@@ -10,6 +10,10 @@
 #include "data_flow/py_cmath.h"
 #include "data_flow/py_tasklet.h"
 #include "py_structured_sdfg.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/passes/rpc/rpc_context.h"
+#include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/targets/cuda/plugin.h"
 #include "transformations/py_replayer.h"
 #include "types/py_types.h"
 
@@ -142,7 +146,7 @@ PYBIND11_MODULE(_sdfg, m) {
             &PyStructuredSDFG::schedule,
             py::arg("target"),
             py::arg("category"),
-            py::arg("remote_ctx").none(true) = nullptr,
+            py::arg("remote_tuning") = false,
             "Schedule the SDFG"
         )
         .def(

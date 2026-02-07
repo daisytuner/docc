@@ -23,8 +23,10 @@ set(SOURCE_FILES
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/highway_scheduler.cpp
     src/passes/scheduler/loop_scheduler.cpp
+    src/passes/scheduler/loop_scheduling_pass.cpp
     src/passes/scheduler/omp_scheduler.cpp
     src/passes/scheduler/polly_scheduler.cpp
+    src/passes/scheduler/scheduler_registry.cpp
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp

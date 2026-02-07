@@ -13,8 +13,13 @@ namespace sdfg {
 namespace builder {
 class StructuredSDFGBuilder;
 }
-
 namespace structured_control_flow {
+
+/**
+ * @brief Categories of schedule types for Map nodes
+ * Defines the high-level classification of scheduling strategies.
+ */
+enum class ScheduleTypeCategory { Offloader, Parallelizer, Vectorizer, None };
 
 /**
  * @brief Represents a schedule type for Map nodes
@@ -27,9 +32,10 @@ class ScheduleType {
 private:
     std::unordered_map<std::string, std::string> properties_;
     std::string value_;
+    ScheduleTypeCategory category_;
 
 public:
-    ScheduleType(std::string value) : value_(value) {}
+    ScheduleType(std::string value, ScheduleTypeCategory category) : value_(value), category_(category) {}
 
     /**
      * @brief Get the schedule type identifier
@@ -42,6 +48,12 @@ public:
      * @return Map of property names to values
      */
     const std::unordered_map<std::string, std::string>& properties() const { return properties_; }
+
+    /**
+     * @brief Get the schedule type category
+     * @return Schedule type category enum
+     */
+    ScheduleTypeCategory category() const { return category_; }
 
     /**
      * @brief Set a schedule property
@@ -65,6 +77,7 @@ public:
     }
 };
 
+
 /**
  * @brief Sequential schedule type for Map nodes
  *
@@ -73,7 +86,7 @@ public:
 class ScheduleType_Sequential {
 public:
     static const std::string value() { return "SEQUENTIAL"; }
-    static ScheduleType create() { return ScheduleType(value()); }
+    static ScheduleType create() { return ScheduleType(value(), ScheduleTypeCategory::None); }
 };
 
 /**

@@ -7,6 +7,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/passes/rpc/rpc_context.h"
+#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
@@ -20,20 +21,10 @@ using namespace sdfg;
 
 class RPCLoopOptTest : public ::testing::Test {
 protected:
-    std::unique_ptr<passes::rpc::RpcContext> ctx_;
-
     std::unique_ptr<builder::StructuredSDFGBuilder> builder_;
     nlohmann::json desc_;
 
     void SetUp() override {
-        passes::rpc::SimpleRpcContextBuilder ctxBuilder;
-        ctx_ = ctxBuilder
-                   .initialize_local_default() // localhost:8080/docc
-                   .from_env() // $SDFG_RPC_CONFIG can override
-                   .from_header_env() // $RPC_HEADER can override/add headers
-                   .build();
-
-
         builder_ = std::make_unique<builder::StructuredSDFGBuilder>("sdfg_test", FunctionType_CPU);
 
         auto& root = builder_->subject().root();
@@ -128,19 +119,12 @@ TEST_F(RPCLoopOptTest, Matmul_FMA) {
 
     // Transfer tuning replayer
 
-   sdfg::analysis::AnalysisManager analysis_manager(builder_->subject());
+    sdfg::analysis::AnalysisManager analysis_manager(builder_->subject());
     auto& loop_analysis = analysis_manager.get<sdfg::analysis::LoopAnalysis>();
     auto outer_loops = loop_analysis.outermost_loops();
 
-    passes::rpc::SimpleRpcContextBuilder b;
-    b.initialize_local_default();
-    b.from_env();
-    b.from_docc_config();
-    b.server = "http://localhost:8080/docc";
-    auto ctx = b.build();
-
-    passes::rpc::RpcLoopOpt rpc_pass(*ctx, "sequential", "server", true);
-    rpc_pass.run(*builder_, analysis_manager);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"rpc"}, nullptr);
+    loop_scheduling_pass.run(*builder_, analysis_manager);
 
     sdfg::analysis::AnalysisManager test_analysis_manager(builder_->subject());
     auto& test_loop_analysis = test_analysis_manager.get<sdfg::analysis::LoopAnalysis>();
@@ -148,22 +132,23 @@ TEST_F(RPCLoopOptTest, Matmul_FMA) {
 
 
     EXPECT_EQ(test_loop_analysis.find_loop_by_indvar("k"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("j")]);
-    EXPECT_EQ(test_loop_analysis.find_loop_by_indvar("j_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k")]);
+    EXPECT_EQ(
+        test_loop_analysis.find_loop_by_indvar("j_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k")]
+    );
 
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("k_tile0"), nullptr);
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("j_tile0"), nullptr);
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("i_tile0"), nullptr);
 
     EXPECT_EQ(
-        test_loop_analysis.find_loop_by_indvar("k_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("j_tile0")]
+        test_loop_analysis.find_loop_by_indvar("k_tile0"),
+        loop_nest_tree[test_loop_analysis.find_loop_by_indvar("j_tile0")]
     );
     EXPECT_EQ(
-        test_loop_analysis.find_loop_by_indvar("i"),
-        loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k_tile0")]
+        test_loop_analysis.find_loop_by_indvar("i"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k_tile0")]
     );
     EXPECT_EQ(
-        test_loop_analysis.find_loop_by_indvar("i_tile0"),
-        loop_nest_tree[test_loop_analysis.find_loop_by_indvar("i")]
+        test_loop_analysis.find_loop_by_indvar("i_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("i")]
     );
 };
 
@@ -184,15 +169,8 @@ TEST_F(RPCLoopOptTest, Double_Matmul) {
 
     EXPECT_EQ(outer_loops.size(), 2);
 
-    passes::rpc::SimpleRpcContextBuilder b;
-    b.initialize_local_default();
-    b.from_env();
-    b.from_docc_config();
-    b.server = "http://localhost:8080/docc";
-    auto ctx = b.build();
-
-    passes::rpc::RpcLoopOpt rpc_pass(*ctx, "sequential", "server", true);
-    rpc_pass.run(*builder_, analysis_manager);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"rpc"}, nullptr);
+    loop_scheduling_pass.run(*builder_, analysis_manager);
 
     sdfg::analysis::AnalysisManager test_analysis_manager(builder_->subject());
 
@@ -200,21 +178,22 @@ TEST_F(RPCLoopOptTest, Double_Matmul) {
     auto loop_nest_tree = test_loop_analysis.loop_tree();
 
     EXPECT_EQ(test_loop_analysis.find_loop_by_indvar("k"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("j")]);
-    EXPECT_EQ(test_loop_analysis.find_loop_by_indvar("j_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k")]);
+    EXPECT_EQ(
+        test_loop_analysis.find_loop_by_indvar("j_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k")]
+    );
 
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("k_tile0"), nullptr);
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("j_tile0"), nullptr);
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("i_tile0"), nullptr);
 
     EXPECT_EQ(
-        test_loop_analysis.find_loop_by_indvar("k_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("j_tile0")]
+        test_loop_analysis.find_loop_by_indvar("k_tile0"),
+        loop_nest_tree[test_loop_analysis.find_loop_by_indvar("j_tile0")]
     );
     EXPECT_EQ(
-        test_loop_analysis.find_loop_by_indvar("i"),
-        loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k_tile0")]
+        test_loop_analysis.find_loop_by_indvar("i"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k_tile0")]
     );
     EXPECT_EQ(
-        test_loop_analysis.find_loop_by_indvar("i_tile0"),
-        loop_nest_tree[test_loop_analysis.find_loop_by_indvar("i")]
+        test_loop_analysis.find_loop_by_indvar("i_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("i")]
     );
 }

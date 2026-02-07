@@ -55,7 +55,7 @@ TEST(MapDispatcherTest, RedirectDispatch) {
         symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
-        structured_control_flow::ScheduleType("mock")
+        structured_control_flow::ScheduleType("mock", structured_control_flow::ScheduleTypeCategory::None)
     );
 
     auto final_sdfg = builder.move();

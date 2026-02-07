@@ -48,9 +48,7 @@ public:
 
     void normalize();
 
-    void schedule(
-        const std::string& target, const std::string& category, sdfg::passes::rpc::RpcContext* remote_ctx = nullptr
-    );
+    void schedule(const std::string& target, const std::string& category, bool remote_tuning = false);
 
     std::string compile(
         const std::string& output_folder,

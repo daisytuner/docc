@@ -20,7 +20,7 @@ using namespace sdfg;
 
 class RPCNodeTransformTest : public ::testing::Test {
 protected:
-    std::unique_ptr<passes::rpc::RpcContext> ctx_;
+    std::shared_ptr<passes::rpc::RpcContext> ctx_;
 
     std::unique_ptr<builder::StructuredSDFGBuilder> builder_;
     nlohmann::json desc_;
@@ -144,22 +144,23 @@ TEST_F(RPCNodeTransformTest, Matmul_FMA) {
     auto loop_nest_tree = test_loop_analysis.loop_tree();
 
     EXPECT_EQ(test_loop_analysis.find_loop_by_indvar("k"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("j")]);
-    EXPECT_EQ(test_loop_analysis.find_loop_by_indvar("j_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k")]);
+    EXPECT_EQ(
+        test_loop_analysis.find_loop_by_indvar("j_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k")]
+    );
 
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("k_tile0"), nullptr);
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("j_tile0"), nullptr);
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("i_tile0"), nullptr);
 
     EXPECT_EQ(
-        test_loop_analysis.find_loop_by_indvar("k_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("j_tile0")]
+        test_loop_analysis.find_loop_by_indvar("k_tile0"),
+        loop_nest_tree[test_loop_analysis.find_loop_by_indvar("j_tile0")]
     );
     EXPECT_EQ(
-        test_loop_analysis.find_loop_by_indvar("i"),
-        loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k_tile0")]
+        test_loop_analysis.find_loop_by_indvar("i"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("k_tile0")]
     );
     EXPECT_EQ(
-        test_loop_analysis.find_loop_by_indvar("i_tile0"),
-        loop_nest_tree[test_loop_analysis.find_loop_by_indvar("i")]
+        test_loop_analysis.find_loop_by_indvar("i_tile0"), loop_nest_tree[test_loop_analysis.find_loop_by_indvar("i")]
     );
 };
 
@@ -197,5 +198,4 @@ TEST_F(RPCNodeTransformTest, Double_Matmul) {
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("k_tile0"), nullptr);
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("j_tile0"), nullptr);
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("i_tile0"), nullptr);
-
 }

@@ -6,6 +6,8 @@
 #include <sdfg/serializer/json_serializer.h>
 
 #include "sdfg/codegen/language_extension.h"
+#include "sdfg/passes/scheduler/cuda_scheduler.h"
+#include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/targets/cuda/blas/dot.h"
 #include "sdfg/targets/cuda/blas/gemm.h"
 #include "sdfg/targets/cuda/cuda.h"
@@ -96,6 +98,10 @@ inline void register_cuda_plugin() {
             );
         }
     );
+
+
+    passes::scheduler::SchedulerRegistry::instance()
+        .register_loop_scheduler<passes::scheduler::CUDAScheduler>(passes::scheduler::CUDAScheduler::target());
 }
 
 } // namespace cuda

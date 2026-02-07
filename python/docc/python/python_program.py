@@ -22,9 +22,6 @@ from docc.compiler.docc_program import DoccProgram
 from docc.compiler.compiled_sdfg import CompiledSDFG
 from docc.python.ast_parser import ASTParser
 
-# Global RPC context for scheduling SDFGs
-sdfg_rpc_context = None
-
 
 def _compile_wrapper(self, output_folder=None):
     """Wrapper to allow StructuredSDFG.compile() to return a CompiledSDFG."""
@@ -108,6 +105,7 @@ class PythonProgram(DoccProgram):
         category: str = "server",
         instrumentation_mode: Optional[str] = None,
         capture_args: Optional[bool] = None,
+        remote_tuning: bool = False,
     ):
         super().__init__(
             name=func.__name__,
@@ -115,6 +113,7 @@ class PythonProgram(DoccProgram):
             category=category,
             instrumentation_mode=instrumentation_mode,
             capture_args=capture_args,
+            remote_tuning=remote_tuning,
         )
         self.func = func
         self._last_structure_member_info = {}
@@ -276,7 +275,7 @@ class PythonProgram(DoccProgram):
 
         # Schedule if target is specified
         if self.target != "none":
-            sdfg.schedule(self.target, self.category, sdfg_rpc_context)
+            sdfg.schedule(self.target, self.category, self.remote_tuning)
 
         self.last_sdfg = sdfg
 

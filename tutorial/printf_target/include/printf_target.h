@@ -31,7 +31,7 @@ public:
 
     /// Creates a default Printf schedule
     static structured_control_flow::ScheduleType create() {
-        auto schedule_type = structured_control_flow::ScheduleType(value());
+        auto schedule_type = structured_control_flow::ScheduleType(value(), structured_control_flow::ScheduleTypeCategory::Offloader);
         return schedule_type;
     }
 };

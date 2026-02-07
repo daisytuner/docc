@@ -2,6 +2,9 @@
 
 #include <string>
 
+#include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
+#include "sdfg/passes/scheduler/highway_scheduler.h"
+#include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/targets/highway/codegen/highway_map_dispatcher.h"
 #include "sdfg/targets/highway/schedule.h"
 
@@ -22,6 +25,9 @@ inline void register_highway_plugin() {
             );
         }
     );
+
+    passes::scheduler::SchedulerRegistry::instance()
+        .register_loop_scheduler<passes::scheduler::HighwayScheduler>(passes::scheduler::HighwayScheduler::target());
 }
 
 } // namespace highway

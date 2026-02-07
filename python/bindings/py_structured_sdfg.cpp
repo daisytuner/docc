@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <nlohmann/json_fwd.hpp>
 #include <sstream>
 
 #include <dlfcn.h>
@@ -26,8 +27,10 @@
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/scheduler/cuda_scheduler.h>
 #include <sdfg/passes/scheduler/highway_scheduler.h>
+#include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/passes/scheduler/omp_scheduler.h>
 #include <sdfg/passes/scheduler/polly_scheduler.h>
+#include <sdfg/passes/scheduler/scheduler_registry.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
 #include <sdfg/passes/structured_control_flow/for2map.h>
@@ -274,8 +277,7 @@ void PyStructuredSDFG::normalize() {
     pipeline.run(builder, analysis_manager);
 }
 
-void PyStructuredSDFG::
-    schedule(const std::string& target, const std::string& category, sdfg::passes::rpc::RpcContext* remote_ctx) {
+void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
     if (target == "none") {
         return;
     }
@@ -285,16 +287,9 @@ void PyStructuredSDFG::
 
     // CPU Opt Pipeline
     if (target == "sequential" || target == "openmp") {
-        if (remote_ctx) {
-            std::cout << "Running RPC Loop Optimization for target: " << target << ", category: " << category << " on "
-                      << remote_ctx->get_remote_address() << std::endl;
-            sdfg::passes::rpc::RpcLoopOpt rpcOpt(*remote_ctx, target, category);
-            rpcOpt.run(builder, analysis_manager);
+        if (remote_tuning) {
+            throw std::runtime_error("Remote tuning is not yet supported in python.");
         }
-
-        // CPU Tiling
-        // sdfg::passes::scheduler::PollyScheduler polly_scheduler;
-        // polly_scheduler.run(builder, analysis_manager);
 
         sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
         sdfg::passes::DeadDataElimination dde;
@@ -302,7 +297,6 @@ void PyStructuredSDFG::
         symbol_propagation_pass.run(builder, analysis_manager);
         dde.run(builder, analysis_manager);
         dce.run(builder, analysis_manager);
-
 
         // CPU Parallelization
         if (target == "openmp") {
@@ -314,7 +308,6 @@ void PyStructuredSDFG::
         sdfg::passes::scheduler::HighwayScheduler highway_scheduler;
         highway_scheduler.run(builder, analysis_manager);
     }
-
     // GPU Opt Pipeline
     else if (target == "cuda") {
         sdfg::passes::scheduler::CUDAScheduler cuda_scheduler;

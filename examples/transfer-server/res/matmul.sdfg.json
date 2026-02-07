@@ -1111,30 +1111,31 @@
                                                                                                         "properties":
                                                                                                             {},
                                                                                                         "value":
-                                                                                                            "SEQUENTIAL"
+                                                                                                            "SEQUENTIAL",
+                                                                                                        "category":
+                                                                                                            3
                                                                                                     },
                                                                                                     "type":
                                                                                                         "map",
-                                                                                                    "update":
-                                                                                                        "1 + k"
+                                                                                                    "update": "1 + k"
                                                                                                 }
                                                                                             ],
-                                                                                            "debug_info":
-                                                                                                {
-                                                                                                    "end_column": 0,
-                                                                                                    "end_line":
-                                                                                                        0,
-                                                                                                    "filename":
-                                                                                                        "",
-                                                                                                    "function":
-                                                                                                        "",
-                                                                                                    "has":
-                                                                                                        false,
-                                                                                                    "start_column":
-                                                                                                        0,
-                                                                                                    "start_line":
-                                                                                                        0
-                                                                                                },
+                                                                                            "debug_info": {
+                                                                                                "end_column":
+                                                                                                    0,
+                                                                                                "end_line":
+                                                                                                    0,
+                                                                                                "filename":
+                                                                                                    "",
+                                                                                                "function":
+                                                                                                    "",
+                                                                                                "has":
+                                                                                                    false,
+                                                                                                "start_column":
+                                                                                                    0,
+                                                                                                "start_line":
+                                                                                                    0
+                                                                                            },
                                                                                             "element_id":
                                                                                                 46,
                                                                                             "transitions": [
@@ -1213,7 +1214,8 @@
                                                                         },
                                                                     "schedule_type": {
                                                                         "properties": {},
-                                                                        "value": "SEQUENTIAL"
+                                                                        "value": "SEQUENTIAL",
+                                                                        "category": 3
                                                                     },
                                                                     "type": "map",
                                                                     "update": "32 + k_tile0"
@@ -1249,7 +1251,8 @@
                                                     },
                                                 "schedule_type": {
                                                     "properties": {},
-                                                    "value": "SEQUENTIAL"
+                                                    "value": "SEQUENTIAL",
+                                                    "category": 3
                                                 },
                                                 "type": "map",
                                                 "update": "1 + i"
@@ -1285,7 +1288,8 @@
                                 },
                             "schedule_type": {
                                 "properties": {},
-                                "value": "SEQUENTIAL"
+                                "value": "SEQUENTIAL",
+                                "category": 3
                             },
                             "type": "map",
                             "update": "32 + i_tile0"

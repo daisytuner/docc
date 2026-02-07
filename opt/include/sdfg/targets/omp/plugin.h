@@ -2,6 +2,9 @@
 
 #include <string>
 
+#include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
+#include "sdfg/passes/scheduler/omp_scheduler.h"
+#include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/targets/omp/codegen/omp_map_dispatcher.h"
 #include "sdfg/targets/omp/schedule.h"
 
@@ -22,6 +25,9 @@ inline void register_omp_plugin() {
             );
         }
     );
+
+    passes::scheduler::SchedulerRegistry::instance()
+        .register_loop_scheduler<passes::scheduler::OMPScheduler>(passes::scheduler::OMPScheduler::target());
 }
 
 } // namespace omp

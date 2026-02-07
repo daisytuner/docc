@@ -38,7 +38,8 @@ public:
     static void nested_sync(structured_control_flow::ScheduleType& schedule, const bool nested_sync);
     static const std::string value() { return "CUDA"; }
     static structured_control_flow::ScheduleType create() {
-        auto schedule_type = structured_control_flow::ScheduleType(value());
+        auto schedule_type =
+            structured_control_flow::ScheduleType(value(), structured_control_flow::ScheduleTypeCategory::Offloader);
         dimension(schedule_type, CUDADimension::X);
         return schedule_type;
     }

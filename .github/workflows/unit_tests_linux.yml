@@ -235,8 +235,8 @@ jobs:
       - name: Integration Tests
         if: matrix.python-version == '3.11' || matrix.python-version == '3.12'
         run: |
-          # Install torch-mlir
-          pip install --pre torch-mlir torchvision --extra-index-url https://download.pytorch.org/whl/nightly/cpu -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
+          # Install torch-mlir (set LD_LIBRARY_PATH to only Python libs to avoid torch conflicts)
+          LD_LIBRARY_PATH="${pythonLocation}/lib" pip install --pre torch-mlir torchvision --extra-index-url https://download.pytorch.org/whl/nightly/cpu -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
 
           cd mlir/
           pytest -v benchmarks/

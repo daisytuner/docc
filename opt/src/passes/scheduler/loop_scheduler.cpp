@@ -36,9 +36,9 @@ bool LoopScheduler::run_pass(builder::StructuredSDFGBuilder& builder, analysis::
         if (scheduling_info.loop_info.has_side_effects) {
             action = SchedulerAction::CHILDREN;
         } else if (auto while_loop = dynamic_cast<structured_control_flow::While*>(loop)) {
-            action = schedule(builder, analysis_manager, *while_loop, scheduling_info);
+            action = schedule(builder, analysis_manager, *while_loop);
         } else if (auto structured_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
-            action = schedule(builder, analysis_manager, *structured_loop, scheduling_info);
+            action = schedule(builder, analysis_manager, *structured_loop);
         } else {
             throw InvalidSDFGException("LoopScheduler encountered non-loop in loop analysis.");
         }

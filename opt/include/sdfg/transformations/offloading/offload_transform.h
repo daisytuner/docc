@@ -50,10 +50,11 @@ protected:
     void handle_device_setup_and_teardown(
         builder::StructuredSDFGBuilder& builder,
         const std::map<std::string, analysis::RegionArgument>& arguments,
-        const std::unordered_map<std::string, symbolic::Expression>& argument_sizes
+        const std::unordered_map<std::string, symbolic::Expression>& argument_sizes,
+        std::string prefix
     );
 
-    void update_map_containers(const std::map<std::string, analysis::RegionArgument>& arguments);
+    void update_map_containers(const std::map<std::string, analysis::RegionArgument>& arguments, std::string prefix);
 
     virtual void add_device_buffer(
         builder::StructuredSDFGBuilder& builder,

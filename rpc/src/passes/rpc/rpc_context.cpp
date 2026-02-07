@@ -7,7 +7,7 @@
 
 namespace sdfg::passes::rpc {
 
-std::unique_ptr<SimpleRpcContext> SimpleRpcContextBuilder::build(bool print) const {
+std::shared_ptr<SimpleRpcContext> SimpleRpcContextBuilder::build(bool print) const {
     if (server.empty()) {
         throw std::runtime_error("No server configured");
     }
@@ -18,7 +18,7 @@ std::unique_ptr<SimpleRpcContext> SimpleRpcContextBuilder::build(bool print) con
         }
         std::cerr << "]" << std::endl;
     }
-    return std::make_unique<SimpleRpcContext>(server, endpoint, headers);
+    return std::make_shared<SimpleRpcContext>(server, endpoint, headers);
 }
 
 SimpleRpcContextBuilder& SimpleRpcContextBuilder::initialize_local_default() {

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <memory>
+#include <unordered_set>
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
+#include "sdfg/structured_control_flow/map.h"
 
 namespace sdfg {
 namespace passes {
@@ -9,7 +12,7 @@ namespace rpc {
 
 class RpcLoopOpt : public scheduler::LoopScheduler {
 private:
-    rpc::RpcContext& rpc_context_;
+    std::shared_ptr<rpc::RpcContext> rpc_context_;
     const std::string target_;
     const std::string category_;
     const bool print_steps_;
@@ -18,25 +21,33 @@ protected:
     scheduler::SchedulerAction schedule(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::StructuredLoop& loop,
-        const scheduler::SchedulerLoopInfo& loop_info
+        structured_control_flow::StructuredLoop& loop
     ) override;
 
     scheduler::SchedulerAction schedule(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::While& loop,
-        const scheduler::SchedulerLoopInfo& loop_info
+        structured_control_flow::While& loop
     ) override;
 
 public:
-    RpcLoopOpt(rpc::RpcContext& rpc_context, std::string target, std::string category, bool print_steps = false);
+    RpcLoopOpt(
+        std::shared_ptr<rpc::RpcContext> rpc_context, std::string target, std::string category, bool print_steps = false
+    );
+
+    static std::string target() { return "rpc"; }
 
     std::string name() override { return "RpcLoopOpt"; };
 
-    bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
-
+    std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };
+
+void register_rpc_loop_opt(
+    std::shared_ptr<rpc::RpcContext> rpc_context,
+    const std::string& target,
+    const std::string& category,
+    bool print_steps = false
+);
 
 } // namespace rpc
 } // namespace passes

@@ -14,12 +14,14 @@ class DoccProgram(ABC):
         category: str = "server",
         instrumentation_mode: Optional[str] = None,
         capture_args: Optional[bool] = None,
+        remote_tuning: bool = False,
     ):
         self.name = name
         self.target = target
         self.category = category
         self.instrumentation_mode = instrumentation_mode
         self.capture_args = capture_args
+        self.remote_tuning = remote_tuning
         self.last_sdfg: Optional[StructuredSDFG] = None
         self.cache: dict = {}
 

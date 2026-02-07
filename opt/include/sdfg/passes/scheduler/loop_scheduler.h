@@ -3,6 +3,9 @@
 #include <sdfg/analysis/flop_analysis.h>
 #include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/passes/pass.h>
+#include <unordered_set>
+#include "sdfg/optimization_report/pass_report_consumer.h"
+#include "sdfg/structured_control_flow/map.h"
 
 namespace sdfg {
 namespace passes {
@@ -21,24 +24,29 @@ struct SchedulerLoopInfo {
     symbolic::Expression flop = SymEngine::null;
 };
 
+
 class LoopScheduler : public Pass {
 protected:
-    virtual SchedulerAction schedule(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::StructuredLoop& loop,
-        const SchedulerLoopInfo& loop_info
-    ) = 0;
-
-    virtual SchedulerAction schedule(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::While& loop,
-        const SchedulerLoopInfo& loop_info
-    ) = 0;
+    PassReportConsumer* report_ = nullptr;
 
 public:
-    ~LoopScheduler() override = default;
+    virtual ~LoopScheduler() = default;
+
+    virtual SchedulerAction schedule(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::StructuredLoop& loop
+    ) = 0;
+
+    virtual SchedulerAction schedule(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::While& loop
+    ) = 0;
+
+    virtual void set_report(PassReportConsumer* report) { report_ = report; }
+
+    virtual std::unordered_set<ScheduleTypeCategory> compatible_types() = 0;
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };
