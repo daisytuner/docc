@@ -173,7 +173,7 @@ def convert_json_to_onnx(build_path: str) -> str:
     json_paths = Path(build_path).glob("*.onnx.json")
     models = []
     for json_path in json_paths:
-        onnx_path = Path(json_path).parent / "model.onnx"
+        onnx_path = json_path.parent / (json_path.name.replace(".onnx.json", ".onnx"))
         build_onnx_model(str(json_path), str(onnx_path))
         models.append(str(onnx_path))
 

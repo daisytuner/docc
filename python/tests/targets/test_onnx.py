@@ -87,3 +87,20 @@ def test_onnx_transpose():
 
     C = onnx_transpose(A)
     assert np.allclose(C, A.T)
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="ONNX target not yet supported on macOS"
+)
+def test_onnx_multiple():
+    @native(target="onnx", category="server")
+    def onnx_multiple(a, b):
+        return (a * b) + (a * b)
+
+    N = 64
+    A = np.random.rand(N, N).astype(np.float64)
+    B = np.random.rand(N, N).astype(np.float64)
+    C = np.zeros((N, N), dtype=np.float64)
+
+    C = onnx_multiple(A, B)
+    assert np.allclose(C, (A * B) + (A * B))

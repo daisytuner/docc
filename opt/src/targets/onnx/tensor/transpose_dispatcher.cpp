@@ -31,8 +31,14 @@ void TransposeNodeDispatcher_ONNX::dispatch_code(
     std::string onnx_type = primitive_type_to_onnx_type(prim_type);
     int onnx_elem_type = primitive_type_to_onnx_type_int(prim_type);
 
-    // Emit ONNX runtime headers to globals
-    emit_onnx_runtime_init(stream, globals_stream);
+    // Emit ONNX runtime headers to globals (only once per SDFG)
+    emit_onnx_runtime_init(stream, globals_stream, library_snippet_factory);
+
+    // Model filename for this node
+    std::string model_filename = "model_" + node_name + ".onnx";
+
+    // Emit per-model session globals
+    emit_onnx_model_session_globals(globals_stream, node_name, model_filename);
 
     // Get or create ONNX graph snippet
     auto& onnx_snippet = library_snippet_factory.require("model_" + node_name, "onnx.json", true);
@@ -95,8 +101,8 @@ void TransposeNodeDispatcher_ONNX::dispatch_code(
     stream << "};" << std::endl;
     stream << std::endl;
 
-    // Initialize ONNX runtime
-    stream << "onnx_runtime_init();" << std::endl;
+    // Initialize ONNX session for this model
+    stream << "onnx_session_init_" << node_name << "();" << std::endl;
     stream << std::endl;
 
     // Create input tensor using global memory info
@@ -125,8 +131,8 @@ void TransposeNodeDispatcher_ONNX::dispatch_code(
     stream << "OrtValue* " << node_name << "_outputs[] = {" << node_name << "_output};" << std::endl;
     stream << std::endl;
 
-    // Actually run the ONNX session
-    stream << "ORT_CHECK_STATUS(g_ort->Run(g_onnx_session, NULL, " << node_name
+    // Actually run the ONNX session for this model
+    stream << "ORT_CHECK_STATUS(g_ort->Run(g_onnx_session_" << node_name << ", NULL, " << node_name
            << "_input_names, (const OrtValue* const*)" << node_name << "_inputs, 1, " << node_name
            << "_output_names, 1, " << node_name << "_outputs));" << std::endl;
     stream << std::endl;

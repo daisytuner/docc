@@ -36,8 +36,14 @@ void ElementWiseUnaryNodeDispatcher_ONNX::dispatch_code(
     std::string onnx_type = primitive_type_to_onnx_type(prim_type);
     int onnx_type_int = primitive_type_to_onnx_type_int(prim_type);
 
-    // Emit ONNX runtime headers and init function to globals
-    emit_onnx_runtime_init(stream, globals_stream);
+    // Emit ONNX runtime headers and init function to globals (only once per SDFG)
+    emit_onnx_runtime_init(stream, globals_stream, library_snippet_factory);
+
+    // Model filename for this node
+    std::string model_filename = "model_" + node_name + ".onnx";
+
+    // Emit per-model session globals
+    emit_onnx_model_session_globals(globals_stream, node_name, model_filename);
 
     // Get or create ONNX graph snippet (JSON format for Python post-processing)
     auto& onnx_snippet = library_snippet_factory.require("model_" + node_name, "onnx.json", true);
@@ -58,8 +64,8 @@ void ElementWiseUnaryNodeDispatcher_ONNX::dispatch_code(
     stream << "{" << std::endl;
     stream.setIndent(stream.indent() + 4);
 
-    // Initialize ONNX runtime (lazy init, finds model path automatically)
-    stream << "onnx_runtime_init();" << std::endl;
+    // Initialize ONNX session for this model
+    stream << "onnx_session_init_" << node_name << "();" << std::endl;
     stream << std::endl;
 
     // Emit shape array
@@ -94,7 +100,7 @@ void ElementWiseUnaryNodeDispatcher_ONNX::dispatch_code(
     stream << "OrtValue* " << node_name << "_outputs[] = {" << node_name << "_output};" << std::endl;
     stream << std::endl;
 
-    stream << "ORT_CHECK_STATUS(g_ort->Run(g_onnx_session, NULL, " << std::endl;
+    stream << "ORT_CHECK_STATUS(g_ort->Run(g_onnx_session_" << node_name << ", NULL, " << std::endl;
     stream << "    " << node_name << "_input_names, (const OrtValue* const*)" << node_name << "_inputs, 1,"
            << std::endl;
     stream << "    " << node_name << "_output_names, 1, " << node_name << "_outputs));" << std::endl;
@@ -139,8 +145,14 @@ void ElementWiseBinaryNodeDispatcher_ONNX::dispatch_code(
     std::string onnx_type = primitive_type_to_onnx_type(prim_type);
     int onnx_type_int = primitive_type_to_onnx_type_int(prim_type);
 
-    // Emit ONNX runtime headers and init function to globals
-    emit_onnx_runtime_init(stream, globals_stream);
+    // Emit ONNX runtime headers and init function to globals (only once per SDFG)
+    emit_onnx_runtime_init(stream, globals_stream, library_snippet_factory);
+
+    // Model filename for this node
+    std::string model_filename = "model_" + node_name + ".onnx";
+
+    // Emit per-model session globals
+    emit_onnx_model_session_globals(globals_stream, node_name, model_filename);
 
     // Get or create ONNX graph snippet (JSON format for Python post-processing)
     auto& onnx_snippet = library_snippet_factory.require("model_" + node_name, "onnx.json", true);
@@ -161,8 +173,8 @@ void ElementWiseBinaryNodeDispatcher_ONNX::dispatch_code(
     stream << "{" << std::endl;
     stream.setIndent(stream.indent() + 4);
 
-    // Initialize ONNX runtime (lazy init, finds model path automatically)
-    stream << "onnx_runtime_init();" << std::endl;
+    // Initialize ONNX session for this model
+    stream << "onnx_session_init_" << node_name << "();" << std::endl;
     stream << std::endl;
 
     // Emit shape array
@@ -198,7 +210,7 @@ void ElementWiseBinaryNodeDispatcher_ONNX::dispatch_code(
     stream << "OrtValue* " << node_name << "_output = NULL;" << std::endl;
     stream << std::endl;
 
-    stream << "ORT_CHECK_STATUS(g_ort->Run(g_onnx_session, NULL, " << std::endl;
+    stream << "ORT_CHECK_STATUS(g_ort->Run(g_onnx_session_" << node_name << ", NULL, " << std::endl;
     stream << "    " << node_name << "_input_names, (const OrtValue* const*)" << node_name << "_inputs, 2,"
            << std::endl;
     stream << "    " << node_name << "_output_names, 1, &" << node_name << "_output));" << std::endl;
