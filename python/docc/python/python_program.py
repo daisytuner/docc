@@ -266,9 +266,15 @@ class PythonProgram(DoccProgram):
             arg_types, args, arg_shape_mapping, len(shape_values), shape_to_scalar
         )
         sdfg.validate()
-        sdfg.expand()
+
+        # Tensor targets keep tensor nodes
+        if self.target != "onnx":
+            sdfg.expand()
+
+        # Simplify pipelines
         sdfg.simplify()
 
+        # Normalization for scheduling
         if self.target != "none":
             sdfg.normalize()
 
@@ -286,6 +292,14 @@ class PythonProgram(DoccProgram):
             instrumentation_mode=instrumentation_mode,
             capture_args=capture_args,
         )
+
+        # Build ONNX model from JSON if target is onnx (after _compile creates the JSON)
+        if self.target == "onnx":
+            from docc.python.onnx_model_builder import convert_json_to_onnx
+
+            onnx_model_path = convert_json_to_onnx(output_folder)
+            if onnx_model_path:
+                print(f"Generated ONNX models: {onnx_model_path}")
 
         # 5. Create CompiledSDFG
         compiled = CompiledSDFG(

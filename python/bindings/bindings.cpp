@@ -28,6 +28,7 @@
 #include <sdfg/targets/cuda/plugin.h>
 #include <sdfg/targets/highway/plugin.h>
 #include <sdfg/targets/omp/plugin.h>
+#include <sdfg/targets/onnx/plugin.h>
 
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_loop_opt.h"
@@ -42,6 +43,7 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::codegen::register_default_dispatchers();
     sdfg::serializer::register_default_serializers();
     sdfg::omp::register_omp_plugin();
+    sdfg::onnx::register_onnx_plugin();
     sdfg::highway::register_highway_plugin();
     sdfg::cuda::register_cuda_plugin();
 

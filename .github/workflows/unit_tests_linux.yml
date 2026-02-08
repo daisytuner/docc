@@ -127,6 +127,13 @@ jobs:
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
           pip install numpy scipy
 
+          # Install ONNX Runtime (lib)
+          wget https://github.com/microsoft/onnxruntime/releases/download/v1.24.1/onnxruntime-linux-x64-1.24.1.tgz
+          tar -xzf onnxruntime-linux-x64-1.24.1.tgz
+          mv onnxruntime-linux-x64-1.24.1 /usr/local/onnxruntime
+
+          pip install onnxruntime==1.24.1 onnx==1.20.1
+
       - name: Formatting
         shell: bash
         run: |
@@ -142,6 +149,12 @@ jobs:
         run: |
           nvidia-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+          # ONNX Runtime libs
+          export LD_LIBRARY_PATH=/usr/local/onnxruntime/lib:$LD_LIBRARY_PATH
+          export LIBRARY_PATH=/usr/local/onnxruntime/lib:$LIBRARY_PATH
+          export CPATH=/usr/local/onnxruntime/include:$CPATH
+
           coverage run --source=python/docc -m pytest -v python/tests
           coverage xml
 
@@ -156,6 +169,12 @@ jobs:
       - name: Integration Tests
         run: |
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+          # ONNX Runtime libs
+          export LD_LIBRARY_PATH=/usr/local/onnxruntime/lib:$LD_LIBRARY_PATH
+          export LIBRARY_PATH=/usr/local/onnxruntime/lib:$LIBRARY_PATH
+          export CPATH=/usr/local/onnxruntime/include:$CPATH
+
           pytest -v python/benchmarks/
 
   mlir-tests-linux:
