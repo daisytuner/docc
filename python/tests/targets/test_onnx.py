@@ -104,3 +104,67 @@ def test_onnx_multiple():
 
     C = onnx_multiple(A, B)
     assert np.allclose(C, (A * B) + (A * B))
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="ONNX target not yet supported on macOS"
+)
+def test_onnx_dot():
+    @native(target="onnx", category="server")
+    def onnx_dot(x, y):
+        return np.dot(x, y)
+
+    N = 128
+    X = np.random.rand(N).astype(np.float64)
+    Y = np.random.rand(N).astype(np.float64)
+
+    result = onnx_dot(X, Y)
+    assert np.allclose(result, np.dot(X, Y))
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="ONNX target not yet supported on macOS"
+)
+def test_onnx_matmul():
+    @native(target="onnx", category="server")
+    def onnx_matmul(a, b):
+        return a @ b
+
+    M, K, N = 32, 48, 64
+    A = np.random.rand(M, K).astype(np.float64)
+    B = np.random.rand(K, N).astype(np.float64)
+
+    C = onnx_matmul(A, B)
+    assert np.allclose(C, A @ B)
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="ONNX target not yet supported on macOS"
+)
+def test_onnx_dot_float32():
+    @native(target="onnx", category="server")
+    def onnx_dot_f32(x, y):
+        return np.dot(x, y)
+
+    N = 128
+    X = np.random.rand(N).astype(np.float32)
+    Y = np.random.rand(N).astype(np.float32)
+
+    result = onnx_dot_f32(X, Y)
+    assert np.allclose(result, np.dot(X, Y), rtol=1e-5)
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="ONNX target not yet supported on macOS"
+)
+def test_onnx_matmul_float32():
+    @native(target="onnx", category="server")
+    def onnx_matmul_f32(a, b):
+        return a @ b
+
+    M, K, N = 32, 48, 64
+    A = np.random.rand(M, K).astype(np.float32)
+    B = np.random.rand(K, N).astype(np.float32)
+
+    C = onnx_matmul_f32(A, B)
+    assert np.allclose(C, A @ B, rtol=1e-5)

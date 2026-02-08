@@ -1,44 +1,11 @@
 #pragma once
 
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
-
-// Tensor node includes
-#include <sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/conv_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/reduce_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/transpose_node.h>
-
-// Elementwise operation nodes
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/elu_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sigmoid_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sqrt_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.h>
-
-// Reduce operation nodes
-#include <sdfg/data_flow/library_nodes/math/tensor/reduce_ops/max_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/reduce_ops/min_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/reduce_ops/std_node.h>
-#include <sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h>
+#include <sdfg/data_flow/library_nodes/math/math.h>
 
 // ONNX target headers
+#include "sdfg/targets/onnx/blas/dot_dispatcher.h"
+#include "sdfg/targets/onnx/blas/gemm_dispatcher.h"
 #include "sdfg/targets/onnx/onnx.h"
 #include "sdfg/targets/onnx/tensor/broadcast_dispatcher.h"
 #include "sdfg/targets/onnx/tensor/conv_dispatcher.h"
@@ -60,13 +27,40 @@ namespace onnx {
 inline void register_onnx_plugin() {
     using namespace codegen;
 
+    // GEMM
+    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+        math::blas::LibraryNodeType_GEMM.value() + "::" + ImplementationType_ONNX.value(),
+        [](LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<blas::GEMMNodeDispatcher_ONNX>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::GEMMNode&>(node)
+            );
+        }
+    );
+
+    // Dot
+    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+        math::blas::LibraryNodeType_DOT.value() + "::" + ImplementationType_ONNX.value(),
+        [](LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<blas::DotNodeDispatcher_ONNX>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::DotNode&>(node)
+            );
+        }
+    );
+
+
     // =========================================================================
     // Elementwise Unary Operations
     // =========================================================================
 
     // Abs
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Abs.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Abs.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -79,7 +73,7 @@ inline void register_onnx_plugin() {
 
     // Sqrt
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Sqrt.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Sqrt.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -92,7 +86,7 @@ inline void register_onnx_plugin() {
 
     // Exp
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Exp.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Exp.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -105,7 +99,7 @@ inline void register_onnx_plugin() {
 
     // Tanh
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Tanh.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Tanh.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -118,7 +112,7 @@ inline void register_onnx_plugin() {
 
     // Sigmoid
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Sigmoid.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Sigmoid.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -131,7 +125,7 @@ inline void register_onnx_plugin() {
 
     // ReLU
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_ReLU.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_ReLU.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -144,7 +138,7 @@ inline void register_onnx_plugin() {
 
     // LeakyReLU
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_LeakyReLU.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_LeakyReLU.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -157,7 +151,7 @@ inline void register_onnx_plugin() {
 
     // Elu
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Elu.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Elu.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -170,7 +164,7 @@ inline void register_onnx_plugin() {
 
     // HardSigmoid
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_HardSigmoid.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_HardSigmoid.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -183,7 +177,7 @@ inline void register_onnx_plugin() {
 
     // Erf
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Erf.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Erf.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -196,7 +190,7 @@ inline void register_onnx_plugin() {
 
     // Cast
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Cast.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Cast.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -209,7 +203,7 @@ inline void register_onnx_plugin() {
 
     // Fill (ConstantOfShape in ONNX)
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Fill.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Fill.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -226,7 +220,7 @@ inline void register_onnx_plugin() {
 
     // Add
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Add.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Add.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -239,7 +233,7 @@ inline void register_onnx_plugin() {
 
     // Sub
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Sub.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Sub.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -252,7 +246,7 @@ inline void register_onnx_plugin() {
 
     // Mul
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Mul.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Mul.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -265,7 +259,7 @@ inline void register_onnx_plugin() {
 
     // Div
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Div.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Div.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -278,7 +272,7 @@ inline void register_onnx_plugin() {
 
     // Pow
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Pow.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Pow.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -291,7 +285,7 @@ inline void register_onnx_plugin() {
 
     // Maximum
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Maximum.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Maximum.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -304,7 +298,7 @@ inline void register_onnx_plugin() {
 
     // Minimum
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Minimum.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Minimum.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -321,7 +315,7 @@ inline void register_onnx_plugin() {
 
     // Sum
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Sum.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Sum.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -334,7 +328,7 @@ inline void register_onnx_plugin() {
 
     // Mean
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Mean.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Mean.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -347,7 +341,7 @@ inline void register_onnx_plugin() {
 
     // Max (reduction)
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Max.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Max.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -360,7 +354,7 @@ inline void register_onnx_plugin() {
 
     // Min (reduction)
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Min.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Min.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -373,7 +367,7 @@ inline void register_onnx_plugin() {
 
     // Std
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Std.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Std.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -386,7 +380,7 @@ inline void register_onnx_plugin() {
 
     // Softmax
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Softmax.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Softmax.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -403,7 +397,7 @@ inline void register_onnx_plugin() {
 
     // Conv
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Conv.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Conv.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -416,7 +410,7 @@ inline void register_onnx_plugin() {
 
     // Transpose
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Transpose.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Transpose.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -429,7 +423,7 @@ inline void register_onnx_plugin() {
 
     // Broadcast
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Broadcast.value() + "::" + tensor::ImplementationType_ONNX.value(),
+        math::tensor::LibraryNodeType_Broadcast.value() + "::" + ImplementationType_ONNX.value(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,

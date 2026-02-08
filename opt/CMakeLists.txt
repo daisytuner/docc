@@ -36,6 +36,8 @@ set(SOURCE_FILES
     src/targets/offloading/data_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
+    src/targets/onnx/blas/dot_dispatcher.cpp
+    src/targets/onnx/blas/gemm_dispatcher.cpp
     src/targets/onnx/tensor/broadcast_dispatcher.cpp
     src/targets/onnx/tensor/conv_dispatcher.cpp
     src/targets/onnx/tensor/elementwise_dispatcher.cpp
