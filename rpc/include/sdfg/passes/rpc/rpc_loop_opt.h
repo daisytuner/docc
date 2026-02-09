@@ -39,8 +39,6 @@ public:
 
     static std::string target() { return "rpc"; }
 
-    std::string name() override { return "RpcLoopOpt"; };
-
     std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };
 

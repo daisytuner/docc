@@ -1,5 +1,8 @@
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
+#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
+#include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/structured_control_flow/map.h"
 #include "sdfg/targets/cuda/cuda.h"
 
 #include <gtest/gtest.h>
@@ -63,8 +66,10 @@ TEST(CUDASchedulerTest, OuterParallelMapWithInnerMap) {
         .add_computational_memlet(block, tasklet, "_out", a_out, {symbolic::symbol("i"), symbolic::symbol("j")}, desc_2);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::CUDAScheduler cuda_scheduler;
-    EXPECT_TRUE(cuda_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(loop.schedule_type().value(), cuda::ScheduleType_CUDA::value());
     EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
@@ -148,8 +153,10 @@ TEST(CUDASchedulerTest, OuterSequentialForWithInnerMaps) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::CUDAScheduler cuda_scheduler;
-    EXPECT_TRUE(cuda_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
     EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA::value());
@@ -223,8 +230,10 @@ TEST(CUDASchedulerTest, OuterSequentialForWith2DMap) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::CUDAScheduler cuda_scheduler;
-    EXPECT_TRUE(cuda_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
     EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA::value());
@@ -302,8 +311,10 @@ TEST(CUDASchedulerTest, OuterWhileWithInnerMaps) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::CUDAScheduler cuda_scheduler;
-    EXPECT_TRUE(cuda_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
     EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA::value());

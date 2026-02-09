@@ -23,7 +23,6 @@ set(SOURCE_FILES
     src/passes/opt_pipeline.cpp
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/highway_scheduler.cpp
-    src/passes/scheduler/loop_scheduler.cpp
     src/passes/scheduler/loop_scheduling_pass.cpp
     src/passes/scheduler/omp_scheduler.cpp
     src/passes/scheduler/polly_scheduler.cpp

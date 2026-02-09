@@ -1,5 +1,9 @@
 #include "sdfg/passes/scheduler/omp_scheduler.h"
 
+#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
+#include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/targets/omp/schedule.h"
+
 #include <gtest/gtest.h>
 
 using namespace sdfg;
@@ -61,8 +65,10 @@ TEST(OMPSchedulerTest, OuterParallelMapWithInnerMap) {
         .add_computational_memlet(block, tasklet, "_out", a_out, {symbolic::symbol("i"), symbolic::symbol("j")}, desc_2);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::OMPScheduler omp_scheduler;
-    EXPECT_TRUE(omp_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"openmp"}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(loop.schedule_type().value(), omp::ScheduleType_OMP::value());
     EXPECT_EQ(loop_2.schedule_type().value(), structured_control_flow::ScheduleType_Sequential::value());
@@ -146,8 +152,10 @@ TEST(OMPSchedulerTest, OuterSequentialForWithInnerMaps) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::OMPScheduler omp_scheduler;
-    EXPECT_TRUE(omp_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"openmp"}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(loop_2.schedule_type().value(), omp::ScheduleType_OMP::value());
     EXPECT_EQ(loop_3.schedule_type().value(), omp::ScheduleType_OMP::value());
@@ -221,8 +229,10 @@ TEST(OMPSchedulerTest, OuterSequentialForWith2DMap) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::OMPScheduler omp_scheduler;
-    EXPECT_TRUE(omp_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"openmp"}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(loop_2.schedule_type().value(), omp::ScheduleType_OMP::value());
     EXPECT_EQ(loop_3.schedule_type().value(), structured_control_flow::ScheduleType_Sequential::value());
@@ -300,8 +310,10 @@ TEST(OMPSchedulerTest, OuterWhileWithInnerMaps) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::OMPScheduler omp_scheduler;
-    EXPECT_TRUE(omp_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"openmp"}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(loop_2.schedule_type().value(), omp::ScheduleType_OMP::value());
     EXPECT_EQ(loop_3.schedule_type().value(), omp::ScheduleType_OMP::value());

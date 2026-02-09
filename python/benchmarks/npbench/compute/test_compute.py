@@ -63,7 +63,7 @@ def test_compute(target):
                 "CUDA": 14,
                 "FOR": 14,
                 "MAP": 14,
-                "CUDAOffloading": 30,
+                "CUDAOffloading": 18,
                 "Malloc": 6,
             }
         )

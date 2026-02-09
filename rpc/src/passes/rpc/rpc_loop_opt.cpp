@@ -33,7 +33,12 @@ scheduler::SchedulerAction RpcLoopOpt::schedule(
         return scheduler::NEXT;
     }
 
-    return scheduler::NEXT;
+    if (loop_info.loopnest_index == -1 || loop_info.has_side_effects || loop_info.num_maps <= 1) {
+        return scheduler::NEXT;
+    } else {
+        // Visit 1st-level children
+        return scheduler::CHILDREN;
+    }
 }
 
 scheduler::SchedulerAction RpcLoopOpt::schedule(
@@ -44,8 +49,11 @@ scheduler::SchedulerAction RpcLoopOpt::schedule(
 ) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto loop_info = loop_analysis.loop_info(&loop);
-    if (loop_info.loopnest_index == -1 || loop_info.has_side_effects || loop_info.is_elementwise) {
+    if (loop_info.loopnest_index == -1 || loop_info.has_side_effects) {
         return scheduler::NEXT;
+    }
+    else {
+        return scheduler::CHILDREN;
     }
 
     // Apply transfer tuning to the loop

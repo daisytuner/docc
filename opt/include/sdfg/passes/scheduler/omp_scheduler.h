@@ -1,7 +1,6 @@
 #pragma once
 
 #include "sdfg/passes/scheduler/loop_scheduler.h"
-#include "sdfg/targets/omp/schedule.h"
 
 namespace sdfg {
 namespace passes {
@@ -24,8 +23,6 @@ public:
     ) override;
 
     static std::string target() { return "openmp"; };
-
-    std::string name() override { return "OMPScheduler"; };
 
     std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };

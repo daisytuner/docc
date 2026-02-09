@@ -60,7 +60,8 @@ SchedulerAction CUDAScheduler::schedule(
     auto loop_info = loop_analysis.loop_info(&loop);
 
     // Check if in not outermost loop
-    if (loop_info.loopnest_index == -1) {
+    if (loop_info.loopnest_index == -1 || loop_info.num_maps <= 1 ||
+        loop_info.has_side_effects) {
         return NEXT;
     } else {
         // Visit 1st-level children
@@ -77,7 +78,8 @@ SchedulerAction CUDAScheduler::schedule(
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto loop_info = loop_analysis.loop_info(&loop);
     // Check if in not outermost loop
-    if (loop_info.loopnest_index == -1 || loop_info.has_side_effects) {
+    if (loop_info.loopnest_index == -1 || loop_info.num_maps <= 1 ||
+        loop_info.has_side_effects) {
         return NEXT;
     } else {
         // Visit 1st-level children
