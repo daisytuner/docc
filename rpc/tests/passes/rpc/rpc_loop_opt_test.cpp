@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <memory>
-#include <sdfg/passes/rpc/rpc_loop_opt.h>
+#include <sdfg/passes/rpc/rpc_scheduler.h>
 
 
 #include "sdfg/analysis/loop_analysis.h"

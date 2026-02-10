@@ -45,7 +45,7 @@
 #include <sdfg/serializer/json_serializer.h>
 
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/rpc/rpc_loop_opt.h"
+#include "sdfg/passes/rpc/rpc_scheduler.h"
 
 // Platform-specific compiler selection
 #if defined(__APPLE__)

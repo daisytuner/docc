@@ -1,4 +1,4 @@
-#include "sdfg/passes/rpc/rpc_loop_opt.h"
+#include "sdfg/passes/rpc/rpc_scheduler.h"
 #include <memory>
 
 #include "sdfg/passes/scheduler/scheduler_registry.h"
@@ -8,12 +8,12 @@ namespace sdfg {
 namespace passes {
 namespace rpc {
 
-RpcLoopOpt::
-    RpcLoopOpt(std::shared_ptr<rpc::RpcContext> rpc_context, std::string target, std::string category, bool print_steps)
+RPCScheduler::
+    RPCScheduler(std::shared_ptr<rpc::RpcContext> rpc_context, std::string target, std::string category, bool print_steps)
     : LoopScheduler(), rpc_context_(std::move(rpc_context)), target_(std::move(target)), category_(std::move(category)),
       print_steps_(print_steps) {}
 
-scheduler::SchedulerAction RpcLoopOpt::schedule(
+scheduler::SchedulerAction RPCScheduler::schedule(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::StructuredLoop& loop,
@@ -33,7 +33,7 @@ scheduler::SchedulerAction RpcLoopOpt::schedule(
         return scheduler::NEXT;
     }
 
-    if (loop_info.loopnest_index == -1 || loop_info.has_side_effects || loop_info.num_maps <= 1) {
+    if (loop_info.num_maps <= 1) {
         return scheduler::NEXT;
     } else {
         // Visit 1st-level children
@@ -41,7 +41,7 @@ scheduler::SchedulerAction RpcLoopOpt::schedule(
     }
 }
 
-scheduler::SchedulerAction RpcLoopOpt::schedule(
+scheduler::SchedulerAction RPCScheduler::schedule(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::While& loop,
@@ -67,7 +67,7 @@ scheduler::SchedulerAction RpcLoopOpt::schedule(
     return scheduler::NEXT;
 }
 
-std::unordered_set<ScheduleTypeCategory> RpcLoopOpt::compatible_types() { return {ScheduleTypeCategory::None}; }
+std::unordered_set<ScheduleTypeCategory> RPCScheduler::compatible_types() { return {ScheduleTypeCategory::None}; }
 
 void register_rpc_loop_opt(
     std::shared_ptr<rpc::RpcContext> rpc_context,
@@ -76,7 +76,7 @@ void register_rpc_loop_opt(
     bool print_steps
 ) {
     scheduler::SchedulerRegistry::instance()
-        .register_loop_scheduler<RpcLoopOpt>(RpcLoopOpt::target(), rpc_context, target, category, print_steps);
+        .register_loop_scheduler<RPCScheduler>(RPCScheduler::target(), rpc_context, target, category, print_steps);
 }
 
 } // namespace rpc
