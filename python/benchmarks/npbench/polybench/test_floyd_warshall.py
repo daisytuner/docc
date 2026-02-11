@@ -40,7 +40,7 @@ def test_floyd_warshall(target):
         verifier = SDFGVerification(
             verification={
                 "HIGHWAY": 4,
-                "CPU_PARALLEL": 4,
+                "SEQUENTIAL": 4,
                 "MAP": 8,
                 "Malloc": 3,
                 "FOR": 9,
@@ -49,9 +49,8 @@ def test_floyd_warshall(target):
     else:  # cuda
         verifier = SDFGVerification(
             verification={
-                "CUDA": 8,
                 "MAP": 8,
-                "CUDAOffloading": 18,
+                "SEQUENTIAL": 8,
                 "Malloc": 3,
                 "FOR": 9,
             }

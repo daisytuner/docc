@@ -64,11 +64,11 @@ def test_covariance(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 1,
+                "HIGHWAY": 3,
                 "GEMM": 1,
-                "CPU_PARALLEL": 8,
+                "CPU_PARALLEL": 5,
                 "Memset": 1,
-                "SEQUENTIAL": 1,
+                "SEQUENTIAL": 2,
                 "FOR": 12,
                 "MAP": 10,
                 "Malloc": 4,

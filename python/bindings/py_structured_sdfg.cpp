@@ -44,9 +44,6 @@
 #include <sdfg/passes/symbolic/type_minimization.h>
 #include <sdfg/serializer/json_serializer.h>
 
-#include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/rpc/rpc_scheduler.h"
-
 // Platform-specific compiler selection
 #if defined(__APPLE__)
 #define DOCC_CXX_COMPILER "clang++"
@@ -288,12 +285,12 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
 
     std::vector<std::string> schedulers;
 
+    if (remote_tuning) {
+        throw std::runtime_error("Remote tuning is not yet supported in python.");
+    }
+
     // CPU Opt Pipeline
     if (target == "sequential" || target == "openmp") {
-        if (remote_tuning) {
-            throw std::runtime_error("Remote tuning is not yet supported in python.");
-        }
-
         sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
         sdfg::passes::DeadDataElimination dde;
         sdfg::passes::SymbolPropagation symbol_propagation_pass;
@@ -308,7 +305,7 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     }
     // GPU Opt Pipeline
     else if (target == "cuda") {
-        schedulers.push_back("highway");
+        schedulers.push_back(target);
     } else if (target == "onnx") {
         sdfg::passes::ONNXLibraryNodeRewriterPass onnx_library_node_rewriter_pass;
         onnx_library_node_rewriter_pass.run(builder, analysis_manager);
