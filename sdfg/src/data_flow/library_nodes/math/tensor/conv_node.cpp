@@ -367,19 +367,8 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     auto& fma_tasklet =
         builder.add_tasklet(comp_block, data_flow::fp_fma, "_out", {"_in1", "_in2", "_in3"}, block.debug_info());
 
-    // Linearization helper
-    auto linearize = [&](const std::vector<symbolic::Expression>& indices,
-                         const std::vector<symbolic::Expression>& shape) -> symbolic::Expression {
-        symbolic::Expression idx = symbolic::zero();
-        symbolic::Expression stride = symbolic::one();
-        for (int i = shape.size() - 1; i >= 0; --i) {
-            idx = symbolic::add(idx, symbolic::mul(indices[i], stride));
-            stride = symbolic::mul(stride, shape[i]);
-        }
-        return idx;
-    };
 
-    // Calculate shapes for linearization
+    // Calculate shapes for
     // X shape: [N, C_in, D0, D1...]
     std::vector<symbolic::Expression> x_shape_vec = {N, C_in};
     x_shape_vec.insert(x_shape_vec.end(), input_spatial_dims.begin(), input_spatial_dims.end());
@@ -388,7 +377,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     std::vector<symbolic::Expression> w_shape_vec = {C_out, symbolic::div(C_in, group_)};
     w_shape_vec.insert(w_shape_vec.end(), kernel_shape_.begin(), kernel_shape_.end());
 
-    // Connect edges with linearized subsets
+    // Connect edges with subsets
     std::vector<symbolic::Expression> x_indices_vec = {n_var, ic_var};
     x_indices_vec.insert(x_indices_vec.end(), input_spatial_indices.begin(), input_spatial_indices.end());
 
@@ -397,8 +386,8 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     // TODO: Handle groups properly in indices if needed, but for standard conv:
     w_indices_vec.insert(w_indices_vec.end(), kernel_vars.begin(), kernel_vars.end());
 
-    data_flow::Subset x_subset({linearize(x_indices_vec, x_shape_vec)});
-    data_flow::Subset w_subset({linearize(w_indices_vec, w_shape_vec)});
+    data_flow::Subset x_subset(x_indices_vec);
+    data_flow::Subset w_subset(w_indices_vec);
 
     builder.add_computational_memlet(
         comp_block, x_access, fma_tasklet, "_in1", x_subset, x_edge->base_type(), x_edge->debug_info()
@@ -418,7 +407,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     std::vector<symbolic::Expression> y_shape_vec = {N, C_out};
     y_shape_vec.insert(y_shape_vec.end(), output_spatial_dims.begin(), output_spatial_dims.end());
 
-    data_flow::Subset y_subset({linearize(output_indices, y_shape_vec)});
+    data_flow::Subset y_subset(output_indices);
 
     if (b_node) {
         // Add bias: output = accum + bias[oc]

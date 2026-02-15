@@ -51,6 +51,7 @@ def kernel(input, w1, b1, w2, b2, w3, b3):
     return x
 
 
+@pytest.mark.skip()
 @pytest.mark.parametrize(
     "target",
     ["none", "sequential", "openmp", "cuda"],

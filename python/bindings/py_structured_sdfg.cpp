@@ -19,6 +19,7 @@
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/passes/dataflow/constant_propagation.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
+#include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dot_expansion_pass.h>
 #include <sdfg/passes/gemm_expansion_pass.h>
 #include <sdfg/passes/normalization/normalization.h>
@@ -117,6 +118,9 @@ void PyStructuredSDFG::expand() {
 
     sdfg::passes::Pipeline libnode_expansion = sdfg::passes::Pipeline::expansion();
     libnode_expansion.run(builder_opt, analysis_manager);
+
+    sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;
+    tensor_to_pointer_conversion_pass.run(builder_opt, analysis_manager);
 }
 
 void PyStructuredSDFG::simplify() {

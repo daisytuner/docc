@@ -27,6 +27,7 @@ class CompiledSDFG:
         structure_member_info=None,
         output_args=None,
         output_shapes=None,
+        output_strides=None,
     ):
         self.lib_path = lib_path
         self.sdfg = sdfg
@@ -43,6 +44,7 @@ class CompiledSDFG:
                 self.output_args = out_args_str.split(",")
 
         self.output_shapes = output_shapes or {}
+        self.output_strides = output_strides or {}
 
         # Cache for ctypes structure definitions
         self._ctypes_structures = {}
@@ -405,7 +407,31 @@ class CompiledSDFG:
                                 eval_str = self._convert_to_python_syntax(str(dim_str))
                                 val = eval(eval_str, {}, shape_symbol_values)
                                 shape.append(int(val))
-                            arr = arr.reshape(shape)
+
+                            # Use strides directly if available
+                            if name in self.output_strides:
+                                stride_strs = self.output_strides[name]
+                                try:
+                                    # Evaluate stride expressions and convert to byte strides
+                                    itemsize = arr.itemsize
+                                    byte_strides = tuple(
+                                        int(
+                                            eval(
+                                                self._convert_to_python_syntax(str(s)),
+                                                {},
+                                                shape_symbol_values,
+                                            )
+                                        )
+                                        * itemsize
+                                        for s in stride_strs
+                                    )
+                                    arr = np.lib.stride_tricks.as_strided(
+                                        arr, shape=shape, strides=byte_strides
+                                    )
+                                except:
+                                    arr = arr.reshape(shape)
+                            else:
+                                arr = arr.reshape(shape)
                         except:
                             pass
                     results.append(arr)

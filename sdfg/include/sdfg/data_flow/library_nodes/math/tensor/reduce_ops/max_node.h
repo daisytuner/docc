@@ -26,13 +26,13 @@ public:
         structured_control_flow::Sequence& body,
         const std::string& input_name,
         const std::string& output_name,
-        const types::IType& input_type,
-        const types::IType& output_type,
+        const types::Tensor& input_type,
+        const types::Tensor& output_type,
         const data_flow::Subset& input_subset,
         const data_flow::Subset& output_subset
     ) override;
 
-    std::string identity() const override;
+    std::string identity(types::PrimitiveType primitive_type) const override;
 
     bool supports_integer_types() const override { return true; }
 

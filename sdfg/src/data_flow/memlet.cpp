@@ -74,21 +74,49 @@ void Memlet::validate(const Function& function) const {
                 );
             }
 
-            // // Return if library node
-            // if (dynamic_cast<const LibraryNode*>(code_node)) {
-            //     return;
-            // }
-
-            // // Criterion: edge must be contiguous memory
-            // auto& inferred_type = types::infer_type(function, *this->base_type_, this->subset_);
-
-            // // Criterion: Inferred type must be a scalar
-            // if (inferred_type.type_id() != types::TypeID::Scalar) {
-            //     throw InvalidSDFGException(
-            //         "Memlet: Computation memlets resolve to scalar type. Base type: " + this->base_type_->print() +
-            //         " Subset Dim: " + std::to_string(this->subset_.size())
-            //     );
-            // }
+            // If tensor, check that the type is consistenly defined
+            if (this->base_type_->type_id() == types::TypeID::Tensor) {
+                auto& tensor_type = dynamic_cast<const types::Tensor&>(*this->base_type_);
+                if (tensor_type.is_scalar()) {
+                    if (auto const_node = dynamic_cast<const data_flow::ConstantNode*>(data_node)) {
+                        if (const_node->type().type_id() != types::TypeID::Scalar) {
+                            throw InvalidSDFGException(
+                                "Memlet: Scalar tensors must reference scalar buffers. Base type: " +
+                                this->base_type_->print() + " Buffer type: " + const_node->type().print()
+                            );
+                        }
+                    } else {
+                        auto& buffer_type = function.type(data_node->data());
+                        if (buffer_type.type_id() != types::TypeID::Scalar) {
+                            throw InvalidSDFGException(
+                                "Memlet: Scalar tensors must reference scalar buffers. Base type: " +
+                                this->base_type_->print() + " Buffer type: " + buffer_type.print()
+                            );
+                        }
+                    }
+                } else {
+                    auto& buffer_type = function.type(data_node->data());
+                    if (buffer_type.type_id() != types::TypeID::Pointer) {
+                        throw InvalidSDFGException(
+                            "Memlet: Non-scalar tensors must reference pointer buffers. Base type: " +
+                            this->base_type_->print() + " Buffer type: " + buffer_type.print()
+                        );
+                    }
+                    if (this->subset_.size() > tensor_type.shape().size()) {
+                        throw InvalidSDFGException(
+                            "Memlet: Subset dimensions must match base type dimensions. Base type: " +
+                            this->base_type_->print() + " Subset Dim: " + std::to_string(this->subset_.size())
+                        );
+                    }
+                    if (tensor_type.shape().size() != tensor_type.strides().size()) {
+                        throw InvalidSDFGException(
+                            "Memlet: Tensor types must have the same number of shape and stride dimensions. Base "
+                            "type: " +
+                            this->base_type_->print()
+                        );
+                    }
+                }
+            }
             break;
         }
         case MemletType::Reference: {

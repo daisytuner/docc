@@ -41,6 +41,19 @@ bool MeanNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     // Calculate output shape
     std::vector<symbolic::Expression> output_shape;
     std::vector<int64_t> sorted_axes = axes_;
+    // Normalize negative axes
+    for (auto& axis : sorted_axes) {
+        if (axis < 0) {
+            axis = static_cast<int64_t>(shape_.size()) + axis;
+        }
+        // Validate axis is in bounds
+        if (axis < 0 || axis >= static_cast<int64_t>(shape_.size())) {
+            throw InvalidSDFGException(
+                "Library Node: Axis value out of bounds. Axis: " + std::to_string(axis) +
+                " Shape size: " + std::to_string(shape_.size())
+            );
+        }
+    }
     std::sort(sorted_axes.begin(), sorted_axes.end());
 
     for (size_t i = 0; i < shape_.size(); ++i) {
@@ -60,7 +73,6 @@ bool MeanNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             output_shape.push_back(shape_[i]);
         }
     }
-    sdfg::types::Scalar element_type(out_edge.base_type().primitive_type());
 
     // Create SumNode
     auto& sum_block = builder.add_block_before(parent, block, {}, this->debug_info());
@@ -99,8 +111,9 @@ bool MeanNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         .add_computational_memlet(div_block, div_in_node, div_node, "A", {}, out_edge.base_type(), this->debug_info());
 
     // Connect Count -> Div (B)
+    types::Tensor scalar_tensor(out_edge.base_type().primitive_type(), {});
     auto& div_count_node = builder.add_access(div_block, count_container, this->debug_info());
-    builder.add_computational_memlet(div_block, div_count_node, div_node, "B", {}, element_type, this->debug_info());
+    builder.add_computational_memlet(div_block, div_count_node, div_node, "B", {}, scalar_tensor, this->debug_info());
 
     // Connect Div -> Output (C)
     auto& div_out_node = builder.add_access(div_block, out_node.data(), this->debug_info());
@@ -127,15 +140,15 @@ bool MeanNode::expand_reduction(
     structured_control_flow::Sequence& body,
     const std::string& input_name,
     const std::string& output_name,
-    const types::IType& input_type,
-    const types::IType& output_type,
+    const types::Tensor& input_type,
+    const types::Tensor& output_type,
     const data_flow::Subset& input_subset,
     const data_flow::Subset& output_subset
 ) {
     throw std::runtime_error("MeanNode::expand_reduction should not be called");
 }
 
-std::string MeanNode::identity() const { return "0"; }
+std::string MeanNode::identity(types::PrimitiveType primitive_type) const { return "0"; }
 
 std::unique_ptr<data_flow::DataFlowNode> MeanNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {

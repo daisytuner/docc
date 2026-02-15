@@ -41,12 +41,14 @@ void TestUnary(std::vector<size_t> shape_dims) {
     for (auto d : shape_dims) {
         shape.push_back(symbolic::integer(d));
     }
+    types::Tensor tensor_type(types::PrimitiveType::Double, shape);
 
     auto& node = static_cast<NodeType&>(builder.add_library_node<NodeType>(block, DebugInfo(), shape));
 
-    builder.add_computational_memlet(block, a_node, node, "X", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, desc_ptr, block.debug_info());
+    builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type, block.debug_info());
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
 
@@ -80,15 +82,20 @@ void TestUnary(std::vector<size_t> shape_dims) {
 
     // Check input edges
     for (auto& edge : dataflow.in_edges(*inner_node)) {
-        if (!edge.subset().empty()) {
-            EXPECT_EQ(edge.subset().size(), 1) << "Input subset size is not 1 for " << typeid(NodeType).name();
+        if (dynamic_cast<data_flow::ConstantNode*>(&edge.src()) != nullptr) {
+            continue; // Skip constant nodes
+        }
+        if (edge.subset().size() != shape_dims.size()) {
+            EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                << "Input subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
         }
     }
 
     // Check output edges
     for (auto& edge : dataflow.out_edges(*inner_node)) {
-        if (!edge.subset().empty()) {
-            EXPECT_EQ(edge.subset().size(), 1) << "Output subset size is not 1 for " << typeid(NodeType).name();
+        if (edge.subset().size() != shape_dims.size()) {
+            EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                << "Output subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
         }
     }
 }
@@ -115,13 +122,15 @@ void TestBinary(std::vector<size_t> shape_dims) {
     for (auto d : shape_dims) {
         shape.push_back(symbolic::integer(d));
     }
+    types::Tensor tensor_type(types::PrimitiveType::Double, shape);
 
     auto& node = static_cast<NodeType&>(builder.add_library_node<NodeType>(block, DebugInfo(), shape));
 
-    builder.add_computational_memlet(block, a_node, node, "A", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, b_node, node, "B", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, desc_ptr, block.debug_info());
+    builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
 
@@ -152,14 +161,19 @@ void TestBinary(std::vector<size_t> shape_dims) {
     auto& dataflow = inner_node->get_parent();
 
     for (auto& edge : dataflow.in_edges(*inner_node)) {
-        if (!edge.subset().empty()) {
-            EXPECT_EQ(edge.subset().size(), 1) << "Input subset size is not 1 for " << typeid(NodeType).name();
+        if (dynamic_cast<data_flow::ConstantNode*>(&edge.src()) != nullptr) {
+            continue; // Skip constant nodes
+        }
+        if (edge.subset().size() != shape_dims.size()) {
+            EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                << "Input subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
         }
     }
 
     for (auto& edge : dataflow.out_edges(*inner_node)) {
-        if (!edge.subset().empty()) {
-            EXPECT_EQ(edge.subset().size(), 1) << "Output subset size is not 1 for " << typeid(NodeType).name();
+        if (edge.subset().size() != shape_dims.size()) {
+            EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                << "Output subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
         }
     }
 }
@@ -278,13 +292,16 @@ void TestCast(std::vector<size_t> shape_dims) {
     for (auto d : shape_dims) {
         shape.push_back(symbolic::integer(d));
     }
+    types::Tensor tensor_type_source(SourceType, shape);
+    types::Tensor tensor_type_target(TargetType, shape);
 
     auto& node = static_cast<math::tensor::CastNode&>(builder.add_library_node<
                                                       math::tensor::CastNode>(block, DebugInfo(), shape, TargetType));
 
-    builder.add_computational_memlet(block, a_node, node, "X", {}, source_ptr, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, target_ptr, block.debug_info());
+    builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type_source, block.debug_info());
+    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type_target, block.debug_info());
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
 
@@ -318,8 +335,9 @@ void TestCast(std::vector<size_t> shape_dims) {
 
     // Check input edges
     for (auto& edge : dataflow.in_edges(*inner_node)) {
-        if (!edge.subset().empty()) {
-            EXPECT_EQ(edge.subset().size(), 1) << "Input subset size is not 1 for CastNode";
+        if (edge.subset().size() != shape_dims.size()) {
+            EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                << "Input subset size is not " << shape_dims.size() << " for CastNode";
         }
         // Check that input type is the source type
         EXPECT_EQ(edge.result_type(sdfg)->primitive_type(), SourceType);
@@ -327,8 +345,9 @@ void TestCast(std::vector<size_t> shape_dims) {
 
     // Check output edges
     for (auto& edge : dataflow.out_edges(*inner_node)) {
-        if (!edge.subset().empty()) {
-            EXPECT_EQ(edge.subset().size(), 1) << "Output subset size is not 1 for CastNode";
+        if (edge.subset().size() != shape_dims.size()) {
+            EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                << "Output subset size is not " << shape_dims.size() << " for CastNode";
         }
         // Check that output type is the target type
         EXPECT_EQ(edge.result_type(sdfg)->primitive_type(), TargetType);

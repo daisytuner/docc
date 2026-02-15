@@ -46,6 +46,19 @@ bool StdNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysis
     // Calculate output shape
     std::vector<symbolic::Expression> output_shape;
     std::vector<int64_t> sorted_axes = axes_;
+    // Normalize negative axes
+    for (auto& axis : sorted_axes) {
+        if (axis < 0) {
+            axis = static_cast<int64_t>(shape_.size()) + axis;
+        }
+        // Validate axis is in bounds
+        if (axis < 0 || axis >= static_cast<int64_t>(shape_.size())) {
+            throw InvalidSDFGException(
+                "Library Node: Axis value out of bounds. Axis: " + std::to_string(axis) +
+                " Shape size: " + std::to_string(shape_.size())
+            );
+        }
+    }
     std::sort(sorted_axes.begin(), sorted_axes.end());
 
     for (size_t i = 0; i < shape_.size(); ++i) {
@@ -70,42 +83,30 @@ bool StdNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysis
     types::Pointer pointer_type(element_type);
 
     std::string tmp_x2_name = builder.find_new_name("_std_x2");
-    builder.add_container(tmp_x2_name, in_edge.base_type());
+    builder.add_container(tmp_x2_name, pointer_type);
     std::string tmp_mean_x2_name = builder.find_new_name("_std_mean_x2");
-    builder.add_container(tmp_mean_x2_name, out_edge.base_type());
     std::string tmp_mean_x_name = builder.find_new_name("_std_mean_x");
-    builder.add_container(tmp_mean_x_name, out_edge.base_type());
 
-    if (in_edge.base_type().type_id() == types::TypeID::Pointer) {
-        symbolic::Expression bytes_in = types::get_type_size(element_type, false);
-        for (auto& dim : this->shape_) {
-            bytes_in = symbolic::mul(dim, bytes_in);
-        }
-
-        {
-            auto& alloc_block = builder.add_block_before(parent, block, {}, this->debug_info());
-            auto& tmp_x2_name_access = builder.add_access(alloc_block, tmp_x2_name);
-            auto& tmp_x2_name_malloc_node =
-                builder.add_library_node<stdlib::MallocNode>(alloc_block, this->debug_info(), bytes_in);
-            builder.add_computational_memlet(
-                alloc_block,
-                tmp_x2_name_malloc_node,
-                "_ret",
-                tmp_x2_name_access,
-                {},
-                in_edge.base_type(),
-                this->debug_info()
-            );
-        }
+    symbolic::Expression bytes_in = types::get_type_size(element_type, false);
+    for (auto& dim : this->shape_) {
+        bytes_in = symbolic::mul(dim, bytes_in);
+    }
+    {
+        auto& alloc_block = builder.add_block_before(parent, block, {}, this->debug_info());
+        auto& tmp_x2_name_access = builder.add_access(alloc_block, tmp_x2_name);
+        auto& tmp_x2_name_malloc_node =
+            builder.add_library_node<stdlib::MallocNode>(alloc_block, this->debug_info(), bytes_in);
+        builder.add_computational_memlet(
+            alloc_block, tmp_x2_name_malloc_node, "_ret", tmp_x2_name_access, {}, pointer_type, this->debug_info()
+        );
     }
 
-    if (out_edge.base_type().type_id() == types::TypeID::Pointer) {
-        auto& pointee_type = static_cast<const types::Pointer&>(out_edge.base_type()).pointee_type();
-        symbolic::Expression bytes_out = types::get_type_size(pointee_type, false);
+    if (!output_shape.empty()) {
+        symbolic::Expression bytes_out = types::get_type_size(element_type, false);
         for (auto& dim : output_shape) {
             bytes_out = symbolic::mul(dim, bytes_out);
         }
-
+        builder.add_container(tmp_mean_x2_name, pointer_type);
         {
             auto& alloc_block = builder.add_block_before(parent, block, {}, this->debug_info());
             auto& tmp_mean_x2_name_access = builder.add_access(alloc_block, tmp_mean_x2_name);
@@ -117,11 +118,12 @@ bool StdNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysis
                 "_ret",
                 tmp_mean_x2_name_access,
                 {},
-                out_edge.base_type(),
+                pointer_type,
                 this->debug_info()
             );
         }
 
+        builder.add_container(tmp_mean_x_name, pointer_type);
         {
             auto& alloc_block = builder.add_block_before(parent, block, {}, this->debug_info());
             auto& tmp_mean_x_name_access = builder.add_access(alloc_block, tmp_mean_x_name);
@@ -133,10 +135,13 @@ bool StdNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysis
                 "_ret",
                 tmp_mean_x_name_access,
                 {},
-                out_edge.base_type(),
+                pointer_type,
                 this->debug_info()
             );
         }
+    } else {
+        builder.add_container(tmp_mean_x2_name, element_type);
+        builder.add_container(tmp_mean_x_name, element_type);
     }
 
     // 1. X^2
@@ -239,15 +244,15 @@ bool StdNode::expand_reduction(
     structured_control_flow::Sequence& body,
     const std::string& input_name,
     const std::string& output_name,
-    const types::IType& input_type,
-    const types::IType& output_type,
+    const types::Tensor& input_type,
+    const types::Tensor& output_type,
     const data_flow::Subset& input_subset,
     const data_flow::Subset& output_subset
 ) {
     throw std::runtime_error("StdNode::expand_reduction should not be called");
 }
 
-std::string StdNode::identity() const { return "0"; }
+std::string StdNode::identity(types::PrimitiveType primitive_type) const { return "0"; }
 
 std::unique_ptr<data_flow::DataFlowNode> StdNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {

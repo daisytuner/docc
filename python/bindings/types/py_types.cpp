@@ -5,6 +5,7 @@
 #include <sdfg/types/pointer.h>
 #include <sdfg/types/scalar.h>
 #include <sdfg/types/structure.h>
+#include <sdfg/types/tensor.h>
 #include <sdfg/types/type.h>
 
 #include <pybind11/operators.h>
@@ -69,4 +70,85 @@ void register_types(py::module& m) {
     py::class_<Structure, IType>(m, "Structure")
         .def(py::init<const std::string&>(), py::arg("name"))
         .def_property_readonly("name", &Structure::name);
+
+    // Tensor
+    py::class_<Tensor, IType>(m, "Tensor")
+        .def(
+            py::init([](const Scalar& element_type, const std::vector<std::string>& shape) {
+                sdfg::symbolic::MultiExpression shape_expr;
+                for (const auto& s : shape) {
+                    shape_expr.push_back(sdfg::symbolic::parse(s));
+                }
+                return new Tensor(element_type, shape_expr);
+            }),
+            py::arg("element_type"),
+            py::arg("shape")
+        )
+        .def(
+            py::init([](const Scalar& element_type,
+                        const std::vector<std::string>& shape,
+                        const std::vector<std::string>& strides,
+                        const std::string& offset) {
+                sdfg::symbolic::MultiExpression shape_expr;
+                for (const auto& s : shape) {
+                    shape_expr.push_back(sdfg::symbolic::parse(s));
+                }
+                sdfg::symbolic::MultiExpression strides_expr;
+                for (const auto& s : strides) {
+                    strides_expr.push_back(sdfg::symbolic::parse(s));
+                }
+                return new Tensor(element_type, shape_expr, strides_expr, sdfg::symbolic::parse(offset));
+            }),
+            py::arg("element_type"),
+            py::arg("shape"),
+            py::arg("strides"),
+            py::arg("offset") = "0"
+        )
+        .def_property_readonly("element_type", &Tensor::element_type)
+        .def_property_readonly(
+            "shape",
+            [](const Tensor& self) {
+                std::vector<std::string> result;
+                for (const auto& s : self.shape()) {
+                    result.push_back(s->__str__());
+                }
+                return result;
+            }
+        )
+        .def_property_readonly(
+            "strides",
+            [](const Tensor& self) {
+                std::vector<std::string> result;
+                for (const auto& s : self.strides()) {
+                    result.push_back(s->__str__());
+                }
+                return result;
+            }
+        )
+        .def_property_readonly("offset", [](const Tensor& self) { return self.offset()->__str__(); })
+        .def("total_elements", [](const Tensor& self) { return self.total_elements()->__str__(); })
+        .def(
+            "newaxis", [](const Tensor& self, size_t axis) { return self.newaxis(axis); }, py::arg("axis")
+        )
+        .def(
+            "flip", [](const Tensor& self, size_t axis) { return self.flip(axis); }, py::arg("axis")
+        )
+        .def(
+            "unsqueeze", [](const Tensor& self, size_t axis) { return self.unsqueeze(axis); }, py::arg("axis")
+        )
+        .def(
+            "squeeze", [](const Tensor& self, size_t axis) { return self.squeeze(axis); }, py::arg("axis")
+        )
+        .def("squeeze", [](const Tensor& self) { return self.squeeze(); })
+        .def(
+            "reshape",
+            [](const Tensor& self, const std::vector<std::string>& new_shape) {
+                sdfg::symbolic::MultiExpression shape_expr;
+                for (const auto& s : new_shape) {
+                    shape_expr.push_back(sdfg::symbolic::parse(s));
+                }
+                return self.reshape(shape_expr);
+            },
+            py::arg("new_shape")
+        );
 }

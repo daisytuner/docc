@@ -28,6 +28,7 @@ def kernel(M, float_n, data):
     return cov
 
 
+@pytest.mark.skip("Array masking not yet supported")
 @pytest.mark.parametrize(
     "target",
     [

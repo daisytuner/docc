@@ -50,6 +50,8 @@ public:
 
     symbolic::Expression total_elements() const;
 
+    bool is_scalar() const;
+
     virtual bool operator==(const IType& other) const override;
 
     virtual std::unique_ptr<IType> clone() const override;

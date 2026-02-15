@@ -29,8 +29,8 @@ bool HardSigmoidNode::expand_operation(
     structured_control_flow::Sequence& body,
     const std::string& input_name,
     const std::string& output_name,
-    const types::IType& input_type,
-    const types::IType& output_type,
+    const types::Tensor& input_type,
+    const types::Tensor& output_type,
     const data_flow::Subset& subset
 ) {
     // Add code
@@ -39,6 +39,8 @@ bool HardSigmoidNode::expand_operation(
     auto& output_node_fma = builder.add_access(code_block, output_name);
     auto& output_node_min = builder.add_access(code_block, output_name);
     auto& output_node_max = builder.add_access(code_block, output_name);
+
+    types::Tensor scalar_tensor(types::Scalar(output_type.primitive_type()), {});
 
     // alpha * x + beta
     {
@@ -54,7 +56,7 @@ bool HardSigmoidNode::expand_operation(
             code_block, code_block.debug_info(), cmath::CMathFunction::fmin, output_type.primitive_type()
         );
         builder.add_computational_memlet(code_block, output_node_fma, tasklet, "_in1", subset, output_type);
-        builder.add_computational_memlet(code_block, one_node, tasklet, "_in2", subset, output_type);
+        builder.add_computational_memlet(code_block, one_node, tasklet, "_in2", {}, scalar_tensor);
         builder.add_computational_memlet(code_block, tasklet, "_out", output_node_min, subset, output_type);
     }
     // max(0, x)
@@ -64,7 +66,7 @@ bool HardSigmoidNode::expand_operation(
             code_block, code_block.debug_info(), cmath::CMathFunction::fmax, output_type.primitive_type()
         );
         builder.add_computational_memlet(code_block, output_node_min, tasklet, "_in1", subset, output_type);
-        builder.add_computational_memlet(code_block, zero_node, tasklet, "_in2", subset, output_type);
+        builder.add_computational_memlet(code_block, zero_node, tasklet, "_in2", {}, scalar_tensor);
         builder.add_computational_memlet(code_block, tasklet, "_out", output_node_max, subset, output_type);
     }
 

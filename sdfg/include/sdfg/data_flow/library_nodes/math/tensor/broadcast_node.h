@@ -25,6 +25,8 @@ public:
         const std::vector<symbolic::Expression>& output_shape
     );
 
+    void validate(const Function& function) const override;
+
     const std::vector<symbolic::Expression>& input_shape() const { return input_shape_; }
     const std::vector<symbolic::Expression>& output_shape() const { return output_shape_; }
 

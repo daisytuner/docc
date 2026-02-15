@@ -47,6 +47,8 @@ public:
 
     std::string get_sizeof(const sdfg::types::IType& type);
 
+    std::string find_new_name(const std::string& prefix = "tmp_");
+
     /***** Control Flow *****/
 
     void add_return(const std::string& data, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
@@ -61,7 +63,11 @@ public:
 
     void end_if();
 
-    void begin_while(const std::string& condition, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
+    void begin_while(const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
+
+    void add_break(const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
+
+    void add_continue(const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
 
     void end_while();
 
@@ -173,36 +179,42 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
-    void add_broadcast(
-        const std::string& input,
-        const std::string& output,
-        const std::vector<std::string>& input_shape,
-        const std::vector<std::string>& output_shape,
-        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
-    );
-
     void add_elementwise_op(
         const std::string& op_type,
         const std::string& A,
+        const sdfg::types::Tensor& A_type,
         const std::string& B,
+        const sdfg::types::Tensor& B_type,
         const std::string& C,
-        const std::vector<std::string>& shape,
+        const sdfg::types::Tensor& C_type,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
     void add_elementwise_unary_op(
         const std::string& op_type,
         const std::string& A,
+        const sdfg::types::Tensor& A_type,
         const std::string& C,
-        const std::vector<std::string>& shape,
+        const sdfg::types::Tensor& C_type,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
-    void add_transpose(
+    void add_cast_op(
         const std::string& A,
+        const sdfg::types::Tensor& A_type,
         const std::string& C,
-        const std::vector<std::string>& shape_strs,
-        const std::vector<int64_t>& perm,
+        const sdfg::types::Tensor& C_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_reduce_op(
+        const std::string& op_type,
+        const std::string& input,
+        const sdfg::types::Tensor& input_type,
+        const std::string& output,
+        const sdfg::types::Tensor& output_type,
+        const std::vector<int64_t>& axes,
+        bool keepdims,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
@@ -217,24 +229,6 @@ public:
         const std::vector<std::string>& dilations,
         const std::string& output_channels,
         const std::string& group,
-        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
-    );
-
-    void add_cast_op(
-        const std::string& A,
-        const std::string& C,
-        const std::vector<std::string>& shape,
-        sdfg::types::PrimitiveType target_type,
-        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
-    );
-
-    void add_reduce_op(
-        const std::string& op_type,
-        const std::string& input,
-        const std::string& output,
-        const std::vector<std::string>& input_shape,
-        const std::vector<int64_t>& axes,
-        bool keepdims,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 };

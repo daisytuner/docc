@@ -188,6 +188,12 @@ PYBIND11_MODULE(_sdfg, m) {
             "Set the return type of the SDFG"
         )
         .def(
+            "find_new_name",
+            &PyStructuredSDFGBuilder::find_new_name,
+            py::arg("prefix") = "tmp_",
+            "Find a new unique name in the SDFG with the given prefix"
+        )
+        .def(
             "add_return",
             &PyStructuredSDFGBuilder::add_return,
             py::arg("data"),
@@ -218,12 +224,9 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def("begin_else", &PyStructuredSDFGBuilder::begin_else, py::arg("debug_info") = sdfg::DebugInfo())
         .def("end_if", &PyStructuredSDFGBuilder::end_if)
-        .def(
-            "begin_while",
-            &PyStructuredSDFGBuilder::begin_while,
-            py::arg("condition"),
-            py::arg("debug_info") = sdfg::DebugInfo()
-        )
+        .def("begin_while", &PyStructuredSDFGBuilder::begin_while, py::arg("debug_info") = sdfg::DebugInfo())
+        .def("add_break", &PyStructuredSDFGBuilder::add_break, py::arg("debug_info") = sdfg::DebugInfo())
+        .def("add_continue", &PyStructuredSDFGBuilder::add_continue, py::arg("debug_info") = sdfg::DebugInfo())
         .def("end_while", &PyStructuredSDFGBuilder::end_while)
         .def(
             "begin_for",
@@ -277,22 +280,15 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
-            "add_broadcast",
-            &PyStructuredSDFGBuilder::add_broadcast,
-            py::arg("input"),
-            py::arg("output"),
-            py::arg("input_shape"),
-            py::arg("output_shape"),
-            py::arg("debug_info") = sdfg::DebugInfo()
-        )
-        .def(
             "add_elementwise_op",
             &PyStructuredSDFGBuilder::add_elementwise_op,
             py::arg("op_type"),
             py::arg("A"),
+            py::arg("A_type"),
             py::arg("B"),
+            py::arg("B_type"),
             py::arg("C"),
-            py::arg("shape"),
+            py::arg("C_type"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
@@ -300,17 +296,9 @@ PYBIND11_MODULE(_sdfg, m) {
             &PyStructuredSDFGBuilder::add_elementwise_unary_op,
             py::arg("op_type"),
             py::arg("A"),
+            py::arg("A_type"),
             py::arg("C"),
-            py::arg("shape"),
-            py::arg("debug_info") = sdfg::DebugInfo()
-        )
-        .def(
-            "add_transpose",
-            &PyStructuredSDFGBuilder::add_transpose,
-            py::arg("A"),
-            py::arg("C"),
-            py::arg("shape"),
-            py::arg("perm"),
+            py::arg("C_type"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
@@ -332,9 +320,9 @@ PYBIND11_MODULE(_sdfg, m) {
             "add_cast_op",
             &PyStructuredSDFGBuilder::add_cast_op,
             py::arg("A"),
+            py::arg("A_type"),
             py::arg("C"),
-            py::arg("shape"),
-            py::arg("target_type"),
+            py::arg("C_type"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
@@ -342,8 +330,9 @@ PYBIND11_MODULE(_sdfg, m) {
             &PyStructuredSDFGBuilder::add_reduce_op,
             py::arg("op_type"),
             py::arg("input"),
+            py::arg("input_type"),
             py::arg("output"),
-            py::arg("input_shape"),
+            py::arg("output_type"),
             py::arg("axes"),
             py::arg("keepdims"),
             py::arg("debug_info") = sdfg::DebugInfo()
