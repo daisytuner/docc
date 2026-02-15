@@ -1407,10 +1407,250 @@ class ASTParser(ast.NodeVisitor):
         self.builder.add_memlet(block, t_task, "_out", t_dst, "void", "")
 
     def _handle_expression_slicing(self, node, value_str, indices_nodes, shapes, ndim):
-        """Handle slicing in expressions (e.g., arr[1:, :, k+1])."""
+        """Handle slicing in expressions (e.g., arr[1:, :, k+1]).
+
+        Uses a zero-copy view when possible (positive step, no indirect access).
+        Falls back to copy-based approach for complex cases.
+        """
         if not self.builder:
             raise ValueError("Builder required for expression slicing")
 
+        # Try view-based approach first (zero-copy)
+        if self._can_use_slice_view(indices_nodes):
+            return self._create_slice_view(value_str, indices_nodes, shapes, ndim)
+
+        # Fall back to copy-based approach for complex cases
+        return self._handle_expression_slicing_copy(
+            node, value_str, indices_nodes, shapes, ndim
+        )
+
+    def _can_use_slice_view(self, indices_nodes):
+        """Check if slicing can be expressed as a zero-copy view.
+
+        Views can be used when:
+        - All steps are non-zero constants (positive or negative)
+        - No indirect array access in slice parameters
+
+        Returns True if a view can be used, False if a copy is required.
+        """
+        for idx in indices_nodes:
+            if isinstance(idx, ast.Slice):
+                # Check for zero step (invalid)
+                if idx.step is not None:
+                    if isinstance(idx.step, ast.Constant):
+                        if idx.step.value == 0:
+                            return False  # Zero step is invalid
+                    elif isinstance(idx.step, ast.UnaryOp) and isinstance(
+                        idx.step.op, ast.USub
+                    ):
+                        # Negative step like -2 is OK
+                        pass
+                    elif self._contains_indirect_access(idx.step):
+                        return False  # Dynamic step requires copy
+
+                # Check for indirect access in slice bounds
+                if idx.lower is not None and self._contains_indirect_access(idx.lower):
+                    return False
+                if idx.upper is not None and self._contains_indirect_access(idx.upper):
+                    return False
+            else:
+                # Fixed index: check for indirect access
+                if self._contains_indirect_access(idx):
+                    return False
+        return True
+
+    def _create_slice_view(self, value_str, indices_nodes, shapes, ndim):
+        """Create a zero-copy view for array slicing.
+
+        This creates a new tensor that shares data with the source but has
+        adjusted shape, strides, and offset to represent the sliced region.
+
+        For positive step A[start:stop:step, ...] on dimension i:
+        - new_shape[i] = ceil((stop - start) / step)
+        - new_stride[i] = old_stride[i] * step
+        - offset contribution = start * old_stride[i]
+
+        For negative step A[start:stop:step, ...] (e.g., ::-1):
+        - Default start = shape - 1 (last element)
+        - Default stop = -1 (before first element)
+        - new_shape[i] = ceil((start - stop) / abs(step))
+        - new_stride[i] = old_stride[i] * step (negative)
+        - offset contribution = start * old_stride[i] (points to last element)
+
+        For a fixed index A[k, ...] on dimension i (dimension reduction):
+        - offset contribution = k * old_stride[i]
+        - dimension is removed from output
+        """
+        in_tensor = self.tensor_table[value_str]
+        in_shape = in_tensor.shape
+        dtype = in_tensor.element_type
+
+        # Get input strides (compute if not available)
+        in_strides = (
+            in_tensor.strides
+            if hasattr(in_tensor, "strides") and in_tensor.strides
+            else None
+        )
+        if in_strides is None:
+            in_strides = self.numpy_visitor._compute_strides(in_shape, "C")
+
+        # Get base offset from input tensor
+        in_offset = getattr(in_tensor, "offset", "0") or "0"
+
+        # Build output shape, strides, and compute offset
+        out_shape = []
+        out_strides = []
+        offset_terms = []
+        if in_offset != "0":
+            offset_terms.append(str(in_offset))
+
+        for i, idx in enumerate(indices_nodes):
+            shape_val = shapes[i] if i < len(shapes) else f"_{value_str}_shape_{i}"
+            stride_val = in_strides[i] if i < len(in_strides) else "1"
+
+            if isinstance(idx, ast.Slice):
+                # Determine step value and sign
+                step_str = "1"
+                step_is_negative = False
+                step_value = 1
+
+                if idx.step is not None:
+                    if isinstance(idx.step, ast.Constant):
+                        step_value = idx.step.value
+                        step_str = str(step_value)
+                        step_is_negative = step_value < 0
+                    elif isinstance(idx.step, ast.UnaryOp) and isinstance(
+                        idx.step.op, ast.USub
+                    ):
+                        # Handle -N syntax
+                        if isinstance(idx.step.operand, ast.Constant):
+                            step_value = -idx.step.operand.value
+                            step_str = str(step_value)
+                            step_is_negative = True
+                        else:
+                            step_str = self.visit(idx.step)
+                    else:
+                        step_str = self.visit(idx.step)
+
+                if step_is_negative:
+                    # Negative step: iterate from end to start
+                    # Default start = shape - 1, default stop = -1 (before 0)
+                    if idx.lower is not None:
+                        start_str = self.visit(idx.lower)
+                        if isinstance(start_str, str) and (
+                            start_str.startswith("-") or start_str.startswith("(-")
+                        ):
+                            start_str = f"({shape_val} + {start_str})"
+                    else:
+                        start_str = f"({shape_val} - 1)"
+
+                    if idx.upper is not None:
+                        stop_str = self.visit(idx.upper)
+                        if isinstance(stop_str, str) and (
+                            stop_str.startswith("-") or stop_str.startswith("(-")
+                        ):
+                            stop_str = f"({shape_val} + {stop_str})"
+                    else:
+                        stop_str = "-1"
+
+                    # Shape for negative step: ceil((start - stop) / abs(step))
+                    abs_step = abs(step_value)
+                    if abs_step == 1:
+                        dim_size = f"({start_str} - {stop_str})"
+                    else:
+                        dim_size = f"(({start_str} - {stop_str} + {abs_step} - 1) / {abs_step})"
+                    out_shape.append(dim_size)
+
+                    # Stride for negative step: old_stride * step (negative)
+                    out_strides.append(f"({stride_val} * {step_str})")
+
+                    # Offset: start * old_stride (points to first element to access)
+                    offset_terms.append(f"({start_str} * {stride_val})")
+                else:
+                    # Positive step (original logic)
+                    start_str = "0"
+                    if idx.lower is not None:
+                        start_str = self.visit(idx.lower)
+                        if isinstance(start_str, str) and (
+                            start_str.startswith("-") or start_str.startswith("(-")
+                        ):
+                            start_str = f"({shape_val} + {start_str})"
+
+                    stop_str = str(shape_val)
+                    if idx.upper is not None:
+                        stop_str = self.visit(idx.upper)
+                        if isinstance(stop_str, str) and (
+                            stop_str.startswith("-") or stop_str.startswith("(-")
+                        ):
+                            stop_str = f"({shape_val} + {stop_str})"
+
+                    # Compute new shape: ceil((stop - start) / step)
+                    if step_str == "1":
+                        dim_size = f"({stop_str} - {start_str})"
+                    else:
+                        dim_size = f"(({stop_str} - {start_str} + {step_str} - 1) / {step_str})"
+                    out_shape.append(dim_size)
+
+                    # Compute new stride: old_stride * step
+                    if step_str == "1":
+                        out_strides.append(stride_val)
+                    else:
+                        out_strides.append(f"({stride_val} * {step_str})")
+
+                    # Add offset contribution: start * stride
+                    if start_str != "0":
+                        offset_terms.append(f"({start_str} * {stride_val})")
+            else:
+                # Fixed index: dimension is removed, just add offset
+                index_str = self.visit(idx)
+                if isinstance(index_str, str) and (
+                    index_str.startswith("-") or index_str.startswith("(-")
+                ):
+                    index_str = f"({shape_val} + {index_str})"
+                offset_terms.append(f"({index_str} * {stride_val})")
+
+        # Combine offset terms
+        if not offset_terms:
+            out_offset = "0"
+        elif len(offset_terms) == 1:
+            out_offset = offset_terms[0]
+        else:
+            out_offset = " + ".join(offset_terms)
+
+        # Create new pointer container
+        tmp_name = self.builder.find_new_name("_slice_view_")
+        ptr_type = Pointer(dtype)
+        self.builder.add_container(tmp_name, ptr_type, False)
+        self.container_table[tmp_name] = ptr_type
+
+        # Create output tensor with new shape, strides, and offset
+        # Offset is stored in the Tensor (like Tensor.flip() does)
+        # Reference memlet just creates the pointer alias with "0" offset
+        if out_shape:
+            out_tensor = Tensor(dtype, out_shape, out_strides, out_offset)
+            self.tensor_table[tmp_name] = out_tensor
+        else:
+            # Scalar result (all indices were fixed)
+            self.builder.add_container(tmp_name, dtype, False)
+            self.container_table[tmp_name] = dtype
+
+        # Create reference memlet (offset is handled by tensor's offset property)
+        debug_info = DebugInfo()
+        block = self.builder.add_block(debug_info)
+        t_src = self.builder.add_access(block, value_str, debug_info)
+        t_dst = self.builder.add_access(block, tmp_name, debug_info)
+        self.builder.add_reference_memlet(block, t_src, t_dst, "0", ptr_type)
+
+        return tmp_name
+
+    def _handle_expression_slicing_copy(
+        self, node, value_str, indices_nodes, shapes, ndim
+    ):
+        """Copy-based slicing for cases that cannot use views.
+
+        This allocates a new array and copies elements using nested loops.
+        Used for negative steps or indirect access patterns.
+        """
         dtype = Scalar(PrimitiveType.Double)
         if value_str in self.container_table:
             t = self.container_table[value_str]

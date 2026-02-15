@@ -191,19 +191,38 @@ class SliceRewriter(ast.NodeTransformer):
                 loop_var = self.loop_vars[slice_counter]
                 slice_counter += 1
 
-                start_str = "0"
-                if idx.lower:
-                    start_str = self.expr_visitor.visit(idx.lower)
-                    if start_str.startswith("-"):
-                        shapes = self.tensor_table[value_str].shape
-                        dim_size = (
-                            shapes[i] if i < len(shapes) else f"_{value_str}_shape_{i}"
-                        )
-                        start_str = f"({dim_size} {start_str})"
-
+                # Determine step value and check if negative
                 step_str = "1"
+                step_is_negative = False
                 if idx.step:
                     step_str = self.expr_visitor.visit(idx.step)
+                    # Check for negative step
+                    if step_str.startswith("-") or step_str.startswith("(-"):
+                        step_is_negative = True
+                    elif isinstance(idx.step, ast.UnaryOp) and isinstance(
+                        idx.step.op, ast.USub
+                    ):
+                        step_is_negative = True
+
+                shapes = self.tensor_table[value_str].shape
+                dim_size = shapes[i] if i < len(shapes) else f"_{value_str}_shape_{i}"
+
+                # Compute start based on step direction
+                if step_is_negative:
+                    # Negative step: default start is (shape - 1)
+                    if idx.lower:
+                        start_str = self.expr_visitor.visit(idx.lower)
+                        if start_str.startswith("-"):
+                            start_str = f"({dim_size} {start_str})"
+                    else:
+                        start_str = f"({dim_size} - 1)"
+                else:
+                    # Positive step: default start is 0
+                    start_str = "0"
+                    if idx.lower:
+                        start_str = self.expr_visitor.visit(idx.lower)
+                        if start_str.startswith("-"):
+                            start_str = f"({dim_size} {start_str})"
 
                 if step_str == "1":
                     if start_str == "0":
