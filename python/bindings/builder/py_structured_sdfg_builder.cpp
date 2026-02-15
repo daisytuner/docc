@@ -803,48 +803,6 @@ void PyStructuredSDFGBuilder::add_dot(
     builder_.add_computational_memlet(block, dot_node, "__out", node_res, {}, type_result, debug_info);
 }
 
-void PyStructuredSDFGBuilder::add_broadcast(
-    const std::string& input,
-    const std::string& output,
-    const std::vector<std::string>& input_shape_strs,
-    const std::vector<std::string>& output_shape_strs,
-    const sdfg::DebugInfo& debug_info
-) {
-    auto& parent = current_sequence();
-    auto& block = builder_.add_block(parent, {}, debug_info);
-
-    std::vector<sdfg::symbolic::Expression> input_shape;
-    for (const auto& s : input_shape_strs) {
-        input_shape.push_back(parse_and_expand(s));
-    }
-
-    std::vector<sdfg::symbolic::Expression> output_shape;
-    for (const auto& s : output_shape_strs) {
-        output_shape.push_back(parse_and_expand(s));
-    }
-
-    auto& node =
-        builder_.add_library_node<sdfg::math::tensor::BroadcastNode>(block, debug_info, input_shape, output_shape);
-
-    auto& input_node = builder_.add_access(block, input, debug_info);
-    auto& output_node = builder_.add_access(block, output, debug_info);
-
-    auto& input_type = builder_.subject().type(input);
-    if (input_type.type_id() == sdfg::types::TypeID::Pointer) {
-        sdfg::types::Tensor tensor_input_type(input_type.primitive_type(), input_shape);
-        builder_.add_computational_memlet(block, input_node, node, "X", {}, tensor_input_type, debug_info);
-    } else if (input_type.type_id() == sdfg::types::TypeID::Scalar) {
-        sdfg::types::Tensor tensor_input_type(input_type.primitive_type(), {});
-        builder_.add_computational_memlet(block, input_node, node, "X", {}, tensor_input_type, debug_info);
-    } else {
-        throw std::runtime_error("Input must be pointer or array type");
-    }
-
-    auto& output_type = builder_.subject().type(output);
-    sdfg::types::Tensor tensor_output_type(output_type.primitive_type(), output_shape);
-    builder_.add_computational_memlet(block, node, "Y", output_node, {}, tensor_output_type, debug_info);
-}
-
 void PyStructuredSDFGBuilder::add_elementwise_op(
     const std::string& op_type,
     const std::string& A,

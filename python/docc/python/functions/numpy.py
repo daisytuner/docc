@@ -986,71 +986,63 @@ class NumPyHandler:
         else:
             right_tensor = Tensor(dtype, [])
 
-        # real_left = left
-        # real_right = right
+        left_shape = left_tensor.shape
+        right_shape = right_tensor.shape
 
-        # left_is_scalar = left not in self.tensor_table
-        # right_is_scalar = right not in self.tensor_table
+        # Compute broadcast output shape
+        output_shape = self._compute_broadcast_shape(left_shape, right_shape)
 
-        # # Cast left operand if needed
-        # if left_is_scalar and dtype_left.primitive_type != dtype.primitive_type:
-        #     left_cast = f"_tmp_{self._get_unique_id()}"
-        #     self.builder.add_container(left_cast, dtype, False)
-        #     self.container_table[left_cast] = dtype
+        # Check if broadcasting is needed
+        left_needs_broadcast = (
+            self._needs_broadcast(left_shape, output_shape) if left_shape else False
+        )
+        right_needs_broadcast = (
+            self._needs_broadcast(right_shape, output_shape) if right_shape else False
+        )
 
-        #     c_block = self.builder.add_block()
-        #     t_src, src_sub = self._add_read(c_block, left)
-        #     t_dst = self.builder.add_access(c_block, left_cast)
-        #     t_task = self.builder.add_tasklet(
-        #         c_block, TaskletCode.assign, ["_in"], ["_out"]
-        #     )
-        #     self.builder.add_memlet(c_block, t_src, "void", t_task, "_in", src_sub)
-        #     self.builder.add_memlet(c_block, t_task, "_out", t_dst, "void", "")
+        real_left = left
+        real_right = right
+        real_left_tensor = left_tensor
+        real_right_tensor = right_tensor
 
-        #     real_left = left_cast
-
-        # # Cast right operand if needed
-        # if right_is_scalar and dtype_right.primitive_type != dtype.primitive_type:
-        #     right_cast = f"_tmp_{self._get_unique_id()}"
-        #     self.builder.add_container(right_cast, dtype, False)
-        #     self.container_table[right_cast] = dtype
-
-        #     c_block = self.builder.add_block()
-        #     t_src, src_sub = self._add_read(c_block, right)
-        #     t_dst = self.builder.add_access(c_block, right_cast)
-        #     t_task = self.builder.add_tasklet(
-        #         c_block, TaskletCode.assign, ["_in"], ["_out"]
-        #     )
-        #     self.builder.add_memlet(c_block, t_src, "void", t_task, "_in", src_sub)
-        #     self.builder.add_memlet(c_block, t_task, "_out", t_dst, "void", "")
-
-        #     real_right = right_cast
-
-        # # Broadcast arrays if needed
-        # if not left_is_scalar and self._needs_broadcast(left_shape, shape):
-        #     real_left = self._broadcast_array(real_left, left_shape, shape, dtype)
-
-        # if not right_is_scalar and self._needs_broadcast(right_shape, shape):
-        #     real_right = self._broadcast_array(real_right, right_shape, shape, dtype)
-
-        if len(left_tensor.shape) == 0:
-            output_strides = self._get_contiguous_output_strides(
-                right_tensor.shape, right_tensor.strides
+        # Broadcast left operand if needed (stride-based, no copy)
+        if left_needs_broadcast:
+            left_strides = left_tensor.strides if left_tensor.strides else []
+            broadcast_strides = self._compute_broadcast_strides(
+                left_shape, left_strides, output_shape
             )
-            tmp_name = self._create_array_temp(
-                right_tensor.shape, dtype, strides=output_strides
+            # Create a new tensor view with broadcast shape and strides
+            real_left_tensor = Tensor(dtype, output_shape, broadcast_strides)
+
+        # Broadcast right operand if needed (stride-based, no copy)
+        if right_needs_broadcast:
+            right_strides = right_tensor.strides if right_tensor.strides else []
+            broadcast_strides = self._compute_broadcast_strides(
+                right_shape, right_strides, output_shape
+            )
+            # Create a new tensor view with broadcast shape and strides
+            real_right_tensor = Tensor(dtype, output_shape, broadcast_strides)
+
+        # Create output array with broadcast shape
+        # Preserve F-order if both inputs are F-order and no broadcasting needed
+        if not left_needs_broadcast and not right_needs_broadcast:
+            # Use left tensor strides to determine output order
+            output_strides = self._get_contiguous_output_strides(
+                output_shape, left_tensor.strides
             )
         else:
-            output_strides = self._get_contiguous_output_strides(
-                left_tensor.shape, left_tensor.strides
-            )
-            tmp_name = self._create_array_temp(
-                left_tensor.shape, dtype, strides=output_strides
-            )
-
+            output_strides = self._compute_strides(output_shape, "C")
+        tmp_name = self._create_array_temp(output_shape, dtype, strides=output_strides)
         tmp_tensor = self.tensor_table[tmp_name]
+
         self.builder.add_elementwise_op(
-            op_type, left, left_tensor, right, right_tensor, tmp_name, tmp_tensor
+            op_type,
+            real_left,
+            real_left_tensor,
+            real_right,
+            real_right_tensor,
+            tmp_name,
+            tmp_tensor,
         )
 
         return tmp_name
@@ -2404,22 +2396,31 @@ class NumPyHandler:
                 return True
         return False
 
-    def _broadcast_array(self, arr_name, input_shape, output_shape, dtype):
-        """Broadcast an array from input_shape to output_shape using BroadcastNode."""
-        broadcast_tmp = self._create_array_temp(output_shape, dtype)
+    def _compute_broadcast_strides(self, input_shape, input_strides, output_shape):
+        """Compute strides for broadcasting input to output shape.
 
-        padded_input_shape = ["1"] * (len(output_shape) - len(input_shape)) + [
-            str(s) for s in input_shape
-        ]
+        For broadcast dimensions (size 1), stride is set to 0 so the same
+        value is repeated. This enables stride-based broadcasting without copying.
+        """
+        # Pad input shape and strides on the left to match output ndim
+        ndim_diff = len(output_shape) - len(input_shape)
+        padded_shape = ["1"] * ndim_diff + [str(s) for s in input_shape]
+        padded_strides = ["0"] * ndim_diff + [str(s) for s in input_strides]
 
-        input_shape_strs = padded_input_shape
-        output_shape_strs = [str(s) for s in output_shape]
+        broadcast_strides = []
+        for in_dim, in_stride, out_dim in zip(
+            padded_shape, padded_strides, output_shape
+        ):
+            # If input dim differs from output dim, it must be 1 (by broadcasting rules),
+            # so we set stride to 0 for that dimension to repeat values
+            if str(in_dim) != str(out_dim):
+                # Broadcast dimension: use stride 0
+                broadcast_strides.append("0")
+            else:
+                # Non-broadcast dimension: keep original stride
+                broadcast_strides.append(in_stride)
 
-        self.builder.add_broadcast(
-            arr_name, broadcast_tmp, input_shape_strs, output_shape_strs
-        )
-
-        return broadcast_tmp
+        return broadcast_strides
 
     def _shape_to_runtime_expr(self, shape_node):
         """Convert a shape expression AST node to a runtime-evaluable string."""

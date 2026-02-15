@@ -280,15 +280,6 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
-            "add_broadcast",
-            &PyStructuredSDFGBuilder::add_broadcast,
-            py::arg("input"),
-            py::arg("output"),
-            py::arg("input_shape"),
-            py::arg("output_shape"),
-            py::arg("debug_info") = sdfg::DebugInfo()
-        )
-        .def(
             "add_elementwise_op",
             &PyStructuredSDFGBuilder::add_elementwise_op,
             py::arg("op_type"),
