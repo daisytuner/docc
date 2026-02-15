@@ -2452,24 +2452,6 @@ class ASTParser(ast.NodeVisitor):
         for _ in loop_vars:
             self.builder.end_for()
 
-    def _is_indirect_access(self, node):
-        """Check if a node represents an indirect array access (e.g., A[B[i]]).
-
-        Returns True if the node is a subscript where the index itself is a subscript
-        into an array (indirect access pattern).
-        """
-        if not isinstance(node, ast.Subscript):
-            return False
-        if isinstance(node.value, ast.Name):
-            arr_name = node.value.id
-            if arr_name in self.tensor_table:
-                if isinstance(node.slice, ast.Subscript):
-                    if isinstance(node.slice.value, ast.Name):
-                        idx_arr_name = node.slice.value.id
-                        if idx_arr_name in self.tensor_table:
-                            return True
-        return False
-
     def _contains_indirect_access(self, node):
         """Check if an AST node contains any indirect array access."""
         if isinstance(node, ast.Subscript):
