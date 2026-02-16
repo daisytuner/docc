@@ -11,6 +11,7 @@
 #include "data_flow/py_tasklet.h"
 #include "py_structured_sdfg.h"
 #include "sdfg/data_flow/tasklet.h"
+#include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/targets/cuda/plugin.h"
@@ -34,7 +35,6 @@
 #include <sdfg/targets/omp/plugin.h>
 #include <sdfg/targets/onnx/plugin.h>
 
-#include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
@@ -98,13 +98,11 @@ PYBIND11_MODULE(_sdfg, m) {
         );
 
 
-    py::class_<
-        sdfg::passes::rpc::DaisytunerTransfertuningRpcContext,
-        sdfg::passes::rpc::SimpleRpcContext>(m, "DaisytunerTransfertuningRpcContext")
-        .def(py::init<std::string>(), py::arg("license_token"))
+    py::class_<sdfg::passes::rpc::DaisytunerRpcContext, sdfg::passes::rpc::SimpleRpcContext>(m, "DaisytunerRpcContext")
+        .def(py::init<std::string, bool>(), py::arg("license_token"), py::arg("is_job_token") = false)
         .def_static(
             "from_docc_config",
-            sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::from_docc_config,
+            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config,
             "Read license config from an already setup DOCC"
         );
 

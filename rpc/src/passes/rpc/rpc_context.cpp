@@ -1,4 +1,3 @@
-#include "sdfg/passes/rpc/rpc_context.h"
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -86,13 +85,14 @@ SimpleRpcContextBuilder& SimpleRpcContextBuilder::from_header_env(std::string en
 }
 
 SimpleRpcContextBuilder& SimpleRpcContextBuilder::from_docc_config() {
-    auto auth = DaisytunerTransfertuningRpcContext::find_docc_auth();
+    auto auth = DaisytunerRpcContext::find_docc_auth();
     if (auth) {
-        server = DaisytunerTransfertuningRpcContext::DEFAULT_SERVER;
-        endpoint = DaisytunerTransfertuningRpcContext::DEFAULT_ENDPOINT;
+        const char* rpc_server = std::getenv("RPC_SERVER");
+        server = (rpc_server && *rpc_server) ? rpc_server : DaisytunerRpcContext::DEFAULT_SERVER;
+        endpoint = DaisytunerRpcContext::DEFAULT_ENDPOINT;
         add_header(
-            std::string(DaisytunerTransfertuningRpcContext::DEFAULT_AUTH_HEADER),
-            DaisytunerTransfertuningRpcContext::build_auth_header_content(auth.value())
+            std::string(DaisytunerRpcContext::DEFAULT_AUTH_HEADER),
+            DaisytunerRpcContext::build_auth_header_content(auth.value())
         );
     }
     return *this;
@@ -102,17 +102,5 @@ SimpleRpcContextBuilder& SimpleRpcContextBuilder::add_header(std::string name, s
     headers[name] = value;
     return *this;
 }
-
-// // Optional testing headers: allow pointing the local server at JSON fixture files.
-//         if (const char* sdfg_path = std::getenv("SDFG_TEST_SDFG_PATH")) {
-//             if (*sdfg_path) {
-//                 headers["sdfg-path"] = sdfg_path;
-//             }
-//         }
-//         if (const char* seq_path = std::getenv("SDFG_TEST_SEQUENCE_PATH")) {
-//             if (*seq_path) {
-//                 headers["sequence-path"] = seq_path;
-//             }
-//         }
 
 } // namespace sdfg::passes::rpc

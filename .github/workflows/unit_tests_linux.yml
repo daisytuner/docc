@@ -149,6 +149,8 @@ jobs:
           pip install --no-build-isolation -v -e python/
 
       - name: Unit Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
         run: |
           nvidia-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH

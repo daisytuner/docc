@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -49,7 +48,6 @@ struct SimpleRpcContextBuilder {
 
     std::shared_ptr<SimpleRpcContext> build(bool print = true) const;
 };
-
 
 inline std::shared_ptr<RpcContext> build_rpc_context_local() {
     SimpleRpcContextBuilder b;

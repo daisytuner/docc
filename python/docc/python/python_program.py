@@ -246,7 +246,7 @@ class PythonProgram(DoccProgram):
 
         if output_folder is None:
             filename = inspect.getsourcefile(self.func)
-            hash_input = f"{filename}|{self.name}|{self.target}|{self.category}|{self.capture_args}|{self.instrumentation_mode}|{signature}".encode(
+            hash_input = f"{filename}|{self.name}|{self.target}|{self.category}|{self.capture_args}|{self.instrumentation_mode}|{self.remote_tuning}|{signature}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
@@ -714,9 +714,10 @@ def native(
     func=None,
     *,
     target="none",
-    category="desktop",
+    category="server",
     instrumentation_mode=None,
     capture_args=None,
+    remote_tuning=False,
 ):
     """Decorator to create a PythonProgram from a Python function.
 
@@ -734,6 +735,7 @@ def native(
             category=category,
             instrumentation_mode=instrumentation_mode,
             capture_args=capture_args,
+            remote_tuning=remote_tuning,
         )
     return PythonProgram(
         func,
@@ -741,4 +743,5 @@ def native(
         category=category,
         instrumentation_mode=instrumentation_mode,
         capture_args=capture_args,
+        remote_tuning=remote_tuning,
     )
