@@ -1,4 +1,4 @@
-// RUN: sdfg-opt %s --convert-arith-to-sdfg > %t
+// RUN: docc-mlir-opt %s --convert-arith-to-sdfg > %t
 // RUN: FileCheck %s < %t
 
 // CHECK: sdfg.sdfg @test_i32_add (%[[ARG0:.*]]: i32, %[[ARG1:.*]]: i32) -> i32

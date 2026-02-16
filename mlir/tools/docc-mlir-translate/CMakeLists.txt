@@ -10,12 +10,12 @@ set(LIBS
     MLIRSDFGDialect
 )
 
-add_llvm_executable(sdfg-translate
-    sdfg-translate.cpp
+add_llvm_executable(docc-mlir-translate
+    docc-mlir-translate.cpp
     DEPENDS ${LIBS}
 )
 
-llvm_update_compile_flags(sdfg-translate)
-target_link_libraries(sdfg-translate PRIVATE ${LIBS})
+llvm_update_compile_flags(docc-mlir-translate)
+target_link_libraries(docc-mlir-translate PRIVATE ${LIBS})
 
-mlir_check_all_link_libraries(sdfg-translate)
+mlir_check_all_link_libraries(docc-mlir-translate)

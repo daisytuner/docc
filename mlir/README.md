@@ -38,7 +38,7 @@ ninja -j$(nproc)
 To verify, the basic dialects and translation work, run the tests:
 
 ```bash
-ninja check-sdfg-opt
+ninja check-docc-mlir
 ```
 
 ## License

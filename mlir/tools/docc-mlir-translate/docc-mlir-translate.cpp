@@ -7,5 +7,5 @@ int main(int argc, char** argv) {
     mlir::registerAllTranslations();
     mlir::sdfg::registerToSDFGTranslation();
 
-    return mlir::failed(mlir::mlirTranslateMain(argc, argv, "SDFG MLIR translation driver"));
+    return mlir::failed(mlir::mlirTranslateMain(argc, argv, "DOCC MLIR translation driver"));
 }
