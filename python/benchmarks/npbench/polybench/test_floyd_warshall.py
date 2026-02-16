@@ -51,7 +51,7 @@ def test_floyd_warshall(target):
             verification={
                 "CUDA": 8,
                 "MAP": 8,
-                "CUDAOffloading": 18,
+                "CUDAOffloading": 15,
                 "Malloc": 3,
                 "FOR": 9,
             }
