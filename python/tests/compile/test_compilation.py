@@ -16,7 +16,10 @@ def test_default_output_folder():
     compiled = my_func.compile(1)
 
     # Check if it is in a temp folder with docc prefix
-    assert compiled.lib_path.startswith(f"/tmp/{getpass.getuser()}/DOCC/my_func-")
+    user = os.getenv("USER")
+    if not user:
+        user = getpass.getuser()
+    assert compiled.lib_path.startswith(f"/tmp/{user}/DOCC/my_func-")
     assert os.path.exists(compiled.lib_path)
 
     # Cleanup handled by tempfile (mostly), but we can try to remove the parent dir if we want

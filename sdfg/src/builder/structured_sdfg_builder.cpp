@@ -2,7 +2,6 @@
 
 #include <cstddef>
 
-#include "sdfg/codegen/language_extensions/cpp_language_extension.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -1627,11 +1626,11 @@ void StructuredSDFGBuilder::merge_siblings(data_flow::AccessNode& source_node) {
         throw InvalidSDFGException("Parent of user graph must be a block!");
     }
 
-    // Merge access nodes if they access the same container on a tasklet
+    // Merge access nodes if they access the same container on a code node
     for (auto& oedge : user_graph.out_edges(source_node)) {
-        if (auto* tasklet = dynamic_cast<data_flow::Tasklet*>(&oedge.dst())) {
+        if (auto* code_node = dynamic_cast<data_flow::CodeNode*>(&oedge.dst())) {
             std::unordered_set<data_flow::Memlet*> iedges;
-            for (auto& iedge : user_graph.in_edges(*tasklet)) {
+            for (auto& iedge : user_graph.in_edges(*code_node)) {
                 iedges.insert(&iedge);
             }
             for (auto* iedge : iedges) {
@@ -1646,13 +1645,41 @@ void StructuredSDFGBuilder::merge_siblings(data_flow::AccessNode& source_node) {
                     *block,
                     source_node,
                     iedge->src_conn(),
-                    *tasklet,
+                    *code_node,
                     iedge->dst_conn(),
                     iedge->subset(),
                     iedge->base_type(),
                     iedge->debug_info()
                 );
                 this->remove_memlet(*block, *iedge);
+                source_node.set_debug_info(DebugInfo::merge(source_node.debug_info(), access_node->debug_info()));
+            }
+        }
+    }
+
+    // Also merge "output" access nodes if they access the same container on a library node
+    for (auto& iedge : user_graph.in_edges(source_node)) {
+        if (auto* libnode = dynamic_cast<data_flow::LibraryNode*>(&iedge.src())) {
+            std::unordered_set<data_flow::Memlet*> oedges;
+            for (auto& oedge : user_graph.out_edges(*libnode)) {
+                oedges.insert(&oedge);
+            }
+            for (auto* oedge : oedges) {
+                auto* access_node = static_cast<data_flow::AccessNode*>(&oedge->dst());
+                if (access_node == &source_node || access_node->data() != source_node.data()) {
+                    continue;
+                }
+                this->add_memlet(
+                    *block,
+                    *libnode,
+                    oedge->src_conn(),
+                    source_node,
+                    oedge->dst_conn(),
+                    oedge->subset(),
+                    oedge->base_type(),
+                    oedge->debug_info()
+                );
+                this->remove_memlet(*block, *oedge);
                 source_node.set_debug_info(DebugInfo::merge(source_node.debug_info(), access_node->debug_info()));
             }
         }

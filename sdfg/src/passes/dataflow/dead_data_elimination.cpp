@@ -36,7 +36,7 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
         }
 
         // Writes without reads
-        bool all_definitions_removed = true;
+        bool all_definitions_removed = (users.num_reads(name) == 0);
         auto raws = data_dependency_analysis.definitions(name);
         for (auto set : raws) {
             if (set.second.size() > 0) {

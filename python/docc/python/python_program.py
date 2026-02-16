@@ -251,7 +251,9 @@ class PythonProgram(DoccProgram):
             if docc_tmp:
                 output_folder = f"{docc_tmp}/{self.name}-{stable_id}"
             else:
-                user = getpass.getuser()
+                user = os.getenv("USER")
+                if not user:
+                    user = getpass.getuser()
                 output_folder = f"/tmp/{user}/DOCC/{self.name}-{stable_id}"
 
         if original_output_folder is None and signature in self.cache:
