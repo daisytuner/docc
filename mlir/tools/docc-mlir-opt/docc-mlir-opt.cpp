@@ -11,5 +11,5 @@ int main(int argc, char** argv) {
     mlir::registerAllDialects(registry);
     mlir::registerAllPasses();
     mlir::registerSDFGConversionPasses();
-    return mlir::asMainReturnCode(mlir::MlirOptMain(argc, argv, "SDFG MLIR optimization driver", registry));
+    return mlir::asMainReturnCode(mlir::MlirOptMain(argc, argv, "DOCC MLIR optimization driver", registry));
 }

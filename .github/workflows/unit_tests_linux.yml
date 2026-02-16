@@ -238,7 +238,7 @@ jobs:
       - name: Unit tests
         run: |
           cd build/
-          ninja check-sdfg-opt
+          ninja check-docc-mlir
 
       - name: Build Python bindings
         run: |

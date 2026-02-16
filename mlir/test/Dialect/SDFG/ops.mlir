@@ -1,4 +1,4 @@
-// RUN: sdfg-opt %s | sdfg-opt | FileCheck %s
+// RUN: docc-mlir-opt %s | docc-mlir-opt | FileCheck %s
 
 // CHECK-LABEL: @test_sdfg
 sdfg.sdfg @test_sdfg()
