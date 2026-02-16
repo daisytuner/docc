@@ -4,6 +4,18 @@
 
 namespace sdfg::passes::rpc {
 
+struct DaisytunerRpcContextBuilder : public sdfg::passes::rpc::SimpleRpcContextBuilder {
+
+    SimpleRpcContextBuilder& initialize_local_default();
+    SimpleRpcContextBuilder& from_file(std::filesystem::path config_file);
+    SimpleRpcContextBuilder& from_header_env(std::string env_var = "RPC_HEADER");
+    SimpleRpcContextBuilder& from_env(std::string env_var = "SDFG_RPC_CONFIG");
+
+    SimpleRpcContextBuilder& add_header(std::string name, std::string value);
+
+    SimpleRpcContextBuilder& from_docc_config();
+};
+
 class DaisytunerTransfertuningRpcContext : public SimpleRpcContext {
 public:
     inline static constexpr auto DEFAULT_ENDPOINT = "transfertune";

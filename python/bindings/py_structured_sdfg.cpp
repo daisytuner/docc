@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <nlohmann/json_fwd.hpp>
 #include <sstream>
 
@@ -44,6 +45,10 @@
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/passes/symbolic/type_minimization.h>
 #include <sdfg/serializer/json_serializer.h>
+
+#include "sdfg/passes/rpc/daisytuner_rpc_context.h"
+#include "sdfg/passes/rpc/rpc_context.h"
+#include "sdfg/passes/rpc/rpc_scheduler.h"
 
 // Platform-specific compiler selection
 #if defined(__APPLE__)
@@ -294,7 +299,11 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     std::vector<std::string> schedulers;
 
     if (remote_tuning) {
-        throw std::runtime_error("Remote tuning is not yet supported in python.");
+        sdfg::passes::rpc::DaisytunerRpcContextBuilder builder;
+        builder.from_docc_config();
+        std::shared_ptr<sdfg::passes::rpc::RpcContext> context = builder.build();
+        sdfg::passes::rpc::register_rpc_loop_opt(context, target, category);
+        schedulers.push_back("rpc");
     }
 
     // CPU Opt Pipeline

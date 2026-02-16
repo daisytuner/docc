@@ -6,6 +6,20 @@
 
 namespace sdfg::passes::rpc {
 
+sdfg::passes::rpc::SimpleRpcContextBuilder& DaisytunerRpcContextBuilder::from_docc_config() {
+    auto auth = DaisytunerTransfertuningRpcContext::find_docc_auth();
+    if (!auth.has_value()) {
+        throw std::runtime_error("DOCC access token not found in DOCC_ACCESS_TOKEN or $HOME/.config/docc/token");
+    }
+    server = sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::DEFAULT_SERVER;
+    endpoint = sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::DEFAULT_ENDPOINT;
+    SimpleRpcContextBuilder::add_header(
+        std::string(sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::DEFAULT_AUTH_HEADER),
+               sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::build_auth_header_content(auth.value())
+    );
+    return *this;
+}
+
 std::optional<std::pair<std::string, bool>> DaisytunerTransfertuningRpcContext::find_docc_auth() {
     // Check $DOCC_ACCESS_TOKEN_ENV
     const char* env_token = std::getenv("DOCC_ACCESS_TOKEN");
