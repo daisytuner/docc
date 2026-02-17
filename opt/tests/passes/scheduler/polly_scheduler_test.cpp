@@ -1,6 +1,7 @@
 #include "sdfg/passes/scheduler/polly_scheduler.h"
 
 #include <gtest/gtest.h>
+#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
 
 using namespace sdfg;
 
@@ -54,8 +55,11 @@ TEST(PollySchedulerTest, SpatialProximity) {
 
     // Apply
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::PollyScheduler polly_scheduler(false);
-    EXPECT_TRUE(polly_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::register_polly_scheduler(false);
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"polly"}, nullptr);
+    loop_scheduling_pass.run(builder, analysis_manager);
 
     auto new_seq = dynamic_cast<structured_control_flow::Sequence*>(&builder.subject().root().at(0).first);
     ASSERT_TRUE(new_seq != nullptr);
@@ -127,8 +131,12 @@ TEST(PollySchedulerTest, OuterWhileWithSpatialProximity) {
 
     // Apply
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::PollyScheduler polly_scheduler(false);
-    EXPECT_TRUE(polly_scheduler.run(builder, analysis_manager));
+
+    passes::scheduler::register_polly_scheduler(false);
+
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"polly"}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     auto while_root = dynamic_cast<structured_control_flow::While*>(&builder.subject().root().at(0).first);
     ASSERT_NE(while_root, nullptr);

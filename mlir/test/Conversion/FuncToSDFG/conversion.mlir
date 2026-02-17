@@ -1,4 +1,4 @@
-// RUN: sdfg-opt %s --convert-func-to-sdfg > %t
+// RUN: docc-mlir-opt %s --convert-func-to-sdfg > %t
 // RUN: FileCheck %s < %t
 
 // CHECK: sdfg.sdfg @test_empty ()

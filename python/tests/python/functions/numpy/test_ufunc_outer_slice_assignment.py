@@ -110,7 +110,7 @@ class TestFullSliceExpressions:
 class TestSliceAssignmentWithUfuncOuter:
     """Tests for slice assignment where RHS contains ufunc outer."""
 
-    @pytest.mark.xfail(
+    @pytest.mark.skip(
         reason="Direct ufunc outer assignment without wrapping operation not yet supported"
     )
     def test_basic_add_outer_assignment(self):

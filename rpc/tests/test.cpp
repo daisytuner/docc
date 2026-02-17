@@ -2,7 +2,7 @@
 
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/rpc/rpc_loop_opt.h"
+#include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/serializer/json_serializer.h"
 
 int main(int argc, char **argv) {

@@ -10,7 +10,7 @@ namespace sdfg {
 namespace passes {
 namespace rpc {
 
-class RpcLoopOpt : public scheduler::LoopScheduler {
+class RPCScheduler : public scheduler::LoopScheduler {
 private:
     std::shared_ptr<rpc::RpcContext> rpc_context_;
     const std::string target_;
@@ -33,13 +33,11 @@ protected:
     ) override;
 
 public:
-    RpcLoopOpt(
+    RPCScheduler(
         std::shared_ptr<rpc::RpcContext> rpc_context, std::string target, std::string category, bool print_steps = false
     );
 
     static std::string target() { return "rpc"; }
-
-    std::string name() override { return "RpcLoopOpt"; };
 
     std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };

@@ -15,7 +15,7 @@
 #include <utility>
 #include "sdfg/codegen/code_generators/cpp_code_generator.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/rpc/rpc_loop_opt.h"
+#include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/loop_scheduling_pass.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/transformations/rpc_node_transform.h"

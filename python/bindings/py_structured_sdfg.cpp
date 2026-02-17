@@ -45,9 +45,6 @@
 #include <sdfg/passes/symbolic/type_minimization.h>
 #include <sdfg/serializer/json_serializer.h>
 
-#include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/rpc/rpc_loop_opt.h"
-
 // Platform-specific compiler selection
 #if defined(__APPLE__)
 #define DOCC_CXX_COMPILER "clang++"
@@ -290,12 +287,14 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
+    std::vector<std::string> schedulers;
+
+    if (remote_tuning) {
+        throw std::runtime_error("Remote tuning is not yet supported in python.");
+    }
+
     // CPU Opt Pipeline
     if (target == "sequential" || target == "openmp") {
-        if (remote_tuning) {
-            throw std::runtime_error("Remote tuning is not yet supported in python.");
-        }
-
         sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
         sdfg::passes::DeadDataElimination dde;
         sdfg::passes::SymbolPropagation symbol_propagation_pass;
@@ -303,27 +302,20 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
         dde.run(builder, analysis_manager);
         dce.run(builder, analysis_manager);
 
-        // CPU Parallelization
         if (target == "openmp") {
-            sdfg::passes::scheduler::OMPScheduler omp_scheduler;
-            omp_scheduler.run(builder, analysis_manager);
+            schedulers.push_back(target);
         }
-
-        // CPU Vectorization
-        sdfg::passes::scheduler::HighwayScheduler highway_scheduler;
-        highway_scheduler.run(builder, analysis_manager);
+        schedulers.push_back("highway");
     }
     // GPU Opt Pipeline
     else if (target == "cuda") {
-        sdfg::passes::scheduler::CUDAScheduler cuda_scheduler;
-        cuda_scheduler.run(builder, analysis_manager);
-
-        sdfg::cuda::CudaLibraryNodeRewriterPass cuda_library_node_rewriter_pass;
-        cuda_library_node_rewriter_pass.run(builder, analysis_manager);
+        schedulers.push_back(target);
     } else if (target == "onnx") {
         sdfg::passes::ONNXLibraryNodeRewriterPass onnx_library_node_rewriter_pass;
         onnx_library_node_rewriter_pass.run(builder, analysis_manager);
     }
+    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, nullptr);
+    loop_scheduling_pass.run(builder, analysis_manager);
 }
 
 std::string PyStructuredSDFG::compile(

@@ -1,9 +1,16 @@
+#include "sdfg/passes/dataflow/dead_data_elimination.h"
+
 #include <gtest/gtest.h>
 
-#include <ostream>
-
+#include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/passes/pipeline.h"
+#include "sdfg/data_flow/library_nodes/call_node.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/element.h"
+#include "sdfg/function.h"
+#include "sdfg/types/function.h"
+#include "sdfg/types/scalar.h"
+#include "sdfg/types/type.h"
 
 using namespace sdfg;
 
@@ -457,4 +464,96 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_ContinueBreak_OpenRead) {
     EXPECT_EQ(case2_1.second.assignments().size(), 1);
 
     EXPECT_EQ(sdfg->containers().size(), 2);
+}
+
+TEST(DeadDataEliminationTest, DanglingRead) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar desc(types::PrimitiveType::Int32);
+    builder.add_container("a", desc, true);
+    builder.add_container("b", desc);
+    builder.add_container("c", desc);
+
+    types::Scalar void_type(types::PrimitiveType::Void);
+    types::Function my_custom_exit_type(void_type);
+    builder.add_container("my_custom_exit", my_custom_exit_type, false, true);
+
+    auto a = symbolic::symbol("a");
+
+    auto& if_else_1 = builder.add_if_else(root);
+    auto& if_else_1_case_1 = builder.add_case(if_else_1, symbolic::Lt(a, symbolic::zero()));
+    auto& if_else_1_case_2 = builder.add_case(if_else_1, symbolic::Not(symbolic::Lt(a, symbolic::zero())));
+
+    auto& block1 = builder.add_block(if_else_1_case_1);
+    std::vector<std::string> empty;
+    auto& libnode = builder.add_library_node<data_flow::CallNode>(block1, DebugInfo(), "my_custom_exit", empty, empty);
+
+    auto& if_else_2 = builder.add_if_else(if_else_1_case_1);
+    auto& if_else_2_case_1 = builder.add_case(if_else_2, symbolic::Lt(symbolic::symbol("b"), symbolic::integer(10)));
+    auto& if_else_2_case_2 =
+        builder.add_case(if_else_2, symbolic::Not(symbolic::Lt(symbolic::symbol("b"), symbolic::integer(10))));
+
+    auto& block2 = builder.add_block(if_else_2_case_1);
+    {
+        auto& a = builder.add_access(block2, "a");
+        auto& c = builder.add_access(block2, "c");
+        auto& tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block2, a, tasklet, "_in", {});
+        builder.add_computational_memlet(block2, tasklet, "_out", c, {});
+    }
+
+    auto& block3 = builder.add_block(if_else_2_case_2);
+    {
+        auto& a = builder.add_access(block3, "a");
+        auto& c = builder.add_access(block3, "c");
+        auto& ten = builder.add_constant(block3, "10", desc);
+        auto& tasklet = builder.add_tasklet(block3, data_flow::TaskletCode::int_sub, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block3, ten, tasklet, "_in1", {});
+        builder.add_computational_memlet(block3, a, tasklet, "_in2", {});
+        builder.add_computational_memlet(block3, tasklet, "_out", c, {});
+    }
+
+    auto& block4 = builder.add_block(if_else_1_case_2, {{symbolic::symbol("b"), a}});
+
+    auto& if_else_3 = builder.add_if_else(if_else_1_case_2);
+    auto& if_else_3_case_1 = builder.add_case(if_else_3, symbolic::Lt(a, symbolic::integer(10)));
+    auto& if_else_3_case_2 = builder.add_case(if_else_3, symbolic::Not(symbolic::Lt(a, symbolic::integer(10))));
+
+    auto& block5 = builder.add_block(if_else_3_case_1);
+    {
+        auto& a = builder.add_access(block5, "a");
+        auto& c = builder.add_access(block5, "c");
+        auto& tasklet = builder.add_tasklet(block5, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block5, a, tasklet, "_in", {});
+        builder.add_computational_memlet(block5, tasklet, "_out", c, {});
+    }
+
+    auto& block6 = builder.add_block(if_else_3_case_2);
+    {
+        auto& a = builder.add_access(block6, "a");
+        auto& c = builder.add_access(block6, "c");
+        auto& ten = builder.add_constant(block6, "10", desc);
+        auto& tasklet = builder.add_tasklet(block6, data_flow::TaskletCode::int_sub, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block6, ten, tasklet, "_in1", {});
+        builder.add_computational_memlet(block6, a, tasklet, "_in2", {});
+        builder.add_computational_memlet(block6, tasklet, "_out", c, {});
+    }
+
+    builder.add_return(root, "c");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::DeadDataElimination pass;
+    bool applied = true;
+    do {
+        applied = pass.run(builder, analysis_manager);
+    } while (applied);
+
+    // Check that assignment was eliminated
+    EXPECT_EQ(if_else_1_case_2.size(), 2);
+    EXPECT_TRUE(if_else_1_case_2.at(0).second.empty());
+
+    // Check that container is still there for dangling read
+    EXPECT_TRUE(sdfg.exists("b"));
 }

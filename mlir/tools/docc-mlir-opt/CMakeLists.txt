@@ -10,12 +10,12 @@ set(LIBS
     MLIRSDFGDialect
 )
 
-add_llvm_executable(sdfg-opt
-    sdfg-opt.cpp
+add_llvm_executable(docc-mlir-opt
+    docc-mlir-opt.cpp
     DEPENDS ${LIBS}
 )
 
-llvm_update_compile_flags(sdfg-opt)
-target_link_libraries(sdfg-opt PRIVATE ${LIBS})
+llvm_update_compile_flags(docc-mlir-opt)
+target_link_libraries(docc-mlir-opt PRIVATE ${LIBS})
 
-mlir_check_all_link_libraries(sdfg-opt)
+mlir_check_all_link_libraries(docc-mlir-opt)

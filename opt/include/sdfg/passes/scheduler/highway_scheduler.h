@@ -1,7 +1,6 @@
 #pragma once
 
 #include "sdfg/passes/scheduler/loop_scheduler.h"
-#include "sdfg/targets/highway/schedule.h"
 
 namespace sdfg {
 namespace passes {
@@ -25,8 +24,6 @@ public:
 
 
     static std::string target() { return "highway"; };
-
-    std::string name() override { return "HighwayScheduler"; };
 
     std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };

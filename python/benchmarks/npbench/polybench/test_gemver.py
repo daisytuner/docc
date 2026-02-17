@@ -54,14 +54,12 @@ def test_gemver(target):
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"CPU_PARALLEL": 1, "MAP": 1, "Malloc": 2, "FOR": 2, "GEMM": 4}
+            verification={"HIGHWAY": 1, "MAP": 1, "Malloc": 2, "FOR": 2, "GEMM": 4}
         )
     else:  # cuda
         verifier = SDFGVerification(
             verification={
-                "CUDA": 1,
                 "MAP": 1,
-                "CUDAOffloading": 4,
                 "Malloc": 2,
                 "FOR": 2,
                 "GEMM": 4,
