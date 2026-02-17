@@ -38,29 +38,11 @@ def kernel(TSTEPS, N, A):
 def test_seidel_2d(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 4,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"MAP": 8, "Malloc": 7, "SEQUENTIAL": 8, "FOR": 11}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 4,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"MAP": 8, "Malloc": 7, "SEQUENTIAL": 8, "FOR": 11}
         )
     elif target == "openmp":
         verifier = SDFGVerification(

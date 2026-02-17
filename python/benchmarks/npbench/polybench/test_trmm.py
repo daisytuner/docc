@@ -40,16 +40,7 @@ def kernel(alpha, A, B):
 def test_trmm(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 4,
-                "MAP": 2,
-                "SEQUENTIAL": 2,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
-                "GEMM": 1,
-                "DOT": 0,
-            }
+            verification={"MAP": 4, "Malloc": 1, "GEMM": 1, "SEQUENTIAL": 4, "FOR": 6}
         )
     elif target == "sequential":
         verifier = SDFGVerification(

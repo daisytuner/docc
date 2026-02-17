@@ -55,13 +55,12 @@ def test_gramschmidt(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "MAP": 6,
+                "MAP": 9,
                 "CMath": 1,
-                "DOT": 0,
-                "SEQUENTIAL": 6,
-                "FOR": 9,
+                "SEQUENTIAL": 9,
+                "FOR": 12,
                 "Memset": 2,
-                "Malloc": 2,
+                "Malloc": 5,
             }
         )
     elif target == "sequential":

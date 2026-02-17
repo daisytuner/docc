@@ -126,11 +126,11 @@ def test_cavity_flow(target):
         verifier = SDFGVerification(
             verification={
                 "CMath": 14,
-                "MAP": 26,
-                "SEQUENTIAL": 26,
-                "FOR": 30,
+                "MAP": 182,
+                "SEQUENTIAL": 182,
+                "FOR": 186,
                 "Memset": 1,
-                "Malloc": 8,
+                "Malloc": 86,
             }
         )
     elif target == "sequential":

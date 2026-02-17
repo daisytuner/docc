@@ -2191,7 +2191,9 @@ class ASTParser(ast.NodeVisitor):
                     else f"_{target_name}_shape_{i}"
                 )
                 normalized_idx = normalize_negative_index(idx, dim_size)
-                new_target_indices.append(normalized_idx)
+                # intermediate computations are placed outside the loops
+                idx_str = self.visit(normalized_idx)
+                new_target_indices.append(ast.Name(id=idx_str, ctx=ast.Load()))
 
         rewriter = SliceRewriter(loop_vars, self.tensor_table, self)
         new_value = rewriter.visit(copy.deepcopy(value))
@@ -2352,7 +2354,10 @@ class ASTParser(ast.NodeVisitor):
                     else f"_{target_name}_shape_{i}"
                 )
                 normalized_idx = normalize_negative_index(idx, dim_size)
-                new_target_indices.append(normalized_idx)
+                # Visit the index NOW before any loops are opened to ensure
+                # intermediate computations are placed outside the loops
+                idx_str = self.visit(normalized_idx)
+                new_target_indices.append(ast.Name(id=idx_str, ctx=ast.Load()))
 
         # Create assignment block: target[i,j,...] = result[i,j,...]
         block = self.builder.add_block(debug_info)

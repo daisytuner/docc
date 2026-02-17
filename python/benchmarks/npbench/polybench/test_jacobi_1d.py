@@ -27,7 +27,9 @@ def kernel(TSTEPS, A, B):
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
 def test_jacobi_1d(target):
     if target == "none":
-        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 2, "FOR": 3})
+        verifier = SDFGVerification(
+            verification={"MAP": 8, "Malloc": 6, "SEQUENTIAL": 8, "FOR": 9}
+        )
     elif target == "sequential":
         verifier = SDFGVerification(verification={"HIGHWAY": 2, "MAP": 2, "FOR": 3})
     elif target == "openmp":

@@ -71,12 +71,11 @@ def kernel(TSTEPS, N, u):
     return u
 
 
-@pytest.mark.skip(reason="Validation")
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
 def test_adi(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 14, "SEQUENTIAL": 14, "FOR": 21, "Malloc": 3}
+            verification={"MAP": 46, "SEQUENTIAL": 46, "FOR": 51, "Malloc": 33}
         )
     elif target == "sequential":
         verifier = SDFGVerification(

@@ -2406,7 +2406,8 @@ class NumPyHandler:
                 if dim_idx == 0:
                     strides.append("1")
                 else:
-                    prefix_shapes = [str(s) for s in shape[:dim_idx]]
+                    # Wrap each shape in parens to ensure correct precedence
+                    prefix_shapes = [f"({s})" for s in shape[:dim_idx]]
                     if len(prefix_shapes) == 1:
                         strides.append(prefix_shapes[0])
                     else:
@@ -2417,7 +2418,8 @@ class NumPyHandler:
                 if dim_idx == ndim - 1:
                     strides.append("1")
                 else:
-                    suffix_shapes = [str(s) for s in shape[dim_idx + 1 :]]
+                    # Wrap each shape in parens to ensure correct precedence
+                    suffix_shapes = [f"({s})" for s in shape[dim_idx + 1 :]]
                     if len(suffix_shapes) == 1:
                         strides.append(suffix_shapes[0])
                     else:
@@ -2493,10 +2495,11 @@ class NumPyHandler:
 
             return tmp_name
 
-        # Calculate size
+        # Calculate size - wrap each dimension in parentheses to ensure correct
+        # parsing when dimensions are expressions like "-2 + _s0"
         size_str = "1"
         for dim in shape:
-            size_str = f"({size_str} * {dim})"
+            size_str = f"({size_str} * ({dim}))"
 
         element_size = self.builder.get_sizeof(dtype)
         total_size = f"({size_str} * {element_size})"

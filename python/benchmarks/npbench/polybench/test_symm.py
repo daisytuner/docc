@@ -49,14 +49,11 @@ def test_symm(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 6,
-                "MAP": 4,
-                "SEQUENTIAL": 4,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
                 "GEMM": 1,
-                "DOT": 0,
+                "SEQUENTIAL": 13,
+                "FOR": 15,
+                "MAP": 13,
+                "Malloc": 9,
             }
         )
     elif target == "sequential":

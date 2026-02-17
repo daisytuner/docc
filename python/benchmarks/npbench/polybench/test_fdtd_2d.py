@@ -30,7 +30,9 @@ def kernel(TMAX, ex, ey, hz, _fict_):
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
 def test_fdtd_2d(target):
     if target == "none":
-        verifier = SDFGVerification(verification={"MAP": 7, "SEQUENTIAL": 7, "FOR": 8})
+        verifier = SDFGVerification(
+            verification={"Malloc": 11, "MAP": 29, "SEQUENTIAL": 29, "FOR": 30}
+        )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={"HIGHWAY": 4, "MAP": 7, "SEQUENTIAL": 3, "FOR": 8}

@@ -42,7 +42,9 @@ def kernel(TSTEPS, A, B):
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
 def test_heat_3d(target):
     if target == "none":
-        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 2, "FOR": 7})
+        verifier = SDFGVerification(
+            verification={"MAP": 92, "Malloc": 30, "SEQUENTIAL": 92, "FOR": 97}
+        )
     elif target == "sequential":
         verifier = SDFGVerification(verification={"HIGHWAY": 2, "MAP": 2, "FOR": 7})
     elif target == "openmp":

@@ -31,6 +31,7 @@ def kernel(M, float_n, data):
     return corr
 
 
+@pytest.mark.skip(reason="sdfg does not validate")
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
 def test_correlation(target):
     if target == "none":

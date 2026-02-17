@@ -37,16 +37,7 @@ def kernel(alpha, beta, A, u1, v1, u2, v2, w, x, y, z):
 def test_gemver(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 2,
-                "MAP": 1,
-                "SEQUENTIAL": 1,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
-                "GEMM": 4,
-                "DOT": 0,
-            }
+            verification={"SEQUENTIAL": 4, "FOR": 4, "MAP": 4, "Malloc": 4, "GEMM": 4}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
