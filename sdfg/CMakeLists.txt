@@ -129,6 +129,7 @@ set(SOURCE_FILES
     src/optimization_report/optimization_report.cpp
     src/passes/pass.cpp
     src/passes/pipeline.cpp
+    src/passes/statistics.cpp
     src/passes/dataflow/dead_data_elimination.cpp
     src/passes/dataflow/dead_reference_elimination.cpp
     src/passes/dataflow/constant_propagation.cpp
