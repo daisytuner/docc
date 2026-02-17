@@ -171,6 +171,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
                 if (access == nullptr || access->data() != container) {
                     continue;
                 }
+                if (dataflow.in_degree(*access) != 0 || dataflow.out_degree(*access) == 0) {
+                    return false;
+                }
 
                 // Check all read memlets from this access
                 for (auto& memlet : dataflow.out_edges(*access)) {
@@ -273,22 +276,14 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
 
         // Deep copy all nodes from first block to producer block
         std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
-
         for (auto& node : first_dataflow.nodes()) {
-            auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-            if (access != nullptr) {
-                // Check if this is an output access node for this candidate's container
-                if (first_dataflow.in_degree(*access) > 0 && access->data() == candidate.container) {
-                    // Replace with temp scalar access
-                    auto& temp_access = builder.add_access(producer_block, temp_name);
-                    node_mapping[&node] = &temp_access;
-                } else {
-                    // Copy the access node as-is
-                    node_mapping[&node] = &builder.copy_node(producer_block, node);
+            node_mapping[&node] = &builder.copy_node(producer_block, node);
+            auto access = node_mapping[&node];
+            if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(access)) {
+                if (access_node->data() == candidate.container) {
+                    // This is the producer access for this candidate - update to temp
+                    access_node->data(temp_name);
                 }
-            } else {
-                // Copy other nodes (tasklets, library nodes, etc.)
-                node_mapping[&node] = &builder.copy_node(producer_block, node);
             }
         }
 
@@ -298,6 +293,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             auto& dst_node = edge.dst();
 
             // Substitute indices in subset
+            const types::IType* base_type = &edge.base_type();
             data_flow::Subset new_subset;
             for (const auto& dim : edge.subset()) {
                 auto new_dim = symbolic::subs(dim, first_indvar, candidate.index_mapping);
@@ -310,6 +306,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             if (dst_access != nullptr && dst_access->data() == candidate.container &&
                 first_dataflow.in_degree(*dst_access) > 0) {
                 new_subset.clear(); // Scalar has empty subset
+                base_type = &tmp_type;
             }
 
             builder.add_memlet(
@@ -319,7 +316,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                 *node_mapping[&dst_node],
                 edge.dst_conn(),
                 new_subset,
-                edge.base_type(),
+                *base_type,
                 edge.debug_info()
             );
         }

@@ -1156,7 +1156,8 @@ TEST(MapFusionTest, Domain_BothMapsStridedModuloMismatch) {
 
 TEST(MapFusionTest, Dataflow_InDegree0_SingleOutEdge) {
     // Pattern: Consumer access node has in_degree=0 (read-only) and one outgoing edge
-    // Verifies: data(), subset(), and base_type() are all updated correctly
+    // Verifies: data(), subset(), and base_type() are all updated correctly for BOTH
+    //           producer memlets (in newly created producer block) and consumer memlets
 
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
@@ -1220,12 +1221,55 @@ TEST(MapFusionTest, Dataflow_InDegree0_SingleOutEdge) {
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
-    // After fusion: verify data, subset, and type are all updated
+    // After fusion: verify CONSUMER memlet data, subset, and type are all updated
     EXPECT_TRUE(t_in.data().find("_fused_tmp") != std::string::npos)
         << "Access node data should point to temp scalar, got: " << t_in.data();
     EXPECT_EQ(t_memlet.subset().size(), 0) << "Memlet subset should be empty after fusion (scalar access)";
     EXPECT_TRUE(dynamic_cast<const types::Scalar*>(&t_memlet.base_type()) != nullptr)
-        << "Memlet base_type should be Scalar after fusion";
+        << "Consumer memlet base_type should be Scalar after fusion";
+
+    // Verify PRODUCER block memlets have correct base_type
+    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
+    ASSERT_TRUE(new_map2 != nullptr);
+    EXPECT_EQ(new_map2->root().size(), 2) << "Should have 1 producer block + 1 consumer block";
+
+    auto* producer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
+    ASSERT_TRUE(producer_block != nullptr);
+
+    auto& producer_dataflow = producer_block->dataflow();
+
+    // Check producer memlet properties
+    bool found_producer_input = false;
+    bool found_producer_output = false;
+    for (auto& node : producer_dataflow.nodes()) {
+        auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+        if (access == nullptr) continue;
+
+        if (access->data() == "A") {
+            // Input memlet (A -> tasklet) should retain Array type
+            for (auto& memlet : producer_dataflow.out_edges(*access)) {
+                if (memlet.type() == data_flow::MemletType::Computational) {
+                    found_producer_input = true;
+                    EXPECT_EQ(memlet.subset().size(), 1) << "Producer input memlet should have 1D subset";
+                    EXPECT_TRUE(dynamic_cast<const types::Array*>(&memlet.base_type()) != nullptr)
+                        << "Producer input memlet (A) should have Array base_type";
+                }
+            }
+        } else if (access->data().find("_fused_tmp") != std::string::npos) {
+            // Output memlet (tasklet -> temp) should have Scalar type
+            for (auto& memlet : producer_dataflow.in_edges(*access)) {
+                if (memlet.type() == data_flow::MemletType::Computational) {
+                    found_producer_output = true;
+                    EXPECT_EQ(memlet.subset().size(), 0) << "Producer output memlet should have empty subset (scalar)";
+                    EXPECT_TRUE(dynamic_cast<const types::Scalar*>(&memlet.base_type()) != nullptr)
+                        << "Producer output memlet (temp) should have Scalar base_type";
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_producer_input) << "Should find producer input memlet from A";
+    EXPECT_TRUE(found_producer_output) << "Should find producer output memlet to temp";
 }
 
 TEST(MapFusionTest, Dataflow_InDegree0_MultipleOutEdges) {
