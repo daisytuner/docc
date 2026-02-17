@@ -1319,3 +1319,209 @@ TEST(MapFusionTest, Dataflow_InDegree0_MultipleOutEdges) {
     EXPECT_TRUE(dynamic_cast<const types::Scalar*>(&memlet2.base_type()) != nullptr)
         << "Second memlet base_type should be Scalar after fusion";
 }
+
+TEST(MapFusionTest, Dataflow_MultipleBlocks_MultipleAccessNodes) {
+    // Pattern: Consumer loop has multiple blocks, each with its own access node for T
+    // Map 1: T[i] = A[i]
+    // Map 2 with TWO blocks:
+    //   Block 2a: B[j] = T[j]
+    //   Block 2b: C[j] = T[j]
+    // Both access nodes should be updated to point to the temp scalar
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Array array_desc(float_desc, {symbolic::symbol("N")});
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("A", array_desc, true);
+    builder.add_container("T", array_desc);
+    builder.add_container("B", array_desc, true);
+    builder.add_container("C", array_desc, true);
+
+    // Map 1: T[i] = A[i]
+    auto indvar1 = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        indvar1,
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& block1 = builder.add_block(map1.root());
+    auto& a_in = builder.add_access(block1, "A");
+    auto& t_out = builder.add_access(block1, "T");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block1, a_in, tasklet1, "_in", {symbolic::symbol("i")}, array_desc);
+    builder.add_computational_memlet(block1, tasklet1, "_out", t_out, {symbolic::symbol("i")}, array_desc);
+
+    // Map 2 with TWO separate blocks, each reading T
+    auto indvar2 = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        root,
+        indvar2,
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Block 2a: B[j] = T[j]
+    auto& block2a = builder.add_block(map2.root());
+    auto& t_in_a = builder.add_access(block2a, "T");
+    auto& b_out = builder.add_access(block2a, "B");
+    auto& tasklet2 = builder.add_tasklet(block2a, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto& memlet_a =
+        builder.add_computational_memlet(block2a, t_in_a, tasklet2, "_in", {symbolic::symbol("j")}, array_desc);
+    builder.add_computational_memlet(block2a, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
+
+    // Block 2b: C[j] = T[j]
+    auto& block2b = builder.add_block(map2.root());
+    auto& t_in_b = builder.add_access(block2b, "T");
+    auto& c_out = builder.add_access(block2b, "C");
+    auto& tasklet3 = builder.add_tasklet(block2b, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto& memlet_b =
+        builder.add_computational_memlet(block2b, t_in_b, tasklet3, "_in", {symbolic::symbol("j")}, array_desc);
+    builder.add_computational_memlet(block2b, tasklet3, "_out", c_out, {symbolic::symbol("j")}, array_desc);
+
+    // Verify initial state - two separate access nodes for T
+    EXPECT_EQ(t_in_a.data(), "T");
+    EXPECT_EQ(t_in_b.data(), "T");
+    EXPECT_EQ(memlet_a.subset().size(), 1);
+    EXPECT_EQ(memlet_b.subset().size(), 1);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(map1, map2);
+
+    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+
+    // After fusion: BOTH access nodes should be updated
+    EXPECT_TRUE(t_in_a.data().find("_fused_tmp") != std::string::npos)
+        << "First access node should point to temp scalar, got: " << t_in_a.data();
+    EXPECT_TRUE(t_in_b.data().find("_fused_tmp") != std::string::npos)
+        << "Second access node should point to temp scalar, got: " << t_in_b.data();
+
+    // Both memlets should have empty subsets (scalar access)
+    EXPECT_EQ(memlet_a.subset().size(), 0) << "First block memlet subset should be empty after fusion";
+    EXPECT_EQ(memlet_b.subset().size(), 0) << "Second block memlet subset should be empty after fusion";
+
+    // Both memlets should have scalar type
+    EXPECT_TRUE(dynamic_cast<const types::Scalar*>(&memlet_a.base_type()) != nullptr)
+        << "First block memlet base_type should be Scalar after fusion";
+    EXPECT_TRUE(dynamic_cast<const types::Scalar*>(&memlet_b.base_type()) != nullptr)
+        << "Second block memlet base_type should be Scalar after fusion";
+}
+
+TEST(MapFusionTest, Dataflow_StencilConsumer_MultipleIndexMappings) {
+    // Pattern: Consumer reads same intermediate array at different indices (stencil pattern)
+    // Map 1: T[i] = A[i]
+    // Map 2: B[j] = T[j-1] + T[j+1]  (different indices)
+    // This IS fusible - we create two producer blocks with different index mappings
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Array array_desc(float_desc, {symbolic::symbol("N")});
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("A", array_desc, true);
+    builder.add_container("T", array_desc);
+    builder.add_container("B", array_desc, true);
+
+    // Map 1: T[i] = A[i]
+    auto indvar1 = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        indvar1,
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& block1 = builder.add_block(map1.root());
+    auto& a_in = builder.add_access(block1, "A");
+    auto& t_out = builder.add_access(block1, "T");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block1, a_in, tasklet1, "_in", {symbolic::symbol("i")}, array_desc);
+    builder.add_computational_memlet(block1, tasklet1, "_out", t_out, {symbolic::symbol("i")}, array_desc);
+
+    // Map 2: B[j] = T[j-1] + T[j+1] (stencil - reads T at different indices)
+    auto indvar2 = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        root,
+        indvar2,
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& block2 = builder.add_block(map2.root());
+
+    // Two access nodes reading T at different indices
+    auto& t_in_left = builder.add_access(block2, "T");
+    auto& t_in_right = builder.add_access(block2, "T");
+    auto& b_out = builder.add_access(block2, "B");
+    auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+
+    // T[j-1] and T[j+1] - different subsets
+    auto& memlet_left = builder.add_computational_memlet(
+        block2, t_in_left, tasklet2, "_in1", {symbolic::sub(symbolic::symbol("j"), symbolic::integer(1))}, array_desc
+    );
+    auto& memlet_right = builder.add_computational_memlet(
+        block2, t_in_right, tasklet2, "_in2", {symbolic::add(symbolic::symbol("j"), symbolic::integer(1))}, array_desc
+    );
+    builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
+
+    // Verify initial state
+    EXPECT_EQ(t_in_left.data(), "T");
+    EXPECT_EQ(t_in_right.data(), "T");
+    EXPECT_EQ(memlet_left.subset().size(), 1);
+    EXPECT_EQ(memlet_right.subset().size(), 1);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(map1, map2);
+
+    // Should BE fusible - we support stencil patterns now
+    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager))
+        << "Stencil consumer with different index patterns should be fusible";
+
+    transformation.apply(builder, analysis_manager);
+
+    // After fusion: both access nodes should point to DIFFERENT temps
+    EXPECT_TRUE(t_in_left.data().find("_fused_tmp") != std::string::npos)
+        << "Left access node should point to temp scalar, got: " << t_in_left.data();
+    EXPECT_TRUE(t_in_right.data().find("_fused_tmp") != std::string::npos)
+        << "Right access node should point to temp scalar, got: " << t_in_right.data();
+
+    // The temps should be different since they have different index mappings
+    EXPECT_NE(t_in_left.data(), t_in_right.data())
+        << "Left and right should use different temps (different index mappings)";
+
+    // Both memlets should have empty subsets (scalar access)
+    EXPECT_EQ(memlet_left.subset().size(), 0) << "Left memlet subset should be empty after fusion";
+    EXPECT_EQ(memlet_right.subset().size(), 0) << "Right memlet subset should be empty after fusion";
+
+    // Both memlets should have scalar type
+    EXPECT_TRUE(dynamic_cast<const types::Scalar*>(&memlet_left.base_type()) != nullptr)
+        << "Left memlet base_type should be Scalar after fusion";
+    EXPECT_TRUE(dynamic_cast<const types::Scalar*>(&memlet_right.base_type()) != nullptr)
+        << "Right memlet base_type should be Scalar after fusion";
+
+    // Should have inserted 2 producer blocks (one per unique index mapping)
+    // The consumer block should now be at index 2
+    EXPECT_EQ(map2.root().size(), 3) << "Should have 2 producer blocks + 1 consumer block";
+}

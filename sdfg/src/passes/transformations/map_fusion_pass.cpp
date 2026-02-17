@@ -26,6 +26,8 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
             if (transformation.can_be_applied(builder_, analysis_manager_)) {
                 transformation.apply(builder_, analysis_manager_);
                 applied = true;
+                std::cout << "Applied MapFusion to maps " << first->indvar()->get_name() << " and "
+                          << second->indvar()->get_name() << std::endl;
             }
         }
 

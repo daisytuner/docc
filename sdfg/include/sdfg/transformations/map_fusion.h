@@ -46,13 +46,10 @@ class MapFusion : public Transformation {
     bool applied_ = false;
 
     // Cached analysis results used in both can_be_applied and apply
+    // Each candidate represents a unique (container, access_subset) pair
     struct FusionCandidate {
         std::string container; ///< Container being read/written
-        data_flow::AccessNode* consumer_access; ///< Read access in second loop
-        data_flow::AccessNode* producer_access; ///< Write access in first map
-        data_flow::Memlet* consumer_memlet; ///< Memlet for the read in second loop
-        data_flow::Memlet* producer_memlet; ///< Memlet for the write in first map
-        structured_control_flow::Block* consumer_block; ///< Block containing the consumer access
+        data_flow::Subset consumer_subset; ///< The access pattern in the consumer (e.g., [j-1], [j], [j+1])
         symbolic::Expression index_mapping; ///< Expression mapping second_indvar to first_indvar
     };
     std::vector<FusionCandidate> fusion_candidates_;

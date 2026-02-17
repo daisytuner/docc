@@ -96,7 +96,6 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             fusion_containers.insert(name);
         }
     }
-
     if (fusion_containers.empty()) {
         return false;
     }
@@ -107,10 +106,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     auto first_indvar = first_map_.indvar();
     auto second_indvar = second_loop_.indvar();
 
-    // For each fusion container, check if we can solve the access equation
+    // For each fusion container, find the producer memlet and collect unique consumer subsets
     for (const auto& container : fusion_containers) {
-        // Find write accesses in first map
-        data_flow::AccessNode* producer_access = nullptr;
+        // Find unique producer in first map (producer)
         data_flow::Memlet* producer_memlet = nullptr;
 
         for (auto& node : first_dataflow.nodes()) {
@@ -118,170 +116,125 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             if (access == nullptr || access->data() != container) {
                 continue;
             }
-
-            // Check if this is a write (has incoming edges)
-            if (first_dataflow.in_degree(*access) > 0) {
-                // Get the write memlet
-                for (auto& memlet : first_dataflow.in_edges(*access)) {
-                    if (memlet.type() == data_flow::MemletType::Computational) {
-                        producer_access = access;
-                        producer_memlet = &memlet;
-                        break;
-                    }
-                }
-                if (producer_access != nullptr) {
-                    break;
-                }
+            if (first_dataflow.in_degree(*access) != 1 || first_dataflow.out_degree(*access) != 0) {
+                return false;
             }
+            auto& iedge = *first_dataflow.in_edges(*access).begin();
+            if (iedge.type() != data_flow::MemletType::Computational) {
+                return false;
+            }
+            if (producer_memlet != nullptr) {
+                return false;
+            }
+            producer_memlet = &iedge;
+        }
+        if (producer_memlet == nullptr) {
+            return false;
         }
 
-        if (producer_access == nullptr || producer_memlet == nullptr) {
-            continue; // No valid producer found for this container
+        const auto& producer_subset = producer_memlet->subset();
+        // Assume linearized subset
+        if (producer_subset.size() != 1) {
+            return false;
         }
 
-        // Find read accesses in any block of the second loop
-        data_flow::AccessNode* consumer_access = nullptr;
-        data_flow::Memlet* consumer_memlet = nullptr;
-        structured_control_flow::Block* consumer_block = nullptr;
+        // Extract affine coefficients for producer (done once per container)
+        auto producer_expr = producer_subset.at(0);
+        symbolic::SymbolVec producer_symbols = {first_indvar};
+        auto producer_poly = symbolic::polynomial(producer_expr, producer_symbols);
+        if (producer_poly.is_null()) {
+            return false; // Not a polynomial
+        }
+        auto producer_coeffs = symbolic::affine_coefficients(producer_poly, producer_symbols);
+        if (producer_coeffs.empty()) {
+            return false; // Not affine
+        }
+        auto first_coeff = producer_coeffs[first_indvar];
+        if (symbolic::eq(first_coeff, symbolic::zero())) {
+            return false;
+        }
+        auto producer_constant = producer_coeffs[symbolic::symbol("__daisy_constant__")];
+
+        // Collect all unique (container, subset) pairs from consumer blocks
+        // A subset is considered unique if it's not symbolically equal to any existing one
+        symbolic::ExpressionSet unique_subsets;
 
         for (size_t i = 0; i < second_loop_.root().size(); ++i) {
             auto* block = dynamic_cast<structured_control_flow::Block*>(&second_loop_.root().at(i).first);
             if (block == nullptr) {
-                continue;
+                return false;
             }
 
-            auto& second_dataflow = block->dataflow();
-            for (auto& node : second_dataflow.nodes()) {
+            auto& dataflow = block->dataflow();
+            for (auto& node : dataflow.nodes()) {
                 auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
                 if (access == nullptr || access->data() != container) {
                     continue;
                 }
 
-                // Check if this is a read (has outgoing edges)
-                if (second_dataflow.out_degree(*access) > 0) {
-                    // Get the read memlet
-                    for (auto& memlet : second_dataflow.out_edges(*access)) {
-                        if (memlet.type() == data_flow::MemletType::Computational) {
-                            consumer_access = access;
-                            consumer_memlet = &memlet;
-                            consumer_block = block;
-                            break;
-                        }
+                // Check all read memlets from this access
+                for (auto& memlet : dataflow.out_edges(*access)) {
+                    if (memlet.type() != data_flow::MemletType::Computational) {
+                        return false;
                     }
-                    if (consumer_access != nullptr) {
-                        break;
+
+                    auto& consumer_subset = memlet.subset();
+                    // Assume linearized subset
+                    if (consumer_subset.size() != 1) {
+                        return false;
                     }
+                    unique_subsets.insert(consumer_subset.at(0));
                 }
             }
-            if (consumer_access != nullptr) {
-                break;
-            }
         }
 
-        if (consumer_access == nullptr || consumer_memlet == nullptr) {
-            continue; // No valid consumer found for this container
-        }
+        // For each unique subset, compute index_mapping and create a FusionCandidate
+        for (const auto& consumer_expr : unique_subsets) {
+            // index_mapping = (consumer_expr - producer_constant) / first_coeff
+            auto numerator = symbolic::sub(consumer_expr, producer_constant);
+            auto index_mapping = symbolic::div(numerator, first_coeff);
+            index_mapping = symbolic::expand(index_mapping);
 
-        // Extract subsets
-        const auto& producer_subset = producer_memlet->subset();
-        const auto& consumer_subset = consumer_memlet->subset();
-
-        // Criterion: Subsets must have the same dimensionality
-        if (producer_subset.size() != consumer_subset.size()) {
-            continue;
-        }
-
-        // Criterion: For now, focus on 1D accesses (simple case)
-        if (producer_subset.size() != 1) {
-            continue;
-        }
-
-        // Solve the affine equation: producer_subset[first_indvar] = consumer_subset[second_indvar]
-        // We need to find first_indvar in terms of second_indvar
-        //
-        // Given: producer_subset = a * first_indvar + b
-        //        consumer_subset = c * second_indvar + d
-        // If they access the same element: a * first_indvar + b = c * second_indvar + d
-        // Solve for first_indvar: first_indvar = (c * second_indvar + d - b) / a
-
-        auto producer_expr = producer_subset[0];
-        auto consumer_expr = consumer_subset[0];
-
-        // Extract affine coefficients for producer
-        symbolic::SymbolVec producer_symbols = {first_indvar};
-        auto producer_poly = symbolic::polynomial(producer_expr, producer_symbols);
-        if (producer_poly.is_null()) {
-            continue; // Not a polynomial
-        }
-        auto producer_coeffs = symbolic::affine_coefficients(producer_poly, producer_symbols);
-        if (producer_coeffs.empty()) {
-            continue; // Not affine
-        }
-
-        // Check that the coefficient of first_indvar is non-zero
-        auto first_coeff = producer_coeffs[first_indvar];
-        if (symbolic::eq(first_coeff, symbolic::zero())) {
-            continue; // first_indvar doesn't appear in producer expression
-        }
-
-        // Compute the inverse: first_indvar = (consumer_expr - producer_constant) / first_coeff
-        auto producer_constant = producer_coeffs[symbolic::symbol("__daisy_constant__")];
-
-        // index_mapping = (consumer_expr - producer_constant) / first_coeff
-        auto numerator = symbolic::sub(consumer_expr, producer_constant);
-        auto index_mapping = symbolic::div(numerator, first_coeff);
-
-        // Simplify and check that it only uses second_indvar and constants
-        index_mapping = symbolic::expand(index_mapping);
-
-        // Verify the mapping is valid (contains only second_indvar and constants)
-        bool valid_mapping = true;
-        for (const auto& atom : symbolic::atoms(index_mapping)) {
-            std::string name = atom->get_name();
-            if (name != second_indvar->get_name()) {
-                // Check if it's a parameter (constant for both loops)
-                bool is_param = false;
-                for (const auto& [arg_name, arg] : second_args) {
-                    if (arg_name == name && arg.is_scalar && !arg.is_output) {
-                        is_param = true;
-                        break;
-                    }
-                }
-                // Also check if it's in first_args as input scalar
-                if (!is_param) {
-                    for (const auto& [arg_name, arg] : first_args) {
+            // Verify the mapping is valid (contains only second_indvar and constants)
+            bool valid_mapping = true;
+            for (const auto& atom : symbolic::atoms(index_mapping)) {
+                std::string name = atom->get_name();
+                if (name != second_indvar->get_name()) {
+                    // Check if it's a parameter (constant for both loops)
+                    bool is_param = false;
+                    for (const auto& [arg_name, arg] : second_args) {
                         if (arg_name == name && arg.is_scalar && !arg.is_output) {
                             is_param = true;
                             break;
                         }
                     }
-                }
-                if (!is_param) {
-                    valid_mapping = false;
-                    break;
+                    if (!is_param) {
+                        for (const auto& [arg_name, arg] : first_args) {
+                            if (arg_name == name && arg.is_scalar && !arg.is_output) {
+                                is_param = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!is_param) {
+                        valid_mapping = false;
+                        break;
+                    }
                 }
             }
+
+            if (!valid_mapping) {
+                return false;
+            }
+
+            // Store the fusion candidate
+            FusionCandidate candidate;
+            candidate.container = container;
+            candidate.consumer_subset = {consumer_expr};
+            candidate.index_mapping = index_mapping;
+
+            fusion_candidates_.push_back(candidate);
         }
-
-        if (!valid_mapping) {
-            continue;
-        }
-
-        // Additional check: verify that the mapping results in integer indices
-        // For now, we require that the coefficient divides evenly
-        // This is a simplified check - a more complete implementation would use ISL
-
-        // Store the fusion candidate
-        FusionCandidate candidate;
-        candidate.container = container;
-        candidate.consumer_access = consumer_access;
-        candidate.producer_access = producer_access;
-        candidate.consumer_memlet = consumer_memlet;
-        candidate.producer_memlet = producer_memlet;
-        candidate.consumer_block = consumer_block;
-        candidate.index_mapping = index_mapping;
-
-        fusion_candidates_.push_back(candidate);
     }
 
     // Criterion: At least one valid fusion candidate
@@ -297,112 +250,160 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
 
     auto first_indvar = first_map_.indvar();
 
-    // Insert a new producer block at the beginning of the second loop's body
     auto& second_root = second_loop_.root();
-    auto& first_child = second_root.at(0).first;
-    control_flow::Assignments empty_assignments;
-    auto& producer_block = builder.add_block_before(second_root, first_child, empty_assignments);
 
-    // Build a set of containers that are written to in the first block (outputs)
-    std::unordered_set<std::string> output_containers;
-    for (auto node : first_dataflow.data_nodes()) {
-        if (dynamic_cast<data_flow::ConstantNode*>(node) != nullptr) {
-            continue; // Skip constants
-        }
-        if (first_dataflow.in_degree(*node) > 0) {
-            output_containers.insert(node->data());
-        }
-    }
+    // For each fusion candidate (unique container+subset pair), create a temp and insert a producer block
+    // Track: candidate_index -> temp_name
+    std::vector<std::string> candidate_temps;
 
-    // Create temporary scalars for each output container
-    std::unordered_map<std::string, std::string> container_to_temp;
+    for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
+        auto& candidate = fusion_candidates_[cand_idx];
 
-    for (const auto& container : output_containers) {
-        auto& type = sdfg.type(container);
+        // Create a temp scalar for this candidate
+        auto& container_type = sdfg.type(candidate.container);
         std::string temp_name = builder.find_new_name("_fused_tmp");
-        types::Scalar tmp_type(type.primitive_type());
+        types::Scalar tmp_type(container_type.primitive_type());
         builder.add_container(temp_name, tmp_type);
-        container_to_temp[container] = temp_name;
-    }
+        candidate_temps.push_back(temp_name);
 
-    // Deep copy all nodes from first block to producer block
-    std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
+        // Insert a producer block at the beginning of the second loop's body
+        auto& first_child = second_root.at(0).first;
+        control_flow::Assignments empty_assignments;
+        auto& producer_block = builder.add_block_before(second_root, first_child, empty_assignments);
 
-    for (auto& node : first_dataflow.nodes()) {
-        auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-        if (access != nullptr) {
-            // Check if this is an output access node (written to)
-            if (first_dataflow.in_degree(*access) > 0 && container_to_temp.contains(access->data())) {
-                // Replace with temp scalar access
-                auto& temp_access = builder.add_access(producer_block, container_to_temp[access->data()]);
-                node_mapping[&node] = &temp_access;
+        // Deep copy all nodes from first block to producer block
+        std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
+
+        for (auto& node : first_dataflow.nodes()) {
+            auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+            if (access != nullptr) {
+                // Check if this is an output access node for this candidate's container
+                if (first_dataflow.in_degree(*access) > 0 && access->data() == candidate.container) {
+                    // Replace with temp scalar access
+                    auto& temp_access = builder.add_access(producer_block, temp_name);
+                    node_mapping[&node] = &temp_access;
+                } else {
+                    // Copy the access node as-is
+                    node_mapping[&node] = &builder.copy_node(producer_block, node);
+                }
             } else {
-                // Copy the access node as-is
+                // Copy other nodes (tasklets, library nodes, etc.)
                 node_mapping[&node] = &builder.copy_node(producer_block, node);
             }
-        } else {
-            // Copy other nodes (tasklets, library nodes, etc.)
-            node_mapping[&node] = &builder.copy_node(producer_block, node);
         }
-    }
 
-    // Add memlets with index substitution
-    for (auto& edge : first_dataflow.edges()) {
-        auto& src_node = edge.src();
-        auto& dst_node = edge.dst();
+        // Add memlets with index substitution using this candidate's index_mapping
+        for (auto& edge : first_dataflow.edges()) {
+            auto& src_node = edge.src();
+            auto& dst_node = edge.dst();
 
-        // Substitute indices in subset
-        data_flow::Subset new_subset;
-        for (const auto& dim : edge.subset()) {
-            // For each fusion candidate, use its index_mapping
-            auto new_dim = dim;
-            for (auto& candidate : fusion_candidates_) {
-                new_dim = symbolic::subs(new_dim, first_indvar, candidate.index_mapping);
+            // Substitute indices in subset
+            data_flow::Subset new_subset;
+            for (const auto& dim : edge.subset()) {
+                auto new_dim = symbolic::subs(dim, first_indvar, candidate.index_mapping);
+                new_dim = symbolic::expand(new_dim);
+                new_subset.push_back(new_dim);
             }
-            new_dim = symbolic::expand(new_dim);
-            new_subset.push_back(new_dim);
-        }
 
-        // For output edges (to temp scalars), use empty subset
-        auto* dst_access = dynamic_cast<data_flow::AccessNode*>(&dst_node);
-        if (dst_access != nullptr && container_to_temp.contains(dst_access->data())) {
-            new_subset.clear(); // Scalar has empty subset
-        }
+            // For output edges (to temp scalar), use empty subset
+            auto* dst_access = dynamic_cast<data_flow::AccessNode*>(&dst_node);
+            if (dst_access != nullptr && dst_access->data() == candidate.container &&
+                first_dataflow.in_degree(*dst_access) > 0) {
+                new_subset.clear(); // Scalar has empty subset
+            }
 
-        builder.add_memlet(
-            producer_block,
-            *node_mapping[&src_node],
-            edge.src_conn(),
-            *node_mapping[&dst_node],
-            edge.dst_conn(),
-            new_subset,
-            edge.base_type(),
-            edge.debug_info()
-        );
+            builder.add_memlet(
+                producer_block,
+                *node_mapping[&src_node],
+                edge.src_conn(),
+                *node_mapping[&dst_node],
+                edge.dst_conn(),
+                new_subset,
+                edge.base_type(),
+                edge.debug_info()
+            );
+        }
     }
 
-    // In the consumer blocks, replace reads from intermediate containers with reads from temp scalars
-    for (auto& candidate : fusion_candidates_) {
-        auto& consumer_block = *candidate.consumer_block;
-        auto& consumer_dataflow = consumer_block.dataflow();
-        const auto& temp_name = container_to_temp[candidate.container];
-        auto& temp_type = sdfg.type(temp_name);
+    // Now update all read accesses in consumer blocks to point to the appropriate temp
+    // We need to match each access node's memlet subset to find the right candidate
+    size_t num_producer_blocks = fusion_candidates_.size();
 
-        auto* consumer_access = candidate.consumer_access;
-
-        // Rename the access node to point to the temp scalar
-        consumer_access->data(temp_name);
-
-        // Update all outgoing edges: set empty subset (scalar) and new type
-        for (auto& edge : consumer_dataflow.out_edges(*consumer_access)) {
-            edge.set_subset({});
-            edge.set_base_type(temp_type);
+    for (size_t block_idx = num_producer_blocks; block_idx < second_root.size(); ++block_idx) {
+        auto* block = dynamic_cast<structured_control_flow::Block*>(&second_root.at(block_idx).first);
+        if (block == nullptr) {
+            continue;
         }
 
-        // Update all incoming edges: set empty subset (scalar) and new type
-        for (auto& edge : consumer_dataflow.in_edges(*consumer_access)) {
-            edge.set_subset({});
-            edge.set_base_type(temp_type);
+        auto& dataflow = block->dataflow();
+
+        // Find all read access nodes
+        for (auto& node : dataflow.nodes()) {
+            auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+            if (access == nullptr) {
+                continue;
+            }
+
+            // Only update read accesses (out_degree > 0)
+            if (dataflow.out_degree(*access) == 0) {
+                continue;
+            }
+
+            // Capture original container name before any modifications
+            std::string original_container = access->data();
+
+            // Check each outgoing memlet to find which candidates match
+            for (auto& memlet : dataflow.out_edges(*access)) {
+                if (memlet.type() != data_flow::MemletType::Computational) {
+                    continue;
+                }
+
+                const auto& memlet_subset = memlet.subset();
+
+                // Find matching candidate by container and subset
+                for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
+                    auto& candidate = fusion_candidates_[cand_idx];
+
+                    if (original_container != candidate.container) {
+                        continue;
+                    }
+
+                    // Check if subset matches
+                    if (memlet_subset.size() != candidate.consumer_subset.size()) {
+                        continue;
+                    }
+
+                    bool subset_matches = true;
+                    for (size_t d = 0; d < memlet_subset.size(); ++d) {
+                        if (!symbolic::eq(memlet_subset[d], candidate.consumer_subset[d])) {
+                            subset_matches = false;
+                            break;
+                        }
+                    }
+
+                    if (!subset_matches) {
+                        continue;
+                    }
+
+                    // Found a match - update the access node and memlet
+                    const auto& temp_name = candidate_temps[cand_idx];
+                    auto& temp_type = sdfg.type(temp_name);
+
+                    access->data(temp_name);
+
+                    // Update this memlet
+                    memlet.set_subset({});
+                    memlet.set_base_type(temp_type);
+
+                    // Also update any incoming edges
+                    for (auto& in_edge : dataflow.in_edges(*access)) {
+                        in_edge.set_subset({});
+                        in_edge.set_base_type(temp_type);
+                    }
+
+                    break; // Found the matching candidate
+                }
+            }
         }
     }
 
