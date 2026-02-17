@@ -1,4 +1,4 @@
-#include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/hip/hip.h"
 
 #include <cstdlib>
 #include <sdfg/analysis/analysis.h>
@@ -18,36 +18,36 @@
 #include <string>
 
 namespace sdfg {
-namespace cuda {
+namespace hip {
 
-void ScheduleType_CUDA::dimension(structured_control_flow::ScheduleType& schedule, const gpu::GPUDimension& dimension) {
+void ScheduleType_HIP::dimension(structured_control_flow::ScheduleType& schedule, const gpu::GPUDimension& dimension) {
     schedule.set_property("dimension", std::to_string(dimension));
 }
-gpu::GPUDimension ScheduleType_CUDA::dimension(const structured_control_flow::ScheduleType& schedule) {
+gpu::GPUDimension ScheduleType_HIP::dimension(const structured_control_flow::ScheduleType& schedule) {
     return static_cast<gpu::GPUDimension>(std::stoi(schedule.properties().at("dimension")));
 }
-void ScheduleType_CUDA::block_size(structured_control_flow::ScheduleType& schedule, const symbolic::Expression block_size) {
+void ScheduleType_HIP::block_size(structured_control_flow::ScheduleType& schedule, const symbolic::Expression block_size) {
     serializer::JSONSerializer serializer;
     schedule.set_property("block_size", serializer.expression(block_size));
 }
 
-symbolic::Integer ScheduleType_CUDA::block_size(const structured_control_flow::ScheduleType& schedule) {
+symbolic::Integer ScheduleType_HIP::block_size(const structured_control_flow::ScheduleType& schedule) {
     if (schedule.properties().find("block_size") == schedule.properties().end()) {
         if (dimension(schedule) == gpu::GPUDimension::X) {
-            return symbolic::integer(32);
+            return symbolic::integer(64); // HIP default wavefront size is 64
         } else if (dimension(schedule) == gpu::GPUDimension::Y) {
             return symbolic::integer(8);
         } else if (dimension(schedule) == gpu::GPUDimension::Z) {
             return symbolic::integer(4);
         } else {
-            throw InvalidSDFGException("Invalid CUDA dimension");
+            throw InvalidSDFGException("Invalid HIP dimension");
         }
     }
     std::string expr_str = schedule.properties().at("block_size");
     return symbolic::integer(std::stoi(expr_str));
 }
 
-bool ScheduleType_CUDA::nested_sync(const structured_control_flow::ScheduleType& schedule) {
+bool ScheduleType_HIP::nested_sync(const structured_control_flow::ScheduleType& schedule) {
     if (schedule.properties().find("nested_sync") == schedule.properties().end()) {
         return false;
     }
@@ -55,30 +55,30 @@ bool ScheduleType_CUDA::nested_sync(const structured_control_flow::ScheduleType&
     return val == "true";
 }
 
-void ScheduleType_CUDA::nested_sync(structured_control_flow::ScheduleType& schedule, const bool nested_sync) {
+void ScheduleType_HIP::nested_sync(structured_control_flow::ScheduleType& schedule, const bool nested_sync) {
     schedule.set_property("nested_sync", nested_sync ? "true" : "false");
 }
 
-void cuda_error_checking(
+void hip_error_checking(
     codegen::PrettyPrinter& stream,
     const codegen::LanguageExtension& language_extension,
     const std::string& status_variable
 ) {
-    if (!do_cuda_error_checking()) {
+    if (!do_hip_error_checking()) {
         return;
     }
-    stream << "if (" << status_variable << " != cudaSuccess) {" << std::endl;
+    stream << "if (" << status_variable << " != hipSuccess) {" << std::endl;
     stream.setIndent(stream.indent() + 4);
     stream << language_extension.external_prefix()
-           << "fprintf(stderr, \"CUDA error: %s File: %s, Line: %d\\n\", cudaGetErrorString(" << status_variable
+           << "fprintf(stderr, \"HIP error: %s File: %s, Line: %d\\n\", hipGetErrorString(" << status_variable
            << "), __FILE__, __LINE__);" << std::endl;
     stream << language_extension.external_prefix() << "exit(EXIT_FAILURE);" << std::endl;
     stream.setIndent(stream.indent() - 4);
     stream << "}" << std::endl;
 }
 
-bool do_cuda_error_checking() {
-    auto env = getenv("DOCC_CUDA_DEBUG");
+bool do_hip_error_checking() {
+    auto env = getenv("DOCC_HIP_DEBUG");
     if (env == nullptr) {
         return false;
     }
@@ -90,15 +90,15 @@ bool do_cuda_error_checking() {
     return false;
 }
 
-void check_cuda_kernel_launch_errors(codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension) {
-    if (!do_cuda_error_checking()) {
+void check_hip_kernel_launch_errors(codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension) {
+    if (!do_hip_error_checking()) {
         return;
     }
-    stream << "cudaError_t launch_err = cudaDeviceSynchronize();" << std::endl;
-    cuda_error_checking(stream, language_extension, "launch_err");
-    stream << "launch_err = cudaGetLastError();" << std::endl;
-    cuda_error_checking(stream, language_extension, "launch_err");
+    stream << "hipError_t launch_err = hipDeviceSynchronize();" << std::endl;
+    hip_error_checking(stream, language_extension, "launch_err");
+    stream << "launch_err = hipGetLastError();" << std::endl;
+    hip_error_checking(stream, language_extension, "launch_err");
 }
 
-} // namespace cuda
+} // namespace hip
 } // namespace sdfg

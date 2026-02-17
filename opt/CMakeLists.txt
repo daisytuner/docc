@@ -22,6 +22,7 @@ set(SOURCE_FILES
     src/passes/gemm_expansion_pass.cpp
     src/passes/opt_pipeline.cpp
     src/passes/scheduler/cuda_scheduler.cpp
+    src/passes/scheduler/hip_scheduler.cpp
     src/passes/scheduler/highway_scheduler.cpp
     src/passes/scheduler/loop_scheduling_pass.cpp
     src/passes/scheduler/omp_scheduler.cpp
@@ -33,6 +34,12 @@ set(SOURCE_FILES
     src/targets/cuda/cuda.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
+    src/targets/hip/blas/dot.cpp
+    src/targets/hip/blas/gemm.cpp
+    src/targets/hip/blas/utils.cpp
+    src/targets/hip/hip.cpp
+    src/targets/hip/hip_data_offloading_node.cpp
+    src/targets/hip/hip_map_dispatcher.cpp
     src/targets/highway/codegen/highway_map_dispatcher.cpp
     src/targets/offloading/data_offloading_node.cpp
     src/targets/offloading/utils.cpp
@@ -50,6 +57,8 @@ set(SOURCE_FILES
     src/transformations/offloading/gpu_condition_propagation.cpp
     src/transformations/offloading/gpu_loop_reordering.cpp
     src/transformations/offloading/gpu_tiling.cpp
+    src/transformations/offloading/hip_parallelize_nested_map.cpp
+    src/transformations/offloading/hip_transform.cpp
     src/transformations/offloading/kernel_local_storage.cpp
     src/transformations/highway_transform.cpp
     src/transformations/omp_transform.cpp

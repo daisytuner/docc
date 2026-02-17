@@ -9,28 +9,28 @@
 #include "sdfg/targets/gpu/gpu_types.h"
 
 namespace sdfg {
-namespace cuda {
+namespace hip {
 
-inline std::string CUDA_DEVICE_PREFIX = "__daisy_cuda_";
+inline std::string HIP_DEVICE_PREFIX = "__daisy_hip_";
 
 namespace blas {
 /**
- * @brief CUBLAS implementation with automatic memory transfers
- * Uses NVIDIA CUBLAS with automatic host-device data transfers
+ * @brief HIPBLAS implementation with automatic memory transfers
+ * Uses AMD HIPBLAS with automatic host-device data transfers
  */
-inline data_flow::ImplementationType ImplementationType_CUBLASWithTransfers{"CUBLASWithTransfers"};
+inline data_flow::ImplementationType ImplementationType_HIPBLASWithTransfers{"HIPBLASWithTransfers"};
 
 /**
- * @brief CUBLAS implementation without memory transfers
- * Uses NVIDIA CUBLAS assuming data is already on GPU
+ * @brief HIPBLAS implementation without memory transfers
+ * Uses AMD HIPBLAS assuming data is already on GPU
  */
-inline data_flow::ImplementationType ImplementationType_CUBLASWithoutTransfers{"CUBLASWithoutTransfers"};
+inline data_flow::ImplementationType ImplementationType_HIPBLASWithoutTransfers{"HIPBLASWithoutTransfers"};
 } // namespace blas
 
 // Use shared GPU dimension type
-using CUDADimension = gpu::GPUDimension;
+using HIPDimension = gpu::GPUDimension;
 
-class ScheduleType_CUDA {
+class ScheduleType_HIP {
 public:
     static void dimension(structured_control_flow::ScheduleType& schedule, const gpu::GPUDimension& dimension);
     static gpu::GPUDimension dimension(const structured_control_flow::ScheduleType& schedule);
@@ -38,7 +38,7 @@ public:
     static symbolic::Integer block_size(const structured_control_flow::ScheduleType& schedule);
     static bool nested_sync(const structured_control_flow::ScheduleType& schedule);
     static void nested_sync(structured_control_flow::ScheduleType& schedule, const bool nested_sync);
-    static const std::string value() { return "CUDA"; }
+    static const std::string value() { return "HIP"; }
     static structured_control_flow::ScheduleType create() {
         auto schedule_type =
             structured_control_flow::ScheduleType(value(), structured_control_flow::ScheduleTypeCategory::Offloader);
@@ -47,18 +47,18 @@ public:
     }
 };
 
-inline codegen::TargetType TargetType_CUDA{ScheduleType_CUDA::value()};
+inline codegen::TargetType TargetType_HIP{ScheduleType_HIP::value()};
 
 
-void cuda_error_checking(
+void hip_error_checking(
     codegen::PrettyPrinter& stream,
     const codegen::LanguageExtension& language_extension,
     const std::string& status_variable
 );
 
-bool do_cuda_error_checking();
+bool do_hip_error_checking();
 
-void check_cuda_kernel_launch_errors(codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension);
+void check_hip_kernel_launch_errors(codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension);
 
-} // namespace cuda
+} // namespace hip
 } // namespace sdfg

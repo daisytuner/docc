@@ -51,6 +51,7 @@ set(SOURCE_FILES
     src/codegen/language_extensions/c_language_extension.cpp
     src/codegen/language_extensions/cpp_language_extension.cpp
     src/codegen/language_extensions/cuda_language_extension.cpp
+    src/codegen/language_extensions/hip_language_extension.cpp
     src/codegen/code_generators/c_code_generator.cpp
     src/codegen/code_generators/c_style_base_code_generator.cpp
     src/codegen/code_generators/cpp_code_generator.cpp
