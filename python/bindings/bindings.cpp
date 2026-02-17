@@ -35,7 +35,7 @@
 #include <sdfg/targets/onnx/plugin.h>
 
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
-#include "sdfg/passes/rpc/rpc_loop_opt.h"
+#include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
 namespace py = pybind11;

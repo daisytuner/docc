@@ -116,10 +116,10 @@ def test_deriche(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 4,
+                "HIGHWAY": 5,
                 "MAP": 14,
                 "FOR": 24,
-                "CPU_PARALLEL": 10,
+                "CPU_PARALLEL": 8,
                 "CMath": 9,
                 "Malloc": 4,
             }

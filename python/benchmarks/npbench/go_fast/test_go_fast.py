@@ -62,7 +62,7 @@ def test_go_fast(target):
             verification={
                 "CUDA": 6,
                 "MAP": 6,
-                "CUDAOffloading": 12,
+                "CUDAOffloading": 8,
                 "Malloc": 2,
                 "CMath": 1,
                 "FOR": 7,

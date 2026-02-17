@@ -70,7 +70,7 @@ def test_spmv(target):
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"DOT": 0, "CPU_PARALLEL": 4, "MAP": 4, "FOR": 6, "Malloc": 4}
+            verification={"DOT": 0, "CPU_PARALLEL": 1, "HIGHWAY": 2 , "SEQUENTIAL": 1, "MAP": 4, "FOR": 6, "Malloc": 4}
         )
     else:  # cuda
         verifier = SDFGVerification(

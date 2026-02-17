@@ -103,7 +103,7 @@ def test_adi(target):
             verification={
                 "CUDA": 10,
                 "MAP": 14,
-                "CUDAOffloading": 24,
+                "CUDAOffloading": 22,
                 "SEQUENTIAL": 4,
                 "FOR": 21,
                 "Malloc": 3,

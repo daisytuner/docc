@@ -25,7 +25,7 @@ struct SchedulerLoopInfo {
 };
 
 
-class LoopScheduler : public Pass {
+class LoopScheduler {
 protected:
     PassReportConsumer* report_ = nullptr;
 
@@ -49,8 +49,6 @@ public:
     virtual void set_report(PassReportConsumer* report) { report_ = report; }
 
     virtual std::unordered_set<ScheduleTypeCategory> compatible_types() = 0;
-
-    bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };
 
 } // namespace scheduler

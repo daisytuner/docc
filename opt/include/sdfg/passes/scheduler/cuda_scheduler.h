@@ -26,8 +26,6 @@ public:
 
     static std::string target() { return "cuda"; };
 
-    std::string name() override { return "CUDAScheduler"; };
-
     std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };
 

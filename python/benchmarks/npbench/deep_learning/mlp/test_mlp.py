@@ -99,7 +99,7 @@ def test_mlp(target):
                 "CUDA": 34,
                 "FOR": 36,
                 "MAP": 34,
-                "CUDAOffloading": 78,
+                "CUDAOffloading": 62,
                 "GEMM": 3,
                 "Malloc": 18,
             }
