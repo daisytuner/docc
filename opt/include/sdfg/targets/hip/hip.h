@@ -5,7 +5,7 @@
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
 #include "sdfg/codegen/language_extension.h"
 #include "sdfg/codegen/utils.h"
-#include "sdfg/structured_control_flow/map.h"
+#include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_types.h"
 
 namespace sdfg {
@@ -30,21 +30,14 @@ inline data_flow::ImplementationType ImplementationType_HIPBLASWithoutTransfers{
 // Use shared GPU dimension type
 using HIPDimension = gpu::GPUDimension;
 
-class ScheduleType_HIP {
+/**
+ * @brief HIP schedule type inheriting shared GPU functionality
+ * Provides HIP-specific value() and default block size (64 for wavefront size)
+ */
+class ScheduleType_HIP : public gpu::ScheduleType_GPU_Base<ScheduleType_HIP> {
 public:
-    static void dimension(structured_control_flow::ScheduleType& schedule, const gpu::GPUDimension& dimension);
-    static gpu::GPUDimension dimension(const structured_control_flow::ScheduleType& schedule);
-    static void block_size(structured_control_flow::ScheduleType& schedule, const symbolic::Expression block_size);
-    static symbolic::Integer block_size(const structured_control_flow::ScheduleType& schedule);
-    static bool nested_sync(const structured_control_flow::ScheduleType& schedule);
-    static void nested_sync(structured_control_flow::ScheduleType& schedule, const bool nested_sync);
     static const std::string value() { return "HIP"; }
-    static structured_control_flow::ScheduleType create() {
-        auto schedule_type =
-            structured_control_flow::ScheduleType(value(), structured_control_flow::ScheduleTypeCategory::Offloader);
-        dimension(schedule_type, gpu::GPUDimension::X);
-        return schedule_type;
-    }
+    static symbolic::Integer default_block_size_x() { return symbolic::integer(64); }
 };
 
 inline codegen::TargetType TargetType_HIP{ScheduleType_HIP::value()};
