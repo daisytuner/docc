@@ -12,3 +12,10 @@ TEST(PipelineTest, RegisterPass) {
 
     EXPECT_EQ(pipeline.size(), 1);
 }
+
+TEST(PipelineTest, MapFusionPipeline) {
+    passes::Pipeline pipeline = passes::Pipeline::map_fusion();
+
+    EXPECT_EQ(pipeline.name(), "MapFusion");
+    EXPECT_EQ(pipeline.size(), 4);
+}
