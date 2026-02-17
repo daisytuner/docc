@@ -40,6 +40,7 @@ set(SOURCE_FILES
     src/targets/hip/hip.cpp
     src/targets/hip/hip_data_offloading_node.cpp
     src/targets/hip/hip_map_dispatcher.cpp
+    src/targets/gpu/gpu_map_utils.cpp
     src/targets/highway/codegen/highway_map_dispatcher.cpp
     src/targets/offloading/data_offloading_node.cpp
     src/targets/offloading/utils.cpp

@@ -5,6 +5,7 @@
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/hip/hip.h"
 
 
@@ -50,14 +51,6 @@ private:
         symbolic::SymbolSet& z_vars,
         std::vector<std::string>& arguments_declaration
     );
-
-    symbolic::Expression find_nested_hip_blocksize(analysis::AnalysisManager& analysis_manager, HIPDimension dimension);
-
-    symbolic::Expression find_nested_hip_iterations(analysis::AnalysisManager& analysis_manager, HIPDimension dimension);
-
-    bool is_outermost_hip_map(analysis::AnalysisManager& analysis_manager);
-
-    symbolic::SymbolSet get_indvars(analysis::AnalysisManager& analysis_manager, HIPDimension dimension);
 
 public:
     HIPMapDispatcher(

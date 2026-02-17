@@ -6,6 +6,7 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 
 
 namespace sdfg {
@@ -50,14 +51,6 @@ private:
         symbolic::SymbolSet& z_vars,
         std::vector<std::string>& arguments_declaration
     );
-
-    symbolic::Expression find_nested_cuda_blocksize(analysis::AnalysisManager& analysis_manager, CUDADimension dimension);
-
-    symbolic::Expression find_nested_cuda_iterations(analysis::AnalysisManager& analysis_manager, CUDADimension dimension);
-
-    bool is_outermost_cuda_map(analysis::AnalysisManager& analysis_manager);
-
-    symbolic::SymbolSet get_indvars(analysis::AnalysisManager& analysis_manager, CUDADimension dimension);
 
 public:
     CUDAMapDispatcher(

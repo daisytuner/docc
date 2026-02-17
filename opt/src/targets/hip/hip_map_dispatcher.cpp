@@ -84,9 +84,9 @@ void HIPMapDispatcher::dispatch_node(
 
     std::vector<std::string> scope_variables;
 
-    auto x_vars = get_indvars(analysis_manager, HIPDimension::X);
-    auto y_vars = get_indvars(analysis_manager, HIPDimension::Y);
-    auto z_vars = get_indvars(analysis_manager, HIPDimension::Z);
+    auto x_vars = gpu::get_gpu_indvars<ScheduleType_HIP>(node_, analysis_manager, HIPDimension::X);
+    auto y_vars = gpu::get_gpu_indvars<ScheduleType_HIP>(node_, analysis_manager, HIPDimension::Y);
+    auto z_vars = gpu::get_gpu_indvars<ScheduleType_HIP>(node_, analysis_manager, HIPDimension::Z);
 
     for (auto& var : scope_variables_unfiltered) {
         if (x_vars.find(symbolic::symbol(var)) == x_vars.end() && y_vars.find(symbolic::symbol(var)) == y_vars.end() &&
@@ -103,12 +103,12 @@ void HIPMapDispatcher::dispatch_node(
         arguments_declaration.push_back(this->language_extension_.declaration(container, sdfg_.type(container)));
     }
 
-    auto block_size_x = find_nested_hip_blocksize(analysis_manager, HIPDimension::X);
-    auto block_size_y = find_nested_hip_blocksize(analysis_manager, HIPDimension::Y);
-    auto block_size_z = find_nested_hip_blocksize(analysis_manager, HIPDimension::Z);
-    auto num_iters_x = find_nested_hip_iterations(analysis_manager, HIPDimension::X);
-    auto num_iters_y = find_nested_hip_iterations(analysis_manager, HIPDimension::Y);
-    auto num_iters_z = find_nested_hip_iterations(analysis_manager, HIPDimension::Z);
+    auto block_size_x = gpu::find_nested_gpu_blocksize<ScheduleType_HIP>(node_, analysis_manager, HIPDimension::X);
+    auto block_size_y = gpu::find_nested_gpu_blocksize<ScheduleType_HIP>(node_, analysis_manager, HIPDimension::Y);
+    auto block_size_z = gpu::find_nested_gpu_blocksize<ScheduleType_HIP>(node_, analysis_manager, HIPDimension::Z);
+    auto num_iters_x = gpu::find_nested_gpu_iterations<ScheduleType_HIP>(node_, analysis_manager, HIPDimension::X);
+    auto num_iters_y = gpu::find_nested_gpu_iterations<ScheduleType_HIP>(node_, analysis_manager, HIPDimension::Y);
+    auto num_iters_z = gpu::find_nested_gpu_iterations<ScheduleType_HIP>(node_, analysis_manager, HIPDimension::Z);
 
     symbolic::Expression num_iters;
     if (HIPDimension::X == ScheduleType_HIP::dimension(node_.schedule_type())) {
@@ -131,7 +131,7 @@ void HIPMapDispatcher::dispatch_node(
 
     std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
 
-    if (this->is_outermost_hip_map(analysis_manager)) {
+    if (gpu::is_outermost_gpu_map<ScheduleType_HIP>(node_, analysis_manager)) {
         this->dispatch_kernel_call(
             main_stream,
             kernel_name,
@@ -184,7 +184,7 @@ void HIPMapDispatcher::dispatch_kernel_body(
     symbolic::Expression& num_iterations
 ) {
     codegen::HIPLanguageExtension hip_language_extension(sdfg_);
-    if (is_outermost_hip_map(analysis_manager_)) {
+    if (gpu::is_outermost_gpu_map<ScheduleType_HIP>(node_, analysis_manager_)) {
         // Declare and optionally allocate scope variables
         for (auto& local : scope_variables) {
             if (local.starts_with("__daisy_hip")) {
@@ -328,160 +328,6 @@ void HIPMapDispatcher::dispatch_kernel_preamble(
     for (auto& var : z_vars) {
         library_stream << "int " << var->get_name() << " = " << indvar_z << ";" << std::endl;
     }
-}
-
-symbolic::Expression HIPMapDispatcher::
-    find_nested_hip_blocksize(analysis::AnalysisManager& analysis_manager, HIPDimension dimension) {
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto loops = loop_analysis.descendants(&node_);
-    loops.insert(&node_);
-
-    auto loop_tree_paths = loop_analysis.loop_tree_paths(&node_);
-    for (auto& path : loop_tree_paths) {
-        bool foundX = false;
-        bool foundY = false;
-        bool foundZ = false;
-        for (auto& loop : path) {
-            if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
-                if (map->schedule_type().value() == ScheduleType_HIP::value()) {
-                    if (ScheduleType_HIP::dimension(map->schedule_type()) == HIPDimension::X) {
-                        if (foundX) {
-                            throw InvalidSDFGException("Nested map in HIP kernel has repeated X dimension");
-                        }
-                        foundX = true;
-                    } else if (ScheduleType_HIP::dimension(map->schedule_type()) == HIPDimension::Y) {
-                        if (foundY) {
-                            throw InvalidSDFGException("Nested map in HIP kernel has repeated Y dimension");
-                        }
-                        foundY = true;
-                    } else if (ScheduleType_HIP::dimension(map->schedule_type()) == HIPDimension::Z) {
-                        if (foundZ) {
-                            throw InvalidSDFGException("Nested map in HIP kernel has repeated Z dimension");
-                        }
-                        foundZ = true;
-                    }
-                }
-            }
-        }
-    }
-
-    for (auto loop : loops) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
-            if (map->schedule_type().value() != ScheduleType_HIP::value() &&
-                map->schedule_type().value() != ScheduleType_Sequential::value()) {
-                throw InvalidSDFGException("Nested map in HIP kernel not HIP or Sequential");
-            }
-
-            if (map->schedule_type().value() == ScheduleType_Sequential::value()) {
-                continue;
-            }
-
-            if (ScheduleType_HIP::dimension(map->schedule_type()) != dimension) {
-                continue;
-            }
-
-            if (ScheduleType_HIP::dimension(map->schedule_type()) == dimension) {
-                return ScheduleType_HIP::block_size(map->schedule_type());
-            }
-        }
-    }
-    return symbolic::one();
-}
-
-symbolic::Expression HIPMapDispatcher::
-    find_nested_hip_iterations(analysis::AnalysisManager& analysis_manager, HIPDimension dimension) {
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto loops = loop_analysis.descendants(&node_);
-    loops.insert(&node_);
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-
-    symbolic::Expression init = SymEngine::null;
-    symbolic::Expression stride = SymEngine::null;
-    symbolic::Expression bound = SymEngine::null;
-
-    for (auto loop : loops) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
-            if (map->schedule_type().value() != ScheduleType_HIP::value() &&
-                map->schedule_type().value() != ScheduleType_Sequential::value()) {
-                throw InvalidSDFGException("Nested map in HIP kernel not HIP or Sequential");
-            }
-            if (map->schedule_type().value() == ScheduleType_Sequential::value()) {
-                continue;
-            }
-            if (ScheduleType_HIP::dimension(map->schedule_type()) != dimension) {
-                continue;
-            }
-            if (init != SymEngine::null) {
-                if (symbolic::eq(init, map->init())) {
-                    throw InvalidSDFGException("Nested map in HIP kernel has repeated dimension with different init");
-                }
-            }
-
-            init = map->init();
-            if (!symbolic::eq(init, symbolic::zero())) {
-                throw InvalidSDFGException("Init is not zero");
-            }
-
-            if (stride != SymEngine::null) {
-                if (!symbolic::eq(stride, analysis::LoopAnalysis::stride(map))) {
-                    throw InvalidSDFGException("Nested map in HIP kernel has repeated dimension with different stride");
-                }
-            }
-
-            stride = analysis::LoopAnalysis::stride(map);
-            if (!symbolic::eq(stride, symbolic::one())) {
-                throw InvalidSDFGException("Stride is not one");
-            }
-
-            if (bound != SymEngine::null) {
-                if (!symbolic::eq(bound, analysis::LoopAnalysis::canonical_bound(map, assumptions_analysis))) {
-                    throw InvalidSDFGException("Nested map in HIP kernel has repeated dimension with different bound");
-                }
-            }
-
-            bound = analysis::LoopAnalysis::canonical_bound(map, assumptions_analysis);
-            if (bound == SymEngine::null) {
-                throw InvalidSDFGException("Canonical bound is null");
-            }
-            auto num_iterations = symbolic::div(bound, stride);
-            num_iterations = symbolic::sub(num_iterations, init);
-
-            return num_iterations;
-        }
-    }
-    return symbolic::one();
-}
-
-bool HIPMapDispatcher::is_outermost_hip_map(analysis::AnalysisManager& analysis_manager) {
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto& loop_tree = loop_analysis.loop_tree();
-    structured_control_flow::ControlFlowNode* ancestor = loop_tree.at(&node_);
-    while (ancestor != nullptr) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(ancestor)) {
-            if (map->schedule_type().value() == ScheduleType_HIP::value()) {
-                return false;
-            }
-        }
-        ancestor = loop_tree.at(ancestor);
-    }
-    return true;
-}
-
-symbolic::SymbolSet HIPMapDispatcher::get_indvars(analysis::AnalysisManager& analysis_manager, HIPDimension dimension) {
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto loops = loop_analysis.descendants(&node_);
-    loops.insert(&node_);
-    symbolic::SymbolSet indvars;
-    for (const auto& loop : loops) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
-            if (map->schedule_type().value() == ScheduleType_HIP::value()) {
-                if (ScheduleType_HIP::dimension(map->schedule_type()) == dimension) {
-                    indvars.insert(map->indvar());
-                }
-            }
-        }
-    }
-    return indvars;
 }
 
 codegen::InstrumentationInfo HIPMapDispatcher::instrumentation_info() const {
