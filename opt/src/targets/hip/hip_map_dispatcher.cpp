@@ -247,15 +247,14 @@ void HIPMapDispatcher::dispatch_kernel_call(
     main_stream.setIndent(main_stream.indent() + 4);
 
     // Kernel launch
-    main_stream << kernel_name << "<<<";
+    main_stream << "hipLaunchKernelGGL(" << kernel_name << ", ";
     main_stream << "dim3((int)(" << this->language_extension_.expression(num_blocks_x) << "), ";
     main_stream << "(int)(" << this->language_extension_.expression(num_blocks_y) << "), ";
     main_stream << "(int)(" << this->language_extension_.expression(num_blocks_z) << ")), ";
     main_stream << "dim3((int)(" << this->language_extension_.expression(block_size_x) << "), ";
     main_stream << "(int)(" << this->language_extension_.expression(block_size_y) << "), ";
-    main_stream << "(int)(" << this->language_extension_.expression(block_size_z) << "))";
-    main_stream << ">>>";
-    main_stream << "(";
+    main_stream << "(int)(" << this->language_extension_.expression(block_size_z) << ")), ";
+    main_stream << "0, 0, "; // shared memory size and stream
     main_stream << helpers::join(arguments_device, ", ");
     main_stream << ")";
     main_stream << ";" << std::endl;
