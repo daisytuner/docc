@@ -130,21 +130,21 @@ steps:
       energy: true
       env:
         DOCC_CI: regions
-    hdiff_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_hdiff.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    hdiff_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_hdiff.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    hdiff_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_hdiff.py --docc --size=M --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
+    # hdiff_numpy:
+    #   command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_hdiff.py --numpy --size=M
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    # hdiff_omp:
+    #   command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_hdiff.py --docc --size=M --target=openmp
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    # hdiff_cuda:
+    #   command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_hdiff.py --docc --size=M --target=cuda
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
     vadv_numpy:
       command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_vadv.py --numpy --size=M
       energy: true
