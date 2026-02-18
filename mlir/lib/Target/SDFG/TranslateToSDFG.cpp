@@ -102,11 +102,16 @@ public:
             }
             return std::make_unique<::sdfg::types::Pointer>(*base_type);
         } else if (auto tensor_type = dyn_cast_or_null<TensorType>(mlir_type)) {
+            ArrayRef<int64_t> shape = tensor_type.getShape();
+            sdfg::symbolic::MultiExpression multi_expr;
+            for (int64_t dim : shape) {
+                multi_expr.push_back(sdfg::symbolic::integer(dim));
+            }
             auto base_type = this->convertType(tensor_type.getElementType());
             if (!base_type) {
                 return nullptr;
             }
-            return std::make_unique<::sdfg::types::Pointer>(*base_type);
+            return std::make_unique<::sdfg::types::Tensor>(*base_type, multi_expr);
         }
         return nullptr;
     }
