@@ -26,12 +26,13 @@ bool ReLUNode::expand_operation(
     structured_control_flow::Sequence& body,
     const std::string& input_name,
     const std::string& output_name,
-    const types::IType& input_type,
-    const types::IType& output_type,
+    const types::Tensor& input_type,
+    const types::Tensor& output_type,
     const data_flow::Subset& subset
 ) {
     // Add code
     types::Scalar base_type(input_type.primitive_type());
+    types::Tensor scalar_tensor(base_type.primitive_type(), {});
 
     auto& code_block = builder.add_block(body);
     auto& input_node_new = builder.add_access(code_block, input_name);
@@ -42,7 +43,7 @@ bool ReLUNode::expand_operation(
         code_block, code_block.debug_info(), cmath::CMathFunction::fmax, input_type.primitive_type()
     );
 
-    builder.add_computational_memlet(code_block, zero_node, tasklet, "_in1", {}, base_type);
+    builder.add_computational_memlet(code_block, zero_node, tasklet, "_in1", {}, scalar_tensor);
     builder.add_computational_memlet(code_block, input_node_new, tasklet, "_in2", subset, input_type);
     builder.add_computational_memlet(code_block, tasklet, "_out", output_node_new, subset, output_type);
 

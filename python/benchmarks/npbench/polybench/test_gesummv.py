@@ -28,54 +28,39 @@ def kernel(alpha, beta, A, B, x):
 def test_gesummv(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 6,
-                "MAP": 6,
-                "SEQUENTIAL": 6,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
-                "GEMM": 2,
-                "DOT": 0,
-            }
+            verification={"GEMM": 2, "SEQUENTIAL": 5, "FOR": 5, "MAP": 5, "Malloc": 4}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 6,
-                "MAP": 6,
-                "SEQUENTIAL": 2,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 4,
                 "GEMM": 2,
-                "DOT": 0,
+                "HIGHWAY": 3,
+                "SEQUENTIAL": 2,
+                "FOR": 5,
+                "MAP": 5,
+                "Malloc": 4,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 6,
-                "MAP": 6,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 4,
-                "HIGHWAY": 2,
                 "GEMM": 2,
-                "DOT": 0,
+                "HIGHWAY": 2,
+                "CPU_PARALLEL": 3,
+                "FOR": 5,
+                "MAP": 5,
+                "Malloc": 4,
             }
         )
     else:  # cuda
         verifier = SDFGVerification(
             verification={
-                "FOR": 6,
-                "MAP": 6,
-                "SEQUENTIAL": 0,
-                "CUDA": 6,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
                 "GEMM": 2,
-                "DOT": 0,
+                "CUDA": 5,
+                "FOR": 5,
+                "MAP": 5,
+                "CUDAOffloading": 14,
+                "Malloc": 4,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

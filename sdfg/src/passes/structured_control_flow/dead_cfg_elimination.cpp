@@ -14,15 +14,24 @@ bool DeadCFGElimination::is_dead(const structured_control_flow::ControlFlowNode&
         return (if_else_stmt->size() == 0);
     } else if (auto while_stmt = dynamic_cast<const structured_control_flow::While*>(&node)) {
         return is_dead(while_stmt->root());
-    } else if (dynamic_cast<const structured_control_flow::For*>(&node)) {
-        return false;
+    } else if (auto sloop = dynamic_cast<const structured_control_flow::StructuredLoop*>(&node)) {
+        if (sloop->root().size() != 0) {
+            return false;
+        }
+        // TODO: Check use of indvar later
+        return permissive_;
     }
 
     return false;
 };
 
 DeadCFGElimination::DeadCFGElimination()
-    : Pass() {
+    : Pass(), permissive_(false) {
+
+      };
+
+DeadCFGElimination::DeadCFGElimination(bool permissive)
+    : Pass(), permissive_(permissive) {
 
       };
 

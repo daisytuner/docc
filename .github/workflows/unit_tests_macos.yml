@@ -26,7 +26,7 @@ jobs:
           brew install gmp isl nlohmann-json boost
           brew install highway libomp
 
-      - name: CMAKE Setup
+      - name: Build
         run: |
           mkdir build
           cd build
@@ -39,6 +39,9 @@ jobs:
             ..
           ninja
 
+      - name: Unit Tests
+        run: |
+          cd build/
           ./sdfg/tests/sdfglib_test
           ./opt/tests/sdfgopt_test
           ./tutorial/printf_target/tests/printf_target_test

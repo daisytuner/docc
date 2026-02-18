@@ -63,6 +63,8 @@ symbolic::Expression Tensor::total_elements() const {
     return total;
 };
 
+bool Tensor::is_scalar() const { return this->shape_.empty(); }
+
 TypeID Tensor::type_id() const { return TypeID::Tensor; };
 
 bool Tensor::operator==(const IType& other) const {
@@ -120,6 +122,17 @@ std::string Tensor::print() const {
         }
     }
     result += "]";
+    result += ", strides=[";
+    for (size_t i = 0; i < this->strides_.size(); ++i) {
+        result += this->strides_.at(i)->__str__();
+        if (i < this->strides_.size() - 1) {
+            result += ", ";
+        }
+    }
+    result += "]";
+    if (!symbolic::eq(this->offset_, symbolic::zero())) {
+        result += ", offset=" + this->offset_->__str__();
+    }
     result += ")";
     return result;
 };
@@ -160,10 +173,7 @@ std::unique_ptr<Tensor> Tensor::flip(size_t axis) const {
     auto shape_minus_one = SymEngine::sub(this->shape_[axis], SymEngine::integer(1));
     auto offset_adjustment = SymEngine::mul(this->strides_[axis], shape_minus_one);
 
-    symbolic::Expression new_offset = this->offset_;
-    if (SymEngine::is_a<SymEngine::Integer>(*offset_adjustment)) {
-        new_offset = SymEngine::add(new_offset, offset_adjustment);
-    }
+    symbolic::Expression new_offset = SymEngine::add(this->offset_, offset_adjustment);
 
     return std::make_unique<Tensor>(
         this->storage_type(),

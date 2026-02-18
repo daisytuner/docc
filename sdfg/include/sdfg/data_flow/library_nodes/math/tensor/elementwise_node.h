@@ -107,6 +107,8 @@ public:
         const std::vector<symbolic::Expression>& shape
     );
 
+    void validate(const Function& function) const override;
+
     /**
      * @brief Get the tensor shape
      * @return Logical tensor shape
@@ -150,8 +152,8 @@ public:
         structured_control_flow::Sequence& body,
         const std::string& input_name,
         const std::string& output_name,
-        const types::IType& input_type,
-        const types::IType& output_type,
+        const types::Tensor& input_type,
+        const types::Tensor& output_type,
         const data_flow::Subset& subset
     ) = 0;
 };
@@ -240,6 +242,8 @@ public:
         const std::vector<symbolic::Expression>& shape
     );
 
+    void validate(const Function& function) const override;
+
     /**
      * @brief Get the tensor shape
      * @return Logical tensor shape
@@ -286,9 +290,9 @@ public:
         const std::string& input_name_a,
         const std::string& input_name_b,
         const std::string& output_name,
-        const types::IType& input_type_a,
-        const types::IType& input_type_b,
-        const types::IType& output_type,
+        const types::Tensor& input_type_a,
+        const types::Tensor& input_type_b,
+        const types::Tensor& output_type,
         const data_flow::Subset& subset
     ) = 0;
 };

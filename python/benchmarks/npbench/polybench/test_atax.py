@@ -67,14 +67,12 @@ def test_atax(target):
     else:  # cuda
         verifier = SDFGVerification(
             verification={
+                "CUDA": 1,
                 "FOR": 1,
                 "MAP": 1,
-                "SEQUENTIAL": 0,
-                "CUDA": 1,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "CUDAOffloading": 4,
                 "GEMM": 2,
-                "DOT": 0,
+                "Malloc": 2,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target=target, verifier=verifier)

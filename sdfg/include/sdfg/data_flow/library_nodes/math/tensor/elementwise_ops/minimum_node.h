@@ -28,9 +28,9 @@ public:
         const std::string& input_name_a,
         const std::string& input_name_b,
         const std::string& output_name,
-        const types::IType& input_type_a,
-        const types::IType& input_type_b,
-        const types::IType& output_type,
+        const types::Tensor& input_type_a,
+        const types::Tensor& input_type_b,
+        const types::Tensor& output_type,
         const data_flow::Subset& subset
     ) override;
 

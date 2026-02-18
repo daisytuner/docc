@@ -3,6 +3,15 @@ from docc.sdfg import Scalar, Array, Pointer, Structure, PrimitiveType
 
 import numpy as np
 
+
+def idiv(a, b):
+    """Integer division (floor division for positive numbers)."""
+    return int(a) // int(b)
+
+
+# Evaluation context for shape expressions
+_EVAL_GLOBALS = {"idiv": idiv}
+
 _CTYPES_MAP = {
     PrimitiveType.Bool: ctypes.c_bool,
     PrimitiveType.Int8: ctypes.c_int8,
@@ -27,6 +36,7 @@ class CompiledSDFG:
         structure_member_info=None,
         output_args=None,
         output_shapes=None,
+        output_strides=None,
     ):
         self.lib_path = lib_path
         self.sdfg = sdfg
@@ -43,6 +53,7 @@ class CompiledSDFG:
                 self.output_args = out_args_str.split(",")
 
         self.output_shapes = output_shapes or {}
+        self.output_strides = output_strides or {}
 
         # Cache for ctypes structure definitions
         self._ctypes_structures = {}
@@ -77,9 +88,19 @@ class CompiledSDFG:
             index = match.group(2)
 
             # Skip known function names
-            known_functions = {"int", "float", "abs", "min", "max", "sum", "len"}
+            known_functions = {
+                "int",
+                "float",
+                "abs",
+                "min",
+                "max",
+                "sum",
+                "len",
+                "idiv",
+            }
             if name.lower() in known_functions:
-                placeholder = f"__FUNC__{name}__{index}__"
+                # Use unique delimiters that won't appear in expressions
+                placeholder = f"@@@FUNC@@@{name}@@@{index}@@@END@@@"
                 result = result[: match.start()] + placeholder + result[match.end() :]
             else:
                 result = (
@@ -87,7 +108,7 @@ class CompiledSDFG:
                 )
 
         result = re.sub(
-            r"__FUNC__([a-zA-Z_][a-zA-Z0-9_]*)__([^_]+)__", r"\1(\2)", result
+            r"@@@FUNC@@@([a-zA-Z_][a-zA-Z0-9_]*)@@@(.+?)@@@END@@@", r"\1(\2)", result
         )
 
         return result
@@ -155,7 +176,7 @@ class CompiledSDFG:
                         for dim_str in return_shape_str.split(","):
                             try:
                                 eval_str = self._convert_to_python_syntax(str(dim_str))
-                                val = eval(eval_str, {}, shape_symbol_values)
+                                val = eval(eval_str, _EVAL_GLOBALS, shape_symbol_values)
                                 shape.append(int(val))
                             except Exception:
                                 # Can't evaluate shape, return raw pointer
@@ -308,7 +329,7 @@ class CompiledSDFG:
                             # Convert SDFG parentheses notation to Python bracket notation
                             # e.g., "A_row(0)" -> "A_row[0]"
                             eval_str = self._convert_to_python_syntax(str(dim_str))
-                            val = eval(eval_str, {}, shape_symbol_values)
+                            val = eval(eval_str, _EVAL_GLOBALS, shape_symbol_values)
                             size *= int(val)
                         except Exception as e:
                             raise RuntimeError(
@@ -403,9 +424,33 @@ class CompiledSDFG:
                             shape = []
                             for dim_str in dims:
                                 eval_str = self._convert_to_python_syntax(str(dim_str))
-                                val = eval(eval_str, {}, shape_symbol_values)
+                                val = eval(eval_str, _EVAL_GLOBALS, shape_symbol_values)
                                 shape.append(int(val))
-                            arr = arr.reshape(shape)
+
+                            # Use strides directly if available
+                            if name in self.output_strides:
+                                stride_strs = self.output_strides[name]
+                                try:
+                                    # Evaluate stride expressions and convert to byte strides
+                                    itemsize = arr.itemsize
+                                    byte_strides = tuple(
+                                        int(
+                                            eval(
+                                                self._convert_to_python_syntax(str(s)),
+                                                {},
+                                                shape_symbol_values,
+                                            )
+                                        )
+                                        * itemsize
+                                        for s in stride_strs
+                                    )
+                                    arr = np.lib.stride_tricks.as_strided(
+                                        arr, shape=shape, strides=byte_strides
+                                    )
+                                except:
+                                    arr = arr.reshape(shape)
+                            else:
+                                arr = arr.reshape(shape)
                         except:
                             pass
                     results.append(arr)
@@ -451,7 +496,7 @@ class CompiledSDFG:
             # Simple evaluation using eval with shape_values
             # Warning: eval is unsafe, but here expressions come from our compiler
             try:
-                val = eval(expr, {}, shape_values)
+                val = eval(expr, _EVAL_GLOBALS, shape_values)
                 evaluated_shape.append(int(val))
             except Exception:
                 return None

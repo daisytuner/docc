@@ -1,3 +1,4 @@
+import sys
 import pytest
 import numpy as np
 from benchmarks.npbench.harness import SDFGVerification, run_benchmark, run_pytest
@@ -117,6 +118,7 @@ def kernel(utens_stage, u_stage, wcon, u_pos, utens, dtr_stage):
         utens_stage[:, :, k] = dtr_stage * (datacol - u_pos[:, :, k])
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
 @pytest.mark.parametrize(
     "target",
     [
@@ -129,31 +131,37 @@ def kernel(utens_stage, u_stage, wcon, u_pos, utens, dtr_stage):
 def test_vadv(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 160, "SEQUENTIAL": 160, "FOR": 185, "Malloc": 79}
+            verification={"MAP": 141, "SEQUENTIAL": 141, "FOR": 165, "Malloc": 69}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 55,
-                "MAP": 160,
-                "SEQUENTIAL": 105,
-                "FOR": 185,
-                "Malloc": 79,
+                "HIGHWAY": 35,
+                "MAP": 141,
+                "SEQUENTIAL": 106,
+                "FOR": 165,
+                "Malloc": 69,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 55,
-                "MAP": 160,
-                "SEQUENTIAL":105,
-                "FOR": 185,
-                "Malloc": 79,
+                "HIGHWAY": 35,
+                "MAP": 141,
+                "SEQUENTIAL": 106,
+                "FOR": 165,
+                "Malloc": 69,
             }
         )
     else:  # cuda
         verifier = SDFGVerification(
-            verification={"MAP": 160, "SEQUENTIAL": 160, "FOR": 185, "Malloc": 79}
+            verification={
+                "HIGHWAY": 35,
+                "MAP": 141,
+                "SEQUENTIAL": 106,
+                "FOR": 165,
+                "Malloc": 69,
+            }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

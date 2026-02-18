@@ -21,17 +21,44 @@ bool TensorToPointerConversion::accept(structured_control_flow::Block& block) {
     auto& dfg = block.dataflow();
 
     for (auto& memlet : dfg.edges()) {
-        if (memlet.subset().empty()) {
-            continue;
-        }
         auto& base_type = memlet.base_type();
         if (base_type.type_id() != types::TypeID::Tensor) {
             continue;
         }
         auto& tensor_type = static_cast<const types::Tensor&>(base_type);
 
-        auto& element_type = tensor_type.element_type();
+        // Distinguish between pointer and scalar buffers
+        const types::IType* container_type = nullptr;
+        if (!dynamic_cast<const data_flow::AccessNode*>(&memlet.src())) {
+            auto& dst_node = static_cast<const data_flow::AccessNode&>(memlet.dst());
+            if (auto const_node = dynamic_cast<const data_flow::ConstantNode*>(&dst_node)) {
+                container_type = &const_node->type();
+            } else {
+                container_type = &builder_.subject().type(dst_node.data());
+            }
+        } else {
+            auto& src_node = static_cast<const data_flow::AccessNode&>(memlet.src());
+            if (auto const_node = dynamic_cast<const data_flow::ConstantNode*>(&src_node)) {
+                container_type = &const_node->type();
+            } else {
+                container_type = &builder_.subject().type(src_node.data());
+            }
+        }
 
+        // Handle scalar containers (including scalar tensor memlets with empty subset)
+        if (container_type->type_id() == types::TypeID::Scalar) {
+            memlet.set_base_type(*container_type);
+            memlet.set_subset({});
+            applied = true;
+            continue;
+        }
+
+        // For pointer containers, we need a non-empty subset to linearize
+        if (memlet.subset().empty()) {
+            continue;
+        }
+
+        auto& element_type = tensor_type.element_type();
         auto& shape = tensor_type.shape();
         auto& strides = tensor_type.strides();
 

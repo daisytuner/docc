@@ -35,7 +35,7 @@ jobs:
           clang-format-19 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
           clang-format-19 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
 
-      - name: CMAKE Setup
+      - name: Build
         run: |
           mkdir build
           cd build
@@ -53,6 +53,9 @@ jobs:
           ninja -j$(nproc)
           ninja install
 
+      - name: Unit Tests
+        run: |
+          cd build/
           LLVM_PROFILE_FILE="sdfglib_test.profraw" ./sdfg/tests/sdfglib_test
           LLVM_PROFILE_FILE="sdfgopt_test.profraw" ./opt/tests/sdfgopt_test
           ./tutorial/printf_target/tests/printf_target_test
@@ -235,7 +238,7 @@ jobs:
             ..
           ninja -j$(nproc)
 
-      - name: Unit tests
+      - name: Unit Tests
         run: |
           cd build/
           ninja check-docc-mlir

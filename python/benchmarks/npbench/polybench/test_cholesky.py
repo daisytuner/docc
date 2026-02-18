@@ -38,7 +38,7 @@ def kernel(A):
     [
         "none",
         "sequential",
-        # "openmp",
+        "openmp",
         "cuda",
     ],
 )

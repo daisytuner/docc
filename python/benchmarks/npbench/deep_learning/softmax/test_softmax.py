@@ -37,38 +37,38 @@ def kernel(x):
         # "cuda"
     ],
 )
-def test_mlp(target):
+def test_softmax(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
                 "CMath": 2,
-                "SEQUENTIAL": 35,
-                "FOR": 40,
-                "MAP": 35,
-                "Malloc": 7,
+                "SEQUENTIAL": 27,
+                "FOR": 32,
+                "MAP": 27,
+                "Malloc": 5,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "CMath": 2,
-                "HIGHWAY": 8,
-                "SEQUENTIAL": 27,
-                "FOR": 40,
-                "MAP": 35,
-                "Malloc": 7,
+                "HIGHWAY": 6,
+                "SEQUENTIAL": 21,
+                "FOR": 32,
+                "MAP": 27,
+                "Malloc": 5,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 8,
+                "HIGHWAY": 6,
                 "CMath": 2,
-                "CPU_PARALLEL": 9,
-                "SEQUENTIAL": 18,
-                "FOR": 40,
-                "MAP": 35,
-                "Malloc": 7,
+                "CPU_PARALLEL": 7,
+                "SEQUENTIAL": 14,
+                "FOR": 32,
+                "MAP": 27,
+                "Malloc": 5,
             }
         )
     else:  # cuda
@@ -85,4 +85,4 @@ def test_mlp(target):
 
 
 if __name__ == "__main__":
-    run_benchmark(initialize, kernel, PARAMETERS, "mlp")
+    run_benchmark(initialize, kernel, PARAMETERS, "softmax")

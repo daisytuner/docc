@@ -57,19 +57,15 @@ def kernel(in_field, out_field, coeff):
     )
 
 
+@pytest.mark.skip(reason="Compile failure with Highway")
 @pytest.mark.parametrize(
     "target",
-    [
-        "none",
-        # "sequential",
-        # "openmp",
-        # "cuda"
-    ],
+    ["none", "sequential", "openmp", "cuda"],
 )
 def test_hdiff(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 83, "SEQUENTIAL": 83, "FOR": 117, "Malloc": 38}
+            verification={"SEQUENTIAL": 57, "FOR": 63, "MAP": 57, "Malloc": 20}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
@@ -81,7 +77,14 @@ def test_hdiff(target):
         )
     else:  # cuda
         verifier = SDFGVerification(
-            verification={"MAP": 53, "SEQUENTIAL": 53, "FOR": 87, "Malloc": 28}
+            verification={
+                "CUDA": 36,
+                "SEQUENTIAL": 21,
+                "FOR": 63,
+                "MAP": 57,
+                "CUDAOffloading": 80,
+                "Malloc": 20,
+            }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

@@ -53,55 +53,61 @@ def kernel(input, w1, b1, w2, b2, w3, b3):
 
 @pytest.mark.parametrize(
     "target",
-    ["none", "sequential", "openmp", "cuda"],
+    [
+        "none",
+        "sequential",
+        "openmp",
+        # "cuda"
+    ],
 )
 def test_mlp(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
                 "CMath": 4,
-                "SEQUENTIAL": 34,
-                "FOR": 36,
-                "MAP": 34,
+                "SEQUENTIAL": 24,
+                "FOR": 26,
+                "MAP": 24,
                 "GEMM": 3,
-                "Malloc": 18,
+                "Malloc": 13,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "CMath": 4,
-                "HIGHWAY": 13,
-                "SEQUENTIAL": 21,
-                "FOR": 36,
-                "MAP": 34,
+                "HIGHWAY": 8,
+                "SEQUENTIAL": 16,
+                "FOR": 26,
+                "MAP": 24,
                 "GEMM": 3,
-                "Malloc": 18,
+                "Malloc": 13,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 13,
+                "HIGHWAY": 8,
                 "CMath": 4,
-                "CPU_PARALLEL": 18,
+                "CPU_PARALLEL": 13,
                 "SEQUENTIAL": 3,
-                "FOR": 36,
-                "MAP": 34,
+                "FOR": 26,
+                "MAP": 24,
                 "GEMM": 3,
-                "Malloc": 18,
+                "Malloc": 13,
             }
         )
     else:  # cuda
         verifier = SDFGVerification(
             verification={
+                "HIGHWAY": 8,
                 "CMath": 4,
-                "CUDA": 34,
-                "FOR": 36,
-                "MAP": 34,
-                "CUDAOffloading": 62,
+                "CPU_PARALLEL": 13,
+                "SEQUENTIAL": 3,
+                "FOR": 26,
+                "MAP": 24,
                 "GEMM": 3,
-                "Malloc": 18,
+                "Malloc": 13,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

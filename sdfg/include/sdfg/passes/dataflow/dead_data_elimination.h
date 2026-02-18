@@ -6,8 +6,13 @@ namespace sdfg {
 namespace passes {
 
 class DeadDataElimination : public Pass {
+private:
+    bool permissive_;
+
 public:
     DeadDataElimination();
+
+    DeadDataElimination(bool permissive);
 
     virtual std::string name() override;
 

@@ -26,8 +26,8 @@ bool SigmoidNode::expand_operation(
     structured_control_flow::Sequence& body,
     const std::string& input_name,
     const std::string& output_name,
-    const types::IType& input_type,
-    const types::IType& output_type,
+    const types::Tensor& input_type,
+    const types::Tensor& output_type,
     const data_flow::Subset& subset
 ) {
     // Add code
@@ -39,6 +39,7 @@ bool SigmoidNode::expand_operation(
     auto& output_node_div = builder.add_access(code_block, output_name);
 
     sdfg::types::Scalar element_type(output_type.primitive_type());
+    types::Tensor scalar_tensor(types::Scalar(output_type.primitive_type()), {});
 
     // -x
     {
@@ -59,7 +60,7 @@ bool SigmoidNode::expand_operation(
     {
         auto& one_node = builder.add_constant(code_block, "1.0", element_type);
         auto& tasklet = builder.add_tasklet(code_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
-        builder.add_computational_memlet(code_block, one_node, tasklet, "_in1", {}, element_type);
+        builder.add_computational_memlet(code_block, one_node, tasklet, "_in1", {}, scalar_tensor);
         builder.add_computational_memlet(code_block, output_node_exp, tasklet, "_in2", subset, output_type);
         builder.add_computational_memlet(code_block, tasklet, "_out", output_node_add, subset, output_type);
     }
@@ -67,7 +68,7 @@ bool SigmoidNode::expand_operation(
     {
         auto& one_node = builder.add_constant(code_block, "1.0", element_type);
         auto& tasklet = builder.add_tasklet(code_block, data_flow::TaskletCode::fp_div, "_out", {"_in1", "_in2"});
-        builder.add_computational_memlet(code_block, one_node, tasklet, "_in1", {}, element_type);
+        builder.add_computational_memlet(code_block, one_node, tasklet, "_in1", {}, scalar_tensor);
         builder.add_computational_memlet(code_block, output_node_add, tasklet, "_in2", subset, output_type);
         builder.add_computational_memlet(code_block, tasklet, "_out", output_node_div, subset, output_type);
     }

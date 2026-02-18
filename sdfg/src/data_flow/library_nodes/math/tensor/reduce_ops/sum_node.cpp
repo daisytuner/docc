@@ -23,8 +23,8 @@ bool SumNode::expand_reduction(
     structured_control_flow::Sequence& body,
     const std::string& input_name,
     const std::string& output_name,
-    const types::IType& input_type,
-    const types::IType& output_type,
+    const types::Tensor& input_type,
+    const types::Tensor& output_type,
     const data_flow::Subset& input_subset,
     const data_flow::Subset& output_subset
 ) {
@@ -49,7 +49,12 @@ bool SumNode::expand_reduction(
     return true;
 }
 
-std::string SumNode::identity() const { return "0.0"; }
+std::string SumNode::identity(types::PrimitiveType primitive_type) const {
+    if (types::is_integer(primitive_type)) {
+        return "0";
+    }
+    return "0.0";
+}
 
 std::unique_ptr<data_flow::DataFlowNode> SumNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {

@@ -27,6 +27,49 @@ BroadcastNode::BroadcastNode(
       ),
       input_shape_(input_shape), output_shape_(output_shape) {}
 
+void BroadcastNode::validate(const Function& function) const {
+    TensorNode::validate(function);
+
+    auto& graph = this->get_parent();
+
+    auto& iedge = *graph.in_edges(*this).begin();
+    auto& shape = static_cast<const types::Tensor&>(iedge.base_type());
+    if (!shape.is_scalar()) {
+        if (shape.shape().size() != this->input_shape_.size()) {
+            throw InvalidSDFGException(
+                "Library Node: Tensor shape must match node shape. Tensor shape: " +
+                std::to_string(shape.shape().size()) + " Node shape: " + std::to_string(this->input_shape_.size())
+            );
+        }
+        for (size_t i = 0; i < this->input_shape_.size(); ++i) {
+            if (!symbolic::eq(shape.shape().at(i), this->input_shape_.at(i))) {
+                throw InvalidSDFGException(
+                    "Library Node: Tensor shape does not match expected shape. Tensor shape: " +
+                    shape.shape().at(i)->__str__() + " Expected shape: " + this->input_shape_.at(i)->__str__()
+                );
+            }
+        }
+    }
+
+    auto& oedge = *graph.out_edges(*this).begin();
+    auto& output_shape = static_cast<const types::Tensor&>(oedge.base_type());
+    if (output_shape.shape().size() != this->output_shape_.size()) {
+        throw InvalidSDFGException(
+            "Library Node: Output tensor shape must match node shape. Output tensor shape: " +
+            std::to_string(output_shape.shape().size()) + " Node shape: " + std::to_string(this->output_shape_.size())
+        );
+    }
+
+    for (size_t i = 0; i < this->output_shape_.size(); ++i) {
+        if (!symbolic::eq(output_shape.shape().at(i), this->output_shape_.at(i))) {
+            throw InvalidSDFGException(
+                "Library Node: Output tensor shape does not match expected shape. Output tensor shape: " +
+                output_shape.shape().at(i)->__str__() + " Expected shape: " + this->output_shape_.at(i)->__str__()
+            );
+        }
+    }
+}
+
 symbolic::SymbolSet BroadcastNode::symbols() const {
     symbolic::SymbolSet syms;
     for (const auto& dim : input_shape_) {
@@ -67,7 +110,7 @@ bool BroadcastNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
     auto& in_node = static_cast<data_flow::AccessNode&>(in_edge.src());
     auto& out_node = static_cast<data_flow::AccessNode&>(out_edge.dst());
 
-    symbolic::SymbolVec loop_vars;
+    symbolic::MultiExpression loop_vars;
     structured_control_flow::Sequence* inner_scope = nullptr;
 
     for (size_t i = 0; i < output_shape_.size(); ++i) {
@@ -113,34 +156,27 @@ bool BroadcastNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
     auto& in_acc = builder.add_access(tasklet_block, in_node.data());
     auto& out_acc = builder.add_access(tasklet_block, out_node.data());
 
+    symbolic::MultiExpression input_subset = {};
+    for (size_t i = 0; i < input_shape_.size(); ++i) {
+        if (!symbolic::eq(input_shape_[i], symbolic::one())) {
+            input_subset.push_back(loop_vars[i]);
+        } else {
+            input_subset.push_back(symbolic::zero());
+        }
+    }
+    auto& iedge_tensor = static_cast<const types::Tensor&>(in_edge.base_type());
+    if (iedge_tensor.is_scalar()) {
+        input_subset = {};
+    }
+
     auto& tasklet =
         builder.add_tasklet(tasklet_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
 
-    symbolic::Expression input_linear_index = symbolic::zero();
-    for (size_t i = 0; i < input_shape_.size(); ++i) {
-        if (!symbolic::eq(input_shape_[i], symbolic::one())) {
-            input_linear_index = symbolic::add(symbolic::mul(input_linear_index, input_shape_[i]), loop_vars[i]);
-        }
-    }
-
-    symbolic::Expression output_linear_index = symbolic::zero();
-    for (size_t i = 0; i < output_shape_.size(); ++i) {
-        output_linear_index = symbolic::add(symbolic::mul(output_linear_index, output_shape_[i]), loop_vars[i]);
-    }
-
-    data_flow::Subset input_subset;
-    if (in_edge.base_type().type_id() != types::TypeID::Scalar) {
-        input_subset = {input_linear_index};
-    }
-    data_flow::Subset output_subset;
-    if (out_edge.base_type().type_id() != types::TypeID::Scalar) {
-        output_subset = {output_linear_index};
-    }
     builder.add_computational_memlet(
         tasklet_block, in_acc, tasklet, "_in", input_subset, in_edge.base_type(), this->debug_info()
     );
     builder.add_computational_memlet(
-        tasklet_block, tasklet, "_out", out_acc, output_subset, out_edge.base_type(), this->debug_info()
+        tasklet_block, tasklet, "_out", out_acc, loop_vars, out_edge.base_type(), this->debug_info()
     );
 
     builder.remove_memlet(block, in_edge);

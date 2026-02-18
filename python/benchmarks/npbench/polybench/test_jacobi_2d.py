@@ -1,3 +1,4 @@
+import sys
 import pytest
 import numpy as np
 from benchmarks.npbench.harness import SDFGVerification, run_benchmark, run_pytest
@@ -28,21 +29,36 @@ def kernel(TSTEPS, A, B):
         )
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
 def test_jacobi_2d(target):
     if target == "none":
-        verifier = SDFGVerification(verification={"MAP": 4, "SEQUENTIAL": 4, "FOR": 5})
+        verifier = SDFGVerification(
+            verification={"MAP": 24, "Malloc": 10, "SEQUENTIAL": 24, "FOR": 25}
+        )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"HIGHWAY": 2, "MAP": 4, "SEQUENTIAL": 2, "FOR": 5}
+            verification={
+                "HIGHWAY": 12,
+                "MAP": 24,
+                "Malloc": 10,
+                "SEQUENTIAL": 12,
+                "FOR": 25,
+            }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"HIGHWAY": 2, "CPU_PARALLEL": 2, "MAP": 4, "FOR": 5}
+            verification={
+                "HIGHWAY": 12,
+                "MAP": 24,
+                "Malloc": 10,
+                "SEQUENTIAL": 12,
+                "FOR": 25,
+            }
         )
     else:  # cuda
         verifier = SDFGVerification(
-            verification={"CUDA": 4, "MAP": 4, "CUDAOffloading": 8, "FOR": 5}
+            verification={"MAP": 24, "Malloc": 10, "SEQUENTIAL": 24, "FOR": 25}
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

@@ -26,8 +26,8 @@ bool CastNode::expand_operation(
     structured_control_flow::Sequence& body,
     const std::string& input_name,
     const std::string& output_name,
-    const types::IType& input_type,
-    const types::IType& output_type,
+    const types::Tensor& input_type,
+    const types::Tensor& output_type,
     const data_flow::Subset& subset
 ) {
     // Add code block
@@ -47,47 +47,21 @@ bool CastNode::expand_operation(
 void CastNode::validate(const Function& function) const {
     auto& graph = this->get_parent();
 
-    // Check that all input memlets are scalar or pointer of scalar
+    // Check that all input memlets are tensor of scalar
     for (auto& iedge : graph.in_edges(*this)) {
-        if (iedge.base_type().type_id() != types::TypeID::Scalar &&
-            iedge.base_type().type_id() != types::TypeID::Pointer) {
+        if (iedge.base_type().type_id() != types::TypeID::Tensor) {
             throw InvalidSDFGException(
-                "CastNode: Input memlet must be of scalar or pointer type. Found type: " + iedge.base_type().print()
+                "CastNode: Input memlet must be of tensor type. Found type: " + iedge.base_type().print()
             );
-        }
-        if (iedge.base_type().type_id() == types::TypeID::Pointer) {
-            auto& ptr_type = static_cast<const types::Pointer&>(iedge.base_type());
-            if (ptr_type.pointee_type().type_id() != types::TypeID::Scalar) {
-                throw InvalidSDFGException(
-                    "CastNode: Input memlet pointer must be flat (pointer to scalar). Found type: " +
-                    ptr_type.pointee_type().print()
-                );
-            }
-            if (!iedge.subset().empty()) {
-                throw InvalidSDFGException("CastNode: Input memlet pointer must not be dereferenced.");
-            }
         }
     }
 
-    // Check that all output memlets are scalar or pointer of scalar
+    // Check that all output memlets are tensor of scalar
     for (auto& oedge : graph.out_edges(*this)) {
-        if (oedge.base_type().type_id() != types::TypeID::Scalar &&
-            oedge.base_type().type_id() != types::TypeID::Pointer) {
+        if (oedge.base_type().type_id() != types::TypeID::Tensor) {
             throw InvalidSDFGException(
-                "CastNode: Output memlet must be of scalar or pointer type. Found type: " + oedge.base_type().print()
+                "CastNode: Output memlet must be of tensor type. Found type: " + oedge.base_type().print()
             );
-        }
-        if (oedge.base_type().type_id() == types::TypeID::Pointer) {
-            auto& ptr_type = static_cast<const types::Pointer&>(oedge.base_type());
-            if (ptr_type.pointee_type().type_id() != types::TypeID::Scalar) {
-                throw InvalidSDFGException(
-                    "CastNode: Output memlet pointer must be flat (pointer to scalar). Found type: " +
-                    ptr_type.pointee_type().print()
-                );
-            }
-            if (!oedge.subset().empty()) {
-                throw InvalidSDFGException("CastNode: Output memlet pointer must not be dereferenced.");
-            }
         }
     }
 

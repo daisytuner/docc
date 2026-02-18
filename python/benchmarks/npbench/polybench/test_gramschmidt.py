@@ -57,7 +57,6 @@ def test_gramschmidt(target):
                 "GEMM": 1,
                 "MAP": 6,
                 "CMath": 1,
-                "DOT": 0,
                 "SEQUENTIAL": 6,
                 "FOR": 9,
                 "Memset": 2,

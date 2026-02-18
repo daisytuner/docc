@@ -3,8 +3,6 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/types/array.h"
-#include "sdfg/types/pointer.h"
 
 #include <algorithm>
 
@@ -24,6 +22,86 @@ ReduceNode::ReduceNode(
 )
     : TensorNode(element_id, debug_info, vertex, parent, code, {"Y"}, {"X"}, data_flow::ImplementationType_NONE),
       shape_(shape), axes_(axes), keepdims_(keepdims) {}
+
+void ReduceNode::validate(const Function& function) const {
+    TensorNode::validate(function);
+
+    auto& graph = this->get_parent();
+
+    auto& iedge = *graph.in_edges(*this).begin();
+    auto& tensor_input = static_cast<const types::Tensor&>(iedge.base_type());
+    if (tensor_input.shape().size() != this->shape_.size()) {
+        throw InvalidSDFGException(
+            "Library Node: Input tensor shape must match node shape. Input shape: " +
+            std::to_string(tensor_input.shape().size()) + " Node shape: " + std::to_string(this->shape_.size())
+        );
+    }
+    for (size_t i = 0; i < shape_.size(); ++i) {
+        if (!symbolic::eq(tensor_input.shape().at(i), shape_.at(i))) {
+            throw InvalidSDFGException(
+                "Library Node: Input tensor shape must match node shape. Input shape at dim " + std::to_string(i) +
+                ": " + tensor_input.shape().at(i)->__str__() + " Node shape at dim " + std::to_string(i) + ": " +
+                shape_.at(i)->__str__()
+            );
+        }
+    }
+
+    // Calculate expected output shape based on axes and keepdims
+    std::vector<int64_t> sorted_axes = axes_;
+    // Normalize negative axes
+    for (auto& axis : sorted_axes) {
+        if (axis < 0) {
+            axis = static_cast<int64_t>(shape_.size()) + axis;
+        }
+        // Validate axis is in bounds
+        if (axis < 0 || axis >= static_cast<int64_t>(shape_.size())) {
+            throw InvalidSDFGException(
+                "Library Node: Axis value out of bounds. Axis: " + std::to_string(axis) +
+                " Shape size: " + std::to_string(shape_.size())
+            );
+        }
+    }
+    std::sort(sorted_axes.begin(), sorted_axes.end());
+
+    std::vector<symbolic::Expression> expected_output_shape;
+    for (size_t i = 0; i < shape_.size(); ++i) {
+        bool is_axis = false;
+        for (auto axis : sorted_axes) {
+            if (axis == (int64_t) i) {
+                is_axis = true;
+                break;
+            }
+        }
+
+        if (is_axis) {
+            if (keepdims_) {
+                expected_output_shape.push_back(symbolic::one());
+            }
+        } else {
+            expected_output_shape.push_back(shape_[i]);
+        }
+    }
+
+    auto& oedge = *graph.out_edges(*this).begin();
+    auto& tensor_output = static_cast<const types::Tensor&>(oedge.base_type());
+    if (tensor_output.shape().size() != expected_output_shape.size()) {
+        throw InvalidSDFGException(
+            "Library Node: Output tensor shape must match expected reduced shape. Output shape size: " +
+            std::to_string(tensor_output.shape().size()) +
+            " Expected shape size: " + std::to_string(expected_output_shape.size())
+        );
+    }
+    for (size_t i = 0; i < expected_output_shape.size(); ++i) {
+        if (!symbolic::eq(tensor_output.shape().at(i), expected_output_shape.at(i))) {
+            throw InvalidSDFGException(
+                "Library Node: Output tensor shape must match expected reduced shape. Output shape at dim " +
+                std::to_string(i) + ": " + tensor_output.shape().at(i)->__str__() + " Expected shape at dim " +
+                std::to_string(i) + ": " + expected_output_shape.at(i)->__str__()
+            );
+        }
+    }
+}
+
 
 symbolic::SymbolSet ReduceNode::symbols() const {
     symbolic::SymbolSet syms;
@@ -67,6 +145,19 @@ bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     // Calculate output shape
     std::vector<symbolic::Expression> output_shape;
     std::vector<int64_t> sorted_axes = axes_;
+    // Normalize negative axes
+    for (auto& axis : sorted_axes) {
+        if (axis < 0) {
+            axis = static_cast<int64_t>(shape_.size()) + axis;
+        }
+        // Validate axis is in bounds
+        if (axis < 0 || axis >= static_cast<int64_t>(shape_.size())) {
+            throw InvalidSDFGException(
+                "Library Node: Axis value out of bounds. Axis: " + std::to_string(axis) +
+                " Shape size: " + std::to_string(shape_.size())
+            );
+        }
+    }
     std::sort(sorted_axes.begin(), sorted_axes.end());
 
     for (size_t i = 0; i < shape_.size(); ++i) {
@@ -88,13 +179,14 @@ bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     }
 
     sdfg::types::Scalar element_type(oedge.base_type().primitive_type());
+    types::Tensor scalar_tensor(element_type.primitive_type(), {});
 
     // Add new sequence
     auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
 
     // 1. Initialization Loop
     {
-        symbolic::Expression init_expr = symbolic::zero();
+        data_flow::Subset init_subset;
         structured_control_flow::Sequence* last_scope = &new_sequence;
         structured_control_flow::Map* last_map = nullptr;
 
@@ -118,11 +210,7 @@ bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 block.debug_info()
             );
             last_scope = &last_map->root();
-            init_expr = symbolic::add(symbolic::mul(init_expr, output_shape[i]), indvar);
-        }
-        data_flow::Subset init_subset;
-        if (!output_shape.empty()) {
-            init_subset.push_back(init_expr);
+            init_subset.push_back(indvar);
         }
 
         // Add initialization tasklet
@@ -130,11 +218,13 @@ bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         auto& init_tasklet =
             builder.add_tasklet(init_block, data_flow::TaskletCode::assign, {"_out"}, {"_in"}, block.debug_info());
 
-        auto& const_node = builder.add_constant(init_block, this->identity(), element_type, block.debug_info());
+        auto& const_node =
+            builder
+                .add_constant(init_block, this->identity(element_type.primitive_type()), element_type, block.debug_info());
         auto& out_access = builder.add_access(init_block, output_node.data(), block.debug_info());
 
         builder
-            .add_computational_memlet(init_block, const_node, init_tasklet, "_in", {}, element_type, block.debug_info());
+            .add_computational_memlet(init_block, const_node, init_tasklet, "_in", {}, scalar_tensor, block.debug_info());
         builder.add_computational_memlet(
             init_block, init_tasklet, "_out", out_access, init_subset, oedge.base_type(), block.debug_info()
         );
@@ -207,18 +297,11 @@ bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             loop_vars_map[dim_idx] = indvar;
         }
 
-        // Linearize input
-        symbolic::Expression input_linear_index = symbolic::zero();
-        for (size_t i = 0; i < shape_.size(); ++i) {
-            input_linear_index = symbolic::add(symbolic::mul(input_linear_index, shape_[i]), loop_vars_map[i]);
-        }
-        if (!shape_.empty()) {
-            input_subset.push_back(input_linear_index);
-        }
-
         // Construct output indices
+        std::vector<symbolic::Expression> input_indices;
         std::vector<symbolic::Expression> output_indices;
         for (size_t i = 0; i < shape_.size(); ++i) {
+            input_indices.push_back(loop_vars_map[i]);
             bool is_axis = false;
             for (auto axis : sorted_axes) {
                 if (axis == (int64_t) i) {
@@ -236,25 +319,16 @@ bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             }
         }
 
-        // Linearize output
-        symbolic::Expression output_linear_index = symbolic::zero();
-        for (size_t i = 0; i < output_shape.size(); ++i) {
-            output_linear_index = symbolic::add(symbolic::mul(output_linear_index, output_shape[i]), output_indices[i]);
-        }
-        if (!output_shape.empty()) {
-            output_subset.push_back(output_linear_index);
-        }
-
         this->expand_reduction(
             builder,
             analysis_manager,
             *last_scope,
             input_node.data(),
             output_node.data(),
-            iedge.base_type(),
-            oedge.base_type(),
-            input_subset,
-            output_subset
+            static_cast<const types::Tensor&>(iedge.base_type()),
+            static_cast<const types::Tensor&>(oedge.base_type()),
+            input_indices,
+            output_indices
         );
     }
 

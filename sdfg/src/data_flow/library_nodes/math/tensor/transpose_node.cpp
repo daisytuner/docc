@@ -38,6 +38,47 @@ TransposeNode::TransposeNode(
     }
 }
 
+void TransposeNode::validate(const Function& function) const {
+    TensorNode::validate(function);
+
+    auto& graph = this->get_parent();
+
+    auto& iedge = *graph.in_edges(*this).begin();
+    auto& shape = static_cast<const types::Tensor&>(iedge.base_type());
+    if (shape.shape().size() != this->shape_.size()) {
+        throw InvalidSDFGException(
+            "Library Node: Tensor shape must match node shape. Tensor shape: " + std::to_string(shape.shape().size()) +
+            " Node shape: " + std::to_string(this->shape_.size())
+        );
+    }
+    for (size_t i = 0; i < this->shape_.size(); ++i) {
+        if (!symbolic::eq(shape.shape().at(i), this->shape_.at(i))) {
+            throw InvalidSDFGException(
+                "Library Node: Tensor shape does not match expected shape. Tensor shape: " +
+                shape.shape().at(i)->__str__() + " Expected shape: " + this->shape_.at(i)->__str__()
+            );
+        }
+    }
+
+    auto& oedge = *graph.out_edges(*this).begin();
+    auto& output_shape = static_cast<const types::Tensor&>(oedge.base_type());
+    if (output_shape.shape().size() != this->shape_.size()) {
+        throw InvalidSDFGException(
+            "Library Node: Output tensor shape must match node shape. Output tensor shape: " +
+            std::to_string(output_shape.shape().size()) + " Node shape: " + std::to_string(this->shape_.size())
+        );
+    }
+
+    for (size_t i = 0; i < this->shape_.size(); ++i) {
+        if (!symbolic::eq(output_shape.shape().at(i), this->shape_.at(perm_.at(i)))) {
+            throw InvalidSDFGException(
+                "Library Node: Output tensor shape does not match expected shape. Output tensor shape: " +
+                output_shape.shape().at(i)->__str__() + " Expected shape: " + this->shape_.at(perm_[i])->__str__()
+            );
+        }
+    }
+}
+
 symbolic::SymbolSet TransposeNode::symbols() const {
     symbolic::SymbolSet syms;
     for (const auto& dim : shape_) {
@@ -83,7 +124,6 @@ bool TransposeNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
     auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
 
     // Add maps
-    data_flow::Subset new_subset;
     structured_control_flow::Sequence* last_scope = &new_sequence;
     structured_control_flow::Map* last_map = nullptr;
     std::vector<symbolic::Expression> loop_vars;
@@ -111,29 +151,7 @@ bool TransposeNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
         loop_vars.push_back(indvar);
     }
 
-    // Linearize subset
-    symbolic::Expression linear_index = symbolic::zero();
-    for (size_t i = 0; i < this->shape_.size(); ++i) {
-        linear_index = symbolic::add(symbolic::mul(linear_index, this->shape_[i]), loop_vars[i]);
-    }
-    if (!this->shape_.empty()) {
-        new_subset.push_back(linear_index);
-    }
-
     auto& body = builder.add_block(*last_scope, {}, block.debug_info());
-
-    // Linearization helper
-    auto linearize = [&](const std::vector<symbolic::Expression>& indices,
-                         const std::vector<symbolic::Expression>& dims) -> symbolic::Expression {
-        if (indices.empty()) return symbolic::zero();
-        symbolic::Expression idx = symbolic::zero();
-        symbolic::Expression stride = symbolic::one();
-        for (int i = dims.size() - 1; i >= 0; --i) {
-            idx = symbolic::add(idx, symbolic::mul(indices[i], stride));
-            stride = symbolic::mul(stride, dims[i]);
-        }
-        return idx;
-    };
 
     // Determine output shape
     std::vector<symbolic::Expression> output_shape(shape_.size());
@@ -143,10 +161,6 @@ bool TransposeNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
         output_indices[i] = loop_vars[perm_[i]];
     }
 
-    // Calculate linearized offsets
-    auto input_offset = linearize(loop_vars, shape_);
-    auto output_offset = linearize(output_indices, output_shape);
-
     // Read Input
     auto& x_access = builder.add_access(body, input_node.data(), debug_info());
     auto& y_access = builder.add_access(body, output_node.data(), debug_info());
@@ -154,13 +168,9 @@ bool TransposeNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
     auto& tasklet = builder.add_tasklet(body, data_flow::assign, "_out", {"_in"}, debug_info());
 
     // Access memlets
-    builder.add_computational_memlet(
-        body, x_access, tasklet, "_in", data_flow::Subset({input_offset}), iedge.base_type(), debug_info()
-    );
+    builder.add_computational_memlet(body, x_access, tasklet, "_in", loop_vars, iedge.base_type(), debug_info());
 
-    builder.add_computational_memlet(
-        body, tasklet, "_out", y_access, data_flow::Subset({output_offset}), oedge.base_type(), debug_info()
-    );
+    builder.add_computational_memlet(body, tasklet, "_out", y_access, output_indices, oedge.base_type(), debug_info());
 
     // Remove the original node
     builder.remove_memlet(block, iedge);

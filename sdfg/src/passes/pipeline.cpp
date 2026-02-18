@@ -146,8 +146,8 @@ Pipeline Pipeline::map_fusion() {
 
     p.register_pass<MapFusionPass>();
     p.register_pass<BlockFusionPass>();
-    p.register_pass<DeadDataElimination>();
-    p.register_pass<DeadCFGElimination>();
+    p.register_pass<DeadDataElimination>(true);
+    p.register_pass<DeadCFGElimination>(true);
 
     return p;
 };

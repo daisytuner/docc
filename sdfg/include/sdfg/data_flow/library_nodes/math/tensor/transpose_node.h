@@ -21,6 +21,8 @@ public:
         const std::vector<int64_t>& perm
     );
 
+    void validate(const Function& function) const override;
+
     bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
     const std::vector<symbolic::Expression>& shape() const { return shape_; }

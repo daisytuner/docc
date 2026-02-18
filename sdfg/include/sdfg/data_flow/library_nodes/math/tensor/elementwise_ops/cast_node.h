@@ -32,8 +32,8 @@ public:
         structured_control_flow::Sequence& body,
         const std::string& input_name,
         const std::string& output_name,
-        const types::IType& input_type,
-        const types::IType& output_type,
+        const types::Tensor& input_type,
+        const types::Tensor& output_type,
         const data_flow::Subset& subset
     ) override;
 

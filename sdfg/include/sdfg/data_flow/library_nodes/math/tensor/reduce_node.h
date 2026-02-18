@@ -110,6 +110,8 @@ public:
         bool keepdims
     );
 
+    void validate(const Function& function) const override;
+
     /**
      * @brief Get the input tensor shape
      * @return Input tensor shape
@@ -166,8 +168,8 @@ public:
         structured_control_flow::Sequence& body,
         const std::string& input_name,
         const std::string& output_name,
-        const types::IType& input_type,
-        const types::IType& output_type,
+        const types::Tensor& input_type,
+        const types::Tensor& output_type,
         const data_flow::Subset& input_subset,
         const data_flow::Subset& output_subset
     ) = 0;
@@ -182,9 +184,10 @@ public:
      * - Max: "-inf" or minimum value
      * - Min: "inf" or maximum value
      *
+     * @param primitive_type The primitive type of the reduction element
      * @return Identity value as string expression
      */
-    virtual std::string identity() const = 0;
+    virtual std::string identity(types::PrimitiveType primitive_type) const = 0;
 };
 
 template<typename T>

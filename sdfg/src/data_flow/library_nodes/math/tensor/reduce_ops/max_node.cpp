@@ -26,8 +26,8 @@ bool MaxNode::expand_reduction(
     structured_control_flow::Sequence& body,
     const std::string& input_name,
     const std::string& output_name,
-    const types::IType& input_type,
-    const types::IType& output_type,
+    const types::Tensor& input_type,
+    const types::Tensor& output_type,
     const data_flow::Subset& input_subset,
     const data_flow::Subset& output_subset
 ) {
@@ -70,7 +70,25 @@ bool MaxNode::expand_reduction(
     return true;
 }
 
-std::string MaxNode::identity() const { return "-INFINITY"; }
+std::string MaxNode::identity(types::PrimitiveType primitive_type) const {
+    switch (primitive_type) {
+        case types::PrimitiveType::Int8:
+            return "INT8_MIN";
+        case types::PrimitiveType::Int16:
+            return "INT16_MIN";
+        case types::PrimitiveType::Int32:
+            return "INT32_MIN";
+        case types::PrimitiveType::Int64:
+            return "INT64_MIN";
+        case types::PrimitiveType::UInt8:
+        case types::PrimitiveType::UInt16:
+        case types::PrimitiveType::UInt32:
+        case types::PrimitiveType::UInt64:
+            return "0"; // Minimum unsigned value
+        default:
+            return "-INFINITY";
+    }
+}
 
 std::unique_ptr<data_flow::DataFlowNode> MaxNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {

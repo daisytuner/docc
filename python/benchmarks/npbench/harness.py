@@ -174,7 +174,7 @@ def run_pytest(
     if sys.platform == "darwin":
         if target == "cuda":
             return
-    
+
     # Use the smallest size for testing
     size = "S"
     if "S" not in parameters:

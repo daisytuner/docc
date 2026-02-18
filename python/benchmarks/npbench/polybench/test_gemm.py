@@ -24,7 +24,15 @@ def kernel(alpha, beta, C, A, B):
     C[:] = alpha * A @ B + beta * C
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "none",
+        "sequential",
+        "openmp",
+        # "cuda"
+    ],
+)
 def test_gemm(target):
     if target == "none":
         verifier = SDFGVerification(

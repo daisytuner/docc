@@ -28,13 +28,15 @@ TEST(ReduceTest, SumNode_1D) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(32)};
     std::vector<int64_t> axes = {0};
     bool keepdims = false;
+    types::Tensor input_tensor(desc.primitive_type(), shape);
+    types::Tensor output_tensor(desc.primitive_type(), {});
 
     auto& sum_node =
         static_cast<math::tensor::SumNode&>(builder.add_library_node<
                                             math::tensor::SumNode>(block, DebugInfo(), shape, axes, keepdims));
 
-    builder.add_computational_memlet(block, a_node, sum_node, "X", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, desc, block.debug_info());
+    builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
+    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, output_tensor, block.debug_info());
 
     // Check inputs and outputs
     EXPECT_EQ(sum_node.inputs().size(), 1);
@@ -44,6 +46,7 @@ TEST(ReduceTest, SumNode_1D) {
 
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(sum_node.expand(builder, analysis_manager));
 
@@ -65,7 +68,7 @@ TEST(ReduceTest, SumNode_1D) {
 
         auto& iedge = *dataflow.in_edges(*init_tasklet).begin();
         EXPECT_EQ(iedge.subset().size(), 0);
-        EXPECT_EQ(iedge.base_type(), desc);
+        EXPECT_EQ(iedge.base_type(), output_tensor);
 
         auto src = dynamic_cast<data_flow::ConstantNode*>(&iedge.src());
         EXPECT_NE(src, nullptr);
@@ -73,7 +76,7 @@ TEST(ReduceTest, SumNode_1D) {
 
         auto& oedge = *dataflow.out_edges(*init_tasklet).begin();
         EXPECT_EQ(oedge.subset().size(), 0);
-        EXPECT_EQ(oedge.base_type(), desc);
+        EXPECT_EQ(oedge.base_type(), output_tensor);
 
         auto dst = dynamic_cast<data_flow::AccessNode*>(&oedge.dst());
         EXPECT_NE(dst, nullptr);
@@ -104,14 +107,14 @@ TEST(ReduceTest, SumNode_1D) {
 
         EXPECT_EQ(iedge1->subset().size(), 1);
         EXPECT_TRUE(symbolic::eq(iedge1->subset().at(0), symbolic::symbol("_k0")));
-        EXPECT_EQ(iedge1->base_type(), desc_ptr);
+        EXPECT_EQ(iedge1->base_type(), input_tensor);
 
         auto src1 = dynamic_cast<data_flow::AccessNode*>(&iedge1->src());
         EXPECT_NE(src1, nullptr);
         EXPECT_EQ(src1->data(), "a");
 
         EXPECT_EQ(iedge2->subset().size(), 0);
-        EXPECT_EQ(iedge2->base_type(), desc);
+        EXPECT_EQ(iedge2->base_type(), output_tensor);
 
         auto src2 = dynamic_cast<data_flow::AccessNode*>(&iedge2->src());
         EXPECT_NE(src2, nullptr);
@@ -119,7 +122,7 @@ TEST(ReduceTest, SumNode_1D) {
 
         auto& oedge = *dataflow.out_edges(*reduce_tasklet).begin();
         EXPECT_EQ(oedge.subset().size(), 0);
-        EXPECT_EQ(oedge.base_type(), desc);
+        EXPECT_EQ(oedge.base_type(), output_tensor);
 
         auto dst = dynamic_cast<data_flow::AccessNode*>(&oedge.dst());
         EXPECT_NE(dst, nullptr);
@@ -146,14 +149,17 @@ TEST(ReduceTest, SumNode_2D) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(32), symbolic::integer(32)};
     std::vector<int64_t> axes = {1};
     bool keepdims = false;
+    types::Tensor input_tensor(desc.primitive_type(), shape);
+    types::Tensor output_tensor(desc.primitive_type(), {symbolic::integer(32)});
 
     auto& sum_node =
         static_cast<math::tensor::SumNode&>(builder.add_library_node<
                                             math::tensor::SumNode>(block, DebugInfo(), shape, axes, keepdims));
 
-    builder.add_computational_memlet(block, a_node, sum_node, "X", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, desc_ptr, block.debug_info());
+    builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
+    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, output_tensor, block.debug_info());
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(sum_node.expand(builder, analysis_manager));
 
@@ -179,11 +185,9 @@ TEST(ReduceTest, SumNode_2D) {
             std::swap(iedge1, iedge2);
         }
 
-        EXPECT_EQ(iedge1->subset().size(), 1);
-        EXPECT_TRUE(symbolic::eq(
-            iedge1->subset().at(0),
-            symbolic::add(symbolic::mul(symbolic::integer(32), symbolic::symbol("_i0")), symbolic::symbol("_k0"))
-        ));
+        EXPECT_EQ(iedge1->subset().size(), 2);
+        EXPECT_TRUE(symbolic::eq(iedge1->subset().at(0), symbolic::symbol("_i0")));
+        EXPECT_TRUE(symbolic::eq(iedge1->subset().at(1), symbolic::symbol("_k0")));
 
         // Output subset: i0
         auto& oedge = *dataflow.out_edges(*reduce_tasklet).begin();
@@ -211,14 +215,17 @@ TEST(ReduceTest, SumNode_2D_KeepDims) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(32), symbolic::integer(32)};
     std::vector<int64_t> axes = {1};
     bool keepdims = true;
+    types::Tensor input_tensor(desc.primitive_type(), shape);
+    types::Tensor output_tensor(desc.primitive_type(), {symbolic::integer(32), symbolic::one()});
 
     auto& sum_node =
         static_cast<math::tensor::SumNode&>(builder.add_library_node<
                                             math::tensor::SumNode>(block, DebugInfo(), shape, axes, keepdims));
 
-    builder.add_computational_memlet(block, a_node, sum_node, "X", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, desc_ptr, block.debug_info());
+    builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
+    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, output_tensor, block.debug_info());
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(sum_node.expand(builder, analysis_manager));
 
@@ -244,12 +251,16 @@ TEST(ReduceTest, SumNode_2D_KeepDims) {
             std::swap(iedge1, iedge2);
         }
 
-        // Input subset: i0 * 32 + k0
-        EXPECT_EQ(iedge1->subset().size(), 1);
+        // Input subset: i0, k0
+        EXPECT_EQ(iedge1->subset().size(), 2);
+        EXPECT_TRUE(symbolic::eq(iedge1->subset().at(0), symbolic::symbol("_i0")));
+        EXPECT_TRUE(symbolic::eq(iedge1->subset().at(1), symbolic::symbol("_k0")));
 
-        // Output subset: i0 * 1 + 0 = i0
+        // Output subset: i0, 0
         auto& oedge = *dataflow.out_edges(*reduce_tasklet).begin();
-        EXPECT_EQ(oedge.subset().size(), 1);
+        EXPECT_EQ(oedge.subset().size(), 2);
+        EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), symbolic::symbol("_i0")));
+        EXPECT_TRUE(symbolic::eq(oedge.subset().at(1), symbolic::zero()));
     }
 }
 
@@ -272,14 +283,17 @@ TEST(ReduceTest, SumNode_3D_Reduce_0_2) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(10), symbolic::integer(20), symbolic::integer(30)};
     std::vector<int64_t> axes = {0, 2};
     bool keepdims = false;
+    types::Tensor input_tensor(desc.primitive_type(), shape);
+    types::Tensor output_tensor(desc.primitive_type(), {symbolic::integer(20)});
 
     auto& sum_node =
         static_cast<math::tensor::SumNode&>(builder.add_library_node<
                                             math::tensor::SumNode>(block, DebugInfo(), shape, axes, keepdims));
 
-    builder.add_computational_memlet(block, a_node, sum_node, "X", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, desc_ptr, block.debug_info());
+    builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
+    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, output_tensor, block.debug_info());
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(sum_node.expand(builder, analysis_manager));
 
@@ -308,11 +322,15 @@ TEST(ReduceTest, SumNode_3D_Reduce_0_2) {
             std::swap(iedge1, iedge2);
         }
 
-        EXPECT_EQ(iedge1->subset().size(), 1);
+        EXPECT_EQ(iedge1->subset().size(), 3);
+        EXPECT_TRUE(symbolic::eq(iedge1->subset().at(0), symbolic::symbol("_k0")));
+        EXPECT_TRUE(symbolic::eq(iedge1->subset().at(1), symbolic::symbol("_i0")));
+        EXPECT_TRUE(symbolic::eq(iedge1->subset().at(2), symbolic::symbol("_k1")));
 
         // Output subset: i1
         auto& oedge = *dataflow.out_edges(*reduce_tasklet).begin();
         EXPECT_EQ(oedge.subset().size(), 1);
+        EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), symbolic::symbol("_i0")));
     }
 }
 
@@ -336,13 +354,15 @@ TEST(ReduceTest, MeanNode_1D) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(32)};
     std::vector<int64_t> axes = {0};
     bool keepdims = false;
+    types::Tensor input_tensor(desc.primitive_type(), shape);
+    types::Tensor output_tensor(desc.primitive_type(), {});
 
     auto& mean_node =
         static_cast<math::tensor::MeanNode&>(builder.add_library_node<
                                              math::tensor::MeanNode>(block, DebugInfo(), shape, axes, keepdims));
 
-    builder.add_computational_memlet(block, a_node, mean_node, "X", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, mean_node, "Y", b_node, {}, desc, block.debug_info());
+    builder.add_computational_memlet(block, a_node, mean_node, "X", {}, input_tensor, block.debug_info());
+    builder.add_computational_memlet(block, mean_node, "Y", b_node, {}, output_tensor, block.debug_info());
 
     // Check inputs and outputs
     EXPECT_EQ(mean_node.inputs().size(), 1);
@@ -352,6 +372,7 @@ TEST(ReduceTest, MeanNode_1D) {
 
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(mean_node.expand(builder, analysis_manager));
 
@@ -385,7 +406,7 @@ TEST(ReduceTest, MeanNode_2D) {
 
     types::Pointer opaque_desc;
     builder.add_container("a", opaque_desc);
-    builder.add_container("b", desc);
+    builder.add_container("b", opaque_desc);
 
     auto& block = builder.add_block(sdfg.root());
 
@@ -395,13 +416,15 @@ TEST(ReduceTest, MeanNode_2D) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(32), symbolic::integer(16)};
     std::vector<int64_t> axes = {-1};
     bool keepdims = false;
+    types::Tensor input_tensor(desc.primitive_type(), shape);
+    types::Tensor output_tensor(desc.primitive_type(), {symbolic::integer(32)});
 
     auto& mean_node =
         static_cast<math::tensor::MeanNode&>(builder.add_library_node<
                                              math::tensor::MeanNode>(block, DebugInfo(), shape, axes, keepdims));
 
-    builder.add_computational_memlet(block, a_node, mean_node, "X", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, mean_node, "Y", b_node, {}, desc, block.debug_info());
+    builder.add_computational_memlet(block, a_node, mean_node, "X", {}, input_tensor, block.debug_info());
+    builder.add_computational_memlet(block, mean_node, "Y", b_node, {}, output_tensor, block.debug_info());
 
     // Check inputs and outputs
     EXPECT_EQ(mean_node.inputs().size(), 1);
@@ -411,6 +434,7 @@ TEST(ReduceTest, MeanNode_2D) {
 
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(mean_node.expand(builder, analysis_manager));
 
@@ -454,13 +478,15 @@ TEST(ReduceTest, StdNode_1D) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(32)};
     std::vector<int64_t> axes = {0};
     bool keepdims = false;
+    types::Tensor input_tensor(desc.primitive_type(), shape);
+    types::Tensor output_tensor(desc.primitive_type(), {});
 
     auto& std_node =
         static_cast<math::tensor::StdNode&>(builder.add_library_node<
                                             math::tensor::StdNode>(block, DebugInfo(), shape, axes, keepdims));
 
-    builder.add_computational_memlet(block, a_node, std_node, "X", {}, desc_ptr, block.debug_info());
-    builder.add_computational_memlet(block, std_node, "Y", b_node, {}, desc, block.debug_info());
+    builder.add_computational_memlet(block, a_node, std_node, "X", {}, input_tensor, block.debug_info());
+    builder.add_computational_memlet(block, std_node, "Y", b_node, {}, output_tensor, block.debug_info());
 
     // Check inputs and outputs
     EXPECT_EQ(std_node.inputs().size(), 1);
@@ -470,6 +496,7 @@ TEST(ReduceTest, StdNode_1D) {
 
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
+    sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(std_node.expand(builder, analysis_manager));
 

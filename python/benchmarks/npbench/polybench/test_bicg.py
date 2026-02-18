@@ -67,14 +67,12 @@ def test_bicg(target):
     else:  # cuda
         verifier = SDFGVerification(
             verification={
+                "CUDA": 2,
                 "FOR": 2,
                 "MAP": 2,
-                "SEQUENTIAL": 0,
-                "CUDA": 2,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "CUDAOffloading": 8,
                 "GEMM": 2,
-                "DOT": 0,
+                "Malloc": 2,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

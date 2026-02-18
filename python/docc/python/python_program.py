@@ -15,12 +15,14 @@ from docc.sdfg import (
     Structure,
     Array,
     Type,
+    Tensor,
     StructuredSDFG,
     StructuredSDFGBuilder,
 )
 from docc.compiler.docc_program import DoccProgram
 from docc.compiler.compiled_sdfg import CompiledSDFG
 from docc.python.ast_parser import ASTParser
+from docc.python.types import element_type_from_sdfg_type
 
 
 def _compile_wrapper(self, output_folder=None):
@@ -263,8 +265,8 @@ class PythonProgram(DoccProgram):
         if os.path.exists(output_folder):
             # Multiple python processes running the same code?
             shutil.rmtree(output_folder)
-        sdfg, out_args, out_shapes = self._build_sdfg(
-            arg_types, args, arg_shape_mapping, len(shape_values), shape_to_scalar
+        sdfg, out_args, out_shapes, out_strides = self._build_sdfg(
+            arg_types, args, arg_shape_mapping, shape_values, shape_to_scalar
         )
         sdfg.validate()
 
@@ -296,7 +298,7 @@ class PythonProgram(DoccProgram):
 
         # Build ONNX model from JSON if target is onnx (after _compile creates the JSON)
         if self.target == "onnx":
-            from docc.python.onnx_model_builder import convert_json_to_onnx
+            from docc.python.targets.onnx_model_builder import convert_json_to_onnx
 
             onnx_model_path = convert_json_to_onnx(output_folder)
             if onnx_model_path:
@@ -310,6 +312,7 @@ class PythonProgram(DoccProgram):
             self._last_structure_member_info,
             out_args,
             out_shapes,
+            out_strides,
         )
 
         # Cache if using default output folder
@@ -353,8 +356,8 @@ class PythonProgram(DoccProgram):
             if s_val in scalar_int_params:
                 shape_to_scalar[s_idx] = scalar_int_params[s_val]
 
-        sdfg, _, _ = self._build_sdfg(
-            arg_types, args, arg_shape_mapping, len(shape_values), shape_to_scalar
+        sdfg, _, _, _ = self._build_sdfg(
+            arg_types, args, arg_shape_mapping, shape_values, shape_to_scalar
         )
         return sdfg
 
@@ -444,7 +447,7 @@ class PythonProgram(DoccProgram):
         arg_types,
         args,
         arg_shape_mapping,
-        num_unique_shapes,
+        shape_values,
         shape_to_scalar=None,
     ):
         if shape_to_scalar is None:
@@ -565,40 +568,77 @@ class PythonProgram(DoccProgram):
                 f"Argument count mismatch: expected {len(params)}, got {len(arg_types)}"
             )
 
-        array_info = {}
-
         # Add regular arguments
+        tensor_table = {}
         for i, ((name, param), dtype, arg) in enumerate(zip(params, arg_types, args)):
             builder.add_container(name, dtype, is_argument=True)
 
-            # If it's an array, prepare shape info
+            # Store layout information for arrays
             if isinstance(arg, np.ndarray):
+                element_type = element_type_from_sdfg_type(dtype)
+
                 shapes = []
                 for dim_idx in range(arg.ndim):
-                    u_idx = arg_shape_mapping[(i, dim_idx)]
-                    # Use scalar parameter name if there's an equivalence, otherwise _sX
-                    if u_idx in shape_to_scalar:
-                        shapes.append(shape_to_scalar[u_idx])
+                    dim_val = arg.shape[dim_idx]
+                    if dim_val == 1:
+                        # Always use literal "1" for size-1 dimensions to enable
+                        # proper broadcasting detection
+                        shapes.append("1")
                     else:
-                        shapes.append(f"_s{u_idx}")
+                        u_idx = arg_shape_mapping[(i, dim_idx)]
+                        if u_idx in shape_to_scalar:
+                            shapes.append(shape_to_scalar[u_idx])
+                        else:
+                            shapes.append(f"_s{u_idx}")
 
-                array_info[name] = {"ndim": arg.ndim, "shapes": shapes}
+                strides = []
+                if arg.flags["C_CONTIGUOUS"]:
+                    # Row-major: stride[i] = product of shapes[i+1:]
+                    for dim_idx in range(arg.ndim):
+                        if dim_idx == arg.ndim - 1:
+                            strides.append("1")
+                        else:
+                            suffix_shapes = shapes[dim_idx + 1 :]
+                            if len(suffix_shapes) == 1:
+                                strides.append(suffix_shapes[0])
+                            else:
+                                strides.append("(" + " * ".join(suffix_shapes) + ")")
+                elif arg.flags["F_CONTIGUOUS"]:
+                    # Column-major: stride[i] = product of shapes[:i]
+                    for dim_idx in range(arg.ndim):
+                        if dim_idx == 0:
+                            strides.append("1")
+                        else:
+                            prefix_shapes = shapes[:dim_idx]
+                            if len(prefix_shapes) == 1:
+                                strides.append(prefix_shapes[0])
+                            else:
+                                strides.append("(" + " * ".join(prefix_shapes) + ")")
+                else:
+                    # Non-contiguous: use actual stride values
+                    for dim_idx in range(arg.ndim):
+                        stride_val = arg.strides[dim_idx] // arg.itemsize
+                        strides.append(f"{stride_val}")
+
+                offset = "0"
+                tensor_table[name] = Tensor(element_type, shapes, strides, offset)
 
         # Add unified shape arguments only for shapes without scalar equivalents
-        for i in range(num_unique_shapes):
-            if i not in shape_to_scalar:
+        # and skip size-1 dimensions (they use literal "1" instead)
+        for i in range(len(shape_values)):
+            if i not in shape_to_scalar and shape_values[i] != 1:
                 builder.add_container(
                     f"_s{i}", Scalar(PrimitiveType.Int64), is_argument=True
                 )
 
         # Create symbol table for parser
-        symbol_table = {}
+        container_table = {}
         for i, ((name, param), dtype, arg) in enumerate(zip(params, arg_types, args)):
-            symbol_table[name] = dtype
+            container_table[name] = dtype
 
-        for i in range(num_unique_shapes):
-            if i not in shape_to_scalar:
-                symbol_table[f"_s{i}"] = Scalar(PrimitiveType.Int64)
+        for i in range(len(shape_values)):
+            if i not in shape_to_scalar and shape_values[i] != 1:
+                container_table[f"_s{i}"] = Scalar(PrimitiveType.Int64)
 
         # Parse AST
         source_lines, start_line = inspect.getsourcelines(self.func)
@@ -610,14 +650,22 @@ class PythonProgram(DoccProgram):
         filename = inspect.getsourcefile(self.func)
         function_name = self.func.__name__
 
+        # Combine globals with closure variables (closure takes precedence)
+        combined_globals = dict(self.func.__globals__)
+        if self.func.__closure__ is not None and self.func.__code__.co_freevars:
+            for name, cell in zip(
+                self.func.__code__.co_freevars, self.func.__closure__
+            ):
+                combined_globals[name] = cell.cell_contents
+
         parser = ASTParser(
             builder,
-            array_info,
-            symbol_table,
+            tensor_table,
+            container_table,
             filename,
             function_name,
             infer_return_type=infer_return_type,
-            globals_dict=self.func.__globals__,
+            globals_dict=combined_globals,
             structure_member_info=structure_member_info,
         )
         for node in func_def.body:
@@ -630,7 +678,12 @@ class PythonProgram(DoccProgram):
             if name.startswith("_docc_ret_"):
                 out_args.append(name)
 
-        return sdfg, out_args, parser.captured_return_shapes
+        return (
+            sdfg,
+            out_args,
+            parser.captured_return_shapes,
+            parser.captured_return_strides,
+        )
 
 
 def native(

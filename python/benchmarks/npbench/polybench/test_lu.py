@@ -35,7 +35,8 @@ def kernel(A):
     [
         "none",
         "sequential",
-        # "openmp"
+        "openmp",
+        "cuda",
     ],
 )
 def test_lu(target):

@@ -30,21 +30,12 @@ def kernel(r):
     return y
 
 
-@pytest.mark.skip("np.flip not yet supported")
+@pytest.mark.skip(reason="dot with tensor types not implemented")
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
 def test_durbin(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"MAP": 4, "SEQUENTIAL": 4, "FOR": 6, "Malloc": 3}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
