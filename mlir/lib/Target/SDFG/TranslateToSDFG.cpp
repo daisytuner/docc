@@ -429,7 +429,6 @@ public:
                                 {},
                                 *this->convertType(fill_op.getInput().getType())
                             );
-                            return success();
                         } else if (auto constant_op = dyn_cast_or_null<ConstantOp>(fill_op.getInput().getDefiningOp()
                                    )) {
                             builder.add_computational_memlet(
@@ -440,10 +439,10 @@ public:
                                 {},
                                 *this->convertType(fill_op.getInput().getType())
                             );
-                            return success();
                         } else {
                             return failure();
                         }
+                        return success();
                     })
                     .Case<MatmulOp>([&](MatmulOp matmul_op) {
                         if (auto memlet_op = dyn_cast_or_null<MemletOp>(matmul_op.getLhs().getDefiningOp())) {
@@ -455,7 +454,6 @@ public:
                                 {},
                                 *this->convertType(matmul_op.getLhs().getType())
                             );
-                            return success();
                         } else if (auto constant_op = dyn_cast_or_null<ConstantOp>(matmul_op.getLhs().getDefiningOp()
                                    )) {
                             builder.add_computational_memlet(
@@ -466,7 +464,6 @@ public:
                                 {},
                                 *this->convertType(matmul_op.getLhs().getType())
                             );
-                            return success();
                         } else {
                             return failure();
                         }
@@ -479,7 +476,6 @@ public:
                                 {},
                                 *this->convertType(matmul_op.getRhs().getType())
                             );
-                            return success();
                         } else if (auto constant_op = dyn_cast_or_null<ConstantOp>(matmul_op.getRhs().getDefiningOp()
                                    )) {
                             builder.add_computational_memlet(
@@ -490,7 +486,6 @@ public:
                                 {},
                                 *this->convertType(matmul_op.getRhs().getType())
                             );
-                            return success();
                         } else {
                             return failure();
                         }
@@ -503,7 +498,6 @@ public:
                                 {},
                                 *this->convertType(matmul_op.getResInput().getType())
                             );
-                            return success();
                         } else if (auto constant_op =
                                        dyn_cast_or_null<ConstantOp>(matmul_op.getResInput().getDefiningOp())) {
                             builder.add_computational_memlet(
@@ -514,10 +508,10 @@ public:
                                 {},
                                 *this->convertType(matmul_op.getResInput().getType())
                             );
-                            return success();
                         } else {
                             return failure();
                         }
+                        return success();
                     })
                     .Case<MemletOp>([&](MemletOp memlet_op) {
                         if (auto tasklet_op = dyn_cast_or_null<TaskletOp>(memlet_op.getInput().getDefiningOp())) {
