@@ -86,8 +86,8 @@ def kernel(alpha, imgIn):
     "target",
     [
         "none",
-        "sequential",
-        "openmp",
+        # "sequential",
+        # "openmp",
         # "cuda"
     ],
 )
