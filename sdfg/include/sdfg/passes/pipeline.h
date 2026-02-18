@@ -38,9 +38,9 @@ public:
 
     virtual bool run(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    template<class T>
-    void register_pass() {
-        this->passes_.push_back(std::make_unique<T>());
+    template<class T, typename... Args>
+    void register_pass(Args&&... args) {
+        this->passes_.push_back(std::make_unique<T>(std::forward<Args>(args)...));
     };
 
     static Pipeline dataflow_simplification();

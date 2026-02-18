@@ -6,7 +6,9 @@
 namespace sdfg {
 namespace passes {
 
-DeadDataElimination::DeadDataElimination() : Pass() {};
+DeadDataElimination::DeadDataElimination() : Pass(), permissive_(false) {};
+
+DeadDataElimination::DeadDataElimination(bool permissive) : Pass(), permissive_(permissive) {};
 
 std::string DeadDataElimination::name() { return "DeadDataElimination"; };
 
@@ -57,7 +59,8 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
                     builder.clear_node(block, *tasklet);
                     applied = true;
                 } else if (auto library_node = dynamic_cast<data_flow::LibraryNode*>(&src)) {
-                    if (!library_node->side_effect() || library_node->code() == stdlib::LibraryNodeType_Malloc) {
+                    if (!library_node->side_effect() ||
+                        (permissive_ && library_node->code() == stdlib::LibraryNodeType_Malloc)) {
                         auto& block = dynamic_cast<structured_control_flow::Block&>(*graph.get_parent());
                         builder.clear_node(block, *library_node);
                         applied = true;
