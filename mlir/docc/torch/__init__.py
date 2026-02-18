@@ -19,6 +19,7 @@ class TorchProgram(DoccProgram):
         example_input: Any = None,
         target: str = "none",
         category: str = "server",
+        remote_tuning: bool = False,
         instrumentation_mode: Optional[str] = None,
         capture_args: Optional[bool] = None,
         name: Optional[str] = None,
@@ -34,6 +35,7 @@ class TorchProgram(DoccProgram):
             name=name,
             target=target,
             category=category,
+            remote_tuning=remote_tuning,
             instrumentation_mode=instrumentation_mode,
             capture_args=capture_args,
         )
@@ -149,7 +151,7 @@ class TorchProgram(DoccProgram):
 
         # Schedule if target is specified
         if self.target != "none":
-            sdfg.schedule(self.target, self.category, sdfg_rpc_context)
+            sdfg.schedule(self.target, self.category, self.remote_tuning)
 
         self.last_sdfg = sdfg
 
