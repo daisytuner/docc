@@ -19,14 +19,19 @@ bool DeadCFGElimination::is_dead(const structured_control_flow::ControlFlowNode&
             return false;
         }
         // TODO: Check use of indvar later
-        return true;
+        return permissive_;
     }
 
     return false;
 };
 
 DeadCFGElimination::DeadCFGElimination()
-    : Pass() {
+    : Pass(), permissive_(false) {
+
+      };
+
+DeadCFGElimination::DeadCFGElimination(bool permissive)
+    : Pass(), permissive_(permissive) {
 
       };
 

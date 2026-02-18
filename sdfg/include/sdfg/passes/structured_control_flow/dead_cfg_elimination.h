@@ -7,10 +7,14 @@ namespace passes {
 
 class DeadCFGElimination : public Pass {
 private:
+    bool permissive_;
+
     bool is_dead(const structured_control_flow::ControlFlowNode& node);
 
 public:
     DeadCFGElimination();
+
+    DeadCFGElimination(bool permissive);
 
     virtual std::string name() override;
 
