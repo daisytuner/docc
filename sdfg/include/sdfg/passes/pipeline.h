@@ -17,6 +17,7 @@
 #include "sdfg/passes/structured_control_flow/sequence_fusion.h"
 #include "sdfg/passes/symbolic/symbol_evolution.h"
 #include "sdfg/passes/symbolic/symbol_propagation.h"
+#include "sdfg/passes/transformations/map_fusion_pass.h"
 
 namespace sdfg {
 namespace passes {
@@ -59,6 +60,8 @@ public:
     static Pipeline memory();
 
     static Pipeline expansion();
+
+    static Pipeline map_fusion();
 };
 
 } // namespace passes
