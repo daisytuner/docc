@@ -167,4 +167,18 @@ def SDFG_MatmulOp : SDFG_Op<"matmul", [Pure, HasParent<"BlockOp">]> {
     let hasVerifier = 1;
 }
 
+// SDFG data flow node that represents a transpose
+def SDFG_TransposeOp : SDFG_Op<"transpose", [Pure, HasParent<"BlockOp">]> {
+    let summary = "Tensor transpose operation";
+
+    let arguments = (ins SDFG_Type:$res_input, SDFG_Type:$input);
+    let results = (outs SDFG_Type:$output);
+
+    let assemblyFormat = [{
+        attr-dict $res_input `,` $input `:` type($res_input) `,` type($input) `->` type($output)
+    }];
+
+    let hasVerifier = 1;
+}
+
 #endif // SDFG_OPS

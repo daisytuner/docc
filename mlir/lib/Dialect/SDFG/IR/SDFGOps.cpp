@@ -376,5 +376,21 @@ llvm::LogicalResult MatmulOp::verify() {
     return success();
 }
 
+//===----------------------------------------------------------------------===//
+// TransposeOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult TransposeOp::verify() {
+    // TODO check type
+    if (failed(argument_depends_on_memlet(this->getResInput()))) {
+        return this->emitOpError() << "result input does not depend on memlet or constant";
+    }
+    if (failed(argument_depends_on_memlet(this->getInput()))) {
+        return this->emitOpError() << "input does not depend on memlet or constant";
+    }
+    return success();
+}
+
+
 } // namespace sdfg
 } // namespace mlir

@@ -102,6 +102,42 @@ struct MatmulOpConversion : public OpRewritePattern<linalg::MatmulOp> {
     }
 };
 
+struct TransposeOpConversion : public OpRewritePattern<linalg::TransposeOp> {
+    using OpRewritePattern<linalg::TransposeOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(linalg::TransposeOp op, PatternRewriter& rewriter) const override {
+        // Check that parent is from sdfg dialect
+        if (op->getParentOp()->getDialect()->getNamespace() != sdfg::SDFGDialect::getDialectNamespace()) {
+            return failure();
+        }
+
+        // Expect 1 input and 1 output
+        if (op.getNumDpsInputs() != 1 || op.getNumDpsInits() != 1) {
+            return failure();
+        }
+
+        Value input = op.getInput();
+        Value init = op.getInit();
+        Value result = op.getResult()[0];
+
+        sdfg::BlockOp block_op = rewriter.create<sdfg::BlockOp>(op.getLoc(), SmallVector<Type>({result.getType()}));
+        rewriter.setInsertionPointToStart(&block_op.getBody().front());
+
+        sdfg::MemletOp res_input_memlet_op = rewriter.create<sdfg::MemletOp>(block_op.getLoc(), init.getType(), init);
+        sdfg::MemletOp input_memlet_op =
+            rewriter.create<sdfg::MemletOp>(res_input_memlet_op.getLoc(), input.getType(), input);
+        sdfg::TransposeOp transpose_op = rewriter.create<
+            sdfg::TransposeOp>(input_memlet_op.getLoc(), result.getType(), res_input_memlet_op, input_memlet_op);
+        sdfg::MemletOp output_memlet_op =
+            rewriter.create<sdfg::MemletOp>(transpose_op.getLoc(), result.getType(), transpose_op);
+
+        block_op.getBody().front().back().setOperands({output_memlet_op});
+        rewriter.replaceOp(op, block_op);
+
+        return success();
+    }
+};
+
 } // namespace linalg2sdfg
 
 namespace {
@@ -123,7 +159,10 @@ struct ConvertLinalgToSDFG : public impl::ConvertLinalgToSDFGBase<ConvertLinalgT
 namespace linalg {
 
 void populateLinalgToSDFGPatterns(RewritePatternSet& patterns) {
-    patterns.add<linalg2sdfg::FillOpConversion, linalg2sdfg::MatmulOpConversion>(patterns.getContext());
+    patterns.add<
+        linalg2sdfg::FillOpConversion,
+        linalg2sdfg::MatmulOpConversion,
+        linalg2sdfg::TransposeOpConversion>(patterns.getContext());
 }
 
 } // namespace linalg
