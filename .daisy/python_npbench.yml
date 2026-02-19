@@ -25,6 +25,141 @@ steps:
     pip install --no-build-isolation -v -e python/
 
   run:
+    cavity_flow_numpy:
+      command: venv/bin/python3 python/benchmarks/npbench/cavity_flow/test_cavity_flow.py --numpy --size=M
+      energy: true
+      env:
+        DOCC_CI: regions
+    cavity_flow_omp:
+      command: venv/bin/python3 python/benchmarks/npbench/cavity_flow/test_cavity_flow.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    cavity_flow_cuda:
+      command: venv/bin/python3 python/benchmarks/npbench/cavity_flow/test_cavity_flow.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    compute_numpy:
+      command: venv/bin/python3 python/benchmarks/npbench/compute/test_compute.py --numpy --size=M
+      energy: true
+      env:
+        DOCC_CI: regions
+    compute_omp:
+      command: venv/bin/python3 python/benchmarks/npbench/compute/test_compute.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    compute_cuda:
+      command: venv/bin/python3 python/benchmarks/npbench/compute/test_compute.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    crc16_numpy:
+      command: venv/bin/python3 python/benchmarks/npbench/crc16/test_crc16.py --numpy --size=M
+      energy: true
+      env:
+        DOCC_CI: regions
+    crc16_omp:
+      command: venv/bin/python3 python/benchmarks/npbench/crc16/test_crc16.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    crc16_cuda:
+      command: venv/bin/python3 python/benchmarks/npbench/crc16/test_crc16.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    mlp_numpy:
+      command: venv/bin/python3 python/benchmarks/npbench/deep_learning/mlp/test_mlp.py --numpy --size=M
+      energy: true
+      env:
+        DOCC_CI: regions
+    mlp_omp:
+      command: venv/bin/python3 python/benchmarks/npbench/deep_learning/mlp/test_mlp.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    mlp_cuda:
+      command: venv/bin/python3 python/benchmarks/npbench/deep_learning/mlp/test_mlp.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    softmax_numpy:
+      command: venv/bin/python3 python/benchmarks/npbench/deep_learning/softmax/test_softmax.py --numpy --size=M
+      energy: true
+      env:
+        DOCC_CI: regions
+    softmax_omp:
+      command: venv/bin/python3 python/benchmarks/npbench/deep_learning/softmax/test_softmax.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    softmax_cuda:
+      command: venv/bin/python3 python/benchmarks/npbench/deep_learning/softmax/test_softmax.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    go_fast_numpy:
+      command: venv/bin/python3 python/benchmarks/npbench/go_fast/test_go_fast.py --numpy --size=M
+      energy: true
+      env:
+        DOCC_CI: regions
+    go_fast_omp:
+      command: venv/bin/python3 python/benchmarks/npbench/go_fast/test_go_fast.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    go_fast_cuda:
+      command: venv/bin/python3 python/benchmarks/npbench/go_fast/test_go_fast.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    spmv_numpy:
+      command: venv/bin/python3 python/benchmarks/npbench/spmv/test_spmv.py --numpy --size=M
+      energy: true
+      env:
+        DOCC_CI: regions
+    spmv_omp:
+      command: venv/bin/python3 python/benchmarks/npbench/spmv/test_spmv.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    spmv_cuda:
+      command: venv/bin/python3 python/benchmarks/npbench/spmv/test_spmv.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    # hdiff_numpy:
+    #   command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_hdiff.py --numpy --size=M
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    # hdiff_omp:
+    #   command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_hdiff.py --docc --size=M --target=openmp
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    # hdiff_cuda:
+    #   command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_hdiff.py --docc --size=M --target=cuda
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    vadv_numpy:
+      command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_vadv.py --numpy --size=M
+      energy: true
+      env:
+        DOCC_CI: regions
+    vadv_omp:
+      command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_vadv.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    vadv_cuda:
+      command: venv/bin/python3 python/benchmarks/npbench/weather_stencils/test_vadv.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
     adi_numpy:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --numpy --size=M
       energy: true
