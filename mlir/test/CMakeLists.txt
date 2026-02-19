@@ -1,3 +1,5 @@
+add_subdirectory(sdfg-json-to-c)
+
 configure_lit_site_cfg(
     ${CMAKE_CURRENT_SOURCE_DIR}/lit.cmake.site.cfg.py.in
     ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
@@ -11,6 +13,8 @@ set(MLIR_SDFG_TEST_DEPENDS
     not
     mlir-opt
     docc-mlir-opt
+    docc-mlir-translate
+    sdfg-json-to-c
 )
 
 add_lit_testsuite(check-docc-mlir "Running the DOCC MLIR frontend regression tests"

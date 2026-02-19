@@ -566,7 +566,9 @@ public:
     }
 
     LogicalResult translateReturnOp(Builder& builder, Sequence& parent, ReturnOp* return_op) {
-        builder.add_return(parent, this->get_or_create_container(builder, return_op->getOperand()));
+        if (return_op->getOperands().size() > 0) {
+            builder.add_return(parent, this->get_or_create_container(builder, return_op->getOperand()));
+        }
         return success();
     }
 
