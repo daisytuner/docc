@@ -116,8 +116,8 @@ def SDFG_TaskletCodeAttr : I64EnumAttr<
             I64EnumAttrCase<"int_uge", 47>, ///< Unsigned greater or equal
             I64EnumAttrCase<"int_ugt", 48>, ///< Unsigned greater than
             I64EnumAttrCase<"int_ule", 49>, ///< Unsigned less or equal
-            I64EnumAttrCase<"int_ult", 51>, ///< Unsigned less than
-            I64EnumAttrCase<"int_abs", 52> ///< Integer absolute value
+            I64EnumAttrCase<"int_ult", 50>, ///< Unsigned less than
+            I64EnumAttrCase<"int_abs", 51> ///< Integer absolute value
         ]> {
     let cppNamespace = "::mlir::sdfg";
 }

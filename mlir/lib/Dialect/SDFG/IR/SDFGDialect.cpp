@@ -21,7 +21,6 @@ bool is_primitive(const Type type) {
     if (auto int_type = llvm::dyn_cast<IntegerType>(type)) {
         switch (int_type.getWidth()) {
             case 1:
-                return int_type.isSigned();
             case 8:
             case 16:
             case 32:
