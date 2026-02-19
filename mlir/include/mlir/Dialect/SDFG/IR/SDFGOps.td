@@ -132,6 +132,60 @@ def SDFG_MemletOp : SDFG_Op<"memlet", [Pure, HasParent<"BlockOp">]> {
     let assemblyFormat = "attr-dict $input `:` type($input) `->` type($output)";
 }
 
+// SDFG memlet that represents a view with reshaped dimensions (analogous to numpy.reshape)
+def SDFG_ReshapeMemletOp : SDFG_Op<"reshape_memlet", [Pure, HasParent<"BlockOp">]> {
+    let summary = "Memlet representing a reshaped view of tensor data";
+    let description = [{
+        Creates a view of the input tensor with a new shape without copying data.
+        Analogous to numpy.reshape. The product of the new shape dimensions must equal
+        the product of the input shape dimensions. This is a zero-copy operation that
+        reinterprets the memory layout.
+    }];
+
+    let arguments = (ins TensorOf<SDFG_PrimitiveType.allowedTypes>:$input);
+    let results = (outs TensorOf<SDFG_PrimitiveType.allowedTypes>:$output);
+
+    let assemblyFormat = "attr-dict $input `:` type($input) `->` type($output)";
+
+    let hasVerifier = 1;
+}
+
+// SDFG memlet that represents a view with flipped axes (analogous to numpy.flip)
+def SDFG_FlipMemletOp : SDFG_Op<"flip_memlet", [Pure, HasParent<"BlockOp">]> {
+    let summary = "Memlet representing a flipped view of tensor data";
+    let description = [{
+        Creates a view of the input tensor with elements reversed along the specified axes.
+        Analogous to numpy.flip. This is a zero-copy operation that changes the stride
+        interpretation of the memory layout.
+    }];
+
+    let arguments = (ins TensorOf<SDFG_PrimitiveType.allowedTypes>:$input, DenseI64ArrayAttr:$axes);
+    let results = (outs TensorOf<SDFG_PrimitiveType.allowedTypes>:$output);
+
+    let assemblyFormat = "attr-dict $input `axes` $axes `:` type($input) `->` type($output)";
+
+    let hasVerifier = 1;
+}
+
+// SDFG memlet that represents a transposed view (analogous to numpy.transpose)
+def SDFG_TransposeMemletOp : SDFG_Op<"transpose_memlet", [Pure, HasParent<"BlockOp">]> {
+    let summary = "Memlet representing a transposed view of tensor data";
+    let description = [{
+        Creates a view of the input tensor with permuted dimensions.
+        Analogous to numpy.transpose. This is a zero-copy operation that changes the
+        stride interpretation of the memory layout. The permutation attribute specifies
+        how dimensions are reordered: output dimension i corresponds to input dimension
+        permutation[i].
+    }];
+
+    let arguments = (ins TensorOf<SDFG_PrimitiveType.allowedTypes>:$input, DenseI64ArrayAttr:$permutation);
+    let results = (outs TensorOf<SDFG_PrimitiveType.allowedTypes>:$output);
+
+    let assemblyFormat = "attr-dict $input `permutation` $permutation `:` type($input) `->` type($output)";
+
+    let hasVerifier = 1;
+}
+
 // LibraryNodes
 class SDFG_UnaryLibraryNode<string mnemonic> : SDFG_Op<mnemonic, [Pure, HasParent<"BlockOp">]> {
     let arguments = (ins SDFG_Type:$input);

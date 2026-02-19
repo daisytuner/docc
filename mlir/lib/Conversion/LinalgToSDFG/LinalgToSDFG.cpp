@@ -102,6 +102,49 @@ struct MatmulOpConversion : public OpRewritePattern<linalg::MatmulOp> {
     }
 };
 
+struct TransposeOpConversion : public OpRewritePattern<linalg::TransposeOp> {
+    using OpRewritePattern<linalg::TransposeOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(linalg::TransposeOp op, PatternRewriter& rewriter) const override {
+        // Check that parent is from sdfg dialect
+        if (op->getParentOp()->getDialect()->getNamespace() != sdfg::SDFGDialect::getDialectNamespace()) {
+            return failure();
+        }
+
+        // Expect 1 input and 1 output
+        if (op.getNumDpsInputs() != 1 || op.getNumDpsInits() != 1) {
+            return failure();
+        }
+
+        Value input = op.getInput();
+        Value result = op.getResult()[0];
+
+        // Get permutation from linalg::TransposeOp
+        ArrayRef<int64_t> permutation = op.getPermutation();
+
+        // Create block containing the transpose memlet operation
+        sdfg::BlockOp block_op = rewriter.create<sdfg::BlockOp>(op.getLoc(), SmallVector<Type>({result.getType()}));
+        rewriter.setInsertionPointToStart(&block_op.getBody().front());
+
+        // Create input memlet
+        sdfg::MemletOp input_memlet_op = rewriter.create<sdfg::MemletOp>(block_op.getLoc(), input.getType(), input);
+
+        // Create transpose memlet with permutation
+        sdfg::TransposeMemletOp transpose_op = rewriter.create<sdfg::TransposeMemletOp>(
+            input_memlet_op.getLoc(), result.getType(), input_memlet_op, rewriter.getDenseI64ArrayAttr(permutation)
+        );
+
+        // Create output memlet
+        sdfg::MemletOp output_memlet_op =
+            rewriter.create<sdfg::MemletOp>(transpose_op.getLoc(), result.getType(), transpose_op);
+
+        block_op.getBody().front().back().setOperands({output_memlet_op});
+        rewriter.replaceOp(op, block_op);
+
+        return success();
+    }
+};
+
 } // namespace linalg2sdfg
 
 namespace {
@@ -123,7 +166,10 @@ struct ConvertLinalgToSDFG : public impl::ConvertLinalgToSDFGBase<ConvertLinalgT
 namespace linalg {
 
 void populateLinalgToSDFGPatterns(RewritePatternSet& patterns) {
-    patterns.add<linalg2sdfg::FillOpConversion, linalg2sdfg::MatmulOpConversion>(patterns.getContext());
+    patterns.add<
+        linalg2sdfg::FillOpConversion,
+        linalg2sdfg::MatmulOpConversion,
+        linalg2sdfg::TransposeOpConversion>(patterns.getContext());
 }
 
 } // namespace linalg

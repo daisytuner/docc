@@ -376,5 +376,114 @@ llvm::LogicalResult MatmulOp::verify() {
     return success();
 }
 
+//===----------------------------------------------------------------------===//
+// ReshapeMemletOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult ReshapeMemletOp::verify() {
+    auto input_type = cast<TensorType>(this->getInput().getType());
+    auto output_type = cast<TensorType>(this->getOutput().getType());
+
+    // Verify element types match
+    if (input_type.getElementType() != output_type.getElementType()) {
+        return this->emitOpError() << "input element type (" << input_type.getElementType()
+                                   << ") must match output element type (" << output_type.getElementType() << ")";
+    }
+
+    // Verify total number of elements is preserved
+    if (input_type.hasStaticShape() && output_type.hasStaticShape()) {
+        int64_t input_num_elements = input_type.getNumElements();
+        int64_t output_num_elements = output_type.getNumElements();
+
+        if (input_num_elements != output_num_elements) {
+            return this->emitOpError() << "reshape cannot change the total number of elements: input has "
+                                       << input_num_elements << " elements but output has " << output_num_elements;
+        }
+    }
+
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// FlipMemletOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult FlipMemletOp::verify() {
+    auto input_type = cast<TensorType>(this->getInput().getType());
+    auto output_type = cast<TensorType>(this->getOutput().getType());
+
+    // Verify input and output types match (flip doesn't change shape or element type)
+    if (input_type != output_type) {
+        return this->emitOpError() << "input type (" << input_type << ") must match output type (" << output_type
+                                   << ")";
+    }
+
+    // Verify axes are valid
+    if (input_type.hasRank()) {
+        int64_t rank = input_type.getRank();
+        for (int64_t axis : this->getAxes()) {
+            if (axis < 0 || axis >= rank) {
+                return this->emitOpError() << "axis " << axis << " is out of bounds for tensor with rank " << rank;
+            }
+        }
+    }
+
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// TransposeMemletOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult TransposeMemletOp::verify() {
+    auto input_type = cast<TensorType>(this->getInput().getType());
+    auto output_type = cast<TensorType>(this->getOutput().getType());
+
+    // Verify element types match
+    if (input_type.getElementType() != output_type.getElementType()) {
+        return this->emitOpError() << "input element type (" << input_type.getElementType()
+                                   << ") must match output element type (" << output_type.getElementType() << ")";
+    }
+
+    ArrayRef<int64_t> permutation = this->getPermutation();
+
+    // Verify permutation length matches input rank
+    if (input_type.hasRank()) {
+        int64_t rank = input_type.getRank();
+        if (static_cast<int64_t>(permutation.size()) != rank) {
+            return this->emitOpError() << "permutation length (" << permutation.size()
+                                       << ") must match input tensor rank (" << rank << ")";
+        }
+
+        // Verify permutation is a valid permutation (each index 0..rank-1 appears exactly once)
+        SmallVector<bool> seen(rank, false);
+        for (int64_t idx : permutation) {
+            if (idx < 0 || idx >= rank) {
+                return this->emitOpError() << "permutation index " << idx << " is out of bounds for rank " << rank;
+            }
+            if (seen[idx]) {
+                return this->emitOpError() << "permutation index " << idx << " appears more than once";
+            }
+            seen[idx] = true;
+        }
+
+        // Verify output shape matches permuted input shape
+        if (output_type.hasRank()) {
+            ArrayRef<int64_t> input_shape = input_type.getShape();
+            ArrayRef<int64_t> output_shape = output_type.getShape();
+            for (int64_t i = 0; i < rank; ++i) {
+                int64_t expected_dim = input_shape[permutation[i]];
+                if (expected_dim != ShapedType::kDynamic && output_shape[i] != ShapedType::kDynamic &&
+                    output_shape[i] != expected_dim) {
+                    return this->emitOpError() << "output dimension " << i << " has size " << output_shape[i]
+                                               << " but expected " << expected_dim << " based on permutation";
+                }
+            }
+        }
+    }
+
+    return success();
+}
+
 } // namespace sdfg
 } // namespace mlir
