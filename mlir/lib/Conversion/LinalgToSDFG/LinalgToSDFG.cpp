@@ -126,19 +126,12 @@ struct TransposeOpConversion : public OpRewritePattern<linalg::TransposeOp> {
         sdfg::BlockOp block_op = rewriter.create<sdfg::BlockOp>(op.getLoc(), SmallVector<Type>({result.getType()}));
         rewriter.setInsertionPointToStart(&block_op.getBody().front());
 
-        // Create input memlet
-        sdfg::MemletOp input_memlet_op = rewriter.create<sdfg::MemletOp>(block_op.getLoc(), input.getType(), input);
-
         // Create transpose memlet with permutation
         sdfg::TransposeMemletOp transpose_op = rewriter.create<sdfg::TransposeMemletOp>(
-            input_memlet_op.getLoc(), result.getType(), input_memlet_op, rewriter.getDenseI64ArrayAttr(permutation)
+            block_op.getLoc(), result.getType(), input, rewriter.getDenseI64ArrayAttr(permutation)
         );
 
-        // Create output memlet
-        sdfg::MemletOp output_memlet_op =
-            rewriter.create<sdfg::MemletOp>(transpose_op.getLoc(), result.getType(), transpose_op);
-
-        block_op.getBody().front().back().setOperands({output_memlet_op});
+        block_op.getBody().front().back().setOperands({transpose_op});
         rewriter.replaceOp(op, block_op);
 
         return success();

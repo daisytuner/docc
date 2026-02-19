@@ -4,21 +4,19 @@ import torch.nn as nn
 from torch_mlir import fx
 
 
-class MatmulNet(nn.Module):
-    def __init__(self, weight1: torch.Tensor, weight2: torch.Tensor):
+class LinearNet(nn.Module):
+    def __init__(self, in_features: int, hidden_features: int, out_features: int):
         super().__init__()
-        self.W1 = nn.Parameter(weight1)
-        self.W2 = nn.Parameter(weight2)
+        self.linear1 = nn.Linear(in_features, hidden_features, bias=False)
+        self.linear2 = nn.Linear(hidden_features, out_features, bias=False)
 
     def forward(self, x: torch.Tensor):
-        h1 = torch.matmul(x, self.W1)
-        h2 = torch.matmul(h1, self.W2)
+        h1 = self.linear1(x)
+        h2 = self.linear2(h1)
         return h2
 
 
-weight1 = torch.randn(10, 16)
-weight2 = torch.randn(16, 3)
-model = MatmulNet(weight1, weight2)
+model = LinearNet(10, 16, 3)
 example_input = torch.randn(8, 10)
 
 torch_mlir = fx.export_and_import(

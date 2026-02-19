@@ -10,6 +10,7 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
+#include "sdfg/types/tensor.h"
 
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
@@ -34,6 +35,101 @@
 namespace mlir {
 namespace sdfg {
 
+// Tensor metadata for tracking view transformations (transpose, flip, reshape)
+struct TensorInfo {
+    std::vector<int64_t> shape;
+    std::vector<int64_t> strides;
+    int64_t offset = 0;
+
+    // Compute C-order contiguous strides from shape
+    static std::vector<int64_t> compute_strides(const std::vector<int64_t>& shape) {
+        if (shape.empty()) {
+            return {};
+        }
+        std::vector<int64_t> strides(shape.size());
+        int64_t stride = 1;
+        for (int64_t i = static_cast<int64_t>(shape.size()) - 1; i >= 0; --i) {
+            strides[i] = stride;
+            stride *= shape[i];
+        }
+        return strides;
+    }
+
+    // Create TensorInfo from tensor type (assumes C-order contiguous)
+    static TensorInfo from_tensor_type(TensorType type) {
+        TensorInfo info;
+        for (int64_t dim : type.getShape()) {
+            info.shape.push_back(dim);
+        }
+        info.strides = compute_strides(info.shape);
+        info.offset = 0;
+        return info;
+    }
+
+    // Create transposed view: output_strides[i] = input_strides[perm[i]]
+    TensorInfo transpose(ArrayRef<int64_t> permutation) const {
+        TensorInfo result;
+        result.offset = offset;
+        for (int64_t p : permutation) {
+            result.shape.push_back(shape[p]);
+            result.strides.push_back(strides[p]);
+        }
+        return result;
+    }
+
+    // Create flipped view: negate stride and adjust offset for flipped axes
+    TensorInfo flip(ArrayRef<int64_t> axes) const {
+        TensorInfo result = *this;
+        for (int64_t axis : axes) {
+            result.offset += (shape[axis] - 1) * strides[axis];
+            // negate stride
+            result.strides[axis] = -strides[axis];
+        }
+        return result;
+    }
+
+    // Returns true, iff a reshape is valid (i.e., no other view transformations have been applied and the total number
+    // of elements matches)
+    bool is_reshape_valid(ArrayRef<int64_t> new_shape) const {
+        int64_t old_num_elements = 1;
+        for (int64_t dim : shape) {
+            old_num_elements *= dim;
+        }
+        int64_t new_num_elements = 1;
+        for (int64_t dim : new_shape) {
+            new_num_elements *= dim;
+        }
+
+        if (old_num_elements != new_num_elements) {
+            return false;
+        }
+
+        // Test for valid C-order strides (i.e., no transpose or flip)
+        auto expected_strides = compute_strides(shape);
+        if (expected_strides.size() != strides.size()) {
+            return false;
+        }
+        for (size_t i = 0; i < expected_strides.size(); ++i) {
+            if (expected_strides[i] != strides[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // Create reshaped view (only valid for contiguous tensors)
+    TensorInfo reshape(ArrayRef<int64_t> new_shape) const {
+        TensorInfo result;
+        result.offset = offset;
+        for (int64_t dim : new_shape) {
+            result.shape.push_back(dim);
+        }
+        result.strides = compute_strides(result.shape);
+        return result;
+    }
+};
+
 class SDFGTranslator {
     using Builder = ::sdfg::builder::StructuredSDFGBuilder;
     using Sequence = ::sdfg::structured_control_flow::Sequence;
@@ -42,6 +138,7 @@ class SDFGTranslator {
 
     using ValueMap = llvm::ScopedHashTableScope<Value, std::string>;
     llvm::ScopedHashTable<Value, std::string> value_map_;
+    llvm::ScopedHashTable<Value, TensorInfo> tensor_map_;
     size_t value_counter_ = 0;
 
 public:
@@ -363,6 +460,58 @@ public:
                             this->value_map_
                                 .insert(results.at(i), this->get_or_create_container(builder, yield_op.getOperand(i)));
                         }
+                        return success();
+                    })
+                    .Case<TransposeMemletOp>([&](TransposeMemletOp transpose_memlet_op) {
+                        std::string input_container =
+                            this->get_or_create_container(builder, transpose_memlet_op.getInput());
+                        std::string output_container =
+                            this->get_or_create_container(builder, transpose_memlet_op.getOutput());
+
+                        if (tensor_map_.count(transpose_memlet_op.getInput())) {
+                            tensor_map_.insert(
+                                transpose_memlet_op.getInput(),
+                                TensorInfo::from_tensor_type(transpose_memlet_op.getInput().getType())
+                            );
+                        }
+                        TensorInfo input_tensor_info = tensor_map_.lookup(transpose_memlet_op.getInput());
+
+                        TensorInfo output_tensor_info = input_tensor_info.transpose(transpose_memlet_op.getPermutation()
+                        );
+                        tensor_map_.insert(transpose_memlet_op.getOutput(), output_tensor_info);
+
+                        // TODO: tensor management
+
+                        access_nodes
+                            .insert({transpose_memlet_op.getInput().getImpl(), &builder.add_access(block, input_container)}
+                            );
+                        access_nodes.insert(
+                            {transpose_memlet_op.getOutput().getImpl(), &builder.add_access(block, output_container)}
+                        );
+                        return success();
+                    })
+                    .Case<FlipMemletOp>([&](FlipMemletOp flip_memlet_op) {
+                        std::string input_container = this->get_or_create_container(builder, flip_memlet_op.getInput());
+                        std::string output_container =
+                            this->get_or_create_container(builder, flip_memlet_op.getOutput());
+                        access_nodes
+                            .insert({flip_memlet_op.getInput().getImpl(), &builder.add_access(block, input_container)});
+                        access_nodes
+                            .insert({flip_memlet_op.getOutput().getImpl(), &builder.add_access(block, output_container)}
+                            );
+                        return success();
+                    })
+                    .Case<ReshapeMemletOp>([&](ReshapeMemletOp reshape_memlet_op) {
+                        std::string input_container =
+                            this->get_or_create_container(builder, reshape_memlet_op.getInput());
+                        std::string output_container =
+                            this->get_or_create_container(builder, reshape_memlet_op.getOutput());
+                        access_nodes
+                            .insert({reshape_memlet_op.getInput().getImpl(), &builder.add_access(block, input_container)}
+                            );
+                        access_nodes
+                            .insert({reshape_memlet_op.getOutput().getImpl(), &builder.add_access(block, output_container)}
+                            );
                         return success();
                     })
                     .Default([&](Operation* op) {
