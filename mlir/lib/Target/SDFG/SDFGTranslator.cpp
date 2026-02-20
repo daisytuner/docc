@@ -134,9 +134,16 @@ llvm::ScopedHashTable<Value, std::string>& SDFGTranslator::value_map() { return 
 
 std::unordered_map<std::string, TensorInfo>& SDFGTranslator::tensor_info_map() { return this->tensor_info_map_; }
 
+TensorInfo& SDFGTranslator::get_or_create_tensor_info(const std::string& container, const TensorType& type) {
+    if (tensor_info_map_.find(container) == tensor_info_map_.end()) {
+        tensor_info_map_.insert({container, TensorInfo::from_tensor_type(type)});
+    }
+    return tensor_info_map_.at(container);
+}
+
 ::sdfg::structured_control_flow::Sequence& SDFGTranslator::insertion_point() {
     if (this->insertion_point_ == nullptr) {
-        std::runtime_error("Tried accessing insertion point but is nullptr");
+        throw std::runtime_error("Tried accessing insertion point but is nullptr");
     }
     return *this->insertion_point_;
 }

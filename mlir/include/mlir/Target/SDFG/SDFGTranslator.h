@@ -75,6 +75,8 @@ public:
 
     std::unordered_map<std::string, TensorInfo>& tensor_info_map();
 
+    TensorInfo& get_or_create_tensor_info(const std::string& container, const TensorType& type);
+
     std::string get_or_create_container(Value val, bool argument = false);
 
     std::unique_ptr<::sdfg::types::IType> convertType(const Type mlir_type);
