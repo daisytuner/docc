@@ -34,18 +34,25 @@ llvm_config.use_default_substitutions()
 # excludes: A list of directories to exclude from the testsuite. The 'Inputs'
 # subdirectories contain auxiliary inputs for various tests in their parent
 # directories.
-config.excludes = ["Inputs", "Examples", "CMakeLists.txt", "README.txt", "LICENSE.txt"]
+config.excludes = ["sdfg-json-to-c", "Inputs", "Examples", "CMakeLists.txt", "README.txt", "LICENSE.txt"]
 
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.project_binary_dir, "test")
-config.project_tools_dir = os.path.join(config.project_binary_dir, "tools/docc-mlir-opt")
+config.project_tools_dir = os.path.join(config.project_binary_dir, "tools")
 
 # Tweak the PATH to include the tools dir.
 llvm_config.with_environment("PATH", config.llvm_tools_dir, append_path=True)
 
-tool_dirs = [config.project_tools_dir, config.llvm_tools_dir]
+tool_dirs = [
+    config.llvm_tools_dir,
+    os.path.join(config.project_tools_dir, "docc-mlir-opt"),
+    os.path.join(config.project_tools_dir, "docc-mlir-translate"),
+    os.path.join(config.project_binary_dir, "test/sdfg-json-to-c"),
+]
 tools = [
-    "docc-mlir-opt"
+    "docc-mlir-opt",
+    "docc-mlir-translate",
+    "sdfg-json-to-c",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
