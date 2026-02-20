@@ -1,6 +1,8 @@
 set(TARGET_SDFG_FILES
+    ArithToSDFGTranslator.cpp
     BuiltinToSDFGTranslator.cpp
     FuncToSDFGTranslator.cpp
+    helper.cpp
     SDFGTranslator.cpp
     TranslateToSDFG.cpp
 )

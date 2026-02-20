@@ -1,12 +1,15 @@
 #include "mlir/Target/SDFG/SDFGTranslator.h"
 #include <stdexcept>
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinDialect.h"
+#include "mlir/Target/SDFG/ArithToSDFGTranslator.h"
 #include "mlir/Target/SDFG/BuiltinToSDFGTranslator.h"
 #include "mlir/Target/SDFG/FuncToSDFGTranslator.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/serializer/json_serializer.h"
 
 namespace mlir {
 namespace sdfg {
@@ -100,7 +103,9 @@ std::unique_ptr<::sdfg::types::IType> SDFGTranslator::convertType(const Type mli
 }
 
 LogicalResult translateOp(SDFGTranslator& translator, Operation* op) {
-    if (op->getDialect()->getNamespace() == BuiltinDialect::getDialectNamespace()) {
+    if (op->getDialect()->getNamespace() == arith::ArithDialect::getDialectNamespace()) {
+        return translateArithOp(translator, op);
+    } else if (op->getDialect()->getNamespace() == BuiltinDialect::getDialectNamespace()) {
         return translateBuiltinOp(translator, op);
     } else if (op->getDialect()->getNamespace() == func::FuncDialect::getDialectNamespace()) {
         return translateFuncOp(translator, op);
@@ -109,7 +114,12 @@ LogicalResult translateOp(SDFGTranslator& translator, Operation* op) {
     return op->emitOpError("Could not translate!");
 }
 
-LogicalResult emitJSON(SDFGTranslator& translator, raw_ostream& os) { return success(); }
+LogicalResult emitJSON(SDFGTranslator& translator, raw_ostream& os) {
+    ::sdfg::serializer::JSONSerializer serializer;
+    auto json = serializer.serialize(translator.builder().subject());
+    os << json.dump(4) << "\n";
+    return success();
+}
 
 } // namespace sdfg
 } // namespace mlir

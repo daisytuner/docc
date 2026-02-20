@@ -2,7 +2,7 @@
 // RUN: FileCheck %s < %t
 
 // CHECK: extern void __docc_test(void)
-sdfg.sdfg @test() {
+func.func @test() {
     // CHECK-NOT: return
-    sdfg.return
+    func.return
 }

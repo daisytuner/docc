@@ -2,7 +2,7 @@
 // RUN: FileCheck %s < %t
 
 // CHECK: extern int __docc_test(int [[a:.*]])
-sdfg.sdfg @test(%a : i32) -> i32 {
+func.func @test(%a : i32) -> i32 {
     // CHECK: return [[a]]
-    sdfg.return %a : i32
+    func.return %a : i32
 }
