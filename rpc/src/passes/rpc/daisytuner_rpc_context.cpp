@@ -11,7 +11,11 @@ sdfg::passes::rpc::SimpleRpcContextBuilder& DaisytunerRpcContextBuilder::from_do
     if (!auth.has_value()) {
         throw std::runtime_error("DOCC access token not found in DOCC_ACCESS_TOKEN or $HOME/.config/docc/token");
     }
-    server = sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::DEFAULT_SERVER;
+    if (getenv("RPC_SERVER")) {
+        server = getenv("RPC_SERVER");
+    } else {
+        server = sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::DEFAULT_SERVER;
+    }
     endpoint = sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::DEFAULT_ENDPOINT;
     SimpleRpcContextBuilder::add_header(
         std::string(sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::DEFAULT_AUTH_HEADER),

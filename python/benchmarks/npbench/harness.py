@@ -100,6 +100,7 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
         parser.add_argument("--numpy", action="store_true")
         parser.add_argument("--target", type=str, default="none")
         parser.add_argument("--n_runs", type=int, default=10)
+        parser.add_argument("--remote-tuning", action="store_true", default=False)
         args = parser.parse_args()
 
     if args.size not in parameters:
@@ -141,6 +142,7 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
         kernel_with_target = docc.python.native(
             kernel_func,
             target=args.target,
+            remote_tuning=args.remote_tuning,
         )
 
         times = []
@@ -170,6 +172,7 @@ def run_pytest(
     parameters,
     target="none",
     verifier: SDFGVerification = None,
+    remote_tuning=False,
 ):
     if sys.platform == "darwin":
         if target == "cuda":
@@ -210,6 +213,7 @@ def run_pytest(
         kernel_func,
         target=target,
         category="server",
+        remote_tuning=remote_tuning,
     )
     res_docc = kernel_with_target(*inputs_docc)
 
