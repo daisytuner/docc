@@ -2,33 +2,25 @@
 // RUN: FileCheck %s < %t
 
 // CHECK: extern int __docc_test(int [[a:.*]], int [[b:.*]], int [[c:.*]])
-sdfg.sdfg @test(%a : i32, %b : i32, %c : i32) -> i32 {
+func.func @test(%a : i32, %b : i32, %c : i32) -> i32 {
 // CHECK: int [[d:.*]];
 // CHECK: int [[tmp:.*]];
-    %d = sdfg.block -> i32 {
     // CHECK: {
-        // CHECK: int [[in1:.*]] = [[a]];
-        %in1 = sdfg.memlet %a : i32 -> i32
-        // CHECK: int [[in2:.*]] = [[b]];
-        %in2 = sdfg.memlet %b : i32 -> i32
-        // CHECK: int [[out1:.*]];
-        // CHECK: [[out1]] = [[in1]] * [[in2]];
-        %out1 = sdfg.tasklet int_mul, %in1, %in2 : (i32, i32) -> i32
-        // CHECK: [[tmp]] = [[out1]];
-        %tmp = sdfg.memlet %out1 : i32 -> i32
+    // CHECK: int [[in1:.*]] = [[a]];
+    // CHECK: int [[in2:.*]] = [[b]];
+    // CHECK: int [[out1:.*]];
+    // CHECK: [[out1]] = [[in1]] * [[in2]];
+    // CHECK: [[tmp]] = [[out1]];
     // CHECK: }
+    %tmp = arith.muli %a, %b : i32
     // CHECK: {
-        // CHECK: int [[in3:.*]] = [[tmp]];
-        %in3 = sdfg.memlet %tmp : i32 -> i32
-        // CHECK: int [[in4:.*]] = [[c]];
-        %in4 = sdfg.memlet %c : i32 -> i32
-        // CHECK: int [[out2:.*]];
-        // CHECK [[out2]] = [[in3]] + [[in4]];
-        %out2 = sdfg.tasklet int_add, %in3, %in4 : (i32, i32) -> i32
-        // CHECK: [[d]] = [[out2]];
-        %d = sdfg.memlet %out2 : i32 -> i32
+    // CHECK: int [[in3:.*]] = [[tmp]];
+    // CHECK: int [[in4:.*]] = [[c]];
+    // CHECK: int [[out2:.*]];
+    // CHECK [[out2]] = [[in3]] + [[in4]];
+    // CHECK: [[d]] = [[out2]];
     // CHECK: }
-    }
+    %d = arith.addi %tmp, %c : i32
     // CHECK: return [[d]];
-    sdfg.return %d : i32
+    func.return %d : i32
 }

@@ -2,21 +2,16 @@
 // RUN: FileCheck %s < %t
 
 // CHECK: extern int __docc_test(int [[a:.*]], int [[b:.*]])
-sdfg.sdfg @test(%a : i32, %b : i32) -> i32 {
+func.func @test(%a : i32, %b : i32) -> i32 {
 // CHECK: int [[c:.*]];
     // CHECK: {
-    %c = sdfg.block -> i32 {
-        // CHECK: int [[in1:.*]] = [[a]];
-        %in1 = sdfg.memlet %a : i32 -> i32
-        // CHECK: int [[in2:.*]] = [[b]];
-        %in2 = sdfg.memlet %b : i32 -> i32
-        // CHECK: int [[out:.*]];
-        // CHECK: [[out]] = [[in1]] + [[in2]];
-        %out = sdfg.tasklet int_add, %in1, %in2 : (i32, i32) -> i32
-        // CHECK: [[c]] = [[out]];
-        %c = sdfg.memlet %out : i32 -> i32
+    // CHECK: int [[in1:.*]] = [[a]];
+    // CHECK: int [[in2:.*]] = [[b]];
+    // CHECK: int [[out:.*]];
+    // CHECK: [[out]] = [[in1]] + [[in2]];
+    // CHECK: [[c]] = [[out]];
     // CHECK: }
-    }
+    %c = arith.addi %a, %b : i32
     // CHECK: return [[c]]
-    sdfg.return %c : i32
+    func.return %c : i32
 }
