@@ -367,6 +367,7 @@ LogicalResult translateArithOp(SDFGTranslator& translator, Operation* op) {
         .Case<arith::ConstantOp>([&](arith::ConstantOp constant_op) {
             return translateArithConstantOp(translator, &constant_op);
         })
+        .Case<arith::NegFOp>([&](arith::NegFOp negf_op) { return translateArithNegFOp(translator, &negf_op); })
         .Default([&](Operation* op) { return op->emitError("Unknown operation from arith dialect encountered"); });
 }
 
