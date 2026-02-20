@@ -302,7 +302,7 @@ def set_backend_options(target: str = "none", category: str = "server"):
 
     Args:
         target: Compilation target ("none", "cuda", "openmp", etc.)
-        category: Target category ("server", "desktop", etc.)
+        category: Target category ("server", "server", etc.)
 
     Example:
         >>> from docc.torch import set_backend_options
