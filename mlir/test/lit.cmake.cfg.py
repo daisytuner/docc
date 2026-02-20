@@ -45,12 +45,10 @@ llvm_config.with_environment("PATH", config.llvm_tools_dir, append_path=True)
 
 tool_dirs = [
     config.llvm_tools_dir,
-    os.path.join(config.project_tools_dir, "docc-mlir-opt"),
     os.path.join(config.project_tools_dir, "docc-mlir-translate"),
     os.path.join(config.project_binary_dir, "test/sdfg-json-to-c"),
 ]
 tools = [
-    "docc-mlir-opt",
     "docc-mlir-translate",
     "sdfg-json-to-c",
 ]
