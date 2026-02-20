@@ -257,29 +257,21 @@ public:
                             for (int64_t dim : tensor_type.getShape()) {
                                 shape.push_back(::sdfg::symbolic::integer(dim));
                             }
-                            if (tensor_type.getElementType().isF16()) {
-                                element_size = ::sdfg::symbolic::integer(2);
-                            } else if (tensor_type.getElementType().isF32()) {
-                                element_size = ::sdfg::symbolic::integer(4);
-                            } else if (tensor_type.getElementType().isF64()) {
-                                element_size = ::sdfg::symbolic::integer(8);
-                            } else {
-                                malloc_op->emitError("Unsupported element type");
-                                return failure();
-                            }
+                            auto docc_type = this->convertType(tensor_type.getElementType());
+                            element_size = ::sdfg::symbolic::size_of_type(*docc_type);
                         } else {
                             malloc_op->emitError("Expected tensor type");
                             return failure();
                         }
                         // Calculate total size (multiply all dimensions)
-                        ::sdfg::symbolic::Expression size = ::sdfg::symbolic::integer(1);
+                        ::sdfg::symbolic::Expression num_elements = ::sdfg::symbolic::integer(1);
                         for (const auto& dim_expr : shape) {
-                            size = ::sdfg::symbolic::mul(size, dim_expr);
+                            num_elements = ::sdfg::symbolic::mul(num_elements, dim_expr);
                         }
-                        size = ::sdfg::symbolic::mul(size, element_size);
+                        auto total_size = ::sdfg::symbolic::mul(num_elements, element_size);
                         this->get_or_create_container(builder, malloc_op->getResult(0));
                         libnodes.insert(
-                            {malloc_op->getLoc()->getImpl(), &builder.add_library_node<::sdfg::stdlib::MallocNode>(block, ::sdfg::DebugInfo(), size)
+                            {malloc_op->getLoc()->getImpl(), &builder.add_library_node<::sdfg::stdlib::MallocNode>(block, ::sdfg::DebugInfo(), total_size)
                             }
                         );
                         return success();
