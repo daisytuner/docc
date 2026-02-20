@@ -14,6 +14,95 @@
 namespace mlir {
 namespace sdfg {
 
+// ===----------------------------------------------------------------------===//
+// TensorInfo
+// ===----------------------------------------------------------------------===//
+
+TensorInfo::TensorInfo() : offset_(0) {}
+
+TensorInfo::TensorInfo(std::vector<int64_t> shape, std::vector<int64_t> strides, int64_t offset)
+    : shape_(std::move(shape)), strides_(std::move(strides)), offset_(offset) {}
+
+const std::vector<int64_t>& TensorInfo::shape() const { return shape_; }
+
+const std::vector<int64_t>& TensorInfo::strides() const { return strides_; }
+
+int64_t TensorInfo::offset() const { return offset_; }
+
+std::vector<int64_t> TensorInfo::compute_strides(const std::vector<int64_t>& shape) {
+    if (shape.empty()) {
+        return {};
+    }
+    std::vector<int64_t> strides(shape.size());
+    int64_t stride = 1;
+    for (int64_t i = static_cast<int64_t>(shape.size()) - 1; i >= 0; --i) {
+        strides[i] = stride;
+        stride *= shape[i];
+    }
+    return strides;
+}
+
+TensorInfo TensorInfo::from_tensor_type(TensorType type) {
+    std::vector<int64_t> shape(type.getShape().begin(), type.getShape().end());
+    std::vector<int64_t> strides = compute_strides(shape);
+    return TensorInfo(std::move(shape), std::move(strides), 0);
+}
+
+TensorInfo TensorInfo::transpose(ArrayRef<int64_t> permutation) const {
+    std::vector<int64_t> new_shape;
+    std::vector<int64_t> new_strides;
+    new_shape.reserve(permutation.size());
+    new_strides.reserve(permutation.size());
+    for (int64_t p : permutation) {
+        new_shape.push_back(shape_[p]);
+        new_strides.push_back(strides_[p]);
+    }
+    return TensorInfo(std::move(new_shape), std::move(new_strides), offset_);
+}
+
+TensorInfo TensorInfo::flip(ArrayRef<int64_t> axes) const {
+    TensorInfo result = *this;
+    for (int64_t axis : axes) {
+        result.offset_ += (shape_[axis] - 1) * strides_[axis];
+        result.strides_[axis] = -strides_[axis];
+    }
+    return result;
+}
+
+bool TensorInfo::is_reshape_valid(ArrayRef<int64_t> new_shape) const {
+    int64_t old_num_elements = 1;
+    for (int64_t dim : shape_) {
+        old_num_elements *= dim;
+    }
+    int64_t new_num_elements = 1;
+    for (int64_t dim : new_shape) {
+        new_num_elements *= dim;
+    }
+    if (old_num_elements != new_num_elements) {
+        return false;
+    }
+    auto expected_strides = compute_strides(shape_);
+    if (expected_strides.size() != strides_.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < expected_strides.size(); ++i) {
+        if (expected_strides[i] != strides_[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+TensorInfo TensorInfo::reshape(ArrayRef<int64_t> new_shape) const {
+    std::vector<int64_t> shape(new_shape.begin(), new_shape.end());
+    std::vector<int64_t> strides = compute_strides(shape);
+    return TensorInfo(std::move(shape), std::move(strides), offset_);
+}
+
+// ===----------------------------------------------------------------------===//
+// SDFGTranslator
+// ===----------------------------------------------------------------------===//
+
 SDFGTranslator::SDFGTranslator()
     : builder_empty_(true), builder_("empty", ::sdfg::FunctionType_CPU), value_counter_(0), insertion_point_(nullptr) {}
 
@@ -39,6 +128,8 @@ std::string SDFGTranslator::get_or_create_container(Value val, bool argument) {
 }
 
 llvm::ScopedHashTable<Value, std::string>& SDFGTranslator::value_map() { return this->value_map_; }
+
+std::unordered_map<std::string, TensorInfo>& SDFGTranslator::tensor_info_map() { return this->tensor_info_map_; }
 
 ::sdfg::structured_control_flow::Sequence& SDFGTranslator::insertion_point() {
     if (this->insertion_point_ == nullptr) {
