@@ -4,8 +4,6 @@
 #include <sstream>
 #include <string>
 
-#include "mlir/Conversion/SDFGPasses.h"
-#include "mlir/Dialect/SDFG/IR/SDFG.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -70,14 +68,6 @@ public:
         return result;
     }
 
-    void convert() {
-        mlir::PassManager pm(context_.get());
-        pm.addPass(mlir::createConvertToSDFG());
-        if (mlir::failed(pm.run(*module_))) {
-            throw std::runtime_error("Failed to convert to SDFG dialect");
-        }
-    }
-
     std::string translate() {
         std::string result;
         llvm::raw_string_ostream os(result);
@@ -103,10 +93,5 @@ PYBIND11_MODULE(_sdfg_mlir, m) {
     py::class_<PyMLIRModule>(m, "MLIRModule")
         .def(py::init<const std::string&>(), py::arg("mlir_text"), "Create an MLIR module from MLIR text representation")
         .def("to_string", &PyMLIRModule::to_string, "Get the MLIR module as a string")
-        .def(
-            "convert",
-            &PyMLIRModule::convert,
-            "Run the convert-to-sdfg pass pipeline to transform the module to SDFG dialect"
-        )
         .def("translate", &PyMLIRModule::translate, "Translate the SDFG dialect module to a serialized SDFG");
 }

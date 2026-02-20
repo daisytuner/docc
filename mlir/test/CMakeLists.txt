@@ -12,7 +12,6 @@ set(MLIR_SDFG_TEST_DEPENDS
     count
     not
     mlir-opt
-    docc-mlir-opt
     docc-mlir-translate
     sdfg-json-to-c
 )

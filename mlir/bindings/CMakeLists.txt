@@ -24,13 +24,7 @@ target_link_libraries(sdfg-mlir PRIVATE
     ${translation_libs}
     MLIRPass
     MLIRParser
-    MLIRSDFGDialect
     MLIRTargetSDFG
-    MLIRConvertToSDFG
-    MLIRArithToSDFG
-    MLIRFuncToSDFG
-    MLIRLinalgToSDFG
-    MLIRTensorToSDFG
     sdfg::sdfg
     sdfg::opt
     sdfg::rpc
