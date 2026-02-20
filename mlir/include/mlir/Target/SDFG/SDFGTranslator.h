@@ -39,6 +39,8 @@ public:
     std::string get_or_create_container(Value val, bool argument = false);
 
     std::unique_ptr<::sdfg::types::IType> convertType(const Type mlir_type);
+
+    std::string convertTypedAttr(const TypedAttr attr);
 };
 
 LogicalResult translateOp(SDFGTranslator& translator, Operation* op);

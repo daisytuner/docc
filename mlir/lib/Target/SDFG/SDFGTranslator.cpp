@@ -1,11 +1,14 @@
 #include "mlir/Target/SDFG/SDFGTranslator.h"
+#include <llvm/ADT/TypeSwitch.h>
 #include <stdexcept>
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/Target/SDFG/BuiltinToSDFGTranslator.h"
 #include "mlir/Target/SDFG/FuncToSDFGTranslator.h"
+#include "mlir/Target/SDFG/LinalgToSDFGTranslator.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 
 namespace mlir {
@@ -99,11 +102,20 @@ std::unique_ptr<::sdfg::types::IType> SDFGTranslator::convertType(const Type mli
     return nullptr;
 }
 
+std::string SDFGTranslator::convertTypedAttr(const TypedAttr attr) {
+    return llvm::TypeSwitch<TypedAttr, std::string>(attr)
+        .Case<FloatAttr>([](FloatAttr attr) { return std::to_string(attr.getValue().convertToDouble()); })
+        .Case<IntegerAttr>([](IntegerAttr attr) { return std::to_string(attr.getInt()); })
+        .Default([](TypedAttr attr) { return ""; });
+}
+
 LogicalResult translateOp(SDFGTranslator& translator, Operation* op) {
     if (op->getDialect()->getNamespace() == BuiltinDialect::getDialectNamespace()) {
         return translateBuiltinOp(translator, op);
     } else if (op->getDialect()->getNamespace() == func::FuncDialect::getDialectNamespace()) {
         return translateFuncOp(translator, op);
+    } else if (op->getDialect()->getNamespace() == linalg::LinalgDialect::getDialectNamespace()) {
+        return translateLinalgOp(translator, op);
     }
     // Handle all others
     return op->emitOpError("Could not translate!");
