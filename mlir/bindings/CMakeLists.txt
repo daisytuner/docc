@@ -30,6 +30,7 @@ target_link_libraries(sdfg-mlir PRIVATE
     MLIRArithToSDFG
     MLIRFuncToSDFG
     MLIRLinalgToSDFG
+    MLIRTensorToSDFG
     sdfg::sdfg
     sdfg::opt
     sdfg::rpc

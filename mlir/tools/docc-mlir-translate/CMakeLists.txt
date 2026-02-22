@@ -10,6 +10,7 @@ set(LIBS
     MLIRSDFGDialect
 )
 
+set_source_files_properties(docc-mlir-translate.cpp PROPERTIES COMPILE_FLAGS -fexceptions)
 add_llvm_executable(docc-mlir-translate
     docc-mlir-translate.cpp
     DEPENDS ${LIBS}

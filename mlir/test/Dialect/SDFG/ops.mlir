@@ -131,3 +131,14 @@ sdfg.sdfg @test_int_add(%0 : i32, %1 : i32) -> i32 {
     }
     sdfg.return %2 : i32
 }
+
+// CHECK-LABEL: @test_malloc
+module {
+  sdfg.sdfg @test_malloc () -> tensor<4x4xf32> {
+    %0 = sdfg.block -> tensor<4x4xf32> {
+      %1 = sdfg.malloc : tensor<4x4xf32>
+      sdfg.yield %1 : tensor<4x4xf32>
+    }
+    sdfg.return %0 : tensor<4x4xf32>
+  }
+}

@@ -153,6 +153,16 @@ def SDFG_FillOp : SDFG_UnaryLibraryNode<"fill"> {
     let hasVerifier = 1;
 }
 
+// SDFG data flow node that represents tensor malloc operation
+def SDFG_MallocOp : SDFG_Op<"malloc", [Pure, HasParent<"BlockOp">]> {
+    let summary = "Tensor malloc operation";
+
+    let arguments = (ins);  // No input needed
+    let results = (outs SDFG_Type:$output);
+
+    let assemblyFormat = "attr-dict `:` type($output)";
+}
+
 // SDFG data flow node that represents matrix-matrix multiplication
 def SDFG_MatmulOp : SDFG_Op<"matmul", [Pure, HasParent<"BlockOp">]> {
     let summary = "Tensor matmul operation";

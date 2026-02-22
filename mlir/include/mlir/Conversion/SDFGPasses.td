@@ -24,4 +24,9 @@ def ConvertLinalgToSDFG : Pass<"convert-linalg-to-sdfg"> {
     let dependentDialects = ["::mlir::sdfg::SDFGDialect"];
 }
 
+def ConvertTensorToSDFG : Pass<"convert-tensor-to-sdfg"> {
+    let summary = "Convert Tensor dialect to SDFG dialect";
+    let dependentDialects = ["::mlir::sdfg::SDFGDialect"];
+}
+
 #endif // SDFG_CONVERSION_PASSES
