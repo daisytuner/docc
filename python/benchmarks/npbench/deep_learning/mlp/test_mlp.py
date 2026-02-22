@@ -65,9 +65,9 @@ def test_mlp(target):
         verifier = SDFGVerification(
             verification={
                 "CMath": 4,
-                "SEQUENTIAL": 24,
-                "FOR": 26,
-                "MAP": 24,
+                "SEQUENTIAL": 22,
+                "FOR": 24,
+                "MAP": 22,
                 "GEMM": 3,
                 "Malloc": 13,
             }
@@ -77,9 +77,9 @@ def test_mlp(target):
             verification={
                 "CMath": 4,
                 "HIGHWAY": 8,
-                "SEQUENTIAL": 16,
-                "FOR": 26,
-                "MAP": 24,
+                "SEQUENTIAL": 14,
+                "FOR": 24,
+                "MAP": 22,
                 "GEMM": 3,
                 "Malloc": 13,
             }
@@ -87,12 +87,12 @@ def test_mlp(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 8,
+                "HIGHWAY": 6,
                 "CMath": 4,
                 "CPU_PARALLEL": 13,
                 "SEQUENTIAL": 3,
-                "FOR": 26,
-                "MAP": 24,
+                "FOR": 24,
+                "MAP": 22,
                 "GEMM": 3,
                 "Malloc": 13,
             }

@@ -126,6 +126,15 @@ public:
     is_monotonic(structured_control_flow::StructuredLoop* loop, analysis::AssumptionsAnalysis& assumptions_analysis);
 
     /**
+     * @brief Checks if a loop's update is a strictly monotonic function (positive).
+     *
+     * @param loop The loop to check.
+     * @param assumptions The assumptions to use.
+     * @return True if the loop is monotonic, false otherwise.
+     */
+    static bool is_monotonic(structured_control_flow::StructuredLoop* loop, const symbolic::Assumptions& assumptions);
+
+    /**
      * @brief Checks if a loop's update is a contiguous function (positive).
      *
      * @param loop The loop to check.
@@ -134,6 +143,15 @@ public:
      */
     static bool
     is_contiguous(structured_control_flow::StructuredLoop* loop, analysis::AssumptionsAnalysis& assumptions_analysis);
+
+    /**
+     * @brief Checks if a loop's update is a contiguous function (positive).
+     *
+     * @param loop The loop to check.
+     * @param assumptions The assumptions to use.
+     * @return True if the loop is contiguous, false otherwise.
+     */
+    static bool is_contiguous(structured_control_flow::StructuredLoop* loop, const symbolic::Assumptions& assumptions);
 
     /**
      * @brief Describes the bound of a loop as a closed-form expression for contiguous loops.
@@ -146,6 +164,18 @@ public:
      */
     static symbolic::Expression
     canonical_bound(structured_control_flow::StructuredLoop* loop, analysis::AssumptionsAnalysis& assumptions_analysis);
+
+    /**
+     * @brief Describes the bound of a loop as a closed-form expression for contiguous loops.
+     *
+     * Example: i <= N && i < M -> i < min(N + 1, M)
+     *
+     * @param loop The loop to describe the bound of.
+     * @param assumptions The assumptions to use.
+     * @return The bound of the loop as a closed-form expression, otherwise null.
+     */
+    static symbolic::Expression
+    canonical_bound(structured_control_flow::StructuredLoop* loop, const symbolic::Assumptions& assumptions);
 
     /**
      * @brief Describes the stride of a loop's update as a constant.
