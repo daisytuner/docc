@@ -4,7 +4,7 @@
 
 namespace sdfg {
 namespace structured_control_flow {
-class StructuredLoop;
+class Map;
 }
 
 namespace passes {
@@ -15,7 +15,7 @@ private:
 
     bool is_dead(const structured_control_flow::ControlFlowNode& node);
 
-    bool is_trivial(structured_control_flow::StructuredLoop* loop);
+    bool is_trivial(structured_control_flow::Map* loop);
 
 public:
     DeadCFGElimination();

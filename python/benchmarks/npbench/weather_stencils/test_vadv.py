@@ -131,15 +131,15 @@ def kernel(utens_stage, u_stage, wcon, u_pos, utens, dtr_stage):
 def test_vadv(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 141, "FOR": 164, "MAP": 141, "Malloc": 69}
+            verification={"MAP": 141, "SEQUENTIAL": 141, "FOR": 165, "Malloc": 69}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "HIGHWAY": 35,
-                "SEQUENTIAL": 106,
-                "FOR": 164,
                 "MAP": 141,
+                "SEQUENTIAL": 106,
+                "FOR": 165,
                 "Malloc": 69,
             }
         )
@@ -147,10 +147,9 @@ def test_vadv(target):
         verifier = SDFGVerification(
             verification={
                 "HIGHWAY": 35,
-                "CPU_PARALLEL": 15,
-                "SEQUENTIAL": 91,
-                "FOR": 164,
                 "MAP": 141,
+                "SEQUENTIAL": 106,
+                "FOR": 165,
                 "Malloc": 69,
             }
         )

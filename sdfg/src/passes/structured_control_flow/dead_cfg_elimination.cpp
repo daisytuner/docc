@@ -29,7 +29,7 @@ bool DeadCFGElimination::is_dead(const structured_control_flow::ControlFlowNode&
     return false;
 };
 
-bool DeadCFGElimination::is_trivial(structured_control_flow::StructuredLoop* loop) {
+bool DeadCFGElimination::is_trivial(structured_control_flow::Map* loop) {
     // Check if stride is 1
     if (!analysis::LoopAnalysis::is_contiguous(loop, symbolic::Assumptions())) {
         return false;
@@ -128,7 +128,7 @@ bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analy
                 }
 
                 // Trivial structured loop (bound - init == 1 and stride == 1)
-                if (auto sloop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child.first)) {
+                if (auto sloop = dynamic_cast<structured_control_flow::Map*>(&child.first)) {
                     if (is_trivial(sloop)) {
                         auto indvar = sloop->indvar();
                         auto init = sloop->init();

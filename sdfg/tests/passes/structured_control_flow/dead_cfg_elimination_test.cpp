@@ -53,40 +53,7 @@ TEST(DeadCFGEliminationTest, NodesAfterReturn) {
     EXPECT_EQ(root.at(0).second.size(), 0);
 }
 
-TEST(DeadCFGEliminationTest, TrivialForLoop) {
-    // Test trivial loop: for (i = 0; i < 1; i++) with body
-    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
-
-    types::Scalar int_type(types::PrimitiveType::UInt64);
-    builder.add_container("i", int_type);
-
-    auto& root = builder.subject().root();
-
-    // for (i = 0; i < 1; i++)
-    auto indvar = symbolic::symbol("i");
-    auto& for_loop = builder.add_for(
-        root,
-        indvar,
-        symbolic::Lt(indvar, symbolic::integer(1)),
-        symbolic::integer(0),
-        symbolic::add(indvar, symbolic::integer(1))
-    );
-
-    // Add a block in the loop body
-    auto& body_block = builder.add_block(for_loop.root());
-
-    EXPECT_EQ(root.size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::For*>(&root.at(0).first) != nullptr);
-
-    // Dead CFG Elimination
-    analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::DeadCFGElimination dce_pass;
-    EXPECT_TRUE(dce_pass.run(builder, analysis_manager));
-
-    EXPECT_EQ(root.size(), 0);
-}
-
-TEST(DeadCFGEliminationTest, TrivialMapLoop) {
+TEST(DeadCFGEliminationTest, TrivialMap) {
     // Test trivial map: map (i = 0; i < 1; i++) with body
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
@@ -120,7 +87,7 @@ TEST(DeadCFGEliminationTest, TrivialMapLoop) {
     EXPECT_EQ(root.size(), 0);
 }
 
-TEST(DeadCFGEliminationTest, TrivialForLoopWithSymbolicInit) {
+TEST(DeadCFGEliminationTest, TrivialMapWithSymbolicInit) {
     // Test trivial loop: for (i = N; i < N+1; i++) with body
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
@@ -136,8 +103,14 @@ TEST(DeadCFGEliminationTest, TrivialForLoopWithSymbolicInit) {
     auto init = N;
     auto bound = symbolic::add(N, symbolic::integer(1));
 
-    auto& for_loop =
-        builder.add_for(root, indvar, symbolic::Lt(indvar, bound), init, symbolic::add(indvar, symbolic::integer(1)));
+    auto& for_loop = builder.add_map(
+        root,
+        indvar,
+        symbolic::Lt(indvar, bound),
+        init,
+        symbolic::add(indvar, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
 
     // Add a block in the loop body
     auto& body_block = builder.add_block(for_loop.root());
@@ -152,7 +125,7 @@ TEST(DeadCFGEliminationTest, TrivialForLoopWithSymbolicInit) {
     EXPECT_EQ(root.size(), 0);
 }
 
-TEST(DeadCFGEliminationTest, NonTrivialForLoop) {
+TEST(DeadCFGEliminationTest, NonTrivialMap) {
     // Test non-trivial loop: for (i = 0; i < 10; i++) - should NOT be eliminated
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
@@ -163,19 +136,20 @@ TEST(DeadCFGEliminationTest, NonTrivialForLoop) {
 
     // for (i = 0; i < 10; i++)
     auto indvar = symbolic::symbol("i");
-    auto& for_loop = builder.add_for(
+    auto& for_loop = builder.add_map(
         root,
         indvar,
         symbolic::Lt(indvar, symbolic::integer(10)),
         symbolic::integer(0),
-        symbolic::add(indvar, symbolic::integer(1))
+        symbolic::add(indvar, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
     );
 
     // Add a block in the loop body
     auto& body_block = builder.add_block(for_loop.root());
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::For*>(&root.at(0).first) != nullptr);
+    EXPECT_TRUE(dynamic_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
 
     // Dead CFG Elimination
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -183,10 +157,10 @@ TEST(DeadCFGEliminationTest, NonTrivialForLoop) {
     dce_pass.run(builder, analysis_manager);
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::For*>(&root.at(0).first) != nullptr);
+    EXPECT_TRUE(dynamic_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
 }
 
-TEST(DeadCFGEliminationTest, TrivialForLoopWithLessThanOrEqual) {
+TEST(DeadCFGEliminationTest, TrivialMapWithLessThanOrEqual) {
     // Test trivial loop with <=: for (i = 0; i <= 0; i++)
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
@@ -197,12 +171,13 @@ TEST(DeadCFGEliminationTest, TrivialForLoopWithLessThanOrEqual) {
 
     // for (i = 0; i <= 0; i++) - executes once (bound becomes 0+1=1, trip count = 1-0=1)
     auto indvar = symbolic::symbol("i");
-    auto& for_loop = builder.add_for(
+    auto& for_loop = builder.add_map(
         root,
         indvar,
         symbolic::Le(indvar, symbolic::integer(0)),
         symbolic::integer(0),
-        symbolic::add(indvar, symbolic::integer(1))
+        symbolic::add(indvar, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
     );
 
     // Add a block in the loop body
@@ -218,7 +193,7 @@ TEST(DeadCFGEliminationTest, TrivialForLoopWithLessThanOrEqual) {
     EXPECT_EQ(root.size(), 0);
 }
 
-TEST(DeadCFGEliminationTest, TrivialForLoopEmptyBody) {
+TEST(DeadCFGEliminationTest, TrivialMapEmptyBody) {
     // Test trivial loop with empty body: for (i = 0; i < 1; i++) {}
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
@@ -229,12 +204,13 @@ TEST(DeadCFGEliminationTest, TrivialForLoopEmptyBody) {
 
     // for (i = 0; i < 1; i++) with empty body
     auto indvar = symbolic::symbol("i");
-    auto& for_loop = builder.add_for(
+    auto& for_loop = builder.add_map(
         root,
         indvar,
         symbolic::Lt(indvar, symbolic::integer(1)),
         symbolic::integer(0),
-        symbolic::add(indvar, symbolic::integer(1))
+        symbolic::add(indvar, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
     );
 
     EXPECT_EQ(root.size(), 1);
