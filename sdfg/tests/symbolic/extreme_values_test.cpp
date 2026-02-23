@@ -266,3 +266,119 @@ TEST(ExtremeValuesTest, Recursive_Assumptions) {
     auto j_min = symbolic::minimum(j, parameters, assumptions);
     EXPECT_TRUE(j_min.is_null());
 }
+
+TEST(ExtremeValuesTest, Pow_Integral) {
+    auto a = symbolic::symbol("a");
+
+    auto lb = symbolic::integer(2);
+    auto ub = symbolic::integer(3);
+
+    symbolic::Assumption assum = symbolic::Assumption(a);
+    assum.lower_bound_deprecated(lb);
+    assum.upper_bound_deprecated(ub);
+
+    symbolic::Assumptions assums;
+    assums.insert({a, assum});
+
+    // a^2 where a ∈ [2, 3]
+    auto expr = symbolic::pow(a, symbolic::integer(2));
+
+    auto min = symbolic::minimum(expr, {}, assums);
+    EXPECT_TRUE(symbolic::eq(min, symbolic::integer(4))); // 2^2 = 4
+
+    auto max = symbolic::maximum(expr, {}, assums);
+    EXPECT_TRUE(symbolic::eq(max, symbolic::integer(9))); // 3^2 = 9
+}
+
+TEST(ExtremeValuesTest, Pow_Symbolic) {
+    auto a = symbolic::symbol("a");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    symbolic::Assumption assum = symbolic::Assumption(a);
+    assum.lower_bound_deprecated(N);
+    assum.upper_bound_deprecated(M);
+
+    symbolic::Assumptions assums;
+    assums.insert({a, assum});
+
+    // a^2 where a ∈ [N, M]
+    auto expr = symbolic::pow(a, symbolic::integer(2));
+
+    auto min = symbolic::minimum(expr, {N, M}, assums);
+    auto expected_min = symbolic::pow(N, symbolic::integer(2));
+    EXPECT_TRUE(symbolic::eq(min, expected_min)); // N^2
+
+    auto max = symbolic::maximum(expr, {N, M}, assums);
+    auto expected_max = symbolic::pow(M, symbolic::integer(2));
+    EXPECT_TRUE(symbolic::eq(max, expected_max)); // M^2
+}
+
+TEST(ExtremeValuesTest, Pow_Exponent_Zero) {
+    auto a = symbolic::symbol("a");
+
+    auto lb = symbolic::integer(2);
+    auto ub = symbolic::integer(5);
+
+    symbolic::Assumption assum = symbolic::Assumption(a);
+    assum.lower_bound_deprecated(lb);
+    assum.upper_bound_deprecated(ub);
+
+    symbolic::Assumptions assums;
+    assums.insert({a, assum});
+
+    // a^0 = 1 for any a
+    auto expr = symbolic::pow(a, symbolic::integer(0));
+
+    auto min = symbolic::minimum(expr, {}, assums);
+    EXPECT_TRUE(symbolic::eq(min, symbolic::integer(1)));
+
+    auto max = symbolic::maximum(expr, {}, assums);
+    EXPECT_TRUE(symbolic::eq(max, symbolic::integer(1)));
+}
+
+TEST(ExtremeValuesTest, Pow_Exponent_One) {
+    auto a = symbolic::symbol("a");
+
+    auto lb = symbolic::integer(3);
+    auto ub = symbolic::integer(7);
+
+    symbolic::Assumption assum = symbolic::Assumption(a);
+    assum.lower_bound_deprecated(lb);
+    assum.upper_bound_deprecated(ub);
+
+    symbolic::Assumptions assums;
+    assums.insert({a, assum});
+
+    // a^1 = a
+    auto expr = symbolic::pow(a, symbolic::integer(1));
+
+    auto min = symbolic::minimum(expr, {}, assums);
+    EXPECT_TRUE(symbolic::eq(min, lb)); // 3
+
+    auto max = symbolic::maximum(expr, {}, assums);
+    EXPECT_TRUE(symbolic::eq(max, ub)); // 7
+}
+
+TEST(ExtremeValuesTest, Pow_Higher_Exponent) {
+    auto a = symbolic::symbol("a");
+
+    auto lb = symbolic::integer(1);
+    auto ub = symbolic::integer(2);
+
+    symbolic::Assumption assum = symbolic::Assumption(a);
+    assum.lower_bound_deprecated(lb);
+    assum.upper_bound_deprecated(ub);
+
+    symbolic::Assumptions assums;
+    assums.insert({a, assum});
+
+    // a^3 where a ∈ [1, 2]
+    auto expr = symbolic::pow(a, symbolic::integer(3));
+
+    auto min = symbolic::minimum(expr, {}, assums);
+    EXPECT_TRUE(symbolic::eq(min, symbolic::integer(1))); // 1^3 = 1
+
+    auto max = symbolic::maximum(expr, {}, assums);
+    EXPECT_TRUE(symbolic::eq(max, symbolic::integer(8))); // 2^3 = 8
+}

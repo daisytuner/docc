@@ -148,6 +148,27 @@ Expression minimum(const Expression expr, const SymbolSet& parameters, const Ass
         return lbs;
     }
 
+    // Pow with constant exponent
+    if (SymEngine::is_a<SymEngine::Pow>(*expr)) {
+        auto pow = SymEngine::rcp_static_cast<const SymEngine::Pow>(expr);
+        auto base = pow->get_base();
+        auto exp = pow->get_exp();
+        if (SymEngine::is_a<SymEngine::Integer>(*exp)) {
+            auto exp_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(exp)->as_int();
+            if (exp_int >= 0) {
+                auto min_base = minimum(base, parameters, assumptions, depth + 1);
+                if (min_base == SymEngine::null) {
+                    return SymEngine::null;
+                }
+                symbolic::Expression min_expr = symbolic::one();
+                for (int i = 0; i < exp_int; ++i) {
+                    min_expr = symbolic::mul(min_expr, min_base);
+                }
+                return min_expr;
+            }
+        }
+    }
+
     return SymEngine::null;
 }
 
@@ -291,6 +312,27 @@ Expression maximum(const Expression expr, const SymbolSet& parameters, const Ass
             }
         }
         return ubs;
+    }
+
+    // Pow with constant exponent
+    if (SymEngine::is_a<SymEngine::Pow>(*expr)) {
+        auto pow = SymEngine::rcp_static_cast<const SymEngine::Pow>(expr);
+        auto base = pow->get_base();
+        auto exp = pow->get_exp();
+        if (SymEngine::is_a<SymEngine::Integer>(*exp)) {
+            auto exp_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(exp)->as_int();
+            if (exp_int >= 0) {
+                auto max_base = maximum(base, parameters, assumptions, depth + 1);
+                if (max_base == SymEngine::null) {
+                    return SymEngine::null;
+                }
+                symbolic::Expression max_expr = symbolic::one();
+                for (int i = 0; i < exp_int; ++i) {
+                    max_expr = symbolic::mul(max_expr, max_base);
+                }
+                return max_expr;
+            }
+        }
     }
 
     return SymEngine::null;
@@ -476,6 +518,27 @@ Expression minimum_new(
         return lbs;
     }
 
+    // Pow with constant exponent
+    if (SymEngine::is_a<SymEngine::Pow>(*expr)) {
+        auto pow = SymEngine::rcp_static_cast<const SymEngine::Pow>(expr);
+        auto base = pow->get_base();
+        auto exp = pow->get_exp();
+        if (SymEngine::is_a<SymEngine::Integer>(*exp)) {
+            auto exp_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(exp)->as_int();
+            if (exp_int >= 0) {
+                auto min_base = minimum_new(base, parameters, assumptions, depth + 1, tight);
+                if (min_base == SymEngine::null) {
+                    return SymEngine::null;
+                }
+                symbolic::Expression min_expr = symbolic::one();
+                for (int i = 0; i < exp_int; ++i) {
+                    min_expr = symbolic::mul(min_expr, min_base);
+                }
+                return min_expr;
+            }
+        }
+    }
+
     return SymEngine::null;
 }
 
@@ -642,6 +705,27 @@ Expression maximum_new(
             }
         }
         return ubs;
+    }
+
+    // Pow with constant exponent
+    if (SymEngine::is_a<SymEngine::Pow>(*expr)) {
+        auto pow = SymEngine::rcp_static_cast<const SymEngine::Pow>(expr);
+        auto base = pow->get_base();
+        auto exp = pow->get_exp();
+        if (SymEngine::is_a<SymEngine::Integer>(*exp)) {
+            auto exp_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(exp)->as_int();
+            if (exp_int >= 0) {
+                auto max_base = maximum_new(base, parameters, assumptions, depth + 1, tight);
+                if (max_base == SymEngine::null) {
+                    return SymEngine::null;
+                }
+                symbolic::Expression max_expr = symbolic::one();
+                for (int i = 0; i < exp_int; ++i) {
+                    max_expr = symbolic::mul(max_expr, max_base);
+                }
+                return max_expr;
+            }
+        }
     }
 
     return SymEngine::null;
