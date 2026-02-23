@@ -109,6 +109,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/sqrt_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.cpp
+    src/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/std_node.cpp
