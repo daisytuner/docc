@@ -13,6 +13,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/transpose_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
@@ -614,6 +615,40 @@ size_t PyStructuredSDFGBuilder::add_memcpy(size_t block_ptr, const std::string& 
     auto count_expr = parse_and_expand(count);
     auto& node = builder_.add_library_node<sdfg::stdlib::MemcpyNode>(*block, debug_info, count_expr);
     return reinterpret_cast<size_t>(&node);
+}
+
+size_t PyStructuredSDFGBuilder::add_free(size_t block_ptr, const sdfg::DebugInfo& debug_info) {
+    auto* block = reinterpret_cast<sdfg::structured_control_flow::Block*>(block_ptr);
+    auto& node = builder_.add_library_node<sdfg::stdlib::FreeNode>(*block, debug_info);
+    return reinterpret_cast<size_t>(&node);
+}
+
+bool PyStructuredSDFGBuilder::is_hoistable_size(const std::string& size_expr) {
+    auto expr = parse_and_expand(size_expr);
+    auto& sdfg = builder_.subject();
+
+    // Check that all symbols in the expression are function arguments
+    for (auto& sym : sdfg::symbolic::atoms(expr)) {
+        if (!sdfg.is_argument(sym->get_name())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+size_t PyStructuredSDFGBuilder::insert_block_at_root_start(const sdfg::DebugInfo& debug_info) {
+    auto& root = builder_.subject().root();
+
+    if (root.size() == 0) {
+        // Empty root - just add a block normally
+        auto& block = builder_.add_block(root, {}, debug_info);
+        return reinterpret_cast<size_t>(&block);
+    }
+
+    // Get first child and insert before it
+    auto& first_child = root.at(0).first;
+    auto& block = builder_.add_block_before(root, first_child, {}, debug_info);
+    return reinterpret_cast<size_t>(&block);
 }
 
 void PyStructuredSDFGBuilder::add_gemm(

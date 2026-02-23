@@ -14,8 +14,38 @@
 namespace sdfg {
 namespace symbolic {
 
-builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
-codegen::CSymbolicPrinter c_printer(builder.subject(), "", false);
+// ISL-compatible printer that converts idiv to floord
+class ISLSymbolicPrinter : public SymEngine::BaseVisitor<ISLSymbolicPrinter, SymEngine::CodePrinter> {
+public:
+    using SymEngine::CodePrinter::apply;
+    using SymEngine::CodePrinter::bvisit;
+    using SymEngine::CodePrinter::str_;
+
+    void bvisit(const SymEngine::FunctionSymbol& x) {
+        if (x.get_name() == "idiv") {
+            // ISL uses floord(a, b) for floor division
+            str_ = "floord(" + apply(x.get_args()[0]) + ", " + apply(x.get_args()[1]) + ")";
+        } else if (x.get_name() == "iabs") {
+            // ISL doesn't support abs directly, but we can express it
+            str_ = apply(x.get_args()[0]); // Simplify: assume non-negative for ISL constraints
+        } else {
+            // Unknown function - print as-is and let ISL reject it during parsing
+            std::ostringstream ss;
+            ss << x.get_name() << "(";
+            auto args = x.get_args();
+            for (size_t i = 0; i < args.size(); i++) {
+                ss << apply(args[i]);
+                if (i < args.size() - 1) {
+                    ss << ", ";
+                }
+            }
+            ss << ")";
+            str_ = ss.str();
+        }
+    }
+};
+
+static ISLSymbolicPrinter isl_printer;
 
 std::string expression_to_map_str(const MultiExpression& expr, const Assumptions& assums) {
     // Get all symbols
@@ -75,7 +105,7 @@ std::string expression_to_map_str(const MultiExpression& expr, const Assumptions
     map_ss << "{ [" + helpers::join(dimensions, ", ") + "] -> [";
     for (size_t i = 0; i < expr.size(); i++) {
         auto dim = expr[i];
-        map_ss << c_printer.apply(dim);
+        map_ss << isl_printer.apply(dim);
         if (i < expr.size() - 1) {
             map_ss << ", ";
         }
@@ -123,8 +153,8 @@ std::string expression_to_map_str(const MultiExpression& expr, const Assumptions
         }
 
         std::string iter = "__daisy_iterator_" + dim;
-        std::string con = "exists " + iter + " : " + dim + " = " + c_printer.apply(lb) + " + " + iter + " * " +
-                          c_printer.apply(arg1);
+        std::string con = "exists " + iter + " : " + dim + " = " + isl_printer.apply(lb) + " + " + iter + " * " +
+                          isl_printer.apply(arg1);
         constraints.push_back(con);
     }
     if (!constraints.empty()) {
@@ -237,7 +267,7 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
         for (auto& iter : dimensions) {
             dim = symbolic::subs(dim, symbolic::symbol(iter), symbolic::symbol(iter + "_1"));
         }
-        map_1_ss << c_printer.apply(dim);
+        map_1_ss << isl_printer.apply(dim);
         if (i < expr1.size() - 1) {
             map_1_ss << ", ";
         }
@@ -247,7 +277,7 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
         for (auto& iter : dimensions) {
             dim = symbolic::subs(dim, symbolic::symbol(iter), symbolic::symbol(iter + "_2"));
         }
-        map_2_ss << c_printer.apply(dim);
+        map_2_ss << isl_printer.apply(dim);
         if (i < expr2.size() - 1) {
             map_2_ss << ", ";
         }
@@ -303,8 +333,8 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
 
         std::string dim1 = dim + "_1";
         std::string iter = "__daisy_iterator_" + dim1;
-        std::string con = "exists " + iter + " : " + dim1 + " = " + c_printer.apply(lb) + " + " + iter + " * " +
-                          c_printer.apply(arg1);
+        std::string con = "exists " + iter + " : " + dim1 + " = " + isl_printer.apply(lb) + " + " + iter + " * " +
+                          isl_printer.apply(arg1);
         constraints_1.push_back(con);
     }
     if (!constraints_1.empty()) {
@@ -360,8 +390,8 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
 
         std::string dim2 = dim + "_2";
         std::string iter = "__daisy_iterator_" + dim2;
-        std::string con = "exists " + iter + " : " + dim2 + " = " + c_printer.apply(lb) + " + " + iter + " * " +
-                          c_printer.apply(arg1);
+        std::string con = "exists " + iter + " : " + dim2 + " = " + isl_printer.apply(lb) + " + " + iter + " * " +
+                          isl_printer.apply(arg1);
         constraints_2.push_back(con);
     }
     if (!constraints_2.empty()) {
@@ -470,7 +500,7 @@ std::string constraint_to_isl_str(const Expression con) {
         if (SymEngine::is_a<SymEngine::Infty>(*lhs) || SymEngine::is_a<SymEngine::Infty>(*rhs)) {
             return "";
         }
-        auto res = c_printer.apply(con);
+        auto res = isl_printer.apply(con);
         return res;
     } else if (SymEngine::is_a<SymEngine::LessThan>(*con)) {
         auto le = SymEngine::rcp_static_cast<const SymEngine::LessThan>(con);
@@ -479,7 +509,7 @@ std::string constraint_to_isl_str(const Expression con) {
         if (SymEngine::is_a<SymEngine::Infty>(*lhs) || SymEngine::is_a<SymEngine::Infty>(*rhs)) {
             return "";
         }
-        auto res = c_printer.apply(con);
+        auto res = isl_printer.apply(con);
         return res;
     } else if (SymEngine::is_a<SymEngine::Equality>(*con)) {
         auto eq = SymEngine::rcp_static_cast<const SymEngine::Equality>(con);
@@ -488,7 +518,7 @@ std::string constraint_to_isl_str(const Expression con) {
         if (SymEngine::is_a<SymEngine::Infty>(*lhs) || SymEngine::is_a<SymEngine::Infty>(*rhs)) {
             return "";
         }
-        auto res = c_printer.apply(con);
+        auto res = isl_printer.apply(con);
         return res;
     } else if (SymEngine::is_a<SymEngine::Unequality>(*con)) {
         auto ne = SymEngine::rcp_static_cast<const SymEngine::Unequality>(con);
@@ -497,7 +527,7 @@ std::string constraint_to_isl_str(const Expression con) {
         if (SymEngine::is_a<SymEngine::Infty>(*lhs) || SymEngine::is_a<SymEngine::Infty>(*rhs)) {
             return "";
         }
-        auto res = c_printer.apply(con);
+        auto res = isl_printer.apply(con);
         return res;
     }
 

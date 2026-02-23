@@ -147,6 +147,22 @@ public:
 
     size_t add_memcpy(size_t block_ptr, const std::string& count, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
 
+    size_t add_free(size_t block_ptr, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
+
+    /**
+     * @brief Check if a size expression only depends on function arguments (hoistable to function entry)
+     * @param size_expr Size expression string to check
+     * @return true if all symbols in the expression are function arguments
+     */
+    bool is_hoistable_size(const std::string& size_expr);
+
+    /**
+     * @brief Insert a block at the very beginning of the root sequence
+     * @param debug_info Optional debug info
+     * @return Pointer to the newly created block
+     */
+    size_t insert_block_at_root_start(const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
+
     void add_gemm(
         const std::string& A,
         const std::string& B,

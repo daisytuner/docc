@@ -140,7 +140,6 @@ set(SOURCE_FILES
     src/passes/dataflow/memlet_linearization.cpp
     src/passes/dataflow/tensor_to_pointer_conversion.cpp
     src/passes/memory/allocation_management.cpp
-    src/passes/memory/insert_frees.cpp
     src/passes/schedules/expansion_pass.cpp
     src/passes/symbolic/symbol_evolution.cpp
     src/passes/symbolic/symbol_propagation.cpp

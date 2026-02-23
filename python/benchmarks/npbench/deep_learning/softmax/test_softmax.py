@@ -42,9 +42,9 @@ def test_softmax(target):
         verifier = SDFGVerification(
             verification={
                 "CMath": 2,
-                "SEQUENTIAL": 27,
-                "FOR": 32,
-                "MAP": 27,
+                "SEQUENTIAL": 25,
+                "FOR": 30,
+                "MAP": 25,
                 "Malloc": 5,
             }
         )
@@ -53,9 +53,9 @@ def test_softmax(target):
             verification={
                 "CMath": 2,
                 "HIGHWAY": 6,
-                "SEQUENTIAL": 21,
-                "FOR": 32,
-                "MAP": 27,
+                "SEQUENTIAL": 19,
+                "FOR": 30,
+                "MAP": 25,
                 "Malloc": 5,
             }
         )
@@ -65,9 +65,9 @@ def test_softmax(target):
                 "HIGHWAY": 6,
                 "CMath": 2,
                 "CPU_PARALLEL": 7,
-                "SEQUENTIAL": 14,
-                "FOR": 32,
-                "MAP": 27,
+                "SEQUENTIAL": 12,
+                "FOR": 30,
+                "MAP": 25,
                 "Malloc": 5,
             }
         )

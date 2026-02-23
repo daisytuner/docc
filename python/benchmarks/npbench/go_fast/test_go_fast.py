@@ -60,12 +60,13 @@ def test_go_fast(target):
     else:  # cuda
         verifier = SDFGVerification(
             verification={
+                "Free": 1,
                 "CUDA": 4,
                 "MAP": 4,
-                "CUDAOffloading": 6,
-                "Malloc": 1,
+                "CUDAOffloading": 7,
                 "CMath": 1,
                 "FOR": 5,
+                "Malloc": 1,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

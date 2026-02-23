@@ -26,6 +26,7 @@ from docc.python.functions.numpy import NumPyHandler
 from docc.python.functions.math import MathHandler
 from docc.python.functions.python import PythonHandler
 from docc.python.functions.scipy import SciPyHandler
+from docc.python.memory import ManagedMemoryHandler
 
 
 class ASTParser(ast.NodeVisitor):
@@ -40,6 +41,7 @@ class ASTParser(ast.NodeVisitor):
         globals_dict=None,
         unique_counter_ref=None,
         structure_member_info=None,
+        memory_handler=None,
     ):
         self.builder = builder
 
@@ -66,6 +68,13 @@ class ASTParser(ast.NodeVisitor):
         self.shapes_runtime_info = (
             {}
         )  # Map array name to runtime shapes (separate from Tensor)
+
+        # Memory manager for hoisted allocations (shared with inline parsers)
+        self.memory_handler = (
+            memory_handler
+            if memory_handler is not None
+            else ManagedMemoryHandler(builder)
+        )
 
         # Initialize handlers - they receive 'self' to access expression visitor methods
         self.numpy_visitor = NumPyHandler(self)
@@ -1074,6 +1083,9 @@ class ASTParser(ast.NodeVisitor):
     def visit_Return(self, node):
         if node.value is None:
             debug_info = get_debug_info(node, self.filename, self.function_name)
+            # Emit frees for all deferred allocations before returning
+            if self.memory_handler.has_allocations():
+                self.memory_handler.emit_frees()
             self.builder.add_return("", debug_info)
             return
 
@@ -1196,6 +1208,10 @@ class ASTParser(ast.NodeVisitor):
 
                 assign_node = ast.Assign(targets=[target_sub], value=val_node)
                 self.visit_Assign(assign_node)
+
+        # Emit frees for all deferred allocations before returning
+        if self.memory_handler.has_allocations():
+            self.memory_handler.emit_frees()
 
         # Add control flow return to exit the function/path
         self.builder.add_return("", debug_info)
@@ -1394,12 +1410,14 @@ class ASTParser(ast.NodeVisitor):
         final_body = param_assignments + new_body
 
         # Create a new parser instance for the inlined function
+        # Share memory_handler so hoisted allocations go to main function entry
         parser = ASTParser(
             self.builder,
             self.tensor_table,
             self.container_table,
             globals_dict=combined_globals,
             unique_counter_ref=self._unique_counter_ref,
+            memory_handler=self.memory_handler,
         )
 
         for stmt in final_body:

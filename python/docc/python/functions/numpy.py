@@ -13,6 +13,7 @@ from docc.python.types import (
     promote_element_types,
 )
 from docc.python.ast_utils import get_debug_info
+from docc.python.memory import ManagedMemoryHandler
 
 
 class NumPyHandler:
@@ -86,6 +87,11 @@ class NumPyHandler:
     @property
     def shapes_runtime_info(self):
         return self._ev.shapes_runtime_info
+
+    @property
+    def memory_handler(self):
+        """Access the memory handler owned by the parser."""
+        return self._ev.memory_handler
 
     def _get_unique_id(self):
         return self._ev._get_unique_id()
@@ -2517,7 +2523,28 @@ class NumPyHandler:
             self.shapes_runtime_info[tmp_name] = shapes_runtime
         self.tensor_table[tmp_name] = tensor_entry
 
-        # Malloc
+        # Try to hoist allocation to function entry
+        init_type = (
+            ManagedMemoryHandler.INIT_ZERO
+            if zero_init
+            else ManagedMemoryHandler.INIT_NONE
+        )
+        if not ones_init and self.memory_handler.allocate(
+            tmp_name, ptr_type, total_size, init=init_type
+        ):
+            pass  # Allocation registered for hoisting
+        else:
+            # Emit allocation immediately (size depends on loop variables or needs loop init)
+            self._emit_malloc(
+                tmp_name, total_size, ptr_type, zero_init, ones_init, size_str, dtype
+            )
+
+        return tmp_name
+
+    def _emit_malloc(
+        self, tmp_name, total_size, ptr_type, zero_init, ones_init, size_str, dtype
+    ):
+        """Emit malloc and optional initialization for a temporary array."""
         block1 = self.builder.add_block()
         t_malloc = self.builder.add_malloc(block1, total_size)
         t_ptr1 = self.builder.add_access(block1, tmp_name)
@@ -2566,8 +2593,6 @@ class NumPyHandler:
             )
 
             self.builder.end_for()
-
-        return tmp_name
 
     def _compute_linear_index(self, indices, shapes, array_name, ndim):
         """Compute linear index from multi-dimensional indices.

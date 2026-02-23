@@ -50,15 +50,21 @@ def test_jacobi_2d(target):
         verifier = SDFGVerification(
             verification={
                 "HIGHWAY": 12,
+                "CPU_PARALLEL": 12,
                 "MAP": 24,
-                "Malloc": 10,
-                "SEQUENTIAL": 12,
                 "FOR": 25,
+                "Malloc": 10,
             }
         )
     else:  # cuda
         verifier = SDFGVerification(
-            verification={"MAP": 24, "Malloc": 10, "SEQUENTIAL": 24, "FOR": 25}
+            verification={
+                "CUDA": 24,
+                "MAP": 24,
+                "CUDAOffloading": 50,
+                "FOR": 25,
+                "Malloc": 10,
+            }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

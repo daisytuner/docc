@@ -48,16 +48,22 @@ def test_fdtd_2d(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "Malloc": 11,
-                "HIGHWAY": 15,
+                "HIGHWAY": 14,
+                "CPU_PARALLEL": 15,
                 "MAP": 29,
-                "SEQUENTIAL": 14,
                 "FOR": 30,
+                "Malloc": 11,
             }
         )
     else:  # cuda
         verifier = SDFGVerification(
-            verification={"Malloc": 11, "MAP": 29, "SEQUENTIAL": 29, "FOR": 30}
+            verification={
+                "CUDA": 29,
+                "MAP": 29,
+                "CUDAOffloading": 57,
+                "FOR": 30,
+                "Malloc": 11,
+            }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

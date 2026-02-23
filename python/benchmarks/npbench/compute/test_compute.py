@@ -60,10 +60,11 @@ def test_compute(target):
     else:  # cuda
         verifier = SDFGVerification(
             verification={
+                "Free": 6,
                 "CUDA": 14,
                 "FOR": 14,
                 "MAP": 14,
-                "CUDAOffloading": 18,
+                "CUDAOffloading": 24,
                 "Malloc": 6,
             }
         )

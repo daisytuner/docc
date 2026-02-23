@@ -671,6 +671,9 @@ class PythonProgram(DoccProgram):
         for node in func_def.body:
             parser.visit(node)
 
+        # Emit hoisted allocations at function entry
+        parser.memory_handler.emit_allocations()
+
         sdfg = builder.move()
         # Mark return arguments metadata
         out_args = []

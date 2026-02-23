@@ -391,6 +391,24 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("count"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
+        .def(
+            "add_free",
+            &PyStructuredSDFGBuilder::add_free,
+            py::arg("block_ptr"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "is_hoistable_size",
+            &PyStructuredSDFGBuilder::is_hoistable_size,
+            py::arg("size_expr"),
+            "Check if a size expression only depends on function arguments (can be hoisted to function entry)"
+        )
+        .def(
+            "insert_block_at_root_start",
+            &PyStructuredSDFGBuilder::insert_block_at_root_start,
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            "Insert a block at the very beginning of the root sequence"
+        )
         .def("get_sizeof", &PyStructuredSDFGBuilder::get_sizeof, py::arg("type"))
         .def(
             "add_reference_memlet",

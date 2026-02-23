@@ -75,38 +75,47 @@ def kernel(TSTEPS, N, u):
 def test_adi(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 18, "SEQUENTIAL": 18, "FOR": 23, "Malloc": 5}
+            verification={
+                "Free": 5,
+                "MAP": 24,
+                "SEQUENTIAL": 24,
+                "FOR": 29,
+                "Malloc": 11,
+            }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 4,
-                "MAP": 18,
-                "SEQUENTIAL": 14,
-                "FOR": 23,
-                "Malloc": 5,
+                "Free": 5,
+                "HIGHWAY": 8,
+                "MAP": 24,
+                "SEQUENTIAL": 16,
+                "FOR": 29,
+                "Malloc": 11,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
+                "Free": 5,
                 "CPU_PARALLEL": 1,
-                "HIGHWAY": 4,
-                "MAP": 18,
-                "SEQUENTIAL": 13,
-                "FOR": 23,
-                "Malloc": 5,
+                "HIGHWAY": 8,
+                "MAP": 24,
+                "SEQUENTIAL": 15,
+                "FOR": 29,
+                "Malloc": 11,
             }
         )
     else:  # cuda
         verifier = SDFGVerification(
             verification={
+                "Free": 5,
                 "CUDA": 2,
                 "CUDAOffloading": 4,
-                "MAP": 18,
-                "SEQUENTIAL": 16,
-                "FOR": 23,
-                "Malloc": 5,
+                "MAP": 24,
+                "SEQUENTIAL": 22,
+                "FOR": 29,
+                "Malloc": 11,
             }
         )
 

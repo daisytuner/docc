@@ -234,15 +234,29 @@ bool LoopAnalysis::is_monotonic(structured_control_flow::StructuredLoop* loop, A
     return symbolic::series::is_monotonic(loop->update(), loop->indvar(), assums);
 }
 
+bool LoopAnalysis::is_monotonic(structured_control_flow::StructuredLoop* loop, const symbolic::Assumptions& assumptions) {
+    return symbolic::series::is_monotonic(loop->update(), loop->indvar(), assumptions);
+}
+
 bool LoopAnalysis::is_contiguous(structured_control_flow::StructuredLoop* loop, AssumptionsAnalysis& assumptions_analysis) {
     auto assums = assumptions_analysis.get(*loop, true);
 
     return symbolic::series::is_contiguous(loop->update(), loop->indvar(), assums);
 }
 
+bool LoopAnalysis::is_contiguous(structured_control_flow::StructuredLoop* loop, const symbolic::Assumptions& assumptions) {
+    return symbolic::series::is_contiguous(loop->update(), loop->indvar(), assumptions);
+}
+
 symbolic::Expression LoopAnalysis::
     canonical_bound(structured_control_flow::StructuredLoop* loop, AssumptionsAnalysis& assumptions_analysis) {
-    if (!LoopAnalysis::is_monotonic(loop, assumptions_analysis)) {
+    auto assums = assumptions_analysis.get(*loop, true);
+    return LoopAnalysis::canonical_bound(loop, assums);
+}
+
+symbolic::Expression LoopAnalysis::
+    canonical_bound(structured_control_flow::StructuredLoop* loop, const symbolic::Assumptions& assumptions) {
+    if (!LoopAnalysis::is_monotonic(loop, assumptions)) {
         return SymEngine::null;
     }
 

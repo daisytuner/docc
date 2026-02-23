@@ -68,7 +68,6 @@ set(TEST_FILES
     passes/dataflow/memlet_linearization_test.cpp
     passes/dataflow/tensor_to_pointer_conversion_test.cpp
     passes/memory/allocation_management_test.cpp
-    passes/memory/insert_frees_test.cpp
     passes/pipeline_test.cpp
     passes/schedules/expansion_pass_test.cpp
     passes/structured_control_flow/block_fusion_test.cpp

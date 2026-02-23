@@ -59,10 +59,11 @@ def test_heat_3d(target):
         verifier = SDFGVerification(
             verification={
                 "HIGHWAY": 32,
+                "CPU_PARALLEL": 30,
                 "MAP": 92,
-                "Malloc": 30,
-                "SEQUENTIAL": 60,
+                "SEQUENTIAL": 30,
                 "FOR": 97,
+                "Malloc": 30,
             }
         )
     else:  # cuda
