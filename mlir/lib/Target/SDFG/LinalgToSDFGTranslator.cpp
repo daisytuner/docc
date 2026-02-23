@@ -4,7 +4,6 @@
 #include <llvm/Support/LogicalResult.h>
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
-#include "mlir/Dialect/SDFG/IR/SDFG.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Target/SDFG/SDFGTranslator.h"

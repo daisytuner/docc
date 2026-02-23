@@ -34,11 +34,8 @@ private:
     MLIRInitializer() {
         // Register all standard MLIR dialects
         mlir::registerAllDialects(registry_);
-        // Register the SDFG dialect
-        registry_.insert<mlir::sdfg::SDFGDialect>();
         // Register all passes
         mlir::registerAllPasses();
-        mlir::registerSDFGConversionPasses();
 
         // Register SDFG code generators and serializers
         ::sdfg::codegen::register_default_dispatchers();
