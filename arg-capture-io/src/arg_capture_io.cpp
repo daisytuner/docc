@@ -175,6 +175,19 @@ bool ArgCaptureIO::write_capture_to_file(ArgCapture& capture, std::filesystem::p
     }
     DEBUG_PRINTLN(" bytes");
 
+    // Calculate size safely
+    auto totalSize = std::accumulate(capture.dims.begin(), capture.dims.end(), size_t{1}, std::multiplies<size_t>());
+
+    auto success = write_data_to_raw_file(std::move(file), data, totalSize);
+
+    if (success) {
+        capture.ext_file = std::make_shared<std::filesystem::path>(file);
+    }
+
+    return success;
+}
+
+bool ArgCaptureIO::write_data_to_raw_file(std::filesystem::path file, const void* src_data, size_t size) {
     // Ensure directory exists
     std::error_code ec;
     std::filesystem::create_directories(file.parent_path(), ec);
@@ -193,29 +206,26 @@ bool ArgCaptureIO::write_capture_to_file(ArgCapture& capture, std::filesystem::p
         return false;
     }
 
-    // Calculate size safely
-    auto totalSize = std::accumulate(capture.dims.begin(), capture.dims.end(), size_t{1}, std::multiplies<size_t>());
+    DEBUG_PRINTLN(" total size: " << size << " bytes");
 
-    DEBUG_PRINTLN(" total size: " << totalSize << " bytes");
-
-    if (totalSize > 0 && data == nullptr) {
-        std::cerr << "[ArgCaptureIO] Error: Data pointer is NULL for size " << totalSize << std::endl;
+    if (size > 0 && src_data == nullptr) {
+        std::cerr << "[ArgCaptureIO] Error: Data pointer is NULL for size " << size << std::endl;
         return false;
     }
 
     // Perform write
-    ofs.write(reinterpret_cast<const char*>(data), totalSize);
+    ofs.write(reinterpret_cast<const char*>(src_data), size);
 
     // Check for write errors using stream state + errno
     if (ofs.bad()) {
         std::cerr << "[ArgCaptureIO] Critical IO Error (badbit) writing " << file.string() << std::endl;
-        std::cerr << "  Size attempted: " << totalSize << " bytes" << std::endl;
+        std::cerr << "  Size attempted: " << size << " bytes" << std::endl;
         std::cerr << "  System Error: " << std::strerror(errno) << std::endl;
         return false;
     }
     if (ofs.fail()) {
         std::cerr << "[ArgCaptureIO] IO Failure (failbit) writing " << file.string() << std::endl;
-        std::cerr << "  Size attempted: " << totalSize << " bytes" << std::endl;
+        std::cerr << "  Size attempted: " << size << " bytes" << std::endl;
         std::cerr << "  System Error: " << std::strerror(errno) << std::endl;
         return false;
     }
@@ -229,9 +239,17 @@ bool ArgCaptureIO::write_capture_to_file(ArgCapture& capture, std::filesystem::p
 
     DEBUG_PRINTLN(" closed");
 
-    capture.ext_file = std::make_shared<std::filesystem::path>(file);
-
     return true;
+}
+
+void ArgCaptureIO::read_data_from_raw_file(std::filesystem::path file, void* write_ptr, size_t size) {
+    std::ifstream ifs(file, std::ifstream::binary | std::ifstream::in);
+    if (!ifs.is_open()) {
+        throw std::runtime_error("Failed to open file: " + file.string());
+    }
+
+    ifs.read(reinterpret_cast<char*>(write_ptr), size);
+    ifs.close();
 }
 
 void ArgCaptureIO::write_index(std::filesystem::path base_path) {

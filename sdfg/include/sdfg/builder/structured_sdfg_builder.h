@@ -476,7 +476,8 @@ public:
 
         auto& dataflow = block.dataflow();
         auto vertex = boost::add_vertex(dataflow.graph_);
-        auto node = std::unique_ptr<T>(new T(this->new_element_id(), debug_info, vertex, dataflow, arguments...));
+        auto node =
+            std::unique_ptr<T>(new T(this->new_element_id(), debug_info, vertex, dataflow, std::move(arguments)...));
         auto res = dataflow.nodes_.insert({vertex, std::move(node)});
 
         return static_cast<data_flow::LibraryNode&>(*(res.first->second));

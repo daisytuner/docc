@@ -233,7 +233,7 @@ void DotVisualizer::visualizeFor(const StructuredSDFG& sdfg, const structured_co
 
 void DotVisualizer::visualizeReturn(const StructuredSDFG& sdfg, const structured_control_flow::Return& return_node) {
     auto id = escapeDotId(return_node.element_id(), "return_");
-    this->stream_ << id << " [shape=cds,label=\" return  \"];" << std::endl;
+    this->stream_ << id << " [shape=cds,label=\" return " << return_node.data() << "\"];" << std::endl;
     this->last_comp_name_ = id;
     this->last_comp_name_cluster_.clear();
 }
@@ -287,7 +287,10 @@ void DotVisualizer::writeToFile(const StructuredSDFG& sdfg, const std::filesyste
 
     std::filesystem::path fileName = file ? *file : std::filesystem::path(sdfg.name() + ".dot");
 
-    std::filesystem::create_directories(fileName.parent_path());
+    auto parent_path = fileName.parent_path();
+    if (!parent_path.empty()) {
+        std::filesystem::create_directories(fileName.parent_path());
+    }
 
     std::ofstream dotOutput(fileName, std::ofstream::out);
     if (!dotOutput.is_open()) {

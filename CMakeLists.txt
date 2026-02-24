@@ -8,6 +8,10 @@ project(sdfglib VERSION ${SDFGLIB_VERSION} DESCRIPTION "Core SDFG library for ge
 
 include(cmake/CPM.cmake)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 CPMAddPackage(
   NAME Boost
   VERSION 1.86.0 # Versions less than 1.85.0 may need patches for installation targets.
@@ -16,10 +20,6 @@ CPMAddPackage(
   OPTIONS "BOOST_ENABLE_CMAKE ON" "BOOST_SKIP_INSTALL_RULES ON" # Set `OFF` for installation
           "BUILD_SHARED_LIBS OFF" "BOOST_INCLUDE_LIBRARIES graph\\\;program_options" # Note the escapes!
 )
-
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Tests Options
 option(SDFG_BUILD_TESTS "Build tests" ON)

@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <memory>
+#include <sdfg/data_flow/library_nodes/load_const_node.h>
 #include <utility>
 #include <vector>
 
@@ -1320,6 +1321,12 @@ void register_default_serializers() {
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(data_flow::LibraryNodeType_Invoke.value(), []() {
             return std::make_unique<data_flow::InvokeNodeSerializer>();
+        });
+
+    // LoadConst
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(data_flow::LibraryNodeType_LoadConst.value(), []() {
+            return std::make_unique<data_flow::LoadConstNodeSerializer>();
         });
 
     // CMath

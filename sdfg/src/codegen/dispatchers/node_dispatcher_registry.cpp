@@ -1,5 +1,7 @@
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 
+#include <sdfg/data_flow/library_nodes/load_const_node.h>
+
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
 #include "sdfg/codegen/dispatchers/for_dispatcher.h"
 #include "sdfg/codegen/dispatchers/if_else_dispatcher.h"
@@ -359,6 +361,19 @@ void register_default_dispatchers() {
            const data_flow::LibraryNode& node) {
             return std::make_unique<data_flow::MetadataDispatcher>(
                 language_extension, function, data_flow_graph, dynamic_cast<const data_flow::MetadataNode&>(node)
+            );
+        }
+    );
+
+    // LoadConst
+    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+        data_flow::LibraryNodeType_LoadConst.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        [](LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<data_flow::LoadConstNodeDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::LoadConstNode&>(node)
             );
         }
     );

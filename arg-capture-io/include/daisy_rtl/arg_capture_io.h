@@ -58,7 +58,7 @@ struct ArgCapture {
 class ArgCaptureIO {
 protected:
     std::string name_;
-    std::unordered_map<std::string,uint32_t> invokes_ = std::unordered_map<std::string,uint32_t>{};
+    std::unordered_map<std::string, uint32_t> invokes_ = std::unordered_map<std::string, uint32_t>{};
     std::unordered_map<std::string, std::unordered_map<std::pair<int32_t, bool>, ArgCapture, MyHash>> current_captures_;
 
 public:
@@ -98,6 +98,10 @@ public:
 
     template<typename T = ArgCaptureIO>
     static std::shared_ptr<T> from_index(const std::filesystem::path& file);
+
+    static bool write_data_to_raw_file(std::filesystem::path file, const void* src_data, size_t size);
+
+    static void read_data_from_raw_file(std::filesystem::path file, void* write_ptr, size_t size);
 };
 
 

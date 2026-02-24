@@ -78,6 +78,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/barrier_local_node.cpp
     src/data_flow/library_nodes/call_node.cpp
     src/data_flow/library_nodes/invoke_node.cpp
+    src/data_flow/library_nodes/load_const_node.cpp
     src/data_flow/library_nodes/metadata_node.cpp
     src/data_flow/library_nodes/math/math_node.cpp
     src/data_flow/library_nodes/math/blas/blas_node.cpp
@@ -244,6 +245,7 @@ target_link_libraries(sdfglib PUBLIC
     $<BUILD_INTERFACE:Boost::graph>
     PkgConfig::ISL
     symengine
+    sdfg::arg_capture_io
 )
 set_target_properties(sdfglib PROPERTIES
     VERSION ${PROJECT_VERSION}

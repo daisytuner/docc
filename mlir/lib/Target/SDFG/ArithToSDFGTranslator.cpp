@@ -13,6 +13,7 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Target/SDFG/SDFGTranslator.h"
 #include "mlir/Target/SDFG/helper.h"
+#include "sdfg/data_flow/library_nodes/load_const_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/element.h"
@@ -251,37 +252,112 @@ LogicalResult translateArithCmpIOp(SDFGTranslator& translator, arith::CmpIOp* cm
     return success();
 }
 
+struct RawArrayRef {
+    const void* data;
+    size_t bytes;
+    int per_element;
+
+    RawArrayRef() : data(nullptr), bytes(0), per_element(0) {}
+    RawArrayRef(const void* data, size_t bytes, int per_element) : data(data), bytes(bytes), per_element(per_element) {}
+};
+
+template<typename T>
+RawArrayRef getRawArrayRef(DenseResourceElementsAttr attr) {
+    if (::mlir::detail::DenseResourceElementsAttrBase<T> typed_attr =
+            dyn_cast_or_null<::mlir::detail::DenseResourceElementsAttrBase<T>>(attr)) {
+        std::optional<ArrayRef<T>> array_ref = typed_attr.tryGetAsArrayRef();
+        if (!array_ref) {
+            return {};
+        }
+        size_t elemCount = array_ref->size();
+        int per_elem_bytes = sizeof(T);
+        return RawArrayRef(reinterpret_cast<const void*>(array_ref->data()), elemCount * per_elem_bytes, per_elem_bytes);
+    }
+    return {};
+}
+
 LogicalResult translateArithConstantOp(SDFGTranslator& translator, arith::ConstantOp* constant_op) {
     Value result = constant_op->getResult();
 
-    // Types must be primitive for now
-    if (!is_sdfg_primitive(result.getType())) {
-        return constant_op->emitOpError("Only SDFG primitive types are supported");
-    }
+    auto mlir_type = constant_op->getValue().getType();
+    auto val_type = translator.convertType(mlir_type);
 
-    std::string val = llvm::TypeSwitch<TypedAttr, std::string>(constant_op->getValue())
-                          .Case<FloatAttr>([](FloatAttr attr) {
-                              return std::to_string(attr.getValue().convertToDouble());
-                          })
-                          .Case<IntegerAttr>([](IntegerAttr attr) { return std::to_string(attr.getInt()); })
-                          .Default([](TypedAttr attr) { return ""; });
-    if (val.empty()) {
-        return constant_op->emitOpError("Can not convert attribute to constant");
-    }
-    auto val_type = translator.convertType(constant_op->getValue().getType());
     if (!val_type) {
-        return constant_op->emitOpError("Can not convert attribute type");
+        return constant_op->emitOpError("Unmapped type of arith.constant");
+    }
+    if (val_type->type_id() == ::sdfg::types::TypeID::Scalar) {
+        std::string val = llvm::TypeSwitch<TypedAttr, std::string>(constant_op->getValue())
+                              .Case<FloatAttr>([](FloatAttr attr) {
+                                  return std::to_string(attr.getValue().convertToDouble());
+                              })
+                              .Case<IntegerAttr>([](IntegerAttr attr) { return std::to_string(attr.getInt()); })
+                              .Default([](TypedAttr attr) { return ""; });
+        if (!val.empty()) { // scalar constant, trivially representable with Const-Node
+            auto& builder = translator.builder();
+            auto& block = builder.add_block(translator.insertion_point());
+            auto& in_access = builder.add_constant(block, val, *val_type);
+            auto& result_access = builder.add_access(block, translator.get_or_create_container(result));
+            auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+            builder.add_computational_memlet(block, in_access, tasklet, "_in", {});
+            builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+
+            return success();
+        } else {
+            return constant_op->emitOpError("Unsupported scalar const type");
+        }
+    } else if (val_type->type_id() == ::sdfg::types::TypeID::Pointer) {
+        if (auto dense_resource_attr = dyn_cast<DenseResourceElementsAttr>(constant_op->getValue())) {
+            RawArrayRef ref;
+            Type element_type = dense_resource_attr.getElementType();
+            if (element_type.isInteger(1)) {
+                ref = getRawArrayRef<bool>(dense_resource_attr);
+            } else if (element_type.isSignedInteger(8) || element_type.isSignlessInteger(8)) {
+                ref = getRawArrayRef<int8_t>(dense_resource_attr);
+            } else if (element_type.isSignedInteger(16) || element_type.isSignlessInteger(16)) {
+                ref = getRawArrayRef<int16_t>(dense_resource_attr);
+            } else if (element_type.isSignedInteger(32) || element_type.isSignlessInteger(32)) {
+                ref = getRawArrayRef<int32_t>(dense_resource_attr);
+            } else if (element_type.isSignedInteger(64) || element_type.isSignlessInteger(64)) {
+                ref = getRawArrayRef<int64_t>(dense_resource_attr);
+            } else if (element_type.isUnsignedInteger(8)) {
+                ref = getRawArrayRef<uint8_t>(dense_resource_attr);
+            } else if (element_type.isUnsignedInteger(16)) {
+                ref = getRawArrayRef<uint16_t>(dense_resource_attr);
+            } else if (element_type.isUnsignedInteger(32)) {
+                ref = getRawArrayRef<uint32_t>(dense_resource_attr);
+            } else if (element_type.isUnsignedInteger(64)) {
+                ref = getRawArrayRef<uint64_t>(dense_resource_attr);
+            } else if (element_type.isF32()) {
+                ref = getRawArrayRef<float>(dense_resource_attr);
+            } else if (element_type.isF64()) {
+                ref = getRawArrayRef<double>(dense_resource_attr);
+            } else {
+                return constant_op->emitOpError("Unsupported dense resource type");
+            }
+
+            if (!ref.data || !ref.bytes) {
+                return constant_op->emitOpError("0-length constant");
+            }
+
+            auto& builder = translator.builder();
+            auto& block = builder.add_block(translator.insertion_point());
+            const uint8_t* data_start = reinterpret_cast<const uint8_t*>(ref.data);
+            auto& load_const = builder.add_library_node<::sdfg::data_flow::LoadConstNode>(
+                block,
+                {},
+                val_type->clone(),
+                std::make_unique<::sdfg::data_flow::InMemoryConstSource>(data_start, data_start + ref.bytes)
+            );
+            auto& dst_access = builder.add_access(block, translator.get_or_create_container(result));
+            builder.add_computational_memlet(block, load_const, load_const.outputs()[0], dst_access, {}, *val_type);
+
+            return success();
+        } else {
+            return constant_op->emitOpError("Unsupported constant pointer init");
+        }
     }
 
-    auto& builder = translator.builder();
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& in_access = builder.add_constant(block, val, *val_type);
-    auto& result_access = builder.add_access(block, translator.get_or_create_container(result));
-    auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-    builder.add_computational_memlet(block, in_access, tasklet, "_in", {});
-    builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
-
-    return success();
+    return constant_op->emitOpError("Can not convert attribute type");
 }
 
 LogicalResult translateArithNegFOp(SDFGTranslator& translator, arith::NegFOp* negf_op) {
