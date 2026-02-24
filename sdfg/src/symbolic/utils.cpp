@@ -43,6 +43,45 @@ public:
             str_ = ss.str();
         }
     }
+
+    void _print_pow(
+        std::ostringstream& o,
+        const SymEngine::RCP<const SymEngine::Basic>& a,
+        const SymEngine::RCP<const SymEngine::Basic>& b
+    ) {
+        // ISL doesn't support power - expand to multiplication for positive integer exponents
+        if (SymEngine::is_a<SymEngine::Integer>(*b)) {
+            auto exp_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(b);
+            try {
+                long long val = exp_int->as_int();
+                if (val >= 0 && val <= 10) { // Reasonable limit for expansion
+                    std::string base_str = apply(a);
+                    if (val == 0) {
+                        o << "1";
+                        return;
+                    }
+                    // For simple symbols/integers, don't add extra parentheses
+                    bool needs_parens = !SymEngine::is_a<SymEngine::Symbol>(*a) &&
+                                        !SymEngine::is_a<SymEngine::Integer>(*a);
+                    for (long long i = 0; i < val; ++i) {
+                        if (i > 0) {
+                            o << "*";
+                        }
+                        if (needs_parens) {
+                            o << "(" << base_str << ")";
+                        } else {
+                            o << base_str;
+                        }
+                    }
+                    return;
+                }
+            } catch (const SymEngine::SymEngineException&) {
+                // Fall through to default
+            }
+        }
+        // Fall back to default printing (will likely fail in ISL)
+        o << "(" << apply(a) << ")**(" << apply(b) << ")";
+    }
 };
 
 static ISLSymbolicPrinter isl_printer;
