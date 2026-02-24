@@ -5,6 +5,7 @@ set(TARGET_SDFG_FILES
     LinalgToSDFGTranslator.cpp
     helper.cpp
     SDFGTranslator.cpp
+    TensorToSDFGTranslator.cpp
     TranslateToSDFG.cpp
 )
 

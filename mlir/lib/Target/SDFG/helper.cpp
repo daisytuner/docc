@@ -26,11 +26,22 @@ bool is_sdfg_primitive(Type type) {
     return type.isF16() || type.isBF16() || type.isF32() || type.isF64() || type.isF80() || type.isF128();
 }
 
+bool is_vector_of_sdfg_primitive(Type type) {
+    if (auto vector_type = llvm::dyn_cast<VectorType>(type)) {
+        return is_sdfg_primitive(vector_type.getElementType());
+    }
+    return false;
+}
+
 bool is_tensor_of_sdfg_primitive(Type type) {
     if (auto tensor_type = llvm::dyn_cast<TensorType>(type)) {
         return is_sdfg_primitive(tensor_type.getElementType());
     }
     return false;
+}
+
+bool is_vector_or_tensor_of_sdfg_primitive(Type type) {
+    return is_vector_of_sdfg_primitive(type) || is_tensor_of_sdfg_primitive(type);
 }
 
 } // namespace sdfg

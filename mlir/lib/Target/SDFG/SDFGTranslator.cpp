@@ -1,18 +1,28 @@
 #include "mlir/Target/SDFG/SDFGTranslator.h"
+#include <cstdint>
 #include <llvm/ADT/TypeSwitch.h>
+#include <memory>
 #include <stdexcept>
+#include <string>
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/Target/SDFG/ArithToSDFGTranslator.h"
 #include "mlir/Target/SDFG/BuiltinToSDFGTranslator.h"
 #include "mlir/Target/SDFG/FuncToSDFGTranslator.h"
 #include "mlir/Target/SDFG/LinalgToSDFGTranslator.h"
+#include "mlir/Target/SDFG/TensorToSDFGTranslator.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/stdlib/free.h"
+#include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/element.h"
 #include "sdfg/serializer/json_serializer.h"
+#include "sdfg/symbolic/symbolic.h"
+#include "sdfg/types/tensor.h"
 
 namespace mlir {
 namespace sdfg {
@@ -102,6 +112,18 @@ TensorInfo TensorInfo::reshape(ArrayRef<int64_t> new_shape) const {
     return TensorInfo(std::move(shape), std::move(strides), offset_);
 }
 
+std::unique_ptr<::sdfg::types::Tensor> TensorInfo::get_sdfg_tensor(const ::sdfg::types::Scalar& element_type) const {
+    ::sdfg::symbolic::MultiExpression shape, strides;
+    for (int64_t dim : this->shape_) {
+        shape.push_back(::sdfg::symbolic::integer(dim));
+    }
+    for (int64_t stride : this->strides_) {
+        strides.push_back(::sdfg::symbolic::integer(stride));
+    }
+    ::sdfg::symbolic::Expression offset = ::sdfg::symbolic::integer(this->offset_);
+    return std::make_unique<::sdfg::types::Tensor>(element_type, shape, strides, offset);
+}
+
 // ===----------------------------------------------------------------------===//
 // SDFGTranslator
 // ===----------------------------------------------------------------------===//
@@ -149,6 +171,11 @@ TensorInfo& SDFGTranslator::get_or_create_tensor_info(const std::string& contain
 }
 
 void SDFGTranslator::insertion_point(::sdfg::structured_control_flow::Sequence& sequence) {
+    if (this->memory_map_.contains(this->insertion_point_)) {
+        this->handle_frees();
+        this->memory_map_.erase(this->insertion_point_);
+    }
+    this->memory_map_.insert({&sequence, {}});
     this->insertion_point_ = &sequence;
 }
 
@@ -210,6 +237,64 @@ std::string SDFGTranslator::convertTypedAttr(const TypedAttr attr) {
         .Default([](TypedAttr attr) { return ""; });
 }
 
+void SDFGTranslator::add_reference(const std::string& src_container, const std::string& dst_container) {
+    auto& block = this->builder_.add_block(*this->insertion_point_);
+    auto& src_access = this->builder_.add_access(block, src_container);
+    auto& dst_access = this->builder_.add_access(block, dst_container);
+    this->builder_.add_reference_memlet(
+        block, src_access, dst_access, {::sdfg::symbolic::zero()}, this->builder_.subject().type(dst_container)
+    );
+
+    if (this->alias_map_.contains(src_container)) {
+        this->alias_map_.insert({dst_container, this->alias_map_.at(src_container)});
+    } else {
+        this->alias_map_.insert({dst_container, src_container});
+    }
+}
+
+void SDFGTranslator::handle_malloc(std::string container, const ::sdfg::symbolic::Expression size) {
+    if (!this->builder_.subject().exists(container)) {
+        throw std::runtime_error("Called handle_malloc with container that does not exist: " + container);
+    }
+
+    auto& container_type = this->builder_.subject().type(container);
+    auto& block = this->builder_.add_block(*this->insertion_point_);
+    auto& access = this->builder_.add_access(block, container);
+    auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::MallocNode>(block, ::sdfg::DebugInfo(), size);
+    this->builder_.add_computational_memlet(block, libnode, "_ret", access, {}, container_type);
+
+    this->memory_map_.at(this->insertion_point_).push_back(container);
+}
+
+void SDFGTranslator::handle_frees(std::string return_container) {
+    std::string spared_container;
+    if (!return_container.empty()) {
+        if (this->alias_map_.contains(return_container)) {
+            spared_container = this->alias_map_.at(return_container);
+        } else {
+            spared_container = return_container;
+        }
+    }
+
+    auto& list = this->memory_map_.at(this->insertion_point_);
+    while (!list.empty()) {
+        std::string container = list.front();
+        list.pop_front();
+
+        if (container == spared_container) {
+            continue; // Spare this container because its returned
+        }
+
+        auto& container_type = this->builder_.subject().type(container);
+        auto& block = this->builder_.add_block(*this->insertion_point_);
+        auto& ptr_in = this->builder_.add_access(block, container);
+        auto& ptr_out = this->builder_.add_access(block, container);
+        auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::FreeNode>(block, ::sdfg::DebugInfo());
+        this->builder_.add_computational_memlet(block, ptr_in, libnode, "_ptr", {}, container_type);
+        this->builder_.add_computational_memlet(block, libnode, "_ptr", ptr_out, {}, container_type);
+    }
+}
+
 LogicalResult translateOp(SDFGTranslator& translator, Operation* op) {
     if (op->getDialect()->getNamespace() == arith::ArithDialect::getDialectNamespace()) {
         return translateArithOp(translator, op);
@@ -219,6 +304,8 @@ LogicalResult translateOp(SDFGTranslator& translator, Operation* op) {
         return translateFuncOp(translator, op);
     } else if (op->getDialect()->getNamespace() == linalg::LinalgDialect::getDialectNamespace()) {
         return translateLinalgOp(translator, op);
+    } else if (op->getDialect()->getNamespace() == tensor::TensorDialect::getDialectNamespace()) {
+        return translateTensorOp(translator, op);
     }
     // Handle all others
     return op->emitOpError("Could not translate!");

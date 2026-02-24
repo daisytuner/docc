@@ -205,6 +205,7 @@ class TorchProgram(DoccProgram):
 
         # Translate to Structured SDFG
         mlir_module = MLIRModule(torch_mlir)
+        mlir_module.convert()
         sdfg_str = mlir_module.translate()
         sdfg = StructuredSDFG.parse(sdfg_str)
 

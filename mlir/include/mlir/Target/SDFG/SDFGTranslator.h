@@ -1,7 +1,8 @@
 #pragma once
 
+#include <list>
 #include <llvm/ADT/ScopedHashTable.h>
-#include <optional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -13,6 +14,9 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/function.h"
 #include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/symbolic/symbolic.h"
+#include "sdfg/types/scalar.h"
+#include "sdfg/types/tensor.h"
 
 namespace mlir {
 namespace sdfg {
@@ -47,6 +51,9 @@ public:
 
     /// Create reshaped view (only valid for contiguous tensors).
     TensorInfo reshape(ArrayRef<int64_t> new_shape) const;
+
+    /// Create SDFG tensor type
+    std::unique_ptr<::sdfg::types::Tensor> get_sdfg_tensor(const ::sdfg::types::Scalar& element_type) const;
 };
 
 class SDFGTranslator {
@@ -59,6 +66,10 @@ class SDFGTranslator {
     ::sdfg::structured_control_flow::Sequence* insertion_point_;
 
     std::unordered_map<std::string, TensorInfo> tensor_info_map_;
+
+    std::unordered_map<::sdfg::structured_control_flow::Sequence*, std::list<std::string>> memory_map_;
+
+    std::unordered_map<std::string, std::string> alias_map_;
 
 public:
     SDFGTranslator();
@@ -82,6 +93,11 @@ public:
     std::unique_ptr<::sdfg::types::IType> convertType(const Type mlir_type);
 
     std::string convertTypedAttr(const TypedAttr attr);
+
+    void add_reference(const std::string& src_container, const std::string& dst_container);
+
+    void handle_malloc(std::string container, const ::sdfg::symbolic::Expression size);
+    void handle_frees(std::string return_container = "");
 };
 
 LogicalResult translateOp(SDFGTranslator& translator, Operation* op);

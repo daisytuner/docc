@@ -3,10 +3,13 @@
 #include <string>
 
 #include <sdfg/analysis/analysis.h>
+#include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/codegen/code_generators/c_code_generator.h>
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/codegen/instrumentation/arg_capture_plan.h>
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
+#include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
+#include <sdfg/passes/pipeline.h>
 #include <sdfg/serializer/json_serializer.h>
 
 int main(int argc, char* argv[]) {
@@ -23,10 +26,18 @@ int main(int argc, char* argv[]) {
     sdfg::serializer::JSONSerializer serializer;
     auto sdfg = serializer.deserialize(json);
 
-    sdfg::analysis::AnalysisManager analysis_manager(*sdfg);
-    auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg);
-    auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(*sdfg);
-    sdfg::codegen::CCodeGenerator gen(*sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan);
+    sdfg::builder::StructuredSDFGBuilder builder(*sdfg);
+    sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
+
+    sdfg::passes::Pipeline libnode_expansion = sdfg::passes::Pipeline::expansion();
+    libnode_expansion.run(builder, analysis_manager);
+
+    sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;
+    tensor_to_pointer_conversion_pass.run(builder, analysis_manager);
+
+    auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(builder.subject());
+    auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(builder.subject());
+    sdfg::codegen::CCodeGenerator gen(builder.subject(), analysis_manager, *instrumentation_plan, *arg_capture_plan);
     if (!gen.generate()) {
         std::cerr << "Could not generate code for SDFG" << std::endl;
         return 1;

@@ -2,15 +2,21 @@
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
+#include <string>
+#include <vector>
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Target/SDFG/SDFGTranslator.h"
 #include "mlir/Target/SDFG/helper.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.h"
 #include "sdfg/data_flow/tasklet.h"
+#include "sdfg/element.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
 
@@ -23,21 +29,55 @@ LogicalResult translateArithBinaryOp(SDFGTranslator& translator, Op* op) {
     Value rhs = op->getRhs();
     Value result = op->getResult();
 
-    // Types must be primitive for now
-    if (!is_sdfg_primitive(lhs.getType()) || !is_sdfg_primitive(rhs.getType()) ||
-        !is_sdfg_primitive(result.getType())) {
-        return op->emitOpError("Only SDFG primitive types are supported");
-    }
-
     auto& builder = translator.builder();
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& lhs_access = builder.add_access(block, translator.get_or_create_container(lhs));
-    auto& rhs_access = builder.add_access(block, translator.get_or_create_container(rhs));
-    auto& result_access = builder.add_access(block, translator.get_or_create_container(result));
-    auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {});
-    builder.add_computational_memlet(block, rhs_access, tasklet, "_in2", {});
-    builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+    auto lhs_container = translator.get_or_create_container(lhs);
+    auto rhs_container = translator.get_or_create_container(rhs);
+    auto result_container = translator.get_or_create_container(result);
+
+    if (is_sdfg_primitive(lhs.getType()) && is_sdfg_primitive(rhs.getType()) && is_sdfg_primitive(result.getType())) {
+        auto& block = builder.add_block(translator.insertion_point());
+        auto& lhs_access = builder.add_access(block, lhs_container);
+        auto& rhs_access = builder.add_access(block, rhs_container);
+        auto& result_access = builder.add_access(block, result_container);
+        auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {});
+        builder.add_computational_memlet(block, rhs_access, tasklet, "_in2", {});
+        builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+    } else if (is_tensor_of_sdfg_primitive(lhs.getType()) && is_tensor_of_sdfg_primitive(rhs.getType()) &&
+               is_tensor_of_sdfg_primitive(result.getType())) {
+        auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
+        auto tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+
+        auto element_type = translator.convertType(result_tensor_type.getElementType());
+        auto sdfg_tensor = tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
+
+        uint64_t size = 1;
+        for (int64_t dim : tensor_info.shape()) {
+            size *= dim;
+        }
+        translator.handle_malloc(
+            result_container,
+            ::sdfg::symbolic::mul(::sdfg::symbolic::integer(size), ::sdfg::symbolic::size_of_type(*element_type))
+        );
+        auto& block = builder.add_block(translator.insertion_point());
+        auto& lhs_access = builder.add_access(block, lhs_container);
+        auto& rhs_access = builder.add_access(block, rhs_container);
+        auto& result_access = builder.add_access(block, result_container);
+        std::vector<::sdfg::symbolic::Expression> shape;
+        auto& libnode = builder.add_library_node<::sdfg::math::tensor::TaskletTensorNode>(
+            block,
+            ::sdfg::DebugInfo(),
+            code,
+            std::vector<std::string>({"_out"}),
+            std::vector<std::string>({"_in1", "_in2"}),
+            sdfg_tensor->shape()
+        );
+        builder.add_computational_memlet(block, lhs_access, libnode, "_in1", {}, *sdfg_tensor);
+        builder.add_computational_memlet(block, rhs_access, libnode, "_in2", {}, *sdfg_tensor);
+        builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor);
+    } else {
+        return op->emitOpError("Unsupported type(s)");
+    }
 
     return success();
 }

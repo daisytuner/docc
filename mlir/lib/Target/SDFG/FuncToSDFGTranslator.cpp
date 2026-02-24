@@ -49,13 +49,17 @@ LogicalResult translateFuncFuncOp(SDFGTranslator& translator, func::FuncOp* func
         }
     }
 
+    // Handle frees manually because we are done with this SDFG and insertion_point is not set again
+    translator.handle_frees();
+
     return success();
 }
 
 LogicalResult translateFuncReturnOp(SDFGTranslator& translator, func::ReturnOp* return_op) {
     if (return_op->getOperands().size() == 1) {
-        translator.builder()
-            .add_return(translator.insertion_point(), translator.get_or_create_container(return_op->getOperand(0)));
+        auto return_container = translator.get_or_create_container(return_op->getOperand(0));
+        translator.handle_frees(return_container);
+        translator.builder().add_return(translator.insertion_point(), return_container);
     } else if (return_op->getOperands().size() > 1) {
         return return_op->emitOpError("Only one result type is supported for SDFGs");
     }

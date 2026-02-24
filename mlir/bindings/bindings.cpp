@@ -2,8 +2,11 @@
 #include <pybind11/stl.h>
 
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
+#include "mlir/Dialect/Linalg/Passes.h"
+#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -65,6 +68,14 @@ public:
         return result;
     }
 
+    void convert() {
+        mlir::PassManager pm(context_.get());
+        pm.addPass(mlir::createLinalgSpecializeGenericOpsPass());
+        if (mlir::failed(pm.run(*module_))) {
+            throw std::runtime_error("Failed to convert MLIR module");
+        }
+    }
+
     std::string translate() {
         std::string result;
         llvm::raw_string_ostream os(result);
@@ -90,5 +101,6 @@ PYBIND11_MODULE(_sdfg_mlir, m) {
     py::class_<PyMLIRModule>(m, "MLIRModule")
         .def(py::init<const std::string&>(), py::arg("mlir_text"), "Create an MLIR module from MLIR text representation")
         .def("to_string", &PyMLIRModule::to_string, "Get the MLIR module as a string")
+        .def("convert", &PyMLIRModule::convert, "Convert MLIR module")
         .def("translate", &PyMLIRModule::translate, "Translate the SDFG dialect module to a serialized SDFG");
 }
