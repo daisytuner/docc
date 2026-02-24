@@ -619,7 +619,7 @@ TEST(DotVisualizerTest, test_return) {
         << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_0 {" << std::endl;
     exp.setIndent(20);
     exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"N <= i\";" << std::endl
-        << escapeDotId(return_node.element_id(), "return_") << " [shape=cds,label=\" return  \"];" << std::endl;
+        << escapeDotId(return_node.element_id(), "return_") << " [shape=cds,label=\" return \"];" << std::endl;
     exp.setIndent(16);
     exp << "}" << std::endl << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_1 {" << std::endl;
     exp.setIndent(20);
