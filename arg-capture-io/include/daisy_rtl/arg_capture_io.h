@@ -99,9 +99,9 @@ public:
     template<typename T = ArgCaptureIO>
     static std::shared_ptr<T> from_index(const std::filesystem::path& file);
 
-    static bool write_data_to_raw_file(std::filesystem::path file, const void* src_data, size_t size);
+    static bool write_data_to_raw_file(const std::filesystem::path& file, const void* src_data, size_t size);
 
-    static void read_data_from_raw_file(std::filesystem::path file, void* write_ptr, size_t size);
+    static void read_data_from_raw_file(const std::filesystem::path& file, void* write_ptr, size_t size);
 };
 
 

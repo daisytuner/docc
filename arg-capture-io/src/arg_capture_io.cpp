@@ -178,7 +178,7 @@ bool ArgCaptureIO::write_capture_to_file(ArgCapture& capture, std::filesystem::p
     // Calculate size safely
     auto totalSize = std::accumulate(capture.dims.begin(), capture.dims.end(), size_t{1}, std::multiplies<size_t>());
 
-    auto success = write_data_to_raw_file(std::move(file), data, totalSize);
+    auto success = write_data_to_raw_file(file, data, totalSize);
 
     if (success) {
         capture.ext_file = std::make_shared<std::filesystem::path>(file);
@@ -187,7 +187,7 @@ bool ArgCaptureIO::write_capture_to_file(ArgCapture& capture, std::filesystem::p
     return success;
 }
 
-bool ArgCaptureIO::write_data_to_raw_file(std::filesystem::path file, const void* src_data, size_t size) {
+bool ArgCaptureIO::write_data_to_raw_file(const std::filesystem::path& file, const void* src_data, size_t size) {
     // Ensure directory exists
     std::error_code ec;
     std::filesystem::create_directories(file.parent_path(), ec);
@@ -242,7 +242,7 @@ bool ArgCaptureIO::write_data_to_raw_file(std::filesystem::path file, const void
     return true;
 }
 
-void ArgCaptureIO::read_data_from_raw_file(std::filesystem::path file, void* write_ptr, size_t size) {
+void ArgCaptureIO::read_data_from_raw_file(const std::filesystem::path& file, void* write_ptr, size_t size) {
     std::ifstream ifs(file, std::ifstream::binary | std::ifstream::in);
     if (!ifs.is_open()) {
         throw std::runtime_error("Failed to open file: " + file.string());
