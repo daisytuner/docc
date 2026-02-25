@@ -1,5 +1,6 @@
 #include "mlir/Target/SDFG/LinalgToSDFGTranslator.h"
 
+#include <llvm-19/llvm/Support/Casting.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
 #include <string>
@@ -12,10 +13,13 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Target/SDFG/SDFGTranslator.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/element.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
 
 namespace mlir {
@@ -69,6 +73,42 @@ LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, El
     return success();
 }
 
+template<typename ElemOp, ::sdfg::math::cmath::CMathFunction function>
+LogicalResult translateLinalgElementwiseCMathOp(SDFGTranslator& translator, ElemOp* op) {
+    Value input = op->getInputs()[0];
+    Value output = op->getOutputs()[0];
+    Value result = op->getResultTensors()[0];
+
+    auto& builder = translator.builder();
+    auto input_container = translator.get_or_create_container(input);
+    auto output_container = translator.get_or_create_container(output);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
+    auto tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+
+    auto element_type = translator.convertType(result_tensor_type.getElementType());
+    auto sdfg_tensor = tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
+
+    translator.add_reference(output_container, result_container);
+
+    auto& block = builder.add_block(translator.insertion_point());
+    auto& input_access = builder.add_access(block, input_container);
+    auto& result_access = builder.add_access(block, result_container);
+    auto& libnode = builder.add_library_node<::sdfg::math::tensor::CMathTensorNode>(
+        block,
+        ::sdfg::DebugInfo(),
+        function,
+        std::vector<std::string>({"_out"}),
+        std::vector<std::string>({"_in"}),
+        sdfg_tensor->shape()
+    );
+    builder.add_computational_memlet(block, input_access, libnode, "_in", {}, *sdfg_tensor);
+    builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor);
+
+    return success();
+}
+
 LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
     return llvm::TypeSwitch<Operation*, LogicalResult>(op)
         .Case<linalg::AddOp>([&](linalg::AddOp add_op) {
@@ -94,6 +134,66 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
                 linalg::SubOp,
                 ::sdfg::data_flow::TaskletCode::fp_sub,
                 ::sdfg::data_flow::TaskletCode::int_sub>(translator, &div_op);
+        })
+        .Case<linalg::AbsOp>([&](linalg::AbsOp abs_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::AbsOp,
+                ::sdfg::math::cmath::CMathFunction::fabs>(translator, &abs_op);
+        })
+        .Case<linalg::CeilOp>([&](linalg::CeilOp ceil_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::CeilOp,
+                ::sdfg::math::cmath::CMathFunction::ceil>(translator, &ceil_op);
+        })
+        .Case<linalg::ErfOp>([&](linalg::ErfOp erf_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::ErfOp,
+                ::sdfg::math::cmath::CMathFunction::erf>(translator, &erf_op);
+        })
+        .Case<linalg::ExpOp>([&](linalg::ExpOp exp_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::ExpOp,
+                ::sdfg::math::cmath::CMathFunction::exp>(translator, &exp_op);
+        })
+        .Case<linalg::FloorOp>([&](linalg::FloorOp floor_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::FloorOp,
+                ::sdfg::math::cmath::CMathFunction::floor>(translator, &floor_op);
+        })
+        .Case<linalg::LogOp>([&](linalg::LogOp log_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::LogOp,
+                ::sdfg::math::cmath::CMathFunction::log>(translator, &log_op);
+        })
+        .Case<linalg::MaxOp>([&](linalg::MaxOp max_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::MaxOp,
+                ::sdfg::math::cmath::CMathFunction::fmax>(translator, &max_op);
+        })
+        .Case<linalg::MinOp>([&](linalg::MinOp min_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::MinOp,
+                ::sdfg::math::cmath::CMathFunction::fmin>(translator, &min_op);
+        })
+        .Case<linalg::PowFOp>([&](linalg::PowFOp powf_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::PowFOp,
+                ::sdfg::math::cmath::CMathFunction::pow>(translator, &powf_op);
+        })
+        .Case<linalg::RoundOp>([&](linalg::RoundOp round_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::RoundOp,
+                ::sdfg::math::cmath::CMathFunction::round>(translator, &round_op);
+        })
+        .Case<linalg::SqrtOp>([&](linalg::SqrtOp sqrt_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::SqrtOp,
+                ::sdfg::math::cmath::CMathFunction::sqrt>(translator, &sqrt_op);
+        })
+        .Case<linalg::TanhOp>([&](linalg::TanhOp tanh_op) {
+            return translateLinalgElementwiseCMathOp<
+                linalg::TanhOp,
+                ::sdfg::math::cmath::CMathFunction::tanh>(translator, &tanh_op);
         })
         .Case<linalg::FillOp>([&](linalg::FillOp fill_op) { return translateLinalgFillOp(translator, &fill_op); })
         .Case<linalg::MatmulOp>([&](linalg::MatmulOp matmul_op) {
