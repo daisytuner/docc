@@ -94,6 +94,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.cpp
+    src/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.cpp

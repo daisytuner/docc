@@ -258,7 +258,7 @@ jobs:
           pip install torch-mlir torchvision --extra-index-url https://download.pytorch.org/whl/cpu -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
 
           cd mlir/
-          pytest -v benchmarks/
+          pytest -v integration/
 
   finish:
     needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux]
