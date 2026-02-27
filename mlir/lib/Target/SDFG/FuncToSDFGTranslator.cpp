@@ -42,15 +42,13 @@ LogicalResult translateFuncFuncOp(SDFGTranslator& translator, func::FuncOp* func
     }
 
     // Region
-    translator.insertion_point(translator.builder().subject().root());
+    translator.enter_sequence(translator.builder().subject().root());
     for (auto& op : func_op->getRegion().getOps()) {
         if (failed(translateOp(translator, &op))) {
             return failure();
         }
     }
-
-    // Handle frees manually because we are done with this SDFG and insertion_point is not set again
-    translator.handle_frees();
+    translator.exit_sequence(translator.builder().subject().root());
 
     return success();
 }

@@ -21,6 +21,7 @@
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/element.h"
 #include "sdfg/serializer/json_serializer.h"
+#include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/tensor.h"
 
@@ -129,7 +130,7 @@ std::unique_ptr<::sdfg::types::Tensor> TensorInfo::get_sdfg_tensor(const ::sdfg:
 // ===----------------------------------------------------------------------===//
 
 SDFGTranslator::SDFGTranslator()
-    : builder_empty_(true), builder_("empty", ::sdfg::FunctionType_CPU), value_counter_(0), insertion_point_(nullptr) {}
+    : builder_empty_(true), builder_("empty", ::sdfg::FunctionType_CPU), value_counter_(0) {}
 
 ::sdfg::builder::StructuredSDFGBuilder& SDFGTranslator::builder() { return this->builder_; }
 
@@ -164,19 +165,26 @@ TensorInfo& SDFGTranslator::get_or_create_tensor_info(const std::string& contain
 }
 
 ::sdfg::structured_control_flow::Sequence& SDFGTranslator::insertion_point() {
-    if (this->insertion_point_ == nullptr) {
-        throw std::runtime_error("Tried accessing insertion point but is nullptr");
+    if (this->insertion_points_.empty()) {
+        throw std::runtime_error("Tried accessing insertion point but is empty");
     }
-    return *this->insertion_point_;
+    return *this->insertion_points_.back();
 }
 
-void SDFGTranslator::insertion_point(::sdfg::structured_control_flow::Sequence& sequence) {
-    if (this->memory_map_.contains(this->insertion_point_)) {
-        this->handle_frees();
-        this->memory_map_.erase(this->insertion_point_);
-    }
+void SDFGTranslator::enter_sequence(::sdfg::structured_control_flow::Sequence& sequence) {
     this->memory_map_.insert({&sequence, {}});
-    this->insertion_point_ = &sequence;
+    this->insertion_points_.push_back(&sequence);
+}
+
+void SDFGTranslator::exit_sequence(::sdfg::structured_control_flow::Sequence& sequence) {
+    if (this->insertion_points_.back() != &sequence) {
+        throw std::runtime_error("Tried exiting sequence but is not the current insertion point");
+    }
+    if (this->memory_map_.contains(&sequence)) {
+        this->handle_frees();
+        this->memory_map_.erase(&sequence);
+    }
+    this->insertion_points_.pop_back();
 }
 
 std::unique_ptr<::sdfg::types::IType> SDFGTranslator::convertType(const Type mlir_type) {
@@ -238,7 +246,7 @@ std::string SDFGTranslator::convertTypedAttr(const TypedAttr attr) {
 }
 
 void SDFGTranslator::add_reference(const std::string& src_container, const std::string& dst_container) {
-    auto& block = this->builder_.add_block(*this->insertion_point_);
+    auto& block = this->builder_.add_block(this->insertion_point());
     auto& src_access = this->builder_.add_access(block, src_container);
     auto& dst_access = this->builder_.add_access(block, dst_container);
     this->builder_.add_reference_memlet(
@@ -258,12 +266,12 @@ void SDFGTranslator::handle_malloc(std::string container, const ::sdfg::symbolic
     }
 
     auto& container_type = this->builder_.subject().type(container);
-    auto& block = this->builder_.add_block(*this->insertion_point_);
+    auto& block = this->builder_.add_block(this->insertion_point());
     auto& access = this->builder_.add_access(block, container);
     auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::MallocNode>(block, ::sdfg::DebugInfo(), size);
     this->builder_.add_computational_memlet(block, libnode, "_ret", access, {}, container_type);
 
-    this->memory_map_.at(this->insertion_point_).push_back(container);
+    this->memory_map_.at(&this->insertion_point()).push_back(container);
 }
 
 void SDFGTranslator::handle_frees(std::string return_container) {
@@ -276,7 +284,7 @@ void SDFGTranslator::handle_frees(std::string return_container) {
         }
     }
 
-    auto& list = this->memory_map_.at(this->insertion_point_);
+    auto& list = this->memory_map_.at(&this->insertion_point());
     while (!list.empty()) {
         std::string container = list.front();
         list.pop_front();
@@ -286,7 +294,7 @@ void SDFGTranslator::handle_frees(std::string return_container) {
         }
 
         auto& container_type = this->builder_.subject().type(container);
-        auto& block = this->builder_.add_block(*this->insertion_point_);
+        auto& block = this->builder_.add_block(this->insertion_point());
         auto& ptr_in = this->builder_.add_access(block, container);
         auto& ptr_out = this->builder_.add_access(block, container);
         auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::FreeNode>(block, ::sdfg::DebugInfo());

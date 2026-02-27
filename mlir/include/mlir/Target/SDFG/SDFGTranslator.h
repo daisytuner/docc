@@ -63,7 +63,7 @@ class SDFGTranslator {
     llvm::ScopedHashTable<Value, std::string> value_map_;
     size_t value_counter_;
 
-    ::sdfg::structured_control_flow::Sequence* insertion_point_;
+    std::list<::sdfg::structured_control_flow::Sequence*> insertion_points_;
 
     std::unordered_map<std::string, TensorInfo> tensor_info_map_;
 
@@ -82,7 +82,8 @@ public:
     llvm::ScopedHashTable<Value, std::string>& value_map();
 
     ::sdfg::structured_control_flow::Sequence& insertion_point();
-    void insertion_point(::sdfg::structured_control_flow::Sequence& sequence);
+    void enter_sequence(::sdfg::structured_control_flow::Sequence& sequence);
+    void exit_sequence(::sdfg::structured_control_flow::Sequence& sequence);
 
     std::unordered_map<std::string, TensorInfo>& tensor_info_map();
 
