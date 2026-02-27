@@ -63,9 +63,18 @@ class TorchProgram(DoccProgram):
         # Execute
         result = self._compiled(*numpy_args)
 
+        # get return shape from metadata
+        return_shape_str = self._compiled.sdfg.metadata("return_shape")
+
+        # parse shape string back to tuple
+        return_shape = tuple(
+            int(dim) for dim in return_shape_str.strip("[]").split(",") if dim
+        )
+        self._output_info = [{"shape": return_shape}]
+
         # Convert outputs back to torch if inputs were torch
         if is_torch_input:
-            result = self._convert_outputs(result, args)
+            result = self._convert_outputs(result, args, return_shape)
 
         return result
 
@@ -198,9 +207,16 @@ class TorchProgram(DoccProgram):
             raise ValueError("No example input provided for SDFG conversion.")
 
         # Import torch model to MLIR using torch-mlir FX
-        torch_mlir = fx.export_and_import(
-            self.model, self.example_input, output_type="linalg_on_tensors"
-        )
+        # example_input may be a single tensor or a tuple of tensors;
+        # fx.export_and_import expects them as positional *args.
+        if isinstance(self.example_input, tuple):
+            torch_mlir = fx.export_and_import(
+                self.model, *self.example_input, output_type="linalg_on_tensors"
+            )
+        else:
+            torch_mlir = fx.export_and_import(
+                self.model, self.example_input, output_type="linalg_on_tensors"
+            )
         torch_mlir = str(torch_mlir)
 
         # Translate to Structured SDFG
@@ -229,7 +245,9 @@ class TorchProgram(DoccProgram):
 
         return tuple(converted)
 
-    def _convert_outputs(self, result: Any, original_args: tuple) -> Any:
+    def _convert_outputs(
+        self, result: Any, original_args: tuple, return_shape: tuple
+    ) -> Any:
         import torch
         import numpy as np
 
@@ -240,15 +258,41 @@ class TorchProgram(DoccProgram):
                 device = arg.device
                 break
 
-        def convert_single(val):
+        def convert_single(val, return_shape):
             if isinstance(val, np.ndarray):
+                val = val.reshape(return_shape)
                 return torch.from_numpy(val).to(device)
-            return val
+            elif isinstance(val, torch.Tensor):
+                return val.reshape(return_shape).to(device)
+            else:
+                # Handle ctypes pointers (e.g. LP_c_float from CompiledSDFG)
+                import ctypes
+
+                if hasattr(val, "contents") and hasattr(val, "_type_"):
+                    import math
+
+                    num_elements = math.prod(return_shape)
+                    ctype = val._type_
+                    dtype_map = {
+                        ctypes.c_float: np.float32,
+                        ctypes.c_double: np.float64,
+                        ctypes.c_int: np.int32,
+                        ctypes.c_long: np.int64,
+                    }
+                    np_dtype = dtype_map.get(ctype, np.float32)
+                    # Cast pointer to a ctypes array of the full size,
+                    # then read with np.frombuffer to get all elements
+                    ArrayType = ctype * num_elements
+                    arr_ptr = ctypes.cast(val, ctypes.POINTER(ArrayType))
+                    arr = np.frombuffer(arr_ptr.contents, dtype=np_dtype).copy()
+                    arr = arr.reshape(return_shape)
+                    return torch.from_numpy(arr).to(device)
+                return val
 
         if isinstance(result, tuple):
-            return tuple(convert_single(r) for r in result)
+            return tuple(convert_single(r, return_shape) for r in result)
         else:
-            return convert_single(result)
+            return convert_single(result, return_shape)
 
     def _get_cache_key(self, example_input: Any) -> str:
         import torch
@@ -327,7 +371,9 @@ def _docc_backend(gm: "torch.fx.GraphModule", example_inputs):
     """
     import torch
 
-    # Convert example_inputs list to tuple for TorchProgram
+    # example_inputs from dynamo includes ALL graph inputs:
+    # lifted parameters/buffers AND user inputs.
+    # Pass them all as the example input since the FX GraphModule expects all of them.
     if len(example_inputs) == 1:
         example_input = example_inputs[0]
     else:
@@ -341,8 +387,16 @@ def _docc_backend(gm: "torch.fx.GraphModule", example_inputs):
         category=_backend_options["category"],
     )
 
+    # Wrap in a function that returns a tuple of tensors,
+    # matching the FX graph's output convention expected by dynamo.
+    def compiled_fn(*args):
+        result = program(*args)
+        if isinstance(result, (tuple, list)):
+            return result
+        return (result,)
+
     # Return the compiled callable
-    return program
+    return compiled_fn
 
 
 def _register_backend():

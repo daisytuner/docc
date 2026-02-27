@@ -2,6 +2,7 @@
 #include "sdfg/analysis/mem_access_range_analysis.h"
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/analysis/users.h"
+#include "sdfg/codegen/utils.h"
 #include "sdfg/helpers/helpers.h"
 #include "sdfg/types/utils.h"
 
@@ -54,8 +55,16 @@ void ArgumentsAnalysis::find_arguments_and_locals(
             is_ptr = true;
             is_scalar = false;
         } else {
-            is_scalar = type->type_id() == types::TypeID::Scalar;
-            is_ptr = type->type_id() == types::TypeID::Pointer || type->type_id() == types::TypeID::Array;
+            // Unwrap Reference types to check the underlying type
+            const types::IType* effective_type = type;
+            if (type->type_id() == types::TypeID::Reference) {
+                auto* reference = dynamic_cast<const codegen::Reference*>(type);
+                assert(reference != nullptr);
+                effective_type = &reference->reference_type();
+            }
+            is_scalar = effective_type->type_id() == types::TypeID::Scalar;
+            is_ptr = effective_type->type_id() == types::TypeID::Pointer ||
+                     effective_type->type_id() == types::TypeID::Array;
         }
 
         if (sdfg_.is_argument(container) || sdfg_.is_external(container)) {

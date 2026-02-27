@@ -181,7 +181,7 @@ void generate_kernel_gemm(
            << "&__beta, "
            << "dC, " << language_extension.expression(ldc) << ");" << std::endl;
     cublas_error_checking(stream, language_extension, "err");
-    check_cuda_kernel_launch_errors(stream, language_extension);
+    check_cuda_kernel_launch_errors(stream, language_extension, false);
 }
 
 } // namespace sdfg::cuda::blas

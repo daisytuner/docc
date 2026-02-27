@@ -172,6 +172,8 @@ class CompiledSDFG:
                     # Get return shape from metadata if available
                     return_shape_str = self.sdfg.metadata("return_shape")
                     if return_shape_str:
+                        # Strip brackets (metadata may be "[10,10]" format)
+                        return_shape_str = return_shape_str.strip("[]")
                         shape = []
                         for dim_str in return_shape_str.split(","):
                             try:

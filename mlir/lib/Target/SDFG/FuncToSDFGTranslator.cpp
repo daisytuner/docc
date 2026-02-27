@@ -1,5 +1,6 @@
 #include "mlir/Target/SDFG/FuncToSDFGTranslator.h"
 
+#include <llvm-19/llvm/Support/Casting.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -56,8 +57,24 @@ LogicalResult translateFuncFuncOp(SDFGTranslator& translator, func::FuncOp* func
 LogicalResult translateFuncReturnOp(SDFGTranslator& translator, func::ReturnOp* return_op) {
     if (return_op->getOperands().size() == 1) {
         auto return_container = translator.get_or_create_container(return_op->getOperand(0));
+        bool isa_tensor = llvm::isa<TensorType>(return_op->getOperand(0).getType());
+        if (isa_tensor) {
+            return_container = translator.store_in_c_order(
+                return_container,
+                translator.get_or_create_tensor_info(
+                    return_container, llvm::dyn_cast<TensorType>(return_op->getOperand(0).getType())
+                ),
+                translator.convertType(return_op->getOperand(0).getType())->primitive_type()
+            );
+        }
         translator.handle_frees(return_container);
         translator.builder().add_return(translator.insertion_point(), return_container);
+        if (isa_tensor) {
+            auto result_tensor_type = llvm::dyn_cast<TensorType>(return_op->getOperand(0).getType());
+            translator.builder().subject().add_metadata(
+                "return_shape", translator.get_or_create_tensor_info(return_container, result_tensor_type).shape_str()
+            );
+        }
     } else if (return_op->getOperands().size() > 1) {
         return return_op->emitOpError("Only one result type is supported for SDFGs");
     }

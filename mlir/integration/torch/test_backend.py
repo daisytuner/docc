@@ -15,8 +15,9 @@ def test_torch_compile():
             return x
 
     model = IdentityNet()
+    model_ref = IdentityNet()
     example_input = torch.randn(2, 1)
 
     program = torch.compile(model, backend="docc")
     res = program(example_input)
-    assert torch.allclose(res, example_input)
+    assert torch.allclose(res, model_ref(example_input), rtol=1e-5)

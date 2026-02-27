@@ -13,11 +13,12 @@ def test_identitfy():
             return x
 
     model = IdentityNet()
+    model_ref = IdentityNet()
     example_input = torch.randn(2, 1)
 
     program = compile_torch(model, example_input)
     res = program(example_input)
-    assert torch.allclose(res, example_input)
+    assert torch.allclose(res, model_ref(example_input), rtol=1e-5)
 
 
 def test_tensor_const():
@@ -30,9 +31,9 @@ def test_tensor_const():
             return const
 
     model = OutputNet()
+    model_ref = OutputNet()
     example_input = torch.randn(4, 1)
-    ref_out = torch.Tensor([[10.0], [21.0], [3.0], [4.0]])
 
     program = compile_torch(model, example_input)
     res = program(example_input)
-    assert torch.equal(res, ref_out)
+    assert torch.allclose(res, model_ref(example_input), rtol=1e-5)

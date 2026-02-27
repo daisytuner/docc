@@ -69,7 +69,7 @@ void DotNodeDispatcher_CUBLASWithTransfers::dispatch_code(
            << ", dx, " << this->language_extension_.expression(dot_node.incx()) << ", dy, "
            << this->language_extension_.expression(dot_node.incy()) << ", &__out);" << std::endl;
     cublas_error_checking(stream, this->language_extension_, "err");
-    check_cuda_kernel_launch_errors(stream, this->language_extension_);
+    check_cuda_kernel_launch_errors(stream, this->language_extension_, false);
 
     destroy_blas_handle(stream, this->language_extension_);
 
@@ -117,7 +117,7 @@ void DotNodeDispatcher_CUBLASWithoutTransfers::dispatch_code(
            << this->language_extension_.expression(dot_node.incy()) << ", &__out);" << std::endl;
 
     cublas_error_checking(stream, this->language_extension_, "err");
-    check_cuda_kernel_launch_errors(stream, this->language_extension_);
+    check_cuda_kernel_launch_errors(stream, this->language_extension_, false);
 
     destroy_blas_handle(stream, this->language_extension_);
 }

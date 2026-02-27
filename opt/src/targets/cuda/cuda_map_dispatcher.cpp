@@ -262,7 +262,7 @@ void CUDAMapDispatcher::dispatch_kernel_call(
     main_stream << ";" << std::endl;
 
     // Synchronize
-    check_cuda_kernel_launch_errors(main_stream, this->language_extension_);
+    check_cuda_kernel_launch_errors(main_stream, this->language_extension_, instrumentation_plan_.should_instrument(node_));
 
     main_stream.setIndent(main_stream.indent() - 4);
     main_stream << "}" << std::endl;

@@ -21,8 +21,10 @@
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/element.h"
 #include "sdfg/serializer/json_serializer.h"
+#include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
 
 namespace mlir {
@@ -95,6 +97,11 @@ bool TensorInfo::is_reshape_valid(ArrayRef<int64_t> new_shape) const {
     if (old_num_elements != new_num_elements) {
         return false;
     }
+
+    return has_basic_strides();
+}
+
+bool TensorInfo::has_basic_strides() const {
     auto expected_strides = compute_strides(shape_);
     if (expected_strides.size() != strides_.size()) {
         return false;
@@ -123,6 +130,18 @@ std::unique_ptr<::sdfg::types::Tensor> TensorInfo::get_sdfg_tensor(const ::sdfg:
     }
     ::sdfg::symbolic::Expression offset = ::sdfg::symbolic::integer(this->offset_);
     return std::make_unique<::sdfg::types::Tensor>(element_type, shape, strides, offset);
+}
+
+std::string TensorInfo::shape_str() const {
+    std::string result = "[";
+    for (size_t i = 0; i < shape_.size(); ++i) {
+        result += std::to_string(shape_[i]);
+        if (i != shape_.size() - 1) {
+            result += ",";
+        }
+    }
+    result += "]";
+    return result;
 }
 
 // ===----------------------------------------------------------------------===//
@@ -324,6 +343,62 @@ LogicalResult emitJSON(SDFGTranslator& translator, raw_ostream& os) {
     auto json = serializer.serialize(translator.builder().subject());
     os << json.dump(4) << "\n";
     return success();
+}
+
+std::string SDFGTranslator::store_in_c_order(
+    const std::string& container, const TensorInfo& tensor_info, const ::sdfg::types::Scalar& element_type
+) {
+    // If already in C order, do nothing
+    if (tensor_info.has_basic_strides()) {
+        return container;
+    }
+
+    std::string new_container = container + "_c_order";
+
+    // Get the container type and element type
+    TensorInfo c_order_tensor_info(tensor_info.shape(), TensorInfo::compute_strides(tensor_info.shape()), 0);
+    auto c_order_type = c_order_tensor_info.get_sdfg_tensor(element_type);
+    auto input_type = tensor_info.get_sdfg_tensor(element_type);
+    builder_.add_container(new_container, ::sdfg::types::Pointer(element_type));
+
+    // Malloc the new container
+    handle_malloc(
+        new_container,
+        ::sdfg::symbolic::mul(c_order_type->total_elements(), ::sdfg::symbolic::size_of_type(element_type))
+    );
+
+    // Build nested for-loop, one per dimension
+    ::sdfg::structured_control_flow::Sequence* current_scope = insertion_point_;
+    std::vector<::sdfg::symbolic::Expression> loop_vars;
+
+    for (size_t i = 0; i < tensor_info.shape().size(); i++) {
+        std::string indvar_str = builder_.find_new_name("_i");
+        builder_.add_container(indvar_str, ::sdfg::types::Scalar(::sdfg::types::PrimitiveType::UInt64));
+
+        auto indvar = ::sdfg::symbolic::symbol(indvar_str);
+        auto init = ::sdfg::symbolic::zero();
+        auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
+        auto condition = ::sdfg::symbolic::Lt(indvar, ::sdfg::symbolic::integer(tensor_info.shape()[i]));
+
+        auto& loop =
+            builder_.add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create());
+        current_scope = &loop.root();
+        loop_vars.push_back(indvar);
+    }
+
+    // Create a block with a tasklet that copies one element
+    auto& block = builder_.add_block(*current_scope);
+    auto& src_access = builder_.add_access(block, container);
+    auto& dst_access = builder_.add_access(block, new_container);
+    auto& tasklet = builder_.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+
+    builder_.add_computational_memlet(block, src_access, tasklet, "_in", loop_vars, *input_type);
+    builder_.add_computational_memlet(block, tasklet, "_out", dst_access, loop_vars, *c_order_type);
+
+    // Update tensor info for the new container with C-order strides
+    tensor_info_map_.insert({new_container, c_order_tensor_info});
+
+    return new_container;
 }
 
 } // namespace sdfg
