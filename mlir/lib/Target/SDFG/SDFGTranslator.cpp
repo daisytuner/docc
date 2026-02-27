@@ -368,7 +368,7 @@ std::string SDFGTranslator::store_in_c_order(
     );
 
     // Build nested for-loop, one per dimension
-    ::sdfg::structured_control_flow::Sequence* current_scope = insertion_point_;
+    ::sdfg::structured_control_flow::Sequence* current_scope = &this->insertion_point();
     std::vector<::sdfg::symbolic::Expression> loop_vars;
 
     for (size_t i = 0; i < tensor_info.shape().size(); i++) {

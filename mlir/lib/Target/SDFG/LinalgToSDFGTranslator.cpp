@@ -19,7 +19,6 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Target/SDFG/SDFGTranslator.h"
 #include "mlir/Target/SDFG/helper.h"
-#include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.h"
@@ -31,7 +30,6 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
-#include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
 #include "sdfg/types/type.h"
@@ -237,7 +235,6 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
 
     // Create loops
     ::sdfg::structured_control_flow::Sequence* current_seq = &translator.insertion_point();
-    bool reduction_occurred = false;
     std::vector<::sdfg::symbolic::Symbol> indvars;
     for (size_t i = 0; i < iteration_types.size(); i++) {
         auto attr = iteration_types[i];
@@ -245,9 +242,6 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
             return generic_op->emitOpError("Expected a string for attribute in iteration_types: ") << attr;
         }
         auto iterator_type_attr = llvm::dyn_cast<linalg::IteratorTypeAttr>(attr);
-        if (iterator_type_attr.getValue() == utils::IteratorType::reduction) {
-            reduction_occurred = true;
-        }
 
         auto indvar_container = builder.find_new_name("_i");
         builder.add_container(indvar_container, ::sdfg::types::Scalar(::sdfg::types::PrimitiveType::Int64));
@@ -257,7 +251,7 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
         auto init = ::sdfg::symbolic::zero();
         auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
 
-        if (reduction_occurred) {
+        if (iterator_type_attr.getValue() == utils::IteratorType::reduction) {
             auto& for_loop = builder.add_for(*current_seq, indvar, condition, init, update);
             current_seq = &for_loop.root();
         } else {
@@ -331,7 +325,8 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
                 auto& sdfg_block = builder.add_block(translator.insertion_point());
                 auto& value_access = builder.add_access(sdfg_block, value_container);
                 auto& result_access = builder.add_access(sdfg_block, result_containers.at(i));
-                auto& tasklet = builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+                auto& tasklet =
+                    builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
                 builder.add_computational_memlet(sdfg_block, value_access, tasklet, "_in", {});
 
                 auto tensor_type = llvm::dyn_cast<TensorType>(results[i].getType());
