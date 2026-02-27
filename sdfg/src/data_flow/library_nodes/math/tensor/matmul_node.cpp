@@ -360,8 +360,6 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     size_t batch_dims_b = shape_b_.size() - 2;
     size_t max_batch_dims = std::max(batch_dims_a, batch_dims_b);
 
-    auto& ref_block = builder.add_block(*last_scope, {}, block.debug_info());
-
     // Create maps for batch dimensions (using broadcasting)
     for (size_t i = 0; i < max_batch_dims; ++i) {
         std::string indvar_str = builder.find_new_name("_b");
@@ -399,6 +397,8 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         last_scope = &last_map->root();
         batch_vars.push_back(indvar);
     }
+
+    auto& ref_block = builder.add_block(*last_scope, {}, block.debug_info());
 
     auto scalar_type = types::Scalar(prim_type);
 
