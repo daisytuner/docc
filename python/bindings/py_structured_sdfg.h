@@ -44,7 +44,7 @@ public:
 
     void simplify();
 
-    void dump(const std::string& path);
+    void dump(const std::string& path, const std::string& type = "");
 
     void normalize();
 

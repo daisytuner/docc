@@ -11,6 +11,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <docc/target/et/target.h>
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/codegen/code_generators/cpp_code_generator.h>
@@ -44,6 +45,9 @@
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/passes/symbolic/type_minimization.h>
 #include <sdfg/serializer/json_serializer.h>
+
+#include <sdfg/helpers/helpers.h>
+#include <sdfg/visualizer/dot_visualizer.h>
 
 // Platform-specific compiler selection
 #if defined(__APPLE__)
@@ -248,20 +252,21 @@ void PyStructuredSDFG::simplify() {
     map_fusion.run(builder_opt, analysis_manager);
 }
 
-void PyStructuredSDFG::dump(const std::string& path) {
+void PyStructuredSDFG::dump(const std::string& path, const std::string& type) {
     fs::path build_path(path);
     if (!fs::exists(build_path)) {
         fs::create_directories(build_path);
     }
 
     // Add metadata to SDFG
-    fs::path sdfg_file = build_path / (sdfg_->name() + ".json");
-    fs::path features_file = build_path / (sdfg_->name() + ".npz");
-    fs::path arg_captures_path = build_path / "arg_captures";
+    auto typeSuffix = type.empty() ? "" : ("." + type);
+    fs::path sdfg_file = build_path / (sdfg_->name() + typeSuffix + ".json");
+    fs::path features_file = build_path / (sdfg_->name() + typeSuffix + ".npz");
+    fs::path arg_captures_path = build_path / ("arg_captures" + typeSuffix);
     sdfg_->add_metadata("sdfg_file", sdfg_file.string());
     sdfg_->add_metadata("arg_capture_path", arg_captures_path.string());
     sdfg_->add_metadata("features_file", features_file.string());
-    sdfg_->add_metadata("opt_report_file", (build_path / (sdfg_->name() + ".opt_report.json")).string());
+    sdfg_->add_metadata("opt_report_file", (build_path / (sdfg_->name() + typeSuffix + ".opt_report.json")).string());
 
     // Dump json
     sdfg::serializer::JSONSerializer serializer;
@@ -273,6 +278,9 @@ void PyStructuredSDFG::dump(const std::string& path) {
     }
     ofs << j.dump(2);
     ofs.close();
+
+    auto dot_file = build_path / (sdfg_->name() + typeSuffix + ".dot");
+    sdfg::visualizer::DotVisualizer::writeToFile(*sdfg_, &dot_file);
 }
 
 void PyStructuredSDFG::normalize() {
@@ -317,6 +325,10 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     } else if (target == "onnx") {
         sdfg::passes::ONNXLibraryNodeRewriterPass onnx_library_node_rewriter_pass;
         onnx_library_node_rewriter_pass.run(builder, analysis_manager);
+    } else if (target == "etsoc") {
+        docc::target::et::et_scheduling_passes(builder, analysis_manager, category);
+    } else {
+        std::cerr << "[WARNING] Target '" << target << "' is not supported, ignoring!" << std::endl;
     }
     sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, nullptr);
     loop_scheduling_pass.run(builder, analysis_manager);
@@ -391,11 +403,13 @@ std::string PyStructuredSDFG::compile(
     // Find libraries relative to the module location
     Dl_info info;
     std::string package_path_str;
+    std::string package_lib_path_str;
     std::string package_include_path_str;
     if (dladdr((void*) &_anchor, &info)) {
         fs::path lib_path = fs::canonical(info.dli_fname);
         fs::path package_path = lib_path.parent_path().parent_path();
         package_path_str = package_path.string();
+        package_lib_path_str = (package_path / "lib").string();
         package_include_path_str = (package_path / "include").string();
     }
 
@@ -408,33 +422,36 @@ std::string PyStructuredSDFG::compile(
             continue;
         }
 
-        std::string name = lib_path.stem().string();
-        std::string object_file = build_path.string() + "/" + name + ".o";
-        std::stringstream cmd;
-        cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3  -march=native -mtune=native -funroll-loops";
-        if (!package_path_str.empty()) {
-            cmd << " -L" << package_path_str;
-            cmd << " -I" << package_include_path_str;
-        }
+        if (extension == ".et.cpp") {
+        } else {
+            std::string name = lib_path.stem().string();
+            std::string object_file = build_path.string() + "/" + name + ".o";
+            std::stringstream cmd;
+            cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3  -march=native -mtune=native -funroll-loops";
+            if (!package_path_str.empty()) {
+                cmd << " -L" << package_lib_path_str;
+                cmd << " -I" << package_include_path_str;
+            }
 #if defined(__APPLE__)
-        cmd << " -I/opt/homebrew/include";
+            cmd << " -I/opt/homebrew/include";
 #endif
-        if (target == "cuda") {
-            cmd << " -x cuda --cuda-gpu-arch=sm_70 --cuda-path=/usr/local/cuda";
-        }
+            if (target == "cuda") { // should use .cu to detect
+                cmd << " -x cuda --cuda-gpu-arch=sm_70 --cuda-path=/usr/local/cuda";
+            }
 
-        cmd << " " << lib_file;
-        cmd << " -o " << object_file;
-        if (name.starts_with("highway_")) {
-            cmd << " -lhwy";
-            has_highway = true;
+            cmd << " " << lib_file;
+            cmd << " -o " << object_file;
+            if (name.starts_with("highway_")) {
+                cmd << " -lhwy";
+                has_highway = true;
+            }
+            cmd << " -lm";
+            int ret = std::system(cmd.str().c_str());
+            if (ret != 0) {
+                throw std::runtime_error("Compilation failed: " + cmd.str());
+            }
+            object_files.insert(object_file);
         }
-        cmd << " -lm";
-        int ret = std::system(cmd.str().c_str());
-        if (ret != 0) {
-            throw std::runtime_error("Compilation failed: " + cmd.str());
-        }
-        object_files.insert(object_file);
     }
 
     // Compile
@@ -442,14 +459,17 @@ std::string PyStructuredSDFG::compile(
         std::stringstream cmd;
         cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3 -march=native -mtune=native -funroll-loops";
         if (!package_path_str.empty()) {
-            cmd << " -L" << package_path_str;
+            cmd << " -L" << package_lib_path_str;
             cmd << " -I" << package_include_path_str;
         }
         if (target == "cuda") {
             cmd << " -x cuda -lcuda";
+        } else if (target == "etsoc") {
+            cmd << " " << docc::target::et::et_get_host_additional_compile_args(*sdfg_, *snippet_factory);
         }
         cmd << " " << source_path.string();
         cmd << " -o " << (build_path / (sdfg_->name() + ".o")).string();
+        DEBUG_PRINTLN("Compile: " << cmd.str());
         int ret = std::system(cmd.str().c_str());
         if (ret != 0) {
             throw std::runtime_error("Compilation failed: " + cmd.str());
@@ -469,7 +489,7 @@ std::string PyStructuredSDFG::compile(
     cmd << DOCC_CXX_COMPILER << " -shared -fopenmp -fPIC -O3";
 #endif
     if (!package_path_str.empty()) {
-        cmd << " -L" << package_path_str;
+        cmd << " -L" << package_lib_path_str;
         cmd << " -I" << package_include_path_str;
     }
     // cmd << " " << source_path.string();
@@ -492,15 +512,16 @@ std::string PyStructuredSDFG::compile(
     if (target == "cuda") {
         cmd << " /usr/local/cuda/lib64/libcudart.so";
         cmd << " /usr/local/cuda/lib64/libcublas.so";
-    }
-    if (target == "onnx") {
+    } else if (target == "onnx") {
         cmd << " -L/usr/local/onnxruntime/lib";
         cmd << " -lonnxruntime";
         cmd << " -ldl"; // Required for dladdr()
+    } else if (target == "etsoc") {
+        cmd << " " << docc::target::et::et_get_host_additional_link_args(*sdfg_, *snippet_factory);
     }
     cmd << " -o " << lib_path.string();
 
-
+    DEBUG_PRINTLN("Link: " << cmd.str());
     int ret = std::system(cmd.str().c_str());
     if (ret != 0) {
         throw std::runtime_error("Compilation failed: " + cmd.str());
