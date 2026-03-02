@@ -285,7 +285,6 @@ def test_transposed_weight_backend():
 # --- Batched matmul (3D) ---
 
 
-@pytest.mark.skip(reason="3D batched matmul uses unsupported linalg operation")
 def test_batched_matmul_compile():
     class BatchedMatmulNet(nn.Module):
         def __init__(self, weight: torch.Tensor):
@@ -307,7 +306,6 @@ def test_batched_matmul_compile():
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
-@pytest.mark.skip(reason="3D batched matmul uses unsupported linalg operation")
 def test_batched_matmul_backend():
     class BatchedMatmulNet(nn.Module):
         def __init__(self, weight: torch.Tensor):

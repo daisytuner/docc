@@ -15,6 +15,8 @@ LogicalResult translateLinalgFillOp(SDFGTranslator& translator, linalg::FillOp* 
 
 LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::MatmulOp* op);
 
+LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::BatchMatmulOp* op);
+
 LogicalResult translateLinalgTransposeOp(SDFGTranslator& translator, linalg::TransposeOp* op);
 
 LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg::Conv2DNchwFchwOp* op);

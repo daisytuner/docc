@@ -444,6 +444,9 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
         .Case<linalg::MatmulOp>([&](linalg::MatmulOp matmul_op) {
             return translateLinalgMatmulOp(translator, &matmul_op);
         })
+        .Case<linalg::BatchMatmulOp>([&](linalg::BatchMatmulOp batch_matmul_op) {
+            return translateLinalgBatchMatmulOp(translator, &batch_matmul_op);
+        })
         .Case<linalg::TransposeOp>([&](linalg::TransposeOp transpose_op) {
             return translateLinalgTransposeOp(translator, &transpose_op);
         })
@@ -540,6 +543,98 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
     auto& tensor_info_out = translator.get_or_create_tensor_info(out_container, output_type);
 
     // check if offsets are 0 for all tensors since we don't support partial tensors for now
+    if (tensor_info_lhs.offset() != 0 || tensor_info_rhs.offset() != 0 || tensor_info_out.offset() != 0) {
+        return op->emitError("Only tensors with 0 offset are supported for now");
+    }
+
+    ::sdfg::symbolic::MultiExpression shape_lhs;
+    for (auto entry : tensor_info_lhs.shape()) {
+        shape_lhs.push_back(::sdfg::symbolic::integer(entry));
+    }
+    ::sdfg::symbolic::MultiExpression shape_rhs;
+    for (auto entry : tensor_info_rhs.shape()) {
+        shape_rhs.push_back(::sdfg::symbolic::integer(entry));
+    }
+    ::sdfg::symbolic::MultiExpression shape_out;
+    for (auto entry : tensor_info_out.shape()) {
+        shape_out.push_back(::sdfg::symbolic::integer(entry));
+    }
+
+    ::sdfg::symbolic::MultiExpression strides_lhs;
+    for (auto entry : tensor_info_lhs.strides()) {
+        strides_lhs.push_back(::sdfg::symbolic::integer(entry));
+    }
+    ::sdfg::symbolic::MultiExpression strides_rhs;
+    for (auto entry : tensor_info_rhs.strides()) {
+        strides_rhs.push_back(::sdfg::symbolic::integer(entry));
+    }
+
+    auto& libnode = translator.builder().add_library_node<::sdfg::math::tensor::MatMulNode>(
+        block,
+        ::sdfg::DebugInfo(),
+        shape_lhs,
+        shape_rhs,
+        strides_lhs,
+        strides_rhs,
+        /*offset_a=*/::sdfg::symbolic::zero(),
+        /*offset_b=*/::sdfg::symbolic::zero()
+    );
+
+    auto lhs_primitive_type = translator.convertType(lhs_type)->primitive_type();
+    ::sdfg::types::Tensor lhs_tensor_type(lhs_primitive_type, shape_lhs, strides_lhs);
+    auto rhs_primitive_type = translator.convertType(rhs_type)->primitive_type();
+    ::sdfg::types::Tensor rhs_tensor_type(rhs_primitive_type, shape_rhs, strides_rhs);
+    auto output_primitive_type = translator.convertType(output_type)->primitive_type();
+    ::sdfg::types::Tensor output_tensor_type(output_primitive_type, shape_out);
+
+    translator.builder().add_computational_memlet(block, *lhs_access, libnode, "A", {}, lhs_tensor_type);
+    translator.builder().add_computational_memlet(block, *rhs_access, libnode, "B", {}, rhs_tensor_type);
+
+    auto& write_access = translator.builder().add_access(block, out_container);
+
+    translator.builder().add_computational_memlet(block, libnode, "Y", write_access, {}, output_tensor_type);
+
+    return success();
+}
+
+LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::BatchMatmulOp* op) {
+    auto& sequence = translator.insertion_point();
+
+    auto output = op->getOutputs()[0];
+    auto result = op->getResult(0);
+
+    auto output_container = translator.get_or_create_container(output);
+    auto result_container = translator.get_or_create_container(result);
+
+    translator.add_reference(output_container, result_container);
+
+    auto& block = translator.builder().add_block(sequence);
+
+    auto lhs_type = dyn_cast_or_null<RankedTensorType>(op->getOperand(0).getType());
+    auto rhs_type = dyn_cast_or_null<RankedTensorType>(op->getOperand(1).getType());
+    auto output_type = dyn_cast_or_null<RankedTensorType>(op->getResult(0).getType());
+    if (!lhs_type || !rhs_type || !output_type || lhs_type.getRank() != 3 || rhs_type.getRank() != 3 ||
+        output_type.getRank() != 3) {
+        return op->emitError("Only 3D batch matmul is supported for now");
+    }
+
+    auto in_container_lhs = translator.get_or_create_container(op->getOperand(0));
+    auto in_container_rhs = translator.get_or_create_container(op->getOperand(1));
+    auto out_container = translator.get_or_create_container(op->getResult(0));
+
+    ::sdfg::data_flow::AccessNode* lhs_access = &translator.builder().add_access(block, in_container_lhs);
+    ::sdfg::data_flow::AccessNode* rhs_access;
+
+    if (in_container_lhs == in_container_rhs) {
+        rhs_access = lhs_access;
+    } else {
+        rhs_access = &translator.builder().add_access(block, in_container_rhs);
+    }
+
+    auto& tensor_info_lhs = translator.get_or_create_tensor_info(in_container_lhs, lhs_type);
+    auto& tensor_info_rhs = translator.get_or_create_tensor_info(in_container_rhs, rhs_type);
+    auto& tensor_info_out = translator.get_or_create_tensor_info(out_container, output_type);
+
     if (tensor_info_lhs.offset() != 0 || tensor_info_rhs.offset() != 0 || tensor_info_out.offset() != 0) {
         return op->emitError("Only tensors with 0 offset are supported for now");
     }
