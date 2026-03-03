@@ -10,7 +10,8 @@ using namespace sdfg;
 bool EtLibNodeMapper::try_map(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, data_flow::LibraryNode& node
 ) const {
-    if (auto* gemm_node = dynamic_cast<math::blas::GEMMNode*>(&node)) {
+    if (node.code() == math::blas::LibraryNodeType_GEMM.value()) {
+        auto* gemm_node = dynamic_cast<math::blas::GEMMNode*>(&node);
         auto data_type = gemm_node->scalar_primitive();
         if (data_type == types::PrimitiveType::Float) {
             gemm_node->implementation_type() = ImplementationType_ETSOC_WithTransfers;

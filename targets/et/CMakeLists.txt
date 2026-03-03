@@ -14,6 +14,10 @@ target_include_directories(docc-target-et
         $<INSTALL_INTERFACE:${PARENT_PROJECT_INSTALL_PREFIX}include>
 )
 
+target_compile_definitions(docc-target-et PUBLIC
+    DOCC_HAS_TARGET_ET
+)
+
 # Sanitizers
 if(SDFG_ENABLE_SANITIZER)
   target_compile_options(docc-target-et PUBLIC ${_SAN_COMPILE_OPTS})

@@ -6,7 +6,7 @@
 #include <sdfg/passes/targets/target_mapping_pass.h>
 #include <sdfg/plugins/plugins.h>
 
-#include "../../include/docc/target/et/target.h"
+#include "docc/target/et/target.h"
 
 #include <sdfg/codegen/docc_paths.h>
 

@@ -11,7 +11,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <docc/target/et/target.h>
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/codegen/code_generators/cpp_code_generator.h>
@@ -48,6 +47,10 @@
 
 #include <sdfg/helpers/helpers.h>
 #include <sdfg/visualizer/dot_visualizer.h>
+
+#ifdef DOCC_HAS_TARGET_ET
+#include <docc/target/et/target.h>
+#endif
 
 // Platform-specific compiler selection
 #if defined(__APPLE__)
@@ -326,7 +329,9 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
         sdfg::passes::ONNXLibraryNodeRewriterPass onnx_library_node_rewriter_pass;
         onnx_library_node_rewriter_pass.run(builder, analysis_manager);
     } else if (target == "etsoc") {
+#ifdef DOCC_HAS_TARGET_ET
         docc::target::et::et_scheduling_passes(builder, analysis_manager, category);
+#endif
     } else {
         std::cerr << "[WARNING] Target '" << target << "' is not supported, ignoring!" << std::endl;
     }
@@ -465,7 +470,9 @@ std::string PyStructuredSDFG::compile(
         if (target == "cuda") {
             cmd << " -x cuda -lcuda";
         } else if (target == "etsoc") {
+#ifdef DOCC_HAS_TARGET_ET
             cmd << " " << docc::target::et::et_get_host_additional_compile_args(*sdfg_, *snippet_factory);
+#endif
         }
         cmd << " " << source_path.string();
         cmd << " -o " << (build_path / (sdfg_->name() + ".o")).string();
@@ -517,7 +524,9 @@ std::string PyStructuredSDFG::compile(
         cmd << " -lonnxruntime";
         cmd << " -ldl"; // Required for dladdr()
     } else if (target == "etsoc") {
+#ifdef DOCC_HAS_TARGET_ET
         cmd << " " << docc::target::et::et_get_host_additional_link_args(*sdfg_, *snippet_factory);
+#endif
     }
     cmd << " -o " << lib_path.string();
 

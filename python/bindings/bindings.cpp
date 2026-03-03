@@ -3,7 +3,6 @@
 #include <pybind11/stl.h>
 
 #include <cstring>
-#include <docc/target/et/target.h>
 #include <fstream>
 
 #include "analysis/py_analysis.h"
@@ -39,6 +38,10 @@
 #include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
+#ifdef DOCC_HAS_TARGET_ET
+#include <docc/target/et/target.h>
+#endif
+
 namespace py = pybind11;
 using namespace sdfg::types;
 
@@ -52,7 +55,9 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::onnx::register_onnx_plugin();
     sdfg::highway::register_highway_plugin();
     sdfg::cuda::register_cuda_plugin();
+#ifdef DOCC_HAS_TARGET_ET
     docc::target::et::register_plugin(docc_context);
+#endif
 
     register_types(m);
     register_tasklet(m);

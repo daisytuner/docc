@@ -24,7 +24,11 @@ target_include_directories(sdfg-py
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bindings>
 )
 
-target_link_libraries(sdfg-py PRIVATE sdfg::sdfg sdfg::opt sdfg::rpc docc::target::et nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
+target_link_libraries(sdfg-py PRIVATE sdfg::sdfg sdfg::opt sdfg::rpc nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
+
+if(TARGET docc::target::et)
+    target_link_libraries(sdfg-py PRIVATE docc::target::et)
+endif()
 
 # Install artifacts for the Python wheel
 install(TARGETS sdfg-py DESTINATION docc/sdfg COMPONENT docc_python)
