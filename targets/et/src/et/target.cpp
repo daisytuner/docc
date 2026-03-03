@@ -28,7 +28,7 @@ void register_plugin(plugins::Context& context) {
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<blas::GEMMNodeDispatcher_ETSOC_WithoutTransfers>(
+            return std::make_unique<blas::GEMMNodeDispatcher_ETSOC_WithTransfers>(
                 language_extension, function, data_flow_graph, dynamic_cast<const sdfg::math::blas::GEMMNode&>(node)
             );
         }
@@ -40,6 +40,7 @@ void et_scheduling_passes(
     sdfg::analysis::AnalysisManager& analysis_manager,
     const std::string& category
 ) {
+    DEBUG_PRINTLN("Running etsoc passes...");
     std::vector<std::shared_ptr<plugins::TargetMapper>> mappers{std::make_shared<EtLibNodeMapper>()};
     sdfg::passes::TargetMappingPass mappingPass(mappers);
     mappingPass.run_pass(builder, analysis_manager);
@@ -56,11 +57,40 @@ et_get_host_additional_link_args(const StructuredSDFG& sdfg, const codegen::Code
            " -ldocc-rt-et -ldebug -llogging -lg3log -letrt -ldeviceLayer -lsw-sysemu -lglog";
 }
 
-std::string et_build_kernel(
+
+std::filesystem::path et_build_kernel(
     const StructuredSDFG& sdfg,
     const codegen::CodeSnippetFactory& snippet_factory,
     const std::filesystem::path& kernel_src,
-    const codegen::DoccPaths& paths
-) {}
+    const EtBuildArgs& paths
+) {
+    auto compiler = ET_INSTALL_PATH / "bin" / "riscv64-unknown-elf-g++";
+    auto src_file_name = kernel_src.filename().string();
+    auto file_name_end = src_file_name.rfind(ETSOC_KERNEL_FILE_EXT);
+    if (file_name_end == std::string::npos) {
+        throw std::runtime_error("ET kernel source file must end with .et.c: " + kernel_src.string());
+    }
+    auto elf_file_name = src_file_name.replace(file_name_end, ETSOC_KERNEL_FILE_EXT.size(), "elf");
+    auto bin_file = paths.build_dir / elf_file_name;
+
+    std::stringstream cmd;
+    cmd << compiler.string() << " ";
+    cmd << " --specs=nano.specs -mcmodel=medany -march=rv64imfc -mabi=lp64f -mno-strict-align -mno-riscv-attribute";
+    cmd << " -fstack-usage -Wall -Wextra -Wdouble-promotion -Wformat -Wnull-dereference -Wswitch-enum -Wshadow";
+    cmd << " -Wstack-protector -Wpointer-arith -Wundef -Wbad-function-cast -Wcast-qual -Wcast-align -Wconversion";
+    cmd << " -Wlogical-op -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wno-main";
+    cmd << " -isystem " << (ET_INSTALL_PATH / "cm-umode/include") << " -isystem "
+        << (ET_INSTALL_PATH / "include/esperanto");
+    cmd << " -O3 -DNDEBUG -flto=auto -fno-fat-lto-objects -nostdlib -nostartfiles -Wl,--gc-sections -T "
+        << (paths.plugin_rt_dir / "libexec/docc/et/sections.ld");
+    cmd << " " << kernel_src << " " << (paths.plugin_rt_dir / "libexec/docc/et/crt.S") << " -o " << bin_file;
+    cmd << " -lc -lm -lgcc " << (ET_INSTALL_PATH / "cm-umode/lib/libcm-umode.a");
+
+    int ret = std::system(cmd.str().c_str());
+    if (ret != 0) {
+        throw std::runtime_error("Compilation of ET kernel failed: " + cmd.str());
+    }
+    return bin_file;
+}
 
 } // namespace docc::target::et

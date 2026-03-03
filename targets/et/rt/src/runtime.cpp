@@ -112,10 +112,10 @@ EtRuntimeWrapper& EtRuntimeWrapper::get_instance() {
 
 ::rt::IRuntime& EtRuntimeWrapper::get_runtime() const { return *runtime_; }
 
-static std::vector<std::byte> readFile(const std::string& path) {
+static std::vector<std::byte> readFile(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios_base::binary);
     if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file: " + path);
+        throw std::runtime_error("Failed to open file: " + path.string());
         return {};
     }
     file.seekg(0, std::ios::end);
@@ -126,8 +126,17 @@ static std::vector<std::byte> readFile(const std::string& path) {
     return content;
 }
 
-::rt::KernelId EtRuntimeWrapper::load_kernel_binary_blocking(::rt::StreamId stream, const std::string& path) const {
-    auto content = readFile(path);
+::rt::KernelId EtRuntimeWrapper::
+    load_kernel_binary_blocking(::rt::StreamId stream, const std::string& base_path, const std::string& name) const {
+    auto* override_base = std::getenv("DOCC_ET_KERNEL_PATH");
+    std::filesystem::path base;
+    if (override_base) {
+        base = override_base;
+    } else {
+        base = base_path;
+    }
+
+    auto content = readFile(base / (name + ".elf"));
     auto resp = runtime_->loadCode(stream, content.data(), content.size());
     runtime_->waitForEvent(resp.event_);
     return resp.kernel_;

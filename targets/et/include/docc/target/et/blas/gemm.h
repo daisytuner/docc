@@ -7,10 +7,10 @@ namespace docc::target::et::blas {
 
 using namespace sdfg;
 
-class GEMMNodeDispatcher_ETSOC_WithoutTransfers
+class GEMMNodeDispatcher_ETSOC_WithTransfers
     : public sdfg::codegen::LibraryNodeDispatcherBase<sdfg::math::blas::GEMMNode> {
 public:
-    GEMMNodeDispatcher_ETSOC_WithoutTransfers(
+    GEMMNodeDispatcher_ETSOC_WithTransfers(
         codegen::LanguageExtension& language_extension,
         const Function& function,
         const data_flow::DataFlowGraph& data_flow_graph,

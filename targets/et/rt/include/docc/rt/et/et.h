@@ -10,7 +10,7 @@ class EtRuntimeWrapper {
     ::rt::RuntimePtr runtime_;
 
 public:
-    static constexpr size_t DEFAULT_TRACE_BUFFER_SIZE = 4096UL * 2 * 1024UL;
+    static constexpr size_t DEFAULT_TRACE_BUFFER_SIZE = 4096UL * 2080UL;
 
     EtRuntimeWrapper(::rt::RuntimePtr runtime);
     static EtRuntimeWrapper& get_instance();
@@ -19,7 +19,8 @@ public:
 
     ::rt::DeviceId get_device(int idx = 0) const;
 
-    ::rt::KernelId load_kernel_binary_blocking(::rt::StreamId stream, const std::string& path) const;
+    ::rt::KernelId load_kernel_binary_blocking(::rt::StreamId stream, const std::string& base_path, const std::string& name)
+        const;
 
     std::byte* alloc_trace_buffer(::rt::DeviceId dev, size_t bufSize = DEFAULT_TRACE_BUFFER_SIZE) const;
 

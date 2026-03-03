@@ -387,13 +387,14 @@ std::string PyStructuredSDFG::compile(
     generator.as_source(header_path, source_path);
 
     // Write library snippets
-    std::unordered_set<std::string> lib_files;
+    std::unordered_map<std::string, std::tuple<std::string, std::string>> lib_files;
     for (auto& [name, snippet] : snippet_factory->snippets()) {
         if (snippet.is_as_file()) {
             auto p = build_path / (name + "." + snippet.extension());
             std::ofstream outfile_lib;
-            if (lib_files.insert(p.string()).second) {
+            if (!lib_files.contains(p.string())) {
                 outfile_lib.open(p, std::ios_base::out);
+                lib_files[p.string()] = std::make_tuple(name, snippet.extension());
             } else {
                 outfile_lib.open(p, std::ios_base::app);
             }
@@ -407,12 +408,13 @@ std::string PyStructuredSDFG::compile(
 
     // Find libraries relative to the module location
     Dl_info info;
+    fs::path package_path;
     std::string package_path_str;
     std::string package_lib_path_str;
     std::string package_include_path_str;
     if (dladdr((void*) &_anchor, &info)) {
         fs::path lib_path = fs::canonical(info.dli_fname);
-        fs::path package_path = lib_path.parent_path().parent_path();
+        package_path = lib_path.parent_path().parent_path();
         package_path_str = package_path.string();
         package_lib_path_str = (package_path / "lib").string();
         package_include_path_str = (package_path / "include").string();
@@ -420,14 +422,19 @@ std::string PyStructuredSDFG::compile(
 
     bool has_highway = false;
     std::unordered_set<std::string> object_files;
-    for (const auto& lib_file : lib_files) {
+    for (const auto& [lib_file, meta] : lib_files) {
         std::filesystem::path lib_path(lib_file);
-        std::string extension = lib_path.extension().string();
-        if (extension == ".json") {
+        auto& [snippet_name, extension] = meta;
+        if (extension == "json") {
             continue;
         }
 
-        if (extension == ".et.cpp") {
+        if (extension == docc::target::et::ETSOC_KERNEL_FILE_EXT) {
+#ifdef DOCC_HAS_TARGET_ET
+            docc::target::et::EtBuildArgs args{.build_dir = build_path, .plugin_rt_dir = package_path};
+            auto et_k_file = docc::target::et::et_build_kernel(*sdfg_, *snippet_factory, lib_file, args);
+            DEBUG_PRINTLN("Generated ET Kernel to: " << et_k_file);
+#endif
         } else {
             std::string name = lib_path.stem().string();
             std::string object_file = build_path.string() + "/" + name + ".o";

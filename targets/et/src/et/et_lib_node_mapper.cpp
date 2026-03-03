@@ -12,8 +12,10 @@ bool EtLibNodeMapper::try_map(
 ) const {
     if (node.code() == math::blas::LibraryNodeType_GEMM.value()) {
         auto* gemm_node = dynamic_cast<math::blas::GEMMNode*>(&node);
+
         auto data_type = gemm_node->scalar_primitive();
-        if (data_type == types::PrimitiveType::Float) {
+        if (data_type == types::PrimitiveType::Float && gemm_node->trans_a() == math::blas::No &&
+            gemm_node->trans_b() == math::blas::No && gemm_node->layout() == math::blas::RowMajor) {
             gemm_node->implementation_type() = ImplementationType_ETSOC_WithTransfers;
             return true;
         }
