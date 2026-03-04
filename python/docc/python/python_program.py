@@ -300,19 +300,18 @@ class PythonProgram(DoccProgram):
 
         sdfg.dump(output_folder, "post_sched")
 
-        if self.target != "none":
-            custom_compile_fn = get_target_compile_fn(self.target)
-            if custom_compile_fn is not None:
-                lib_path = custom_compile_fn(
-                    sdfg, output_folder, instrumentation_mode, capture_args, {}
-                )
-            else:
-                lib_path = sdfg._compile(
-                    output_folder=output_folder,
-                    target=self.target,
-                    instrumentation_mode=instrumentation_mode,
-                    capture_args=capture_args,
-                )
+        custom_compile_fn = get_target_compile_fn(self.target)
+        if custom_compile_fn is not None:
+            lib_path = custom_compile_fn(
+                sdfg, output_folder, instrumentation_mode, capture_args, {}
+            )
+        else:
+            lib_path = sdfg._compile(
+                output_folder=output_folder,
+                target=self.target,
+                instrumentation_mode=instrumentation_mode,
+                capture_args=capture_args,
+            )
 
         # Build ONNX model from JSON if target is onnx (after _compile creates the JSON)
         if self.target == "onnx":
