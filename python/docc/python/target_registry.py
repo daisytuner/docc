@@ -10,8 +10,6 @@ _target_compile_registry: dict[str, TargetCompileFn] = {}
 
 
 def register_target(name: str, schedule_fn: Optional[LegacyTargetScheduleFn]) -> None:
-    print("adapting to modern sched hook")
-
     def wrapper(
         sdfg: StructuredSDFG, category: str, options: Optional[Dict[str, Any]] = None
     ) -> None:
