@@ -339,6 +339,11 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     loop_scheduling_pass.run(builder, analysis_manager);
 }
 
+struct SnippetMetadata {
+    std::string name;
+    std::string extension;
+};
+
 std::string PyStructuredSDFG::compile(
     const std::string& output_folder,
     const std::string& target,
@@ -387,14 +392,14 @@ std::string PyStructuredSDFG::compile(
     generator.as_source(header_path, source_path);
 
     // Write library snippets
-    std::unordered_map<std::string, std::tuple<std::string, std::string>> lib_files;
+    std::unordered_map<std::string, SnippetMetadata> lib_files;
     for (auto& [name, snippet] : snippet_factory->snippets()) {
         if (snippet.is_as_file()) {
             auto p = build_path / (name + "." + snippet.extension());
             std::ofstream outfile_lib;
             if (!lib_files.contains(p.string())) {
                 outfile_lib.open(p, std::ios_base::out);
-                lib_files[p.string()] = std::make_tuple(name, snippet.extension());
+                lib_files[p.string()] = {.name = name, .extension = snippet.extension()};
             } else {
                 outfile_lib.open(p, std::ios_base::app);
             }
