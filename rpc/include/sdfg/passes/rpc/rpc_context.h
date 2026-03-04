@@ -21,6 +21,9 @@ private:
     std::string endpoint_;
     std::unordered_map<std::string, std::string> headers_;
 
+protected:
+    void set_server(std::string server) { server_ = std::move(server); }
+
 public:
     SimpleRpcContext(std::string server, std::string endpoint, std::unordered_map<std::string, std::string> headers = {})
         : server_(std::move(server)), endpoint_(std::move(endpoint)), headers_(std::move(headers)) {}

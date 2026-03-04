@@ -17,7 +17,13 @@ DaisytunerRpcContext::DaisytunerRpcContext(std::string license_token, bool is_jo
           DEFAULT_SERVER,
           DEFAULT_ENDPOINT,
           {{DEFAULT_AUTH_HEADER, build_auth_header_content({license_token, is_job_token})}}
-      ) {}
+      ) {
+    // Check for RPC_SERVER environment variable to override default server
+    const char* rpc_server = std::getenv("RPC_SERVER");
+    if (rpc_server && *rpc_server) {
+        set_server(rpc_server);
+    }
+}
 
 std::string DaisytunerRpcContext::build_auth_header_content(std::pair<std::string, bool> docc_auth) {
     return static_cast<std::string>(docc_auth.second ? "Job" : "Token") + " " + docc_auth.first;
@@ -71,7 +77,16 @@ std::shared_ptr<DaisytunerRpcContext> DaisytunerRpcContext::from_docc_config() {
             "or place a token in $HOME/.config/docc/token"
         );
     }
-    return std::make_shared<DaisytunerRpcContext>(auth->first, auth->second);
+
+    auto context = std::make_shared<DaisytunerRpcContext>(auth->first, auth->second);
+
+    // Check for RPC_SERVER environment variable to override default server
+    const char* rpc_server = std::getenv("RPC_SERVER");
+    if (rpc_server && *rpc_server) {
+        context->set_server(rpc_server);
+    }
+
+    return context;
 }
 
 } // namespace sdfg::passes::rpc
