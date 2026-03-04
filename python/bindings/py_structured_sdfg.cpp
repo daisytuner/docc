@@ -429,41 +429,41 @@ std::string PyStructuredSDFG::compile(
             continue;
         }
 
-        if (extension == docc::target::et::ETSOC_KERNEL_FILE_EXT) {
 #ifdef DOCC_HAS_TARGET_ET
+        if (extension == docc::target::et::ETSOC_KERNEL_FILE_EXT) {
             docc::target::et::EtBuildArgs args{.build_dir = build_path, .plugin_rt_dir = package_path};
             auto et_k_file = docc::target::et::et_build_kernel(*sdfg_, *snippet_factory, lib_file, args);
             DEBUG_PRINTLN("Generated ET Kernel to: " << et_k_file);
-#endif
-        } else {
-            std::string name = lib_path.stem().string();
-            std::string object_file = build_path.string() + "/" + name + ".o";
-            std::stringstream cmd;
-            cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3  -march=native -mtune=native -funroll-loops";
-            if (!package_path_str.empty()) {
-                cmd << " -L" << package_lib_path_str;
-                cmd << " -I" << package_include_path_str;
-            }
-#if defined(__APPLE__)
-            cmd << " -I/opt/homebrew/include";
-#endif
-            if (target == "cuda") { // should use .cu to detect
-                cmd << " -x cuda --cuda-gpu-arch=sm_70 --cuda-path=/usr/local/cuda";
-            }
-
-            cmd << " " << lib_file;
-            cmd << " -o " << object_file;
-            if (name.starts_with("highway_")) {
-                cmd << " -lhwy";
-                has_highway = true;
-            }
-            cmd << " -lm";
-            int ret = std::system(cmd.str().c_str());
-            if (ret != 0) {
-                throw std::runtime_error("Compilation failed: " + cmd.str());
-            }
-            object_files.insert(object_file);
+            continue;
         }
+#endif
+        std::string name = lib_path.stem().string();
+        std::string object_file = build_path.string() + "/" + name + ".o";
+        std::stringstream cmd;
+        cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3  -march=native -mtune=native -funroll-loops";
+        if (!package_path_str.empty()) {
+            cmd << " -L" << package_lib_path_str;
+            cmd << " -I" << package_include_path_str;
+        }
+#if defined(__APPLE__)
+        cmd << " -I/opt/homebrew/include";
+#endif
+        if (target == "cuda") { // should use .cu to detect
+            cmd << " -x cuda --cuda-gpu-arch=sm_70 --cuda-path=/usr/local/cuda";
+        }
+
+        cmd << " " << lib_file;
+        cmd << " -o " << object_file;
+        if (name.starts_with("highway_")) {
+            cmd << " -lhwy";
+            has_highway = true;
+        }
+        cmd << " -lm";
+        int ret = std::system(cmd.str().c_str());
+        if (ret != 0) {
+            throw std::runtime_error("Compilation failed: " + cmd.str());
+        }
+        object_files.insert(object_file);
     }
 
     // Compile
