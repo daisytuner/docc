@@ -290,7 +290,9 @@ class PythonProgram(DoccProgram):
             # Check for custom registered target first
             custom_schedule_fn = get_target_schedule_fn(self.target)
             if custom_schedule_fn is not None:
-                custom_schedule_fn(sdfg, self.category)
+                custom_schedule_fn(
+                    sdfg, self.category, {"remote_tuning": self.remote_tuning}
+                )
             else:
                 sdfg.schedule(self.target, self.category, self.remote_tuning)
 
@@ -301,7 +303,7 @@ class PythonProgram(DoccProgram):
         if self.target != "none":
             custom_compile_fn = get_target_compile_fn(self.target)
             if custom_compile_fn is not None:
-                custom_compile_fn(
+                lib_path = custom_compile_fn(
                     sdfg, output_folder, instrumentation_mode, capture_args, {}
                 )
             else:

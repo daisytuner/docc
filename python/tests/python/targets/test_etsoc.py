@@ -5,7 +5,6 @@ import sys
 
 
 def test_scheduling_etsoc_matmul_mini():
-    # Assuming CUDA is available and supported
     @native(target="etsoc", category="server")
     def matmul_etsoc(A, B, C):
         C = A @ B
@@ -25,7 +24,6 @@ def test_scheduling_etsoc_matmul_mini():
 
 @pytest.mark.skip("too slow")
 def test_scheduling_etsoc_matmul_large():
-    # Assuming CUDA is available and supported
     @native(target="etsoc", category="server")
     def matmul_etsoc(A, B, C):
         C = A @ B

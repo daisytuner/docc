@@ -1,30 +1,29 @@
-from typing import Callable, Optional, Dict, Any, Union, overload
-import inspect
+from typing import Callable, Optional, Dict, Any
 from docc.sdfg import StructuredSDFG
 
 TargetScheduleFn = Callable[[StructuredSDFG, str, Dict[str, Any]], None]
 LegacyTargetScheduleFn = Callable[[StructuredSDFG, str], None]
-TargetCompileFn = Callable[[StructuredSDFG, str, str, bool, Dict[str, Any]], None]
+TargetCompileFn = Callable[[StructuredSDFG, str, str, bool, Dict[str, Any]], str]
 
 _target_schedule_registry: dict[str, TargetScheduleFn] = {}
 _target_compile_registry: dict[str, TargetCompileFn] = {}
 
 
-@overload
 def register_target(name: str, schedule_fn: Optional[LegacyTargetScheduleFn]) -> None:
+    print("adapting to modern sched hook")
+
     def wrapper(
         sdfg: StructuredSDFG, category: str, options: Optional[Dict[str, Any]] = None
     ) -> None:
-        original_fn(sdfg, category)  # type: ignore
+        schedule_fn(sdfg, category)  # type: ignore
 
-    register_target(name, wrapper, None)
+    register_target_overrides(name, schedule_fn=wrapper, compile_fn=None)
 
 
-@overload
-def register_target(
+def register_target_overrides(
     name: str,
     schedule_fn: Optional[TargetScheduleFn],
-    compile_fn: Optional[TargetCompileFn],
+    compile_fn: Optional[TargetCompileFn] = None,
 ) -> None:
     """Override the scheduling or compile step for this target.
 
