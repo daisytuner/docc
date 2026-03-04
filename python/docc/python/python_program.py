@@ -24,7 +24,7 @@ from docc.compiler.docc_program import DoccProgram
 from docc.compiler.compiled_sdfg import CompiledSDFG
 from docc.python.ast_parser import ASTParser
 from docc.python.types import element_type_from_sdfg_type
-from docc.python.target_registry import get_target, is_custom_target
+from docc.python.target_registry import get_target_schedule_fn, get_target_compile_fn
 
 
 def _compile_wrapper(self, output_folder=None):
@@ -288,20 +288,30 @@ class PythonProgram(DoccProgram):
         # Schedule if target is specified
         if self.target != "none":
             # Check for custom registered target first
-            custom_schedule_fn = get_target(self.target)
+            custom_schedule_fn = get_target_schedule_fn(self.target)
             if custom_schedule_fn is not None:
-                custom_schedule_fn(sdfg, self.category)
+                custom_schedule_fn(
+                    sdfg, self.category, {"remote_tuning": self.remote_tuning}
+                )
             else:
                 sdfg.schedule(self.target, self.category, self.remote_tuning)
 
         self.last_sdfg = sdfg
 
-        lib_path = sdfg._compile(
-            output_folder=output_folder,
-            target=self.target,
-            instrumentation_mode=instrumentation_mode,
-            capture_args=capture_args,
-        )
+        sdfg.dump(output_folder, "post_sched")
+
+        custom_compile_fn = get_target_compile_fn(self.target)
+        if custom_compile_fn is not None:
+            lib_path = custom_compile_fn(
+                sdfg, output_folder, instrumentation_mode, capture_args, {}
+            )
+        else:
+            lib_path = sdfg._compile(
+                output_folder=output_folder,
+                target=self.target,
+                instrumentation_mode=instrumentation_mode,
+                capture_args=capture_args,
+            )
 
         # Build ONNX model from JSON if target is onnx (after _compile creates the JSON)
         if self.target == "onnx":

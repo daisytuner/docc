@@ -296,9 +296,8 @@ void DataFlowDispatcher::dispatch_library_node(
     CodeSnippetFactory& library_snippet_factory,
     const data_flow::LibraryNode& libnode
 ) {
-    auto dispatcher_fn =
-        LibraryNodeDispatcherRegistry::instance()
-            .get_library_node_dispatcher(libnode.code().value() + "::" + libnode.implementation_type().value());
+    auto dispatcher_id = libnode.code().value() + "::" + libnode.implementation_type().value();
+    auto dispatcher_fn = LibraryNodeDispatcherRegistry::instance().get_library_node_dispatcher(dispatcher_id);
     if (dispatcher_fn) {
         auto dispatcher = dispatcher_fn(this->language_extension_, this->function_, this->data_flow_graph_, libnode);
         auto applied = dispatcher->begin_node(stream);
@@ -319,9 +318,7 @@ void DataFlowDispatcher::dispatch_library_node(
         }
         dispatcher->end_node(stream, applied);
     } else {
-        throw std::runtime_error(
-            "No library node dispatcher found for library node code: " + std::string(libnode.code().value())
-        );
+        throw std::runtime_error("No library node dispatcher found for library node id: " + dispatcher_id);
     }
 };
 

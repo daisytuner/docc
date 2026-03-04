@@ -47,7 +47,8 @@ Issues = "https://github.com/daisytuner/docc/issues"
 [tool.scikit-build]
 wheel.packages = ["docc"]
 cmake.source-dir = ".."
-cmake.build-type = "Release"
+install.components = ["docc_python", "compile-runtime"]
+cmake.define.PARENT_PROJECT_INSTALL_PREFIX = "docc/"
 cmake.define.PYTHON_BUILD_FRONTEND = "ON"
 cmake.define.SDFG_BUILD_TESTS = "OFF"
 cmake.define.BUILD_TESTS = "OFF"
