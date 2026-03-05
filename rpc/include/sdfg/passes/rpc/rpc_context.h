@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -21,6 +20,9 @@ private:
     std::string server_;
     std::string endpoint_;
     std::unordered_map<std::string, std::string> headers_;
+
+protected:
+    void set_server(std::string server) { server_ = std::move(server); }
 
 public:
     SimpleRpcContext(std::string server, std::string endpoint, std::unordered_map<std::string, std::string> headers = {})
@@ -49,7 +51,6 @@ struct SimpleRpcContextBuilder {
 
     std::shared_ptr<SimpleRpcContext> build(bool print = true) const;
 };
-
 
 inline std::shared_ptr<RpcContext> build_rpc_context_local() {
     SimpleRpcContextBuilder b;

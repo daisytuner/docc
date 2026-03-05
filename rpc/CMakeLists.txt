@@ -6,8 +6,8 @@ endif()
 find_package(CURL REQUIRED)
 
 set(SOURCE_FILES
-    src/passes/rpc/daisytuner_rpc_context.cpp
     src/passes/rpc/rpc_context.cpp
+    src/passes/rpc/daisytuner_rpc_context.cpp
     src/passes/rpc/rpc_scheduler.cpp
     src/transformations/rpc_node_transform.cpp
     src/util/utils_curl.cpp

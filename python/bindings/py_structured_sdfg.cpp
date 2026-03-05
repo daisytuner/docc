@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <nlohmann/json_fwd.hpp>
 #include <sstream>
 
@@ -47,6 +48,10 @@
 
 #include <sdfg/helpers/helpers.h>
 #include <sdfg/visualizer/dot_visualizer.h>
+
+#include "sdfg/passes/rpc/daisytuner_rpc_context.h"
+#include "sdfg/passes/rpc/rpc_context.h"
+#include "sdfg/passes/rpc/rpc_scheduler.h"
 
 #ifdef DOCC_HAS_TARGET_ET
 #include <docc/target/et/target.h>
@@ -305,7 +310,10 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     std::vector<std::string> schedulers;
 
     if (remote_tuning) {
-        throw std::runtime_error("Remote tuning is not yet supported in python.");
+        std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
+            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
+        sdfg::passes::rpc::register_rpc_loop_opt(context, target, category);
+        schedulers.push_back("rpc");
     }
 
     // CPU Opt Pipeline
