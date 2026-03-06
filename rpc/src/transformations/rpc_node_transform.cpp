@@ -44,7 +44,7 @@ bool RPCNodeTransform::
     // Get loop info
 
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    // This loop info differs from the one in the scheduler, as that one is stale
+
     auto loop_info = loop_analysis.loop_info(&this->node_);
 
     // Re-check for side effects with fresh loop info
@@ -58,7 +58,7 @@ bool RPCNodeTransform::
     }
 
     // Create cutout SDFG
-    std::unique_ptr<sdfg::StructuredSDFG> loop_sdfg = util::cutout(builder, analysis_manager, this->node_);
+    std::unique_ptr<sdfg::StructuredSDFG> loop_sdfg = util::cutout(builder.subject(), analysis_manager, this->node_);
 
     // Loop info is only used for information on the loop structure
     auto opt_resp = query_rpc_server(
