@@ -124,7 +124,7 @@ TEST_F(CutoutTest, TestCutoutInstrumentation) {
 
     EXPECT_TRUE(region_node != nullptr);
 
-    auto cutout_sdfg = sdfg::util::cutout(local_builder, analysis_manager, *region_node);
+    auto cutout_sdfg = sdfg::util::cutout(local_builder.subject(), analysis_manager, *region_node);
     EXPECT_TRUE(cutout_sdfg != nullptr);
 
     EXPECT_GE(cutout_sdfg->root().size(), 1u);

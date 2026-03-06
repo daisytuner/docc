@@ -12,7 +12,7 @@ namespace sdfg {
 namespace util {
 
 std::unique_ptr<StructuredSDFG> cutout(
-    sdfg::builder::StructuredSDFGBuilder& builder,
+    sdfg::StructuredSDFG& sdfg,
     sdfg::analysis::AnalysisManager& analysis_manager,
     structured_control_flow::ControlFlowNode& node
 );
