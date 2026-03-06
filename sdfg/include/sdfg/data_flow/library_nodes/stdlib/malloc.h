@@ -33,6 +33,8 @@ public:
         const override;
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
+
+    std::string toStr() const override;
 };
 
 class MallocNodeSerializer : public serializer::LibraryNodeSerializer {

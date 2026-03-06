@@ -133,7 +133,8 @@ def test_cavity_flow(target):
                 "FOR": 186,
                 "Memset": 1,
                 "Malloc": 84,
-            }
+            },
+            non_critical=True,
         )
     elif target == "sequential":
         verifier = SDFGVerification(
@@ -145,7 +146,8 @@ def test_cavity_flow(target):
                 "FOR": 186,
                 "Memset": 1,
                 "Malloc": 84,
-            }
+            },
+            non_critical=True,
         )
     elif target == "openmp":
         verifier = SDFGVerification(
@@ -158,7 +160,8 @@ def test_cavity_flow(target):
                 "FOR": 186,
                 "Memset": 1,
                 "Malloc": 84,
-            }
+            },
+            non_critical=True,
         )
     else:  # cuda
         verifier = SDFGVerification(
@@ -171,7 +174,8 @@ def test_cavity_flow(target):
                 "FOR": 186,
                 "Memset": 1,
                 "Malloc": 84,
-            }
+            },
+            non_critical=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

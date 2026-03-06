@@ -2,6 +2,7 @@
 
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/visualizer/dot_visualizer.h"
 
 namespace sdfg {
 namespace passes {
@@ -28,19 +29,22 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
         if (users.num_views(name) > 0 || users.num_moves(name) > 0) {
             continue;
         }
-        bool no_reads = users.num_reads(name) == 0;
-        if (no_reads && users.num_writes(name) == 0) {
+        auto num_reads = users.num_reads(name);
+        if (!num_reads && users.num_writes(name) == 0) {
             dead.insert(name);
             applied = true;
             continue;
         }
 
-        // TODO UNSAFE: use analysis does not return actual reads and writes for pointers. So if [name] is a pointer,
-        // no_reads, does not actually mean no reads exist and any removal is problematic
-        // but fixing may have vast downstream effects that not allowed at this time
+        if (sdfg.type(name).type_id() == types::TypeID::Pointer) {
+            continue;
+            // use analysis does not return actual reads and writes for pointers. So if [name] is a pointer,
+            // num reads/writes, does not actually mean no reads exist and any removal is problematic
+        }
 
-        bool completely_unused = no_reads; // if there are reads left, we can never remove the container, but maybe some
-                                           // writes
+
+        bool completely_unused = !num_reads; // if there are reads left, we can never remove the container, but maybe
+                                             // some writes
         auto raws = data_dependency_analysis.definitions(name);
         for (auto set : raws) {
             bool no_reads = false;

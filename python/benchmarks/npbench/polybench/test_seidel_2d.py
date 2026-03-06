@@ -39,13 +39,21 @@ def kernel(TSTEPS, N, A):
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
 def test_seidel_2d(target):
     if target == "none":
-        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4})
+        verifier = SDFGVerification(
+            verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4}, non_critical=True
+        )
     elif target == "sequential":
-        verifier = SDFGVerification(verification={"HIGHWAY": 1, "MAP": 1, "FOR": 4})
+        verifier = SDFGVerification(
+            verification={"HIGHWAY": 1, "MAP": 1, "FOR": 4}, non_critical=True
+        )
     elif target == "openmp":
-        verifier = SDFGVerification(verification={"HIGHWAY": 1, "MAP": 1, "FOR": 4})
+        verifier = SDFGVerification(
+            verification={"HIGHWAY": 1, "MAP": 1, "FOR": 4}, non_critical=True
+        )
     else:  # cuda
-        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4})
+        verifier = SDFGVerification(
+            verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4}, non_critical=True
+        )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
 

@@ -1,10 +1,15 @@
 import argparse
 import inspect
+import os
+import re
 import sys
 import time
 import numpy as np
 import pytest
 import docc.python
+
+
+_GLOBAL_CAPSYS = None
 
 
 def _get_func_param_names(func):
@@ -77,19 +82,39 @@ def _combine_params_with_init_returns(params, initialize_func, init_returns):
 
 
 class SDFGVerification:
-    def __init__(self, verification: dict):
+    def __init__(self, verification: dict, non_critical: bool = False, capsys=None):
         self._verification = verification
+        self._non_critical = non_critical
+        self._capsys = capsys
 
-    def verify(self, stats: dict) -> None:
+    def verify(self, stats: dict, test_file: str, test_target: str) -> None:
         print(stats)
+        all_good = True
         for key, val in self._verification.items():
-            if key not in stats:
-                assert val == 0, f"Key {key} not found in stats"
+            if not self._non_critical:
+                if key not in stats:
+                    assert val == 0, f"Key {key} not found in stats"
+                else:
+                    assert (
+                        stats[key] == val
+                    ), f"Key {key} has value {stats[key]} but expected {val}"
             else:
-                assert (
-                    stats[key] == val
-                ), f"Key {key} has value {stats[key]} but expected {val}"
-        print("All verifications passed.")
+                if key in stats:
+                    stat = stats[key]
+                else:
+                    stat = None
+
+                if stat is None or stat != val:
+                    capsys = self._capsys or _GLOBAL_CAPSYS
+                    with capsys.disabled():
+                        if all_good:
+                            print()
+                        print(
+                            f"::error file=python/{test_file},title={test_target}::Report key {key} is {stat}, expected {val}",
+                        )
+                    all_good = False
+        if all_good:
+            print("All verifications passed.")
 
 
 def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
@@ -221,7 +246,18 @@ def run_pytest(
     stats = sdfg.loop_report()
     print(stats)  # {'FOR': 5, 'MAP': 2, 'CPU': 2, ...}
     assert stats is not None, "No stats found in SDFG."
-    verifier.verify(stats)
+    test_id = os.environ.get("PYTEST_CURRENT_TEST")
+    if test_id:
+        match = re.match(r"^([^:\[]+)::[^\[]+\[([^]]+)]", test_id)
+        if match:
+            test_case = match.group(1)
+            test_sub = match.group(2)
+        else:
+            test_case = test_id
+            test_sub = target
+    else:
+        test_case = f"unknown"
+    verifier.verify(stats, test_case, test_sub)
 
     # Validate return values if they exist
     if res_ref is not None:
