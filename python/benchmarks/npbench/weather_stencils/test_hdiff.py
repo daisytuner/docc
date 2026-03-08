@@ -57,10 +57,14 @@ def kernel(in_field, out_field, coeff):
     )
 
 
-@pytest.mark.skip(reason="Compile failure with Highway")
 @pytest.mark.parametrize(
     "target",
-    ["none", "sequential", "openmp", "cuda"],
+    [
+        "none",
+        # "sequential",
+        # "openmp",
+        # "cuda"
+    ],
 )
 def test_hdiff(target):
     if target == "none":

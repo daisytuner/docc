@@ -4,6 +4,7 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/symbolic/assumptions.h"
 #include "sdfg/transformations/transformation.h"
 
 namespace sdfg {
@@ -14,45 +15,29 @@ namespace transformations {
  *
  * This transformation fuses two sequential maps (children of the same sequence)
  * when the second map reads from containers that are written by the first map.
- * The transformation inlines the computation from the first map into the second map,
- * eliminating intermediate storage and improving data locality.
+ * The transformation inlines the computation from the first map into the second map.
  *
- * ## Preconditions
- * - The first node must be a Map instance
- * - The second node must be a StructuredLoop (Map or For)
- * - The loops must be sequential children of the same sequence (first_map directly before second_loop)
- * - The second loop must read from at least one output of the first map
- * - Memory accesses must be affine (to allow solving the index mapping equation)
- * - Both maps must have simple structure (single block body for now)
- *
- * ## Fusion Strategy
- * For each read in the second map that reads from a container written by the first map:
- * 1. Extract the subset (memory access indices) of the read
- * 2. Find the corresponding write in the first map with matching subset
- * 3. Solve the affine equation system to determine the index mapping
- * 4. Inline the producer subgraph from the first map into the second map
- * 5. Reconnect the dataflow to bypass the intermediate container
- *
- * @note Currently focuses on simple maps with single blocks (loop nests of size 1)
- * @note Only handles affine memory access patterns
- *
- * @see Map
- * @see Sequence
- * @see ArgumentsAnalysis
  */
 class MapFusion : public Transformation {
     structured_control_flow::Map& first_map_;
     structured_control_flow::StructuredLoop& second_loop_;
     bool applied_ = false;
 
-    // Cached analysis results used in both can_be_applied and apply
-    // Each candidate represents a unique (container, access_subset) pair
     struct FusionCandidate {
-        std::string container; ///< Container being read/written
-        data_flow::Subset consumer_subset; ///< The access pattern in the consumer (e.g., [j-1], [j], [j+1])
-        symbolic::Expression index_mapping; ///< Expression mapping second_indvar to first_indvar
+        std::string container;
+        data_flow::Subset consumer_subset;
+        std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> index_mappings;
     };
     std::vector<FusionCandidate> fusion_candidates_;
+
+    static std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> solve_subsets(
+        const data_flow::Subset& producer_subset,
+        const data_flow::Subset& consumer_subset,
+        const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
+        const std::vector<structured_control_flow::StructuredLoop*>& consumer_loops,
+        const symbolic::Assumptions& producer_assumptions,
+        const symbolic::Assumptions& consumer_assumptions
+    );
 
 public:
     /**
@@ -70,11 +55,6 @@ public:
 
     /**
      * @brief Check if this transformation can be applied
-     *
-     * Validates preconditions:
-     * - Both maps are sequential children of the same sequence
-     * - The second map reads from outputs of the first map
-     * - Memory accesses are affine and can be solved
      *
      * @param builder The SDFG builder
      * @param analysis_manager The analysis manager

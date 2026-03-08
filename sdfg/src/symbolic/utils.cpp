@@ -598,7 +598,7 @@ MultiExpression delinearize(const MultiExpression& expr, const Assumptions& assu
                 symbols.push_back(sym);
             }
         }
-        if (symbols.size() < 1) {
+        if (symbols.size() < 2) {
             delinearized.push_back(dim);
             continue;
         }

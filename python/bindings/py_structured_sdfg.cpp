@@ -295,8 +295,16 @@ void PyStructuredSDFG::normalize() {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
+    // Fuse maps
+    auto map_fusion = sdfg::passes::Pipeline::map_fusion();
+    map_fusion.run(builder, analysis_manager);
+
+    // Distribute and permute
     auto pipeline = sdfg::passes::normalization::loop_normalization();
     pipeline.run(builder, analysis_manager);
+
+    // Fuse maps
+    map_fusion.run(builder, analysis_manager);
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {

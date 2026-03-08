@@ -544,3 +544,56 @@ TEST(ReferencePropagationTest, AggregatePointers_Structure_Cast) {
     passes::ReferencePropagation pass;
     EXPECT_FALSE(pass.run(builder_opt, analysis_manager));
 }
+
+TEST(ReferencePropagationTest, ReferenceUsedInsideForLoop) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    types::Array desc_array(desc, symbolic::symbol("N"));
+    types::Pointer desc_array_ptr(desc_array);
+
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("B", opaque_desc, true);
+    builder.add_container("a", opaque_desc);
+
+    auto& root = builder.subject().root();
+
+    // Block 1: a = &A[0]  (reference assignment)
+    auto& block1 = builder.add_block(root);
+    auto& a_input = builder.add_access(block1, "A");
+    auto& a_output = builder.add_access(block1, "a");
+    builder.add_reference_memlet(block1, a_input, a_output, {symbolic::integer(0)}, desc_array_ptr);
+
+    // For loop: for (i = 0; i < N; i++)
+    auto i = symbolic::symbol("i");
+    auto N = symbolic::symbol("N");
+    auto& loop =
+        builder.add_for(root, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)));
+    auto& body = loop.root();
+
+    // Inside loop body: read a[i], write B[i]
+    auto& block2 = builder.add_block(body);
+    auto& input_node = builder.add_access(block2, "a");
+    auto& output_node = builder.add_access(block2, "B");
+    auto& tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::assign, "_out", {"_in0"});
+    auto& iedge = builder.add_computational_memlet(block2, input_node, tasklet, "_in0", {i}, desc_array_ptr);
+    auto& oedge = builder.add_computational_memlet(block2, tasklet, "_out", output_node, {i}, desc_array_ptr);
+
+    auto sdfg = builder.move();
+
+    // Apply pass
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    passes::ReferencePropagation pass;
+    EXPECT_TRUE(pass.run(builder_opt, analysis_manager));
+    sdfg = builder_opt.move();
+
+    // Check result: 'a' should be replaced by 'A'
+    EXPECT_EQ(input_node.data(), "A");
+
+    EXPECT_EQ(iedge.subset().size(), 1);
+    EXPECT_TRUE(symbolic::eq(iedge.subset()[0], i));
+    EXPECT_EQ(iedge.base_type(), desc_array_ptr);
+}

@@ -1,13 +1,22 @@
 #include "sdfg/transformations/map_fusion.h"
 
+#include <isl/ctx.h>
+#include <isl/map.h>
+#include <isl/options.h>
+#include <isl/set.h>
+#include <isl/space.h>
+#include <symengine/solve.h>
 #include "sdfg/analysis/arguments_analysis.h"
+#include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
+
+#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/control_flow/interstate_edge.h"
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
-#include "sdfg/symbolic/polynomials.h"
+#include "sdfg/symbolic/utils.h"
 
 namespace sdfg {
 namespace transformations {
@@ -17,6 +26,168 @@ MapFusion::MapFusion(structured_control_flow::Map& first_map, structured_control
 
 std::string MapFusion::name() const { return "MapFusion"; }
 
+std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_subsets(
+    const data_flow::Subset& producer_subset,
+    const data_flow::Subset& consumer_subset,
+    const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
+    const std::vector<structured_control_flow::StructuredLoop*>& consumer_loops,
+    const symbolic::Assumptions& producer_assumptions,
+    const symbolic::Assumptions& consumer_assumptions
+) {
+    // Delinearize subsets to recover multi-dimensional structure from linearized accesses
+    // e.g. T[i*N + j] with assumptions on bounds -> T[i, j]
+    auto producer_sub = symbolic::delinearize(producer_subset, producer_assumptions);
+    auto consumer_sub = symbolic::delinearize(consumer_subset, consumer_assumptions);
+
+    // Subset dimensions must match
+    if (producer_sub.size() != consumer_sub.size()) {
+        return {};
+    }
+    if (producer_sub.empty()) {
+        return {};
+    }
+
+    // Extract producer indvars
+    SymEngine::vec_sym producer_vars;
+    for (auto* loop : producer_loops) {
+        producer_vars.push_back(SymEngine::rcp_static_cast<const SymEngine::Symbol>(loop->indvar()));
+    }
+
+    // Step 1: Solve the linear equation system using SymEngine
+    // System: producer_sub[d] - consumer_sub[d] = 0, for each dimension d
+    // Solve for producer_vars in terms of consumer_vars and parameters
+    SymEngine::vec_basic equations;
+    for (size_t d = 0; d < producer_sub.size(); ++d) {
+        equations.push_back(symbolic::sub(producer_sub.at(d), consumer_sub.at(d)));
+    }
+
+    // Need exactly as many equations as unknowns for a unique solution.
+    // Underdetermined systems (e.g. linearized access with multiple loop vars)
+    // cannot be uniquely solved and would crash linsolve.
+    if (equations.size() != producer_vars.size()) {
+        return {};
+    }
+
+    SymEngine::vec_basic solution;
+    try {
+        solution = SymEngine::linsolve(equations, producer_vars);
+    } catch (...) {
+        return {};
+    }
+    if (solution.size() != producer_vars.size()) {
+        return {};
+    }
+    // Build consumer var set for atom validation
+    symbolic::SymbolSet consumer_var_set;
+    for (auto* loop : consumer_loops) {
+        consumer_var_set.insert(loop->indvar());
+    }
+
+    std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> mappings;
+    for (size_t i = 0; i < producer_vars.size(); ++i) {
+        auto& sol = solution[i];
+
+        // Check for invalid solutions
+        if (SymEngine::is_a<SymEngine::NaN>(*sol) || SymEngine::is_a<SymEngine::Infty>(*sol)) {
+            return {};
+        }
+
+        // Validate that solution atoms are consumer vars or parameters
+        for (const auto& atom : symbolic::atoms(sol)) {
+            if (consumer_var_set.count(atom)) {
+                continue;
+            }
+            bool is_param = false;
+            auto it = consumer_assumptions.find(atom);
+            if (it != consumer_assumptions.end() && it->second.constant()) {
+                is_param = true;
+            }
+            if (!is_param) {
+                it = producer_assumptions.find(atom);
+                if (it != producer_assumptions.end() && it->second.constant()) {
+                    is_param = true;
+                }
+            }
+            if (!is_param) {
+                return {};
+            }
+        }
+
+        mappings.push_back({symbolic::symbol(producer_vars[i]->get_name()), symbolic::expand(sol)});
+    }
+    // Step 2: ISL integrality validation via map composition
+    // Build an unconstrained producer access map (no domain bounds on producer vars).
+    // In map fusion, the producer's computation is inlined into the consumer, so
+    // the producer's original iteration domain is irrelevant. We only need to verify
+    // that the equation system has an INTEGER solution for every consumer point.
+    symbolic::Assumptions unconstrained_producer;
+    for (auto* loop : producer_loops) {
+        symbolic::Assumption a(loop->indvar());
+        a.constant(false);
+        unconstrained_producer[loop->indvar()] = a;
+    }
+    for (const auto& [sym, assump] : producer_assumptions) {
+        if (assump.constant() && unconstrained_producer.find(sym) == unconstrained_producer.end()) {
+            unconstrained_producer[sym] = assump;
+        }
+    }
+
+    std::string producer_map_str = symbolic::expression_to_map_str(producer_sub, unconstrained_producer);
+    // Build consumer access map with full domain constraints
+    std::string consumer_map_str = symbolic::expression_to_map_str(consumer_sub, consumer_assumptions);
+
+    isl_ctx* ctx = isl_ctx_alloc();
+    isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
+
+    isl_map* producer_map = isl_map_read_from_str(ctx, producer_map_str.c_str());
+    isl_map* consumer_map = isl_map_read_from_str(ctx, consumer_map_str.c_str());
+
+    if (!producer_map || !consumer_map) {
+        if (producer_map) isl_map_free(producer_map);
+        if (consumer_map) isl_map_free(consumer_map);
+        isl_ctx_free(ctx);
+        return {};
+    }
+
+    // Align parameters between the two maps
+    isl_space* params_p = isl_space_params(isl_map_get_space(producer_map));
+    isl_space* params_c = isl_space_params(isl_map_get_space(consumer_map));
+    isl_space* unified = isl_space_align_params(isl_space_copy(params_p), isl_space_copy(params_c));
+    isl_space_free(params_p);
+    isl_space_free(params_c);
+
+    producer_map = isl_map_align_params(producer_map, isl_space_copy(unified));
+    consumer_map = isl_map_align_params(consumer_map, isl_space_copy(unified));
+
+    // Save consumer domain before consuming consumer_map in composition
+    isl_set* consumer_domain = isl_map_domain(isl_map_copy(consumer_map));
+
+    // Compute composition: consumer_access ∘ inverse(producer_access)
+    // This checks whether the equation system producer_subset = consumer_subset
+    // has an integer solution for each consumer domain point.
+    isl_map* producer_inverse = isl_map_reverse(producer_map);
+    isl_map* composition = isl_map_apply_range(consumer_map, producer_inverse);
+
+    // Check single-valuedness: each consumer point maps to at most one producer point
+    bool single_valued = isl_map_is_single_valued(composition) == isl_bool_true;
+
+    // Check domain coverage: every consumer point has a valid integer mapping
+    isl_set* comp_domain = isl_map_domain(composition);
+
+    bool domain_covered = isl_set_is_subset(consumer_domain, comp_domain) == isl_bool_true;
+
+    isl_set_free(comp_domain);
+    isl_set_free(consumer_domain);
+    isl_space_free(unified);
+    isl_ctx_free(ctx);
+
+    if (!single_valued || !domain_covered) {
+        return {};
+    }
+
+    return mappings;
+}
+
 bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     fusion_candidates_.clear();
 
@@ -24,12 +195,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
     auto* first_parent = scope_analysis.parent_scope(&first_map_);
     auto* second_parent = scope_analysis.parent_scope(&second_loop_);
-
     if (first_parent == nullptr || second_parent == nullptr) {
         return false;
     }
-
-    // Both must have the same parent sequence
     if (first_parent != second_parent) {
         return false;
     }
@@ -39,14 +207,11 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         return false;
     }
 
-    // Criterion: first_map must immediately precede second_loop in the sequence
     int first_index = parent_sequence->index(first_map_);
     int second_index = parent_sequence->index(second_loop_);
-
     if (first_index == -1 || second_index == -1) {
         return false;
     }
-
     if (second_index != first_index + 1) {
         return false;
     }
@@ -56,21 +221,36 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     if (!transition.empty()) {
         return false;
     }
-
-    // Criterion: First map must have simple body (single block)
-    // This ensures no WAR/WAW hazards when replicating the producer
-    if (first_map_.root().size() != 1) {
+    // Criterion: First loop is perfectly nested
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto first_loop_info = loop_analysis.loop_info(&first_map_);
+    if (!first_loop_info.is_perfectly_nested) {
         return false;
     }
-
-    auto* first_block = dynamic_cast<structured_control_flow::Block*>(&first_map_.root().at(0).first);
-    if (first_block == nullptr) {
+    if (!first_loop_info.is_perfectly_parallel) {
         return false;
     }
+    std::vector<structured_control_flow::StructuredLoop*> producer_loops = {&first_map_};
+    structured_control_flow::Sequence* producer_body = &first_map_.root();
+    structured_control_flow::ControlFlowNode* producer_node = &first_map_.root().at(0).first;
+    while (auto* nested = dynamic_cast<structured_control_flow::Map*>(producer_node)) {
+        producer_loops.push_back(nested);
+        producer_body = &nested->root();
+        producer_node = &nested->root().at(0).first;
+    }
 
-    // Criterion: First block's transition should be empty
-    if (!first_map_.root().at(0).second.empty()) {
+    // Criterion: Second loop is perfectly nested (but can have non-parallel loops)
+    auto second_loop_info = loop_analysis.loop_info(&second_loop_);
+    if (!second_loop_info.is_perfectly_nested) {
         return false;
+    }
+    std::vector<structured_control_flow::StructuredLoop*> consumer_loops = {&second_loop_};
+    structured_control_flow::Sequence* consumer_body = &second_loop_.root();
+    structured_control_flow::ControlFlowNode* consumer_node = &second_loop_.root().at(0).first;
+    while (auto* nested = dynamic_cast<structured_control_flow::StructuredLoop*>(consumer_node)) {
+        consumer_loops.push_back(nested);
+        consumer_body = &nested->root();
+        consumer_node = &nested->root().at(0).first;
     }
 
     // Get arguments analysis to identify inputs/outputs of each loop
@@ -78,7 +258,6 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     auto first_args = arguments_analysis.arguments(analysis_manager, first_map_);
     auto second_args = arguments_analysis.arguments(analysis_manager, second_loop_);
 
-    // Find containers that are outputs of first map and inputs of second map
     std::unordered_set<std::string> first_outputs;
     for (const auto& [name, arg] : first_args) {
         if (arg.is_output) {
@@ -88,25 +267,25 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 
     std::unordered_set<std::string> fusion_containers;
     for (const auto& [name, arg] : second_args) {
-        if (arg.is_input && first_outputs.contains(name)) {
-            // Criterion: Skip scalars - only fuse array/pointer accesses
-            if (arg.is_scalar) {
-                continue;
+        if (first_outputs.contains(name)) {
+            if (arg.is_output) {
+                return false;
             }
-            fusion_containers.insert(name);
+            if (arg.is_input) {
+                fusion_containers.insert(name);
+            }
         }
     }
     if (fusion_containers.empty()) {
         return false;
     }
-
-    // Analyze memory access patterns for each fusion candidate
-    auto& first_dataflow = first_block->dataflow();
-
-    auto first_indvar = first_map_.indvar();
-    auto second_indvar = second_loop_.indvar();
+    // Get assumptions for the innermost blocks (includes all enclosing loop bounds)
+    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& producer_assumptions = assumptions_analysis.get(*producer_node);
+    auto& consumer_assumptions = assumptions_analysis.get(consumer_body->at(0).first);
 
     // For each fusion container, find the producer memlet and collect unique consumer subsets
+    auto& first_dataflow = dynamic_cast<structured_control_flow::Block*>(producer_node)->dataflow();
     for (const auto& container : fusion_containers) {
         // Find unique producer in first map (producer)
         data_flow::Memlet* producer_memlet = nullptr;
@@ -133,34 +312,15 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
 
         const auto& producer_subset = producer_memlet->subset();
-        // Assume linearized subset
-        if (producer_subset.size() != 1) {
+        if (producer_subset.empty()) {
             return false;
         }
 
-        // Extract affine coefficients for producer (done once per container)
-        auto producer_expr = producer_subset.at(0);
-        symbolic::SymbolVec producer_symbols = {first_indvar};
-        auto producer_poly = symbolic::polynomial(producer_expr, producer_symbols);
-        if (producer_poly.is_null()) {
-            return false; // Not a polynomial
-        }
-        auto producer_coeffs = symbolic::affine_coefficients(producer_poly, producer_symbols);
-        if (producer_coeffs.empty()) {
-            return false; // Not affine
-        }
-        auto first_coeff = producer_coeffs[first_indvar];
-        if (symbolic::eq(first_coeff, symbolic::zero())) {
-            return false;
-        }
-        auto producer_constant = producer_coeffs[symbolic::symbol("__daisy_constant__")];
-
-        // Collect all unique (container, subset) pairs from consumer blocks
-        // A subset is considered unique if it's not symbolically equal to any existing one
-        symbolic::ExpressionSet unique_subsets;
-
-        for (size_t i = 0; i < second_loop_.root().size(); ++i) {
-            auto* block = dynamic_cast<structured_control_flow::Block*>(&second_loop_.root().at(i).first);
+        // Collect all unique subsets from consumer blocks
+        // Use a vector of subsets and deduplicate manually
+        std::vector<data_flow::Subset> unique_subsets;
+        for (size_t i = 0; i < consumer_body->size(); ++i) {
+            auto* block = dynamic_cast<structured_control_flow::Block*>(&consumer_body->at(i).first);
             if (block == nullptr) {
                 return false;
             }
@@ -182,59 +342,51 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
                     }
 
                     auto& consumer_subset = memlet.subset();
-                    // Assume linearized subset
-                    if (consumer_subset.size() != 1) {
-                        return false;
+                    if (consumer_subset.size() != producer_subset.size()) {
+                        return false; // Dimension mismatch
                     }
-                    unique_subsets.insert(consumer_subset.at(0));
+
+                    // Check if this subset is already in unique_subsets
+                    bool found = false;
+                    for (const auto& existing : unique_subsets) {
+                        if (existing.size() != consumer_subset.size()) continue;
+                        bool match = true;
+                        for (size_t d = 0; d < existing.size(); ++d) {
+                            if (!symbolic::eq(existing[d], consumer_subset[d])) {
+                                match = false;
+                                break;
+                            }
+                        }
+                        if (match) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        unique_subsets.push_back(consumer_subset);
+                    }
                 }
             }
         }
 
-        // For each unique subset, compute index_mapping and create a FusionCandidate
-        for (const auto& consumer_expr : unique_subsets) {
-            // index_mapping = (consumer_expr - producer_constant) / first_coeff
-            auto numerator = symbolic::sub(consumer_expr, producer_constant);
-            auto index_mapping = symbolic::div(numerator, first_coeff);
-            index_mapping = symbolic::expand(index_mapping);
-
-            // Verify the mapping is valid (contains only second_indvar and constants)
-            bool valid_mapping = true;
-            for (const auto& atom : symbolic::atoms(index_mapping)) {
-                std::string name = atom->get_name();
-                if (name != second_indvar->get_name()) {
-                    // Check if it's a parameter (constant for both loops)
-                    bool is_param = false;
-                    for (const auto& [arg_name, arg] : second_args) {
-                        if (arg_name == name && arg.is_scalar && !arg.is_output) {
-                            is_param = true;
-                            break;
-                        }
-                    }
-                    if (!is_param) {
-                        for (const auto& [arg_name, arg] : first_args) {
-                            if (arg_name == name && arg.is_scalar && !arg.is_output) {
-                                is_param = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!is_param) {
-                        valid_mapping = false;
-                        break;
-                    }
-                }
-            }
-
-            if (!valid_mapping) {
+        // For each unique consumer subset, solve index mappings and create a FusionCandidate
+        for (const auto& consumer_subset : unique_subsets) {
+            auto mappings = solve_subsets(
+                producer_subset,
+                consumer_subset,
+                producer_loops,
+                consumer_loops,
+                producer_assumptions,
+                consumer_assumptions
+            );
+            if (mappings.empty()) {
                 return false;
             }
 
-            // Store the fusion candidate
             FusionCandidate candidate;
             candidate.container = container;
-            candidate.consumer_subset = {consumer_expr};
-            candidate.index_mapping = index_mapping;
+            candidate.consumer_subset = consumer_subset;
+            candidate.index_mappings = std::move(mappings);
 
             fusion_candidates_.push_back(candidate);
         }
@@ -247,13 +399,21 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
 
-    // Get the producer block from first map
-    auto* first_block = dynamic_cast<structured_control_flow::Block*>(&first_map_.root().at(0).first);
+    // Navigate to the innermost block of the first map (handling nested maps)
+    structured_control_flow::ControlFlowNode* first_block_node = &first_map_.root().at(0).first;
+    while (auto* nested_map = dynamic_cast<structured_control_flow::Map*>(first_block_node)) {
+        first_block_node = &nested_map->root().at(0).first;
+    }
+    auto* first_block = dynamic_cast<structured_control_flow::Block*>(first_block_node);
     auto& first_dataflow = first_block->dataflow();
 
-    auto first_indvar = first_map_.indvar();
-
-    auto& second_root = second_loop_.root();
+    // Navigate to the innermost consumer sequence (handling nested loops)
+    structured_control_flow::Sequence* second_root = &second_loop_.root();
+    structured_control_flow::ControlFlowNode* consumer_node = &second_loop_.root().at(0).first;
+    while (auto* nested = dynamic_cast<structured_control_flow::StructuredLoop*>(consumer_node)) {
+        second_root = &nested->root();
+        consumer_node = &nested->root().at(0).first;
+    }
 
     // For each fusion candidate (unique container+subset pair), create a temp and insert a producer block
     // Track: candidate_index -> temp_name
@@ -269,10 +429,10 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         builder.add_container(temp_name, tmp_type);
         candidate_temps.push_back(temp_name);
 
-        // Insert a producer block at the beginning of the second loop's body
-        auto& first_child = second_root.at(0).first;
+        // Insert a producer block at the beginning of the consumer's innermost body
+        auto& first_child = second_root->at(0).first;
         control_flow::Assignments empty_assignments;
-        auto& producer_block = builder.add_block_before(second_root, first_child, empty_assignments);
+        auto& producer_block = builder.add_block_before(*second_root, first_child, empty_assignments);
 
         // Deep copy all nodes from first block to producer block
         std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
@@ -287,16 +447,19 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             }
         }
 
-        // Add memlets with index substitution using this candidate's index_mapping
+        // Add memlets with index substitution using this candidate's index_mappings
         for (auto& edge : first_dataflow.edges()) {
             auto& src_node = edge.src();
             auto& dst_node = edge.dst();
 
-            // Substitute indices in subset
+            // Substitute all producer indvars in subset
             const types::IType* base_type = &edge.base_type();
             data_flow::Subset new_subset;
             for (const auto& dim : edge.subset()) {
-                auto new_dim = symbolic::subs(dim, first_indvar, candidate.index_mapping);
+                auto new_dim = dim;
+                for (const auto& [pvar, mapping] : candidate.index_mappings) {
+                    new_dim = symbolic::subs(new_dim, pvar, mapping);
+                }
                 new_dim = symbolic::expand(new_dim);
                 new_subset.push_back(new_dim);
             }
@@ -326,8 +489,8 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     // We need to match each access node's memlet subset to find the right candidate
     size_t num_producer_blocks = fusion_candidates_.size();
 
-    for (size_t block_idx = num_producer_blocks; block_idx < second_root.size(); ++block_idx) {
-        auto* block = dynamic_cast<structured_control_flow::Block*>(&second_root.at(block_idx).first);
+    for (size_t block_idx = num_producer_blocks; block_idx < second_root->size(); ++block_idx) {
+        auto* block = dynamic_cast<structured_control_flow::Block*>(&second_root->at(block_idx).first);
         if (block == nullptr) {
             continue;
         }
