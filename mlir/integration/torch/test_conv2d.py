@@ -53,7 +53,7 @@ def test_single_nobias_backend():
 # --- Single Conv2d (with bias) ---
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
+@pytest.mark.skip(reason="broadcast inside convolution not yet supported")
 def test_single_bias_compile():
     class SingleConv2dBiasNet(nn.Module):
         def __init__(self):
@@ -75,7 +75,7 @@ def test_single_bias_compile():
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
+@pytest.mark.skip(reason="broadcast inside convolution not yet supported")
 def test_single_bias_backend():
     class SingleConv2dBiasNet(nn.Module):
         def __init__(self):

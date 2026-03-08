@@ -54,7 +54,6 @@ def test_single_nobias_backend():
 # --- Single linear layer (with bias) ---
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_single_bias_compile():
     class SingleBiasNet(nn.Module):
         def __init__(self, in_features: int, out_features: int):
@@ -76,7 +75,6 @@ def test_single_bias_compile():
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_single_bias_backend():
     class SingleBiasNet(nn.Module):
         def __init__(self, in_features: int, out_features: int):
@@ -150,7 +148,6 @@ def test_chained_nobias_backend():
 # --- Chained linear layers (with bias) ---
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_chained_bias_compile():
     class ChainedBiasNet(nn.Module):
         def __init__(self, in_features: int, hidden_features: int, out_features: int):
@@ -173,7 +170,6 @@ def test_chained_bias_compile():
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_chained_bias_backend():
     class ChainedBiasNet(nn.Module):
         def __init__(self, in_features: int, hidden_features: int, out_features: int):

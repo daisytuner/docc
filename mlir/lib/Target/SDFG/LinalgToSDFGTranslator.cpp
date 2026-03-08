@@ -437,6 +437,9 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
                 linalg::TanhOp,
                 ::sdfg::math::cmath::CMathFunction::tanh>(translator, &tanh_op);
         })
+        .Case<linalg::BroadcastOp>([&](linalg::BroadcastOp broadcast_op) {
+            return translateLinalgBroadcastOp(translator, &broadcast_op);
+        })
         .Case<linalg::GenericOp>([&](linalg::GenericOp generic_op) {
             return translateLinalgGenericOp(translator, &generic_op);
         })
@@ -617,6 +620,106 @@ LogicalResult translateLinalgTransposeOp(SDFGTranslator& translator, linalg::Tra
 
     auto out_tensor_info = in_tensor_info.transpose(permutation);
     translator.tensor_info_map().insert({out_container, out_tensor_info});
+
+    return success();
+}
+
+LogicalResult translateLinalgBroadcastOp(SDFGTranslator& translator, linalg::BroadcastOp* op) {
+    Value input = op->getInput();
+    Value init = op->getInit();
+    auto results = op->getResult();
+    if (results.size() != 1) {
+        return op->emitError("Expected exactly one result for linalg.broadcast");
+    }
+    Value result = results[0];
+
+    // Validate tensor types
+    auto input_type = dyn_cast_or_null<RankedTensorType>(input.getType());
+    auto result_type = dyn_cast_or_null<RankedTensorType>(result.getType());
+    if (!input_type || !result_type) {
+        return op->emitError("Input and result types must be ranked tensors");
+    }
+
+    auto dimensions = op->getDimensions();
+    int64_t output_rank = result_type.getRank();
+    auto result_shape = result_type.getShape();
+
+    // Construct affine maps from dimensions attribute
+    // Input map: (d0, ..., d_{M-1}) -> (non-broadcast dims only)
+    // Output map: identity (d0, ..., d_{M-1}) -> (d0, ..., d_{M-1})
+    SmallVector<AffineExpr> input_exprs;
+    for (int64_t d = 0; d < output_rank; d++) {
+        if (!llvm::is_contained(dimensions, d)) {
+            input_exprs.push_back(getAffineDimExpr(d, op->getContext()));
+        }
+    }
+    auto input_affine_map = AffineMap::get(output_rank, 0, input_exprs, op->getContext());
+    auto output_affine_map = AffineMap::getMultiDimIdentityMap(output_rank, op->getContext());
+
+    auto& builder = translator.builder();
+    auto input_container = translator.get_or_create_container(input);
+    auto init_container = translator.get_or_create_container(init);
+    auto result_container = translator.get_or_create_container(result);
+
+    translator.add_reference(init_container, result_container);
+
+    // Create parallel map nest over all output dimensions (all parallel for broadcast)
+    ::sdfg::structured_control_flow::Sequence* current_seq = &translator.insertion_point();
+    std::vector<::sdfg::symbolic::Symbol> indvars;
+    for (int64_t i = 0; i < output_rank; i++) {
+        auto indvar_container = builder.find_new_name("_i");
+        builder.add_container(indvar_container, ::sdfg::types::Scalar(::sdfg::types::PrimitiveType::Int64));
+        auto indvar = ::sdfg::symbolic::symbol(indvar_container);
+        indvars.push_back(indvar);
+        auto condition = ::sdfg::symbolic::Lt(indvar, ::sdfg::symbolic::integer(result_shape[i]));
+        auto init_expr = ::sdfg::symbolic::zero();
+        auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
+
+        auto& map = builder.add_map(
+            *current_seq,
+            indvar,
+            condition,
+            init_expr,
+            update,
+            ::sdfg::structured_control_flow::ScheduleType_Sequential::create()
+        );
+        current_seq = &map.root();
+    }
+
+    // Generate subsets from affine maps (same pattern as linalg.generic)
+    auto input_subset = affine_map_to_subset(input_affine_map, indvars);
+    auto output_subset = affine_map_to_subset(output_affine_map, indvars);
+
+    // Create a scalar container for the intermediate value
+    auto element_type = translator.convertType(input_type.getElementType());
+    auto scalar_container = builder.find_new_name("_scalar");
+    builder.add_container(scalar_container, static_cast<::sdfg::types::Scalar&>(*element_type));
+
+    // Get tensor types for memlets
+    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input_type);
+    auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
+    auto result_tensor_info = translator.get_or_create_tensor_info(result_container, result_type);
+    auto result_sdfg_tensor = result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
+
+    // Block 1: Read from input tensor into scalar (same as linalg.generic read pattern)
+    {
+        auto& sdfg_block = builder.add_block(*current_seq);
+        auto& input_access = builder.add_access(sdfg_block, input_container);
+        auto& scalar_access = builder.add_access(sdfg_block, scalar_container);
+        auto& tasklet = builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(sdfg_block, input_access, tasklet, "_in", input_subset, *input_sdfg_tensor);
+        builder.add_computational_memlet(sdfg_block, tasklet, "_out", scalar_access, {});
+    }
+
+    // Block 2: Write scalar into result tensor (same as linalg.generic yield pattern)
+    {
+        auto& sdfg_block = builder.add_block(*current_seq);
+        auto& scalar_access = builder.add_access(sdfg_block, scalar_container);
+        auto& result_access = builder.add_access(sdfg_block, result_container);
+        auto& tasklet = builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(sdfg_block, scalar_access, tasklet, "_in", {});
+        builder.add_computational_memlet(sdfg_block, tasklet, "_out", result_access, output_subset, *result_sdfg_tensor);
+    }
 
     return success();
 }
