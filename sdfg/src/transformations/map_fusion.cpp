@@ -34,11 +34,16 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_
     const symbolic::Assumptions& producer_assumptions,
     const symbolic::Assumptions& consumer_assumptions
 ) {
+    // Delinearize subsets to recover multi-dimensional structure from linearized accesses
+    // e.g. T[i*N + j] with assumptions on bounds -> T[i, j]
+    auto producer_sub = symbolic::delinearize(producer_subset, producer_assumptions);
+    auto consumer_sub = symbolic::delinearize(consumer_subset, consumer_assumptions);
+
     // Subset dimensions must match
-    if (producer_subset.size() != consumer_subset.size()) {
+    if (producer_sub.size() != consumer_sub.size()) {
         return {};
     }
-    if (producer_subset.empty()) {
+    if (producer_sub.empty()) {
         return {};
     }
 
@@ -49,11 +54,18 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_
     }
 
     // Step 1: Solve the linear equation system using SymEngine
-    // System: producer_subset[d] - consumer_subset[d] = 0, for each dimension d
+    // System: producer_sub[d] - consumer_sub[d] = 0, for each dimension d
     // Solve for producer_vars in terms of consumer_vars and parameters
     SymEngine::vec_basic equations;
-    for (size_t d = 0; d < producer_subset.size(); ++d) {
-        equations.push_back(SymEngine::sub(producer_subset[d], consumer_subset[d]));
+    for (size_t d = 0; d < producer_sub.size(); ++d) {
+        equations.push_back(symbolic::sub(producer_sub.at(d), consumer_sub.at(d)));
+    }
+
+    // Need exactly as many equations as unknowns for a unique solution.
+    // Underdetermined systems (e.g. linearized access with multiple loop vars)
+    // cannot be uniquely solved and would crash linsolve.
+    if (equations.size() != producer_vars.size()) {
+        return {};
     }
 
     SymEngine::vec_basic solution;
@@ -65,7 +77,6 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_
     if (solution.size() != producer_vars.size()) {
         return {};
     }
-
     // Build consumer var set for atom validation
     symbolic::SymbolSet consumer_var_set;
     for (auto* loop : consumer_loops) {
@@ -104,7 +115,6 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_
 
         mappings.push_back({symbolic::symbol(producer_vars[i]->get_name()), symbolic::expand(sol)});
     }
-
     // Step 2: ISL integrality validation via map composition
     // Build an unconstrained producer access map (no domain bounds on producer vars).
     // In map fusion, the producer's computation is inlined into the consumer, so
@@ -122,9 +132,9 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_
         }
     }
 
-    std::string producer_map_str = symbolic::expression_to_map_str(producer_subset, unconstrained_producer);
+    std::string producer_map_str = symbolic::expression_to_map_str(producer_sub, unconstrained_producer);
     // Build consumer access map with full domain constraints
-    std::string consumer_map_str = symbolic::expression_to_map_str(consumer_subset, consumer_assumptions);
+    std::string consumer_map_str = symbolic::expression_to_map_str(consumer_sub, consumer_assumptions);
 
     isl_ctx* ctx = isl_ctx_alloc();
     isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
@@ -211,7 +221,6 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     if (!transition.empty()) {
         return false;
     }
-
     // Criterion: First loop is perfectly nested
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto first_loop_info = loop_analysis.loop_info(&first_map_);
@@ -249,11 +258,6 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     auto first_args = arguments_analysis.arguments(analysis_manager, first_map_);
     auto second_args = arguments_analysis.arguments(analysis_manager, second_loop_);
 
-    // Get assumptions for the innermost blocks (includes all enclosing loop bounds)
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    auto& producer_assumptions = assumptions_analysis.get(*producer_node);
-    auto& consumer_assumptions = assumptions_analysis.get(consumer_body->at(0).first);
-
     std::unordered_set<std::string> first_outputs;
     for (const auto& [name, arg] : first_args) {
         if (arg.is_output) {
@@ -275,6 +279,10 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     if (fusion_containers.empty()) {
         return false;
     }
+    // Get assumptions for the innermost blocks (includes all enclosing loop bounds)
+    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& producer_assumptions = assumptions_analysis.get(*producer_node);
+    auto& consumer_assumptions = assumptions_analysis.get(consumer_body->at(0).first);
 
     // For each fusion container, find the producer memlet and collect unique consumer subsets
     auto& first_dataflow = dynamic_cast<structured_control_flow::Block*>(producer_node)->dataflow();
