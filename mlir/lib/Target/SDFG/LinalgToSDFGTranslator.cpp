@@ -284,8 +284,8 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
     for (size_t i = 0; i < block.getNumArguments(); i++) {
         BlockArgument argument = block.getArgument(i);
         auto argument_container = translator.get_or_create_container(argument);
-        auto outer_container = (i < inputs.size()) ? input_containers.at(i) : output_containers.at(inputs.size() - i);
-        auto outer_type = (i < inputs.size()) ? inputs[i].getType() : outputs[inputs.size() - i].getType();
+        auto outer_container = (i < inputs.size()) ? input_containers.at(i) : output_containers.at(i - inputs.size());
+        auto outer_type = (i < inputs.size()) ? inputs[i].getType() : outputs[i - inputs.size()].getType();
 
         auto& sdfg_block = builder.add_block(*current_seq);
         auto& outer_access = builder.add_access(sdfg_block, outer_container);

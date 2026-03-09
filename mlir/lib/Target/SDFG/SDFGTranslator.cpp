@@ -8,6 +8,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinDialect.h"
@@ -15,6 +16,7 @@
 #include "mlir/Target/SDFG/BuiltinToSDFGTranslator.h"
 #include "mlir/Target/SDFG/FuncToSDFGTranslator.h"
 #include "mlir/Target/SDFG/LinalgToSDFGTranslator.h"
+#include "mlir/Target/SDFG/MathToSDFGTranslator.h"
 #include "mlir/Target/SDFG/TensorToSDFGTranslator.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
@@ -246,11 +248,17 @@ std::unique_ptr<::sdfg::types::IType> SDFGTranslator::convertType(const Type mli
         if (!base_type) {
             return nullptr;
         }
+        if (vector_type.getRank() == 0) {
+            return base_type;
+        }
         return std::make_unique<::sdfg::types::Pointer>(*base_type);
     } else if (auto tensor_type = dyn_cast_or_null<TensorType>(mlir_type)) {
         auto base_type = this->convertType(tensor_type.getElementType());
         if (!base_type) {
             return nullptr;
+        }
+        if (tensor_type.getRank() == 0) {
+            return base_type;
         }
         return std::make_unique<::sdfg::types::Pointer>(*base_type);
     }
@@ -331,6 +339,8 @@ LogicalResult translateOp(SDFGTranslator& translator, Operation* op) {
         return translateFuncOp(translator, op);
     } else if (op->getDialect()->getNamespace() == linalg::LinalgDialect::getDialectNamespace()) {
         return translateLinalgOp(translator, op);
+    } else if (op->getDialect()->getNamespace() == math::MathDialect::getDialectNamespace()) {
+        return translateMathOp(translator, op);
     } else if (op->getDialect()->getNamespace() == tensor::TensorDialect::getDialectNamespace()) {
         return translateTensorOp(translator, op);
     }

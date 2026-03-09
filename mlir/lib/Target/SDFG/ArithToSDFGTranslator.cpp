@@ -1,7 +1,9 @@
 #include "mlir/Target/SDFG/ArithToSDFGTranslator.h"
 
+#include <cstdint>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -291,6 +293,26 @@ LogicalResult translateArithConstantOp(SDFGTranslator& translator, arith::Consta
                                   return std::to_string(attr.getValue().convertToDouble());
                               })
                               .Case<IntegerAttr>([](IntegerAttr attr) { return std::to_string(attr.getInt()); })
+                              .Case<DenseIntElementsAttr>([](DenseIntElementsAttr attr) {
+                                  assert(attr.getNumElements() == 1);
+                                  auto value = *attr.begin();
+                                  if (attr.getElementType().isUnsignedInteger()) {
+                                      return std::to_string(value.getZExtValue());
+                                  } else {
+                                      return std::to_string(value.getSExtValue());
+                                  }
+                              })
+                              .Case<DenseFPElementsAttr>([](DenseFPElementsAttr attr) {
+                                  assert(attr.getNumElements() == 1);
+                                  auto value = *attr.begin();
+                                  if (attr.getElementType().isF32()) {
+                                      return std::to_string(value.convertToFloat());
+                                  } else if (attr.getElementType().isF64()) {
+                                      return std::to_string(value.convertToDouble());
+                                  } else {
+                                      return std::string();
+                                  }
+                              })
                               .Default([](TypedAttr attr) { return ""; });
         if (!val.empty()) { // scalar constant, trivially representable with Const-Node
             auto& builder = translator.builder();
@@ -352,6 +374,88 @@ LogicalResult translateArithConstantOp(SDFGTranslator& translator, arith::Consta
             builder.add_computational_memlet(block, load_const, load_const.outputs()[0], dst_access, {}, *val_type);
 
             return success();
+        } else if (auto dense_elements_attr = dyn_cast<DenseIntOrFPElementsAttr>(constant_op->getValue())) {
+            std::vector<uint8_t> data;
+            if (auto dense_int_elements_attr = dyn_cast<DenseIntElementsAttr>(dense_elements_attr)) {
+                Type element_type = dense_int_elements_attr.getElementType();
+                if (element_type.isInteger(1)) {
+                    for (auto element : dense_int_elements_attr) {
+                        bool val = element.getBoolValue();
+                        data.push_back(val);
+                    }
+                } else if (element_type.isInteger(8)) {
+                    for (auto element : dense_int_elements_attr) {
+                        auto val = element.getZExtValue();
+                        data.push_back(static_cast<uint8_t>(val));
+                    }
+                } else if (element_type.isInteger(16)) {
+                    for (auto element : dense_int_elements_attr) {
+                        auto val = element.getZExtValue();
+                        data.push_back(static_cast<uint8_t>(val >> 8));
+                        data.push_back(static_cast<uint8_t>(val));
+                    }
+                } else if (element_type.isInteger(32)) {
+                    for (auto element : dense_int_elements_attr) {
+                        auto val = element.getZExtValue();
+                        data.push_back(static_cast<uint8_t>(val >> 24));
+                        data.push_back(static_cast<uint8_t>(val >> 16));
+                        data.push_back(static_cast<uint8_t>(val >> 8));
+                        data.push_back(static_cast<uint8_t>(val));
+                    }
+                } else if (element_type.isInteger(64)) {
+                    for (auto element : dense_int_elements_attr) {
+                        auto val = element.getZExtValue();
+                        data.push_back(static_cast<uint8_t>(val >> 56));
+                        data.push_back(static_cast<uint8_t>(val >> 48));
+                        data.push_back(static_cast<uint8_t>(val >> 40));
+                        data.push_back(static_cast<uint8_t>(val >> 32));
+                        data.push_back(static_cast<uint8_t>(val >> 24));
+                        data.push_back(static_cast<uint8_t>(val >> 16));
+                        data.push_back(static_cast<uint8_t>(val >> 8));
+                        data.push_back(static_cast<uint8_t>(val));
+                    }
+                } else {
+                    return constant_op->emitOpError("Unsupported dense int elements attribute");
+                }
+            } else if (auto dense_fp_elements_attr = dyn_cast<DenseFPElementsAttr>(dense_elements_attr)) {
+                Type element_type = dense_fp_elements_attr.getElementType();
+                if (element_type.isF32()) {
+                    for (auto element : dense_fp_elements_attr) {
+                        auto val = std::bit_cast<uint32_t>(element.convertToFloat());
+                        data.push_back(static_cast<uint8_t>(val >> 24));
+                        data.push_back(static_cast<uint8_t>(val >> 16));
+                        data.push_back(static_cast<uint8_t>(val >> 8));
+                        data.push_back(static_cast<uint8_t>(val));
+                    }
+                } else if (element_type.isF64()) {
+                    for (auto element : dense_fp_elements_attr) {
+                        auto val = std::bit_cast<uint64_t>(element.convertToDouble());
+                        data.push_back(static_cast<uint8_t>(val >> 56));
+                        data.push_back(static_cast<uint8_t>(val >> 48));
+                        data.push_back(static_cast<uint8_t>(val >> 40));
+                        data.push_back(static_cast<uint8_t>(val >> 32));
+                        data.push_back(static_cast<uint8_t>(val >> 24));
+                        data.push_back(static_cast<uint8_t>(val >> 16));
+                        data.push_back(static_cast<uint8_t>(val >> 8));
+                        data.push_back(static_cast<uint8_t>(val));
+                    }
+                } else {
+                    return constant_op->emitOpError("Unsupported dense fp elements attribute");
+                }
+            }
+
+            auto& builder = translator.builder();
+            auto& block = builder.add_block(translator.insertion_point());
+            auto& load_const = builder.add_library_node<::sdfg::data_flow::LoadConstNode>(
+                block,
+                ::sdfg::DebugInfo(),
+                val_type->clone(),
+                std::make_unique<::sdfg::data_flow::InMemoryConstSource>(data.begin(), data.end())
+            );
+            auto& dst_access = builder.add_access(block, translator.get_or_create_container(result));
+            builder.add_computational_memlet(block, load_const, load_const.outputs()[0], dst_access, {}, *val_type);
+
+            return success();
         } else {
             return constant_op->emitOpError("Unsupported constant pointer init");
         }
@@ -376,6 +480,48 @@ LogicalResult translateArithNegFOp(SDFGTranslator& translator, arith::NegFOp* ne
     auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::fp_neg, "_out", {"_in"});
     builder.add_computational_memlet(block, in_access, tasklet, "_in", {});
     builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+
+    return success();
+}
+
+LogicalResult translateArithSelectOp(SDFGTranslator& translator, arith::SelectOp* select_op) {
+    Value condition = select_op->getCondition();
+    Value true_value = select_op->getTrueValue();
+    Value false_value = select_op->getFalseValue();
+    Value result = select_op->getResult();
+
+    auto& builder = translator.builder();
+    auto condition_container = translator.get_or_create_container(condition);
+    auto true_value_container = translator.get_or_create_container(true_value);
+    auto false_value_container = translator.get_or_create_container(false_value);
+    auto result_container = translator.get_or_create_container(result);
+
+    if (is_sdfg_primitive(condition.getType()) && is_sdfg_primitive(true_value.getType()) &&
+        is_sdfg_primitive(false_value.getType()) && is_sdfg_primitive(result.getType())) {
+        auto& if_else = builder.add_if_else(translator.insertion_point());
+        auto& true_case = builder.add_case(
+            if_else, ::sdfg::symbolic::Eq(::sdfg::symbolic::symbol(condition_container), ::sdfg::symbolic::__true__())
+        );
+        auto& false_case = builder.add_case(
+            if_else, ::sdfg::symbolic::Eq(::sdfg::symbolic::symbol(condition_container), ::sdfg::symbolic::__false__())
+        );
+
+        auto& true_block = builder.add_block(true_case);
+        auto& true_value_access = builder.add_access(true_block, true_value_container);
+        auto& true_result_access = builder.add_access(true_block, result_container);
+        auto& true_tasklet = builder.add_tasklet(true_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(true_block, true_value_access, true_tasklet, "_in", {});
+        builder.add_computational_memlet(true_block, true_tasklet, "_out", true_result_access, {});
+
+        auto& false_block = builder.add_block(false_case);
+        auto& false_value_access = builder.add_access(false_block, false_value_container);
+        auto& false_result_access = builder.add_access(false_block, result_container);
+        auto& false_tasklet = builder.add_tasklet(false_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(false_block, false_value_access, false_tasklet, "_in", {});
+        builder.add_computational_memlet(false_block, false_tasklet, "_out", false_result_access, {});
+    } else {
+        return select_op->emitOpError("Unsupported type(s)");
+    }
 
     return success();
 }
@@ -484,6 +630,8 @@ LogicalResult translateArithOp(SDFGTranslator& translator, Operation* op) {
             return translateArithConstantOp(translator, &constant_op);
         })
         .Case<arith::NegFOp>([&](arith::NegFOp negf_op) { return translateArithNegFOp(translator, &negf_op); })
+        .Case<arith::SelectOp>([&](arith::SelectOp select_op) { return translateArithSelectOp(translator, &select_op); }
+        )
         .Default([&](Operation* op) { return op->emitError("Unknown operation from arith dialect encountered"); });
 }
 
