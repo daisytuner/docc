@@ -52,6 +52,8 @@
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
+#include "sdfg/passes/targets/target_mapping_pass.h"
+#include "targets/target_mapping.h"
 
 #ifdef DOCC_HAS_TARGET_ET
 #include <docc/target/et/target.h>
@@ -315,6 +317,9 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
+    docc::plugins::TargetOptions topts = {.target = target, .category = category, .transfer_tuning = remote_tuning};
+    docc::plugins::apply_lib_node_target_mapping(builder, analysis_manager, topts);
+
     std::vector<std::string> schedulers;
 
     if (remote_tuning) {
@@ -342,11 +347,10 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     else if (target == "cuda") {
         schedulers.push_back(target);
     } else if (target == "onnx") {
-        sdfg::passes::ONNXLibraryNodeRewriterPass onnx_library_node_rewriter_pass;
-        onnx_library_node_rewriter_pass.run(builder, analysis_manager);
+        // nothing
     } else if (target == "etsoc") {
 #ifdef DOCC_HAS_TARGET_ET
-        docc::target::et::et_scheduling_passes(builder, analysis_manager, category);
+
 #endif
     } else {
         std::cerr << "[WARNING] Target '" << target << "' is not supported, ignoring!" << std::endl;

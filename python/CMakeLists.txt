@@ -10,6 +10,7 @@ set(PYTHON_SOURCES
     bindings/builder/py_structured_sdfg_builder.cpp
     bindings/data_flow/py_cmath.cpp
     bindings/data_flow/py_tasklet.cpp
+    bindings/targets/target_mapping.cpp
     bindings/types/py_types.cpp
 )
 
