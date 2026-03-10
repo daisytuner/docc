@@ -8,8 +8,6 @@
 
 #include "docc/target/et/target.h"
 
-#include <sdfg/codegen/docc_paths.h>
-
 #include "docc/target/et/blas/gemm.h"
 
 namespace docc::target::et {
