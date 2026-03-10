@@ -1270,6 +1270,10 @@ void register_default_serializers() {
             return std::make_unique<stdlib::AllocaNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(stdlib::LibraryNodeType_Assert.value(), []() {
+            return std::make_unique<stdlib::AssertNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(stdlib::LibraryNodeType_Calloc.value(), []() {
             return std::make_unique<stdlib::CallocNodeSerializer>();
         });

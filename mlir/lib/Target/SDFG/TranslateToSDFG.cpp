@@ -1,5 +1,6 @@
 #include "mlir/Target/SDFG/TranslateToSDFG.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -37,6 +38,7 @@ void registerToSDFGTranslation() {
             registry.insert<linalg::LinalgDialect>();
             registry.insert<tensor::TensorDialect>();
             registry.insert<math::MathDialect>();
+            registry.insert<cf::ControlFlowDialect>();
         }
     );
 }

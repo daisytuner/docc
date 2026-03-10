@@ -115,6 +115,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/reduce_ops/min_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.cpp
     src/data_flow/library_nodes/stdlib/alloca.cpp
+    src/data_flow/library_nodes/stdlib/assert.cpp
     src/data_flow/library_nodes/stdlib/calloc.cpp
     src/data_flow/library_nodes/stdlib/free.cpp
     src/data_flow/library_nodes/stdlib/malloc.cpp

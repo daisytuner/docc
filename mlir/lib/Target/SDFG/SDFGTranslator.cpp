@@ -6,6 +6,7 @@
 #include <string>
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -14,6 +15,7 @@
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/Target/SDFG/ArithToSDFGTranslator.h"
 #include "mlir/Target/SDFG/BuiltinToSDFGTranslator.h"
+#include "mlir/Target/SDFG/CfToSDFGTranslator.h"
 #include "mlir/Target/SDFG/FuncToSDFGTranslator.h"
 #include "mlir/Target/SDFG/LinalgToSDFGTranslator.h"
 #include "mlir/Target/SDFG/MathToSDFGTranslator.h"
@@ -335,6 +337,8 @@ LogicalResult translateOp(SDFGTranslator& translator, Operation* op) {
         return translateArithOp(translator, op);
     } else if (op->getDialect()->getNamespace() == BuiltinDialect::getDialectNamespace()) {
         return translateBuiltinOp(translator, op);
+    } else if (op->getDialect()->getNamespace() == cf::ControlFlowDialect::getDialectNamespace()) {
+        return translateCfOp(translator, op);
     } else if (op->getDialect()->getNamespace() == func::FuncDialect::getDialectNamespace()) {
         return translateFuncOp(translator, op);
     } else if (op->getDialect()->getNamespace() == linalg::LinalgDialect::getDialectNamespace()) {
