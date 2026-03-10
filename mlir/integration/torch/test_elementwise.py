@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from docc.torch import compile_torch
 
+
 def test_abs():
     class AbsNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -14,10 +15,13 @@ def test_abs():
     model_ref = AbsNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_absolute():
@@ -29,10 +33,13 @@ def test_absolute():
     model_ref = AbsoluteNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_acos():
     class AcosNet(nn.Module):
@@ -43,10 +50,13 @@ def test_acos():
     model_ref = AcosNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_arccos():
@@ -58,10 +68,13 @@ def test_arccos():
     model_ref = ArccosNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_acosh():
     class AcoshNet(nn.Module):
@@ -72,10 +85,13 @@ def test_acosh():
     model_ref = AcoshNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_arccosh():
@@ -87,10 +103,13 @@ def test_arccosh():
     model_ref = ArccoshNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_add():
     class AddNet(nn.Module):
@@ -101,10 +120,13 @@ def test_add():
     model_ref = AddNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_addcdiv():
     class AddcdivNet(nn.Module):
@@ -115,10 +137,13 @@ def test_addcdiv():
     model_ref = AddcdivNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_addcmul():
     class AddcmulNet(nn.Module):
@@ -129,10 +154,13 @@ def test_addcmul():
     model_ref = AddcmulNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_angle():
@@ -144,10 +172,13 @@ def test_angle():
     model_ref = AngleNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_asin():
     class AsinNet(nn.Module):
@@ -158,10 +189,13 @@ def test_asin():
     model_ref = AsinNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_arcsin():
@@ -173,10 +207,13 @@ def test_arcsin():
     model_ref = ArcsinNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_asinh():
     class AsinhNet(nn.Module):
@@ -187,10 +224,13 @@ def test_asinh():
     model_ref = AsinhNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_arcsinh():
@@ -202,10 +242,13 @@ def test_arcsinh():
     model_ref = ArcsinhNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_atan():
     class AtanNet(nn.Module):
@@ -216,10 +259,13 @@ def test_atan():
     model_ref = AtanNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_arctan():
@@ -231,10 +277,13 @@ def test_arctan():
     model_ref = ArctanNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_atanh():
     class AtanhNet(nn.Module):
@@ -245,10 +294,13 @@ def test_atanh():
     model_ref = AtanhNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_arctanh():
@@ -260,10 +312,13 @@ def test_arctanh():
     model_ref = ArctanhNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_atan2():
     class Atan2Net(nn.Module):
@@ -274,10 +329,13 @@ def test_atan2():
     model_ref = Atan2Net()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_arctan2():
@@ -289,10 +347,13 @@ def test_arctan2():
     model_ref = Arctan2Net()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_bitwise_not():
     class BitwiseNotNet(nn.Module):
@@ -303,10 +364,13 @@ def test_bitwise_not():
     model_ref = BitwiseNotNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_bitwise_and():
     class BitwiseAndNet(nn.Module):
@@ -317,10 +381,13 @@ def test_bitwise_and():
     model_ref = BitwiseAndNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_bitwise_or():
     class BitwiseOrNet(nn.Module):
@@ -331,10 +398,13 @@ def test_bitwise_or():
     model_ref = BitwiseOrNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_bitwise_xor():
     class BitwiseXorNet(nn.Module):
@@ -345,10 +415,13 @@ def test_bitwise_xor():
     model_ref = BitwiseXorNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_bitwise_left_shift():
     class BitwiseLeftShiftNet(nn.Module):
@@ -359,10 +432,13 @@ def test_bitwise_left_shift():
     model_ref = BitwiseLeftShiftNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Incorrect result")
 def test_bitwise_right_shift():
@@ -374,10 +450,13 @@ def test_bitwise_right_shift():
     model_ref = BitwiseRightShiftNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_ceil():
     class CeilNet(nn.Module):
@@ -388,10 +467,13 @@ def test_ceil():
     model_ref = CeilNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_clamp():
     class ClampNet(nn.Module):
@@ -402,10 +484,13 @@ def test_clamp():
     model_ref = ClampNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_clip():
@@ -417,10 +502,13 @@ def test_clip():
     model_ref = ClipNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_conj_physical():
     class ConjPhysicalNet(nn.Module):
@@ -431,10 +519,13 @@ def test_conj_physical():
     model_ref = ConjPhysicalNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_copysign():
@@ -446,10 +537,13 @@ def test_copysign():
     model_ref = CopysignNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_cos():
     class CosNet(nn.Module):
@@ -460,10 +554,13 @@ def test_cos():
     model_ref = CosNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_cosh():
     class CoshNet(nn.Module):
@@ -474,10 +571,13 @@ def test_cosh():
     model_ref = CoshNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_deg2rad():
     class Deg2RadNet(nn.Module):
@@ -488,10 +588,13 @@ def test_deg2rad():
     model_ref = Deg2RadNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_div():
     class DivNet(nn.Module):
@@ -502,10 +605,13 @@ def test_div():
     model_ref = DivNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_divide():
@@ -517,10 +623,13 @@ def test_divide():
     model_ref = DivideNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_digamma():
@@ -532,10 +641,13 @@ def test_digamma():
     model_ref = DigammaNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_erf():
     class ErfNet(nn.Module):
@@ -546,10 +658,13 @@ def test_erf():
     model_ref = ErfNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_erfc():
@@ -561,10 +676,13 @@ def test_erfc():
     model_ref = ErfcNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_erfinv():
@@ -576,10 +694,13 @@ def test_erfinv():
     model_ref = ErfinvNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_exp():
     class ExpNet(nn.Module):
@@ -590,10 +711,13 @@ def test_exp():
     model_ref = ExpNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_exp2():
     class Exp2Net(nn.Module):
@@ -604,10 +728,13 @@ def test_exp2():
     model_ref = Exp2Net()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_expm1():
     class Expm1Net(nn.Module):
@@ -618,10 +745,13 @@ def test_expm1():
     model_ref = Expm1Net()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Incorrect result")
 def test_fix():
@@ -633,10 +763,13 @@ def test_fix():
     model_ref = FixNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_float_power():
     class FloatPowerNet(nn.Module):
@@ -647,10 +780,13 @@ def test_float_power():
     model_ref = FloatPowerNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_floor():
     class FloorNet(nn.Module):
@@ -661,10 +797,13 @@ def test_floor():
     model_ref = FloorNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_floor_divide():
     class FloorDivideNet(nn.Module):
@@ -675,10 +814,13 @@ def test_floor_divide():
     model_ref = FloorDivideNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Incorrect result")
 def test_fmod():
@@ -690,10 +832,13 @@ def test_fmod():
     model_ref = FmodNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Incorrect result")
 def test_frac():
@@ -705,10 +850,13 @@ def test_frac():
     model_ref = FracNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_frexp():
@@ -720,10 +868,13 @@ def test_frexp():
     model_ref = FrexpNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_ldexp():
     class LdexpNet(nn.Module):
@@ -734,10 +885,13 @@ def test_ldexp():
     model_ref = LdexpNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_lerp():
     class LerpNet(nn.Module):
@@ -748,10 +902,13 @@ def test_lerp():
     model_ref = LerpNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_lgamma():
@@ -763,10 +920,13 @@ def test_lgamma():
     model_ref = LgammaNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_log():
     class LogNet(nn.Module):
@@ -777,10 +937,13 @@ def test_log():
     model_ref = LogNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_log10():
     class Log10Net(nn.Module):
@@ -791,10 +954,13 @@ def test_log10():
     model_ref = Log10Net()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_log1p():
     class Log1PNet(nn.Module):
@@ -805,10 +971,13 @@ def test_log1p():
     model_ref = Log1PNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_log2():
     class Log2Net(nn.Module):
@@ -819,10 +988,13 @@ def test_log2():
     model_ref = Log2Net()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_logaddexp():
     class LogaddexpNet(nn.Module):
@@ -833,10 +1005,13 @@ def test_logaddexp():
     model_ref = LogaddexpNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_logaddexp2():
     class Logaddexp2Net(nn.Module):
@@ -847,10 +1022,13 @@ def test_logaddexp2():
     model_ref = Logaddexp2Net()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_logical_and():
     class LogicalAndNet(nn.Module):
@@ -861,10 +1039,13 @@ def test_logical_and():
     model_ref = LogicalAndNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_logical_not():
     class LogicalNotNet(nn.Module):
@@ -875,10 +1056,13 @@ def test_logical_not():
     model_ref = LogicalNotNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_logical_or():
     class LogicalOrNet(nn.Module):
@@ -889,10 +1073,13 @@ def test_logical_or():
     model_ref = LogicalOrNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_logical_xor():
     class LogicalXorNet(nn.Module):
@@ -903,10 +1090,13 @@ def test_logical_xor():
     model_ref = LogicalXorNet()
     example_input = torch.tensor([-1, -2, 3], dtype=torch.int8)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_logit():
@@ -918,10 +1108,13 @@ def test_logit():
     model_ref = LogitNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_hypot():
@@ -933,10 +1126,13 @@ def test_hypot():
     model_ref = HypotNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_i0():
@@ -948,10 +1144,13 @@ def test_i0():
     model_ref = I0Net()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_igamma():
@@ -963,10 +1162,13 @@ def test_igamma():
     model_ref = IgammaNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_igammac():
@@ -978,10 +1180,13 @@ def test_igammac():
     model_ref = IgammacNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_mul():
     class MulNet(nn.Module):
@@ -992,10 +1197,13 @@ def test_mul():
     model_ref = MulNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_multiply():
@@ -1007,10 +1215,13 @@ def test_multiply():
     model_ref = MultiplyNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_mvlgamma():
@@ -1022,10 +1233,13 @@ def test_mvlgamma():
     model_ref = MvlgammaNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("MLIR frontend crahes")
 def test_nan_to_num():
@@ -1035,12 +1249,15 @@ def test_nan_to_num():
 
     model = NanToNumNet()
     model_ref = NanToNumNet()
-    example_input = torch.tensor([float('nan'), float('inf'), -float('inf'), 3.14])
+    example_input = torch.tensor([float("nan"), float("inf"), -float("inf"), 3.14])
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_neg():
     class NegNet(nn.Module):
@@ -1051,10 +1268,13 @@ def test_neg():
     model_ref = NegNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_negative():
@@ -1066,10 +1286,13 @@ def test_negative():
     model_ref = NegativeNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_nextafter():
@@ -1081,10 +1304,13 @@ def test_nextafter():
     model_ref = NextafterNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_positive():
     class PositiveNet(nn.Module):
@@ -1095,10 +1321,13 @@ def test_positive():
     model_ref = PositiveNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_pow():
     class PowNet(nn.Module):
@@ -1109,10 +1338,13 @@ def test_pow():
     model_ref = PowNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_rad2deg():
     class Rad2DegNet(nn.Module):
@@ -1123,10 +1355,13 @@ def test_rad2deg():
     model_ref = Rad2DegNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_real():
     class RealNet(nn.Module):
@@ -1137,10 +1372,13 @@ def test_real():
     model_ref = RealNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Missing cf.assert")
 def test_reciprocal():
@@ -1152,10 +1390,13 @@ def test_reciprocal():
     model_ref = ReciprocalNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_remainder():
     class RemainderNet(nn.Module):
@@ -1166,10 +1407,13 @@ def test_remainder():
     model_ref = RemainderNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_round():
     class RoundNet(nn.Module):
@@ -1180,10 +1424,13 @@ def test_round():
     model_ref = RoundNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_rsqrt():
     class RsqrtNet(nn.Module):
@@ -1194,10 +1441,13 @@ def test_rsqrt():
     model_ref = RsqrtNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_sigmoid():
     class SigmoidNet(nn.Module):
@@ -1208,10 +1458,13 @@ def test_sigmoid():
     model_ref = SigmoidNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Incorrect result")
 def test_sign():
@@ -1223,10 +1476,13 @@ def test_sign():
     model_ref = SignNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Incorrect result")
 def test_sgn():
@@ -1238,10 +1494,13 @@ def test_sgn():
     model_ref = SgnNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_signbit():
@@ -1253,10 +1512,13 @@ def test_signbit():
     model_ref = SignbitNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_sin():
     class SinNet(nn.Module):
@@ -1267,10 +1529,13 @@ def test_sin():
     model_ref = SinNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_sinc():
@@ -1282,10 +1547,13 @@ def test_sinc():
     model_ref = SincNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_sinh():
     class SinhNet(nn.Module):
@@ -1296,10 +1564,13 @@ def test_sinh():
     model_ref = SinhNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Missing linalg.index")
 def test_softmax():
@@ -1311,10 +1582,13 @@ def test_softmax():
     model_ref = SoftmaxNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_sqrt():
     class SqrtNet(nn.Module):
@@ -1325,10 +1599,13 @@ def test_sqrt():
     model_ref = SqrtNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_square():
     class SquareNet(nn.Module):
@@ -1339,10 +1616,13 @@ def test_square():
     model_ref = SquareNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_sub():
     class SubNet(nn.Module):
@@ -1353,10 +1633,13 @@ def test_sub():
     model_ref = SubNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_subtract():
@@ -1368,10 +1651,13 @@ def test_subtract():
     model_ref = SubtractNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_tan():
     class TanNet(nn.Module):
@@ -1382,10 +1668,13 @@ def test_tan():
     model_ref = TanNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 def test_tanh():
     class TanhNet(nn.Module):
@@ -1396,10 +1685,13 @@ def test_tanh():
     model_ref = TanhNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_true_divide():
@@ -1411,10 +1703,13 @@ def test_true_divide():
     model_ref = TrueDivideNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Incorrect result")
 def test_trunc():
@@ -1426,10 +1721,13 @@ def test_trunc():
     model_ref = TruncNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)
+
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_xlogy():
@@ -1441,7 +1739,9 @@ def test_xlogy():
     model_ref = XlogyNet()
     example_input = torch.randn(3, 4)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
     assert torch.allclose(res, ref, equal_nan=True)

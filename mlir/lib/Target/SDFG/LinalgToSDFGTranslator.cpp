@@ -21,6 +21,7 @@
 #include "mlir/Target/SDFG/helper.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.h"
@@ -437,6 +438,9 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
                 linalg::TanhOp,
                 ::sdfg::math::cmath::CMathFunction::tanh>(translator, &tanh_op);
         })
+        .Case<linalg::BroadcastOp>([&](linalg::BroadcastOp broadcast_op) {
+            return translateLinalgBroadcastOp(translator, &broadcast_op);
+        })
         .Case<linalg::GenericOp>([&](linalg::GenericOp generic_op) {
             return translateLinalgGenericOp(translator, &generic_op);
         })
@@ -716,14 +720,82 @@ LogicalResult translateLinalgTransposeOp(SDFGTranslator& translator, linalg::Tra
     return success();
 }
 
+LogicalResult translateLinalgBroadcastOp(SDFGTranslator& translator, linalg::BroadcastOp* op) {
+    Value input = op->getInput();
+    Value init = op->getInit();
+    auto results = op->getResult();
+    if (results.size() != 1) {
+        return op->emitError("Expected exactly one result for linalg.broadcast");
+    }
+    Value result = results[0];
+
+    // Validate tensor types
+    auto input_type = dyn_cast_or_null<RankedTensorType>(input.getType());
+    auto result_type = dyn_cast_or_null<RankedTensorType>(result.getType());
+    if (!input_type || !result_type) {
+        return op->emitError("Input and result types must be ranked tensors");
+    }
+
+    auto& builder = translator.builder();
+    auto input_container = translator.get_or_create_container(input);
+    auto init_container = translator.get_or_create_container(init);
+    auto result_container = translator.get_or_create_container(result);
+
+    translator.add_reference(init_container, result_container);
+
+    // Get element type
+    auto element_type = translator.convertType(input_type.getElementType());
+    ::sdfg::types::Scalar base_type(element_type->primitive_type());
+
+    // Get tensor info for input and result
+    auto& input_tensor_info = translator.get_or_create_tensor_info(input_container, input_type);
+    auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(base_type);
+    auto& result_tensor_info = translator.get_or_create_tensor_info(result_container, result_type);
+    auto result_sdfg_tensor = result_tensor_info.get_sdfg_tensor(base_type);
+
+    // Build input and output shapes
+    ::sdfg::symbolic::MultiExpression input_shape;
+    for (auto entry : input_tensor_info.shape()) {
+        input_shape.push_back(::sdfg::symbolic::integer(entry));
+    }
+    ::sdfg::symbolic::MultiExpression output_shape;
+    for (auto entry : result_tensor_info.shape()) {
+        output_shape.push_back(::sdfg::symbolic::integer(entry));
+    }
+
+    // Create block and BroadcastNode library node
+    auto& block = builder.add_block(translator.insertion_point());
+    auto& lib_node = builder.add_library_node<
+        ::sdfg::math::tensor::BroadcastNode>(block, ::sdfg::DebugInfo(), input_shape, output_shape);
+
+    // Connect input to "X" and output to "Y"
+    auto& in_access = builder.add_access(block, input_container);
+    auto& out_access = builder.add_access(block, result_container);
+    builder.add_computational_memlet(block, in_access, lib_node, "X", {}, *input_sdfg_tensor);
+    builder.add_computational_memlet(block, lib_node, "Y", out_access, {}, *result_sdfg_tensor);
+
+    return success();
+}
+
 LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg::Conv2DNchwFchwOp* op) {
     auto& sequence = translator.insertion_point();
 
     // Get operands
     auto input = op->getInputs()[0]; // X: [N, C_in, H, W]
     auto weight = op->getInputs()[1]; // W: [C_out, C_in/group, kH, kW]
-    auto output = op->getOutputs()[0]; // accumulator (from fill)
+    auto output = op->getOutputs()[0]; // accumulator (from fill or broadcast)
     auto result = op->getResult(0); // Y: [N, C_out, H_out, W_out]
+
+    // Check if the outs operand comes from a broadcast (bias pattern).
+    // In linalg, conv accumulates into outs. If outs = broadcast(bias), we connect
+    // the original bias tensor to the ConvNode's "B" connector, since the ConvNode
+    // initializes its internal accumulator to 0 and adds bias separately.
+    Value bias_value;
+    bool has_bias = false;
+    if (auto broadcast_op = dyn_cast_or_null<linalg::BroadcastOp>(output.getDefiningOp())) {
+        bias_value = broadcast_op.getInput();
+        has_bias = true;
+    }
 
     auto output_container = translator.get_or_create_container(output);
     auto result_container = translator.get_or_create_container(result);
@@ -839,6 +911,24 @@ LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg
 
     translator.builder().add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type);
     translator.builder().add_computational_memlet(block, w_access, libnode, "W", {}, weight_tensor_type);
+
+    // Connect bias to ConvNode "B" connector if outs came from a broadcast
+    if (has_bias) {
+        auto bias_container = translator.get_or_create_container(bias_value);
+        auto& b_access = translator.builder().add_access(block, bias_container);
+
+        auto bias_ranked_type = dyn_cast_or_null<RankedTensorType>(bias_value.getType());
+        auto& bias_tensor_info = translator.get_or_create_tensor_info(bias_container, bias_ranked_type);
+
+        ::sdfg::symbolic::MultiExpression bias_shape;
+        for (auto entry : bias_tensor_info.shape()) {
+            bias_shape.push_back(::sdfg::symbolic::integer(entry));
+        }
+        ::sdfg::types::Tensor bias_tensor_type(primitive, bias_shape);
+
+        translator.builder().add_computational_memlet(block, b_access, libnode, "B", {}, bias_tensor_type);
+    }
+
     translator.builder().add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type);
 
     return success();

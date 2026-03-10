@@ -26,6 +26,24 @@ def test_highway_sin():
     assert stats["HIGHWAY"] == 1
 
 
+def test_highway_sin_f32():
+    @native(target="sequential")
+    def highway_sin_f32(A, B):
+        for i in range(A.shape[0]):
+            B[i] = math.sin(A[i])
+
+    N = 128
+    A = np.random.rand(N).astype(np.float32)
+    B = np.random.rand(N).astype(np.float32)
+
+    highway_sin_f32(A, B)
+    assert np.allclose(B, np.sin(A))
+
+    sdfg = highway_sin_f32.last_sdfg
+    stats = sdfg.loop_report()
+    assert stats["HIGHWAY"] == 1
+
+
 def test_highway_cos():
     @native(target="sequential")
     def highway_cos(A, B):

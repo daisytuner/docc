@@ -1,39 +1,65 @@
+import pytest
+
 import torch
 import torch.nn as nn
 
-from docc.torch import compile_torch
+import docc.torch
+
+docc.torch.set_backend_options(target="none", category="server")
 
 
-def test_identitfy():
-    class IdentityNet(nn.Module):
-        def __init__(self):
+def test_inference():
+    class LinearNet(nn.Module):
+        def __init__(self, in_features=4, out_features=2):
             super().__init__()
+            self.linear = nn.Linear(in_features, out_features, bias=False)
 
         def forward(self, x: torch.Tensor):
-            return x
+            return self.linear(x)
 
-    model = IdentityNet()
-    model_ref = IdentityNet()
-    example_input = torch.randn(2, 1)
+    model = LinearNet()
+    model.eval()
+    model_ref = LinearNet()
+    model_ref.eval()
+    model_ref.load_state_dict(model.state_dict())
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    assert torch.allclose(res, model_ref(example_input), rtol=1e-5)
+    program = torch.compile(model, backend="docc")
+
+    example_input = torch.randn(2, 4)
+
+    # Force dynamo (inference) backend
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
+    assert res.shape == (2, 2)
+    assert torch.allclose(res, ref, rtol=1e-5)
 
 
-def test_tensor_const():
-    class OutputNet(nn.Module):
-        def __init__(self):
+@pytest.mark.skip(
+    reason="Training requires support for multiple outputs in SDFG translation"
+)
+def test_training():
+    class LinearNet(nn.Module):
+        def __init__(self, in_features=4, out_features=2):
             super().__init__()
+            self.linear = nn.Linear(in_features, out_features, bias=False)
 
         def forward(self, x: torch.Tensor):
-            const = torch.Tensor([[10.0], [21.0], [3.0], [4.0]])
-            return const
+            return self.linear(x)
 
-    model = OutputNet()
-    model_ref = OutputNet()
-    example_input = torch.randn(4, 1)
+    model = LinearNet()
+    model_ref = LinearNet()
+    example_input = torch.randn(2, 4)
+    target = torch.randn(2, 2)
 
-    program = compile_torch(model, example_input)
-    res = program(example_input)
-    assert torch.allclose(res, model_ref(example_input), rtol=1e-5)
+    program = torch.compile(model, backend="docc")
+    optimizer = torch.optim.SGD(program.parameters(), lr=0.01)
+    criterion = nn.MSELoss()
+
+    for _ in range(10):
+        optimizer.zero_grad()
+        res = program(example_input)
+        loss = criterion(res, target)
+        loss.backward()
+        optimizer.step()

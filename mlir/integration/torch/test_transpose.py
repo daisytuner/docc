@@ -21,11 +21,11 @@ def test_2d_backend():
 
     model_ref = Transpose2dNet()
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -43,9 +43,10 @@ def test_2d_compile():
     model_ref = Transpose2dNet()
 
     program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -66,9 +67,10 @@ def test_t_property_compile():
     model_ref = TPropertyNet()
 
     program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -85,11 +87,11 @@ def test_t_property_backend():
 
     model_ref = TPropertyNet()
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -110,9 +112,10 @@ def test_square_compile():
     model_ref = SquareTransposeNet()
 
     program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -129,11 +132,11 @@ def test_square_backend():
 
     model_ref = SquareTransposeNet()
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -154,9 +157,10 @@ def test_3d_dim01_compile():
     model_ref = Transpose3dDim01Net()
 
     program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -173,11 +177,11 @@ def test_3d_dim01_backend():
 
     model_ref = Transpose3dDim01Net()
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -195,9 +199,10 @@ def test_3d_dim12_compile():
     model_ref = Transpose3dDim12Net()
 
     program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -214,11 +219,11 @@ def test_3d_dim12_backend():
 
     model_ref = Transpose3dDim12Net()
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -236,9 +241,10 @@ def test_3d_dim02_compile():
     model_ref = Transpose3dDim02Net()
 
     program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -255,11 +261,11 @@ def test_3d_dim02_backend():
 
     model_ref = Transpose3dDim02Net()
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -280,9 +286,10 @@ def test_double_transpose_compile():
     model_ref = DoubleTransposeNet()
 
     program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -299,11 +306,11 @@ def test_double_transpose_backend():
 
     model_ref = DoubleTransposeNet()
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -324,9 +331,10 @@ def test_permute_compile():
     model_ref = PermuteNet()
 
     program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -343,9 +351,9 @@ def test_permute_backend():
 
     model_ref = PermuteNet()
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)

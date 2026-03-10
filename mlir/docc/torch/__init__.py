@@ -31,6 +31,11 @@ class TorchProgram(DoccProgram):
             else:
                 name = "torch_model"
 
+        # Sanitize name: remove characters that are invalid in filesystem paths
+        import re as _re
+
+        name = _re.sub(r"[<>:\"/\\|?*]", "_", name)
+
         super().__init__(
             name=name,
             target=target,
@@ -376,30 +381,15 @@ def set_backend_options(target: str = "none", category: str = "server"):
     _backend_options["category"] = category
 
 
-def _docc_backend(gm: "torch.fx.GraphModule", example_inputs):
-    """Backend function for torch.compile integration.
-
-    This function is called by torch.compile when backend="docc" is specified.
-    It compiles the FX graph to native code using the docc compiler.
-
-    Args:
-        gm: The torch.fx.GraphModule captured by dynamo
-        example_inputs: List of example input tensors
-
-    Returns:
-        A callable that executes the compiled code
-    """
+def _docc_dynamo_compiler(gm, example_inputs):
+    """Dynamic Compiler based on TorchProgram (inference only)."""
     import torch
 
-    # example_inputs from dynamo includes ALL graph inputs:
-    # lifted parameters/buffers AND user inputs.
-    # Pass them all as the example input since the FX GraphModule expects all of them.
     if len(example_inputs) == 1:
         example_input = example_inputs[0]
     else:
         example_input = tuple(example_inputs)
 
-    # Create TorchProgram from the FX GraphModule
     program = TorchProgram(
         gm,
         example_input=example_input,
@@ -407,16 +397,76 @@ def _docc_backend(gm: "torch.fx.GraphModule", example_inputs):
         category=_backend_options["category"],
     )
 
-    # Wrap in a function that returns a tuple of tensors,
-    # matching the FX graph's output convention expected by dynamo.
     def compiled_fn(*args):
         result = program(*args)
         if isinstance(result, (tuple, list)):
             return result
         return (result,)
 
-    # Return the compiled callable
     return compiled_fn
+
+
+def _docc_aot_compiler(gm, example_inputs):
+    """AOTAutograd Compiler based on TorchProgram (inference and training)."""
+    from functorch.compile import make_boxed_func
+
+    import torch
+
+    if len(example_inputs) == 1:
+        example_input = example_inputs[0]
+    else:
+        example_input = tuple(example_inputs)
+
+    program = TorchProgram(
+        gm,
+        example_input=example_input,
+        target=_backend_options["target"],
+        category=_backend_options["category"],
+    )
+
+    def compiled_fn(*args):
+        result = program(*args)
+        if isinstance(result, (tuple, list)):
+            return result
+        return (result,)
+
+    return make_boxed_func(compiled_fn)
+
+
+def _needs_autograd(gm, example_inputs):
+    """Detect whether the current compilation requires autograd support.
+
+    Uses torch.is_grad_enabled() as the signal. For inference, users should
+    wrap calls in torch.no_grad() — this is standard PyTorch convention.
+    Dynamo does not propagate model.eval() to the GraphModule, and lifted
+    parameters always have requires_grad=True, so neither of those are
+    reliable signals.
+    """
+    import torch
+
+    return torch.is_grad_enabled()
+
+
+def _docc_backend(gm, example_inputs):
+    """Unified docc backend for torch.compile.
+
+    Automatically selects the compilation strategy at runtime:
+    - Inference (no grad): direct Dynamo path (faster compile, no overhead)
+    - Training (grad required): AOTAutograd path (traces forward + backward)
+
+    Usage:
+        torch.compile(model, backend="docc")
+    """
+    if _needs_autograd(gm, example_inputs):
+        from torch._dynamo.backends.common import aot_autograd
+
+        aot_backend = aot_autograd(
+            fw_compiler=_docc_aot_compiler,
+            bw_compiler=_docc_aot_compiler,
+        )
+        return aot_backend(gm, example_inputs)
+    else:
+        return _docc_dynamo_compiler(gm, example_inputs)
 
 
 def _register_backend():

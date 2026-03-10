@@ -80,16 +80,23 @@ class MathHandler:
             raise NotImplementedError(f"Math function {func_name} not supported")
 
         args = [self.visit(arg) for arg in node.args]
+        dtype = Scalar(PrimitiveType.Double)
+        for arg in args:
+            if arg in self.container_table:
+                arg_dtype = self.container_table[arg]
+                dtype = Scalar(arg_dtype.primitive_type)
+                break
 
         tmp_name = self.builder.find_new_name("_tmp_")
-        dtype = Scalar(PrimitiveType.Double)
         self.builder.add_container(tmp_name, dtype, False)
         self.container_table[tmp_name] = dtype
 
         block = self.builder.add_block()
         t_out = self.builder.add_access(block, tmp_name)
 
-        t_task = self.builder.add_cmath(block, self.math_funcs[func_name])
+        t_task = self.builder.add_cmath(
+            block, self.math_funcs[func_name], dtype.primitive_type
+        )
 
         for i, arg in enumerate(args):
             t_arg, arg_sub = self._add_read(block, arg)

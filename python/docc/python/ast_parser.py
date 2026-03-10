@@ -331,7 +331,9 @@ class ASTParser(ast.NodeVisitor):
             t_right, right_sub = self._add_read(block, real_right)
             t_out = self.builder.add_access(block, tmp_name)
 
-            t_task = self.builder.add_cmath(block, CMathFunction.pow)
+            t_task = self.builder.add_cmath(
+                block, CMathFunction.pow, dtype.primitive_type
+            )
             self.builder.add_memlet(block, t_left, "void", t_task, "_in1", left_sub)
             self.builder.add_memlet(block, t_right, "void", t_task, "_in2", right_sub)
             self.builder.add_memlet(block, t_task, "_out", t_out, "void", "")
