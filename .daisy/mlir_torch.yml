@@ -41,6 +41,21 @@ steps:
       energy: true
       env:
         DOCC_CI: regions
+    linear_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/linear.py --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+    linear_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/linear.py --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    linear_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/linear.py --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
     matmul_torch:
       command: venv/bin/python3 mlir/benchmarks/torch/matmul.py --torch
       energy: true
@@ -48,6 +63,21 @@ steps:
         DOCC_CI: regions
     matmul_none:
       command: venv/bin/python3 mlir/benchmarks/torch/matmul.py --docc --target=none
+      energy: true
+      env:
+        DOCC_CI: regions
+    matmul_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/matmul.py --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+    matmul_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/matmul.py --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    matmul_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/matmul.py --docc --target=cuda
       energy: true
       env:
         DOCC_CI: regions

@@ -12,8 +12,8 @@ class LinearNet(nn.Module):
         return self.linear(x)
 
 def setup():
-    model = LinearNet(100, 50)
-    x = torch.randn(80, 100)
+    model = LinearNet(10000, 5000)
+    x = torch.randn(8000, 10000)
     return model, x
 
 if __name__ == "__main__":

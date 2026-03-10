@@ -12,9 +12,9 @@ class MatmulNet(nn.Module):
         return torch.matmul(x, self.W)
 
 def setup():
-    weight = torch.randn(1000, 500)
+    weight = torch.randn(10000, 5000)
     model = MatmulNet(weight)
-    x = torch.randn(800, 1000)
+    x = torch.randn(8000, 10000)
     return model, x
 
 if __name__ == "__main__":
