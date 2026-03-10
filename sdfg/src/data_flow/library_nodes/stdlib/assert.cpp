@@ -158,19 +158,34 @@ void AssertNodeDispatcher::dispatch_code(
 ) {
     auto& node = static_cast<const AssertNode&>(this->node_);
 
-    stream << "assert(" << node.input(0);
-    if (!node.message().empty()) {
-        stream << " && ";
-        this->escape_message(stream, node.message());
-    }
-    stream << ");" << std::endl;
-
+#ifndef __APPLE__
+    std::string bool_cast = "";
+#endif
     // Should be in include stream. Change when include handling is reworked!
     if (this->language_extension_.language() == "C") {
         globals_stream << "#include <assert.h>" << std::endl;
     } else {
         globals_stream << "#include <cassert>" << std::endl;
+#ifndef __APPLE__
+        bool_cast = "static_cast<bool>";
+#endif
     }
+
+#ifdef __APPLE__
+    stream << "(__builtin_expect(!bool(" << node.input(0) << "), 0) ? __assert_rtn(__func__, __FILE__, __LINE__, \""
+           << node.input(0) << "\"";
+#else
+    stream << "(" << bool_cast << "(" << node.input(0) << ") ? void (0) : __assert_fail(\"" << node.input(0) << "\"";
+#endif
+    if (!node.message().empty()) {
+        stream << " \" && \" ";
+        this->escape_message(stream, node.message());
+    }
+#ifdef __APPLE__
+    stream << ") : (void) 0);" << std::endl;
+#else
+    stream << ", __FILE__, __LINE__, __extension__ __PRETTY_FUNCTION__));" << std::endl;
+#endif
 }
 
 } // namespace stdlib
