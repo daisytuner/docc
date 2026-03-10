@@ -149,9 +149,11 @@ jobs:
 
       - name: Build
         run: |
+          # scikit sets this internally to find pybind, so cannot override via -Ccmake
+          export CMAKE_PREFIX_PATH=/opt/et
+
           pip install --no-build-isolation \
             -Ccmake.define.DOCC_BUILD_TARGET_ET=ON \
-            -Ccmake.define.CMAKE_PREFIX_PATH=/opt/et \
             -v -e python/
 
       - name: Unit Tests
