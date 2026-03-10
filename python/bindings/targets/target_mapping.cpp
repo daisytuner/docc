@@ -1,10 +1,13 @@
 #include "target_mapping.h"
 
-#include "docc/target/et/target.h"
 #include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
 #include "sdfg/passes/offloading/onnx_library_node_rewriter_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
 #include "sdfg/plugins/target_mapping.h"
+
+#ifdef DOCC_HAS_TARGET_ET
+#include "docc/target/et/target.h"
+#endif
 
 namespace docc::plugins {
 
