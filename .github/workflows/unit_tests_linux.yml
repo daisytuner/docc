@@ -15,7 +15,7 @@ jobs:
       group: dahlia
       labels: cuda
     container:
-      image: daisytuner/docc-build-env-llvm19-base:latest-amd64
+      image: daisytuner/docc-build-env-llvm19-ubuntu-24.04-et:latest
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -49,6 +49,8 @@ jobs:
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
+            -DDOCC_BUILD_TARGET_ET=ON \
+            -CMAKE_PREFIX_PATH=/opt/et \
             ..
           ninja -j$(nproc)
           ninja install
@@ -58,13 +60,14 @@ jobs:
           cd build/
           LLVM_PROFILE_FILE="sdfglib_test.profraw" ./sdfg/tests/sdfglib_test
           LLVM_PROFILE_FILE="sdfgopt_test.profraw" ./opt/tests/sdfgopt_test
+          LLVM_PROFILE_FILE="docc-target-et_test.profraw" ./targets/et/tests/docc-target-et_test
           ./tutorial/printf_target/tests/printf_target_test
 
           # Run coverage
-          llvm-profdata-19 merge -sparse sdfglib_test.profraw sdfgopt_test.profraw -o default.profdata
+          llvm-profdata-19 merge -sparse sdfglib_test.profraw sdfgopt_test.profraw docc-target-et_test.profraw -o default.profdata
           cd ../
-          llvm-cov-19 export ./build/sdfg/tests/sdfglib_test -object ./build/opt/tests/sdfgopt_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
-          lcov --extract build/coverage_full.lcov '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' --output-file build/coverage.lcov
+          llvm-cov-19 export ./build/sdfg/tests/sdfglib_test -object ./build/opt/tests/sdfgopt_test -object ./build/targets/et/tests/docc-target-et_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
+          lcov --extract build/coverage_full.lcov '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' '*/targets/*/src/*' '*/targets/*/include/*' --output-file build/coverage.lcov
 
       - name: Test Arg-Capture-IO
         run: |
@@ -97,7 +100,7 @@ jobs:
       group: dahlia
       labels: cuda
     container:
-      image: daisytuner/docc-build-env-llvm19-base:latest-amd64
+      image: daisytuner/docc-build-env-llvm19-ubuntu-24.04-et:latest
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -120,7 +123,6 @@ jobs:
         run: |
           python -m venv .venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
-          echo "::warning file=.venv::Testing warnings"
 
       - name: Mark GitHub Actions workdir as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -147,7 +149,10 @@ jobs:
 
       - name: Build
         run: |
-          pip install --no-build-isolation -v -e python/
+          pip install --no-build-isolation \
+            -Ccmake.define.DOCC_BUILD_TARGET_ET=ON \
+            -Ccmake.define.CMAKE_PREFIX_PATH=/opt/et \
+            -v -e python/
 
       - name: Unit Tests
         env:
@@ -161,6 +166,7 @@ jobs:
           export LIBRARY_PATH=/usr/local/onnxruntime/lib:$LIBRARY_PATH
           export CPATH=/usr/local/onnxruntime/include:$CPATH
 
+          export ETSOC_TESTS=1
           coverage run --source=python/docc -m pytest -v python/tests
           coverage xml
 

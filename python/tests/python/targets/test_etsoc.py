@@ -1,9 +1,15 @@
+import os
+
 from docc.python import native
 import numpy as np
 import pytest
 import sys
 
 
+# COR-1607 find a way to depend on target plugins being available or not for pytest
+@pytest.mark.skipif(
+    os.environ.get("ETSOC_TESTS") != "1", reason="ETSoC tests are disabled"
+)
 def test_scheduling_etsoc_matmul_mini():
     @native(target="etsoc", category="server")
     def matmul_etsoc(A, B, C):
@@ -22,6 +28,9 @@ def test_scheduling_etsoc_matmul_mini():
     assert np.allclose(C, A @ B)
 
 
+@pytest.mark.skipif(
+    os.environ.get("ETSOC_SLOW_TESTS") != "1", reason="ETSoC Slow tests are disabled"
+)
 def test_scheduling_etsoc_matmul_large():
     @native(target="etsoc", category="server")
     def matmul_etsoc(A, B, C):
