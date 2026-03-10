@@ -2,6 +2,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Target/SDFG/SDFGTranslator.h"
@@ -35,6 +36,7 @@ void registerToSDFGTranslation() {
             registry.insert<arith::ArithDialect>();
             registry.insert<linalg::LinalgDialect>();
             registry.insert<tensor::TensorDialect>();
+            registry.insert<math::MathDialect>();
         }
     );
 }

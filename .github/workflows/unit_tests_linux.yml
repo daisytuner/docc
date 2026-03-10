@@ -66,14 +66,6 @@ jobs:
           llvm-cov-19 export ./build/sdfg/tests/sdfglib_test -object ./build/opt/tests/sdfgopt_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
           lcov --extract build/coverage_full.lcov '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' --output-file build/coverage.lcov
 
-      - name: Coveralls
-        uses: coverallsapp/github-action@v2
-        with:
-          flag-name: sdfg
-          parallel: true
-          format: lcov
-          file: build/coverage.lcov
-
       - name: Test Arg-Capture-IO
         run: |
           cd build
@@ -91,6 +83,14 @@ jobs:
 
           cd rtl/tests
           pytest -v -s rtl_tests.py
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          flag-name: sdfg
+          parallel: true
+          format: lcov
+          file: build/coverage.lcov
 
   python-tests-linux:
     runs-on:
@@ -120,6 +120,7 @@ jobs:
         run: |
           python -m venv .venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "::warning file=.venv::Testing warnings"
 
       - name: Mark GitHub Actions workdir as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -128,7 +129,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy
+          pip install numpy scipy ml_dtypes
 
           # Install ONNX Runtime (lib)
           wget https://github.com/microsoft/onnxruntime/releases/download/v1.24.1/onnxruntime-linux-x64-1.24.1.tgz
@@ -149,6 +150,8 @@ jobs:
           pip install --no-build-isolation -v -e python/
 
       - name: Unit Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
         run: |
           nvidia-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
@@ -161,14 +164,6 @@ jobs:
           coverage run --source=python/docc -m pytest -v python/tests
           coverage xml
 
-      - name: Coveralls
-        uses: coverallsapp/github-action@v2
-        with:
-          flag-name: python-${{ matrix.python-version }}
-          parallel: true
-          format: cobertura
-          file: coverage.xml
-
       - name: Integration Tests
         run: |
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
@@ -179,6 +174,14 @@ jobs:
           export CPATH=/usr/local/onnxruntime/include:$CPATH
 
           pytest -v python/benchmarks/
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          flag-name: python-${{ matrix.python-version }}
+          parallel: true
+          format: cobertura
+          file: coverage.xml
 
   mlir-tests-linux:
     runs-on:
@@ -215,7 +218,7 @@ jobs:
 
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy
+          pip install numpy scipy ml_dtypes
 
       - name: Build
         run: |

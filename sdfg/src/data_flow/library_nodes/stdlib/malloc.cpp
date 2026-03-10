@@ -38,6 +38,8 @@ void MallocNode::replace(const symbolic::Expression old_expression, const symbol
     this->size_ = symbolic::subs(this->size_, old_expression, new_expression);
 }
 
+std::string MallocNode::toStr() const { return LibraryNode::toStr() + "(" + size_->__str__() + ")"; }
+
 nlohmann::json MallocNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const MallocNode& node = static_cast<const MallocNode&>(library_node);
 

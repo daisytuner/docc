@@ -40,6 +40,11 @@ steps:
       energy: true
       env:
         DOCC_CI: regions
+    adi_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --target=sequential --remote-tuning
+      energy: true
+      env:
+        DOCC_CI: regions
     atax_numpy:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --numpy --size=M
       energy: true
@@ -52,6 +57,11 @@ steps:
         DOCC_CI: regions
     atax_cuda:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    atax_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --target=sequential --remote-tuning
       energy: true
       env:
         DOCC_CI: regions
@@ -70,6 +80,11 @@ steps:
       energy: true
       env:
         DOCC_CI: regions
+    gemm_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --target=sequential --remote-tuning
+      energy: true
+      env:
+        DOCC_CI: regions
     gesummv_numpy:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --numpy --size=M
       energy: true
@@ -82,6 +97,11 @@ steps:
         DOCC_CI: regions
     gesummv_cuda:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    gesummv_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --target=sequential --remote-tuning
       energy: true
       env:
         DOCC_CI: regions
@@ -100,6 +120,11 @@ steps:
       energy: true
       env:
         DOCC_CI: regions
+    gemver_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --target=sequential --remote-tuning
+      energy: true
+      env:
+        DOCC_CI: regions
     k2mm_numpy:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --numpy --size=M
       energy: true
@@ -112,6 +137,11 @@ steps:
         DOCC_CI: regions
     k2mm_cuda:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+    k2mm_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --target=sequential --remote-tuning
       energy: true
       env:
         DOCC_CI: regions
@@ -130,6 +160,11 @@ steps:
       energy: true
       env:
         DOCC_CI: regions
+    k3mm_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --target=sequential --remote-tuning
+      energy: true
+      env:
+        DOCC_CI: regions
     mvt_numpy:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --numpy --size=M
       energy: true
@@ -145,6 +180,11 @@ steps:
       energy: true
       env:
         DOCC_CI: regions
+    mvt_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --target=sequential --remote-tuning
+      energy: true
+      env:
+        DOCC_CI: regions
     symm_numpy:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --numpy --size=M
       energy: true
@@ -152,6 +192,11 @@ steps:
         DOCC_CI: regions
     symm_omp:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    symm_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --target=sequential --remote-tuning
       energy: true
       env:
         DOCC_CI: regions
@@ -175,6 +220,11 @@ steps:
       energy: true
       env:
         DOCC_CI: regions
+    syr2k_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --target=sequential --remote-tuning
+      energy: true
+      env:
+        DOCC_CI: regions
     syrk_numpy:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --numpy --size=M
       energy: true
@@ -190,6 +240,11 @@ steps:
       energy: true
       env:
         DOCC_CI: regions
+    syrk_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --target=sequential --remote-tuning
+      energy: true
+      env:
+        DOCC_CI: regions
     trmm_numpy:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --numpy --size=M
       energy: true
@@ -197,6 +252,11 @@ steps:
         DOCC_CI: regions
     trmm_omp:
       command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+    trmm_seq_tuning:
+      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --target=sequential --remote-tuning
       energy: true
       env:
         DOCC_CI: regions

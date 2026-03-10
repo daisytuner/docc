@@ -20,6 +20,7 @@ struct Context {
     // Dispatchers
     codegen::NodeDispatcherRegistry& node_dispatcher_registry;
     codegen::MapDispatcherRegistry& map_dispatcher_registry;
+    codegen::LibraryNodeDispatcherRegistry& library_node_dispatcher_registry;
 
     // Schedulers
     passes::scheduler::SchedulerRegistry& scheduler_registry;
@@ -29,6 +30,7 @@ struct Context {
             serializer::LibraryNodeSerializerRegistry::instance(),
             codegen::NodeDispatcherRegistry::instance(),
             codegen::MapDispatcherRegistry::instance(),
+            codegen::LibraryNodeDispatcherRegistry::instance(),
             passes::scheduler::SchedulerRegistry::instance()
         };
     }

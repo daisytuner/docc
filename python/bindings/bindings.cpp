@@ -11,6 +11,7 @@
 #include "data_flow/py_tasklet.h"
 #include "py_structured_sdfg.h"
 #include "sdfg/data_flow/tasklet.h"
+#include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/targets/cuda/plugin.h"
@@ -34,9 +35,12 @@
 #include <sdfg/targets/omp/plugin.h>
 #include <sdfg/targets/onnx/plugin.h>
 
-#include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
+
+#ifdef DOCC_HAS_TARGET_ET
+#include <docc/target/et/target.h>
+#endif
 
 namespace py = pybind11;
 using namespace sdfg::types;
@@ -44,12 +48,16 @@ using namespace sdfg::types;
 PYBIND11_MODULE(_sdfg, m) {
     m.doc() = "A JIT compiler for Numpy-based Python programs targeting various hardware backends.";
 
+    static sdfg::plugins::Context docc_context = sdfg::plugins::Context::global_context();
     sdfg::codegen::register_default_dispatchers();
     sdfg::serializer::register_default_serializers();
     sdfg::omp::register_omp_plugin();
     sdfg::onnx::register_onnx_plugin();
     sdfg::highway::register_highway_plugin();
     sdfg::cuda::register_cuda_plugin();
+#ifdef DOCC_HAS_TARGET_ET
+    docc::target::et::register_plugin(docc_context);
+#endif
 
     register_types(m);
     register_tasklet(m);
@@ -90,13 +98,11 @@ PYBIND11_MODULE(_sdfg, m) {
         );
 
 
-    py::class_<
-        sdfg::passes::rpc::DaisytunerTransfertuningRpcContext,
-        sdfg::passes::rpc::SimpleRpcContext>(m, "DaisytunerTransfertuningRpcContext")
-        .def(py::init<std::string>(), py::arg("license_token"))
+    py::class_<sdfg::passes::rpc::DaisytunerRpcContext, sdfg::passes::rpc::SimpleRpcContext>(m, "DaisytunerRpcContext")
+        .def(py::init<std::string, bool>(), py::arg("license_token"), py::arg("is_job_token") = false)
         .def_static(
             "from_docc_config",
-            sdfg::passes::rpc::DaisytunerTransfertuningRpcContext::from_docc_config,
+            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config,
             "Read license config from an already setup DOCC"
         );
 
@@ -146,7 +152,7 @@ PYBIND11_MODULE(_sdfg, m) {
         .def("validate", &PyStructuredSDFG::validate, "Validates the SDFG")
         .def("expand", &PyStructuredSDFG::expand, "Expands all library nodes")
         .def("simplify", &PyStructuredSDFG::simplify, "Simplify the SDFG")
-        .def("dump", &PyStructuredSDFG::dump, py::arg("path"))
+        .def("dump", &PyStructuredSDFG::dump, py::arg("path"), py::arg("type") = "")
         .def("normalize", &PyStructuredSDFG::normalize, "Normalize the SDFG")
         .def(
             "schedule",
@@ -474,10 +480,9 @@ PYBIND11_MODULE(_sdfg, m) {
         );
 
     // Plugin infrastructure - global context and registration callback
-    static sdfg::plugins::Context plugin_context = sdfg::plugins::Context::global_context();
     m.def(
         "_plugin_context",
-        []() { return reinterpret_cast<uintptr_t>(&plugin_context); },
+        []() { return reinterpret_cast<uintptr_t>(&docc_context); },
         "Get native pointer to the global plugin context"
     );
 }

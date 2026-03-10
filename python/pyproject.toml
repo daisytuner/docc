@@ -35,6 +35,7 @@ classifiers = [
 dependencies = [
   "numpy>=1.19.0",
   "scipy>=1.7.0",
+  "ml_dtypes>=0.5.4",
 ]
 
 [project.urls]
@@ -46,7 +47,8 @@ Issues = "https://github.com/daisytuner/docc/issues"
 [tool.scikit-build]
 wheel.packages = ["docc"]
 cmake.source-dir = ".."
-cmake.build-type = "Release"
+install.components = ["docc_python", "compile-runtime"]
+cmake.define.PARENT_PROJECT_INSTALL_PREFIX = "docc/"
 cmake.define.PYTHON_BUILD_FRONTEND = "ON"
 cmake.define.SDFG_BUILD_TESTS = "OFF"
 cmake.define.BUILD_TESTS = "OFF"
@@ -67,7 +69,7 @@ manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 
 test-command = "python -c \"import docc; print('docc imported successfully')\""
-test-requires = ["numpy", "pytest", "scipy"]
+test-requires = ["numpy", "ml_dtypes", "pytest", "scipy"]
 
 [tool.cibuildwheel.linux]
 before-all = [

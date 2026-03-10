@@ -5,6 +5,7 @@ import ast
 import os
 import getpass
 import hashlib
+import ml_dtypes
 import numpy as np
 from typing import Annotated, get_origin, get_args, Any, Optional
 
@@ -23,7 +24,7 @@ from docc.compiler.docc_program import DoccProgram
 from docc.compiler.compiled_sdfg import CompiledSDFG
 from docc.python.ast_parser import ASTParser
 from docc.python.types import element_type_from_sdfg_type
-from docc.python.target_registry import get_target, is_custom_target
+from docc.python.target_registry import get_target_schedule_fn, get_target_compile_fn
 
 
 def _compile_wrapper(self, output_folder=None):
@@ -245,7 +246,7 @@ class PythonProgram(DoccProgram):
 
         if output_folder is None:
             filename = inspect.getsourcefile(self.func)
-            hash_input = f"{filename}|{self.name}|{self.target}|{self.category}|{self.capture_args}|{self.instrumentation_mode}|{signature}".encode(
+            hash_input = f"{filename}|{self.name}|{self.target}|{self.category}|{self.capture_args}|{self.instrumentation_mode}|{self.remote_tuning}|{signature}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
@@ -287,20 +288,30 @@ class PythonProgram(DoccProgram):
         # Schedule if target is specified
         if self.target != "none":
             # Check for custom registered target first
-            custom_schedule_fn = get_target(self.target)
+            custom_schedule_fn = get_target_schedule_fn(self.target)
             if custom_schedule_fn is not None:
-                custom_schedule_fn(sdfg, self.category)
+                custom_schedule_fn(
+                    sdfg, self.category, {"remote_tuning": self.remote_tuning}
+                )
             else:
                 sdfg.schedule(self.target, self.category, self.remote_tuning)
 
         self.last_sdfg = sdfg
 
-        lib_path = sdfg._compile(
-            output_folder=output_folder,
-            target=self.target,
-            instrumentation_mode=instrumentation_mode,
-            capture_args=capture_args,
-        )
+        sdfg.dump(output_folder, "post_sched")
+
+        custom_compile_fn = get_target_compile_fn(self.target)
+        if custom_compile_fn is not None:
+            lib_path = custom_compile_fn(
+                sdfg, output_folder, instrumentation_mode, capture_args, {}
+            )
+        else:
+            lib_path = sdfg._compile(
+                output_folder=output_folder,
+                target=self.target,
+                instrumentation_mode=instrumentation_mode,
+                capture_args=capture_args,
+            )
 
         # Build ONNX model from JSON if target is onnx (after _compile creates the JSON)
         if self.target == "onnx":
@@ -416,6 +427,10 @@ class PythonProgram(DoccProgram):
                 elem_type = Scalar(PrimitiveType.Double)
             elif arg.dtype == np.float32:
                 elem_type = Scalar(PrimitiveType.Float)
+            elif arg.dtype == np.float16:
+                elem_type = Scalar(PrimitiveType.Half)
+            elif arg.dtype == ml_dtypes.bfloat16:
+                elem_type = Scalar(PrimitiveType.BFloat)
             elif arg.dtype == np.bool_:
                 elem_type = Scalar(PrimitiveType.Bool)
             elif arg.dtype == np.int64:
@@ -699,9 +714,10 @@ def native(
     func=None,
     *,
     target="none",
-    category="desktop",
+    category="server",
     instrumentation_mode=None,
     capture_args=None,
+    remote_tuning=False,
 ):
     """Decorator to create a PythonProgram from a Python function.
 
@@ -719,6 +735,7 @@ def native(
             category=category,
             instrumentation_mode=instrumentation_mode,
             capture_args=capture_args,
+            remote_tuning=remote_tuning,
         )
     return PythonProgram(
         func,
@@ -726,4 +743,5 @@ def native(
         category=category,
         instrumentation_mode=instrumentation_mode,
         capture_args=capture_args,
+        remote_tuning=remote_tuning,
     )

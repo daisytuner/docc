@@ -228,12 +228,13 @@ void ReferenceAnalysis::visit_for(
         }
 
         bool found = false;
-        for (auto entry : open_definitions) {
+        for (auto& entry : open_definitions) {
             if (entry.first->container() != open->container()) {
                 continue;
             }
 
             entry.second.insert(open);
+            found = true;
         }
 
         if (!found) {
@@ -272,12 +273,13 @@ void ReferenceAnalysis::visit_while(
         }
 
         bool found = false;
-        for (auto entry : open_definitions) {
+        for (auto& entry : open_definitions) {
             if (entry.first->container() != open->container()) {
                 continue;
             }
 
             entry.second.insert(open);
+            found = true;
         }
 
         if (!found) {

@@ -41,7 +41,7 @@ void DotVisualizer::visualizeBlock(const StructuredSDFG& sdfg, const structured_
         std::vector<std::string> in_connectors;
         bool is_access_node = false;
         bool node_will_show_literal_connectors = false;
-        auto nodeId = escapeDotId(node->element_id(), "n_");
+        auto nodeId = escapeDotId(node->element_id(), "id");
         if (this->last_comp_name_.empty()) this->last_comp_name_ = nodeId;
         if (const data_flow::Tasklet* tasklet = dynamic_cast<const data_flow::Tasklet*>(node)) {
             this->stream_ << nodeId << " [shape=octagon,label=\"" << tasklet->output() << " = ";
@@ -82,7 +82,7 @@ void DotVisualizer::visualizeBlock(const StructuredSDFG& sdfg, const structured_
                 }
             }
 
-            this->stream_ << escapeDotId(src.element_id(), "n_") << " -> " << nodeId << " [label=\"   ";
+            this->stream_ << escapeDotId(src.element_id(), "id") << " -> " << nodeId << " [label=\"   ";
             bool dstIsVoid = dst_conn == "void";
             bool dstIsRef = dst_conn == "ref";
             bool dstIsDeref = dst_conn == "deref";
@@ -152,7 +152,7 @@ void DotVisualizer::visualizeBlock(const StructuredSDFG& sdfg, const structured_
                 auto& in_conn = in_connectors[i];
                 auto it = unused_connectors.find(in_conn);
                 if (it != unused_connectors.end()) {
-                    auto literal_id = escapeDotId(node->element_id(), "n_") + "_" + escapeDotId(i, "in");
+                    auto literal_id = escapeDotId(node->element_id(), "id") + "_" + escapeDotId(i, "in");
                     this->stream_ << literal_id << " [style=\"dotted\", label=\"" << in_conn << "\"];" << std::endl;
                     this->stream_ << literal_id << " -> " << nodeId << " [label=\"" << i << "\"]" << ";" << std::endl;
                 }

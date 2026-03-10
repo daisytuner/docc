@@ -5,7 +5,6 @@ import torch.nn as nn
 
 from docc.torch import compile_torch
 
-@pytest.mark.skip("Requires math dialect")
 def test_abs():
     class AbsNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -18,9 +17,9 @@ def test_abs():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Unsupported by torch-mlir")
 def test_absolute():
     class AbsoluteNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -33,9 +32,8 @@ def test_absolute():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_acos():
     class AcosNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -48,9 +46,9 @@ def test_acos():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Unsupported by torch-mlir")
 def test_arccos():
     class ArccosNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -63,9 +61,8 @@ def test_arccos():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_acosh():
     class AcoshNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -78,9 +75,9 @@ def test_acosh():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Unsupported by torch-mlir")
 def test_arccosh():
     class ArccoshNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -93,7 +90,7 @@ def test_arccosh():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_add():
     class AddNet(nn.Module):
@@ -107,7 +104,7 @@ def test_add():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_addcdiv():
     class AddcdivNet(nn.Module):
@@ -121,7 +118,7 @@ def test_addcdiv():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_addcmul():
     class AddcmulNet(nn.Module):
@@ -135,7 +132,7 @@ def test_addcmul():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_angle():
@@ -150,9 +147,8 @@ def test_angle():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_asin():
     class AsinNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -165,9 +161,9 @@ def test_asin():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Unsupported by torch-mlir")
 def test_arcsin():
     class ArcsinNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -180,9 +176,8 @@ def test_arcsin():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_asinh():
     class AsinhNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -195,9 +190,9 @@ def test_asinh():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Unsupported by torch-mlir")
 def test_arcsinh():
     class ArcsinhNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -210,9 +205,8 @@ def test_arcsinh():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_atan():
     class AtanNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -225,9 +219,9 @@ def test_atan():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Unsupported by torch-mlir")
 def test_arctan():
     class ArctanNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -240,9 +234,8 @@ def test_arctan():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_atanh():
     class AtanhNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -255,9 +248,9 @@ def test_atanh():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Unsupported by torch-mlir")
 def test_arctanh():
     class ArctanhNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -270,9 +263,8 @@ def test_arctanh():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_atan2():
     class Atan2Net(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -285,9 +277,9 @@ def test_atan2():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Unsupported by torch-mlir")
 def test_arctan2():
     class Arctan2Net(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -300,7 +292,7 @@ def test_arctan2():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_bitwise_not():
     class BitwiseNotNet(nn.Module):
@@ -314,7 +306,7 @@ def test_bitwise_not():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_bitwise_and():
     class BitwiseAndNet(nn.Module):
@@ -328,7 +320,7 @@ def test_bitwise_and():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_bitwise_or():
     class BitwiseOrNet(nn.Module):
@@ -342,7 +334,7 @@ def test_bitwise_or():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_bitwise_xor():
     class BitwiseXorNet(nn.Module):
@@ -356,7 +348,7 @@ def test_bitwise_xor():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_bitwise_left_shift():
     class BitwiseLeftShiftNet(nn.Module):
@@ -370,7 +362,7 @@ def test_bitwise_left_shift():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Incorrect result")
 def test_bitwise_right_shift():
@@ -385,13 +377,12 @@ def test_bitwise_right_shift():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_ceil():
     class CeilNet(nn.Module):
         def forward(self, x: torch.Tensor):
-            return torch.ceil(x, min=-1, max=1)
+            return torch.ceil(x)
 
     model = CeilNet()
     model_ref = CeilNet()
@@ -400,9 +391,23 @@ def test_ceil():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+def test_clamp():
+    class ClampNet(nn.Module):
+        def forward(self, x: torch.Tensor):
+            return torch.clamp(x, min=-1, max=1)
+
+    model = ClampNet()
+    model_ref = ClampNet()
+    example_input = torch.randn(3, 4)
+
+    program = compile_torch(model, example_input)
+    res = program(example_input)
+    ref = model_ref(example_input)
+    assert torch.allclose(res, ref, equal_nan=True)
+
+@pytest.mark.skip("Unsupported by torch-mlir")
 def test_clip():
     class ClipNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -415,7 +420,7 @@ def test_clip():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_conj_physical():
     class ConjPhysicalNet(nn.Module):
@@ -429,7 +434,7 @@ def test_conj_physical():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_copysign():
@@ -444,9 +449,8 @@ def test_copysign():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_cos():
     class CosNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -459,9 +463,8 @@ def test_cos():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_cosh():
     class CoshNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -474,7 +477,7 @@ def test_cosh():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_deg2rad():
     class Deg2RadNet(nn.Module):
@@ -488,7 +491,7 @@ def test_deg2rad():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_div():
     class DivNet(nn.Module):
@@ -502,7 +505,7 @@ def test_div():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_divide():
@@ -517,7 +520,7 @@ def test_divide():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_digamma():
@@ -532,9 +535,8 @@ def test_digamma():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_erf():
     class ErfNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -547,7 +549,7 @@ def test_erf():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_erfc():
@@ -562,7 +564,7 @@ def test_erfc():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_erfinv():
@@ -577,7 +579,7 @@ def test_erfinv():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_exp():
     class ExpNet(nn.Module):
@@ -591,9 +593,8 @@ def test_exp():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_exp2():
     class Exp2Net(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -606,9 +607,8 @@ def test_exp2():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_expm1():
     class Expm1Net(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -621,9 +621,9 @@ def test_expm1():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Incorrect result")
 def test_fix():
     class FixNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -636,9 +636,8 @@ def test_fix():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_float_power():
     class FloatPowerNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -651,9 +650,8 @@ def test_float_power():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_floor():
     class FloorNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -666,9 +664,8 @@ def test_floor():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_floor_divide():
     class FloorDivideNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -681,9 +678,9 @@ def test_floor_divide():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Incorrect result")
 def test_fmod():
     class FmodNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -696,9 +693,9 @@ def test_fmod():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
+@pytest.mark.skip("Incorrect result")
 def test_frac():
     class FracNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -711,7 +708,7 @@ def test_frac():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_frexp():
@@ -726,9 +723,8 @@ def test_frexp():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_ldexp():
     class LdexpNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -741,7 +737,7 @@ def test_ldexp():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_lerp():
     class LerpNet(nn.Module):
@@ -755,7 +751,7 @@ def test_lerp():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_lgamma():
@@ -770,9 +766,8 @@ def test_lgamma():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_log():
     class LogNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -785,9 +780,8 @@ def test_log():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_log10():
     class Log10Net(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -800,9 +794,8 @@ def test_log10():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_log1p():
     class Log1PNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -815,9 +808,8 @@ def test_log1p():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_log2():
     class Log2Net(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -830,9 +822,8 @@ def test_log2():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_logaddexp():
     class LogaddexpNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -845,9 +836,8 @@ def test_logaddexp():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_logaddexp2():
     class Logaddexp2Net(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -860,7 +850,7 @@ def test_logaddexp2():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_logical_and():
     class LogicalAndNet(nn.Module):
@@ -874,7 +864,7 @@ def test_logical_and():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_logical_not():
     class LogicalNotNet(nn.Module):
@@ -888,7 +878,7 @@ def test_logical_not():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_logical_or():
     class LogicalOrNet(nn.Module):
@@ -902,7 +892,7 @@ def test_logical_or():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_logical_xor():
     class LogicalXorNet(nn.Module):
@@ -916,7 +906,7 @@ def test_logical_xor():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_logit():
@@ -931,7 +921,7 @@ def test_logit():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_hypot():
@@ -946,7 +936,7 @@ def test_hypot():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_i0():
@@ -961,7 +951,7 @@ def test_i0():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_igamma():
@@ -976,7 +966,7 @@ def test_igamma():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_igammac():
@@ -991,7 +981,7 @@ def test_igammac():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_mul():
     class MulNet(nn.Module):
@@ -1005,7 +995,7 @@ def test_mul():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_multiply():
@@ -1020,7 +1010,7 @@ def test_multiply():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_mvlgamma():
@@ -1035,7 +1025,7 @@ def test_mvlgamma():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("MLIR frontend crahes")
 def test_nan_to_num():
@@ -1050,7 +1040,7 @@ def test_nan_to_num():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_neg():
     class NegNet(nn.Module):
@@ -1064,7 +1054,7 @@ def test_neg():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_negative():
@@ -1079,7 +1069,7 @@ def test_negative():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_nextafter():
@@ -1094,7 +1084,7 @@ def test_nextafter():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_positive():
     class PositiveNet(nn.Module):
@@ -1108,9 +1098,8 @@ def test_positive():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_pow():
     class PowNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1123,7 +1112,7 @@ def test_pow():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_rad2deg():
     class Rad2DegNet(nn.Module):
@@ -1137,7 +1126,7 @@ def test_rad2deg():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_real():
     class RealNet(nn.Module):
@@ -1151,9 +1140,9 @@ def test_real():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("MLIR frontend crahes")
+@pytest.mark.skip("Missing cf.assert")
 def test_reciprocal():
     class ReciprocalNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1166,9 +1155,8 @@ def test_reciprocal():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("MLIR frontend crahes")
 def test_remainder():
     class RemainderNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1181,9 +1169,8 @@ def test_remainder():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_round():
     class RoundNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1196,9 +1183,8 @@ def test_round():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_rsqrt():
     class RsqrtNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1211,9 +1197,8 @@ def test_rsqrt():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_sigmoid():
     class SigmoidNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1226,9 +1211,9 @@ def test_sigmoid():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("MLIR frontend crahes")
+@pytest.mark.skip("Incorrect result")
 def test_sign():
     class SignNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1241,9 +1226,9 @@ def test_sign():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("MLIR frontend crahes")
+@pytest.mark.skip("Incorrect result")
 def test_sgn():
     class SgnNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1256,7 +1241,7 @@ def test_sgn():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_signbit():
@@ -1271,9 +1256,8 @@ def test_signbit():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_sin():
     class SinNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1286,7 +1270,7 @@ def test_sin():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_sinc():
@@ -1301,9 +1285,8 @@ def test_sinc():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_sinh():
     class SinhNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1316,9 +1299,9 @@ def test_sinh():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("MLIR frontend crahes")
+@pytest.mark.skip("Missing linalg.index")
 def test_softmax():
     class SoftmaxNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1331,9 +1314,8 @@ def test_softmax():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_sqrt():
     class SqrtNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1346,7 +1328,7 @@ def test_sqrt():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_square():
     class SquareNet(nn.Module):
@@ -1360,7 +1342,7 @@ def test_square():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 def test_sub():
     class SubNet(nn.Module):
@@ -1374,7 +1356,7 @@ def test_sub():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_subtract():
@@ -1389,9 +1371,8 @@ def test_subtract():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_tan():
     class TanNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1404,9 +1385,8 @@ def test_tan():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("Requires math dialect")
 def test_tanh():
     class TanhNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1419,7 +1399,7 @@ def test_tanh():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_true_divide():
@@ -1434,9 +1414,9 @@ def test_true_divide():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
-@pytest.mark.skip("MLIR frontend crahes")
+@pytest.mark.skip("Incorrect result")
 def test_trunc():
     class TruncNet(nn.Module):
         def forward(self, x: torch.Tensor):
@@ -1449,7 +1429,7 @@ def test_trunc():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)
 
 @pytest.mark.skip("Unsupported by torch-mlir")
 def test_xlogy():
@@ -1464,4 +1444,4 @@ def test_xlogy():
     program = compile_torch(model, example_input)
     res = program(example_input)
     ref = model_ref(example_input)
-    assert torch.allclose(res, ref)
+    assert torch.allclose(res, ref, equal_nan=True)

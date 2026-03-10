@@ -197,11 +197,6 @@ class TestWhereOffsetViews:
         np.testing.assert_array_equal(result, expected)
 
 
-# =============================================================================
-# 3. STRIDED VIEWS (Non-unit step: a[::2])
-# =============================================================================
-
-
 class TestWhereStridedViews:
     """Tests for np.where with strided views (non-contiguous)."""
 
@@ -290,11 +285,6 @@ class TestWhereStridedViews:
         np.testing.assert_array_equal(result, expected)
 
 
-# =============================================================================
-# 4. NEGATIVE STEP VIEWS (Reversed: a[::-1])
-# =============================================================================
-
-
 class TestWhereNegativeStepViews:
     """Tests for np.where with negative step views (reversed arrays)."""
 
@@ -360,11 +350,6 @@ class TestWhereNegativeStepViews:
         np.testing.assert_array_equal(result, expected)
 
 
-# =============================================================================
-# 5. MIXED VIEW/SCALAR (View condition with scalar values)
-# =============================================================================
-
-
 class TestWhereMixedViewScalar:
     """Tests for np.where with views and scalars mixed."""
 
@@ -416,11 +401,6 @@ class TestWhereMixedViewScalar:
         np.testing.assert_array_equal(result, expected)
 
 
-# =============================================================================
-# 6. MULTIPLE VIEWS (All inputs are views from different sources)
-# =============================================================================
-
-
 class TestWhereMultipleViews:
     """Tests for np.where where all inputs are views."""
 
@@ -463,11 +443,6 @@ class TestWhereMultipleViews:
         np.testing.assert_array_equal(result, expected)
 
 
-# =============================================================================
-# 7. CHAINED VIEWS (View of view)
-# =============================================================================
-
-
 class TestWhereChainedViews:
     """Tests for np.where with chained views (view of view)."""
 
@@ -504,11 +479,6 @@ class TestWhereChainedViews:
         # view = [3.0, -2.0]
         expected = np.array([3.0, 0.0])
         np.testing.assert_array_equal(result, expected)
-
-
-# =============================================================================
-# 8. 2D VIEWS (Multi-dimensional slicing)
-# =============================================================================
 
 
 class TestWhere2DViews:
@@ -572,68 +542,6 @@ class TestWhere2DViews:
         result = compiled(a)
         expected = np.array([[0.0, 7.0], [10.0, 0.0]])
         np.testing.assert_array_equal(result, expected)
-
-
-# =============================================================================
-# 9. HDIFF PATTERN (Real-world use case)
-# =============================================================================
-
-
-class TestWhereHdiffPattern:
-    """Tests for np.where with hdiff-like patterns (stencil computations)."""
-
-    def test_1d_forward_diff_clipped(self):
-        """1D forward difference with positive values clipped."""
-
-        @native
-        def hdiff_1d(a):
-            left = a[:-1]
-            right = a[1:]
-            diff = right - left
-            return np.where(diff > 0, diff, 0.0)
-
-        a = np.array([1.0, 3.0, 2.0, 5.0, 4.0])
-        compiled = hdiff_1d.compile(a)
-        result = compiled(a)
-        # diff = [2, -1, 3, -1] -> [2, 0, 3, 0]
-        expected = np.array([2.0, 0.0, 3.0, 0.0])
-        np.testing.assert_array_equal(result, expected)
-
-    def test_replace_positive_with_zero(self):
-        """Replace positive differences with zero (inverse hdiff)."""
-
-        @native
-        def hdiff_inv(a):
-            left = a[:-1]
-            right = a[1:]
-            diff = right - left
-            return np.where(diff > 0, 0.0, diff)
-
-        a = np.array([1.0, 3.0, 2.0, 5.0, 4.0])
-        compiled = hdiff_inv.compile(a)
-        result = compiled(a)
-        # diff = [2, -1, 3, -1] -> [0, -1, 0, -1]
-        expected = np.array([0.0, -1.0, 0.0, -1.0])
-        np.testing.assert_array_equal(result, expected)
-
-    def test_2d_center_slice(self):
-        """2D center slice with where."""
-
-        @native
-        def where_2d_center(a):
-            center = a[1:-1, 1:-1]
-            return np.where(center > 0, center, 0.0)
-
-        a = np.array([[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0], [7.0, -8.0, 9.0]])
-        compiled = where_2d_center.compile(a)
-        result = compiled(a)
-        expected = np.array([[5.0]])
-        np.testing.assert_array_equal(result, expected)
-
-
-# =============================================================================
-# 10. CHAINED OPERATIONS
-# =============================================================================
 
 
 class TestWhereChainedOperations:

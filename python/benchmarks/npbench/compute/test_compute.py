@@ -40,8 +40,9 @@ def test_compute(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 7,
-                "SEQUENTIAL": 7,
+                "Free": 6,
+                "HIGHWAY": 3,
+                "SEQUENTIAL": 11,
                 "FOR": 14,
                 "MAP": 14,
                 "Malloc": 6,
@@ -50,8 +51,10 @@ def test_compute(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 7,
+                "Free": 6,
+                "HIGHWAY": 3,
                 "CPU_PARALLEL": 7,
+                "SEQUENTIAL": 4,
                 "FOR": 14,
                 "MAP": 14,
                 "Malloc": 6,
@@ -61,10 +64,11 @@ def test_compute(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 6,
-                "CUDA": 14,
+                "CUDA": 6,
+                "SEQUENTIAL": 8,
                 "FOR": 14,
                 "MAP": 14,
-                "CUDAOffloading": 24,
+                "CUDAOffloading": 12,
                 "Malloc": 6,
             }
         )

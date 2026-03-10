@@ -1,10 +1,5 @@
 include(GNUInstallDirs)
 
-if(NOT DEFINED PARENT_PROJECT_INSTALL_PREFIX)
-    set(PARENT_PROJECT_INSTALL_PREFIX "" CACHE STRING
-           "Path prefix (trailing /!) for installing sdfglib artifacts. For example 'lib/docc-0.1.6/'" )
-endif()
-
 # Enable packaging of symengine
 set(_CMAKE_INSTALL_DEFAULT_COMPONENT_NAME ${CMAKE_INSTALL_DEFAULT_COMPONENT_NAME})
 set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME sdfglib-development)
@@ -43,7 +38,6 @@ set(SOURCE_FILES
     src/builder/function_builder.cpp
     src/builder/sdfg_builder.cpp
     src/builder/structured_sdfg_builder.cpp
-    src/codegen/utils.cpp
     src/codegen/code_snippet_factory.cpp
     src/codegen/instrumentation/arg_capture_plan.cpp
     src/codegen/instrumentation/instrumentation_info.cpp
@@ -51,6 +45,7 @@ set(SOURCE_FILES
     src/codegen/language_extensions/c_language_extension.cpp
     src/codegen/language_extensions/cpp_language_extension.cpp
     src/codegen/language_extensions/cuda_language_extension.cpp
+    src/codegen/utils.cpp
     src/codegen/code_generators/c_code_generator.cpp
     src/codegen/code_generators/c_style_base_code_generator.cpp
     src/codegen/code_generators/cpp_code_generator.cpp
@@ -212,6 +207,7 @@ add_library(sdfglib
 )
 add_library(sdfg::sdfg ALIAS sdfglib)
 add_library(sdfglib::sdfglib ALIAS sdfglib)
+add_library(docc::core ALIAS sdfglib)
 target_include_directories(sdfglib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -245,6 +241,7 @@ endif()
 target_link_libraries(sdfglib PUBLIC
     nlohmann_json::nlohmann_json
     $<BUILD_INTERFACE:Boost::graph>
+    $<BUILD_INTERFACE:Boost::boost>
     PkgConfig::ISL
     symengine
     sdfg::arg_capture_io

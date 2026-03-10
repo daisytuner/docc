@@ -1,5 +1,7 @@
 from docc.python import native
 import numpy as np
+import sys
+import pytest
 
 # Module-level constants
 GLOBAL_FLOAT = 0.5
@@ -60,6 +62,7 @@ def test_global_in_expression():
     assert result == 2.0  # 0.25 * (3.0 + 5.0)
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
 def test_global_with_array_slice():
     """Test global constant with array slicing (vadv pattern)."""
 

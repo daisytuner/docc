@@ -63,7 +63,7 @@ def test_go_fast(target):
                 "Free": 1,
                 "CUDA": 4,
                 "MAP": 4,
-                "CUDAOffloading": 7,
+                "CUDAOffloading": 8,
                 "CMath": 1,
                 "FOR": 5,
                 "Malloc": 1,

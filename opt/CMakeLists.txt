@@ -11,6 +11,7 @@ set(SOURCE_FILES
     src/analysis/scop_analysis.cpp
     src/passes/normalization/perfect_loop_distribution.cpp
     src/passes/normalization/stride_minimization.cpp
+    src/passes/targets/target_mapping_pass.cpp
     src/passes/offloading/cuda_library_node_rewriter_pass.cpp
     src/passes/offloading/code_motion/block_hoisting.cpp
     src/passes/offloading/code_motion/block_sorting.cpp
@@ -60,6 +61,7 @@ add_library(sdfgopt
     ${SOURCE_FILES}
 )
 add_library(sdfg::opt ALIAS sdfgopt)
+add_library(docc::opt ALIAS sdfgopt)
 add_library(sdfgopt::sdfgopt ALIAS sdfgopt)
 target_include_directories(sdfgopt
     PUBLIC

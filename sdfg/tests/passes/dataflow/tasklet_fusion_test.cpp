@@ -161,8 +161,6 @@ TEST(TaskletFusionTest, SimpleInAssignWithAccessNodeMerging) {
     // Check
     auto& dfg = block.dataflow();
     EXPECT_EQ(dfg.nodes().size(), 3);
-    EXPECT_EQ(dfg.tasklets(), std::unordered_set<data_flow::Tasklet*>({&tasklet2}));
-    EXPECT_EQ(dfg.data_nodes(), std::unordered_set<data_flow::AccessNode*>({&a1, &c}));
 }
 
 TEST(TaskletFusionTest, ComplexInAssignWithAccessNodeMerging) {

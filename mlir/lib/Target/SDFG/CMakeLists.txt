@@ -2,8 +2,9 @@ set(TARGET_SDFG_FILES
     ArithToSDFGTranslator.cpp
     BuiltinToSDFGTranslator.cpp
     FuncToSDFGTranslator.cpp
-    LinalgToSDFGTranslator.cpp
     helper.cpp
+    LinalgToSDFGTranslator.cpp
+    MathToSDFGTranslator.cpp
     SDFGTranslator.cpp
     TensorToSDFGTranslator.cpp
     TranslateToSDFG.cpp
@@ -24,5 +25,6 @@ add_mlir_translation_library(MLIRTargetSDFG
     MLIRArithDialect
     MLIRLinalgDialect
     MLIRTensorDialect
+    MLIRMathDialect
     sdfglib
 )

@@ -38,7 +38,7 @@ std::string CLanguageExtension::primitive_type(const types::PrimitiveType prim_t
         case types::PrimitiveType::UInt128:
             return "unsigned __int128";
         case types::PrimitiveType::Half:
-            return "__fp16";
+            return "_Float16";
         case types::PrimitiveType::BFloat:
             return "__bf16";
         case types::PrimitiveType::Float:
