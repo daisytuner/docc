@@ -67,7 +67,7 @@ jobs:
           llvm-profdata-19 merge -sparse sdfglib_test.profraw sdfgopt_test.profraw docc-target-et_test.profraw -o default.profdata
           cd ../
           llvm-cov-19 export ./build/sdfg/tests/sdfglib_test -object ./build/opt/tests/sdfgopt_test -object ./build/targets/et/tests/docc-target-et_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
-          lcov --extract build/coverage_full.lcov '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' '*/targets/*/src/*' '*/targets/*/include/*' --output-file build/coverage.lcov
+          lcov --extract build/coverage_full.lcov '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' '*/targets/et/src/*' '*/targets/et/include/*' --output-file build/coverage.lcov
 
       - name: Test Arg-Capture-IO
         run: |
