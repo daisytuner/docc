@@ -3,6 +3,7 @@
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/recorder.h>
+#include <sdfg/transformations/tile_fusion.h>
 
 namespace sdfg {
 namespace transformations {

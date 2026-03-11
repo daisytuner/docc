@@ -106,6 +106,7 @@ set(TEST_FILES
     transformations/loop_skewing_test.cpp
     transformations/loop_tiling_test.cpp
     transformations/map_fusion_test.cpp
+    transformations/tile_fusion_test.cpp
     transformations/out_local_storage_test.cpp
     transformations/recorder_test.cpp
     types/array_test.cpp
