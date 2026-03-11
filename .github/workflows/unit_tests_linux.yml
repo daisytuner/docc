@@ -50,7 +50,7 @@ jobs:
             -DBUILD_BENCHMARKS:BOOL=OFF \
             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
             -DDOCC_BUILD_TARGET_ET=ON \
-            -CMAKE_PREFIX_PATH=/opt/et \
+            -DCMAKE_PREFIX_PATH=/opt/et \
             ..
           ninja -j$(nproc)
           ninja install
