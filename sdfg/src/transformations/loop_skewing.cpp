@@ -13,14 +13,14 @@
  * space to depend on the outer loop's iteration variable, creating a "skewed" pattern.
  *
  * The transformation:
- * - Requires the inner loop to be a Map (parallel loop with independent iterations)
+ * - Works with any StructuredLoop (For or Map) as inner loop
  * - Adjusts inner loop init: init_j + skew_factor * (i - init_i)
  * - Adjusts inner loop condition using symbolic::subs
  * - Updates memory access patterns in loop body using root().replace()
  * - Uses builder.update_loop() to modify the loop in place
  *
  * Safety:
- * - Inner loop must be a Map (guarantees independent iterations)
+ * - Skewing is a pure re-indexing that preserves iteration order within the inner loop
  * - Inner loop bounds must not depend on outer loop variable
  * - Loops must be properly nested
  */
@@ -40,12 +40,6 @@ std::string LoopSkewing::name() const { return "LoopSkewing"; }
 bool LoopSkewing::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Criterion 0: Skew factor must be non-zero
     if (this->skew_factor_ == 0) {
-        return false;
-    }
-
-    // Criterion 1: Inner loop must be a Map
-    // Maps guarantee independent iterations, ensuring the transformation is safe
-    if (!dynamic_cast<structured_control_flow::Map*>(&inner_loop_)) {
         return false;
     }
 
@@ -109,10 +103,13 @@ void LoopSkewing::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
 void LoopSkewing::to_json(nlohmann::json& j) const {
     // Determine loop types for serialization
     std::string outer_type = "for";
-    std::string inner_type = "map"; // Inner loop must be a Map by construction
+    std::string inner_type = "for";
 
     if (dynamic_cast<const structured_control_flow::Map*>(&this->outer_loop_)) {
         outer_type = "map";
+    }
+    if (dynamic_cast<const structured_control_flow::Map*>(&this->inner_loop_)) {
+        inner_type = "map";
     }
 
     j["transformation_type"] = this->name();
