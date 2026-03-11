@@ -22,10 +22,11 @@ def test_single_nobias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -43,18 +44,17 @@ def test_single_nobias_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
 # --- Single linear layer (with bias) ---
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_single_bias_compile():
     class SingleBiasNet(nn.Module):
         def __init__(self, in_features: int, out_features: int):
@@ -69,14 +69,14 @@ def test_single_bias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_single_bias_backend():
     class SingleBiasNet(nn.Module):
         def __init__(self, in_features: int, out_features: int):
@@ -91,11 +91,11 @@ def test_single_bias_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -117,10 +117,11 @@ def test_chained_nobias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -139,18 +140,17 @@ def test_chained_nobias_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
 # --- Chained linear layers (with bias) ---
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_chained_bias_compile():
     class ChainedBiasNet(nn.Module):
         def __init__(self, in_features: int, hidden_features: int, out_features: int):
@@ -166,14 +166,14 @@ def test_chained_bias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_chained_bias_backend():
     class ChainedBiasNet(nn.Module):
         def __init__(self, in_features: int, hidden_features: int, out_features: int):
@@ -189,11 +189,11 @@ def test_chained_bias_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -214,10 +214,11 @@ def test_wide_output_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 4)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -235,11 +236,11 @@ def test_wide_output_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 4)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -261,10 +262,11 @@ def test_bottleneck_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -283,11 +285,11 @@ def test_bottleneck_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 32)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -308,10 +310,11 @@ def test_single_sample_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 10)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -329,11 +332,11 @@ def test_single_sample_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 10)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -356,10 +359,11 @@ def test_deep_stack_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -379,11 +383,11 @@ def test_deep_stack_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -404,10 +408,11 @@ def test_square_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 16)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -425,11 +430,11 @@ def test_square_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 16)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -450,10 +455,11 @@ def test_scalar_output_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)
 
 
@@ -471,9 +477,9 @@ def test_scalar_output_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-5)

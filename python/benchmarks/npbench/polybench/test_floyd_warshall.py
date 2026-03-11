@@ -29,19 +29,20 @@ def test_floyd_warshall(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 3,
+                "HIGHWAY": 1,
                 "MAP": 6,
-                "Malloc": 2,
-                "SEQUENTIAL": 3,
+                "SEQUENTIAL": 5,
                 "FOR": 7,
+                "Malloc": 2,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 3,
+                "HIGHWAY": 1,
                 "CPU_PARALLEL": 3,
                 "MAP": 6,
+                "SEQUENTIAL": 2,
                 "FOR": 7,
                 "Malloc": 2,
             }
@@ -49,9 +50,10 @@ def test_floyd_warshall(target):
     else:  # cuda
         verifier = SDFGVerification(
             verification={
-                "CUDA": 6,
+                "CUDA": 2,
                 "MAP": 6,
-                "CUDAOffloading": 12,
+                "CUDAOffloading": 4,
+                "SEQUENTIAL": 4,
                 "FOR": 7,
                 "Malloc": 2,
             }

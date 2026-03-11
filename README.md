@@ -105,7 +105,8 @@ model = IdentityNet()
 example_input = torch.randn(2, 1)
 
 # Compile model
-compiled_model = torch.compile(model, backend="docc")
+with torch.no_grad():
+  compiled_model = torch.compile(model, backend="docc")
 
 # Forward
 res = compiled_model(example_input)

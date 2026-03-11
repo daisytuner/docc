@@ -19,6 +19,8 @@ LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::B
 
 LogicalResult translateLinalgTransposeOp(SDFGTranslator& translator, linalg::TransposeOp* op);
 
+LogicalResult translateLinalgBroadcastOp(SDFGTranslator& translator, linalg::BroadcastOp* op);
+
 LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg::Conv2DNchwFchwOp* op);
 
 } // namespace sdfg

@@ -110,7 +110,7 @@ class PythonHandler:
             intrinsic_name = (
                 CMathFunction.fmax if func_name == "max" else CMathFunction.fmin
             )
-            t_task = self.builder.add_cmath(block, intrinsic_name)
+            t_task = self.builder.add_cmath(block, intrinsic_name, dtype.primitive_type)
 
             for i, arg in enumerate(casted_args):
                 t_arg, arg_sub = self._add_read(block, arg)

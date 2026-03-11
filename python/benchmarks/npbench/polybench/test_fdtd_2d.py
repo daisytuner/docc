@@ -38,19 +38,20 @@ def test_fdtd_2d(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "Malloc": 11,
-                "HIGHWAY": 15,
+                "HIGHWAY": 13,
                 "MAP": 29,
-                "SEQUENTIAL": 14,
+                "SEQUENTIAL": 16,
                 "FOR": 30,
+                "Malloc": 11,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 14,
+                "HIGHWAY": 12,
                 "CPU_PARALLEL": 15,
                 "MAP": 29,
+                "SEQUENTIAL": 2,
                 "FOR": 30,
                 "Malloc": 11,
             }
@@ -58,9 +59,10 @@ def test_fdtd_2d(target):
     else:  # cuda
         verifier = SDFGVerification(
             verification={
-                "CUDA": 29,
+                "CUDA": 25,
                 "MAP": 29,
-                "CUDAOffloading": 57,
+                "CUDAOffloading": 50,
+                "SEQUENTIAL": 4,
                 "FOR": 30,
                 "Malloc": 11,
             }

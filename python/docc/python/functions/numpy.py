@@ -1154,7 +1154,9 @@ class NumPyHandler:
             block = self.builder.add_block()
             t_src = self.builder.add_access(block, operand)
             t_dst = self.builder.add_access(block, tmp_name)
-            t_task = self.builder.add_cmath(block, func_map[op_type])
+            t_task = self.builder.add_cmath(
+                block, func_map[op_type], dtype.primitive_type
+            )
 
             self.builder.add_memlet(block, t_src, "void", t_task, "_in1", "", dtype)
             self.builder.add_memlet(block, t_task, "_out", t_dst, "void", "", dtype)
@@ -2184,7 +2186,7 @@ class NumPyHandler:
                     block, int_opcode, ["_in1", "_in2"], ["_out"]
                 )
             else:
-                t_task = self.builder.add_cmath(block, fp_opcode)
+                t_task = self.builder.add_cmath(block, fp_opcode, dtype.primitive_type)
         else:
             tasklet_code = int_opcode if is_int else fp_opcode
             t_task = self.builder.add_tasklet(

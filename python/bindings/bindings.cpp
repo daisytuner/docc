@@ -378,6 +378,7 @@ PYBIND11_MODULE(_sdfg, m) {
             &PyStructuredSDFGBuilder::add_cmath,
             py::arg("block_ptr"),
             py::arg("func"),
+            py::arg("primitive_type"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(

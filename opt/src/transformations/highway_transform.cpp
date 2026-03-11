@@ -70,6 +70,7 @@ bool HighwayTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
         }
     }
 
+    size_t bitwidth = 0;
     std::list<structured_control_flow::ControlFlowNode*> queue = {&map_.root()};
     while (!queue.empty()) {
         auto node = queue.front();
@@ -83,6 +84,20 @@ bool HighwayTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
                         report_->transform_impossible(
                             this,
                             "contains unsupported memlet type on edge with element ID " +
+                                std::to_string(edge.element_id())
+                        );
+                    }
+                    return false;
+                }
+
+                size_t edge_bitwidth = types::bit_width(edge.base_type().primitive_type());
+                if (bitwidth == 0) {
+                    bitwidth = edge_bitwidth;
+                } else if (edge_bitwidth != bitwidth) {
+                    if (report_) {
+                        report_->transform_impossible(
+                            this,
+                            "contains mismatched memlet bitwidth on edge with element ID " +
                                 std::to_string(edge.element_id())
                         );
                     }

@@ -58,14 +58,25 @@ TEST(LoopAnalysisInfoTest, NestedLoops) {
     analysis::AnalysisManager manager(sdfg);
     auto& loop_analysis = manager.get<analysis::LoopAnalysis>();
 
-    auto info = loop_analysis.loop_info(&loop_i);
-    EXPECT_EQ(info.num_loops, 2);
-    EXPECT_EQ(info.num_maps, 0);
-    EXPECT_EQ(info.num_fors, 2);
-    EXPECT_EQ(info.num_whiles, 0);
-    EXPECT_EQ(info.max_depth, 2);
-    EXPECT_TRUE(info.is_perfectly_nested);
-    EXPECT_FALSE(info.is_perfectly_parallel);
+    auto info_j = loop_analysis.loop_info(&loop_j);
+    EXPECT_EQ(info_j.num_loops, 1);
+    EXPECT_EQ(info_j.num_maps, 0);
+    EXPECT_EQ(info_j.num_fors, 1);
+    EXPECT_EQ(info_j.num_whiles, 0);
+    EXPECT_EQ(info_j.max_depth, 1);
+    EXPECT_TRUE(info_j.is_perfectly_nested);
+    EXPECT_FALSE(info_j.is_perfectly_parallel);
+    EXPECT_FALSE(info_j.is_elementwise);
+
+    auto info_i = loop_analysis.loop_info(&loop_i);
+    EXPECT_EQ(info_i.num_loops, 2);
+    EXPECT_EQ(info_i.num_maps, 0);
+    EXPECT_EQ(info_i.num_fors, 2);
+    EXPECT_EQ(info_i.num_whiles, 0);
+    EXPECT_EQ(info_i.max_depth, 2);
+    EXPECT_TRUE(info_i.is_perfectly_nested);
+    EXPECT_FALSE(info_i.is_perfectly_parallel);
+    EXPECT_FALSE(info_i.is_elementwise);
 }
 
 TEST(LoopAnalysisInfoTest, NestedLoopsWithExtraStatement) {
@@ -94,14 +105,25 @@ TEST(LoopAnalysisInfoTest, NestedLoopsWithExtraStatement) {
     analysis::AnalysisManager manager(sdfg);
     auto& loop_analysis = manager.get<analysis::LoopAnalysis>();
 
-    auto info = loop_analysis.loop_info(&loop_i);
-    EXPECT_EQ(info.num_loops, 2);
-    EXPECT_EQ(info.num_maps, 0);
-    EXPECT_EQ(info.num_fors, 2);
-    EXPECT_EQ(info.num_whiles, 0);
-    EXPECT_EQ(info.max_depth, 2);
-    EXPECT_FALSE(info.is_perfectly_nested);
-    EXPECT_FALSE(info.is_perfectly_parallel);
+    auto info_j = loop_analysis.loop_info(&loop_j);
+    EXPECT_EQ(info_j.num_loops, 1);
+    EXPECT_EQ(info_j.num_maps, 0);
+    EXPECT_EQ(info_j.num_fors, 1);
+    EXPECT_EQ(info_j.num_whiles, 0);
+    EXPECT_EQ(info_j.max_depth, 1);
+    EXPECT_TRUE(info_j.is_perfectly_nested);
+    EXPECT_FALSE(info_j.is_perfectly_parallel);
+    EXPECT_FALSE(info_j.is_elementwise);
+
+    auto info_i = loop_analysis.loop_info(&loop_i);
+    EXPECT_EQ(info_i.num_loops, 2);
+    EXPECT_EQ(info_i.num_maps, 0);
+    EXPECT_EQ(info_i.num_fors, 2);
+    EXPECT_EQ(info_i.num_whiles, 0);
+    EXPECT_EQ(info_i.max_depth, 2);
+    EXPECT_FALSE(info_i.is_perfectly_nested);
+    EXPECT_FALSE(info_i.is_perfectly_parallel);
+    EXPECT_FALSE(info_i.is_elementwise);
 }
 
 TEST(LoopAnalysisInfoTest, NestedLoopsWithInnerSequence) {
@@ -130,15 +152,25 @@ TEST(LoopAnalysisInfoTest, NestedLoopsWithInnerSequence) {
     analysis::AnalysisManager manager(sdfg);
     auto& loop_analysis = manager.get<analysis::LoopAnalysis>();
 
-    auto info = loop_analysis.loop_info(&loop_i);
-    EXPECT_EQ(info.num_loops, 2);
-    EXPECT_EQ(info.num_maps, 0);
-    EXPECT_EQ(info.num_fors, 2);
-    EXPECT_EQ(info.num_whiles, 0);
-    EXPECT_EQ(info.max_depth, 2);
-    EXPECT_TRUE(info.is_perfectly_nested);
-    EXPECT_FALSE(info.is_perfectly_parallel);
-    EXPECT_FALSE(info.is_elementwise);
+    auto info_j = loop_analysis.loop_info(&loop_j);
+    EXPECT_EQ(info_j.num_loops, 1);
+    EXPECT_EQ(info_j.num_maps, 0);
+    EXPECT_EQ(info_j.num_fors, 1);
+    EXPECT_EQ(info_j.num_whiles, 0);
+    EXPECT_EQ(info_j.max_depth, 1);
+    EXPECT_TRUE(info_j.is_perfectly_nested);
+    EXPECT_FALSE(info_j.is_perfectly_parallel);
+    EXPECT_FALSE(info_j.is_elementwise);
+
+    auto info_i = loop_analysis.loop_info(&loop_i);
+    EXPECT_EQ(info_i.num_loops, 2);
+    EXPECT_EQ(info_i.num_maps, 0);
+    EXPECT_EQ(info_i.num_fors, 2);
+    EXPECT_EQ(info_i.num_whiles, 0);
+    EXPECT_EQ(info_i.max_depth, 2);
+    EXPECT_TRUE(info_i.is_perfectly_nested);
+    EXPECT_FALSE(info_i.is_perfectly_parallel);
+    EXPECT_FALSE(info_i.is_elementwise);
 }
 
 TEST(LoopAnalysisInfoTest, PerfectlyParallel) {

@@ -21,10 +21,11 @@ def test_single_nobias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -44,16 +45,16 @@ def test_single_nobias_backend():
 
     docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
 # --- Single Conv2d (with bias) ---
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_single_bias_compile():
     class SingleConv2dBiasNet(nn.Module):
         def __init__(self):
@@ -68,14 +69,14 @@ def test_single_bias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
-@pytest.mark.skip(reason="broadcast not yet supported")
 def test_single_bias_backend():
     class SingleConv2dBiasNet(nn.Module):
         def __init__(self):
@@ -90,11 +91,11 @@ def test_single_bias_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -116,10 +117,11 @@ def test_chained_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -138,11 +140,11 @@ def test_chained_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -163,10 +165,11 @@ def test_kernel_1x1_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -184,11 +187,11 @@ def test_kernel_1x1_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -206,10 +209,11 @@ def test_kernel_5x5_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-3)
 
 
@@ -227,11 +231,11 @@ def test_kernel_5x5_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-3)
 
 
@@ -253,10 +257,11 @@ def test_padding_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -275,11 +280,11 @@ def test_padding_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -300,10 +305,11 @@ def test_stride_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -321,11 +327,11 @@ def test_stride_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -346,10 +352,10 @@ def test_batch_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(4, 3, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
-
-    res_ref = model_ref(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-3, atol=1e-5)
 
 
@@ -367,11 +373,11 @@ def test_batch_backend():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(4, 3, 32, 32)
 
-    docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-3, atol=1e-5)
 
 
@@ -392,10 +398,11 @@ def test_single_channel_out_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-3)
 
 
@@ -415,9 +422,10 @@ def test_single_channel_out_backend():
 
     docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-3)
 
 
@@ -439,10 +447,11 @@ def test_depthwise_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 16, 32, 32)
 
-    program = docc.torch.compile_torch(model, example_input)
-    res = program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 
@@ -463,7 +472,8 @@ def test_depthwise_backend():
 
     docc.torch.set_backend_options(target="none", category="server")
     program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
 
-    res_ref = model_ref(example_input)
     assert torch.allclose(res, res_ref, rtol=1e-4)

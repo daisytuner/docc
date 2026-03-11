@@ -84,6 +84,8 @@ private:
             DFSLoopComparator>& tree
     ) const;
 
+    void compute_loop_infos(structured_control_flow::ControlFlowNode* loop);
+
 public:
     LoopAnalysis(StructuredSDFG& sdfg);
 

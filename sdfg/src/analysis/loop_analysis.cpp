@@ -56,164 +56,159 @@ void LoopAnalysis::
     }
 }
 
+void LoopAnalysis::compute_loop_infos(structured_control_flow::ControlFlowNode* loop) {
+    structured_control_flow::Sequence* root = nullptr;
+    if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(loop)) {
+        root = &while_stmt->root();
+    } else if (auto loop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+        root = &loop_stmt->root();
+    } else {
+        throw std::runtime_error("Node is not a loop");
+    }
+
+    LoopInfo init_info;
+    init_info.element_id = loop->element_id();
+    init_info.loopnest_index = -1;
+    init_info.is_perfectly_nested = true;
+    init_info.is_perfectly_parallel = true;
+    init_info.is_elementwise = (dynamic_cast<structured_control_flow::Map*>(loop) != nullptr);
+    init_info.has_side_effects = false;
+    init_info.max_depth = 1;
+    init_info.num_loops = 1;
+    if (dynamic_cast<structured_control_flow::Map*>(loop)) {
+        init_info.num_maps = 1;
+        init_info.num_fors = 0;
+        init_info.num_whiles = 0;
+    } else if (dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+        init_info.num_maps = 0;
+        init_info.num_fors = 1;
+        init_info.num_whiles = 0;
+    } else if (dynamic_cast<structured_control_flow::While*>(loop)) {
+        init_info.num_maps = 0;
+        init_info.num_fors = 0;
+        init_info.num_whiles = 1;
+    }
+    this->loop_infos_[loop] = init_info;
+
+    // Recursion
+    LoopInfo& info = this->loop_infos_[loop];
+    std::list<structured_control_flow::ControlFlowNode*> queue = {root};
+    while (!queue.empty()) {
+        auto current = queue.front();
+        queue.pop_front();
+
+        if (auto block = dynamic_cast<structured_control_flow::Block*>(current)) {
+            for (auto& node : block->dataflow().nodes()) {
+                if (auto library_node = dynamic_cast<data_flow::LibraryNode*>(&node)) {
+                    if (library_node->side_effect()) {
+                        info.has_side_effects = true;
+                        break;
+                    }
+                }
+            }
+        } else if (auto seq = dynamic_cast<structured_control_flow::Sequence*>(current)) {
+            for (size_t i = 0; i < seq->size(); i++) {
+                auto& child = seq->at(i).first;
+                queue.push_back(&child);
+            }
+        } else if (auto ifelse = dynamic_cast<structured_control_flow::IfElse*>(current)) {
+            for (size_t i = 0; i < ifelse->size(); i++) {
+                auto& branch = ifelse->at(i).first;
+                queue.push_back(&branch);
+            }
+        } else if (auto loop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(current)) {
+            this->compute_loop_infos(loop_stmt);
+
+            auto& sub_info = this->loop_infos_[loop_stmt];
+            info.num_loops += sub_info.num_loops;
+            info.num_maps += sub_info.num_maps;
+            info.num_fors += sub_info.num_fors;
+            info.num_whiles += sub_info.num_whiles;
+            info.max_depth = std::max(info.max_depth, 1 + sub_info.max_depth);
+
+            info.has_side_effects = info.has_side_effects || sub_info.has_side_effects;
+            info.is_elementwise = info.is_elementwise && sub_info.is_elementwise;
+            info.is_perfectly_nested = info.is_perfectly_nested && sub_info.is_perfectly_nested;
+            info.is_perfectly_parallel = info.is_perfectly_parallel && sub_info.is_perfectly_parallel;
+        } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(current)) {
+            this->compute_loop_infos(while_stmt);
+
+            auto& sub_info = this->loop_infos_[while_stmt];
+            info.num_loops += sub_info.num_loops;
+            info.num_maps += sub_info.num_maps;
+            info.num_fors += sub_info.num_fors;
+            info.num_whiles += sub_info.num_whiles;
+            info.max_depth = std::max(info.max_depth, 1 + sub_info.max_depth);
+
+            info.has_side_effects = info.has_side_effects || sub_info.has_side_effects;
+            info.is_elementwise = info.is_elementwise && sub_info.is_elementwise;
+            info.is_perfectly_nested = info.is_perfectly_nested && sub_info.is_perfectly_nested;
+            info.is_perfectly_parallel = info.is_perfectly_parallel && sub_info.is_perfectly_parallel;
+        } else if (dynamic_cast<structured_control_flow::Break*>(current)) {
+            continue;
+        } else if (dynamic_cast<structured_control_flow::Continue*>(current)) {
+            continue;
+        } else if (dynamic_cast<structured_control_flow::Return*>(current)) {
+            info.has_side_effects = false;
+            continue;
+        } else {
+            throw std::runtime_error("Unsupported control flow node type");
+        }
+    }
+
+    // Perfectly nested
+    if (info.is_perfectly_nested) {
+        if (info.num_loops != info.max_depth) {
+            info.is_perfectly_nested = false;
+        } else {
+            if (info.num_loops == 1) {
+                // Leaf-nodes are by definition perfectly nested
+                info.is_perfectly_nested = true;
+            } else {
+                // Non-leaf loop: body contains next loop
+                info.is_perfectly_nested = (root->size() == 1 && root->at(0).second.empty());
+            }
+        }
+    }
+
+    // Perfectly parallel if all loops are maps
+    if (info.is_perfectly_parallel) {
+        info.is_perfectly_parallel = (info.num_maps == info.num_loops);
+    }
+
+    // Elementwise: perfectly nested, perfectly parallel, one increment
+    if (info.is_elementwise) {
+        if (info.is_perfectly_nested && info.is_perfectly_parallel) {
+            auto loop_stmt = dynamic_cast<structured_control_flow::Map*>(loop);
+            bool is_contiguous =
+                symbolic::series::is_contiguous(loop_stmt->update(), loop_stmt->indvar(), symbolic::Assumptions());
+            info.is_elementwise = is_contiguous;
+        } else {
+            info.is_elementwise = false;
+        }
+    }
+}
+
 void LoopAnalysis::run(AnalysisManager& analysis_manager) {
     this->loops_.clear();
     this->loop_tree_.clear();
     this->loop_infos_.clear();
     this->run(this->sdfg_.root(), nullptr);
 
-    // Loop info for outermost loops
+    // Set loopnest indices for outermost loops
     int loopnest_index = 0;
     for (const auto& [loop, parent] : this->loop_tree_) {
         if (parent != nullptr) {
             continue;
         }
-
-        LoopInfo info;
-        info.loopnest_index = loopnest_index;
-        loopnest_index++;
-
-        info.element_id = loop->element_id();
-
-        auto descendants = this->descendants(loop);
-        descendants.insert(loop);
-
-        // Structure of loop nest
-        info.num_loops = descendants.size();
-        info.max_depth = 0;
-        for (const auto& path : this->loop_tree_paths(loop)) {
-            info.max_depth = std::max(info.max_depth, path.size());
-        }
-
-        info.is_perfectly_nested = true;
-        auto current = loop;
-        while (true) {
-            auto children = this->children(current);
-            if (children.empty()) {
-                break;
-            }
-
-            if (children.size() > 1) {
-                info.is_perfectly_nested = false;
-                break;
-            }
-
-            auto child = children[0];
-            structured_control_flow::Sequence* root = nullptr;
-
-            if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(current)) {
-                root = &while_stmt->root();
-            } else if (auto loop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(current)) {
-                root = &loop_stmt->root();
-            }
-
-            if (root == nullptr || root->size() != 1 || &root->at(0).first != child) {
-                info.is_perfectly_nested = false;
-                break;
-            }
-
-            current = child;
-        }
-
-        // Count types of loops
-        info.num_maps = 0;
-        info.num_fors = 0;
-        info.num_whiles = 0;
-        for (auto node : descendants) {
-            if (dynamic_cast<structured_control_flow::Map*>(node)) {
-                info.num_maps++;
-            } else if (dynamic_cast<structured_control_flow::StructuredLoop*>(node)) {
-                info.num_fors++;
-            } else if (dynamic_cast<structured_control_flow::While*>(node)) {
-                info.num_whiles++;
-            }
-        }
-        info.is_perfectly_parallel = (info.num_loops == info.num_maps);
-
-        // Classifiy loop nest
-        info.is_elementwise = false;
-        if (info.is_perfectly_nested && info.is_perfectly_parallel) {
-            bool all_contiguous = true;
-            for (auto node : descendants) {
-                if (auto loop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(node)) {
-                    bool is_contiguous =
-                        symbolic::series::is_contiguous(loop_stmt->update(), loop_stmt->indvar(), symbolic::Assumptions());
-                    if (!is_contiguous) {
-                        all_contiguous = false;
-                        break;
-                    }
-                } else {
-                    all_contiguous = false;
-                    break;
-                }
-            }
-            info.is_elementwise = all_contiguous;
-        }
-
-        // Criterion: Loop must not have side-effecting body
-        structured_control_flow::Sequence* root = nullptr;
-        if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(loop)) {
-            root = &while_stmt->root();
-        } else if (auto loop_stmt = dynamic_cast<structured_control_flow::For*>(loop)) {
-            root = &loop_stmt->root();
-        }
-        // Maps cannot have side effects by definition
-
-        info.has_side_effects = false;
-        if (root != nullptr) {
-            std::list<const structured_control_flow::ControlFlowNode*> queue = {root};
-            while (!queue.empty()) {
-                auto current = queue.front();
-                queue.pop_front();
-
-                if (auto block = dynamic_cast<const structured_control_flow::Block*>(current)) {
-                    for (auto& node : block->dataflow().nodes()) {
-                        if (auto library_node = dynamic_cast<const data_flow::LibraryNode*>(&node)) {
-                            if (library_node->side_effect()) {
-                                info.has_side_effects = true;
-                                break;
-                            }
-                        }
-                    }
-                } else if (auto seq = dynamic_cast<const structured_control_flow::Sequence*>(current)) {
-                    for (size_t i = 0; i < seq->size(); i++) {
-                        auto& child = seq->at(i).first;
-                        queue.push_back(&child);
-                    }
-                } else if (auto ifelse = dynamic_cast<const structured_control_flow::IfElse*>(current)) {
-                    for (size_t i = 0; i < ifelse->size(); i++) {
-                        auto& branch = ifelse->at(i).first;
-                        queue.push_back(&branch);
-                    }
-                } else if (auto loop = dynamic_cast<const structured_control_flow::For*>(current)) {
-                    queue.push_back(&loop->root());
-                } else if (auto while_stmt = dynamic_cast<const structured_control_flow::While*>(current)) {
-                    queue.push_back(&while_stmt->root());
-                } else if (auto loop = dynamic_cast<const structured_control_flow::Map*>(current)) {
-                    continue;
-                } else if (auto for_stmt = dynamic_cast<const structured_control_flow::Break*>(current)) {
-                    continue;
-                } else if (auto for_stmt = dynamic_cast<const structured_control_flow::Continue*>(current)) {
-                    continue;
-                } else if (auto for_stmt = dynamic_cast<const structured_control_flow::Return*>(current)) {
-                    info.has_side_effects = true;
-                    break;
-                } else {
-                    throw InvalidSDFGException("Unknown control flow node type in Loop Analysis.");
-                }
-            }
-        }
-
-        this->loop_infos_[loop] = info;
+        this->compute_loop_infos(loop);
+        this->loop_infos_[loop].loopnest_index = loopnest_index++;
     }
 }
 
 const std::vector<structured_control_flow::ControlFlowNode*> LoopAnalysis::loops() const { return this->loops_; }
 
 LoopInfo LoopAnalysis::loop_info(structured_control_flow::ControlFlowNode* loop) const {
-    if (this->loop_infos_.find(loop) == this->loop_infos_.end()) {
-        return LoopInfo();
-    }
     return this->loop_infos_.at(loop);
 }
 

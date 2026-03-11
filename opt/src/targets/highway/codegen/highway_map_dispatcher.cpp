@@ -25,7 +25,7 @@ HighwayMapDispatcher::HighwayMapDispatcher(
 )
     : NodeDispatcher(language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan),
       node_(node), indvar_(node.indvar()), arguments_(), arguments_declaration_(), arguments_lookup_(), locals_(),
-      local_symbols_(), vec_type_(types::PrimitiveType::Double) {
+      local_symbols_(), vec_type_(types::PrimitiveType::Void) {
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
     for (auto& entry : arguments_analysis.arguments(analysis_manager, node_)) {
         arguments_.push_back(entry.first);
@@ -45,6 +45,47 @@ HighwayMapDispatcher::HighwayMapDispatcher(
         if (types::is_integer(type.primitive_type())) {
             local_symbols_.insert(symbolic::symbol(local));
         }
+    }
+
+    size_t bitwidth = 0;
+    std::list<structured_control_flow::ControlFlowNode*> queue = {&node.root()};
+    while (!queue.empty()) {
+        auto node = queue.front();
+        queue.pop_front();
+
+        if (auto block = dynamic_cast<structured_control_flow::Block*>(node)) {
+            auto& graph = block->dataflow();
+            for (auto& edge : graph.edges()) {
+                bitwidth = types::bit_width(edge.base_type().primitive_type());
+                break;
+            }
+        } else if (auto sequence = dynamic_cast<structured_control_flow::Sequence*>(node)) {
+            for (size_t i = 0; i < sequence->size(); i++) {
+                queue.push_back(&sequence->at(i).first);
+            }
+        } else {
+            throw std::runtime_error("Unsupported control flow node of type " + std::string(typeid(*node).name()));
+        }
+    }
+    if (bitwidth == 0) {
+        bitwidth = 64;
+    }
+
+    switch (bitwidth) {
+        case 8:
+            vec_type_ = types::PrimitiveType::UInt8;
+            break;
+        case 16:
+            vec_type_ = types::PrimitiveType::UInt16;
+            break;
+        case 32:
+            vec_type_ = types::PrimitiveType::UInt32;
+            break;
+        case 64:
+            vec_type_ = types::PrimitiveType::UInt64;
+            break;
+        default:
+            throw std::runtime_error("Unsupported bitwidth " + std::to_string(bitwidth));
     }
 };
 
@@ -81,6 +122,8 @@ void HighwayMapDispatcher::
     library_stream << "const hn::ScalableTag<int16_t> daisy_vec_s16;" << std::endl;
     library_stream << "const hn::ScalableTag<int32_t> daisy_vec_s32;" << std::endl;
     library_stream << "const hn::ScalableTag<int64_t> daisy_vec_s64;" << std::endl;
+    library_stream << "const hn::ScalableTag<hwy::float16_t> daisy_vec_f16;" << std::endl;
+    library_stream << "const hn::ScalableTag<hwy::bfloat16_t> daisy_vec_bf16;" << std::endl;
     library_stream << "const hn::ScalableTag<float> daisy_vec_f32;" << std::endl;
     library_stream << "const hn::ScalableTag<double> daisy_vec_f64;" << std::endl;
     library_stream << std::endl;
@@ -371,6 +414,10 @@ std::string HighwayMapDispatcher::HighwayMapDispatcher::daisy_vec(const types::P
             return "daisy_vec_u32";
         case types::PrimitiveType::UInt64:
             return "daisy_vec_u64";
+        case types::PrimitiveType::Half:
+            return "daisy_vec_f16";
+        case types::PrimitiveType::BFloat:
+            return "daisy_vec_bf16";
         case types::PrimitiveType::Float:
             return "daisy_vec_f32";
         case types::PrimitiveType::Double:

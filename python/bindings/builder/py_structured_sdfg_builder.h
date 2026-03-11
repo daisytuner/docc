@@ -133,7 +133,10 @@ public:
     /***** Library Nodes *****/
 
     size_t add_cmath(
-        size_t block_ptr, sdfg::math::cmath::CMathFunction func, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+        size_t block_ptr,
+        sdfg::math::cmath::CMathFunction func,
+        sdfg::types::PrimitiveType primitive_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
     size_t add_malloc(size_t block_ptr, const std::string& size, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());

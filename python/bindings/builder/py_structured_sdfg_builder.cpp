@@ -586,11 +586,14 @@ void PyStructuredSDFGBuilder::add_reference_memlet(
     builder_.add_reference_memlet(*block, *src, *dst, indices, *type, debug_info);
 }
 
-size_t PyStructuredSDFGBuilder::
-    add_cmath(size_t block_ptr, sdfg::math::cmath::CMathFunction func, const sdfg::DebugInfo& debug_info) {
+size_t PyStructuredSDFGBuilder::add_cmath(
+    size_t block_ptr,
+    sdfg::math::cmath::CMathFunction func,
+    sdfg::types::PrimitiveType primitive_type,
+    const sdfg::DebugInfo& debug_info
+) {
     auto* block = reinterpret_cast<sdfg::structured_control_flow::Block*>(block_ptr);
-    auto& node = builder_.add_library_node<
-        sdfg::math::cmath::CMathNode>(*block, debug_info, func, sdfg::types::PrimitiveType::Double);
+    auto& node = builder_.add_library_node<sdfg::math::cmath::CMathNode>(*block, debug_info, func, primitive_type);
     return reinterpret_cast<size_t>(&node);
 }
 
