@@ -176,7 +176,15 @@ PYBIND11_MODULE(_sdfg, m) {
         .def("validate", &PyStructuredSDFG::validate, "Validates the SDFG")
         .def("expand", &PyStructuredSDFG::expand, "Expands all library nodes")
         .def("simplify", &PyStructuredSDFG::simplify, "Simplify the SDFG")
-        .def("dump", &PyStructuredSDFG::dump, py::arg("path"), py::arg("type") = "")
+        .def(
+            "dump",
+            &PyStructuredSDFG::dump,
+            py::arg("path"),
+            py::arg("type") = "",
+            py::arg("dump_dot") = false,
+            py::arg("dump_json") = true,
+            py::arg("record_for_instrumentation") = false
+        )
         .def("normalize", &PyStructuredSDFG::normalize, "Normalize the SDFG")
         .def(
             "schedule",

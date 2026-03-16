@@ -55,7 +55,13 @@ public:
 
     void simplify();
 
-    void dump(const std::string& path, const std::string& type = "");
+    void dump(
+        const std::string& path,
+        const std::string& type = "",
+        bool dump_dot = false,
+        bool dump_json = true,
+        bool record_for_instrumentation = false
+    );
 
     void normalize();
 

@@ -100,6 +100,10 @@ def _map_python_type(dtype):
     return dtype
 
 
+def _is_debug_dump() -> bool:
+    return bool(os.environ.get("DOCC_DEBUG"))
+
+
 class PythonProgram(DoccProgram):
 
     def __init__(
@@ -245,15 +249,18 @@ class PythonProgram(DoccProgram):
         signature = f"{type_sig}|{mapping_sig}|{equiv_sig}"
 
         if output_folder is None:
-            filename = inspect.getsourcefile(self.func)
-            hash_input = f"{filename}|{self.name}|{self.target}|{self.category}|{self.capture_args}|{self.instrumentation_mode}|{self.remote_tuning}|{signature}".encode(
+            source_path = inspect.getsourcefile(self.func)
+            hash_input = f"{source_path}|{self.name}|{self.target}|{self.category}|{self.capture_args}|{self.instrumentation_mode}|{signature}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
+            filename = os.path.basename(inspect.getsourcefile(self.func))
 
             docc_tmp = os.environ.get("DOCC_TMP")
             if docc_tmp:
-                output_folder = f"{docc_tmp}/{self.name}-{stable_id}"
+                output_folder = (
+                    f"{docc_tmp}/{filename}-{self.name}-{self.target}-{stable_id}"
+                )
             else:
                 user = os.getenv("USER")
                 if not user:
@@ -272,18 +279,34 @@ class PythonProgram(DoccProgram):
         )
         sdfg.validate()
 
+        debug_dump = _is_debug_dump()
+
+        if debug_dump:
+            sdfg.dump(output_folder, "py0.parsed", dump_dot=True)
+
         # Tensor targets keep tensor nodes
         if self.target != "onnx":
             sdfg.expand()
+            if debug_dump:
+                sdfg.dump(output_folder, "py1.expanded", dump_dot=True)
 
         # Simplify pipelines
         sdfg.simplify()
+        if debug_dump:
+            sdfg.dump(output_folder, "py2.opt", dump_dot=True)
 
         # Normalization for scheduling
         if self.target != "none":
             sdfg.normalize()
 
-        sdfg.dump(output_folder)
+        if debug_dump or instrumentation_mode or capture_args:
+            sdfg.dump(
+                output_folder,
+                "py3.norm",
+                dump_dot=debug_dump,
+                dump_json=True,
+                record_for_instrumentation=True,
+            )
 
         # Schedule if target is specified
         if self.target != "none":
@@ -298,7 +321,8 @@ class PythonProgram(DoccProgram):
 
         self.last_sdfg = sdfg
 
-        sdfg.dump(output_folder, "post_sched")
+        if debug_dump:
+            sdfg.dump(output_folder, "py4.post_sched", dump_dot=True)
 
         custom_compile_fn = get_target_compile_fn(self.target)
         if custom_compile_fn is not None:

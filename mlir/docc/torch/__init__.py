@@ -7,6 +7,7 @@ from typing import Any, Optional
 from docc.sdfg import StructuredSDFG
 from docc.mlir import MLIRModule
 from docc.compiler import DoccProgram, CompiledSDFG
+from docc.python.target_registry import get_target_schedule_fn, get_target_compile_fn
 
 # Global RPC context for scheduling SDFGs
 sdfg_rpc_context = None
@@ -173,29 +174,60 @@ class TorchProgram(DoccProgram):
         if self._sdfg is None:
             self._sdfg = self.to_sdfg()
 
+        debug_mode = os.environ.get("DOCC_DEBUG")
+        debug_dump = bool(debug_mode)
+
         sdfg = self._sdfg
         sdfg.validate()
+        if debug_dump:
+            sdfg.dump(output_folder, "mlir0.parsed", dump_dot=True)
         sdfg.expand()
+        if debug_dump:
+            sdfg.dump(output_folder, "mlir1.expanded", dump_dot=True)
         sdfg.simplify()
+        if debug_dump:
+            sdfg.dump(output_folder, "mlir2.opt", dump_dot=True)
 
         if self.target != "none":
             sdfg.normalize()
 
-        sdfg.dump(output_folder)
+        if debug_dump or instrumentation_mode or capture_args:
+            sdfg.dump(
+                output_folder,
+                "py3.norm",
+                dump_dot=debug_dump,
+                dump_json=True,
+                record_for_instrumentation=True,
+            )
 
         # Schedule if target is specified
         if self.target != "none":
-            sdfg.schedule(self.target, self.category, self.remote_tuning)
+            custom_schedule_fn = get_target_schedule_fn(self.target)
+            if custom_schedule_fn is not None:
+                custom_schedule_fn(
+                    sdfg, self.category, {"remote_tuning": self.remote_tuning}
+                )
+            else:
+                sdfg.schedule(self.target, self.category, self.remote_tuning)
 
         self.last_sdfg = sdfg
 
+        if debug_dump:
+            sdfg.dump(output_folder, "mlir4.post_sched", dump_dot=True)
+
         # Compile to shared library
-        lib_path = sdfg._compile(
-            output_folder=output_folder,
-            target=self.target,
-            instrumentation_mode=instrumentation_mode,
-            capture_args=capture_args,
-        )
+        custom_compile_fn = get_target_compile_fn(self.target)
+        if custom_compile_fn is not None:
+            lib_path = custom_compile_fn(
+                sdfg, output_folder, instrumentation_mode, capture_args, {}
+            )
+        else:
+            lib_path = sdfg._compile(
+                output_folder=output_folder,
+                target=self.target,
+                instrumentation_mode=instrumentation_mode,
+                capture_args=capture_args,
+            )
 
         # Build shape sources from input info
         shape_sources = []

@@ -266,7 +266,9 @@ void PyStructuredSDFG::simplify() {
     map_fusion.run(builder_opt, analysis_manager);
 }
 
-void PyStructuredSDFG::dump(const std::string& path, const std::string& type) {
+void PyStructuredSDFG::dump(
+    const std::string& path, const std::string& type, bool dump_dot, bool dump_json, bool record_for_instrumentation
+) {
     fs::path build_path(path);
     if (!fs::exists(build_path)) {
         fs::create_directories(build_path);
@@ -274,27 +276,36 @@ void PyStructuredSDFG::dump(const std::string& path, const std::string& type) {
 
     // Add metadata to SDFG
     auto typeSuffix = type.empty() ? "" : ("." + type);
-    fs::path sdfg_file = build_path / (sdfg_->name() + typeSuffix + ".json");
-    fs::path features_file = build_path / (sdfg_->name() + typeSuffix + ".npz");
-    fs::path arg_captures_path = build_path / ("arg_captures" + typeSuffix);
-    sdfg_->add_metadata("sdfg_file", sdfg_file.string());
-    sdfg_->add_metadata("arg_capture_path", arg_captures_path.string());
-    sdfg_->add_metadata("features_file", features_file.string());
-    sdfg_->add_metadata("opt_report_file", (build_path / (sdfg_->name() + typeSuffix + ".opt_report.json")).string());
+    auto suffixedName = sdfg_->name() + typeSuffix;
 
-    // Dump json
-    sdfg::serializer::JSONSerializer serializer;
-    nlohmann::json j = serializer.serialize(*this->sdfg_);
+    if (dump_json) {
+        fs::path sdfg_file = build_path / (suffixedName + ".json");
 
-    std::ofstream ofs(sdfg_file);
-    if (!ofs.is_open()) {
-        throw std::runtime_error("Failed to open file: " + sdfg_file.string());
+        // Dump json
+        sdfg::serializer::JSONSerializer serializer;
+        nlohmann::json j = serializer.serialize(*this->sdfg_);
+
+        std::ofstream ofs(sdfg_file);
+        if (!ofs.is_open()) {
+            throw std::runtime_error("Failed to open file: " + sdfg_file.string());
+        }
+        ofs << j.dump(2);
+        ofs.close();
+
+        if (record_for_instrumentation) {
+            fs::path features_file = build_path / (suffixedName + ".npz");
+            fs::path arg_captures_path = build_path / "arg_captures";
+            sdfg_->add_metadata("sdfg_file", sdfg_file.string());
+            sdfg_->add_metadata("arg_capture_path", arg_captures_path.string());
+            sdfg_->add_metadata("features_file", features_file.string());
+            sdfg_->add_metadata("opt_report_file", (build_path / (suffixedName + ".opt_report.json")).string());
+        }
     }
-    ofs << j.dump(2);
-    ofs.close();
 
-    auto dot_file = build_path / (sdfg_->name() + typeSuffix + ".dot");
-    sdfg::visualizer::DotVisualizer::writeToFile(*sdfg_, &dot_file);
+    if (dump_dot) {
+        auto dot_file = build_path / (suffixedName + ".dot");
+        sdfg::visualizer::DotVisualizer::writeToFile(*sdfg_, &dot_file);
+    }
 }
 
 void PyStructuredSDFG::normalize() {

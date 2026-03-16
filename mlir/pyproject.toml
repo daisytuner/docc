@@ -46,7 +46,8 @@ Issues = "https://github.com/daisytuner/docc/issues"
 [tool.scikit-build]
 wheel.packages = ["docc"]
 cmake.source-dir = ".."
-cmake.build-type = "Release"
+install.components = ["docc_mlir"]
+cmake.define.PARENT_PROJECT_INSTALL_PREFIX = "docc/"
 cmake.define.MLIR_BUILD_FRONTEND = "ON"
 cmake.define.MLIR_BUILD_BINDINGS = "ON"
 cmake.define.MLIR_DIR = "/usr/lib/llvm-19/lib/cmake/mlir"
