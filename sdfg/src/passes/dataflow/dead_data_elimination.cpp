@@ -53,27 +53,27 @@ public:
 
     bool visit(sdfg::structured_control_flow::Block& node) override;
 
-    void useAsSymbolWrite(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) override;
-    void useAsSymbolRead(
+    void use_as_symbol_write(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) override;
+    void use_as_symbol_read(
         const std::string& container,
         const Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
     ) override;
-    void useAsSrcNode(
+    void use_as_src_node(
         const std::string& container,
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
     ) override;
-    void useAsDstNode(
+    void use_as_dst_node(
         const std::string& container,
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
     ) override;
-    void useAsReturnSrc(const std::string& container, const Return& ret) override;
+    void use_as_return_src(const std::string& container, const Return& ret) override;
 
     const std::unordered_set<std::string>& fully_owned_areas() const { return fully_owned_; }
 
@@ -215,21 +215,21 @@ bool MemoryOwnershipAnalysis::visit(sdfg::structured_control_flow::Block& node) 
 }
 
 
-void MemoryOwnershipAnalysis::useAsReturnSrc(const std::string& container, const Return& ret) {
+void MemoryOwnershipAnalysis::use_as_return_src(const std::string& container, const Return& ret) {
     if (sdfg_.type(container).type_id() == types::TypeID::Pointer) {
         blockers_[container].emplace(&ret, BlockerType::Escape);
     }
 }
 
 void MemoryOwnershipAnalysis::
-    useAsSymbolWrite(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) {
+    use_as_symbol_write(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) {
     auto name = container->get_name();
     if (sdfg_.type(name).type_id() == types::TypeID::Pointer) {
         blockers_[name].emplace(user, BlockerType::Overwrite);
     }
 }
 
-void MemoryOwnershipAnalysis::useAsSymbolRead(
+void MemoryOwnershipAnalysis::use_as_symbol_read(
     const std::string& container, const Element* user, SymbolReadLocation loc, int loc_index, symbolic::Expression expr
 ) {
     auto& type = sdfg_.type(container);
@@ -238,7 +238,7 @@ void MemoryOwnershipAnalysis::useAsSymbolRead(
     }
 }
 
-void MemoryOwnershipAnalysis::useAsSrcNode(
+void MemoryOwnershipAnalysis::use_as_src_node(
     const std::string& container, const data_flow::AccessNode& node, const data_flow::Memlet& edge, const Block& block
 ) {
     auto& type = sdfg_.type(container);
@@ -250,7 +250,7 @@ void MemoryOwnershipAnalysis::useAsSrcNode(
     }
 }
 
-void MemoryOwnershipAnalysis::useAsDstNode(
+void MemoryOwnershipAnalysis::use_as_dst_node(
     const std::string& container, const data_flow::AccessNode& node, const data_flow::Memlet& edge, const Block& block
 ) {
     if (edge.is_dst_write()) { // writes to the ptr
@@ -284,33 +284,34 @@ public:
         return writes_to_remove_;
     }
 
-    void useAsSymbolRead(
+    void use_as_symbol_read(
         const std::string& container,
         const Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
     ) override {}
-    void useAsSymbolWrite(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) override {}
-    void useAsSrcNode(
+    void use_as_symbol_write(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) override {
+    }
+    void use_as_src_node(
         const std::string& container,
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
     ) override;
-    void useAsDstNode(
+    void use_as_dst_node(
         const std::string& container,
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
     ) override;
-    void useAsReturnSrc(const std::string& container, const Return& ret) override {}
+    void use_as_return_src(const std::string& container, const Return& ret) override {}
 };
 
 IndirectMemoryAccessFinder::IndirectMemoryAccessFinder(const std::unordered_set<std::string>& target_containers)
     : target_containers_(target_containers) {}
 
-void IndirectMemoryAccessFinder::useAsSrcNode(
+void IndirectMemoryAccessFinder::use_as_src_node(
     const std::string& container, const data_flow::AccessNode& node, const data_flow::Memlet& edge, const Block& block
 ) {
     if (target_containers_.contains(container)) {
@@ -320,7 +321,7 @@ void IndirectMemoryAccessFinder::useAsSrcNode(
     }
 }
 
-void IndirectMemoryAccessFinder::useAsDstNode(
+void IndirectMemoryAccessFinder::use_as_dst_node(
     const std::string& container, const data_flow::AccessNode& node, const data_flow::Memlet& edge, const Block& block
 ) {
     if (target_containers_.contains(container)) {

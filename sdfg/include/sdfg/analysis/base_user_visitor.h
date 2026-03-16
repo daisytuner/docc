@@ -27,27 +27,27 @@ public:
                    // call!
     };
 
-    virtual void useAsSymbolRead(
+    virtual void use_as_symbol_read(
         const std::string& container,
         const Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
     ) = 0;
-    virtual void useAsSymbolWrite(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) = 0;
-    virtual void useAsSrcNode(
+    virtual void use_as_symbol_write(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) = 0;
+    virtual void use_as_src_node(
         const std::string& container,
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
     ) = 0;
-    virtual void useAsDstNode(
+    virtual void use_as_dst_node(
         const std::string& container,
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
     ) = 0;
-    virtual void useAsReturnSrc(const std::string& container, const Return& ret) = 0;
+    virtual void use_as_return_src(const std::string& container, const Return& ret) = 0;
 
     bool visit(sdfg::structured_control_flow::Block& node) override;
     bool visit(sdfg::structured_control_flow::Sequence& node) override;
