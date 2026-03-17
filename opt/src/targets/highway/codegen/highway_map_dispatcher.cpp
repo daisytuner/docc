@@ -227,12 +227,7 @@ void HighwayMapDispatcher::dispatch_node(
 
     auto& library_stream = library_snippet_factory.require(kernel_name, "cpp", true).stream();
 
-    std::filesystem::path sdfg_path = sdfg_.metadata("sdfg_file");
-    std::filesystem::path kernel_file = sdfg_path.parent_path() / (kernel_name + ".cpp");
     library_stream << "#include " << library_snippet_factory.header_path().filename() << std::endl;
-    // library_stream << "#undef HWY_TARGET_INCLUDE" << std::endl;
-    // library_stream << "#define HWY_TARGET_INCLUDE " << "\"" << kernel_file.string() << "\"" << std::endl;
-    // library_stream << "#include <hwy/foreach_target.h>" << std::endl;
     library_stream << "#include <hwy/highway.h>" << std::endl;
     library_stream << "#include <hwy/contrib/math/math-inl.h>" << std::endl;
     library_stream << std::endl;
