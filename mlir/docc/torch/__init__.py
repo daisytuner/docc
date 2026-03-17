@@ -170,18 +170,21 @@ class TorchProgram(DoccProgram):
             else:
                 self._input_info.append({})
 
-        # Build SDFG if not already done
-        if self._sdfg is None:
-            self._sdfg = self.to_sdfg()
-
         debug_mode = os.environ.get("DOCC_DEBUG")
         debug_dump = bool(debug_mode)
 
+        # Build SDFG if not already done
+        if self._sdfg is None:
+            self._sdfg = self.to_sdfg(output_folder, debug_dump)
+
         sdfg = self._sdfg
-        sdfg.validate()
+
         if debug_dump:
             sdfg.dump(output_folder, "mlir0.parsed", dump_dot=True)
+
+        sdfg.validate()
         sdfg.expand()
+
         if debug_dump:
             sdfg.dump(output_folder, "mlir1.expanded", dump_dot=True)
         sdfg.simplify()
@@ -194,7 +197,7 @@ class TorchProgram(DoccProgram):
         if debug_dump or instrumentation_mode or capture_args:
             sdfg.dump(
                 output_folder,
-                "py3.norm",
+                "mlir3.norm",
                 dump_dot=debug_dump,
                 dump_json=True,
                 record_for_instrumentation=True,
@@ -250,7 +253,11 @@ class TorchProgram(DoccProgram):
         self._compiled = compiled
         return compiled
 
-    def to_sdfg(self) -> StructuredSDFG:
+    def to_sdfg(
+        self,
+        output_folder: Optional[str] = None,
+        debug_dump: bool = False,
+    ) -> StructuredSDFG:
         try:
             from torch_mlir import fx
         except ImportError:
@@ -279,8 +286,23 @@ class TorchProgram(DoccProgram):
         # Translate to Structured SDFG
         mlir_module = MLIRModule(torch_mlir)
         mlir_module.convert()
+
+        # Dump the MLIR code to a file for inspection
+        if debug_dump and output_folder is not None:
+            os.makedirs(output_folder, exist_ok=True)
+            with open(f"{output_folder}/{self.name}_imported.mlir", "w") as f:
+                f.write(torch_mlir)
         sdfg_str = mlir_module.translate()
-        sdfg = StructuredSDFG.parse(sdfg_str)
+        try:
+            sdfg = StructuredSDFG.parse(sdfg_str)
+        except RuntimeError:
+            if output_folder is not None:
+                os.makedirs(output_folder, exist_ok=True)
+                with open(
+                    f"{output_folder}/{self.name}_parse_failed.sdfg.json", "w"
+                ) as f:
+                    f.write(sdfg_str)
+            raise
 
         self._sdfg = sdfg
         return sdfg
