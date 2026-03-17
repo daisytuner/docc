@@ -372,6 +372,9 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
             }
         }
     }
+    if (applied) { // if changes were made, any cached analysis will be out of date.
+        analysis_manager.invalidate_all();
+    }
 
     // slightly expensive, because for fully_owned_areas we already looked for uses. But classified differently and did
     // not look at, whether the entire container can be removed
