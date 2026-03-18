@@ -20,8 +20,14 @@ void CodeNode::validate(const Function& function) const {
     auto& graph = this->get_parent();
 
     // No two access nodes for same data
+    std::unordered_set<std::string> in_conns;
     std::unordered_map<std::string, const AccessNode*> input_names;
     for (auto& iedge : graph.in_edges(*this)) {
+        if (std::find(this->inputs().begin(), this->inputs().end(), iedge.dst_conn()) == this->inputs().end()) {
+            throw InvalidSDFGException("Input edge " + iedge.dst_conn() + " does not match any input of the code node");
+        }
+        in_conns.insert(iedge.dst_conn());
+
         if (dynamic_cast<const ConstantNode*>(&iedge.src()) != nullptr) {
             continue;
         }
@@ -34,9 +40,20 @@ void CodeNode::validate(const Function& function) const {
             input_names.insert({src.data(), &src});
         }
     }
+    for (auto& input : this->inputs()) {
+        if (in_conns.find(input) == in_conns.end()) {
+            throw InvalidSDFGException("Input " + input + " of code node is not connected to any edge");
+        }
+    }
 
+    std::unordered_set<std::string> out_conns;
     std::unordered_map<std::string, const AccessNode*> output_names;
     for (auto& oedge : graph.out_edges(*this)) {
+        if (std::find(this->outputs().begin(), this->outputs().end(), oedge.src_conn()) == this->outputs().end()) {
+            throw InvalidSDFGException("Output edge " + oedge.src_conn() + " does not match any output of the code node");
+        }
+        out_conns.insert(oedge.src_conn());
+
         if (dynamic_cast<const ConstantNode*>(&oedge.dst()) != nullptr) {
             continue;
         }
@@ -47,6 +64,11 @@ void CodeNode::validate(const Function& function) const {
             }
         } else {
             output_names.insert({dst.data(), &dst});
+        }
+    }
+    for (auto& output : this->outputs()) {
+        if (out_conns.find(output) == out_conns.end()) {
+            throw InvalidSDFGException("Output " + output + " of code node is not connected to any edge");
         }
     }
 }
