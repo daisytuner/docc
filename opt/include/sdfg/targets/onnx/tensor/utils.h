@@ -98,9 +98,6 @@ inline std::string get_onnx_op_type(const std::string& node_code) {
     if (node_code == "ml::Tanh") return "Tanh";
     if (node_code == "ml::Sigmoid") return "Sigmoid";
     if (node_code == "ml::ReLU") return "Relu";
-    if (node_code == "ml::LeakyReLU") return "LeakyRelu";
-    if (node_code == "ml::Elu") return "Elu";
-    if (node_code == "ml::HardSigmoid") return "HardSigmoid";
     if (node_code == "ml::Erf") return "Erf";
     if (node_code == "ml::Cast") return "Cast";
     if (node_code == "ml::Fill") return "ConstantOfShape";

@@ -6,11 +6,8 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/elu_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.h"
@@ -227,21 +224,6 @@ REGISTER_UNARY_TEST(SigmoidNode, 1)
 REGISTER_UNARY_TEST(SigmoidNode, 2)
 REGISTER_UNARY_TEST(SigmoidNode, 3)
 REGISTER_UNARY_TEST(SigmoidNode, 4)
-
-REGISTER_UNARY_TEST(EluNode, 1)
-REGISTER_UNARY_TEST(EluNode, 2)
-REGISTER_UNARY_TEST(EluNode, 3)
-REGISTER_UNARY_TEST(EluNode, 4)
-
-REGISTER_UNARY_TEST(HardSigmoidNode, 1)
-REGISTER_UNARY_TEST(HardSigmoidNode, 2)
-REGISTER_UNARY_TEST(HardSigmoidNode, 3)
-REGISTER_UNARY_TEST(HardSigmoidNode, 4)
-
-REGISTER_UNARY_TEST(LeakyReLUNode, 1)
-REGISTER_UNARY_TEST(LeakyReLUNode, 2)
-REGISTER_UNARY_TEST(LeakyReLUNode, 3)
-REGISTER_UNARY_TEST(LeakyReLUNode, 4)
 
 // Binary Tests
 REGISTER_BINARY_TEST(AddNode, 1)

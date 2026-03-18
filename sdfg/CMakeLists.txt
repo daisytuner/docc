@@ -97,12 +97,9 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/elu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.cpp

@@ -1409,24 +1409,12 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::DivNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(math::tensor::LibraryNodeType_Elu.value(), []() {
-            return std::make_unique<math::tensor::EluNodeSerializer>();
-        });
-    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Exp.value(), []() {
             return std::make_unique<math::tensor::ExpNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Erf.value(), []() {
             return std::make_unique<math::tensor::ErfNodeSerializer>();
-        });
-    LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(math::tensor::LibraryNodeType_HardSigmoid.value(), []() {
-            return std::make_unique<math::tensor::HardSigmoidNodeSerializer>();
-        });
-    LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(math::tensor::LibraryNodeType_LeakyReLU.value(), []() {
-            return std::make_unique<math::tensor::LeakyReLUNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Mul.value(), []() {

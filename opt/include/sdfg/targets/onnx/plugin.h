@@ -136,45 +136,6 @@ inline void register_onnx_plugin() {
         }
     );
 
-    // LeakyReLU
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_LeakyReLU.value() + "::" + ImplementationType_ONNX.value(),
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<tensor::ElementWiseUnaryNodeDispatcher_ONNX>(
-                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::LeakyReLUNode&>(node)
-            );
-        }
-    );
-
-    // Elu
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_Elu.value() + "::" + ImplementationType_ONNX.value(),
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<tensor::ElementWiseUnaryNodeDispatcher_ONNX>(
-                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::EluNode&>(node)
-            );
-        }
-    );
-
-    // HardSigmoid
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_HardSigmoid.value() + "::" + ImplementationType_ONNX.value(),
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<tensor::ElementWiseUnaryNodeDispatcher_ONNX>(
-                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::HardSigmoidNode&>(node)
-            );
-        }
-    );
-
     // Erf
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
         math::tensor::LibraryNodeType_Erf.value() + "::" + ImplementationType_ONNX.value(),
