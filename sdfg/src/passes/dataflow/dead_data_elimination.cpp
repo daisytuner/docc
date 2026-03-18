@@ -432,9 +432,19 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
                     auto& graph = access_node->get_parent();
                     auto& block = dynamic_cast<structured_control_flow::Block&>(*graph.get_parent());
 
-                    builder.clear_node(block, *access_node);
-                    applied = true;
-                    could_eliminate_write = true;
+                    // Restrict to nodes which are the only output of an operation
+                    bool multi_output = false;
+                    for (auto& iedge : graph.in_edges(*access_node)) {
+                        if (graph.out_degree(iedge.src()) > 1) {
+                            multi_output = true;
+                            break;
+                        }
+                    }
+                    if (!multi_output) {
+                        builder.clear_node(block, *access_node);
+                        applied = true;
+                        could_eliminate_write = true;
+                    }
                 }
 
                 completely_unused &= could_eliminate_write;
