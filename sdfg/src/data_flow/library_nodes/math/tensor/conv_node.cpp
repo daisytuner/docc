@@ -1,6 +1,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 
 #include <map>
+#include <sstream>
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -536,24 +537,45 @@ std::unique_ptr<data_flow::DataFlowNode> ConvNode::
 }
 
 std::string ConvNode::toStr() const {
-    std::string result = "Conv(shape=[";
+    std::stringstream result;
+    result << "Conv(shape=[";
     for (size_t i = 0; i < shape_.size(); ++i) {
-        if (i > 0) result += ", ";
-        result += shape_[i]->__str__();
+        if (i > 0) {
+            result << ", ";
+        }
+        result << shape_[i]->__str__();
     }
-    result += "], kernel_shape=[";
+    result << "], kernel_shape=[";
     for (size_t i = 0; i < kernel_shape_.size(); ++i) {
-        if (i > 0) result += ", ";
-        result += kernel_shape_[i]->__str__();
+        if (i > 0) {
+            result << ", ";
+        }
+        result << kernel_shape_[i]->__str__();
     }
-    result += "], strides=[";
+    result << "], strides=[";
     for (size_t i = 0; i < strides_.size(); ++i) {
-        if (i > 0) result += ", ";
-        result += strides_[i]->__str__();
+        if (i > 0) {
+            result << ", ";
+        }
+        result << strides_[i]->__str__();
     }
-    result += "], output_channels=" + output_channels_->__str__();
-    result += ", group=" + group_->__str__() + ")";
-    return result;
+    result << "], pads=[";
+    for (size_t i = 0; i < pads_.size(); ++i) {
+        if (i > 0) {
+            result << ", ";
+        }
+        result << pads_[i]->__str__();
+    }
+    result << "], dilations=[";
+    for (size_t i = 0; i < dilations_.size(); ++i) {
+        if (i > 0) {
+            result << ", ";
+        }
+        result << dilations_[i]->__str__();
+    }
+    result << "], output_channels=" + output_channels_->__str__();
+    result << ", group=" + group_->__str__() + ")";
+    return result.str();
 }
 
 nlohmann::json ConvNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
