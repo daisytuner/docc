@@ -21,11 +21,15 @@ def _compile(sdfg, out_dir: str, inst_mode: str, capture: bool, kwargs: Dict[str
     return sdfg._compile(out_dir, "sequential", inst_mode, capture)
 
 
-register_target("special_legacy", _schedule_legacy)
-register_target_overrides("special", _schedule, _compile)
+def _expand(sdfg, cat: str, kwargs: Dict[str, Any]):
+    print("hooking expand")
+    return sdfg.expand()
 
 
 def test_python_target_overrides(capsys):
+    register_target("special_legacy", _schedule_legacy)
+    register_target_overrides("special", _schedule, _compile, _expand)
+
     @native(target="special", category="server")
     def matmul_etsoc(A, B, C):
         C = A @ B
@@ -43,6 +47,7 @@ def test_python_target_overrides(capsys):
     captured = capsys.readouterr()
     assert "hooking scheduling new" in captured.out
     assert "hooking compile" in captured.out
+    assert "hooking expand" in captured.out
     assert "Target 'special' is not supported" not in captured.out
 
     print("Result: ", C)
@@ -50,6 +55,9 @@ def test_python_target_overrides(capsys):
 
 
 def test_python_target_legacy_override(capsys):
+    register_target("special_legacy", _schedule_legacy)
+    register_target_overrides("special", _schedule, _compile, _expand)
+
     @native(target="special_legacy", category="server")
     def matmul_etsoc(A, B, C):
         C = A @ B

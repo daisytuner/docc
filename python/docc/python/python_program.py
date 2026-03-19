@@ -24,7 +24,6 @@ from docc.compiler.docc_program import DoccProgram
 from docc.compiler.compiled_sdfg import CompiledSDFG
 from docc.python.ast_parser import ASTParser
 from docc.python.types import element_type_from_sdfg_type
-from docc.python.target_registry import get_target_schedule_fn, get_target_compile_fn
 
 
 def _compile_wrapper(self, output_folder=None):
@@ -98,10 +97,6 @@ def _map_python_type(dtype):
         return Pointer(Structure(dtype.__name__))
 
     return dtype
-
-
-def _is_debug_dump() -> bool:
-    return bool(os.environ.get("DOCC_DEBUG"))
 
 
 class PythonProgram(DoccProgram):
@@ -277,65 +272,10 @@ class PythonProgram(DoccProgram):
         sdfg, out_args, out_shapes, out_strides = self._build_sdfg(
             arg_types, args, arg_shape_mapping, shape_values, shape_to_scalar
         )
-        sdfg.validate()
 
-        debug_dump = _is_debug_dump()
-
-        if debug_dump:
-            sdfg.dump(output_folder, "py0.parsed", dump_dot=True)
-
-        # Tensor targets keep tensor nodes
-        if self.target != "onnx":
-            sdfg.expand()
-            if debug_dump:
-                sdfg.dump(output_folder, "py1.expanded", dump_dot=True)
-
-        # Simplify pipelines
-        sdfg.simplify()
-        if debug_dump:
-            sdfg.dump(output_folder, "py2.opt", dump_dot=True)
-
-        # Normalization for scheduling
-        if self.target != "none":
-            sdfg.normalize()
-
-        if debug_dump or instrumentation_mode or capture_args:
-            sdfg.dump(
-                output_folder,
-                "py3.norm",
-                dump_dot=debug_dump,
-                dump_json=True,
-                record_for_instrumentation=True,
-            )
-
-        # Schedule if target is specified
-        if self.target != "none":
-            # Check for custom registered target first
-            custom_schedule_fn = get_target_schedule_fn(self.target)
-            if custom_schedule_fn is not None:
-                custom_schedule_fn(
-                    sdfg, self.category, {"remote_tuning": self.remote_tuning}
-                )
-            else:
-                sdfg.schedule(self.target, self.category, self.remote_tuning)
-
-        self.last_sdfg = sdfg
-
-        if debug_dump:
-            sdfg.dump(output_folder, "py4.post_sched", dump_dot=True)
-
-        custom_compile_fn = get_target_compile_fn(self.target)
-        if custom_compile_fn is not None:
-            lib_path = custom_compile_fn(
-                sdfg, output_folder, instrumentation_mode, capture_args, {}
-            )
-        else:
-            lib_path = sdfg._compile(
-                output_folder=output_folder,
-                target=self.target,
-                instrumentation_mode=instrumentation_mode,
-                capture_args=capture_args,
-            )
+        lib_path = self.sdfg_pipe(
+            sdfg, output_folder, instrumentation_mode, capture_args
+        )
 
         # Build ONNX model from JSON if target is onnx (after _compile creates the JSON)
         if self.target == "onnx":

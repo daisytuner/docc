@@ -5,10 +5,10 @@ import torch.nn as nn
 
 import docc.torch
 
-docc.torch.set_backend_options(target="none", category="server")
-
 
 def test_inference():
+    docc.torch.set_backend_options(target="none", category="server")
+
     class LinearNet(nn.Module):
         def __init__(self, in_features=4, out_features=2):
             super().__init__()
@@ -40,6 +40,8 @@ def test_inference():
     reason="Training requires support for multiple outputs in SDFG translation"
 )
 def test_training():
+    docc.torch.set_backend_options(target="none", category="server")
+
     class LinearNet(nn.Module):
         def __init__(self, in_features=4, out_features=2):
             super().__init__()
