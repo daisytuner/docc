@@ -2,8 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include "sdfg_debug_dump.h"
-
 using namespace sdfg;
 
 TEST(MapFusionTest, ProducerConsumer_1D) {
@@ -72,16 +70,12 @@ TEST(MapFusionTest, ProducerConsumer_1D) {
     builder.add_computational_memlet(block2, two_node, tasklet2, "_in2", {});
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
 
-    dump_sdfg(builder.subject(), "0-before");
-
     // Analyze and apply transformation
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1, map2);
 
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
-
-    dump_sdfg(builder.subject(), "1-after");
 
     // Verify transformation results
     auto& new_sdfg = builder.subject();
@@ -167,8 +161,6 @@ TEST(MapFusionTest, SimpleInputOutputOverlap) {
     builder.add_computational_memlet(block2, t_in, tasklet2, "_in1", {symbolic::symbol("j")}, array_desc);
     builder.add_computational_memlet(block2, two_node, tasklet2, "_in2", {});
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
-
-    dump_sdfg(builder.subject(), "0-before");
 
     // Analyze and apply transformation
     analysis::AnalysisManager analysis_manager(builder.subject());

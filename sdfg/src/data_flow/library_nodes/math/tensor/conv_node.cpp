@@ -397,11 +397,14 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     data_flow::Subset x_subset(x_indices_vec);
     data_flow::Subset w_subset(w_indices_vec);
 
+    types::Tensor x_tensor_type(scalar_type, x_shape_vec);
+    types::Tensor w_tensor_type(scalar_type, w_shape_vec);
+
     builder.add_computational_memlet(
-        comp_block, x_access, fma_tasklet, "_in1", x_subset, x_edge->base_type(), x_edge->debug_info()
+        comp_block, x_access, fma_tasklet, "_in1", x_subset, x_tensor_type, x_edge->debug_info()
     );
     builder.add_computational_memlet(
-        comp_block, w_access, fma_tasklet, "_in2", w_subset, w_edge->base_type(), w_edge->debug_info()
+        comp_block, w_access, fma_tasklet, "_in2", w_subset, w_tensor_type, w_edge->debug_info()
     );
     builder.add_computational_memlet(comp_block, accum_read, fma_tasklet, "_in3", {}, scalar_type, block.debug_info());
     builder.add_computational_memlet(comp_block, fma_tasklet, "_out", accum_write, {}, scalar_type, block.debug_info());

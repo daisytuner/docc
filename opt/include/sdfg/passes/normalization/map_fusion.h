@@ -5,6 +5,7 @@
 
 namespace sdfg {
 namespace passes {
+namespace normalization {
 
 class MapFusion : public visitor::NonStoppingStructuredSDFGVisitor {
 public:
@@ -17,5 +18,6 @@ public:
 
 typedef VisitorPass<MapFusion> MapFusionPass;
 
+} // namespace normalization
 } // namespace passes
 } // namespace sdfg

@@ -11,6 +11,7 @@ set(SOURCE_FILES
     src/analysis/scop_analysis.cpp
     src/passes/normalization/perfect_loop_distribution.cpp
     src/passes/normalization/stride_minimization.cpp
+    src/passes/normalization/map_fusion.cpp
     src/passes/targets/target_mapping_pass.cpp
     src/passes/offloading/cuda_library_node_rewriter_pass.cpp
     src/passes/offloading/code_motion/block_hoisting.cpp
@@ -67,6 +68,16 @@ set(SOURCE_FILES
     src/transformations/omp_transform.cpp
     src/transformations/offloading/offload_transform.cpp
     src/transformations/polly_transform.cpp
+    src/transformations/loop_distribute.cpp
+    src/transformations/loop_interchange.cpp
+    src/transformations/loop_skewing.cpp
+    src/transformations/loop_tiling.cpp
+    src/transformations/map_fusion.cpp
+    src/transformations/tile_fusion.cpp
+    src/transformations/out_local_storage.cpp
+    src/transformations/recorder.cpp
+    src/transformations/replayer.cpp
+    src/transformations/utils.cpp
 )
 add_library(sdfgopt
     ${SOURCE_FILES}

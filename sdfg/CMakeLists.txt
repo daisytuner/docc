@@ -158,7 +158,6 @@ set(SOURCE_FILES
     src/passes/structured_control_flow/sequence_fusion.cpp
     src/passes/structured_control_flow/unify_loop_exits.cpp
     src/passes/structured_control_flow/while_to_for_conversion.cpp
-    src/passes/transformations/map_fusion_pass.cpp
     src/passes/debug_info_propagation.cpp
     src/serializer/json_serializer.cpp
     src/structured_control_flow/block.cpp
@@ -179,16 +178,6 @@ set(SOURCE_FILES
     src/symbolic/sets.cpp
     src/symbolic/symbolic.cpp
     src/symbolic/utils.cpp
-    src/transformations/loop_distribute.cpp
-    src/transformations/loop_interchange.cpp
-    src/transformations/loop_skewing.cpp
-    src/transformations/loop_tiling.cpp
-    src/transformations/map_fusion.cpp
-    src/transformations/tile_fusion.cpp
-    src/transformations/out_local_storage.cpp
-    src/transformations/recorder.cpp
-    src/transformations/replayer.cpp
-    src/transformations/utils.cpp
     src/types/array.cpp
     src/types/function.cpp
     src/types/pointer.cpp

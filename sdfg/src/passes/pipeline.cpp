@@ -3,7 +3,6 @@
 #include "sdfg/passes/dataflow/tasklet_fusion.h"
 #include "sdfg/passes/dataflow/trivial_reference_conversion.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
-#include "sdfg/passes/transformations/map_fusion_pass.h"
 
 namespace sdfg {
 namespace passes {
@@ -137,17 +136,6 @@ Pipeline Pipeline::expansion() {
     Pipeline p("Expansion");
 
     p.register_pass<ExpansionPass>();
-
-    return p;
-};
-
-Pipeline Pipeline::map_fusion() {
-    Pipeline p("MapFusion");
-
-    p.register_pass<MapFusionPass>();
-    p.register_pass<BlockFusionPass>();
-    p.register_pass<DeadDataElimination>(true);
-    p.register_pass<DeadCFGElimination>(true);
 
     return p;
 };

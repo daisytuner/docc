@@ -31,6 +31,14 @@ set(TEST_FILES
     transformations/highway_transform_test.cpp
     transformations/omp_transform_test.cpp
     transformations/polly_transform_test.cpp
+    transformations/loop_distribute_test.cpp
+    transformations/loop_interchange_test.cpp
+    transformations/loop_skewing_test.cpp
+    transformations/loop_tiling_test.cpp
+    transformations/map_fusion_test.cpp
+    transformations/tile_fusion_test.cpp
+    transformations/out_local_storage_test.cpp
+    transformations/recorder_test.cpp
     test.cpp
 )
 

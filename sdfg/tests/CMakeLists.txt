@@ -104,14 +104,6 @@ set(TEST_FILES
     symbolic/symbolic_test.cpp
     symbolic/sets_test.cpp
     symbolic/utils_test.cpp
-    transformations/loop_distribute_test.cpp
-    transformations/loop_interchange_test.cpp
-    transformations/loop_skewing_test.cpp
-    transformations/loop_tiling_test.cpp
-    transformations/map_fusion_test.cpp
-    transformations/tile_fusion_test.cpp
-    transformations/out_local_storage_test.cpp
-    transformations/recorder_test.cpp
     types/array_test.cpp
     types/function_test.cpp
     types/pointer_test.cpp

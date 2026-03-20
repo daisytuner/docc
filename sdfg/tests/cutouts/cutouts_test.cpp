@@ -10,8 +10,6 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
-#include "sdfg/transformations/loop_interchange.h"
-#include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/type.h"
 

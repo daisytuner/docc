@@ -1,9 +1,10 @@
-#include "sdfg/passes/transformations/map_fusion_pass.h"
+#include "sdfg/passes/normalization/map_fusion.h"
 
 #include "sdfg/transformations/map_fusion.h"
 
 namespace sdfg {
 namespace passes {
+namespace normalization {
 
 MapFusion::MapFusion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
@@ -37,5 +38,6 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
     return applied;
 }
 
+} // namespace normalization
 } // namespace passes
 } // namespace sdfg

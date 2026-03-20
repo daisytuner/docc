@@ -93,7 +93,7 @@ void TestConvNode(
 }
 
 // Test 1D convolution with kernel size 3
-TEST(ConvNodeTest, DISABLED_Conv1D_Kernel3) {
+TEST(ConvNodeTest, Conv1D_Kernel3) {
     TestConvNode(
         {3}, // kernel_shape
         {1}, // strides
@@ -105,7 +105,7 @@ TEST(ConvNodeTest, DISABLED_Conv1D_Kernel3) {
 }
 
 // Test 1D convolution with kernel size 5
-TEST(ConvNodeTest, DISABLED_Conv1D_Kernel5) {
+TEST(ConvNodeTest, Conv1D_Kernel5) {
     TestConvNode(
         {5}, // kernel_shape
         {2}, // strides
@@ -117,7 +117,7 @@ TEST(ConvNodeTest, DISABLED_Conv1D_Kernel5) {
 }
 
 // Test 2D convolution with kernel size 3x3
-TEST(ConvNodeTest, DISABLED_Conv2D_Kernel3x3) {
+TEST(ConvNodeTest, Conv2D_Kernel3x3) {
     TestConvNode(
         {3, 3}, // kernel_shape
         {1, 1}, // strides
@@ -129,7 +129,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_Kernel3x3) {
 }
 
 // Test 2D convolution with stride 2
-TEST(ConvNodeTest, DISABLED_Conv2D_Stride2) {
+TEST(ConvNodeTest, Conv2D_Stride2) {
     TestConvNode(
         {3, 3}, // kernel_shape
         {2, 2}, // strides
@@ -141,7 +141,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_Stride2) {
 }
 
 // Test 2D convolution with no padding
-TEST(ConvNodeTest, DISABLED_Conv2D_NoPadding) {
+TEST(ConvNodeTest, Conv2D_NoPadding) {
     TestConvNode(
         {3, 3}, // kernel_shape
         {1, 1}, // strides
@@ -153,7 +153,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_NoPadding) {
 }
 
 // Test 2D convolution with asymmetric padding
-TEST(ConvNodeTest, DISABLED_Conv2D_AsymmetricPadding) {
+TEST(ConvNodeTest, Conv2D_AsymmetricPadding) {
     TestConvNode(
         {3, 3}, // kernel_shape
         {1, 1}, // strides
@@ -165,7 +165,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_AsymmetricPadding) {
 }
 
 // Test 2D convolution with dilation
-TEST(ConvNodeTest, DISABLED_Conv2D_Dilation2) {
+TEST(ConvNodeTest, Conv2D_Dilation2) {
     TestConvNode(
         {3, 3}, // kernel_shape
         {1, 1}, // strides
@@ -177,7 +177,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_Dilation2) {
 }
 
 // Test 2D convolution with bias
-TEST(ConvNodeTest, DISABLED_Conv2D_WithBias) {
+TEST(ConvNodeTest, Conv2D_WithBias) {
     TestConvNode(
         {3, 3}, // kernel_shape
         {1, 1}, // strides
@@ -189,7 +189,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_WithBias) {
 }
 
 // Test 2D convolution with kernel size 5x5
-TEST(ConvNodeTest, DISABLED_Conv2D_Kernel5x5) {
+TEST(ConvNodeTest, Conv2D_Kernel5x5) {
     TestConvNode(
         {5, 5}, // kernel_shape
         {1, 1}, // strides
@@ -201,7 +201,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_Kernel5x5) {
 }
 
 // Test 2D convolution with kernel size 1x1 (pointwise convolution)
-TEST(ConvNodeTest, DISABLED_Conv2D_Kernel1x1) {
+TEST(ConvNodeTest, Conv2D_Kernel1x1) {
     TestConvNode(
         {1, 1}, // kernel_shape
         {1, 1}, // strides
@@ -213,7 +213,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_Kernel1x1) {
 }
 
 // Test 2D convolution with grouped convolution
-TEST(ConvNodeTest, DISABLED_Conv2D_Grouped) {
+TEST(ConvNodeTest, Conv2D_Grouped) {
     TestConvNode(
         {3, 3}, // kernel_shape
         {1, 1}, // strides
@@ -225,7 +225,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_Grouped) {
 }
 
 // Test 3D convolution with kernel size 3x3x3
-TEST(ConvNodeTest, DISABLED_Conv3D_Kernel3x3x3) {
+TEST(ConvNodeTest, Conv3D_Kernel3x3x3) {
     TestConvNode(
         {3, 3, 3}, // kernel_shape
         {1, 1, 1}, // strides
@@ -237,7 +237,7 @@ TEST(ConvNodeTest, DISABLED_Conv3D_Kernel3x3x3) {
 }
 
 // Test 3D convolution with kernel size 2x2x2 and stride 2
-TEST(ConvNodeTest, DISABLED_Conv3D_Kernel2x2x2_Stride2) {
+TEST(ConvNodeTest, Conv3D_Kernel2x2x2_Stride2) {
     TestConvNode(
         {2, 2, 2}, // kernel_shape
         {2, 2, 2}, // strides
@@ -249,7 +249,7 @@ TEST(ConvNodeTest, DISABLED_Conv3D_Kernel2x2x2_Stride2) {
 }
 
 // Test validation: mismatched strides dimension
-TEST(ConvNodeTest, DISABLED_ValidationError_MismatchedStrides) {
+TEST(ConvNodeTest, ValidationError_MismatchedStrides) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -296,7 +296,7 @@ TEST(ConvNodeTest, DISABLED_ValidationError_MismatchedStrides) {
 }
 
 // Test validation: mismatched pads dimension
-TEST(ConvNodeTest, DISABLED_ValidationError_MismatchedPads) {
+TEST(ConvNodeTest, ValidationError_MismatchedPads) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -341,7 +341,7 @@ TEST(ConvNodeTest, DISABLED_ValidationError_MismatchedPads) {
 }
 
 // Test clone functionality
-TEST(ConvNodeTest, DISABLED_CloneNode) {
+TEST(ConvNodeTest, CloneNode) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -382,7 +382,7 @@ TEST(ConvNodeTest, DISABLED_CloneNode) {
 }
 
 // Test expansion of Conv2D with simple parameters
-TEST(ConvNodeTest, DISABLED_Conv2D_SimpleExpansion) {
+TEST(ConvNodeTest, Conv2D_SimpleExpansion) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -415,7 +415,10 @@ TEST(ConvNodeTest, DISABLED_Conv2D_SimpleExpansion) {
         symbolic::integer(1), symbolic::integer(1), symbolic::integer(4), symbolic::integer(4)
     };
     types::Tensor desc_tensor_input(desc, shape);
-    types::Tensor desc_tensor_weights(desc, {symbolic::integer(3), symbolic::integer(3)});
+    // W shape: [C_out, C_in/group, kH, kW] = [1, 1, 3, 3]
+    types::Tensor desc_tensor_weights(
+        desc, {symbolic::integer(1), symbolic::integer(1), symbolic::integer(3), symbolic::integer(3)}
+    );
     types::Tensor
         desc_tensor_output(desc, {symbolic::integer(1), symbolic::integer(1), symbolic::integer(2), symbolic::integer(2)});
 
@@ -439,7 +442,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_SimpleExpansion) {
 }
 
 // Test that expansion is not attempted with unsupported parameters
-TEST(ConvNodeTest, DISABLED_Conv2D_ExpansionNotImplemented) {
+TEST(ConvNodeTest, Conv2D_ExpansionNotImplemented) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -469,7 +472,10 @@ TEST(ConvNodeTest, DISABLED_Conv2D_ExpansionNotImplemented) {
         symbolic::integer(1), symbolic::integer(1), symbolic::integer(4), symbolic::integer(4)
     };
     types::Tensor desc_tensor_input(desc, shape);
-    types::Tensor desc_tensor_weights(desc, {symbolic::integer(3), symbolic::integer(3)});
+    // W shape: [C_out, C_in/group, kH, kW] = [1, 1, 3, 3]
+    types::Tensor desc_tensor_weights(
+        desc, {symbolic::integer(1), symbolic::integer(1), symbolic::integer(3), symbolic::integer(3)}
+    );
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
         block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
@@ -487,7 +493,7 @@ TEST(ConvNodeTest, DISABLED_Conv2D_ExpansionNotImplemented) {
 }
 
 // Test 1D convolution expansion
-TEST(ConvNodeTest, DISABLED_Conv1D_Expansion) {
+TEST(ConvNodeTest, Conv1D_Expansion) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -513,7 +519,8 @@ TEST(ConvNodeTest, DISABLED_Conv1D_Expansion) {
     // X shape: [N, C_in, D0] = [1, 1, 10]
     std::vector<symbolic::Expression> shape = {symbolic::integer(1), symbolic::integer(1), symbolic::integer(10)};
     types::Tensor desc_tensor_input(desc, shape);
-    types::Tensor desc_tensor_weights(desc, {symbolic::integer(5)});
+    // W shape: [C_out, C_in/group, k0] = [1, 1, 5]
+    types::Tensor desc_tensor_weights(desc, {symbolic::integer(1), symbolic::integer(1), symbolic::integer(5)});
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
         block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
@@ -534,7 +541,7 @@ TEST(ConvNodeTest, DISABLED_Conv1D_Expansion) {
 }
 
 // Test 3D convolution expansion
-TEST(ConvNodeTest, DISABLED_Conv3D_Expansion) {
+TEST(ConvNodeTest, Conv3D_Expansion) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -569,7 +576,11 @@ TEST(ConvNodeTest, DISABLED_Conv3D_Expansion) {
         symbolic::integer(1), symbolic::integer(1), symbolic::integer(4), symbolic::integer(4), symbolic::integer(4)
     };
     types::Tensor desc_tensor_input(desc, shape);
-    types::Tensor desc_tensor_weights(desc, {symbolic::integer(3), symbolic::integer(3), symbolic::integer(3)});
+    // W shape: [C_out, C_in/group, k0, k1, k2] = [1, 1, 3, 3, 3]
+    types::Tensor desc_tensor_weights(
+        desc,
+        {symbolic::integer(1), symbolic::integer(1), symbolic::integer(3), symbolic::integer(3), symbolic::integer(3)}
+    );
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
         block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
@@ -590,7 +601,7 @@ TEST(ConvNodeTest, DISABLED_Conv3D_Expansion) {
 }
 
 // Test linearization of memlets after expansion
-TEST(ConvNodeTest, DISABLED_LinearizationTest) {
+TEST(ConvNodeTest, LinearizationTest) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -620,7 +631,10 @@ TEST(ConvNodeTest, DISABLED_LinearizationTest) {
         symbolic::integer(1), symbolic::integer(1), symbolic::integer(4), symbolic::integer(4)
     };
     types::Tensor desc_tensor_input(desc, shape);
-    types::Tensor desc_tensor_weights(desc, {symbolic::integer(3), symbolic::integer(3)});
+    // W shape: [C_out, C_in/group, kH, kW] = [1, 1, 3, 3]
+    types::Tensor desc_tensor_weights(
+        desc, {symbolic::integer(1), symbolic::integer(1), symbolic::integer(3), symbolic::integer(3)}
+    );
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
         block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
