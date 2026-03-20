@@ -5,6 +5,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/exceptions.h"
 #include "sdfg/types/type.h"
 
 #include "sdfg/analysis/scope_analysis.h"
@@ -62,23 +63,39 @@ void ConvNode::validate(const Function& function) const {
         throw InvalidSDFGException("ConvNode: Required input 'W' is not connected");
     }
 
-    // Validate kernel shape is not empty
+    // Validate that parameters are not empty
+    if (shape_.empty()) {
+        throw InvalidSDFGException("ConvNode shape cannot be empty");
+    }
     if (kernel_shape_.empty()) {
         throw InvalidSDFGException("ConvNode kernel_shape cannot be empty");
     }
+    if (strides_.empty()) {
+        throw InvalidSDFGException("ConvNode strides cannot be empty");
+    }
+    if (pads_.empty()) {
+        throw InvalidSDFGException("ConvNode pads cannot be empty");
+    }
+    if (dilations_.empty()) {
+        throw InvalidSDFGException("ConvNode dilations cannot be empty");
+    }
 
-    // Validate strides, pads, dilations have consistent dimensions
+    // Validate consistent dimensions
     size_t spatial_dims = kernel_shape_.size();
 
-    if (!strides_.empty() && strides_.size() != spatial_dims) {
+    if (shape_.size() != spatial_dims + 2) {
+        throw InvalidSDFGException("ConvNode shape must match kernel spatial dimensions + 2");
+    }
+
+    if (strides_.size() != spatial_dims) {
         throw InvalidSDFGException("ConvNode strides must match kernel spatial dimensions");
     }
 
-    if (!pads_.empty() && pads_.size() != 2 * spatial_dims) {
+    if (pads_.size() != 2 * spatial_dims) {
         throw InvalidSDFGException("ConvNode pads must have 2 * spatial dimensions (start and end for each axis)");
     }
 
-    if (!dilations_.empty() && dilations_.size() != spatial_dims) {
+    if (dilations_.size() != spatial_dims) {
         throw InvalidSDFGException("ConvNode dilations must match kernel spatial dimensions");
     }
 }
