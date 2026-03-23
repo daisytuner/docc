@@ -6,6 +6,10 @@
 namespace sdfg {
 namespace passes {
 
+/**
+ * @deprecated does not scale, only use in experimental setups and limited testing.
+ * To be replaced by a smarter BlockHoisting pass, that requires 1 call instead this pipeline
+ **/
 Pipeline code_motion() {
     Pipeline p("CodeMotion");
 

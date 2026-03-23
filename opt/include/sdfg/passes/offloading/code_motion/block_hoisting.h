@@ -20,6 +20,10 @@
 namespace sdfg {
 namespace passes {
 
+/**
+ * Currently only looks at the first and lost block in the sequence of a if/else or Map node and thus provides very
+ * limited hoisting by itself
+ */
 class BlockHoisting : public visitor::NonStoppingStructuredSDFGVisitor {
 private:
     bool is_invariant_move(

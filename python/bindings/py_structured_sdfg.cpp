@@ -49,6 +49,7 @@
 #include <sdfg/helpers/helpers.h>
 #include <sdfg/visualizer/dot_visualizer.h>
 
+#include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
@@ -232,8 +233,8 @@ void PyStructuredSDFG::simplify() {
     memlet_combine.run(builder_opt, analysis_manager);
 
     // Move code out of loops where possible
-    sdfg::passes::Pipeline code_motion = sdfg::passes::code_motion();
-    code_motion.run(builder_opt, analysis_manager);
+    sdfg::passes::BlockHoistingPass block_hoisting;
+    block_hoisting.run(builder_opt, analysis_manager);
 
     // Convert pointer-based iterators to indvar usage
     sdfg::passes::PointerEvolution pointer_evolution_pass;
@@ -254,7 +255,7 @@ void PyStructuredSDFG::simplify() {
     map_conversion_pass.run(builder_opt, analysis_manager);
 
     // Move code out of maps where possible
-    code_motion.run(builder_opt, analysis_manager);
+    block_hoisting.run(builder_opt, analysis_manager);
 
     // Dead code elimination
     dde.run(builder_opt, analysis_manager);
