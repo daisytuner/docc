@@ -149,7 +149,12 @@ class TorchProgram(DoccProgram):
                     user = getpass.getuser()
                 output_folder = f"/tmp/{user}/DOCC/{self.name}-{stable_id}"
 
-        if os.path.exists(output_folder):
+        # Reuse already built binaries
+        docc_reuse_binaries = os.environ.get("DOCC_REUSE_BINARIES")
+
+        if not os.path.exists(output_folder) and docc_reuse_binaries:
+            docc_reuse_binaries = None
+        elif os.path.exists(output_folder) and not docc_reuse_binaries:
             shutil.rmtree(output_folder)
 
         # Populate input info from example input
@@ -172,15 +177,25 @@ class TorchProgram(DoccProgram):
             else:
                 self._input_info.append({})
 
-        # Build SDFG if not already done
-        if self._sdfg is None:
-            self._sdfg = self.to_sdfg(output_folder)
+        if docc_reuse_binaries:
+            lib_path = f"{output_folder}/lib__docc_{self.name}.so"
+            if not os.path.exists(lib_path):
+                raise ValueError(f"Tried reusing binary '{lib_path}' but does not exist")
+            sdfg_path = f"{output_folder}/__docc_{self.name}.py3.norm.json"
+            if not os.path.exists(sdfg_path):
+                raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
+            sdfg = StructuredSDFG.from_file(sdfg_path)
+            self._sdfg = sdfg
+        else:
+            # Build SDFG if not already done
+            if self._sdfg is None:
+                self._sdfg = self.to_sdfg(output_folder)
 
-        sdfg = self._sdfg
+            sdfg = self._sdfg
 
-        lib_path = self.sdfg_pipe(
-            sdfg, output_folder, instrumentation_mode, capture_args
-        )
+            lib_path = self.sdfg_pipe(
+                sdfg, output_folder, instrumentation_mode, capture_args
+            )
 
         # Build shape sources from input info
         shape_sources = []
@@ -225,11 +240,11 @@ class TorchProgram(DoccProgram):
         # fx.export_and_import expects them as positional *args.
         if isinstance(self.example_input, tuple):
             torch_mlir = fx.export_and_import(
-                self.model, *self.example_input, output_type="linalg_on_tensors"
+                self.model, *self.example_input, output_type="linalg_on_tensors", func_name=self.name
             )
         else:
             torch_mlir = fx.export_and_import(
-                self.model, self.example_input, output_type="linalg_on_tensors"
+                self.model, self.example_input, output_type="linalg_on_tensors", func_name=self.name
             )
         torch_mlir = str(torch_mlir)
 

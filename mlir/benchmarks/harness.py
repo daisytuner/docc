@@ -20,7 +20,7 @@ def run_benchmark(setup_func, name):
                 program = torch.compile(model)
                 program(model_input)
             end = time.time()
-            print(f"Torch execution time: {end - start:.6f} seconds")
+            print(f"{name} torch execution time: {end - start:.6f} seconds")
     
     if args.docc:
         docc.torch.set_backend_options(target=args.target, category="server")
@@ -30,4 +30,4 @@ def run_benchmark(setup_func, name):
                 program = torch.compile(model, backend="docc")
                 program(model_input)
             end = time.time()
-            print(f"Torch execution time: {end - start:.6f} seconds")
+            print(f"{name} docc execution time: {end - start:.6f} seconds")

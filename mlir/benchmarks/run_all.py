@@ -24,13 +24,13 @@ import subprocess
 import sys
 
 BENCHMARKS = [
-    ("matmul", "benchmarks.torch.matmul", None),
-    ("linear", "benchmarks.torch.linear", None),
-    ("batchnorm2d", "benchmarks.torch.batchnorm", None),
-    ("relu", "benchmarks.torch.relu", None),
-    ("conv2d", "benchmarks.torch.conv2d", None),
-    ("maxpool2d", "benchmarks.torch.pooling", ["--variant", "maxpool2d"]),
-    ("avgpool2d", "benchmarks.torch.pooling", ["--variant", "avgpool2d"]),
+    ("matmul", "benchmarks.torch.layers.matmul", None),
+    ("linear", "benchmarks.torch.layers.linear", None),
+    ("batchnorm2d", "benchmarks.torch.layers.batchnorm", None),
+    ("relu", "benchmarks.torch.layers.relu", None),
+    ("conv2d", "benchmarks.torch.layers.conv2d", None),
+    ("maxpool2d", "benchmarks.torch.layers.pooling", ["--variant", "maxpool2d"]),
+    ("avgpool2d", "benchmarks.torch.layers.pooling", ["--variant", "avgpool2d"]),
 ]
 
 CONFIGS = [

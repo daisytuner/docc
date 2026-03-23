@@ -261,7 +261,7 @@ jobs:
           pip install -Ccmake.build-type=Debug -e python/
 
           # Then build mlir bindings
-          pip install -Ccmake.build-type=Debug --no-build-isolation -v -e mlir/
+          pip install -Ccmake.build-type=Debug --no-build-isolation -e mlir/
 
       - name: Integration Tests
         if: matrix.python-version == '3.11' || matrix.python-version == '3.12'
@@ -270,7 +270,7 @@ jobs:
           pip install torch-mlir torchvision --extra-index-url https://download.pytorch.org/whl/cpu -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
 
           cd mlir/
-          pytest -v integration/ model_zoo/
+          pytest -v integration/
 
   finish:
     needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux]

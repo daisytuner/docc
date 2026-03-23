@@ -41,6 +41,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
 #include "sdfg/serializer/json_serializer.h"
+#include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
 namespace math {
@@ -81,6 +82,9 @@ private:
     symbolic::MultiExpression strides_b_; ///< Strides for tensor B (elements per dimension)
     symbolic::Expression offset_a_; ///< Offset into tensor A (in elements)
     symbolic::Expression offset_b_; ///< Offset into tensor B (in elements)
+
+    static bool has_basic_strides(symbolic::MultiExpression shape, symbolic::MultiExpression strides);
+    static bool has_transposed_strides(symbolic::MultiExpression shape, symbolic::MultiExpression strides);
 
 public:
     /**

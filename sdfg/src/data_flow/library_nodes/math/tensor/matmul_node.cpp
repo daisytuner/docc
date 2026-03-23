@@ -1,13 +1,15 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
+#include <cstddef>
 #include <string>
 
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
-#include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/element.h"
+#include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -21,6 +23,36 @@
 namespace sdfg {
 namespace math {
 namespace tensor {
+
+bool MatMulNode::has_basic_strides(symbolic::MultiExpression shape, symbolic::MultiExpression strides) {
+    auto basic_strides = types::Tensor::strides_from_shape(shape);
+    if (basic_strides.size() != strides.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < strides.size(); i++) {
+        if (!symbolic::eq(basic_strides[i], strides[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool MatMulNode::has_transposed_strides(symbolic::MultiExpression shape, symbolic::MultiExpression strides) {
+    if (shape.size() < 2) {
+        return false;
+    }
+    symbolic::MultiExpression new_shape;
+    new_shape.reserve(shape.size());
+    for (size_t i = 0; i < shape.size() - 2; i++) {
+        new_shape.push_back(shape[i]);
+    }
+    new_shape.push_back(shape[shape.size() - 1]);
+    new_shape.push_back(shape[shape.size() - 2]);
+    symbolic::MultiExpression transposed_strides(strides);
+    transposed_strides[strides.size() - 2] = strides[strides.size() - 1];
+    transposed_strides[strides.size() - 1] = strides[strides.size() - 2];
+    return MatMulNode::has_basic_strides(new_shape, transposed_strides);
+}
 
 MatMulNode::MatMulNode(
     size_t element_id,
@@ -220,25 +252,22 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     auto& transition = parent.at(index).second;
 
     // Get input and output edges
-    data_flow::Memlet* iedge_a = nullptr;
-    data_flow::Memlet* iedge_b = nullptr;
-    for (auto& iedge : dataflow.in_edges(*this)) {
-        if (iedge.dst_conn() == "A") {
-            iedge_a = &iedge;
-        } else if (iedge.dst_conn() == "B") {
-            iedge_b = &iedge;
-        }
-    }
-    auto& oedge = *dataflow.out_edges(*this).begin();
-
-    if (!iedge_a || !iedge_b) {
+    auto iedges = dataflow.in_edges_by_connector(*this);
+    if (iedges.size() != 2) {
         return false;
     }
+    auto* iedge_a = iedges.at(0);
+    auto* iedge_b = iedges.at(1);
+    auto oedges = dataflow.out_edges_by_connector(*this);
+    if (oedges.size() != 1) {
+        return false;
+    }
+    auto* oedge = oedges.at(0);
 
     // Check if legal - access nodes must not have other connections
     auto& input_node_a = static_cast<data_flow::AccessNode&>(iedge_a->src());
     auto& input_node_b = static_cast<data_flow::AccessNode&>(iedge_b->src());
-    auto& output_node = static_cast<data_flow::AccessNode&>(oedge.dst());
+    auto& output_node = static_cast<data_flow::AccessNode&>(oedge->dst());
 
     if (dataflow.in_degree(input_node_a) != 0 || dataflow.in_degree(input_node_b) != 0 ||
         dataflow.out_degree(output_node) != 0) {
@@ -267,9 +296,27 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
 
     auto copy_name_a = input_node_a.data();
-    strides_a_ = types::Tensor::strides_from_shape(shape_a_);
+    auto basic_strides_a = types::Tensor::strides_from_shape(shape_a_);
     auto copy_name_b = input_node_b.data();
-    strides_b_ = types::Tensor::strides_from_shape(shape_b_);
+
+    // Check if A and B have basic strides and whether they are transposed in the last dimension
+    blas::BLAS_Transpose trans_a, trans_b;
+    if (MatMulNode::has_basic_strides(this->shape_a(), this->strides_a())) {
+        trans_a = blas::BLAS_Transpose::No;
+    } else if (MatMulNode::has_transposed_strides(this->shape_a(), this->strides_a())) {
+        trans_a = blas::BLAS_Transpose::Trans;
+    } else {
+        trans_a = blas::BLAS_Transpose::No;
+        throw InvalidSDFGException("A must be in c-order");
+    }
+    if (MatMulNode::has_basic_strides(this->shape_b(), this->strides_b())) {
+        trans_b = blas::BLAS_Transpose::No;
+    } else if (MatMulNode::has_transposed_strides(this->shape_b(), this->strides_b())) {
+        trans_b = blas::BLAS_Transpose::Trans;
+    } else {
+        trans_b = blas::BLAS_Transpose::No;
+        throw InvalidSDFGException("B must be in c-order");
+    }
 
     // Create maps for batch dimensions and M, N dimensions
     structured_control_flow::Sequence* last_scope = &new_sequence;
@@ -384,11 +431,22 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     auto& gemm_block = builder.add_block(*last_scope, {}, block.debug_info());
 
     // Leading dimensions: stride of the row dimension (second-to-last dim)
-    // For row-major A[M, K]: lda = stride for M dimension = strides_a_[-2]
-    // For row-major B[K, N]: ldb = stride for K dimension = strides_b_[-2]
-    auto lda = strides_a_[strides_a_.size() - 2];
-    auto ldb = strides_b_[strides_b_.size() - 2];
-    // For output C[M, N] in row-major: ldc = N
+    symbolic::Expression lda, ldb;
+    if (trans_a == blas::BLAS_Transpose::No) {
+        // For row-major A [m * k] -> lda = k
+        lda = strides_a_[strides_a_.size() - 2];
+    } else {
+        // For row-major A [m * k] -> lda = m
+        ldb = strides_a_[strides_a_.size() - 1];
+    }
+    if (trans_b == blas::BLAS_Transpose::No) {
+        // For row-major B [k * n] -> ldb = n
+        ldb = strides_b_[strides_b_.size() - 2];
+    } else {
+        // For row-major B [k * n] -> ldb = k
+        ldb = strides_b_[strides_b_.size() - 1];
+    }
+    // For row-major C [m * n] -> ldc = n
     auto ldc = this->n();
 
     // Add GEMM node: C = alpha * A * B + beta * C
@@ -399,8 +457,8 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         blas::ImplementationType_BLAS,
         precision,
         blas::BLAS_Layout::RowMajor,
-        blas::BLAS_Transpose::No, // trans_a
-        blas::BLAS_Transpose::No, // trans_b
+        trans_a,
+        trans_b,
         this->m(),
         this->n(),
         this->k(),
@@ -452,7 +510,7 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     // Remove the original nodes
     builder.remove_memlet(block, *iedge_a);
     builder.remove_memlet(block, *iedge_b);
-    builder.remove_memlet(block, oedge);
+    builder.remove_memlet(block, *oedge);
     if (&input_node_a != &input_node_b) {
         builder.remove_node(block, input_node_a);
     }

@@ -562,18 +562,6 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
     auto in_container_rhs = translator.get_or_create_container(op->getOperand(1));
     auto out_container = translator.get_or_create_container(op->getResult(0));
 
-    // Ensure inputs are in C order (MatMulNode requires contiguous data)
-    auto element_type = translator.convertType(lhs_type.getElementType());
-    auto scalar_type = static_cast<::sdfg::types::Scalar&>(*element_type);
-    {
-        auto& tensor_info_lhs = translator.get_or_create_tensor_info(in_container_lhs, lhs_type);
-        in_container_lhs = translator.store_in_c_order(in_container_lhs, tensor_info_lhs, scalar_type);
-    }
-    {
-        auto& tensor_info_rhs = translator.get_or_create_tensor_info(in_container_rhs, rhs_type);
-        in_container_rhs = translator.store_in_c_order(in_container_rhs, tensor_info_rhs, scalar_type);
-    }
-
     auto& block = translator.builder().add_block(sequence);
 
     ::sdfg::data_flow::AccessNode* lhs_access = &translator.builder().add_access(block, in_container_lhs);
@@ -667,18 +655,6 @@ LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::B
     auto in_container_lhs = translator.get_or_create_container(op->getOperand(0));
     auto in_container_rhs = translator.get_or_create_container(op->getOperand(1));
     auto out_container = translator.get_or_create_container(op->getResult(0));
-
-    // Ensure inputs are in C order (MatMulNode requires contiguous data)
-    auto element_type = translator.convertType(lhs_type.getElementType());
-    auto scalar_type = static_cast<::sdfg::types::Scalar&>(*element_type);
-    {
-        auto& tensor_info_lhs = translator.get_or_create_tensor_info(in_container_lhs, lhs_type);
-        in_container_lhs = translator.store_in_c_order(in_container_lhs, tensor_info_lhs, scalar_type);
-    }
-    {
-        auto& tensor_info_rhs = translator.get_or_create_tensor_info(in_container_rhs, rhs_type);
-        in_container_rhs = translator.store_in_c_order(in_container_rhs, tensor_info_rhs, scalar_type);
-    }
 
     auto& block = translator.builder().add_block(sequence);
 
