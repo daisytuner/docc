@@ -82,18 +82,6 @@ void register_tenstorrent_plugin(bool emit_full_metrics, bool force_close_device
         }
     );
 
-    codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + ImplementationType_Tenstorrent_WithoutTransfers.value(),
-        [](codegen::LanguageExtension &language_extension,
-           const Function &function,
-           const data_flow::DataFlowGraph &data_flow_graph,
-           const data_flow::LibraryNode &node) {
-            return std::make_unique<blas::DotNodeDispatcher_Tenstorrent>(
-                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::DotNode &>(node)
-            );
-        }
-    );
-
     passes::scheduler::SchedulerRegistry::instance()
         .register_loop_scheduler<
             passes::scheduler::TenstorrentScheduler>(passes::scheduler::TenstorrentScheduler::target());
