@@ -9,10 +9,12 @@
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/pointer.h"
@@ -203,7 +205,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     types::Scalar indvar_type(types::PrimitiveType::Int64);
 
     // Add patches container with malloc
-    symbolic::Expression patches_size = this->shape_[1];
+    symbolic::Expression patches_size = symbolic::mul(this->shape_[0], this->shape_[1]);
     for (size_t i = 0; i < dims; i++) {
         patches_size = symbolic::mul(patches_size, symbolic::mul(this->kernel_shape_[i], out_shape[i]));
     }
@@ -221,74 +223,113 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         );
     }
 
+    // Memset patches to zero
+    auto& patches_memset_block = builder.add_block(new_sequence, {}, block->debug_info());
+    {
+        auto& patches_access = builder.add_access(patches_memset_block, patches_container, this->debug_info());
+        auto& libnode = builder.add_library_node<stdlib::MemsetNode>(
+            patches_memset_block,
+            this->debug_info(),
+            symbolic::zero(),
+            symbolic::mul(patches_size, symbolic::size_of_type(base_type))
+        );
+        builder.add_computational_memlet(
+            patches_memset_block, libnode, "_ptr", patches_access, {}, patches_type, this->debug_info()
+        );
+    }
+
+    // Add malloc for temporary GEMM output
+    symbolic::Expression tmp_Y_size = symbolic::mul(this->output_channels_, this->shape_[0]);
+    for (size_t i = 0; i < dims; i++) {
+        tmp_Y_size = symbolic::mul(tmp_Y_size, out_shape[i]);
+    }
+    auto tmp_Y_container = builder.find_new_name("_tmp_Y");
+    types::Scalar tmp_Y_base_type(builder.subject().type(access_Y->data()).primitive_type());
+    types::Pointer tmp_Y_type(tmp_Y_base_type);
+    builder.add_container(tmp_Y_container, tmp_Y_type);
+    auto& tmp_Y_malloc_block = builder.add_block(new_sequence, {}, block->debug_info());
+    {
+        auto& tmp_Y_access = builder.add_access(tmp_Y_malloc_block, tmp_Y_container, this->debug_info());
+        auto& libnode = builder.add_library_node<stdlib::MallocNode>(
+            tmp_Y_malloc_block, this->debug_info(), symbolic::mul(tmp_Y_size, symbolic::size_of_type(tmp_Y_base_type))
+        );
+        builder.add_computational_memlet(
+            tmp_Y_malloc_block, libnode, "_ret", tmp_Y_access, {}, tmp_Y_type, this->debug_info()
+        );
+    }
+
     // Add loop over batch size
     auto n_container = builder.find_new_name("_n");
     builder.add_container(n_container, indvar_type);
     auto n = symbolic::symbol(n_container);
-    auto& for_loop_n = builder.add_for(
+    auto& loop_n = builder.add_map(
         new_sequence,
         n,
         symbolic::Lt(n, this->shape_[0]),
         symbolic::zero(),
         symbolic::add(n, symbolic::one()),
+        ScheduleType_Sequential::create(),
         {},
         block->debug_info()
     );
-    structured_control_flow::Sequence* current_seq = &for_loop_n.root();
+    structured_control_flow::Sequence* current_seq = &loop_n.root();
 
     // Add loops over output dimensions
-    symbolic::MultiExpression os;
+    symbolic::SymbolVec os;
     os.reserve(dims);
     for (size_t i = 0; i < dims; i++) {
         auto o_container = builder.find_new_name("_o");
         builder.add_container(o_container, indvar_type);
         auto o = symbolic::symbol(o_container);
         os.push_back(o);
-        auto& for_loop_o = builder.add_for(
+        auto& loop_o = builder.add_map(
             *current_seq,
             o,
             symbolic::Lt(o, out_shape[i]),
             symbolic::zero(),
             symbolic::add(o, symbolic::one()),
+            ScheduleType_Sequential::create(),
             {},
             block->debug_info()
         );
-        current_seq = &for_loop_o.root();
+        current_seq = &loop_o.root();
     }
 
     // Add loop over channels
     auto c_container = builder.find_new_name("_c");
     builder.add_container(c_container, indvar_type);
     auto c = symbolic::symbol(c_container);
-    auto& for_loop_c = builder.add_for(
+    auto& loop_c = builder.add_map(
         *current_seq,
         c,
         symbolic::Lt(c, this->shape_[1]),
         symbolic::zero(),
         symbolic::add(c, symbolic::one()),
+        ScheduleType_Sequential::create(),
         {},
         block->debug_info()
     );
-    current_seq = &for_loop_c.root();
+    current_seq = &loop_c.root();
 
     // Add loops over kernel shape
-    symbolic::MultiExpression ks;
+    symbolic::SymbolVec ks;
     ks.reserve(dims);
     for (size_t i = 0; i < dims; i++) {
         auto k_container = builder.find_new_name("_k");
         builder.add_container(k_container, indvar_type);
         auto k = symbolic::symbol(k_container);
         ks.push_back(k);
-        auto& for_loop_k = builder.add_for(
+        auto& loop_k = builder.add_map(
             *current_seq,
             k,
             symbolic::Lt(k, this->kernel_shape_[i]),
             symbolic::zero(),
             symbolic::add(k, symbolic::one()),
+            ScheduleType_Sequential::create(),
             {},
             block->debug_info()
         );
-        current_seq = &for_loop_k.root();
+        current_seq = &loop_k.root();
     }
 
     // Add if/else
@@ -296,27 +337,26 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     symbolic::MultiExpression is;
     is.reserve(dims);
     symbolic::Condition true_condition = symbolic::__true__();
-    symbolic::Condition false_condition = symbolic::__false__();
     for (size_t i = 0; i < dims; i++) {
         auto expr = symbolic::
             add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
                 symbolic::mul(ks[i], this->dilations_[i]));
         is.push_back(expr);
         true_condition = symbolic::And(true_condition, symbolic::Lt(expr, this->shape_[i + 2]));
-        false_condition = symbolic::Or(false_condition, symbolic::Ge(expr, this->shape_[i + 2]));
     }
     auto& true_case = builder.add_case(if_else, true_condition, block->debug_info());
-    auto& false_case = builder.add_case(if_else, false_condition, block->debug_info());
 
     // Determine patches subset & tensor type
     data_flow::Subset patches_subset;
+    patches_subset.push_back(n);
+    patches_subset.insert(patches_subset.end(), os.begin(), os.end());
     patches_subset.push_back(c);
     patches_subset.insert(patches_subset.end(), ks.begin(), ks.end());
-    patches_subset.insert(patches_subset.end(), os.begin(), os.end());
     symbolic::MultiExpression patches_shape;
+    patches_shape.push_back(this->shape_[0]);
+    patches_shape.insert(patches_shape.end(), out_shape.begin(), out_shape.end());
     patches_shape.push_back(this->shape_[1]);
     patches_shape.insert(patches_shape.end(), this->kernel_shape_.begin(), this->kernel_shape_.end());
-    patches_shape.insert(patches_shape.end(), out_shape.begin(), out_shape.end());
     types::Tensor patches_tensor_type(base_type, patches_shape);
 
     // Determine subset for X
@@ -330,7 +370,8 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     {
         auto& X_access = builder.add_access(true_block, access_X->data(), access_X->debug_info());
         auto& patches_access = builder.add_access(true_block, patches_container, this->debug_info());
-        auto& tasklet = builder.add_tasklet(true_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto& tasklet =
+            builder.add_tasklet(true_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
         builder.add_computational_memlet(
             true_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
         );
@@ -339,43 +380,17 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         );
     }
 
-    // Add zero assignment to false case
-    auto& false_block = builder.add_block(false_case, {}, block->debug_info());
-    {
-        auto& const_zero = builder.add_constant(false_block, "0.0", base_type, this->debug_info());
-        auto& patches_access = builder.add_access(false_block, patches_container, this->debug_info());
-        auto& tasklet = builder.add_tasklet(false_block, data_flow::TaskletCode::assign, "_out", {"_in"});
-        builder.add_computational_memlet(false_block, const_zero, tasklet, "_in", {}, this->debug_info());
-        builder.add_computational_memlet(
-            false_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
-        );
-    }
-
-    // Add reference to output at current batch
-    auto Y_ref = builder.find_new_name(access_Y->data());
-    auto& Y_ref_type = builder.subject().type(access_Y->data());
-    builder.add_container(Y_ref, Y_ref_type);
-    auto& ref_block = builder.add_block(for_loop_n.root(), {}, block->debug_info());
-    {
-        auto& Y_access = builder.add_access(ref_block, access_Y->data(), access_Y->debug_info());
-        auto& Y_ref_access = builder.add_access(ref_block, Y_ref, access_Y->debug_info());
-        symbolic::Expression Y_ref_n = symbolic::mul(n, this->output_channels_);
-        for (size_t i = 0; i < dims; i++) {
-            Y_ref_n = symbolic::mul(Y_ref_n, out_shape[i]);
-        }
-        builder.add_reference_memlet(ref_block, Y_access, Y_ref_access, {Y_ref_n}, Y_ref_type, oedge_Y->debug_info());
-    }
-
     // Add GEMM node
-    auto& gemm_block = builder.add_block(for_loop_n.root(), {}, block->debug_info());
+    auto& gemm_block = builder.add_block(new_sequence, {}, block->debug_info());
     {
         auto& alpha = builder.add_constant(gemm_block, "1.0", base_type, this->debug_info());
         auto& beta = builder.add_constant(gemm_block, "0.0", base_type, this->debug_info());
         auto& W_access = builder.add_access(gemm_block, access_W->data(), access_W->debug_info());
         auto& patches_access = builder.add_access(gemm_block, patches_container, this->debug_info());
-        auto& Y_access_in = builder.add_access(gemm_block, Y_ref, access_Y->debug_info());
-        auto& Y_access_out = builder.add_access(gemm_block, Y_ref, access_Y->debug_info());
-        symbolic::Expression gemm_n = symbolic::one();
+        auto& tmp_Y_access_in = builder.add_access(gemm_block, tmp_Y_container, access_Y->debug_info());
+        auto& tmp_Y_access_out = builder.add_access(gemm_block, tmp_Y_container, access_Y->debug_info());
+        symbolic::Expression gemm_m = this->output_channels_;
+        symbolic::Expression gemm_n = this->shape_[0];
         symbolic::Expression gemm_k = this->shape_[1];
         for (size_t i = 0; i < dims; i++) {
             gemm_n = symbolic::mul(gemm_n, out_shape[i]);
@@ -388,12 +403,12 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             precision, // precision
             blas::BLAS_Layout::RowMajor, // layout
             blas::BLAS_Transpose::No, // transA
-            blas::BLAS_Transpose::No, // transB
-            this->output_channels_, // m
+            blas::BLAS_Transpose::Trans, // transB
+            gemm_m, // m
             gemm_n, // n
             gemm_k, // k
             gemm_k, // lda
-            gemm_n, // ldb
+            gemm_k, // ldb
             gemm_n // ldc
         );
         builder.add_computational_memlet(gemm_block, alpha, libnode, "__alpha", {}, base_type, this->debug_info());
@@ -409,11 +424,86 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         );
         builder
             .add_computational_memlet(gemm_block, patches_access, libnode, "__B", {}, patches_type, this->debug_info());
-        types::Pointer Y_edge_type(types::Scalar(oedge_Y->base_type().primitive_type()));
         builder
-            .add_computational_memlet(gemm_block, Y_access_in, libnode, "__C", {}, Y_edge_type, oedge_Y->debug_info());
+            .add_computational_memlet(gemm_block, tmp_Y_access_in, libnode, "__C", {}, tmp_Y_type, oedge_Y->debug_info());
         builder
-            .add_computational_memlet(gemm_block, libnode, "__C", Y_access_out, {}, Y_edge_type, oedge_Y->debug_info());
+            .add_computational_memlet(gemm_block, libnode, "__C", tmp_Y_access_out, {}, tmp_Y_type, oedge_Y->debug_info());
+    }
+
+    // Add loop over batch size (again)
+    auto& loop_n_2 = builder.add_map(
+        new_sequence,
+        n,
+        symbolic::Lt(n, this->shape_[0]),
+        symbolic::zero(),
+        symbolic::add(n, symbolic::one()),
+        ScheduleType_Sequential::create(),
+        {},
+        block->debug_info()
+    );
+    current_seq = &loop_n_2.root();
+
+    // Add loop over output channels
+    auto l_container = builder.find_new_name("_l");
+    builder.add_container(l_container, indvar_type);
+    auto l = symbolic::symbol(l_container);
+    auto& loop_l = builder.add_map(
+        *current_seq,
+        l,
+        symbolic::Lt(l, this->output_channels_),
+        symbolic::zero(),
+        symbolic::add(l, symbolic::one()),
+        ScheduleType_Sequential::create(),
+        {},
+        block->debug_info()
+    );
+    current_seq = &loop_l.root();
+
+    // Add loops over output dimensions (again)
+    for (size_t i = 0; i < dims; i++) {
+        auto o_container = builder.find_new_name("_o");
+        builder.add_container(o_container, indvar_type);
+        auto o = symbolic::symbol(o_container);
+        auto& loop_o = builder.add_map(
+            *current_seq,
+            o,
+            symbolic::Lt(o, out_shape[i]),
+            symbolic::zero(),
+            symbolic::add(o, symbolic::one()),
+            ScheduleType_Sequential::create(),
+            {},
+            block->debug_info()
+        );
+        current_seq = &loop_o.root();
+        os[i] = o;
+    }
+
+    // Add transposed copy from temporary GEMM output to Y
+    data_flow::Subset tmp_Y_subset;
+    tmp_Y_subset.push_back(l);
+    tmp_Y_subset.push_back(n);
+    tmp_Y_subset.insert(tmp_Y_subset.end(), os.begin(), os.end());
+    symbolic::MultiExpression tmp_Y_shape;
+    tmp_Y_shape.push_back(this->output_channels_);
+    tmp_Y_shape.push_back(this->shape_[0]);
+    tmp_Y_shape.insert(tmp_Y_shape.end(), out_shape.begin(), out_shape.end());
+    types::Tensor tmp_Y_tensor_type(tmp_Y_base_type, tmp_Y_shape);
+    data_flow::Subset Y_subset;
+    Y_subset.push_back(n);
+    Y_subset.push_back(l);
+    Y_subset.insert(Y_subset.end(), os.begin(), os.end());
+    auto& transpose_block = builder.add_block(*current_seq, {}, block->debug_info());
+    {
+        auto& tmp_Y_access = builder.add_access(transpose_block, tmp_Y_container, this->debug_info());
+        auto& Y_access = builder.add_access(transpose_block, access_Y->data(), access_Y->debug_info());
+        auto& tasklet =
+            builder.add_tasklet(transpose_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+        builder.add_computational_memlet(
+            transpose_block, tmp_Y_access, tasklet, "_in", tmp_Y_subset, tmp_Y_tensor_type, this->debug_info()
+        );
+        builder.add_computational_memlet(
+            transpose_block, tasklet, "_out", Y_access, Y_subset, oedge_Y->base_type(), oedge_Y->debug_info()
+        );
     }
 
     // Add free for patches container
@@ -427,6 +517,20 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         );
         builder.add_computational_memlet(
             patches_free_block, libnode, "_ptr", patches_access_out, {}, patches_type, this->debug_info()
+        );
+    }
+
+    // Add free for temporary GEMM output
+    auto& tmp_Y_free_block = builder.add_block(new_sequence, {}, block->debug_info());
+    {
+        auto& tmp_Y_access_in = builder.add_access(tmp_Y_free_block, tmp_Y_container, this->debug_info());
+        auto& tmp_Y_access_out = builder.add_access(tmp_Y_free_block, tmp_Y_container, this->debug_info());
+        auto& libnode = builder.add_library_node<stdlib::FreeNode>(tmp_Y_free_block, this->debug_info());
+        builder.add_computational_memlet(
+            tmp_Y_free_block, tmp_Y_access_in, libnode, "_ptr", {}, tmp_Y_type, this->debug_info()
+        );
+        builder.add_computational_memlet(
+            tmp_Y_free_block, libnode, "_ptr", tmp_Y_access_out, {}, tmp_Y_type, this->debug_info()
         );
     }
 
