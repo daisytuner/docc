@@ -15,6 +15,7 @@
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/einsum/einsum.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/tenstorrent/library_node_mapping.h"
 #include "sdfg/transformations/transformation.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
@@ -41,9 +42,7 @@ std::optional<sdfg::data_flow::ImplementationType> Einsum2Gemm::get_impl_type(ty
     if (this->target_tune_ == "openmp") {
         impl_type = std::make_optional(sdfg::math::blas::ImplementationType_BLAS);
     } else if (this->target_tune_ == "tenstorrent") {
-        if (data_type == types::PrimitiveType::Float) {
-            impl_type = data_flow::ImplementationType{"TENSTORRENT_WithTransfers"};
-        }
+        impl_type = tenstorrent::try_map_library_node_implementation(math::blas::LibraryNodeType_GEMM, data_type);
     }
     // TODO: Implement GEMM dispatcher for CUBLAS
 

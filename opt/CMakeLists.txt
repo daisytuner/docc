@@ -23,6 +23,8 @@ set(SOURCE_FILES
     src/passes/offloading/remove_redundant_transfers_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
     src/passes/offloading/sync_condition_propagation.cpp
+    src/passes/extended_data_transfer_minimization_pass.cpp
+    src/passes/readonly_transfer_hoisting_pass.cpp
     src/passes/dot_expansion_pass.cpp
     src/passes/gemm_expansion_pass.cpp
     src/passes/opt_pipeline.cpp
@@ -48,6 +50,7 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_map_utils.cpp
     src/targets/highway/codegen/highway_map_dispatcher.cpp
     src/targets/offloading/data_offloading_node.cpp
+    src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/targets/onnx/blas/dot_dispatcher.cpp
@@ -87,6 +90,23 @@ set(SOURCE_FILES
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
     src/transformations/utils.cpp
+    src/targets/tenstorrent/blas/dot.cpp
+    src/targets/tenstorrent/blas/gemm.cpp
+    src/targets/tenstorrent/codegen.cpp
+    src/targets/tenstorrent/library_node_dispatcher.cpp
+    src/targets/tenstorrent/library_node_mapping.cpp
+    src/targets/tenstorrent/math_node_implementation_override_pass.cpp
+    src/targets/tenstorrent/plugin.cpp
+    src/targets/tenstorrent/schedule.cpp
+    src/targets/tenstorrent/tenstorrent_create_device.cpp
+    src/targets/tenstorrent/tenstorrent_offloading_expansion.cpp
+    src/targets/tenstorrent/tenstorrent_offloading_node.cpp
+    src/targets/tenstorrent/tenstorrent_scheduler.cpp
+    src/targets/tenstorrent/tenstorrent_transform.cpp
+    src/passes/code_motion/extended_block_hoisting.cpp
+    src/passes/code_motion/extended_block_sorting.cpp
+    src/util/offloading_instrumentation_plan.cpp
+    src/util/offloading_type_collector.cpp
 )
 add_library(sdfgopt
     ${SOURCE_FILES}

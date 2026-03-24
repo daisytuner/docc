@@ -37,19 +37,6 @@
 namespace sdfg {
 namespace einsum {
 
-namespace {
-struct EinsumSerializerRegistration {
-    EinsumSerializerRegistration() {
-        serializer::LibraryNodeSerializerRegistry::instance()
-            .register_library_node_serializer(LibraryNodeType_Einsum.value(), []() {
-                return std::make_unique<EinsumSerializer>();
-            });
-    }
-};
-
-static EinsumSerializerRegistration kEinsumSerializerRegistration;
-} // namespace
-
 EinsumNode::EinsumNode(
     size_t element_id,
     const DebugInfo& debug_info,
