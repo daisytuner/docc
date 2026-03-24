@@ -314,15 +314,21 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     // Add loops over kernel shape
     symbolic::SymbolVec ks;
     ks.reserve(dims);
+    symbolic::MultiExpression is;
+    is.reserve(dims);
     for (size_t i = 0; i < dims; i++) {
         auto k_container = builder.find_new_name("_k");
         builder.add_container(k_container, indvar_type);
         auto k = symbolic::symbol(k_container);
         ks.push_back(k);
+        auto i_expr = symbolic::
+            add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
+                symbolic::mul(k, this->dilations_[i]));
+        is.push_back(i_expr);
         auto& loop_k = builder.add_map(
             *current_seq,
             k,
-            symbolic::Lt(k, this->kernel_shape_[i]),
+            symbolic::And(symbolic::Lt(k, this->kernel_shape_[i]), symbolic::Lt(i_expr, this->shape_[i + 2])),
             symbolic::zero(),
             symbolic::add(k, symbolic::one()),
             ScheduleType_Sequential::create(),
@@ -331,20 +337,6 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         );
         current_seq = &loop_k.root();
     }
-
-    // Add if/else
-    auto& if_else = builder.add_if_else(*current_seq, {}, block->debug_info());
-    symbolic::MultiExpression is;
-    is.reserve(dims);
-    symbolic::Condition true_condition = symbolic::__true__();
-    for (size_t i = 0; i < dims; i++) {
-        auto expr = symbolic::
-            add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
-                symbolic::mul(ks[i], this->dilations_[i]));
-        is.push_back(expr);
-        true_condition = symbolic::And(true_condition, symbolic::Lt(expr, this->shape_[i + 2]));
-    }
-    auto& true_case = builder.add_case(if_else, true_condition, block->debug_info());
 
     // Determine patches subset & tensor type
     data_flow::Subset patches_subset;
@@ -366,7 +358,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     subset_X.insert(subset_X.end(), is.begin(), is.end());
 
     // Add copy from X to patches to true case
-    auto& true_block = builder.add_block(true_case, {}, block->debug_info());
+    auto& true_block = builder.add_block(*current_seq, {}, block->debug_info());
     {
         auto& X_access = builder.add_access(true_block, access_X->data(), access_X->debug_info());
         auto& patches_access = builder.add_access(true_block, patches_container, this->debug_info());
