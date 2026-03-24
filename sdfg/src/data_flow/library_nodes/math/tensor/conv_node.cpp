@@ -357,7 +357,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     subset_X.push_back(c);
     subset_X.insert(subset_X.end(), is.begin(), is.end());
 
-    // Add copy from X to patches to true case
+    // Add copy from X to patches
     auto& true_block = builder.add_block(*current_seq, {}, block->debug_info());
     {
         auto& X_access = builder.add_access(true_block, access_X->data(), access_X->debug_info());
@@ -470,7 +470,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         os[i] = o;
     }
 
-    // Add transposed copy from temporary GEMM output to Y
+    // Add transposed copy from temporary GEMM output to Y + add bias if available
     data_flow::Subset tmp_Y_subset;
     tmp_Y_subset.push_back(l);
     tmp_Y_subset.push_back(n);
@@ -485,7 +485,23 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     Y_subset.push_back(l);
     Y_subset.insert(Y_subset.end(), os.begin(), os.end());
     auto& transpose_block = builder.add_block(*current_seq, {}, block->debug_info());
-    {
+    if (has_bias) {
+        auto& tmp_Y_access = builder.add_access(transpose_block, tmp_Y_container, this->debug_info());
+        auto& B_access = builder.add_access(transpose_block, access_B->data(), access_B->debug_info());
+        auto& Y_access = builder.add_access(transpose_block, access_Y->data(), access_Y->debug_info());
+        auto& tasklet = builder.add_tasklet(
+            transpose_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, this->debug_info()
+        );
+        builder.add_computational_memlet(
+            transpose_block, tmp_Y_access, tasklet, "_in1", tmp_Y_subset, tmp_Y_tensor_type, this->debug_info()
+        );
+        builder.add_computational_memlet(
+            transpose_block, B_access, tasklet, "_in2", {l}, iedge_B->base_type(), iedge_B->debug_info()
+        );
+        builder.add_computational_memlet(
+            transpose_block, tasklet, "_out", Y_access, Y_subset, oedge_Y->base_type(), oedge_Y->debug_info()
+        );
+    } else {
         auto& tmp_Y_access = builder.add_access(transpose_block, tmp_Y_container, this->debug_info());
         auto& Y_access = builder.add_access(transpose_block, access_Y->data(), access_Y->debug_info());
         auto& tasklet =
