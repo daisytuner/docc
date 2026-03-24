@@ -4,9 +4,9 @@
 #include "sdfg/codegen/instrumentation/instrumentation_plan.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
-#include "sdfg/targets/offloading/external_offloading_node.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
+#include "sdfg/targets/offloading/external_offloading_node.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
 
 namespace sdfg::auto_util {

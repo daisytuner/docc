@@ -14,12 +14,12 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/exceptions.h"
-#include "sdfg/targets/offloading/external_offloading_node.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
+#include "sdfg/targets/offloading/external_offloading_node.h"
 #include "sdfg/targets/tenstorrent/tenstorrent_offloading_node.h"
 
 namespace sdfg {

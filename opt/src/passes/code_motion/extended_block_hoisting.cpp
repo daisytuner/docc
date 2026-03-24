@@ -4,12 +4,12 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/memlet.h"
-#include "sdfg/targets/offloading/external_offloading_node.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
+#include "sdfg/targets/offloading/external_offloading_node.h"
 
 namespace sdfg {
 namespace passes {

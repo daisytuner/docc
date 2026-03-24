@@ -5,8 +5,8 @@
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/function.h"
-#include "sdfg/targets/offloading/external_offloading_node.h"
 #include "sdfg/serializer/json_serializer.h"
+#include "sdfg/targets/offloading/external_offloading_node.h"
 
 namespace sdfg {
 namespace offloading {

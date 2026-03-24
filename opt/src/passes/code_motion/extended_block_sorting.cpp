@@ -5,9 +5,9 @@
 
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_node.h"
-#include "sdfg/targets/offloading/external_offloading_node.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/structured_control_flow/block.h"
+#include "sdfg/targets/offloading/external_offloading_node.h"
 
 namespace sdfg {
 namespace passes {
