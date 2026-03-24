@@ -9,6 +9,8 @@ pkg_check_modules(ISL REQUIRED IMPORTED_TARGET isl)
 
 set(SOURCE_FILES
     src/analysis/scop_analysis.cpp
+    src/einsum/einsum.cpp
+    src/passes/einsum.cpp
     src/passes/normalization/perfect_loop_distribution.cpp
     src/passes/normalization/stride_minimization.cpp
     src/passes/normalization/map_fusion.cpp
@@ -71,6 +73,11 @@ set(SOURCE_FILES
     src/transformations/polly_transform.cpp
     src/transformations/map_collapse.cpp
     src/transformations/loop_distribute.cpp
+    src/transformations/einsum2dot.cpp
+    src/transformations/einsum2gemm.cpp
+    src/transformations/einsum_expand.cpp
+    src/transformations/einsum_extend.cpp
+    src/transformations/einsum_lift.cpp
     src/transformations/loop_interchange.cpp
     src/transformations/loop_skewing.cpp
     src/transformations/loop_tiling.cpp
