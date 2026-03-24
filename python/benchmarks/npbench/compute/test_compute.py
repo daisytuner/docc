@@ -50,11 +50,10 @@ def test_compute(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 1,
                 "CPU_PARALLEL": 1,
                 "SEQUENTIAL": 0,
-                "FOR": 2,
-                "MAP": 2,
+                "FOR": 1,
+                "MAP": 1,
                 "Malloc": 0,
             }
         )

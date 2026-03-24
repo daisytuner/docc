@@ -1,5 +1,6 @@
 #include "sdfg/passes/scheduler/omp_scheduler.h"
 
+#include "sdfg/transformations/collapse_to_depth.h"
 #include "sdfg/transformations/omp_transform.h"
 
 namespace sdfg {
@@ -14,7 +15,13 @@ SchedulerAction OMPScheduler::schedule(
 ) {
     if (auto map_node = dynamic_cast<structured_control_flow::Map*>(&loop)) {
         // Apply OpenMP parallelization to the loop
-        transformations::OMPTransform omp_transform(*map_node);
+        transformations::CollapseToDepth collapse_to_depth(*map_node, 1);
+        if (collapse_to_depth.can_be_applied(builder, analysis_manager)) {
+            collapse_to_depth.apply(builder, analysis_manager);
+            analysis_manager.invalidate_all();
+        }
+        auto collapsed_map = collapse_to_depth.outer_loop();
+        transformations::OMPTransform omp_transform(*collapsed_map);
         if (omp_transform.can_be_applied(builder, analysis_manager)) {
             omp_transform.apply(builder, analysis_manager);
             return NEXT;

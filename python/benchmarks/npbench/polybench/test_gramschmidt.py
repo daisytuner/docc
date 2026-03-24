@@ -83,13 +83,12 @@ def test_gramschmidt(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "HIGHWAY": 2,
                 "GEMM": 1,
-                "MAP": 7,
+                "MAP": 5,
                 "CPU_PARALLEL": 3,
                 "CMath": 1,
                 "SEQUENTIAL": 2,
-                "FOR": 10,
+                "FOR": 8,
                 "Memset": 2,
                 "Malloc": 3,
             }

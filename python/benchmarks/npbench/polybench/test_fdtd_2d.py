@@ -48,10 +48,9 @@ def test_fdtd_2d(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 12,
                 "CPU_PARALLEL": 13,
-                "MAP": 25,
-                "FOR": 26,
+                "MAP": 13,
+                "FOR": 14,
                 "Malloc": 9,
             }
         )

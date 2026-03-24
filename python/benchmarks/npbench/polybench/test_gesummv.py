@@ -54,10 +54,9 @@ def test_gesummv(target):
             verification={
                 "Free": 4,
                 "GEMM": 2,
-                "HIGHWAY": 2,
                 "CPU_PARALLEL": 3,
-                "FOR": 5,
-                "MAP": 5,
+                "FOR": 3,
+                "MAP": 3,
                 "Malloc": 4,
             }
         )

@@ -49,12 +49,10 @@ def test_go_fast(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 1,
-                "MAP": 2,
-                "Malloc": 0,
+                "MAP": 1,
                 "CPU_PARALLEL": 1,
                 "CMath": 1,
-                "FOR": 3,
+                "FOR": 2,
             }
         )
     elif target == "cuda":

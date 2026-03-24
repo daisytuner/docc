@@ -90,12 +90,10 @@ def test_mlp(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 9,
-                "HIGHWAY": 2,
                 "CMath": 4,
                 "CPU_PARALLEL": 9,
-                "SEQUENTIAL": 3,
-                "FOR": 16,
-                "MAP": 14,
+                "FOR": 11,
+                "MAP": 9,
                 "GEMM": 3,
                 "Malloc": 9,
             }

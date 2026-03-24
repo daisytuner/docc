@@ -66,12 +66,11 @@ def test_softmax(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "HIGHWAY": 4,
+                "HIGHWAY": 1,
                 "CMath": 2,
                 "CPU_PARALLEL": 5,
-                "SEQUENTIAL": 8,
-                "FOR": 22,
-                "MAP": 17,
+                "FOR": 11,
+                "MAP": 6,
                 "Malloc": 3,
             }
         )

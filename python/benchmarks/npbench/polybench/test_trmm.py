@@ -57,12 +57,11 @@ def test_trmm(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 2,
                 "CPU_PARALLEL": 2,
-                "MAP": 4,
-                "Malloc": 1,
+                "MAP": 2,
                 "GEMM": 1,
-                "FOR": 6,
+                "FOR": 4,
+                "Malloc": 1,
             }
         )
     elif target == "cuda":

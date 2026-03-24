@@ -63,14 +63,12 @@ def test_k3mm(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
-                "MAP": 2,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
+                "Free": 3,
                 "CPU_PARALLEL": 1,
-                "HIGHWAY": 1,
+                "FOR": 1,
+                "MAP": 1,
                 "GEMM": 3,
-                "DOT": 0,
+                "Malloc": 3,
             }
         )
     elif target == "cuda":

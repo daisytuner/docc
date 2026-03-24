@@ -72,14 +72,12 @@ def test_nussinov(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 5,
-                "MAP": 2,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
+                "Free": 1,
                 "CPU_PARALLEL": 1,
-                "HIGHWAY": 1,
-                "GEMM": 0,
-                "DOT": 0,
+                "MAP": 1,
+                "FOR": 4,
+                "Memset": 1,
+                "Malloc": 1,
             }
         )
     elif target == "cuda":

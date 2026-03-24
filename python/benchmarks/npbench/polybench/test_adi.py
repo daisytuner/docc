@@ -99,10 +99,10 @@ def test_adi(target):
             verification={
                 "Free": 5,
                 "CPU_PARALLEL": 1,
-                "HIGHWAY": 10,
-                "MAP": 32,
+                "HIGHWAY": 9,
+                "MAP": 31,
                 "SEQUENTIAL": 21,
-                "FOR": 37,
+                "FOR": 36,
                 "Malloc": 19,
             }
         )

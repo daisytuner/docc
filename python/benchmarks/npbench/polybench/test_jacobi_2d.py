@@ -49,10 +49,9 @@ def test_jacobi_2d(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 12,
                 "CPU_PARALLEL": 12,
-                "MAP": 24,
-                "FOR": 25,
+                "MAP": 12,
+                "FOR": 13,
                 "Malloc": 10,
             }
         )

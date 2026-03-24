@@ -1,6 +1,9 @@
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
+#include "sdfg/passes/scheduler/loop_scheduler.h"
+#include "sdfg/passes/symbolic/symbol_propagation.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/transformations/collapse_to_depth.h"
 #include "sdfg/transformations/offloading/cuda_parallelize_nested_map.h"
 #include "sdfg/transformations/offloading/cuda_transform.h"
 #include "sdfg/transformations/offloading/gpu_loop_reordering.h"
@@ -17,11 +20,18 @@ SchedulerAction CUDAScheduler::schedule(
     bool offload_unknown_sizes
 ) {
     if (auto map_node = dynamic_cast<structured_control_flow::Map*>(&loop)) {
-        // Apply OpenMP parallelization to the loop
+        // Apply CUDA parallelization to the loop
+        bool applied_collapse = false;
+        // transformations::CollapseToDepth collapse_to_depth(*map_node, 2);
+        // if (collapse_to_depth.can_be_applied(builder, analysis_manager)) {
+        //     collapse_to_depth.apply(builder, analysis_manager);
+        //     analysis_manager.invalidate_all();
+        //     applied_collapse = true;
+        // }
+        // auto collapsed_map = collapse_to_depth.outer_loop();
         cuda::CUDATransform cuda_transform(*map_node, 32, offload_unknown_sizes);
         if (cuda_transform.can_be_applied(builder, analysis_manager)) {
             cuda_transform.apply(builder, analysis_manager);
-
 
             transformations::GPULoopReordering gpu_loop_reordering_pass(*map_node);
             if (gpu_loop_reordering_pass.can_be_applied(builder, analysis_manager)) {
@@ -52,6 +62,9 @@ SchedulerAction CUDAScheduler::schedule(
             }
 
             analysis_manager.invalidate_all();
+            return NEXT;
+        }
+        if (applied_collapse) {
             return NEXT;
         }
     }

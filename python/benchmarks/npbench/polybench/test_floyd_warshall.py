@@ -39,10 +39,9 @@ def test_floyd_warshall(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 2,
                 "CPU_PARALLEL": 2,
-                "MAP": 4,
-                "FOR": 5,
+                "MAP": 2,
+                "FOR": 3,
                 "Malloc": 1,
             }
         )

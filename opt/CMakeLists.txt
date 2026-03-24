@@ -64,10 +64,12 @@ set(SOURCE_FILES
     src/transformations/offloading/rocm_parallelize_nested_map.cpp
     src/transformations/offloading/rocm_transform.cpp
     src/transformations/offloading/kernel_local_storage.cpp
+    src/transformations/collapse_to_depth.cpp
     src/transformations/highway_transform.cpp
     src/transformations/omp_transform.cpp
     src/transformations/offloading/offload_transform.cpp
     src/transformations/polly_transform.cpp
+    src/transformations/map_collapse.cpp
     src/transformations/loop_distribute.cpp
     src/transformations/loop_interchange.cpp
     src/transformations/loop_skewing.cpp

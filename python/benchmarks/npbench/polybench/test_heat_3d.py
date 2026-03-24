@@ -58,11 +58,10 @@ def test_heat_3d(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 32,
+                "HIGHWAY": 2,
                 "CPU_PARALLEL": 30,
-                "MAP": 92,
-                "SEQUENTIAL": 30,
-                "FOR": 97,
+                "MAP": 32,
+                "FOR": 37,
                 "Malloc": 30,
             }
         )
