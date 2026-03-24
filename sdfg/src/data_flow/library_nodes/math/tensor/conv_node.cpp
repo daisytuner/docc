@@ -5,7 +5,19 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/free.h"
+#include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/data_flow/memlet.h"
+#include "sdfg/data_flow/tasklet.h"
 #include "sdfg/exceptions.h"
+#include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/symbolic/symbolic.h"
+#include "sdfg/types/pointer.h"
+#include "sdfg/types/scalar.h"
+#include "sdfg/types/tensor.h"
 #include "sdfg/types/type.h"
 
 #include "sdfg/analysis/scope_analysis.h"
@@ -101,382 +113,338 @@ void ConvNode::validate(const Function& function) const {
 }
 
 bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-
-    auto& dataflow = this->get_parent();
-    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
-    int index = parent.index(block);
-    auto& transition = parent.at(index).second;
-
-    // Get primitive type
-    auto primitive_type = this->primitive_type(dataflow);
-    types::Scalar scalar_type(primitive_type);
-
-    // Get input edges
-    auto in_edges = dataflow.in_edges(*this);
-    auto in_edges_it = in_edges.begin();
-
-    data_flow::Memlet* x_edge = nullptr;
-    data_flow::Memlet* w_edge = nullptr;
-    data_flow::Memlet* b_edge = nullptr;
-
-    while (in_edges_it != in_edges.end()) {
-        auto& edge = *in_edges_it;
-        auto dst_conn = edge.dst_conn();
-        if (dst_conn == "X") {
-            x_edge = &edge;
-        } else if (dst_conn == "W") {
-            w_edge = &edge;
-        } else if (dst_conn == "B") {
-            b_edge = &edge;
-        } else {
-            throw InvalidSDFGException("ConvNode has unexpected input: " + dst_conn);
-        }
-        ++in_edges_it;
+    // Validate nodes are standalone in the data flow graph
+    auto& dfg = this->get_parent();
+    if ((dfg.nodes().size() != 4 || dfg.edges().size() != 3) && (dfg.nodes().size() != 5 || dfg.edges().size() != 4)) {
+        return false;
     }
 
-    if (!x_edge || !w_edge) {
-        throw InvalidSDFGException("ConvNode requires X and W inputs");
+    // Get edges
+    auto iedges = dfg.in_edges_by_connector(*this);
+    auto oedges = dfg.out_edges_by_connector(*this);
+    if (iedges.size() != 3 || oedges.size() != 1) {
+        return false;
     }
-
-    auto& y_edge = *dataflow.out_edges(*this).begin();
+    auto* iedge_X = iedges.at(0);
+    auto* iedge_W = iedges.at(1);
+    auto* iedge_B = iedges.at(2);
+    auto* oedge_Y = oedges.at(0);
+    if (!iedge_X || !iedge_W || !oedge_Y) {
+        return false;
+    }
+    bool has_bias = iedge_B != nullptr;
 
     // Get access nodes
-    auto* x_node = static_cast<data_flow::AccessNode*>(&x_edge->src());
-    auto* w_node = static_cast<data_flow::AccessNode*>(&w_edge->src());
-    data_flow::AccessNode* b_node = b_edge ? static_cast<data_flow::AccessNode*>(&b_edge->src()) : nullptr;
-    auto* y_node = static_cast<data_flow::AccessNode*>(&y_edge.dst());
-
-    // Validate nodes are standalone in the block
-    if (!x_node || dataflow.in_degree(*x_node) != 0 || !w_node || dataflow.in_degree(*w_node) != 0 || !y_node ||
-        dataflow.out_degree(*y_node) != 0) {
+    auto* access_X = dynamic_cast<data_flow::AccessNode*>(&iedge_X->src());
+    auto* access_W = dynamic_cast<data_flow::AccessNode*>(&iedge_W->src());
+    auto* access_B = (has_bias ? dynamic_cast<data_flow::AccessNode*>(&iedge_B->src()) : nullptr);
+    auto* access_Y = dynamic_cast<data_flow::AccessNode*>(&oedge_Y->dst());
+    if (!access_X || !access_W || (has_bias && !access_B) || !access_Y) {
         return false;
     }
 
-    if (b_node && dataflow.in_degree(*b_node) != 0) {
+    // Get block & its parent
+    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    if (!block) {
+        return false;
+    }
+    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
+    auto* block_parent = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(block));
+    if (!block_parent) {
+        return false;
+    }
+    size_t block_index = block_parent->index(*block);
+    if (block_index >= block_parent->size()) {
         return false;
     }
 
-    // Check that all other nodes in the block are the expected ones
-    for (auto* nd : dataflow.data_nodes()) {
-        if (nd != x_node && nd != w_node && nd != y_node && (!b_node || nd != b_node)) {
-            return false; // there are other nodes we cannot handle
-        }
-    }
-
-    // Support n-dimensional convolutions
-    size_t spatial_dims = kernel_shape_.size();
-
-    if (spatial_dims == 0) {
-        return false; // Need at least 1 spatial dimension
-    }
-
-    // Get strides (default to 1 if not provided)
-    std::vector<symbolic::Expression> strides_vec;
-    for (size_t i = 0; i < spatial_dims; ++i) {
-        if (i < strides_.size()) {
-            strides_vec.push_back(strides_[i]);
-        } else {
-            strides_vec.push_back(symbolic::one());
-        }
-    }
-
-    // Get padding (default to 0 if not provided)
-    // Pads format: [begin_0, begin_1, ..., begin_n, end_0, end_1, ..., end_n]
-    std::vector<symbolic::Expression> pads_begin_vec;
-    std::vector<symbolic::Expression> pads_end_vec;
-    for (size_t i = 0; i < spatial_dims; ++i) {
-        if (i < pads_.size()) {
-            pads_begin_vec.push_back(pads_[i]);
-        } else {
-            pads_begin_vec.push_back(symbolic::zero());
-        }
-
-        if (spatial_dims + i < pads_.size()) {
-            pads_end_vec.push_back(pads_[spatial_dims + i]);
-        } else {
-            pads_end_vec.push_back(symbolic::zero());
-        }
-    }
-
-    // Get dilations (default to 1 if not provided)
-    std::vector<symbolic::Expression> dilations_vec;
-    for (size_t i = 0; i < spatial_dims; ++i) {
-        if (i < dilations_.size()) {
-            dilations_vec.push_back(dilations_[i]);
-        } else {
-            dilations_vec.push_back(symbolic::one());
-        }
-    }
-
-    // Get variable names
-    auto& X_var = x_node->data();
-    auto& W_var = w_node->data();
-    auto& Y_var = y_node->data();
-
-    // Use shape_ for dimensions if available
-    // For a generic n-dimensional implementation:
-    // Input X shape: [N, C_in, D0_in, D1_in, ..., Dn_in]
-    symbolic::Expression N, C_in;
-    std::vector<symbolic::Expression> input_spatial_dims;
-
-    if (shape_.size() >= 2 + spatial_dims) {
-        N = shape_[0];
-        C_in = shape_[1];
-        for (size_t i = 0; i < spatial_dims; ++i) {
-            input_spatial_dims.push_back(shape_[2 + i]);
-        }
-    } else {
-        N = symbolic::symbol(builder.find_new_name("N"));
-        C_in = symbolic::symbol(builder.find_new_name("C_in"));
-        for (size_t i = 0; i < spatial_dims; ++i) {
-            input_spatial_dims.push_back(symbolic::symbol(builder.find_new_name("D" + std::to_string(i) + "_in")));
-        }
-    }
-
-    // Output Channel (C_out) is passed via constructor
-    auto C_out = output_channels_;
-
-    // Calculate output spatial dimensions
-    std::vector<symbolic::Expression> output_spatial_dims;
-    for (size_t i = 0; i < spatial_dims; ++i) {
-        // D_out = floor((D_in + pads_begin + pads_end - dilation * (kernel - 1) - 1) / stride) + 1
-        auto d_in = input_spatial_dims[i];
-        auto pad = symbolic::add(pads_begin_vec[i], pads_end_vec[i]);
-        auto dk = symbolic::mul(dilations_vec[i], symbolic::sub(kernel_shape_[i], symbolic::one()));
-        auto num = symbolic::sub(symbolic::add(d_in, pad), symbolic::add(dk, symbolic::one()));
-        auto d_out = symbolic::add(symbolic::div(num, strides_vec[i]), symbolic::one());
-        output_spatial_dims.push_back(d_out);
+    // Determine BLAS precision
+    blas::BLAS_Precision precision;
+    types::Scalar base_type(this->primitive_type(dfg));
+    switch (base_type.primitive_type()) {
+        case types::PrimitiveType::Half:
+            precision = blas::BLAS_Precision::h;
+            break;
+        case types::PrimitiveType::Float:
+            precision = blas::BLAS_Precision::s;
+            break;
+        case types::PrimitiveType::Double:
+            precision = blas::BLAS_Precision::d;
+            break;
+        default:
+            return false;
     }
 
     // Create new sequence for expansion
-    auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
-
-    // Create nested map structure for convolution
-    structured_control_flow::Sequence* current_scope = &new_sequence;
-    std::vector<symbolic::Expression> output_indices;
-    std::vector<symbolic::Expression> output_spatial_vars;
-
-    // Map over batch dimension
-    std::string n_str = builder.find_new_name("n");
-    builder.add_container(n_str, types::Scalar(types::PrimitiveType::UInt64));
-    auto n_var = symbolic::symbol(n_str);
-    auto& map_n = builder.add_map(
-        *current_scope,
-        n_var,
-        symbolic::Lt(n_var, N),
-        symbolic::zero(),
-        symbolic::add(n_var, symbolic::one()),
-        structured_control_flow::ScheduleType_Sequential::create(),
-        {},
-        block.debug_info()
+    auto& new_sequence = builder.add_sequence_before(
+        *block_parent, *block, block_parent->at(block_index).second.assignments(), block->debug_info()
     );
-    current_scope = &map_n.root();
-    output_indices.push_back(n_var);
 
-    // Map over output channel dimension
-    std::string oc_str = builder.find_new_name("oc");
-    builder.add_container(oc_str, types::Scalar(types::PrimitiveType::UInt64));
-    auto oc_var = symbolic::symbol(oc_str);
-    auto& map_oc = builder.add_map(
-        *current_scope,
-        oc_var,
-        symbolic::Lt(oc_var, C_out),
-        symbolic::zero(),
-        symbolic::add(oc_var, symbolic::one()),
-        structured_control_flow::ScheduleType_Sequential::create(),
-        {},
-        block.debug_info()
-    );
-    current_scope = &map_oc.root();
-    output_indices.push_back(oc_var);
+    // Dimensions, i.e., 1D, 2D, 3D, ...
+    size_t dims = this->kernel_shape_.size();
+    symbolic::MultiExpression out_shape;
+    out_shape.reserve(dims);
+    // out_shape[i] = (shape[i + 2] + pads[i] + pads[dims + i] - dilations[i] * (kernel_shape[i] - 1) - 1)
+    //                 / strides[i] + 1
+    for (size_t i = 0; i < dims; i++) {
+        out_shape.push_back(symbolic::add(
+            symbolic::div(
+                symbolic::sub(
+                    symbolic::
+                        sub(symbolic::add(this->shape_[i + 2], symbolic::add(this->pads_[i], this->pads_[dims + i])),
+                            symbolic::mul(this->dilations_[i], symbolic::sub(this->kernel_shape_[i], symbolic::one()))),
+                    symbolic::one()
+                ),
+                this->strides_[i]
+            ),
+            symbolic::one()
+        ));
+    }
+    types::Scalar indvar_type(types::PrimitiveType::Int64);
 
-    // Map over each output spatial dimension dynamically
-    for (size_t i = 0; i < spatial_dims; ++i) {
-        std::string od_str = builder.find_new_name("od" + std::to_string(i));
-        builder.add_container(od_str, types::Scalar(types::PrimitiveType::UInt64));
-        auto od_var = symbolic::symbol(od_str);
-        auto& map_od = builder.add_map(
-            *current_scope,
-            od_var,
-            symbolic::Lt(od_var, output_spatial_dims[i]),
-            symbolic::zero(),
-            symbolic::add(od_var, symbolic::one()),
-            structured_control_flow::ScheduleType_Sequential::create(),
-            {},
-            block.debug_info()
+    // Add patches container with malloc
+    symbolic::Expression patches_size = this->shape_[1];
+    for (size_t i = 0; i < dims; i++) {
+        patches_size = symbolic::mul(patches_size, symbolic::mul(this->kernel_shape_[i], out_shape[i]));
+    }
+    types::Pointer patches_type(base_type);
+    auto patches_container = builder.find_new_name("_patches");
+    builder.add_container(patches_container, patches_type);
+    auto& patches_malloc_block = builder.add_block(new_sequence, {}, block->debug_info());
+    {
+        auto& patches_access = builder.add_access(patches_malloc_block, patches_container, this->debug_info());
+        auto& libnode = builder.add_library_node<stdlib::MallocNode>(
+            patches_malloc_block, this->debug_info(), symbolic::mul(patches_size, symbolic::size_of_type(base_type))
         );
-        current_scope = &map_od.root();
-        output_indices.push_back(od_var);
-        output_spatial_vars.push_back(od_var);
-    }
-
-    // Create accumulator variable for the sum
-    std::string accum_var = builder.find_new_name("_conv_accum");
-    builder.add_container(accum_var, scalar_type);
-
-    // Initialize accumulator to 0
-    auto& init_block = builder.add_block(*current_scope, {}, block.debug_info());
-    auto& accum_init = builder.add_access(init_block, accum_var, block.debug_info());
-    auto& zero_const = builder.add_constant(init_block, "0.0", scalar_type, block.debug_info());
-    auto& init_tasklet = builder.add_tasklet(init_block, data_flow::assign, "_out", {"_in"}, block.debug_info());
-    builder.add_computational_memlet(init_block, zero_const, init_tasklet, "_in", {}, scalar_type, block.debug_info());
-    builder.add_computational_memlet(init_block, init_tasklet, "_out", accum_init, {}, scalar_type, block.debug_info());
-
-    // Create nested for loops for input channels and kernel dimensions
-    // For grouped convolution, each output channel group only reads C_in/group input channels
-    auto C_in_per_group = symbolic::div(C_in, group_);
-
-    // For loop over input channels (per group)
-    std::string ic_str = builder.find_new_name("ic");
-    builder.add_container(ic_str, types::Scalar(types::PrimitiveType::UInt64));
-    auto ic_var = symbolic::symbol(ic_str);
-    auto& for_ic = builder.add_for(
-        *current_scope,
-        ic_var,
-        symbolic::Lt(ic_var, C_in_per_group),
-        symbolic::zero(),
-        symbolic::add(ic_var, symbolic::one()),
-        {},
-        block.debug_info()
-    );
-    auto* loop_scope = &for_ic.root();
-
-    // For loops over each kernel spatial dimension
-    std::vector<symbolic::Expression> kernel_vars;
-    for (size_t i = 0; i < spatial_dims; ++i) {
-        std::string k_str = builder.find_new_name("k" + std::to_string(i));
-        builder.add_container(k_str, types::Scalar(types::PrimitiveType::UInt64));
-        auto k_var = symbolic::symbol(k_str);
-        auto& for_k = builder.add_for(
-            *loop_scope,
-            k_var,
-            symbolic::Lt(k_var, kernel_shape_[i]),
-            symbolic::zero(),
-            symbolic::add(k_var, symbolic::one()),
-            {},
-            block.debug_info()
+        builder.add_computational_memlet(
+            patches_malloc_block, libnode, "_ret", patches_access, {}, patches_type, this->debug_info()
         );
-        loop_scope = &for_k.root();
-        kernel_vars.push_back(k_var);
     }
 
-    // Compute indices for input and weight access
-    // Input index: [n, ic, od0 * stride0 - pad0 + k0 * dilation0, ...]
-    // Note: taking dilation into account for input index calculation
-    std::vector<symbolic::Expression> input_spatial_indices;
-    for (size_t i = 0; i < spatial_dims; ++i) {
-        auto k_dilated = symbolic::mul(kernel_vars[i], dilations_vec[i]);
-        auto input_idx = symbolic::
-            add(symbolic::sub(symbolic::mul(output_spatial_vars[i], strides_vec[i]), pads_begin_vec[i]), k_dilated);
-        input_spatial_indices.push_back(input_idx);
+    // Add loop over batch size
+    auto n_container = builder.find_new_name("_n");
+    builder.add_container(n_container, indvar_type);
+    auto n = symbolic::symbol(n_container);
+    auto& for_loop_n = builder.add_for(
+        new_sequence,
+        n,
+        symbolic::Lt(n, this->shape_[0]),
+        symbolic::zero(),
+        symbolic::add(n, symbolic::one()),
+        {},
+        block->debug_info()
+    );
+    structured_control_flow::Sequence* current_seq = &for_loop_n.root();
+
+    // Add loops over output dimensions
+    symbolic::MultiExpression os;
+    os.reserve(dims);
+    for (size_t i = 0; i < dims; i++) {
+        auto o_container = builder.find_new_name("_o");
+        builder.add_container(o_container, indvar_type);
+        auto o = symbolic::symbol(o_container);
+        os.push_back(o);
+        auto& for_loop_o = builder.add_for(
+            *current_seq,
+            o,
+            symbolic::Lt(o, out_shape[i]),
+            symbolic::zero(),
+            symbolic::add(o, symbolic::one()),
+            {},
+            block->debug_info()
+        );
+        current_seq = &for_loop_o.root();
     }
 
-    // Create computation block
-    auto& comp_block = builder.add_block(*loop_scope, {}, block.debug_info());
-
-    // Access input X[n, ic, input_spatial_indices...]
-    auto& x_access = builder.add_access(comp_block, X_var, x_node->debug_info());
-    // Access weight W[oc, ic, k0, k1, ...]
-    auto& w_access = builder.add_access(comp_block, W_var, w_node->debug_info());
-    // Access accumulator
-    auto& accum_read = builder.add_access(comp_block, accum_var, block.debug_info());
-    auto& accum_write = builder.add_access(comp_block, accum_var, block.debug_info());
-
-    // Create FMA tasklet: accum = accum + x * w
-    auto& fma_tasklet =
-        builder.add_tasklet(comp_block, data_flow::fp_fma, "_out", {"_in1", "_in2", "_in3"}, block.debug_info());
-
-
-    // Calculate shapes for
-    // X shape: [N, C_in, D0, D1...]
-    std::vector<symbolic::Expression> x_shape_vec = {N, C_in};
-    x_shape_vec.insert(x_shape_vec.end(), input_spatial_dims.begin(), input_spatial_dims.end());
-
-    // W shape: [C_out, C_in/group, k0, k1...]
-    std::vector<symbolic::Expression> w_shape_vec = {C_out, symbolic::div(C_in, group_)};
-    w_shape_vec.insert(w_shape_vec.end(), kernel_shape_.begin(), kernel_shape_.end());
-
-    // Connect edges with subsets
-    // For grouped conv, compute group index g = oc / (C_out/group), then
-    // input channel = g * (C_in/group) + ic
-    // For group=1: g=0, input_channel=ic. For depthwise (group=C): g=oc, input_channel=oc+ic.
-    auto C_out_per_group = symbolic::div(C_out, group_);
-    auto group_idx = symbolic::div(oc_var, C_out_per_group);
-    auto input_channel_idx = symbolic::add(symbolic::mul(group_idx, C_in_per_group), ic_var);
-    std::vector<symbolic::Expression> x_indices_vec = {n_var, input_channel_idx};
-    x_indices_vec.insert(x_indices_vec.end(), input_spatial_indices.begin(), input_spatial_indices.end());
-
-    std::vector<symbolic::Expression> w_indices_vec = {oc_var, ic_var};
-    w_indices_vec.insert(w_indices_vec.end(), kernel_vars.begin(), kernel_vars.end());
-
-    data_flow::Subset x_subset(x_indices_vec);
-    data_flow::Subset w_subset(w_indices_vec);
-
-    types::Tensor x_tensor_type(scalar_type, x_shape_vec);
-    types::Tensor w_tensor_type(scalar_type, w_shape_vec);
-
-    builder.add_computational_memlet(
-        comp_block, x_access, fma_tasklet, "_in1", x_subset, x_tensor_type, x_edge->debug_info()
+    // Add loop over channels
+    auto c_container = builder.find_new_name("_c");
+    builder.add_container(c_container, indvar_type);
+    auto c = symbolic::symbol(c_container);
+    auto& for_loop_c = builder.add_for(
+        *current_seq,
+        c,
+        symbolic::Lt(c, this->shape_[1]),
+        symbolic::zero(),
+        symbolic::add(c, symbolic::one()),
+        {},
+        block->debug_info()
     );
-    builder.add_computational_memlet(
-        comp_block, w_access, fma_tasklet, "_in2", w_subset, w_tensor_type, w_edge->debug_info()
-    );
-    builder.add_computational_memlet(comp_block, accum_read, fma_tasklet, "_in3", {}, scalar_type, block.debug_info());
-    builder.add_computational_memlet(comp_block, fma_tasklet, "_out", accum_write, {}, scalar_type, block.debug_info());
+    current_seq = &for_loop_c.root();
 
-    // After all loops, write accumulated result to output (with optional bias)
-    auto& output_block = builder.add_block(*current_scope, {}, block.debug_info());
-    auto& accum_final = builder.add_access(output_block, accum_var, block.debug_info());
-    auto& y_access = builder.add_access(output_block, Y_var, y_node->debug_info());
+    // Add loops over kernel shape
+    symbolic::MultiExpression ks;
+    ks.reserve(dims);
+    for (size_t i = 0; i < dims; i++) {
+        auto k_container = builder.find_new_name("_k");
+        builder.add_container(k_container, indvar_type);
+        auto k = symbolic::symbol(k_container);
+        ks.push_back(k);
+        auto& for_loop_k = builder.add_for(
+            *current_seq,
+            k,
+            symbolic::Lt(k, this->kernel_shape_[i]),
+            symbolic::zero(),
+            symbolic::add(k, symbolic::one()),
+            {},
+            block->debug_info()
+        );
+        current_seq = &for_loop_k.root();
+    }
 
-    // Y shape: [N, C_out, D0_out, ...]
-    std::vector<symbolic::Expression> y_shape_vec = {N, C_out};
-    y_shape_vec.insert(y_shape_vec.end(), output_spatial_dims.begin(), output_spatial_dims.end());
+    // Add if/else
+    auto& if_else = builder.add_if_else(*current_seq, {}, block->debug_info());
+    symbolic::MultiExpression is;
+    is.reserve(dims);
+    symbolic::Condition true_condition = symbolic::__true__();
+    symbolic::Condition false_condition = symbolic::__false__();
+    for (size_t i = 0; i < dims; i++) {
+        auto expr = symbolic::
+            add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
+                symbolic::mul(ks[i], this->dilations_[i]));
+        is.push_back(expr);
+        true_condition = symbolic::And(true_condition, symbolic::Lt(expr, this->shape_[i + 2]));
+        false_condition = symbolic::Or(false_condition, symbolic::Ge(expr, this->shape_[i + 2]));
+    }
+    auto& true_case = builder.add_case(if_else, true_condition, block->debug_info());
+    auto& false_case = builder.add_case(if_else, false_condition, block->debug_info());
 
-    data_flow::Subset y_subset(output_indices);
+    // Determine patches subset & tensor type
+    data_flow::Subset patches_subset;
+    patches_subset.push_back(c);
+    patches_subset.insert(patches_subset.end(), ks.begin(), ks.end());
+    patches_subset.insert(patches_subset.end(), os.begin(), os.end());
+    symbolic::MultiExpression patches_shape;
+    patches_shape.push_back(this->shape_[1]);
+    patches_shape.insert(patches_shape.end(), this->kernel_shape_.begin(), this->kernel_shape_.end());
+    patches_shape.insert(patches_shape.end(), out_shape.begin(), out_shape.end());
+    types::Tensor patches_tensor_type(base_type, patches_shape);
 
-    if (b_node) {
-        // Add bias: output = accum + bias[oc]
-        auto& b_access = builder.add_access(output_block, b_node->data(), b_node->debug_info());
-        auto& add_tasklet =
-            builder.add_tasklet(output_block, data_flow::fp_add, "_out", {"_in1", "_in2"}, block.debug_info());
+    // Determine subset for X
+    data_flow::Subset subset_X;
+    subset_X.push_back(n);
+    subset_X.push_back(c);
+    subset_X.insert(subset_X.end(), is.begin(), is.end());
 
+    // Add copy from X to patches to true case
+    auto& true_block = builder.add_block(true_case, {}, block->debug_info());
+    {
+        auto& X_access = builder.add_access(true_block, access_X->data(), access_X->debug_info());
+        auto& patches_access = builder.add_access(true_block, patches_container, this->debug_info());
+        auto& tasklet = builder.add_tasklet(true_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            true_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
+        );
+        builder.add_computational_memlet(
+            true_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+        );
+    }
+
+    // Add zero assignment to false case
+    auto& false_block = builder.add_block(false_case, {}, block->debug_info());
+    {
+        auto& const_zero = builder.add_constant(false_block, "0.0", base_type, this->debug_info());
+        auto& patches_access = builder.add_access(false_block, patches_container, this->debug_info());
+        auto& tasklet = builder.add_tasklet(false_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(false_block, const_zero, tasklet, "_in", {}, this->debug_info());
+        builder.add_computational_memlet(
+            false_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+        );
+    }
+
+    // Add reference to output at current batch
+    auto Y_ref = builder.find_new_name(access_Y->data());
+    auto& Y_ref_type = builder.subject().type(access_Y->data());
+    builder.add_container(Y_ref, Y_ref_type);
+    auto& ref_block = builder.add_block(for_loop_n.root(), {}, block->debug_info());
+    {
+        auto& Y_access = builder.add_access(ref_block, access_Y->data(), access_Y->debug_info());
+        auto& Y_ref_access = builder.add_access(ref_block, Y_ref, access_Y->debug_info());
+        symbolic::Expression Y_ref_n = symbolic::mul(n, this->output_channels_);
+        for (size_t i = 0; i < dims; i++) {
+            Y_ref_n = symbolic::mul(Y_ref_n, out_shape[i]);
+        }
+        builder.add_reference_memlet(ref_block, Y_access, Y_ref_access, {Y_ref_n}, Y_ref_type, oedge_Y->debug_info());
+    }
+
+    // Add GEMM node
+    auto& gemm_block = builder.add_block(for_loop_n.root(), {}, block->debug_info());
+    {
+        auto& alpha = builder.add_constant(gemm_block, "1.0", base_type, this->debug_info());
+        auto& beta = builder.add_constant(gemm_block, "0.0", base_type, this->debug_info());
+        auto& W_access = builder.add_access(gemm_block, access_W->data(), access_W->debug_info());
+        auto& patches_access = builder.add_access(gemm_block, patches_container, this->debug_info());
+        auto& Y_access_in = builder.add_access(gemm_block, Y_ref, access_Y->debug_info());
+        auto& Y_access_out = builder.add_access(gemm_block, Y_ref, access_Y->debug_info());
+        symbolic::Expression gemm_n = symbolic::one();
+        symbolic::Expression gemm_k = this->shape_[1];
+        for (size_t i = 0; i < dims; i++) {
+            gemm_n = symbolic::mul(gemm_n, out_shape[i]);
+            gemm_k = symbolic::mul(gemm_k, this->kernel_shape_[i]);
+        }
+        auto& libnode = builder.add_library_node<blas::GEMMNode>(
+            gemm_block,
+            this->debug_info(),
+            blas::ImplementationType_BLAS,
+            precision, // precision
+            blas::BLAS_Layout::RowMajor, // layout
+            blas::BLAS_Transpose::No, // transA
+            blas::BLAS_Transpose::No, // transB
+            this->output_channels_, // m
+            gemm_n, // n
+            gemm_k, // k
+            gemm_k, // lda
+            gemm_n, // ldb
+            gemm_n // ldc
+        );
+        builder.add_computational_memlet(gemm_block, alpha, libnode, "__alpha", {}, base_type, this->debug_info());
+        builder.add_computational_memlet(gemm_block, beta, libnode, "__beta", {}, base_type, this->debug_info());
+        builder.add_computational_memlet(
+            gemm_block,
+            W_access,
+            libnode,
+            "__A",
+            {},
+            types::Pointer(types::Scalar(iedge_W->base_type().primitive_type())),
+            iedge_W->debug_info()
+        );
         builder
-            .add_computational_memlet(output_block, accum_final, add_tasklet, "_in1", {}, scalar_type, block.debug_info());
-        builder.add_computational_memlet(
-            output_block, b_access, add_tasklet, "_in2", {oc_var}, b_edge->base_type(), b_edge->debug_info()
-        );
-        builder.add_computational_memlet(
-            output_block, add_tasklet, "_out", y_access, y_subset, y_edge.base_type(), y_edge.debug_info()
-        );
-    } else {
-        // No bias: output = accum
-        auto& assign_tasklet =
-            builder.add_tasklet(output_block, data_flow::assign, "_out", {"_in"}, block.debug_info());
+            .add_computational_memlet(gemm_block, patches_access, libnode, "__B", {}, patches_type, this->debug_info());
+        types::Pointer Y_edge_type(types::Scalar(oedge_Y->base_type().primitive_type()));
+        builder
+            .add_computational_memlet(gemm_block, Y_access_in, libnode, "__C", {}, Y_edge_type, oedge_Y->debug_info());
+        builder
+            .add_computational_memlet(gemm_block, libnode, "__C", Y_access_out, {}, Y_edge_type, oedge_Y->debug_info());
+    }
 
+    // Add free for patches container
+    auto& patches_free_block = builder.add_block(new_sequence, {}, block->debug_info());
+    {
+        auto& patches_access_in = builder.add_access(patches_free_block, patches_container, this->debug_info());
+        auto& patches_access_out = builder.add_access(patches_free_block, patches_container, this->debug_info());
+        auto& libnode = builder.add_library_node<stdlib::FreeNode>(patches_free_block, this->debug_info());
         builder.add_computational_memlet(
-            output_block, accum_final, assign_tasklet, "_in", {}, scalar_type, block.debug_info()
+            patches_free_block, patches_access_in, libnode, "_ptr", {}, patches_type, this->debug_info()
         );
         builder.add_computational_memlet(
-            output_block, assign_tasklet, "_out", y_access, y_subset, y_edge.base_type(), y_edge.debug_info()
+            patches_free_block, libnode, "_ptr", patches_access_out, {}, patches_type, this->debug_info()
         );
     }
 
     // Clean up the original block
-    builder.remove_memlet(block, *x_edge);
-    builder.remove_memlet(block, *w_edge);
-    if (b_edge) {
-        builder.remove_memlet(block, *b_edge);
-        builder.remove_node(block, *b_node);
+    builder.remove_memlet(*block, *iedge_X);
+    builder.remove_memlet(*block, *iedge_W);
+    if (has_bias) {
+        builder.remove_memlet(*block, *iedge_B);
     }
-    builder.remove_memlet(block, y_edge);
-    builder.remove_node(block, *x_node);
-    builder.remove_node(block, *w_node);
-    builder.remove_node(block, *y_node);
-    builder.remove_node(block, *this);
-    builder.remove_child(parent, index + 1);
+    builder.remove_memlet(*block, *oedge_Y);
+    builder.remove_node(*block, *access_X);
+    builder.remove_node(*block, *access_W);
+    if (has_bias) {
+        builder.remove_node(*block, *access_B);
+    }
+    builder.remove_node(*block, *access_Y);
+    builder.remove_node(*block, *this);
+    builder.remove_child(*block_parent, block_index + 1);
 
     return true;
 }

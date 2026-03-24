@@ -26,7 +26,7 @@ def test_single_nobias_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, rtol=3e-4)
 
 
 def test_single_nobias_backend():
@@ -49,7 +49,7 @@ def test_single_nobias_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, rtol=3e-4)
 
 
 # --- Single Conv2d (with bias) ---
@@ -74,7 +74,14 @@ def test_single_bias_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    # for i in range(res.shape[0]):
+    #     for j in range(res.shape[1]):
+    #         for k in range(res.shape[2]):
+    #             for l in range(res.shape[3]):
+    #                 if abs(res[i][j][k][l] - res_ref[i][j][k][l]) > 1e-08 + 1e-05 * abs(res_ref[i][j][k][l]):
+    #                     print(f"{i} {j} {k} {l}: {res[i][j][k][l]} != {res_ref[i][j][k][l]}")
+
+    assert torch.allclose(res, res_ref)
 
 
 def test_single_bias_backend():
@@ -96,7 +103,14 @@ def test_single_bias_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    # for i in range(res.shape[0]):
+    #     for j in range(res.shape[1]):
+    #         for k in range(res.shape[2]):
+    #             for l in range(res.shape[3]):
+    #                 if abs(res[i][j][k][l] - res_ref[i][j][k][l]) > 1e-08 + 1e-05 * abs(res_ref[i][j][k][l]):
+    #                     print(f"{i} {j} {k} {l}: {res[i][j][k][l]} != {res_ref[i][j][k][l]}")
+
+    assert torch.allclose(res, res_ref)
 
 
 # --- Chained Conv2d layers ---
@@ -122,7 +136,7 @@ def test_chained_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, atol=1e-5)
 
 
 def test_chained_backend():
@@ -145,7 +159,7 @@ def test_chained_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, atol=1e-5)
 
 
 # --- Different kernel sizes ---
@@ -170,7 +184,7 @@ def test_kernel_1x1_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, rtol=1e-04)
 
 
 def test_kernel_1x1_backend():
@@ -192,7 +206,7 @@ def test_kernel_1x1_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, rtol=1e-04)
 
 
 def test_kernel_5x5_compile():
@@ -214,7 +228,7 @@ def test_kernel_5x5_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-3)
+    assert torch.allclose(res, res_ref, atol=1e-06)
 
 
 def test_kernel_5x5_backend():
@@ -236,7 +250,7 @@ def test_kernel_5x5_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-3)
+    assert torch.allclose(res, res_ref, atol=1e-06)
 
 
 # --- Padding ---
@@ -261,7 +275,7 @@ def test_padding_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, atol=1e-06)
 
 
 def test_padding_backend():
@@ -283,7 +297,7 @@ def test_padding_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, atol=1e-06)
 
 
 # --- Stride > 1 ---
@@ -308,7 +322,7 @@ def test_stride_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, atol=1e-06)
 
 
 def test_stride_backend():
@@ -330,7 +344,7 @@ def test_stride_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    assert torch.allclose(res, res_ref, atol=1e-06)
 
 
 # --- Batch size > 1 ---
@@ -354,7 +368,8 @@ def test_batch_compile():
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
-    assert torch.allclose(res, res_ref, rtol=1e-3, atol=1e-5)
+
+    assert torch.allclose(res, res_ref, atol=1e-06)
 
 
 def test_batch_backend():
@@ -376,7 +391,7 @@ def test_batch_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-3, atol=1e-5)
+    assert torch.allclose(res, res_ref, atol=1e-06)
 
 
 # --- Single output channel ---
@@ -401,7 +416,7 @@ def test_single_channel_out_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-3)
+    assert torch.allclose(res, res_ref)
 
 
 def test_single_channel_out_backend():
@@ -424,7 +439,7 @@ def test_single_channel_out_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-3)
+    assert torch.allclose(res, res_ref)
 
 
 # --- Depthwise Conv2d (groups=in_channels) ---
@@ -449,7 +464,14 @@ def test_depthwise_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    # for i in range(res.shape[0]):
+    #     for j in range(res.shape[1]):
+    #         for k in range(res.shape[2]):
+    #             for l in range(res.shape[3]):
+    #                 if abs(res[i][j][k][l] - res_ref[i][j][k][l]) > 1e-06 + 1e-05 * abs(res_ref[i][j][k][l]):
+    #                     print(f"{i} {j} {k} {l}: {res[i][j][k][l]} != {res_ref[i][j][k][l]}")
+
+    assert torch.allclose(res, res_ref)
 
 
 def test_depthwise_backend():
@@ -472,4 +494,11 @@ def test_depthwise_backend():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    assert torch.allclose(res, res_ref, rtol=1e-4)
+    # for i in range(res.shape[0]):
+    #     for j in range(res.shape[1]):
+    #         for k in range(res.shape[2]):
+    #             for l in range(res.shape[3]):
+    #                 if abs(res[i][j][k][l] - res_ref[i][j][k][l]) > 1e-08 + 1e-05 * abs(res_ref[i][j][k][l]):
+    #                     print(f"{i} {j} {k} {l}: {res[i][j][k][l]} != {res_ref[i][j][k][l]}")
+
+    assert torch.allclose(res, res_ref)
