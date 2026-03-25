@@ -438,6 +438,11 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
                         if (graph.out_degree(iedge.src()) > 1) {
                             multi_output = true;
                             break;
+                        } else if (auto* lib_node = dynamic_cast<const data_flow::LibraryNode*>(&iedge.src())) {
+                            if (lib_node->side_effect()) {
+                                multi_output = true;
+                                break;
+                            }
                         }
                     }
                     if (!multi_output) {
