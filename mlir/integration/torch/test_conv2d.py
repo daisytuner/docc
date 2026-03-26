@@ -430,7 +430,7 @@ def test_single_channel_out_backend():
 
 # --- Depthwise Conv2d (groups=in_channels) ---
 
-@pytest.mark.skip("TODO")
+
 def test_depthwise_compile():
     class DepthwiseConv2dNet(nn.Module):
         def __init__(self):
@@ -450,16 +450,9 @@ def test_depthwise_compile():
         res = program(example_input)
         res_ref = model_ref(example_input)
 
-    # for i in range(res.shape[0]):
-    #     for j in range(res.shape[1]):
-    #         for k in range(res.shape[2]):
-    #             for l in range(res.shape[3]):
-    #                 if abs(res[i][j][k][l] - res_ref[i][j][k][l]) > 1e-06 + 1e-05 * abs(res_ref[i][j][k][l]):
-    #                     print(f"{i} {j} {k} {l}: {res[i][j][k][l]} != {res_ref[i][j][k][l]}")
-
     assert torch.allclose(res, res_ref)
 
-@pytest.mark.skip("TODO")
+
 def test_depthwise_backend():
     class DepthwiseConv2dNet(nn.Module):
         def __init__(self):
@@ -479,12 +472,5 @@ def test_depthwise_backend():
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
-
-    # for i in range(res.shape[0]):
-    #     for j in range(res.shape[1]):
-    #         for k in range(res.shape[2]):
-    #             for l in range(res.shape[3]):
-    #                 if abs(res[i][j][k][l] - res_ref[i][j][k][l]) > 1e-08 + 1e-05 * abs(res_ref[i][j][k][l]):
-    #                     print(f"{i} {j} {k} {l}: {res[i][j][k][l]} != {res_ref[i][j][k][l]}")
 
     assert torch.allclose(res, res_ref)
