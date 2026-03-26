@@ -11,7 +11,7 @@ CallocNode::CallocNode(
     const symbolic::Expression num,
     const symbolic::Expression size
 )
-    : LibraryNode(
+    : StdlibNode(
           element_id,
           debug_info,
           vertex,

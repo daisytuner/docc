@@ -6,7 +6,7 @@ namespace stdlib {
 UnreachableNode::UnreachableNode(
     size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex, data_flow::DataFlowGraph& parent
 )
-    : LibraryNode(
+    : StdlibNode(
           element_id,
           debug_info,
           vertex,

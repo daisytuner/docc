@@ -1,6 +1,8 @@
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
+#include "sdfg/passes/dataflow/dead_data_elimination.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
+#include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/symbolic/symbol_propagation.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/transformations/collapse_to_depth.h"
@@ -22,24 +24,33 @@ SchedulerAction CUDAScheduler::schedule(
     if (auto map_node = dynamic_cast<structured_control_flow::Map*>(&loop)) {
         // Apply CUDA parallelization to the loop
         bool applied_collapse = false;
-        // transformations::CollapseToDepth collapse_to_depth(*map_node, 2);
-        // if (collapse_to_depth.can_be_applied(builder, analysis_manager)) {
-        //     collapse_to_depth.apply(builder, analysis_manager);
-        //     analysis_manager.invalidate_all();
-        //     applied_collapse = true;
-        // }
-        // auto collapsed_map = collapse_to_depth.outer_loop();
-        cuda::CUDATransform cuda_transform(*map_node, 32, offload_unknown_sizes);
+        transformations::CollapseToDepth collapse_to_depth(*map_node, 2);
+        if (collapse_to_depth.can_be_applied(builder, analysis_manager)) {
+            collapse_to_depth.apply(builder, analysis_manager);
+            analysis_manager.invalidate_all();
+            applied_collapse = true;
+        }
+        auto collapsed_map = collapse_to_depth.outer_loop();
+
+        passes::SymbolPropagation symbol_propagation_pass;
+        symbol_propagation_pass.run(builder, analysis_manager);
+        passes::DeadDataElimination ddead_pass;
+        ddead_pass.run(builder, analysis_manager);
+        passes::DeadCFGElimination dcfg_pass;
+        dcfg_pass.run(builder, analysis_manager);
+        analysis_manager.invalidate_all();
+
+        cuda::CUDATransform cuda_transform(*collapsed_map, 32, offload_unknown_sizes);
         if (cuda_transform.can_be_applied(builder, analysis_manager)) {
             cuda_transform.apply(builder, analysis_manager);
 
-            transformations::GPULoopReordering gpu_loop_reordering_pass(*map_node);
+            transformations::GPULoopReordering gpu_loop_reordering_pass(*collapsed_map);
             if (gpu_loop_reordering_pass.can_be_applied(builder, analysis_manager)) {
                 gpu_loop_reordering_pass.apply(builder, analysis_manager);
             }
 
             auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-            auto descendants = loop_analysis.descendants(map_node);
+            auto descendants = loop_analysis.descendants(collapsed_map);
             for (auto& descendant : descendants) {
                 if (auto nested_map = dynamic_cast<structured_control_flow::Map*>(descendant)) {
                     transformations::CUDAParallelizeNestedMap nested_cuda_transform(*nested_map, 8);
@@ -52,7 +63,7 @@ SchedulerAction CUDAScheduler::schedule(
 
             analysis_manager.invalidate_all();
             auto& loop_analysis2 = analysis_manager.get<analysis::LoopAnalysis>();
-            for (auto& descendant : loop_analysis2.descendants(map_node)) {
+            for (auto& descendant : loop_analysis2.descendants(collapsed_map)) {
                 if (auto target_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant)) {
                     transformations::GPUTiling gpu_tiling_transform(*target_loop, 8);
                     if (gpu_tiling_transform.can_be_applied(builder, analysis_manager)) {

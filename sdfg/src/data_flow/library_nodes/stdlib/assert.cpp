@@ -32,7 +32,7 @@ AssertNode::AssertNode(
     data_flow::DataFlowGraph& parent,
     std::string message
 )
-    : data_flow::LibraryNode(
+    : StdlibNode(
           element_id,
           debug_info,
           vertex,
@@ -58,8 +58,6 @@ std::string AssertNode::toStr() const {
 }
 
 symbolic::SymbolSet AssertNode::symbols() const { return {}; }
-
-symbolic::Expression AssertNode::flop() const { return symbolic::zero(); }
 
 std::unique_ptr<data_flow::DataFlowNode> AssertNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {

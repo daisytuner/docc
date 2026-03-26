@@ -8,6 +8,55 @@
 
 using namespace sdfg;
 
+TEST(StrideMinimizationTest, EmptyLoop) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    // Add containers
+    types::Scalar sym_desc(types::PrimitiveType::Int32);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    // Define loop 1
+    auto bound = symbolic::symbol("N");
+    auto indvar = symbolic::symbol("i");
+
+    auto& loop = builder.add_map(
+        root,
+        indvar,
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& body = loop.root();
+
+    // Define loop 2
+    auto bound_2 = symbolic::symbol("M");
+    auto indvar_2 = symbolic::symbol("j");
+
+    auto& loop_2 = builder.add_map(
+        body,
+        indvar_2,
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& body_2 = loop_2.root();
+
+    // Add computation
+    auto& block = builder.add_block(body_2);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::normalization::StrideMinimization stride_minimization;
+    EXPECT_FALSE(stride_minimization.run_pass(builder, analysis_manager));
+}
+
 TEST(StrideMinimizationTest, is_admissible) {
     std::vector<std::string> current_1 = {"i", "j", "k"};
     std::vector<std::string> target_1 = {"j", "i", "k"};

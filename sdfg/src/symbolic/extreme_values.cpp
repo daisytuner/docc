@@ -1,6 +1,5 @@
 #include "sdfg/symbolic/extreme_values.h"
 
-#include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "symengine/basic.h"
 #include "symengine/functions.h"
@@ -468,6 +467,37 @@ Expression minimum_new(
                 return SymEngine::null;
             }
             return symbolic::div(numerator_lb, denominator_ub);
+        } else if (func_id == "imod") {
+            auto lhs = func_sym->get_args()[0];
+            auto rhs = func_sym->get_args()[1];
+            if (!SymEngine::is_a<const SymEngine::Integer>(*rhs)) {
+                return SymEngine::null;
+            }
+
+            auto lhs_lb = minimum_new(lhs, parameters, assumptions, depth + 1, tight);
+            auto lhs_ub = maximum_new(lhs, parameters, assumptions, depth + 1, tight);
+            if (lhs_lb == SymEngine::null || lhs_ub == SymEngine::null) {
+                return SymEngine::null;
+            }
+
+            // Handle negative cases: min can be -(|rhs| - 1)
+            bool has_negative = symbolic::is_true(symbolic::Lt(lhs_lb, symbolic::zero())) ||
+                                symbolic::is_true(symbolic::Lt(rhs, symbolic::zero()));
+            auto neg_bound = symbolic::sub(symbolic::one(), symbolic::simplify(symbolic::abs(rhs)));
+            symbolic::Expression zero = symbolic::zero();
+
+            auto width = symbolic::sub(lhs_ub, lhs_lb);
+            if (symbolic::is_true(symbolic::Lt(width, rhs))) {
+                // Range doesn't span full modulus cycle
+                bool wraps = symbolic::is_true(symbolic::Lt(symbolic::mod(lhs_ub, rhs), symbolic::mod(lhs_lb, rhs)));
+                if (wraps) {
+                    return has_negative ? neg_bound : zero;
+                }
+                return symbolic::simplify(symbolic::mod(lhs_lb, rhs));
+            }
+
+            // Range spans full cycle
+            return has_negative ? neg_bound : zero;
         }
     }
 
@@ -706,8 +736,8 @@ Expression maximum_new(
                 return SymEngine::null;
             }
 
-            auto numerator_ub = maximum(numerator, parameters, assumptions, depth + 1);
-            auto denominator_lb = minimum(denominator, parameters, assumptions, depth + 1);
+            auto numerator_ub = maximum_new(numerator, parameters, assumptions, depth + 1, tight);
+            auto denominator_lb = minimum_new(denominator, parameters, assumptions, depth + 1, tight);
             if (numerator_ub == SymEngine::null || denominator_lb == SymEngine::null) {
                 return SymEngine::null;
             }
@@ -716,6 +746,37 @@ Expression maximum_new(
                 return SymEngine::null;
             }
             return symbolic::div(numerator_ub, denominator_lb);
+        } else if (func_id == "imod") {
+            auto lhs = func_sym->get_args()[0];
+            auto rhs = func_sym->get_args()[1];
+            if (!SymEngine::is_a<const SymEngine::Integer>(*rhs)) {
+                return SymEngine::null;
+            }
+
+            auto lhs_lb = minimum_new(lhs, parameters, assumptions, depth + 1, tight);
+            auto lhs_ub = maximum_new(lhs, parameters, assumptions, depth + 1, tight);
+            if (lhs_lb == SymEngine::null || lhs_ub == SymEngine::null) {
+                return SymEngine::null;
+            }
+
+            // Handle negative cases: max can be 0
+            bool has_negative = symbolic::is_true(symbolic::Lt(lhs_ub, symbolic::zero())) ||
+                                symbolic::is_true(symbolic::Lt(rhs, symbolic::zero()));
+            auto pos_bound = symbolic::sub(rhs, symbolic::one());
+            symbolic::Expression zero = symbolic::zero();
+
+            auto width = symbolic::sub(lhs_ub, lhs_lb);
+            if (symbolic::is_true(symbolic::Lt(width, rhs))) {
+                // Range doesn't span full modulus cycle
+                bool wraps = symbolic::is_true(symbolic::Lt(symbolic::mod(lhs_ub, rhs), symbolic::mod(lhs_lb, rhs)));
+                if (wraps) {
+                    return has_negative ? zero : pos_bound;
+                }
+                return symbolic::simplify(symbolic::mod(lhs_ub, rhs));
+            }
+
+            // Range spans full cycle
+            return has_negative ? zero : pos_bound;
         }
     }
 

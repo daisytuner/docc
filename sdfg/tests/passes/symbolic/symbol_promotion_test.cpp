@@ -2,10 +2,9 @@
 
 #include <gtest/gtest.h>
 
-#include <ostream>
 
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/codegen/language_extensions/cpp_language_extension.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -972,7 +971,9 @@ TEST(SymbolPromotionTest, Abs_Signed_Constant) {
     EXPECT_EQ(sdfg->root().size(), 2);
     auto child1 = sdfg->root().at(0);
     EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::abs(symbolic::integer(-5))));
+    EXPECT_TRUE(SymEngine::
+                    eq(*child1.second.assignments().at(sym), *symbolic::simplify(symbolic::abs(symbolic::integer(-5))))
+    );
 }
 
 TEST(SymbolPromotionTest, ASHR_Constant) {

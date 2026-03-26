@@ -28,7 +28,6 @@ def kernel(M, float_n, data):
     return cov
 
 
-@pytest.mark.skip(reason="sdfg does not validate")
 @pytest.mark.parametrize(
     "target",
     [
@@ -43,37 +42,40 @@ def test_covariance(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
+                "Free": 3,
                 "GEMM": 1,
+                "MAP": 12,
+                "SEQUENTIAL": 12,
+                "FOR": 14,
                 "Memset": 1,
-                "SEQUENTIAL": 10,
-                "FOR": 12,
-                "MAP": 10,
-                "Malloc": 4,
+                "Malloc": 5,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
+                "Free": 3,
                 "GEMM": 1,
-                "HIGHWAY": 5,
+                "HIGHWAY": 6,
+                "MAP": 12,
+                "SEQUENTIAL": 6,
+                "FOR": 14,
                 "Memset": 1,
-                "SEQUENTIAL": 5,
-                "FOR": 12,
-                "MAP": 10,
-                "Malloc": 4,
+                "Malloc": 5,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 3,
+                "Free": 3,
+                "HIGHWAY": 2,
                 "GEMM": 1,
-                "CPU_PARALLEL": 5,
+                "CPU_PARALLEL": 6,
+                "MAP": 9,
+                "SEQUENTIAL": 1,
+                "FOR": 11,
                 "Memset": 1,
-                "SEQUENTIAL": 2,
-                "FOR": 12,
-                "MAP": 10,
-                "Malloc": 4,
+                "Malloc": 5,
             }
         )
     else:  # cuda / rocm

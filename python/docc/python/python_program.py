@@ -608,6 +608,13 @@ class PythonProgram(DoccProgram):
                 offset = "0"
                 tensor_table[name] = Tensor(element_type, shapes, strides, offset)
 
+            elif isinstance(arg, np.generic):
+                # NumPy scalar types (np.float64, np.int32, etc.) should be treated
+                # as 0-d arrays for type promotion purposes - they trigger full
+                # promotion, unlike Python literals which adapt to the array dtype
+                element_type = element_type_from_sdfg_type(dtype)
+                tensor_table[name] = Tensor(element_type, [], [], "0")
+
         # Add unified shape arguments only for shapes without scalar equivalents
         # and skip size-1 dimensions (they use literal "1" instead)
         for i in range(len(shape_values)):

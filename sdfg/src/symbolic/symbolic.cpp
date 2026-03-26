@@ -114,7 +114,8 @@ Expression abs(const Expression expr) {
 };
 
 Expression mod(const Expression lhs, const Expression rhs) {
-    return symbolic::sub(lhs, symbolic::mul(symbolic::div(lhs, rhs), rhs));
+    auto mod = SymEngine::function_symbol("imod", {lhs, rhs});
+    return mod;
 };
 
 Expression pow(const Expression base, const Expression exp) { return SymEngine::pow(base, exp); };
@@ -223,6 +224,9 @@ Expression simplify(const Expression expr) {
             if (symbolic::eq(rhs, symbolic::integer(0))) {
                 return expr;
             }
+            if (symbolic::is_true(symbolic::Lt(lhs, rhs))) {
+                return symbolic::zero();
+            }
 
             if (SymEngine::is_a<SymEngine::Mul>(*lhs) && SymEngine::is_a<SymEngine::Integer>(*rhs)) {
                 auto lhs_mul = SymEngine::rcp_static_cast<const SymEngine::Mul>(lhs);
@@ -281,6 +285,13 @@ Expression simplify(const Expression expr) {
 
             if (!eq(arg, simple_arg)) {
                 return zext_i64(simple_arg);
+            }
+        } else if (func_id == "iabs") {
+            auto arg = func_sym->get_args()[0];
+            auto simple_arg = symbolic::simplify(arg);
+            if (SymEngine::is_a<SymEngine::Integer>(*simple_arg)) {
+                auto val = SymEngine::rcp_static_cast<const SymEngine::Integer>(simple_arg)->as_int();
+                return integer(val >= 0 ? val : -val);
             }
         }
     }
