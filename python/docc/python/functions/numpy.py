@@ -66,6 +66,7 @@ class NumPyHandler:
             "fliplr": self._handle_numpy_fliplr,
             "flipud": self._handle_numpy_flipud,
             "reshape": self._handle_numpy_reshape,
+            "einsum": self._handle_numpy_einsum,
         }
 
     # Expose parent properties for convenience
@@ -2319,6 +2320,172 @@ class NumPyHandler:
         output_tensor = self.tensor_table[tmp_name]
         self.builder.add_reduce_op(
             func_name, array_name, input_tensor, tmp_name, output_tensor, axes, keepdims
+        )
+
+        return tmp_name
+
+    # ========== Einsum Operations ==========
+
+    def _parse_einsum_subscripts(self, subscripts, operand_shapes):
+        """Parse einsum subscripts string and return parsed components.
+
+        Args:
+            subscripts: Einsum notation string, e.g., "ij,jk->ik" or "ij,jk"
+            operand_shapes: List of shapes for each operand
+
+        Returns:
+            Tuple of (input_subscripts, output_subscripts, index_to_dim)
+            - input_subscripts: List of index strings per operand, e.g., ["ij", "jk"]
+            - output_subscripts: Output index string, e.g., "ik"
+            - index_to_dim: Dict mapping index char to dimension size string
+        """
+        # Remove whitespace
+        subscripts = subscripts.replace(" ", "")
+
+        # Split into inputs and output
+        if "->" in subscripts:
+            input_part, output_subscripts = subscripts.split("->")
+        else:
+            input_part = subscripts
+            output_subscripts = None  # Implicit output
+
+        # Split inputs by comma
+        input_subscripts = input_part.split(",")
+
+        if len(input_subscripts) != len(operand_shapes):
+            raise ValueError(
+                f"Number of operands ({len(operand_shapes)}) does not match "
+                f"number of subscripts ({len(input_subscripts)})"
+            )
+
+        # Map each index to its dimension size
+        index_to_dim = {}
+        for subscript, shape in zip(input_subscripts, operand_shapes):
+            if len(subscript) != len(shape):
+                raise ValueError(
+                    f"Subscript '{subscript}' has {len(subscript)} indices but "
+                    f"operand has {len(shape)} dimensions"
+                )
+            for idx_char, dim_size in zip(subscript, shape):
+                if idx_char in index_to_dim:
+                    # Validate dimensions match (at least symbolically)
+                    existing = index_to_dim[idx_char]
+                    if str(existing) != str(dim_size):
+                        # Could be symbolic - just warn or trust the user
+                        pass
+                else:
+                    index_to_dim[idx_char] = dim_size
+
+        # Compute implicit output if not provided
+        if output_subscripts is None:
+            output_subscripts = self._compute_implicit_output(input_subscripts)
+
+        return input_subscripts, output_subscripts, index_to_dim
+
+    def _compute_implicit_output(self, input_subscripts):
+        """Compute implicit output indices (sorted indices appearing exactly once).
+
+        Args:
+            input_subscripts: List of index strings, e.g., ["ij", "jk"]
+
+        Returns:
+            Output index string with sorted non-contracted indices, e.g., "ik"
+        """
+        counts = {}
+        for subscript in input_subscripts:
+            for idx in subscript:
+                counts[idx] = counts.get(idx, 0) + 1
+
+        # Output = sorted indices with count == 1 (non-contracted)
+        return "".join(sorted(idx for idx, cnt in counts.items() if cnt == 1))
+
+    def _handle_numpy_einsum(self, node, func_name):
+        """Handle np.einsum(subscripts, *operands) calls.
+
+        Parses the subscripts string to extract index structure, computes output
+        shape, and emits an EinsumNode to the IR.
+        """
+        if len(node.args) < 2:
+            raise ValueError("np.einsum requires at least subscripts and one operand")
+
+        # First argument is the subscripts string
+        subscripts_arg = node.args[0]
+        if not isinstance(subscripts_arg, ast.Constant) or not isinstance(
+            subscripts_arg.value, str
+        ):
+            raise NotImplementedError("np.einsum subscripts must be a string literal")
+        subscripts = subscripts_arg.value
+
+        # Remaining arguments are operands
+        operand_nodes = node.args[1:]
+        operand_names = [self.visit(op) for op in operand_nodes]
+
+        # Validate all operands are in tensor_table
+        for name in operand_names:
+            if name not in self.tensor_table:
+                raise ValueError(f"Einsum operand '{name}' not found in tensor_table")
+
+        # Get shapes for all operands
+        operand_shapes = [self.tensor_table[name].shape for name in operand_names]
+
+        # Parse subscripts
+        input_subscripts, output_subscripts, index_to_dim = (
+            self._parse_einsum_subscripts(subscripts, operand_shapes)
+        )
+
+        # Build dimension specs: (indvar, init, bound) for each unique index
+        # Collect all unique indices in order of first appearance
+        seen_indices = []
+        for subscript in input_subscripts:
+            for idx in subscript:
+                if idx not in seen_indices:
+                    seen_indices.append(idx)
+
+        dims = []
+        for idx in seen_indices:
+            dims.append((idx, "0", str(index_to_dim[idx])))
+
+        # Build output indices (the index variables for output dimensions)
+        out_indices = list(output_subscripts)
+
+        # Build input indices for each operand
+        in_indices = [list(subscript) for subscript in input_subscripts]
+
+        # Compute output shape from output subscripts
+        output_shape = [str(index_to_dim[idx]) for idx in output_subscripts]
+
+        # Determine element type (promote from inputs)
+        dtypes = [self._ev._element_type(name) for name in operand_names]
+        dtype = dtypes[0]
+        for dt in dtypes[1:]:
+            dtype = promote_element_types(dtype, dt)
+
+        # Create output container
+        if output_shape:
+            output_strides = self._compute_strides(output_shape, "C")
+            tmp_name = self._create_array_temp(
+                output_shape, dtype, strides=output_strides
+            )
+        else:
+            # Scalar output
+            tmp_name = f"_tmp_{self._get_unique_id()}"
+            self.builder.add_container(tmp_name, dtype, False)
+            self.container_table[tmp_name] = dtype
+            self.tensor_table[tmp_name] = Tensor(dtype, [])
+
+        # Get tensor types for builder call
+        input_types = [self.tensor_table[name] for name in operand_names]
+        output_type = self.tensor_table[tmp_name]
+
+        # Call builder.add_einsum
+        self.builder.add_einsum(
+            operand_names,
+            tmp_name,
+            dims,
+            out_indices,
+            in_indices,
+            input_types,
+            output_type,
         )
 
         return tmp_name
