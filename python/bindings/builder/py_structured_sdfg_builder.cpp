@@ -17,6 +17,7 @@
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
+#include "sdfg/einsum/einsum.h"
 #include "sdfg/passes/debug_info_propagation.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -1072,4 +1073,72 @@ void PyStructuredSDFGBuilder::add_reduce_op(
     builder_.add_computational_memlet(block, in_access, *node, "X", {}, input_type, debug_info);
 
     builder_.add_computational_memlet(block, *node, "Y", out_access, {}, output_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_einsum(
+    const std::vector<std::string>& inputs,
+    const std::string& output,
+    const std::vector<std::tuple<std::string, std::string, std::string>>& dims,
+    const std::vector<std::string>& out_indices,
+    const std::vector<std::vector<std::string>>& in_indices,
+    const std::vector<const sdfg::types::Tensor*>& input_types,
+    const sdfg::types::Tensor& output_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& parent = current_sequence();
+    auto& block = builder_.add_block(parent, {}, debug_info);
+
+    // Build EinsumDimension vector
+    std::vector<sdfg::einsum::EinsumDimension> einsum_dims;
+    for (const auto& [indvar_str, init_str, bound_str] : dims) {
+        sdfg::einsum::EinsumDimension dim;
+        dim.indvar = sdfg::symbolic::symbol(indvar_str);
+        dim.init = parse_and_expand(init_str);
+        dim.bound = parse_and_expand(bound_str);
+        einsum_dims.push_back(dim);
+    }
+
+    // Build output indices subset
+    sdfg::data_flow::Subset out_subset;
+    for (const auto& idx_str : out_indices) {
+        out_subset.push_back(sdfg::symbolic::parse(idx_str));
+    }
+
+    // Build input indices subsets
+    std::vector<sdfg::data_flow::Subset> in_subsets;
+    for (const auto& indices : in_indices) {
+        sdfg::data_flow::Subset subset;
+        for (const auto& idx_str : indices) {
+            subset.push_back(sdfg::symbolic::parse(idx_str));
+        }
+        in_subsets.push_back(subset);
+    }
+
+    std::vector<std::string> in_conns;
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        in_conns.push_back("__einsum_in_" + std::to_string(i));
+    }
+
+    // Create the EinsumNode
+    auto& einsum_node = builder_.add_library_node<
+        sdfg::einsum::EinsumNode,
+        const std::vector<std::string>&,
+        const std::vector<sdfg::einsum::EinsumDimension>&,
+        const sdfg::data_flow::Subset&,
+        const std::vector<sdfg::data_flow::Subset>&>(block, debug_info, in_conns, einsum_dims, out_subset, in_subsets);
+
+    // Add access nodes and memlets for inputs
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        auto& in_access = builder_.add_access(block, inputs[i], debug_info);
+        std::string conn = in_conns[i];
+        builder_.add_computational_memlet(block, in_access, einsum_node, conn, {}, *input_types[i], debug_info);
+    }
+
+    // Add input access node for output (for reading current value during accumulation)
+    auto& out_in_access = builder_.add_access(block, output, debug_info);
+    builder_.add_computational_memlet(block, out_in_access, einsum_node, "__einsum_out", {}, output_type, debug_info);
+
+    // Add output access node and memlet
+    auto& out_access = builder_.add_access(block, output, debug_info);
+    builder_.add_computational_memlet(block, einsum_node, "__einsum_out", out_access, {}, output_type, debug_info);
 }

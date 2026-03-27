@@ -256,8 +256,15 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
         const std::vector<std::string>&,
         const std::vector<einsum::EinsumDimension>&,
         const data_flow::Subset&,
-        const std::vector<data_flow::Subset>&>(
-        new_block, this->einsum_node_.debug_info(), new_inputs, new_dims, this->einsum_node_.out_indices(), new_in_indices
+        const std::vector<data_flow::Subset>&,
+        bool>(
+        new_block,
+        this->einsum_node_.debug_info(),
+        new_inputs,
+        new_dims,
+        this->einsum_node_.out_indices(),
+        new_in_indices,
+        false // skip renaming - indvars are already internal symbols
     );
 
     // Create the memlets in the new block after the loops

@@ -47,7 +47,8 @@ public:
         const std::vector<std::string>& inputs,
         const std::vector<EinsumDimension>& dims,
         const data_flow::Subset& out_indices,
-        const std::vector<data_flow::Subset>& in_indices
+        const std::vector<data_flow::Subset>& in_indices,
+        bool rename_indvars = true
     );
 
     EinsumNode(const EinsumNode&) = delete;
@@ -74,6 +75,8 @@ public:
     const data_flow::Subset& in_indices(size_t index) const;
 
     const symbolic::Expression& in_index(size_t index1, size_t index2) const;
+
+    symbolic::SymbolSet internal_symbols() const;
 
     virtual bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 

@@ -45,7 +45,8 @@ EinsumNode::EinsumNode(
     const std::vector<std::string>& inputs,
     const std::vector<EinsumDimension>& dims,
     const data_flow::Subset& out_indices,
-    const std::vector<data_flow::Subset>& in_indices
+    const std::vector<data_flow::Subset>& in_indices,
+    bool rename_indvars
 )
     : math::MathNode(
           element_id,
@@ -63,9 +64,50 @@ EinsumNode::EinsumNode(
         throw InvalidSDFGException("EinsumNode: Number of input containers != number of input indices");
     }
 
+    // Rename indvars to internal symbols (only for fresh construction, not clone/deserialize)
+    if (rename_indvars) {
+        // Build mapping from original indvars to internal symbols
+        // Format: _einsum_node_{element_id}_{original_indvar_name}
+        std::string prefix = "_einsum_node_" + std::to_string(element_id) + "_";
+        std::vector<std::pair<symbolic::Symbol, symbolic::Symbol>> indvar_renames;
+        for (const auto& dim : this->dims_) {
+            auto old_indvar = dim.indvar;
+            auto old_name = SymEngine::rcp_static_cast<const SymEngine::Symbol>(old_indvar)->get_name();
+            auto new_indvar = symbolic::symbol(prefix + old_name);
+            indvar_renames.push_back({old_indvar, new_indvar});
+        }
+
+        // Apply all substitutions
+        for (size_t idx = 0; idx < indvar_renames.size(); idx++) {
+            auto old_indvar = indvar_renames[idx].first;
+            auto new_indvar = indvar_renames[idx].second;
+
+            // Replace in all dims' init, bound, and indvar
+            for (auto& d : this->dims_) {
+                if (symbolic::eq(d.indvar, old_indvar)) {
+                    d.indvar = new_indvar;
+                }
+                d.init = symbolic::subs(d.init, old_indvar, new_indvar);
+                d.bound = symbolic::subs(d.bound, old_indvar, new_indvar);
+            }
+
+            // Replace in out_indices
+            for (size_t i = 0; i < this->out_indices_.size(); i++) {
+                this->out_indices_[i] = symbolic::subs(this->out_indices_[i], old_indvar, new_indvar);
+            }
+
+            // Replace in in_indices
+            for (size_t i = 0; i < this->in_indices_.size(); i++) {
+                for (size_t j = 0; j < this->in_indices_[i].size(); j++) {
+                    this->in_indices_[i][j] = symbolic::subs(this->in_indices_[i][j], old_indvar, new_indvar);
+                }
+            }
+        }
+    }
+
     // Append output at the end
     this->inputs_.push_back("__einsum_out");
-    this->in_indices_.push_back(out_indices);
+    this->in_indices_.push_back(this->out_indices_);
 }
 
 const std::vector<EinsumDimension>& EinsumNode::dims() const { return this->dims_; }
@@ -88,6 +130,14 @@ const data_flow::Subset& EinsumNode::in_indices(size_t index) const { return thi
 
 const symbolic::Expression& EinsumNode::in_index(size_t index1, size_t index2) const {
     return this->in_indices_.at(index1).at(index2);
+}
+
+symbolic::SymbolSet EinsumNode::internal_symbols() const {
+    symbolic::SymbolSet result;
+    for (auto& dim : this->dims()) {
+        result.insert(dim.indvar);
+    }
+    return result;
 }
 
 bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -195,21 +245,11 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         builder.remove_node(*block, *node);
     }
 
-    // Create unique containers for loop induction variables
-    auto& sdfg = builder.subject();
+    // Add containers for loop induction variables (symbols already renamed in constructor)
     for (size_t i = 0; i < this->dims().size(); i++) {
         auto indvar = this->indvar(i);
         auto indvar_name = SymEngine::rcp_static_cast<const SymEngine::Symbol>(indvar)->get_name();
-
-        // Always create a unique container name using find_new_name
-        std::string container_name = builder.find_new_name(indvar_name);
-
-        // Add container with Int64 type for loop index
-        builder.add_container(container_name, types::Scalar(types::PrimitiveType::Int64));
-
-        // Update the symbol in the einsum node to use the new unique name
-        auto new_indvar = symbolic::symbol(container_name);
-        this->replace(indvar, new_indvar);
+        builder.add_container(indvar_name, types::Scalar(types::PrimitiveType::Int64));
     }
 
     // Add loops
@@ -323,14 +363,13 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     // Add computations to the block
     if (this->inputs().size() == 1) {
         auto& tasklet =
-            builder
-                .add_tasklet(*new_block, data_flow::TaskletCode::assign, {"_out"}, this->inputs(), this->debug_info());
+            builder.add_tasklet(*new_block, data_flow::TaskletCode::assign, {"_out"}, {"_in0"}, this->debug_info());
         builder.add_memlet(
             *new_block,
             *new_in_accesses.at(this->input(0)),
             "void",
             tasklet,
-            this->input(0),
+            "_in0",
             this->in_indices(0),
             in_types.at(this->input(0)),
             this->debug_info()
@@ -341,13 +380,13 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     } else if (this->inputs().size() == 2) {
         auto& tasklet =
             builder
-                .add_tasklet(*new_block, data_flow::TaskletCode::fp_add, {"_out"}, this->inputs(), this->debug_info());
+                .add_tasklet(*new_block, data_flow::TaskletCode::fp_add, {"_out"}, {"_in0", "_in1"}, this->debug_info());
         builder.add_memlet(
             *new_block,
             *new_in_accesses.at(this->input(0)),
             "void",
             tasklet,
-            this->input(0),
+            "_in0",
             this->in_indices(0),
             in_types.at(this->input(0)),
             this->debug_info()
@@ -357,7 +396,7 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             *new_in_accesses.at(this->input(1)),
             "void",
             tasklet,
-            this->input(1),
+            "_in1",
             this->in_indices(1),
             in_types.at(this->input(1)),
             this->debug_info()
@@ -366,28 +405,29 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             *new_block, tasklet, "_out", *new_out_access, "void", this->out_indices(), *out_type, this->debug_info()
         );
     } else {
+        // Build a mapping from original connector names to internal names and indices
         std::unordered_map<std::string, data_flow::Subset> in_indices;
+        std::unordered_map<std::string, std::string> conn_to_internal;
         for (size_t i = 0; i < this->inputs().size(); i++) {
             in_indices.insert({this->input(i), this->in_indices(i)});
+            conn_to_internal.insert({this->input(i), "_in" + std::to_string(i)});
         }
         long long inp;
         for (inp = 0; inp < (long long) this->inputs().size() - 3; inp++) {
             auto tmp = builder.find_new_name();
             auto& tmp_type = builder.add_container(tmp, types::Scalar(in_types.at(this->input(inp)).primitive_type()));
             auto& tmp_access = builder.add_access(*new_block, tmp);
+            std::string int_conn0 = conn_to_internal.at(this->input(inp));
+            std::string int_conn1 = conn_to_internal.at(this->input(inp + 1));
             auto& tasklet = builder.add_tasklet(
-                *new_block,
-                data_flow::TaskletCode::fp_mul,
-                {"_out"},
-                {this->input(inp), this->input(inp + 1)},
-                this->debug_info()
+                *new_block, data_flow::TaskletCode::fp_mul, {"_out"}, {int_conn0, int_conn1}, this->debug_info()
             );
             builder.add_memlet(
                 *new_block,
                 *new_in_accesses.at(this->input(inp)),
                 "void",
                 tasklet,
-                this->input(inp),
+                int_conn0,
                 in_indices.at(this->input(inp)),
                 in_types.at(this->input(inp)),
                 this->debug_info()
@@ -397,7 +437,7 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 *new_in_accesses.at(this->input(inp + 1)),
                 "void",
                 tasklet,
-                this->input(inp + 1),
+                int_conn1,
                 in_indices.at(this->input(inp + 1)),
                 in_types.at(this->input(inp + 1)),
                 this->debug_info()
@@ -408,19 +448,18 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             in_types.erase(this->input(inp + 1));
             in_types.insert({this->input(inp + 1), tmp_type});
         }
+        std::string int_conn0 = conn_to_internal.at(this->input(inp));
+        std::string int_conn1 = conn_to_internal.at(this->input(inp + 1));
+        std::string int_conn2 = conn_to_internal.at(this->input(inp + 2));
         auto& tasklet = builder.add_tasklet(
-            *new_block,
-            data_flow::TaskletCode::fp_fma,
-            {"_out"},
-            {this->input(inp), this->input(inp + 1), this->input(inp + 2)},
-            this->debug_info()
+            *new_block, data_flow::TaskletCode::fp_fma, {"_out"}, {int_conn0, int_conn1, int_conn2}, this->debug_info()
         );
         builder.add_memlet(
             *new_block,
             *new_in_accesses.at(this->input(inp)),
             "void",
             tasklet,
-            this->input(inp),
+            int_conn0,
             in_indices.at(this->input(inp)),
             in_types.at(this->input(inp)),
             this->debug_info()
@@ -430,7 +469,7 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             *new_in_accesses.at(this->input(inp + 1)),
             "void",
             tasklet,
-            this->input(inp + 1),
+            int_conn1,
             in_indices.at(this->input(inp + 1)),
             in_types.at(this->input(inp + 1)),
             this->debug_info()
@@ -440,7 +479,7 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             *new_in_accesses.at(this->input(inp + 2)),
             "void",
             tasklet,
-            this->input(inp + 2),
+            int_conn2,
             in_indices.at(this->input(inp + 2)),
             in_types.at(this->input(inp + 2)),
             this->debug_info()
@@ -485,57 +524,42 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
 
 symbolic::SymbolSet EinsumNode::symbols() const {
     symbolic::SymbolSet result;
+    symbolic::SymbolSet internal = this->internal_symbols();
 
+    // Collect only external symbols from bounds and init expressions
     for (auto& dim : this->dims()) {
-        result.insert(dim.indvar);
         for (auto& symbol : symbolic::atoms(dim.init)) {
-            result.insert(symbol);
+            if (!internal.count(symbol)) {
+                result.insert(symbol);
+            }
         }
         for (auto& symbol : symbolic::atoms(dim.bound)) {
-            result.insert(symbol);
-        }
-    }
-
-    for (auto& index : this->out_indices()) {
-        for (auto& symbol : symbolic::atoms(index)) {
-            result.insert(symbol);
-        }
-    }
-
-    for (auto& indices : this->in_indices()) {
-        for (auto& index : indices) {
-            for (auto& symbol : symbolic::atoms(index)) {
+            if (!internal.count(symbol)) {
                 result.insert(symbol);
             }
         }
     }
 
+    // Note: indices only contain internal indvars, so skip them
+
     return result;
 }
 
 void EinsumNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
-    for (auto& dim : this->dims_) {
+    // Skip if old_expression is an internal symbol (indvar)
+    for (auto& dim : this->dims()) {
         if (symbolic::eq(dim.indvar, old_expression)) {
-            if (SymEngine::is_a<SymEngine::Symbol>(*old_expression) &&
-                SymEngine::is_a<SymEngine::Symbol>(*new_expression)) {
-                dim.indvar = SymEngine::rcp_dynamic_cast<const SymEngine::Symbol>(new_expression);
-            } else {
-                throw InvalidSDFGException("EinsumNode: Could not replace index variable with expression");
-            }
+            return; // Internal symbol - do not replace
         }
+    }
+
+    // Only replace external symbols in bounds/init expressions
+    for (auto& dim : this->dims_) {
         dim.init = symbolic::subs(dim.init, old_expression, new_expression);
         dim.bound = symbolic::subs(dim.bound, old_expression, new_expression);
     }
 
-    for (size_t i = 0; i < this->out_indices_.size(); i++) {
-        this->out_indices_[i] = symbolic::subs(this->out_indices_[i], old_expression, new_expression);
-    }
-
-    for (size_t i = 0; i < this->in_indices_.size(); i++) {
-        for (size_t j = 0; j < this->in_indices_[i].size(); j++) {
-            this->in_indices_[i][j] = symbolic::subs(this->in_indices_[i][j], old_expression, new_expression);
-        }
-    }
+    // Note: indices only contain internal indvars, so no substitution needed
 }
 
 std::string EinsumNode::toStr() const {
@@ -602,7 +626,8 @@ std::unique_ptr<data_flow::DataFlowNode> EinsumNode::
         std::vector<std::string>(this->inputs().begin(), this->inputs().end() - 1),
         this->dims(),
         this->out_indices(),
-        std::vector<data_flow::Subset>(this->in_indices().begin(), this->in_indices().end() - 1)
+        std::vector<data_flow::Subset>(this->in_indices().begin(), this->in_indices().end() - 1),
+        false // skip renaming - already internal symbols
     );
 }
 
@@ -828,13 +853,15 @@ data_flow::LibraryNode& EinsumSerializer::deserialize(
         const std::vector<std::string>&,
         const std::vector<EinsumDimension>&,
         const data_flow::Subset&,
-        const std::vector<data_flow::Subset>&>(
+        const std::vector<data_flow::Subset>&,
+        bool>(
         parent,
         DebugInfo(),
         std::vector<std::string>(inputs.begin(), inputs.end() - 1),
         dims,
         out_indices,
-        std::vector<data_flow::Subset>(in_indices.begin(), in_indices.end() - 1)
+        std::vector<data_flow::Subset>(in_indices.begin(), in_indices.end() - 1),
+        false // skip renaming - already internal symbols from serialization
     );
 
     return einsum_node;
