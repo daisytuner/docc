@@ -370,7 +370,7 @@ symbolic::Expression FlopAnalysis::visit_while(structured_control_flow::While& l
     this->visit_sequence(loop.root(), analysis_manager);
     this->flops_[&loop] = SymEngine::null;
     this->precise_ = false;
-    // Return null because there is now good way to simply estimate the FLOPs of a while loop
+    // Return null because there is no good way to simply estimate the FLOPs of a while loop
     return SymEngine::null;
 }
 

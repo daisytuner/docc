@@ -81,3 +81,18 @@ before-all = [
   "curl -L https://libisl.sourceforge.io/isl-0.27.tar.xz | tar -xJ -C /tmp",
   "cd /tmp/isl-0.27 && ./configure && make -j$(nproc) && make install",
 ]
+
+[tool.cibuildwheel.macos]
+before-all = [
+  # Build tools
+  "brew install cmake ninja uv",
+
+  # Build dependencies (linked into the wheel)
+  "brew install boost gmp isl nlohmann-json llvm@19",
+]
+
+# Ensure we build universal2 wheels for both Intel and Apple Silicon
+[tool.cibuildwheel.macos.environment]
+MACOSX_DEPLOYMENT_TARGET = "14.0"
+MAKEFLAGS = "-j$(sysctl -n hw.ncpu)"
+MLIR_DIR = "/opt/homebrew/opt/llvm@19/lib/cmake/mlir"

@@ -349,6 +349,16 @@ Expression abs(const Expression expr);
 Expression mod(const Expression lhs, const Expression rhs);
 
 /**
+ * @brief Function class for integer modulo operation
+ *
+ * This class represents the symbolic function for integer modulo.
+ */
+class IModFunction : public SymEngine::FunctionSymbol {
+public:
+    IModFunction(const Expression lhs, const Expression rhs) : FunctionSymbol("imod", {lhs, rhs}) {}
+};
+
+/**
  * @brief Power/exponentiation operation
  * @param base Base expression
  * @param exp Exponent expression

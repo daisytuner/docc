@@ -7,7 +7,7 @@ on:
 
 jobs:
   wheels:
-    name: Wheels (${{ matrix.os }}, ${{ matrix.python }})
+    name: Wheels (${{ matrix.package }}, ${{ matrix.os }}, ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -15,6 +15,11 @@ jobs:
       matrix:
         os: [build-amd64-big, build-arm64-big, macos-14]
         python: ["cp311", "cp312", "cp313", "cp314"]
+        package:
+          - name: docc-compiler
+            dir: python/
+          - name: docc-ai
+            dir: mlir/
         include:
           - os: build-amd64-big
             cibw_archs: x86_64
@@ -28,10 +33,9 @@ jobs:
         with:
           submodules: recursive
 
-      # Build python/ (docc-compiler)
       - uses: pypa/cibuildwheel@v3.3.1
         with:
-          package-dir: python/
+          package-dir: ${{ matrix.package.dir }}
           output-dir: wheelhouse
         env:
           CIBW_ARCHS: ${{ matrix.cibw_archs }}
@@ -39,7 +43,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-${{ matrix.python }}
+          name: wheels-${{ matrix.package.name }}-${{ matrix.os }}-${{ matrix.python }}
           path: wheelhouse/*.whl
 
   publish:

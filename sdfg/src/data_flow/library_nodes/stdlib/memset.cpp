@@ -11,7 +11,7 @@ MemsetNode::MemsetNode(
     const symbolic::Expression value,
     const symbolic::Expression num
 )
-    : LibraryNode(
+    : StdlibNode(
           element_id,
           debug_info,
           vertex,

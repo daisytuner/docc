@@ -18,15 +18,15 @@ def test_quadratic_self_backend():
             return h1
 
     model = SelfMatmulNet()
-    example_input = torch.randn(10, 10)
-
     model_ref = SelfMatmulNet()
 
-    program = torch.compile(model, backend="docc")
-    res = program(example_input)
+    example_input = torch.randn(10, 10)
 
-    ref_program = torch.compile(model_ref)
-    res_ref = ref_program(example_input)
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        res_ref = model_ref(example_input)
+
     assert torch.allclose(res, res_ref, rtol=1e-4)
 
 

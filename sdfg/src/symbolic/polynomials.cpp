@@ -132,14 +132,25 @@ std::pair<Expression, Expression> polynomial_div(const Expression& offset, const
     Expression dividend_expr = offset;
 
     int max_iter = 100;
+    size_t prev_term_count = std::numeric_limits<size_t>::max();
     while (!symbolic::eq(dividend_expr, symbolic::zero()) && max_iter-- > 0) {
         auto poly_dividend = polynomial(dividend_expr, symbols);
-        if (poly_dividend == SymEngine::null) break;
+        if (poly_dividend == SymEngine::null) {
+            break;
+        }
+
+        size_t cur_term_count = poly_dividend->get_poly().dict_.size();
+        if (cur_term_count >= prev_term_count) {
+            break;
+        }
+        prev_term_count = cur_term_count;
 
         auto [exp_div, coeff_div] = get_leading_term(poly_dividend);
         auto [exp_sor, coeff_sor] = get_leading_term(poly_stride);
 
-        if (exp_div.empty() && symbolic::eq(coeff_div, symbolic::zero())) break;
+        if (exp_div.empty() && symbolic::eq(coeff_div, symbolic::zero())) {
+            break;
+        }
 
         bool divisible = true;
         std::vector<int> exp_diff(exp_div.size());

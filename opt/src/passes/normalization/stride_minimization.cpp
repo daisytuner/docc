@@ -147,6 +147,11 @@ std::pair<bool, std::vector<std::string>> StrideMinimization::can_be_applied(
         }
     }
 
+    // No memory accesses to optimize
+    if (subsets.empty()) {
+        return {false, {}};
+    }
+
     // Test all permutations (must start from a sorted sequence)
     std::vector<std::string> current = permutation;
     std::sort(current.begin(), current.end());

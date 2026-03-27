@@ -3,6 +3,7 @@ import getpass
 import hashlib
 import shutil
 from typing import Any, Optional
+import time
 
 from docc.compiler import CompiledSDFG, DoccProgram
 from docc.sdfg import StructuredSDFG
@@ -90,6 +91,11 @@ class TorchProgram(DoccProgram):
         capture_args: Optional[bool] = None,
     ) -> CompiledSDFG:
         original_output_folder = output_folder
+
+        compile_profile = os.environ.get("DOCC_PROFILE_COMPILE", "")
+        if compile_profile:
+            print("Compiling Torch Model>")
+            compile_start_time = time.perf_counter()
 
         # Resolve options
         if instrumentation_mode is None:
@@ -180,7 +186,9 @@ class TorchProgram(DoccProgram):
         if docc_reuse_binaries:
             lib_path = f"{output_folder}/lib__docc_{self.name}.so"
             if not os.path.exists(lib_path):
-                raise ValueError(f"Tried reusing binary '{lib_path}' but does not exist")
+                raise ValueError(
+                    f"Tried reusing binary '{lib_path}' but does not exist"
+                )
             sdfg_path = f"{output_folder}/__docc_{self.name}.py3.norm.json"
             if not os.path.exists(sdfg_path):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
@@ -216,6 +224,10 @@ class TorchProgram(DoccProgram):
             self.cache[cache_key] = compiled
 
         self._compiled = compiled
+
+        if compile_profile:
+            docc_compile_time = time.perf_counter() - compile_start_time
+            print(f">DOCC compile done: {docc_compile_time:.4f} s")
         return compiled
 
     def to_sdfg(
@@ -240,11 +252,17 @@ class TorchProgram(DoccProgram):
         # fx.export_and_import expects them as positional *args.
         if isinstance(self.example_input, tuple):
             torch_mlir = fx.export_and_import(
-                self.model, *self.example_input, output_type="linalg_on_tensors", func_name=self.name
+                self.model,
+                *self.example_input,
+                output_type="linalg_on_tensors",
+                func_name=self.name,
             )
         else:
             torch_mlir = fx.export_and_import(
-                self.model, self.example_input, output_type="linalg_on_tensors", func_name=self.name
+                self.model,
+                self.example_input,
+                output_type="linalg_on_tensors",
+                func_name=self.name,
             )
         torch_mlir = str(torch_mlir)
 

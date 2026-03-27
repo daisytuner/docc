@@ -403,7 +403,7 @@ void SymbolPromotion::apply(
     }
 
     // Split states and set transition
-    builder.add_block_before(sequence, block, {{lhs, rhs}}, block.debug_info());
+    builder.add_block_before(sequence, block, {{lhs, symbolic::simplify(rhs)}}, block.debug_info());
     builder.clear_node(block, output_node);
 };
 

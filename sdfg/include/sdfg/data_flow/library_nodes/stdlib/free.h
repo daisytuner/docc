@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/stdlib_node.h"
 
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
 #include "sdfg/serializer/json_serializer.h"
@@ -10,7 +11,7 @@ namespace stdlib {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_Free("Free");
 
-class FreeNode : public data_flow::LibraryNode {
+class FreeNode : public StdlibNode {
 public:
     FreeNode(size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex, data_flow::DataFlowGraph& parent);
 

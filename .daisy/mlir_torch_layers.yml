@@ -35,10 +35,10 @@ steps:
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=cuda
 
-    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=none
-    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=sequential
-    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=openmp
-    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=cuda
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=none
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=cuda
 
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=sequential
@@ -95,10 +95,10 @@ steps:
 
     # layer conv2d
 
-    # conv2d_torch:
-    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --torch
-    #   energy: true
-    #   measurements: 3
+    conv2d_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --torch
+      energy: true
+      measurements: 3
     # conv2d_run_none:
     #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --docc --target=none
     #   energy: true
@@ -111,18 +111,18 @@ steps:
     #   env:
     #     DOCC_CI: regions
     #     DOCC_REUSE_BINARIES: 1
-    # conv2d_run_openmp:
-    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --docc --target=openmp
-    #   energy: true
-    #   env:
-    #     DOCC_CI: regions
-    #     DOCC_REUSE_BINARIES: 1
-    # conv2d_run_cuda:
-    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --docc --target=cuda
-    #   energy: true
-    #   env:
-    #     DOCC_CI: regions
-    #     DOCC_REUSE_BINARIES: 1
+    conv2d_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    conv2d_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
 
     # layer linear
 

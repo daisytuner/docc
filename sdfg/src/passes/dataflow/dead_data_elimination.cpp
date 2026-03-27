@@ -28,6 +28,8 @@ class MemoryOwnershipAnalysis : public analysis::BaseUserVisitor {
         const Block* block;
         const data_flow::Memlet* in;
         const data_flow::Memlet* out;
+
+        FreeCluster(const Block* b, const data_flow::Memlet* i, const data_flow::Memlet* o) : block(b), in(i), out(o) {}
     };
 
     struct OwnedArea {
@@ -36,6 +38,10 @@ class MemoryOwnershipAnalysis : public analysis::BaseUserVisitor {
         symbolic::Expression allocation_size;
         bool non_ssa = false;
         std::vector<FreeCluster> free_clusters;
+
+        OwnedArea(data_flow::Memlet* p, structured_control_flow::Block* pb, symbolic::Expression as, bool ns)
+            : producer(p), producer_block(pb), allocation_size(std::move(as)), non_ssa(ns) {}
+
         void remove_from(builder::StructuredSDFGBuilder& builder) const;
     };
 

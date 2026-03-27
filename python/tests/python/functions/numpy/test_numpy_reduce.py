@@ -380,6 +380,46 @@ def test_mean_3d():
     assert np.allclose(result, expected)
 
 
+def test_mean_dtypes():
+    """Test np.mean always returns float64 regardless of input dtype"""
+
+    @native
+    def mean_int64(a):
+        return np.mean(a, axis=0)
+
+    a = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int64)
+    result = mean_int64(a)
+    expected = np.mean(a, axis=0)
+    assert result.shape == (3,)
+    assert result.strides == (8,)
+    assert result.dtype == np.float64  # mean always returns float64
+    assert np.allclose(result, expected)
+
+    @native
+    def mean_int32(a):
+        return np.mean(a, axis=0)
+
+    a = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
+    result = mean_int32(a)
+    expected = np.mean(a, axis=0)
+    assert result.shape == (3,)
+    assert result.strides == (8,)
+    assert result.dtype == np.float64  # mean always returns float64
+    assert np.allclose(result, expected)
+
+    @native
+    def mean_float32(a):
+        return np.mean(a, axis=0)
+
+    a = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+    result = mean_float32(a)
+    expected = np.mean(a, axis=0)
+    assert result.shape == (3,)
+    assert result.strides == (8,)
+    assert result.dtype == np.float64  # mean always returns float64
+    assert np.allclose(result, expected)
+
+
 def test_std_1d():
     """Test np.std on 1D arrays"""
 
@@ -499,6 +539,46 @@ def test_std_3d():
     assert result.shape == (2, 3)
     assert result.strides == (24, 8)
     assert result.dtype == np.float64
+    assert np.allclose(result, expected)
+
+
+def test_std_dtypes():
+    """Test np.std always returns float64 regardless of input dtype"""
+
+    @native
+    def std_int64(a):
+        return np.std(a, axis=0)
+
+    a = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int64)
+    result = std_int64(a)
+    expected = np.std(a, axis=0)
+    assert result.shape == (3,)
+    assert result.strides == (8,)
+    assert result.dtype == np.float64  # std always returns float64
+    assert np.allclose(result, expected)
+
+    @native
+    def std_int32(a):
+        return np.std(a, axis=0)
+
+    a = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
+    result = std_int32(a)
+    expected = np.std(a, axis=0)
+    assert result.shape == (3,)
+    assert result.strides == (8,)
+    assert result.dtype == np.float64  # std always returns float64
+    assert np.allclose(result, expected)
+
+    @native
+    def std_float32(a):
+        return np.std(a, axis=0)
+
+    a = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+    result = std_float32(a)
+    expected = np.std(a, axis=0)
+    assert result.shape == (3,)
+    assert result.strides == (8,)
+    assert result.dtype == np.float64  # std always returns float64
     assert np.allclose(result, expected)
 
 

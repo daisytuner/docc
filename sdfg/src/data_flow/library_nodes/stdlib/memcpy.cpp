@@ -10,7 +10,7 @@ MemcpyNode::MemcpyNode(
     data_flow::DataFlowGraph& parent,
     const symbolic::Expression count
 )
-    : LibraryNode(
+    : StdlibNode(
           element_id,
           debug_info,
           vertex,

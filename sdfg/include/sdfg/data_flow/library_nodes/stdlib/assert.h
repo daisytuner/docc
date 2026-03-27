@@ -13,6 +13,7 @@
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/data_flow_node.h"
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/stdlib_node.h"
 #include "sdfg/element.h"
 #include "sdfg/function.h"
 #include "sdfg/graph/graph.h"
@@ -25,7 +26,7 @@ namespace stdlib {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_Assert("Assert");
 
-class AssertNode : public data_flow::LibraryNode {
+class AssertNode : public StdlibNode {
 private:
     std::string message_;
 
@@ -44,8 +45,6 @@ public:
     virtual std::string toStr() const override;
 
     virtual symbolic::SymbolSet symbols() const override;
-
-    virtual symbolic::Expression flop() const override;
 
     virtual std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;

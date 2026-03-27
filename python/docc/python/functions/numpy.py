@@ -11,6 +11,7 @@ from docc.sdfg import (
 from docc.python.types import (
     element_type_from_ast_node,
     promote_element_types,
+    numpy_promote_types,
 )
 from docc.python.ast_utils import get_debug_info
 from docc.python.memory import ManagedMemoryHandler
@@ -108,10 +109,18 @@ class NumPyHandler:
     # ========== Linear Algebra Helper Methods (from LinearAlgebraHandler) ==========
 
     def parse_arg(self, node):
-        """Parse an array argument, returning (name, start_indices, slice_shape, indices)."""
+        """Parse an array argument, returning (name, start_indices, slice_shape, indices).
+
+        Returns None for 0-d arrays since they are scalars, not valid array operands
+        for linear algebra operations.
+        """
         if isinstance(node, ast.Name):
             if node.id in self.tensor_table:
-                return node.id, [], self.tensor_table[node.id].shape, []
+                shape = self.tensor_table[node.id].shape
+                # Reject 0-d arrays (scalars) - not valid for linalg ops
+                if len(shape) == 0:
+                    return None, None, None, None
+                return node.id, [], shape, []
         elif isinstance(node, ast.Subscript):
             if isinstance(node.value, ast.Name) and node.value.id in self.tensor_table:
                 name = node.value.id
@@ -1175,17 +1184,32 @@ class NumPyHandler:
         return tmp_name
 
     def handle_array_binary_op(self, op_type, left, right):
+        # Determine if operands are arrays or scalars
+        # NumPy 0-d arrays (shape=[]) ARE arrays for promotion purposes
+        # Only literals and Python scalars (not in tensor_table) are treated as scalars
+        left_is_array = left in self.tensor_table
+        right_is_array = right in self.tensor_table
+
         dtype_left = self._ev._element_type(left)
         dtype_right = self._ev._element_type(right)
-        dtype = promote_element_types(dtype_left, dtype_right)
 
-        if left in self.tensor_table:
-            left_tensor = self.tensor_table[left]
+        # Use NumPy promotion rules: scalars adapt to arrays
+        dtype = numpy_promote_types(
+            dtype_left, left_is_array, dtype_right, right_is_array
+        )
+
+        # Cast operands to result type if needed
+        real_left = self._cast_to_type(left, dtype)
+        real_right = self._cast_to_type(right, dtype)
+
+        # Get tensor info for the (possibly casted) operands
+        if real_left in self.tensor_table:
+            left_tensor = self.tensor_table[real_left]
         else:
             left_tensor = Tensor(dtype, [])
 
-        if right in self.tensor_table:
-            right_tensor = self.tensor_table[right]
+        if real_right in self.tensor_table:
+            right_tensor = self.tensor_table[real_right]
         else:
             right_tensor = Tensor(dtype, [])
 
@@ -1203,8 +1227,6 @@ class NumPyHandler:
             self._needs_broadcast(right_shape, output_shape) if right_shape else False
         )
 
-        real_left = left
-        real_right = right
         real_left_tensor = left_tensor
         real_right_tensor = right_tensor
 
@@ -2218,6 +2240,12 @@ class NumPyHandler:
         if array_name not in self.tensor_table:
             raise ValueError(f"Reduction input must be an array, got {array_name}")
 
+        # For mean and std, we need float64 input and output (NumPy behavior)
+        # Cast input to float64 if needed
+        if func_name in ("mean", "std"):
+            float64_type = Scalar(PrimitiveType.Double)
+            array_name = self._cast_array(array_name, float64_type)
+
         input_tensor = self.tensor_table[array_name]
         input_shape = input_tensor.shape
         ndim = len(input_shape)
@@ -2744,3 +2772,93 @@ class NumPyHandler:
             return [self._shape_to_runtime_expr(elt) for elt in shape_node.elts]
         else:
             return self.visit(shape_node)
+
+    # ========== Type Casting Helpers ==========
+
+    def _cast_scalar(self, name, target_type):
+        """
+        Cast a scalar value to a different type using an assign tasklet.
+
+        The backend detects the specific conversion (fpext, sitofp, etc.)
+        from the type mismatch between input and output.
+
+        Args:
+            name: Name of the scalar to cast
+            target_type: Target element type (Scalar)
+
+        Returns:
+            Name of the casted scalar (or original if no cast needed)
+        """
+        current_type = self._ev._element_type(name)
+        if current_type.primitive_type == target_type.primitive_type:
+            return name
+
+        cast_name = f"_cast_{self._get_unique_id()}"
+        self.builder.add_container(cast_name, target_type, False)
+        self.container_table[cast_name] = target_type
+        self.tensor_table[cast_name] = Tensor(target_type, [])
+
+        block = self.builder.add_block()
+        t_src, src_sub = self._add_read(block, name)
+        t_dst = self.builder.add_access(block, cast_name)
+        t_task = self.builder.add_tasklet(block, TaskletCode.assign, ["_in"], ["_out"])
+        self.builder.add_memlet(block, t_src, "void", t_task, "_in", src_sub)
+        self.builder.add_memlet(block, t_task, "_out", t_dst, "void", "")
+
+        return cast_name
+
+    def _cast_array(self, name, target_type):
+        """
+        Cast an array to a different element type using the CastNode library node.
+
+        This is an elementwise cast operation that creates a new array.
+        Reuses the same infrastructure as handle_numpy_astype().
+
+        Args:
+            name: Name of the array to cast
+            target_type: Target element type (Scalar)
+
+        Returns:
+            Name of the casted array (or original if no cast needed)
+        """
+        current_type = self._ev._element_type(name)
+        if current_type.primitive_type == target_type.primitive_type:
+            return name
+
+        src_tensor = self.tensor_table[name]
+
+        # Create output array with same shape but new dtype
+        # Preserve strides order (C or F contiguous)
+        output_strides = self._get_contiguous_output_strides(
+            src_tensor.shape, src_tensor.strides
+        )
+        tmp_name = self._create_array_temp(
+            src_tensor.shape, target_type, strides=output_strides
+        )
+        tmp_tensor = self.tensor_table[tmp_name]
+
+        # Use existing cast infrastructure (CastNode)
+        self.builder.add_cast_op(name, src_tensor, tmp_name, tmp_tensor)
+
+        return tmp_name
+
+    def _cast_to_type(self, name, target_type):
+        """
+        Cast an operand (scalar or array) to the target type.
+
+        Dispatches to _cast_scalar or _cast_array based on whether
+        the operand is in tensor_table (includes 0-d arrays).
+
+        Args:
+            name: Name of the operand to cast
+            target_type: Target element type (Scalar)
+
+        Returns:
+            Name of the casted operand (or original if no cast needed)
+        """
+        if name in self.tensor_table:
+            # In tensor_table means it's an array (including 0-d arrays)
+            return self._cast_array(name, target_type)
+        else:
+            # Not in tensor_table means it's a literal or Python scalar
+            return self._cast_scalar(name, target_type)

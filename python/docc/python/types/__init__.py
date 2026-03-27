@@ -128,16 +128,110 @@ def element_type_from_ast_node(ast_node, container_table=None):
 
 
 def promote_element_types(left_element_type, right_element_type):
-    """Promote two dtypes following NumPy rules: float > int, wider > narrower."""
-    priority = {
-        PrimitiveType.Double: 4,
-        PrimitiveType.Float: 3,
-        PrimitiveType.Int64: 2,
-        PrimitiveType.Int32: 1,
+    """
+    Promote two dtypes following NumPy rules for array-array operations.
+
+    Rules:
+    - float + float → wider float
+    - int + int → wider int
+    - float + int → float that can represent both (float32+int32 → float64)
+    """
+    left_pt = left_element_type.primitive_type
+    right_pt = right_element_type.primitive_type
+
+    # Check if types are floating point (includes half-precision types)
+    float_types = {
+        PrimitiveType.Double,
+        PrimitiveType.Float,
+        PrimitiveType.Half,
+        PrimitiveType.BFloat,
     }
-    left_prio = priority.get(left_element_type.primitive_type, 0)
-    right_prio = priority.get(right_element_type.primitive_type, 0)
-    if left_prio >= right_prio:
-        return left_element_type
-    else:
-        return right_element_type
+    int_types = {
+        PrimitiveType.Int64,
+        PrimitiveType.Int32,
+        PrimitiveType.Int16,
+        PrimitiveType.Int8,
+        PrimitiveType.UInt64,
+        PrimitiveType.UInt32,
+        PrimitiveType.UInt16,
+        PrimitiveType.UInt8,
+    }
+
+    left_is_float = left_pt in float_types
+    right_is_float = right_pt in float_types
+
+    # Both floats: return wider
+    if left_is_float and right_is_float:
+        if left_pt == PrimitiveType.Double or right_pt == PrimitiveType.Double:
+            return Scalar(PrimitiveType.Double)
+        if left_pt == PrimitiveType.Float or right_pt == PrimitiveType.Float:
+            return Scalar(PrimitiveType.Float)
+        # Half-precision types: same type stays, mixed promotes to Float
+        if left_pt == right_pt:
+            return Scalar(left_pt)  # BFloat+BFloat→BFloat, Half+Half→Half
+        return Scalar(PrimitiveType.Float)  # Mixed half types → float32
+
+    # Both integers: return wider (simplified - always Int64 for now)
+    if not left_is_float and not right_is_float:
+        if left_pt == PrimitiveType.Int64 or right_pt == PrimitiveType.Int64:
+            return Scalar(PrimitiveType.Int64)
+        if left_pt == PrimitiveType.UInt64 or right_pt == PrimitiveType.UInt64:
+            return Scalar(PrimitiveType.Int64)  # Promote to signed for safety
+        if left_pt == PrimitiveType.Int32 or right_pt == PrimitiveType.Int32:
+            return Scalar(PrimitiveType.Int32)
+        return Scalar(PrimitiveType.Int64)  # Default
+
+    # Mixed float + int: need a float that can represent the int
+    # float32 can represent int16/int8, but not int32
+    # float64 can represent int32 and smaller
+    # half types + int → promote to float32 (half can't represent ints well)
+    float_type = left_pt if left_is_float else right_pt
+    int_type = right_pt if left_is_float else left_pt
+
+    # If float is already double, use double
+    if float_type == PrimitiveType.Double:
+        return Scalar(PrimitiveType.Double)
+
+    # Half-precision + any int → float32 (half types can't represent ints well)
+    if float_type in {PrimitiveType.Half, PrimitiveType.BFloat}:
+        return Scalar(PrimitiveType.Float)
+
+    # float32 + (int32 or larger) → float64
+    if int_type in {
+        PrimitiveType.Int32,
+        PrimitiveType.Int64,
+        PrimitiveType.UInt32,
+        PrimitiveType.UInt64,
+    }:
+        return Scalar(PrimitiveType.Double)
+
+    # float32 + (int16 or smaller) → float32
+    return Scalar(PrimitiveType.Float)
+
+
+def numpy_promote_types(left_type, left_is_array, right_type, right_is_array):
+    """
+    Implement NumPy's type promotion rules for binary operations.
+
+    Key rule: Scalars adapt to arrays, not vice versa.
+    - array + scalar → array's dtype (scalar is cast to array's dtype)
+    - array + array → standard promotion (wider/float wins)
+    - scalar + scalar → standard promotion
+
+    Args:
+        left_type: Element type of left operand (Scalar)
+        left_is_array: True if left operand is an array
+        right_type: Element type of right operand (Scalar)
+        right_is_array: True if right operand is an array
+
+    Returns:
+        Result element type (Scalar)
+    """
+    if left_is_array and not right_is_array:
+        # Scalar adapts to array
+        return left_type
+    if right_is_array and not left_is_array:
+        # Scalar adapts to array
+        return right_type
+    # Both arrays or both scalars: use standard promotion
+    return promote_element_types(left_type, right_type)
