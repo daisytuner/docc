@@ -56,10 +56,10 @@ void TestConvNode(
     }
 
     auto group = symbolic::integer(group_val);
-    auto output_channels = symbolic::integer(1);
+    auto output_channels = symbolic::integer(8);
 
     // Default shape for validation
-    std::vector<symbolic::Expression> shape = {symbolic::integer(1), symbolic::integer(1)};
+    std::vector<symbolic::Expression> shape = {symbolic::integer(1), symbolic::integer(8)};
     for (size_t i = 0; i < kernel_dims.size(); ++i) {
         shape.push_back(symbolic::integer(10)); // Arbitrary spatial size
     }
