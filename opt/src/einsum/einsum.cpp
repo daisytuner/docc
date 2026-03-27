@@ -195,6 +195,23 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         builder.remove_node(*block, *node);
     }
 
+    // Create unique containers for loop induction variables
+    auto& sdfg = builder.subject();
+    for (size_t i = 0; i < this->dims().size(); i++) {
+        auto indvar = this->indvar(i);
+        auto indvar_name = SymEngine::rcp_static_cast<const SymEngine::Symbol>(indvar)->get_name();
+
+        // Always create a unique container name using find_new_name
+        std::string container_name = builder.find_new_name(indvar_name);
+
+        // Add container with Int64 type for loop index
+        builder.add_container(container_name, types::Scalar(types::PrimitiveType::Int64));
+
+        // Update the symbol in the einsum node to use the new unique name
+        auto new_indvar = symbolic::symbol(container_name);
+        this->replace(indvar, new_indvar);
+    }
+
     // Add loops
     structured_control_flow::Sequence* current_sequence = nullptr;
     bool map = true;

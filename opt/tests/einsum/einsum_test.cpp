@@ -30,13 +30,6 @@ TEST(EinsumNodeTest, SimpleGEMM) {
     auto& root = sdfg.root();
 
     // Add containers
-    types::Scalar sym_desc(types::PrimitiveType::Int64);
-    builder.add_container("i", sym_desc);
-    builder.add_container("j", sym_desc);
-    builder.add_container("k", sym_desc);
-    builder.add_container("l", sym_desc, true);
-    builder.add_container("m", sym_desc, true);
-    builder.add_container("n", sym_desc, true);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Array array_desc_n(base_desc, symbolic::symbol("n"));
     types::Pointer desc_n(array_desc_n);
@@ -138,13 +131,6 @@ TEST(EinsumNodeTest, ExpandGEMM) {
     auto& root = sdfg.root();
 
     // Add containers
-    types::Scalar sym_desc(types::PrimitiveType::Int64);
-    builder.add_container("i", sym_desc);
-    builder.add_container("j", sym_desc);
-    builder.add_container("k", sym_desc);
-    builder.add_container("l", sym_desc, true);
-    builder.add_container("m", sym_desc, true);
-    builder.add_container("n", sym_desc, true);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Array array_desc_n(base_desc, symbolic::symbol("n"));
     types::Pointer desc_n(array_desc_n);
@@ -196,28 +182,29 @@ TEST(EinsumNodeTest, ExpandGEMM) {
 
     auto* loop1 = dynamic_cast<structured_control_flow::Map*>(&root.at(0).first);
     ASSERT_TRUE(loop1);
-    EXPECT_TRUE(symbolic::eq(loop1->indvar(), i));
+    // Indvars are renamed during expansion for uniqueness, so get them from the loops
+    auto i_renamed = loop1->indvar();
     EXPECT_TRUE(symbolic::eq(loop1->init(), zero));
-    EXPECT_TRUE(symbolic::eq(loop1->condition(), symbolic::Lt(i, l)));
-    EXPECT_TRUE(symbolic::eq(loop1->update(), symbolic::add(i, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(loop1->condition(), symbolic::Lt(i_renamed, l)));
+    EXPECT_TRUE(symbolic::eq(loop1->update(), symbolic::add(i_renamed, symbolic::one())));
     EXPECT_EQ(loop1->root().size(), 1);
     ASSERT_GE(loop1->root().size(), 1);
 
     auto* loop2 = dynamic_cast<structured_control_flow::Map*>(&loop1->root().at(0).first);
     ASSERT_TRUE(loop2);
-    EXPECT_TRUE(symbolic::eq(loop2->indvar(), j));
+    auto j_renamed = loop2->indvar();
     EXPECT_TRUE(symbolic::eq(loop2->init(), zero));
-    EXPECT_TRUE(symbolic::eq(loop2->condition(), symbolic::Lt(j, m)));
-    EXPECT_TRUE(symbolic::eq(loop2->update(), symbolic::add(j, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(loop2->condition(), symbolic::Lt(j_renamed, m)));
+    EXPECT_TRUE(symbolic::eq(loop2->update(), symbolic::add(j_renamed, symbolic::one())));
     EXPECT_EQ(loop2->root().size(), 1);
     ASSERT_GE(loop2->root().size(), 1);
 
     auto* loop3 = dynamic_cast<structured_control_flow::For*>(&loop2->root().at(0).first);
     ASSERT_TRUE(loop3);
-    EXPECT_TRUE(symbolic::eq(loop3->indvar(), k));
+    auto k_renamed = loop3->indvar();
     EXPECT_TRUE(symbolic::eq(loop3->init(), zero));
-    EXPECT_TRUE(symbolic::eq(loop3->condition(), symbolic::Lt(k, n)));
-    EXPECT_TRUE(symbolic::eq(loop3->update(), symbolic::add(k, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(loop3->condition(), symbolic::Lt(k_renamed, n)));
+    EXPECT_TRUE(symbolic::eq(loop3->update(), symbolic::add(k_renamed, symbolic::one())));
     EXPECT_EQ(loop3->root().size(), 1);
     ASSERT_GE(loop3->root().size(), 1);
 
@@ -235,8 +222,8 @@ TEST(EinsumNodeTest, ExpandGEMM) {
         EXPECT_EQ(oedge.src_conn(), "_out");
         EXPECT_EQ(oedge.subset().size(), 2);
         ASSERT_GE(oedge.subset().size(), 2);
-        EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), i));
-        EXPECT_TRUE(symbolic::eq(oedge.subset().at(1), j));
+        EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), i_renamed));
+        EXPECT_TRUE(symbolic::eq(oedge.subset().at(1), j_renamed));
         EXPECT_EQ(access_node->data(), "C");
     }
     EXPECT_EQ(tasklet->inputs(), std::vector<std::string>({"_in1", "_in2", "__einsum_out"}));
@@ -246,20 +233,20 @@ TEST(EinsumNodeTest, ExpandGEMM) {
         if (iedge.dst_conn() == "_in1") {
             EXPECT_EQ(iedge.subset().size(), 2);
             ASSERT_GE(iedge.subset().size(), 2);
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i));
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(1), k));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i_renamed));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(1), k_renamed));
             EXPECT_EQ(access_node->data(), "A");
         } else if (iedge.dst_conn() == "_in2") {
             EXPECT_EQ(iedge.subset().size(), 2);
             ASSERT_GE(iedge.subset().size(), 2);
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), k));
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(1), j));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), k_renamed));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(1), j_renamed));
             EXPECT_EQ(access_node->data(), "B");
         } else if (iedge.dst_conn() == "__einsum_out") {
             EXPECT_EQ(iedge.subset().size(), 2);
             ASSERT_GE(iedge.subset().size(), 2);
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i));
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(1), j));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i_renamed));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(1), j_renamed));
             EXPECT_EQ(access_node->data(), "C");
         } else {
             EXPECT_EQ(iedge.dst_conn(), "Unknown connector");
@@ -275,8 +262,6 @@ TEST(EinsumNodeTest, SimpleMeans) {
 
     // Add containers
     types::Scalar sym_desc(types::PrimitiveType::Int64);
-    builder.add_container("i", sym_desc);
-    builder.add_container("j", sym_desc);
     builder.add_container("m", sym_desc, true);
     builder.add_container("n", sym_desc, true);
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -386,8 +371,6 @@ TEST(EinsumNodeTest, ExpandMeans) {
 
     // Add containers
     types::Scalar sym_desc(types::PrimitiveType::Int64);
-    builder.add_container("i", sym_desc);
-    builder.add_container("j", sym_desc);
     builder.add_container("m", sym_desc, true);
     builder.add_container("n", sym_desc, true);
     types::Scalar base_desc(types::PrimitiveType::Float);
@@ -464,19 +447,20 @@ TEST(EinsumNodeTest, ExpandMeans) {
 
     auto* loop1 = dynamic_cast<structured_control_flow::Map*>(&root.at(1).first);
     ASSERT_TRUE(loop1);
-    EXPECT_TRUE(symbolic::eq(loop1->indvar(), i));
+    // Indvars are renamed during expansion for uniqueness
+    auto i_renamed = loop1->indvar();
     EXPECT_TRUE(symbolic::eq(loop1->init(), zero));
-    EXPECT_TRUE(symbolic::eq(loop1->condition(), symbolic::Lt(i, m)));
-    EXPECT_TRUE(symbolic::eq(loop1->update(), symbolic::add(i, one)));
+    EXPECT_TRUE(symbolic::eq(loop1->condition(), symbolic::Lt(i_renamed, m)));
+    EXPECT_TRUE(symbolic::eq(loop1->update(), symbolic::add(i_renamed, one)));
     EXPECT_EQ(loop1->root().size(), 1);
     ASSERT_GE(loop1->root().size(), 1);
 
     auto* loop2 = dynamic_cast<structured_control_flow::For*>(&loop1->root().at(0).first);
     ASSERT_TRUE(loop2);
-    EXPECT_TRUE(symbolic::eq(loop2->indvar(), j));
+    auto j_renamed = loop2->indvar();
     EXPECT_TRUE(symbolic::eq(loop2->init(), zero));
-    EXPECT_TRUE(symbolic::eq(loop2->condition(), symbolic::Lt(j, n)));
-    EXPECT_TRUE(symbolic::eq(loop2->update(), symbolic::add(j, one)));
+    EXPECT_TRUE(symbolic::eq(loop2->condition(), symbolic::Lt(j_renamed, n)));
+    EXPECT_TRUE(symbolic::eq(loop2->update(), symbolic::add(j_renamed, one)));
     EXPECT_EQ(loop2->root().size(), 1);
     ASSERT_GE(loop2->root().size(), 1);
 
@@ -494,7 +478,7 @@ TEST(EinsumNodeTest, ExpandMeans) {
         EXPECT_EQ(oedge.src_conn(), "_out");
         EXPECT_EQ(oedge.subset().size(), 1);
         ASSERT_GE(oedge.subset().size(), 1);
-        EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), i));
+        EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), i_renamed));
         EXPECT_EQ(access_node->data(), "y");
     }
     EXPECT_EQ(tasklet->inputs(), std::vector<std::string>({"_in", "__einsum_out"}));
@@ -504,13 +488,13 @@ TEST(EinsumNodeTest, ExpandMeans) {
         if (iedge.dst_conn() == "_in") {
             EXPECT_EQ(iedge.subset().size(), 2);
             ASSERT_GE(iedge.subset().size(), 2);
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i));
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(1), j));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i_renamed));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(1), j_renamed));
             EXPECT_EQ(access_node->data(), "A");
         } else if (iedge.dst_conn() == "__einsum_out") {
             EXPECT_EQ(iedge.subset().size(), 1);
             ASSERT_GE(iedge.subset().size(), 1);
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i_renamed));
             EXPECT_EQ(access_node->data(), "y");
         } else {
             EXPECT_EQ(iedge.dst_conn(), "Unknown connector");
@@ -706,10 +690,11 @@ TEST(EinsumNodeTest, ExpandMean) {
 
     auto* for1 = dynamic_cast<structured_control_flow::For*>(&root.at(1).first);
     ASSERT_TRUE(for1);
-    EXPECT_TRUE(symbolic::eq(for1->indvar(), i));
+    // Indvars are renamed during expansion for uniqueness
+    auto i_renamed = for1->indvar();
     EXPECT_TRUE(symbolic::eq(for1->init(), zero));
-    EXPECT_TRUE(symbolic::eq(for1->condition(), symbolic::Lt(i, m)));
-    EXPECT_TRUE(symbolic::eq(for1->update(), symbolic::add(i, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(for1->condition(), symbolic::Lt(i_renamed, m)));
+    EXPECT_TRUE(symbolic::eq(for1->update(), symbolic::add(i_renamed, symbolic::one())));
     EXPECT_EQ(for1->root().size(), 1);
     ASSERT_GE(for1->root().size(), 1);
 
@@ -736,7 +721,7 @@ TEST(EinsumNodeTest, ExpandMean) {
         if (iedge.dst_conn() == "_in") {
             EXPECT_EQ(iedge.subset().size(), 1);
             ASSERT_GE(iedge.subset().size(), 1);
-            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i));
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), i_renamed));
             EXPECT_EQ(access_node->data(), "a");
         } else if (iedge.dst_conn() == "__einsum_out") {
             EXPECT_EQ(iedge.subset().size(), 0);
