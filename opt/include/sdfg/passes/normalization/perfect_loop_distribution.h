@@ -22,7 +22,7 @@ private:
     );
 
 public:
-    PerfectLoopDistributionPass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+    PerfectLoopDistributionPass();
 
     std::string name() override { return "PerfectLoopDistribution"; };
 

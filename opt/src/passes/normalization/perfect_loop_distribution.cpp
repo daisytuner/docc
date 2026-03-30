@@ -53,8 +53,7 @@ void PerfectLoopDistributionPass::apply(
     loop_distribute.apply(builder, analysis_manager);
 };
 
-PerfectLoopDistributionPass::
-    PerfectLoopDistributionPass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
+PerfectLoopDistributionPass::PerfectLoopDistributionPass()
     : passes::Pass() {
 
       };
