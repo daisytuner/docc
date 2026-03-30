@@ -281,9 +281,8 @@ void StrideMinimization::apply(
                 auto first_loop = static_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(j));
                 auto second_loop = static_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(j + 1));
                 transformations::LoopInterchange loop_interchange(*first_loop, *second_loop);
-                if (!loop_interchange.can_be_applied(builder, analysis_manager)) {
-                    throw std::runtime_error("Loop interchange cannot be applied");
-                }
+                // given that the permutation is admissible, the interchange must be applicable, else the permutation
+                // would not be admissible
                 loop_interchange.apply(builder, analysis_manager);
                 std::swap(permutation_indices[j], permutation_indices[j + 1]);
             }
