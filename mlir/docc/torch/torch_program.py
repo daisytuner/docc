@@ -51,6 +51,7 @@ class TorchProgram(DoccProgram):
         self._compiled: Optional[CompiledSDFG] = None
         self._input_info: list = []  # [(shape, dtype), ...] for each input
         self._output_info: list = []  # [(shape, dtype), ...] for each output
+        self._frozen_buffer_args: list = []  # buffer tensors not frozen by torch-mlir
         self.force_rebuild = force_rebuild
 
     def __call__(self, *args: Any) -> Any:
@@ -63,8 +64,15 @@ class TorchProgram(DoccProgram):
         if self._compiled is None:
             self._compiled = self.compile()
 
+        # Prepend frozen buffer values (e.g. BatchNorm running_mean/var) that
+        # torch-mlir left as function arguments instead of freezing as constants.
+        if self._frozen_buffer_args:
+            all_args = tuple(self._frozen_buffer_args) + args
+        else:
+            all_args = args
+
         # Convert inputs to numpy
-        numpy_args = self._convert_inputs(args)
+        numpy_args = self._convert_inputs(all_args)
 
         # Execute
         result = self._compiled(*numpy_args)
@@ -205,6 +213,15 @@ class TorchProgram(DoccProgram):
                 sdfg, output_folder, instrumentation_mode, capture_args
             )
 
+        # Prepend buffer info for any buffers that torch-mlir left as
+        # function arguments (detected in to_sdfg).
+        if self._frozen_buffer_args:
+            buffer_info = [
+                {"shape": tuple(buf.shape), "dtype": buf.dtype}
+                for buf in self._frozen_buffer_args
+            ]
+            self._input_info = buffer_info + self._input_info
+
         # Build shape sources from input info
         shape_sources = []
         for i, info in enumerate(self._input_info):
@@ -247,23 +264,39 @@ class TorchProgram(DoccProgram):
         if self.example_input is None:
             raise ValueError("No example input provided for SDFG conversion.")
 
-        # Import torch model to MLIR using torch-mlir FX
-        # example_input may be a single tensor or a tuple of tensors;
-        # fx.export_and_import expects them as positional *args.
-        if isinstance(self.example_input, tuple):
-            torch_mlir = fx.export_and_import(
-                self.model,
-                *self.example_input,
-                output_type="linalg_on_tensors",
-                func_name=self.name,
-            )
-        else:
-            torch_mlir = fx.export_and_import(
-                self.model,
-                self.example_input,
-                output_type="linalg_on_tensors",
-                func_name=self.name,
-            )
+        # Import torch model to MLIR using torch-mlir FX.
+        # torch-mlir's import_frozen_program freezes parameters as MLIR constants
+        # but may leave buffers (e.g. BatchNorm running_mean/var) as function
+        # arguments with newer PyTorch versions. Detect such buffers so __call__
+        # can prepend their values alongside user inputs.
+        import torch
+
+        example_inputs = (
+            self.example_input
+            if isinstance(self.example_input, tuple)
+            else (self.example_input,)
+        )
+
+        self._frozen_buffer_args = []
+        try:
+            prog = torch.export.export(self.model, example_inputs)
+            sig = prog.graph_signature
+            if hasattr(prog, "constants"):
+                for spec in sig.input_specs:
+                    if spec.kind == torch.export.graph_signature.InputKind.BUFFER:
+                        obj = self.model
+                        for part in spec.target.split("."):
+                            obj = getattr(obj, part)
+                        self._frozen_buffer_args.append(obj.detach().cpu().contiguous())
+        except Exception:
+            self._frozen_buffer_args = []
+
+        torch_mlir = fx.export_and_import(
+            self.model,
+            *example_inputs,
+            output_type="linalg_on_tensors",
+            func_name=self.name,
+        )
         torch_mlir = str(torch_mlir)
 
         # Translate to Structured SDFG

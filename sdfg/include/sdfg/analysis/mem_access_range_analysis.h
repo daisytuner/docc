@@ -69,6 +69,8 @@ protected:
 public:
     MemAccessRanges(StructuredSDFG& sdfg);
 
+    std::string name() const override { return "MemAccessRanges"; }
+
     const MemAccessRange* get(const std::string& varName) const;
 
     const MemAccessRange*

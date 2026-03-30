@@ -20,6 +20,15 @@ def _check(model, example_input, rtol=1e-4, atol=1e-5):
     assert torch.allclose(res, ref, rtol=rtol, atol=atol)
 
 
+def _check_compile(model, example_input, rtol=1e-4, atol=1e-5):
+    model_ref = copy.deepcopy(model)
+    program = docc.torch.compile_torch(model, example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+    assert torch.allclose(res, ref, rtol=rtol, atol=atol)
+
+
 def _check_backend(model, example_input, rtol=1e-4, atol=1e-5):
     docc.torch.set_backend_options(target="none", category="server")
     _check(model, example_input, rtol=rtol, atol=atol)
@@ -37,7 +46,7 @@ def test_batchnorm1d_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN1dCompile().eval(), torch.randn(8, 32))
+    _check_compile(BN1dCompile().eval(), torch.randn(8, 32))
 
 
 def test_batchnorm1d_backend():
@@ -61,7 +70,7 @@ def test_batchnorm1d_large_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN1dLargeCompile().eval(), torch.randn(32, 256))
+    _check_compile(BN1dLargeCompile().eval(), torch.randn(32, 256))
 
 
 def test_batchnorm1d_large_backend():
@@ -85,7 +94,7 @@ def test_batchnorm1d_no_affine_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN1dNoAffineCompile().eval(), torch.randn(8, 32))
+    _check_compile(BN1dNoAffineCompile().eval(), torch.randn(8, 32))
 
 
 def test_batchnorm1d_no_affine_backend():
@@ -111,7 +120,7 @@ def test_batchnorm1d_3d_input_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN1d3dInputCompile().eval(), torch.randn(4, 16, 10))
+    _check_compile(BN1d3dInputCompile().eval(), torch.randn(4, 16, 10))
 
 
 def test_batchnorm1d_3d_input_backend():
@@ -138,7 +147,7 @@ def test_batchnorm2d_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN2dCompile().eval(), torch.randn(4, 64, 16, 16))
+    _check_compile(BN2dCompile().eval(), torch.randn(4, 64, 16, 16))
 
 
 def test_batchnorm2d_backend():
@@ -162,7 +171,7 @@ def test_batchnorm2d_small_spatial_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN2dSmallSpatialCompile().eval(), torch.randn(8, 128, 4, 4))
+    _check_compile(BN2dSmallSpatialCompile().eval(), torch.randn(8, 128, 4, 4))
 
 
 def test_batchnorm2d_small_spatial_backend():
@@ -186,7 +195,7 @@ def test_batchnorm2d_no_affine_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN2dNoAffineCompile().eval(), torch.randn(4, 64, 8, 8))
+    _check_compile(BN2dNoAffineCompile().eval(), torch.randn(4, 64, 8, 8))
 
 
 def test_batchnorm2d_no_affine_backend():
@@ -215,7 +224,7 @@ def test_batchnorm2d_3ch_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN2d3chCompile().eval(), torch.randn(1, 3, 224, 224))
+    _check_compile(BN2d3chCompile().eval(), torch.randn(1, 3, 224, 224))
 
 
 def test_batchnorm2d_3ch_backend():
@@ -241,7 +250,7 @@ def test_batchnorm2d_64ch_large_spatial_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN2d64chLargeCompile().eval(), torch.randn(1, 64, 112, 112))
+    _check_compile(BN2d64chLargeCompile().eval(), torch.randn(1, 64, 112, 112))
 
 
 def test_batchnorm2d_64ch_large_spatial_backend():
@@ -267,7 +276,7 @@ def test_batchnorm2d_batch1_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN2dBatch1Compile().eval(), torch.randn(1, 16, 32, 32))
+    _check_compile(BN2dBatch1Compile().eval(), torch.randn(1, 16, 32, 32))
 
 
 def test_batchnorm2d_batch1_backend():
@@ -294,7 +303,7 @@ def test_batchnorm3d_compile():
         def forward(self, x: torch.Tensor):
             return self.bn(x)
 
-    _check(BN3dCompile().eval(), torch.randn(2, 32, 4, 4, 4))
+    _check_compile(BN3dCompile().eval(), torch.randn(2, 32, 4, 4, 4))
 
 
 def test_batchnorm3d_backend():

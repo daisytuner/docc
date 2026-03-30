@@ -1,8 +1,14 @@
 from abc import ABC, abstractmethod
+import sys
 from typing import Any, Optional
 import os
 
 from docc.sdfg import StructuredSDFG
+from docc.sdfg._sdfg import (
+    _enable_statistics,
+    _statistics_enabled_by_env,
+    _statistics_summary,
+)
 from docc.compiler.compiled_sdfg import CompiledSDFG
 from docc.compiler.target_registry import (
     get_target_schedule_fn,
@@ -71,6 +77,11 @@ class DoccProgram(ABC):
 
         if self.debug_dump:
             sdfg.dump(output_folder, "py0.parsed", dump_dot=True)
+
+        # Enable statistics if envvar is set
+        if _statistics_enabled_by_env():
+            _enable_statistics()
+
         sdfg.validate()
 
         # Tensor targets keep tensor nodes
@@ -117,6 +128,10 @@ class DoccProgram(ABC):
                 sdfg.dump(output_folder, "py4.post_sched", dump_dot=True)
 
         self.last_sdfg = sdfg
+
+        # Dump statistics before compile
+        if _statistics_enabled_by_env():
+            print(_statistics_summary(), file=sys.stderr)
 
         custom_compile_fn = get_target_compile_fn(self.target)
         if custom_compile_fn is not None:

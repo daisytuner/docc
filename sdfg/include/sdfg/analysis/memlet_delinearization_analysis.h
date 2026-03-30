@@ -53,6 +53,8 @@ protected:
 public:
     MemletDelinearizationAnalysis(StructuredSDFG& sdfg);
 
+    std::string name() const override { return "MemletDelinearizationAnalysis"; }
+
     /**
      * @brief Get the delinearized subset for a memlet
      * @param memlet The memlet to query

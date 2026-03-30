@@ -20,6 +20,15 @@ def _check(model, example_input, rtol=1e-4, atol=1e-5):
     assert torch.allclose(res, ref, rtol=rtol, atol=atol)
 
 
+def _check_compile(model, example_input, rtol=1e-4, atol=1e-5):
+    model_ref = copy.deepcopy(model)
+    program = docc.torch.compile_torch(model, example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+    assert torch.allclose(res, ref, rtol=rtol, atol=atol)
+
+
 def _check_backend(model, example_input, rtol=1e-4, atol=1e-5):
     docc.torch.set_backend_options(target="none", category="server")
     _check(model, example_input, rtol=rtol, atol=atol)
@@ -37,7 +46,7 @@ def test_relu_2d_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(ReLU2dCompile().eval(), torch.randn(4, 64))
+    _check_compile(ReLU2dCompile().eval(), torch.randn(4, 64))
 
 
 def test_relu_2d_backend():
@@ -64,7 +73,7 @@ def test_relu_4d_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(ReLU4dCompile().eval(), torch.randn(2, 32, 8, 8))
+    _check_compile(ReLU4dCompile().eval(), torch.randn(2, 32, 8, 8))
 
 
 def test_relu_4d_backend():
@@ -91,7 +100,7 @@ def test_relu_large_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(ReLULargeCompile().eval(), torch.randn(16, 256))
+    _check_compile(ReLULargeCompile().eval(), torch.randn(16, 256))
 
 
 def test_relu_large_backend():
@@ -118,7 +127,7 @@ def test_relu6_2d_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(ReLU62dCompile().eval(), torch.randn(4, 64))
+    _check_compile(ReLU62dCompile().eval(), torch.randn(4, 64))
 
 
 def test_relu6_2d_backend():
@@ -142,7 +151,7 @@ def test_relu6_4d_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(ReLU64dCompile().eval(), torch.randn(2, 32, 8, 8))
+    _check_compile(ReLU64dCompile().eval(), torch.randn(2, 32, 8, 8))
 
 
 def test_relu6_4d_backend():
@@ -169,7 +178,7 @@ def test_leaky_relu_default_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(LeakyReLUDefaultCompile().eval(), torch.randn(4, 64))
+    _check_compile(LeakyReLUDefaultCompile().eval(), torch.randn(4, 64))
 
 
 def test_leaky_relu_default_backend():
@@ -193,7 +202,7 @@ def test_leaky_relu_slope_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(LeakyReLUSlopeCompile().eval(), torch.randn(4, 64))
+    _check_compile(LeakyReLUSlopeCompile().eval(), torch.randn(4, 64))
 
 
 def test_leaky_relu_slope_backend():
@@ -220,7 +229,7 @@ def test_elu_default_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(ELUDefaultCompile().eval(), torch.randn(4, 64))
+    _check_compile(ELUDefaultCompile().eval(), torch.randn(4, 64))
 
 
 def test_elu_default_backend():
@@ -244,7 +253,7 @@ def test_elu_alpha_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(ELUAlphaCompile().eval(), torch.randn(4, 64))
+    _check_compile(ELUAlphaCompile().eval(), torch.randn(4, 64))
 
 
 def test_elu_alpha_backend():
@@ -271,7 +280,7 @@ def test_gelu_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(GELUCompile().eval(), torch.randn(4, 64))
+    _check_compile(GELUCompile().eval(), torch.randn(4, 64))
 
 
 def test_gelu_backend():
@@ -295,7 +304,7 @@ def test_gelu_4d_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(GELU4dCompile().eval(), torch.randn(2, 32, 8, 8))
+    _check_compile(GELU4dCompile().eval(), torch.randn(2, 32, 8, 8))
 
 
 def test_gelu_4d_backend():
@@ -322,7 +331,7 @@ def test_silu_compile():
         def forward(self, x: torch.Tensor):
             return self.act(x)
 
-    _check(SiLUCompile().eval(), torch.randn(4, 64))
+    _check_compile(SiLUCompile().eval(), torch.randn(4, 64))
 
 
 def test_silu_backend():

@@ -19,6 +19,8 @@ public:
     TypeAnalysis(StructuredSDFG& sdfg);
     TypeAnalysis(StructuredSDFG& sdfg, structured_control_flow::ControlFlowNode* node, AnalysisManager& analysis_manager);
 
+    std::string name() const override { return "TypeAnalysis"; }
+
     const sdfg::types::IType* get_outer_type(const std::string& container) const;
 };
 

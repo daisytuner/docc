@@ -20,6 +20,15 @@ def _check(model, example_input, rtol=1e-4, atol=1e-5):
     assert torch.allclose(res, ref, rtol=rtol, atol=atol)
 
 
+def _check_compile(model, example_input, rtol=1e-4, atol=1e-5):
+    model_ref = copy.deepcopy(model)
+    program = docc.torch.compile_torch(model, example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+    assert torch.allclose(res, ref, rtol=rtol, atol=atol)
+
+
 def _check_backend(model, example_input, rtol=1e-4, atol=1e-5):
     docc.torch.set_backend_options(target="none", category="server")
     _check(model, example_input, rtol=rtol, atol=atol)
@@ -37,7 +46,7 @@ def test_embedding_small_compile():
         def forward(self, x: torch.Tensor):
             return self.emb(x)
 
-    _check(EmbSmallCompile().eval(), torch.randint(0, 256, (4, 16)))
+    _check_compile(EmbSmallCompile().eval(), torch.randint(0, 256, (4, 16)))
 
 
 def test_embedding_small_backend():
@@ -64,7 +73,7 @@ def test_embedding_large_vocab_compile():
         def forward(self, x: torch.Tensor):
             return self.emb(x)
 
-    _check(EmbLargeVocabCompile().eval(), torch.randint(0, 30000, (2, 32)))
+    _check_compile(EmbLargeVocabCompile().eval(), torch.randint(0, 30000, (2, 32)))
 
 
 def test_embedding_large_vocab_backend():
@@ -91,7 +100,7 @@ def test_embedding_1d_compile():
         def forward(self, x: torch.Tensor):
             return self.emb(x)
 
-    _check(Emb1dCompile().eval(), torch.randint(0, 100, (8,)))
+    _check_compile(Emb1dCompile().eval(), torch.randint(0, 100, (8,)))
 
 
 def test_embedding_1d_backend():
@@ -118,7 +127,7 @@ def test_embedding_3d_compile():
         def forward(self, x: torch.Tensor):
             return self.emb(x)
 
-    _check(Emb3dCompile().eval(), torch.randint(0, 512, (2, 4, 8)))
+    _check_compile(Emb3dCompile().eval(), torch.randint(0, 512, (2, 4, 8)))
 
 
 def test_embedding_3d_backend():
@@ -145,7 +154,7 @@ def test_embedding_padding_idx_compile():
         def forward(self, x: torch.Tensor):
             return self.emb(x)
 
-    _check(EmbPadIdxCompile().eval(), torch.randint(0, 256, (4, 16)))
+    _check_compile(EmbPadIdxCompile().eval(), torch.randint(0, 256, (4, 16)))
 
 
 def test_embedding_padding_idx_backend():
@@ -172,7 +181,7 @@ def test_embedding_small_dim_compile():
         def forward(self, x: torch.Tensor):
             return self.emb(x)
 
-    _check(EmbSmallDimCompile().eval(), torch.randint(0, 50, (4, 10)))
+    _check_compile(EmbSmallDimCompile().eval(), torch.randint(0, 50, (4, 10)))
 
 
 def test_embedding_small_dim_backend():

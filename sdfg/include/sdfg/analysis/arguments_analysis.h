@@ -86,6 +86,8 @@ private:
 public:
     ArgumentsAnalysis(StructuredSDFG& sdfg);
 
+    std::string name() const override { return "ArgumentsAnalysis"; }
+
     void run(analysis::AnalysisManager& analysis_manager) override;
 
     const std::map<std::string, RegionArgument>&

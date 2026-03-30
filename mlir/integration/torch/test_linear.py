@@ -22,7 +22,7 @@ def test_single_nobias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -69,7 +69,7 @@ def test_single_bias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -117,7 +117,7 @@ def test_chained_nobias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -166,7 +166,7 @@ def test_chained_bias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -214,7 +214,7 @@ def test_wide_output_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 4)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -262,7 +262,7 @@ def test_bottleneck_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -310,7 +310,7 @@ def test_single_sample_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 10)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -359,7 +359,7 @@ def test_deep_stack_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -408,7 +408,7 @@ def test_square_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 16)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -455,7 +455,7 @@ def test_scalar_output_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(8, 10)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)

@@ -219,6 +219,45 @@ TEST(MapCollapseTest, CannotApply_InnerBoundDependsOnOuterIndvar) {
     EXPECT_FALSE(t.can_be_applied(builder, am));
 }
 
+TEST(MapCollapseTest, CannotApply_InnerInitDependsOnOuterIndvar) {
+    // inner map starts from i instead of 0, so its init references the outer indvar
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // inner init is `i` — depends on outer indvar
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::symbol("M")),
+        i,
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    builder.add_block(inner.root());
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    EXPECT_FALSE(t.can_be_applied(builder, am));
+}
+
 TEST(MapCollapseTest, CannotApply_NonEmptyTransitionToInnerMap) {
     // The transition attached to the inner map (inside outer.root()) carries an
     // assignment, violating the "empty transitions in holding sequence" criterion.

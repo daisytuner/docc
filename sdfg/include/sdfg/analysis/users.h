@@ -147,6 +147,8 @@ public:
 
     Users(StructuredSDFG& sdfg, structured_control_flow::ControlFlowNode& node);
 
+    std::string name() const override { return "Users"; }
+
     void run(analysis::AnalysisManager& analysis_manager) override;
 
     bool has_user(

@@ -57,6 +57,8 @@ protected:
 public:
     FlopAnalysis(StructuredSDFG& sdfg);
 
+    std::string name() const override { return "FlopAnalysis"; }
+
     bool contains(const structured_control_flow::ControlFlowNode* node);
 
     /**

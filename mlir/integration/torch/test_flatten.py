@@ -16,7 +16,7 @@ def test_flatten_2d_compile():
     model_ref = FlatNet()
     example_input = torch.randn(4, 8)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -53,7 +53,7 @@ def test_flatten_4d_compile():
     model_ref = FlatNet()
     example_input = torch.randn(2, 8, 4, 4)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -90,7 +90,7 @@ def test_flatten_3d_compile():
     model_ref = FlatNet()
     example_input = torch.randn(3, 5, 16)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -127,7 +127,7 @@ def test_flatten_all_compile():
     model_ref = FlatAllNet()
     example_input = torch.randn(2, 3, 4)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -172,7 +172,7 @@ def test_flatten_after_avgpool_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(2, 512, 7, 7)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)

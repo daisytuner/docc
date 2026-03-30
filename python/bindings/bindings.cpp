@@ -45,6 +45,7 @@
 #include <sdfg/targets/onnx/plugin.h>
 #include <sdfg/targets/rocm/plugin.h>
 
+#include <sdfg/passes/statistics.h>
 #include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
@@ -542,5 +543,32 @@ PYBIND11_MODULE(_sdfg, m) {
         "_plugin_context",
         []() { return reinterpret_cast<uintptr_t>(&docc_context); },
         "Get native pointer to the global plugin context"
+    );
+
+    // Statistics
+    m.def(
+        "_enable_statistics",
+        []() {
+            sdfg::passes::PassStatistics::instance().enable();
+            sdfg::passes::PipelineStatistics::instance().enable();
+            sdfg::passes::AnalysisStatistics::instance().enable();
+        },
+        "Enable pass, pipeline, and analysis statistics collection"
+    );
+    m.def(
+        "_statistics_enabled_by_env",
+        &sdfg::passes::statistics_enabled_by_env,
+        "Check if DOCC_STATISTICS envvar is set to 1"
+    );
+    m.def(
+        "_statistics_summary",
+        []() {
+            std::string result;
+            result += sdfg::passes::PassStatistics::instance().summary();
+            result += sdfg::passes::PipelineStatistics::instance().summary();
+            result += sdfg::passes::AnalysisStatistics::instance().summary();
+            return result;
+        },
+        "Get pass and pipeline statistics summary"
     );
 }

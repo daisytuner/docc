@@ -78,6 +78,8 @@ public:
 
     DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node, bool detailed = false);
 
+    std::string name() const override { return "DataDependencyAnalysis"; }
+
     void run(analysis::AnalysisManager& analysis_manager) override;
 
     /****** Visitor API ******/

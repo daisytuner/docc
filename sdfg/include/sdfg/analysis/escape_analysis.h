@@ -26,6 +26,8 @@ protected:
 public:
     EscapeAnalysis(StructuredSDFG& sdfg);
 
+    std::string name() const override { return "EscapeAnalysis"; }
+
     bool is_malloc_allocation(const std::string& container) const;
 
     bool escapes(const std::string& container) const;

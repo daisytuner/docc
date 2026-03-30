@@ -50,7 +50,7 @@ bool MapCollapse::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
         current = next;
     }
 
-    // Criterion: All maps must be contiguous (stride 1, starting from 0)
+    // Criterion: All maps must be contiguous (stride 1)
     for (auto* map : maps) {
         if (!analysis::LoopAnalysis::is_contiguous(map, assumptions_analysis)) {
             return false;
@@ -61,6 +61,16 @@ bool MapCollapse::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
     symbolic::SymbolSet indvars;
     for (auto* map : maps) {
         indvars.insert(map->indvar());
+    }
+
+    // Criterion: Map inits may not depend on any of the loop induction variables
+    for (auto* map : maps) {
+        auto init = map->init();
+        for (auto& iv : indvars) {
+            if (symbolic::uses(init, iv)) {
+                return false;
+            }
+        }
     }
 
     // Criterion: Map bounds may not depend on any of the loop induction variables

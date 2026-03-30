@@ -21,6 +21,8 @@ private:
 public:
     ReferenceAnalysis(StructuredSDFG& sdfg);
 
+    std::string name() const override { return "ReferenceAnalysis"; }
+
     void run(analysis::AnalysisManager& analysis_manager) override;
 
     /****** Visitor API ******/

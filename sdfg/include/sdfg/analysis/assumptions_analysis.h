@@ -15,6 +15,9 @@ namespace sdfg {
 namespace analysis {
 
 class AssumptionsAnalysis : public Analysis {
+public:
+    std::string name() const override { return "AssumptionsAnalysis"; }
+
 private:
     // Data structures to hold assumptions
     std::unordered_map<structured_control_flow::ControlFlowNode*, symbolic::Assumptions> assumptions_;

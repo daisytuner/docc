@@ -21,7 +21,7 @@ def test_single_nobias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -69,7 +69,7 @@ def test_single_bias_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -117,7 +117,7 @@ def test_chained_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -165,7 +165,7 @@ def test_kernel_1x1_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -209,7 +209,7 @@ def test_kernel_5x5_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -256,7 +256,7 @@ def test_padding_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -303,7 +303,7 @@ def test_stride_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -350,7 +350,7 @@ def test_batch_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(4, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -397,7 +397,7 @@ def test_single_channel_out_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)
@@ -445,7 +445,7 @@ def test_depthwise_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 16, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)

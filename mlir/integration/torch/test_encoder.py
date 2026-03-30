@@ -20,6 +20,15 @@ def _check(model, example_input, rtol=1e-4, atol=1e-5):
     assert torch.allclose(res, ref, rtol=rtol, atol=atol)
 
 
+def _check_compile(model, example_input, rtol=1e-4, atol=1e-5):
+    model_ref = copy.deepcopy(model)
+    program = docc.torch.compile_torch(model, example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+    assert torch.allclose(res, ref, rtol=rtol, atol=atol)
+
+
 def _check_backend(model, example_input, rtol=1e-4, atol=1e-5):
     docc.torch.set_backend_options(target="none", category="server")
     _check(model, example_input, rtol=rtol, atol=atol)
@@ -42,7 +51,7 @@ def test_encoder_layer_compile():
         def forward(self, x: torch.Tensor):
             return self.layer(x)
 
-    _check(EncLayer8h64dCompile().eval(), torch.randn(2, 16, 64))
+    _check_compile(EncLayer8h64dCompile().eval(), torch.randn(2, 16, 64))
 
 
 @pytest.mark.skip(reason="Unsupported by torch-mlir")
@@ -83,7 +92,7 @@ def test_encoder_layer_4h128d_compile():
         def forward(self, x: torch.Tensor):
             return self.layer(x)
 
-    _check(EncLayer4h128dCompile().eval(), torch.randn(2, 32, 128))
+    _check_compile(EncLayer4h128dCompile().eval(), torch.randn(2, 32, 128))
 
 
 @pytest.mark.skip(reason="Unsupported by torch-mlir")
@@ -124,7 +133,7 @@ def test_encoder_layer_postnorm_compile():
         def forward(self, x: torch.Tensor):
             return self.layer(x)
 
-    _check(EncLayerPostnormCompile().eval(), torch.randn(2, 16, 64))
+    _check_compile(EncLayerPostnormCompile().eval(), torch.randn(2, 16, 64))
 
 
 @pytest.mark.skip(reason="Unsupported by torch-mlir")
@@ -166,7 +175,7 @@ def test_transformer_encoder_2layer_compile():
         def forward(self, x: torch.Tensor):
             return self.encoder(x)
 
-    _check(TFEnc2LayerCompile().eval(), torch.randn(2, 16, 64))
+    _check_compile(TFEnc2LayerCompile().eval(), torch.randn(2, 16, 64))
 
 
 @pytest.mark.skip(reason="Unsupported by torch-mlir")
@@ -209,7 +218,7 @@ def test_transformer_encoder_4layer_compile():
         def forward(self, x: torch.Tensor):
             return self.encoder(x)
 
-    _check(TFEnc4LayerCompile().eval(), torch.randn(1, 16, 128))
+    _check_compile(TFEnc4LayerCompile().eval(), torch.randn(1, 16, 128))
 
 
 @pytest.mark.skip(reason="Unsupported by torch-mlir")
@@ -252,7 +261,7 @@ def test_transformer_encoder_postnorm_compile():
         def forward(self, x: torch.Tensor):
             return self.encoder(x)
 
-    _check(TFEncPostnormCompile().eval(), torch.randn(2, 16, 64))
+    _check_compile(TFEncPostnormCompile().eval(), torch.randn(2, 16, 64))
 
 
 @pytest.mark.skip(reason="Unsupported by torch-mlir")

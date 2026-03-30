@@ -19,7 +19,7 @@ def test_maxpool2d_compile():
     model = MaxPool2dNet()
     example_input = torch.randn(1, 16, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -63,7 +63,7 @@ def test_maxpool2d_k3s1_compile():
     model = MaxPool2dK3S1Net()
     example_input = torch.randn(1, 8, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -107,7 +107,7 @@ def test_maxpool2d_batch_compile():
     model = MaxPool2dBatchNet()
     example_input = torch.randn(4, 16, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -151,7 +151,7 @@ def test_global_maxpool2d_compile():
     model = GlobalMaxPool2dNet()
     example_input = torch.randn(1, 16, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -195,7 +195,7 @@ def test_avgpool2d_compile():
     model = AvgPool2dNet()
     example_input = torch.randn(1, 16, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -239,7 +239,7 @@ def test_avgpool2d_k3s1_compile():
     model = AvgPool2dK3S1Net()
     example_input = torch.randn(1, 8, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -283,7 +283,7 @@ def test_global_avgpool2d_compile():
     model = GlobalAvgPool2dNet()
     example_input = torch.randn(1, 16, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -327,7 +327,7 @@ def test_sumpool2d_compile():
     model = SumPool2dNet()
     example_input = torch.randn(1, 16, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -371,7 +371,7 @@ def test_sumpool2d_k3s1_compile():
     model = SumPool2dK3S1Net()
     example_input = torch.randn(1, 8, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -415,7 +415,7 @@ def test_sumpool2d_batch_compile():
     model = SumPool2dBatchNet()
     example_input = torch.randn(4, 16, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model(example_input)
@@ -462,7 +462,7 @@ def test_conv_maxpool_compile():
     model_ref.load_state_dict(model.state_dict())
     example_input = torch.randn(1, 3, 32, 32)
 
-    program = torch.compile(model, backend="docc")
+    program = docc.torch.compile_torch(model, example_input)
     with torch.no_grad():
         res = program(example_input)
         res_ref = model_ref(example_input)

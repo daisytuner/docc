@@ -20,6 +20,8 @@ protected:
 public:
     ScopeAnalysis(StructuredSDFG& sdfg);
 
+    std::string name() const override { return "ScopeAnalysis"; }
+
     const std::unordered_map<const structured_control_flow::ControlFlowNode*, structured_control_flow::ControlFlowNode*>&
     scope_tree() const;
 

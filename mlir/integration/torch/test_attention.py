@@ -20,6 +20,16 @@ def _check(model, *inputs, rtol=1e-4, atol=1e-5):
     assert torch.allclose(res, ref, rtol=rtol, atol=atol)
 
 
+def _check_compile(model, *inputs, rtol=1e-4, atol=1e-5):
+    model_ref = copy.deepcopy(model)
+    example_input = inputs[0] if len(inputs) == 1 else inputs
+    program = docc.torch.compile_torch(model, example_input)
+    with torch.no_grad():
+        res = program(*inputs)
+        ref = model_ref(*inputs)
+    assert torch.allclose(res, ref, rtol=rtol, atol=atol)
+
+
 def _check_backend(model, *inputs, rtol=1e-4, atol=1e-5):
     docc.torch.set_backend_options(target="none", category="server")
     _check(model, *inputs, rtol=rtol, atol=atol)
@@ -41,7 +51,7 @@ def test_self_attention_compile():
             out, _ = self.attn(x, x, x)
             return out
 
-    _check(SelfAttn8h64dCompile().eval(), torch.randn(2, 16, 64))
+    _check_compile(SelfAttn8h64dCompile().eval(), torch.randn(2, 16, 64))
 
 
 @pytest.mark.skip(reason="requires tensor.extract_slice")
@@ -76,7 +86,7 @@ def test_self_attention_4h128d_compile():
             out, _ = self.attn(x, x, x)
             return out
 
-    _check(SelfAttn4h128dCompile().eval(), torch.randn(2, 32, 128))
+    _check_compile(SelfAttn4h128dCompile().eval(), torch.randn(2, 32, 128))
 
 
 @pytest.mark.skip(reason="requires tensor.extract_slice")
@@ -111,7 +121,7 @@ def test_self_attention_1head_compile():
             out, _ = self.attn(x, x, x)
             return out
 
-    _check(SelfAttn1hCompile().eval(), torch.randn(4, 8, 32))
+    _check_compile(SelfAttn1hCompile().eval(), torch.randn(4, 8, 32))
 
 
 @pytest.mark.skip(reason="requires tensor.extract_slice")
@@ -146,7 +156,7 @@ def test_self_attention_16h256d_compile():
             out, _ = self.attn(x, x, x)
             return out
 
-    _check(SelfAttn16h256dCompile().eval(), torch.randn(1, 16, 256))
+    _check_compile(SelfAttn16h256dCompile().eval(), torch.randn(1, 16, 256))
 
 
 @pytest.mark.skip(reason="requires tensor.extract_slice")
@@ -182,7 +192,7 @@ def test_self_attention_seq_first_compile():
             return out
 
     # (seq, batch, embed)
-    _check(SelfAttnSeqFirstCompile().eval(), torch.randn(16, 2, 64))
+    _check_compile(SelfAttnSeqFirstCompile().eval(), torch.randn(16, 2, 64))
 
 
 @pytest.mark.skip(reason="requires tensor.extract_slice")
@@ -217,7 +227,7 @@ def test_cross_attention_compile():
             out, _ = self.attn(q, kv, kv)
             return out
 
-    _check(
+    _check_compile(
         CrossAttn8h64dCompile().eval(), torch.randn(2, 8, 64), torch.randn(2, 16, 64)
     )
 
@@ -253,7 +263,7 @@ def test_cross_attention_large_compile():
             out, _ = self.attn(q, kv, kv)
             return out
 
-    _check(
+    _check_compile(
         CrossAttn4h128dCompile().eval(), torch.randn(1, 4, 128), torch.randn(1, 64, 128)
     )
 

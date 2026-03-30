@@ -30,6 +30,8 @@ private:
 public:
     ControlFlowAnalysis(StructuredSDFG& sdfg);
 
+    std::string name() const override { return "ControlFlowAnalysis"; }
+
     void run(analysis::AnalysisManager& analysis_manager) override;
 
     std::unordered_set<structured_control_flow::ControlFlowNode*> exits() const;

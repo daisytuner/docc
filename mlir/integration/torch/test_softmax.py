@@ -20,6 +20,15 @@ def _check(model, example_input, rtol=1e-4, atol=1e-5):
     assert torch.allclose(res, ref, rtol=rtol, atol=atol)
 
 
+def _check_compile(model, example_input, rtol=1e-4, atol=1e-5):
+    model_ref = copy.deepcopy(model)
+    program = docc.torch.compile_torch(model, example_input)
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+    assert torch.allclose(res, ref, rtol=rtol, atol=atol)
+
+
 def _check_backend(model, example_input, rtol=1e-4, atol=1e-5):
     docc.torch.set_backend_options(target="none", category="server")
     _check(model, example_input, rtol=rtol, atol=atol)
@@ -37,7 +46,7 @@ def test_softmax_last_dim_compile():
         def forward(self, x: torch.Tensor):
             return self.sm(x)
 
-    _check(SoftmaxLastDimCompile().eval(), torch.randn(4, 16, 64))
+    _check_compile(SoftmaxLastDimCompile().eval(), torch.randn(4, 16, 64))
 
 
 def test_softmax_last_dim_backend():
@@ -64,7 +73,7 @@ def test_softmax_dim1_compile():
         def forward(self, x: torch.Tensor):
             return self.sm(x)
 
-    _check(SoftmaxDim1Compile().eval(), torch.randn(8, 32))
+    _check_compile(SoftmaxDim1Compile().eval(), torch.randn(8, 32))
 
 
 def test_softmax_dim1_backend():
@@ -91,7 +100,7 @@ def test_softmax_dim0_compile():
         def forward(self, x: torch.Tensor):
             return self.sm(x)
 
-    _check(SoftmaxDim0Compile().eval(), torch.randn(16, 32))
+    _check_compile(SoftmaxDim0Compile().eval(), torch.randn(16, 32))
 
 
 def test_softmax_dim0_backend():
@@ -118,7 +127,7 @@ def test_softmax_4d_compile():
         def forward(self, x: torch.Tensor):
             return self.sm(x)
 
-    _check(Softmax4dCompile().eval(), torch.randn(2, 10, 8, 8))
+    _check_compile(Softmax4dCompile().eval(), torch.randn(2, 10, 8, 8))
 
 
 def test_softmax_4d_backend():
@@ -145,7 +154,7 @@ def test_softmax_large_vocab_compile():
         def forward(self, x: torch.Tensor):
             return self.sm(x)
 
-    _check(SoftmaxLargeVocabCompile().eval(), torch.randn(4, 50000))
+    _check_compile(SoftmaxLargeVocabCompile().eval(), torch.randn(4, 50000))
 
 
 def test_softmax_large_vocab_backend():
@@ -172,7 +181,7 @@ def test_logsoftmax_compile():
         def forward(self, x: torch.Tensor):
             return self.sm(x)
 
-    _check(LogSoftmaxCompile().eval(), torch.randn(4, 16, 64))
+    _check_compile(LogSoftmaxCompile().eval(), torch.randn(4, 16, 64))
 
 
 def test_logsoftmax_backend():
@@ -196,7 +205,7 @@ def test_logsoftmax_dim1_compile():
         def forward(self, x: torch.Tensor):
             return self.sm(x)
 
-    _check(LogSoftmaxDim1Compile().eval(), torch.randn(8, 32))
+    _check_compile(LogSoftmaxDim1Compile().eval(), torch.randn(8, 32))
 
 
 def test_logsoftmax_dim1_backend():
