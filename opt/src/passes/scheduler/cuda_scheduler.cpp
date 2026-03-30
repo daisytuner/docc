@@ -1,99 +1,42 @@
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
+#include "sdfg/passes/collapse_pass.h"
 #include "sdfg/passes/dataflow/dead_data_elimination.h"
+#include "sdfg/passes/offloading/gpu_loop_reordering_pass.h"
+#include "sdfg/passes/offloading/gpu_nested_parallelization_pass.h"
+#include "sdfg/passes/offloading/gpu_tiling_pass.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/symbolic/symbol_propagation.h"
 #include "sdfg/structured_control_flow/map.h"
-#include "sdfg/transformations/collapse_to_depth.h"
-#include "sdfg/transformations/offloading/cuda_parallelize_nested_map.h"
 #include "sdfg/transformations/offloading/cuda_transform.h"
-#include "sdfg/transformations/offloading/gpu_loop_reordering.h"
-#include "sdfg/transformations/offloading/gpu_tiling.h"
 
 namespace sdfg {
 namespace passes {
 namespace scheduler {
 
-SchedulerAction CUDAScheduler::schedule(
+SchedulerAction CUDAScheduler::find(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    if (auto map_node = dynamic_cast<structured_control_flow::Map*>(&loop)) {
-        // Apply CUDA parallelization to the loop
-        bool applied_collapse = false;
-        transformations::CollapseToDepth collapse_to_depth(*map_node, 2);
-        if (collapse_to_depth.can_be_applied(builder, analysis_manager)) {
-            collapse_to_depth.apply(builder, analysis_manager);
-            analysis_manager.invalidate_all();
-            applied_collapse = true;
-        }
-        auto collapsed_map = collapse_to_depth.outer_loop();
-
-        passes::SymbolPropagation symbol_propagation_pass;
-        symbol_propagation_pass.run(builder, analysis_manager);
-        passes::DeadDataElimination ddead_pass;
-        ddead_pass.run(builder, analysis_manager);
-        passes::DeadCFGElimination dcfg_pass;
-        dcfg_pass.run(builder, analysis_manager);
-        analysis_manager.invalidate_all();
-
-        cuda::CUDATransform cuda_transform(*collapsed_map, 32, offload_unknown_sizes);
-        if (cuda_transform.can_be_applied(builder, analysis_manager)) {
-            cuda_transform.apply(builder, analysis_manager);
-
-            transformations::GPULoopReordering gpu_loop_reordering_pass(*collapsed_map);
-            if (gpu_loop_reordering_pass.can_be_applied(builder, analysis_manager)) {
-                gpu_loop_reordering_pass.apply(builder, analysis_manager);
-            }
-
-            auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-            auto descendants = loop_analysis.descendants(collapsed_map);
-            for (auto& descendant : descendants) {
-                if (auto nested_map = dynamic_cast<structured_control_flow::Map*>(descendant)) {
-                    transformations::CUDAParallelizeNestedMap nested_cuda_transform(*nested_map, 8);
-                    if (nested_cuda_transform.can_be_applied(builder, analysis_manager)) {
-                        nested_cuda_transform.apply(builder, analysis_manager);
-                    }
-                }
-            }
-
-
-            analysis_manager.invalidate_all();
-            auto& loop_analysis2 = analysis_manager.get<analysis::LoopAnalysis>();
-            for (auto& descendant : loop_analysis2.descendants(collapsed_map)) {
-                if (auto target_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant)) {
-                    transformations::GPUTiling gpu_tiling_transform(*target_loop, 8);
-                    if (gpu_tiling_transform.can_be_applied(builder, analysis_manager)) {
-                        gpu_tiling_transform.apply(builder, analysis_manager);
-                    }
-                }
-            }
-
-            analysis_manager.invalidate_all();
-            return NEXT;
-        }
-        if (applied_collapse) {
-            return NEXT;
-        }
+    if (dynamic_cast<structured_control_flow::Map*>(&loop)) {
+        return NEXT;
     }
 
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto loop_info = loop_analysis.loop_info(&loop);
 
-    // Check if in not outermost loop
     if (loop_info.loopnest_index == -1 || loop_info.num_maps <= 1 || loop_info.is_perfectly_nested ||
         loop_info.has_side_effects) {
         return NEXT;
     } else {
-        // Visit 1st-level children
         return CHILDREN;
     }
 }
 
-SchedulerAction CUDAScheduler::schedule(
+SchedulerAction CUDAScheduler::find(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::While& loop,
@@ -101,13 +44,99 @@ SchedulerAction CUDAScheduler::schedule(
 ) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto loop_info = loop_analysis.loop_info(&loop);
-    // Check if in not outermost loop
     if (loop_info.loopnest_index == -1 || loop_info.has_side_effects) {
         return NEXT;
     } else {
-        // Visit 1st-level children
         return CHILDREN;
     }
+}
+
+bool CUDAScheduler::can_apply_schedule(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::StructuredLoop& loop,
+    bool offload_unknown_sizes
+) {
+    auto* map = dynamic_cast<structured_control_flow::Map*>(&loop);
+    if (!map) {
+        return false;
+    }
+    cuda::CUDATransform cuda_transform(*map, 32, offload_unknown_sizes);
+    return cuda_transform.can_be_applied(builder, analysis_manager);
+}
+
+void CUDAScheduler::apply_schedule(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::StructuredLoop& loop,
+    bool offload_unknown_sizes
+) {
+    auto* map = dynamic_cast<structured_control_flow::Map*>(&loop);
+    cuda::CUDATransform cuda_transform(*map, 32, offload_unknown_sizes);
+    cuda_transform.apply(builder, analysis_manager);
+}
+
+void CUDAScheduler::pre_schedule(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    std::vector<structured_control_flow::StructuredLoop*>& applicable_loops
+) {
+    std::vector<structured_control_flow::Map*> applicable_maps;
+    for (auto* loop : applicable_loops) {
+        if (auto* map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+            applicable_maps.push_back(map);
+        }
+    }
+
+    if (applicable_maps.empty()) {
+        return;
+    }
+
+    CollapsePass collapse_pass(applicable_maps, 2);
+    collapse_pass.run(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+
+    passes::SymbolPropagation symbol_propagation_pass;
+    symbol_propagation_pass.run(builder, analysis_manager);
+    passes::DeadDataElimination ddead_pass;
+    ddead_pass.run(builder, analysis_manager);
+    passes::DeadCFGElimination dcfg_pass;
+    dcfg_pass.run(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+
+    applicable_loops.clear();
+    for (auto* map : applicable_maps) {
+        applicable_loops.push_back(map);
+    }
+}
+
+void CUDAScheduler::post_schedule(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    std::vector<structured_control_flow::StructuredLoop*>& scheduled_loops
+) {
+    std::vector<structured_control_flow::Map*> gpu_maps;
+    for (auto* loop : scheduled_loops) {
+        if (auto* map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+            gpu_maps.push_back(map);
+        }
+    }
+
+    if (gpu_maps.empty()) {
+        return;
+    }
+
+    GPULoopReorderingPass reordering_pass(gpu_maps);
+    reordering_pass.run(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+
+    GPUNestedParallelizationPass nested_pass(gpu_maps, GPUTarget::CUDA, 8);
+    nested_pass.run(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+
+    GPUTilingPass tiling_pass(gpu_maps, 8);
+    tiling_pass.run(builder, analysis_manager);
+    analysis_manager.invalidate_all();
 }
 
 std::unordered_set<ScheduleTypeCategory> CUDAScheduler::compatible_types() { return {ScheduleTypeCategory::None}; }

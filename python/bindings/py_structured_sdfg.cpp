@@ -50,6 +50,7 @@
 #include <sdfg/visualizer/dot_visualizer.h>
 
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
+#include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
@@ -233,6 +234,8 @@ void PyStructuredSDFG::simplify() {
     memlet_combine.run(builder_opt, analysis_manager);
 
     // Move code out of loops where possible
+    // sdfg::passes::BlockSortingPass block_sorting_pass;
+    // block_sorting_pass.run(builder_opt, analysis_manager);
     sdfg::passes::BlockHoistingPass block_hoisting;
     block_hoisting.run(builder_opt, analysis_manager);
 
@@ -255,6 +258,7 @@ void PyStructuredSDFG::simplify() {
     map_conversion_pass.run(builder_opt, analysis_manager);
 
     // Move code out of maps where possible
+    // block_sorting_pass.run(builder_opt, analysis_manager);
     block_hoisting.run(builder_opt, analysis_manager);
 
     // Dead code elimination

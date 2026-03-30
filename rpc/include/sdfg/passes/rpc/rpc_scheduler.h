@@ -17,22 +17,35 @@ private:
     const std::string category_;
     const bool print_steps_;
 
-protected:
-    scheduler::SchedulerAction schedule(
+public:
+    scheduler::SchedulerAction find(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         structured_control_flow::StructuredLoop& loop,
         bool offload_unknown_sizes = false
     ) override;
 
-    scheduler::SchedulerAction schedule(
+    scheduler::SchedulerAction find(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         structured_control_flow::While& loop,
         bool offload_unknown_sizes = false
     ) override;
 
-public:
+    bool can_apply_schedule(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::StructuredLoop& loop,
+        bool offload_unknown_sizes = false
+    ) override;
+
+    void apply_schedule(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::StructuredLoop& loop,
+        bool offload_unknown_sizes = false
+    ) override;
+
     RPCScheduler(
         std::shared_ptr<rpc::RpcContext> rpc_context, std::string target, std::string category, bool print_steps = false
     );

@@ -8,7 +8,7 @@ namespace sdfg {
 namespace passes {
 namespace scheduler {
 
-SchedulerAction HighwayScheduler::schedule(
+SchedulerAction HighwayScheduler::find(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::StructuredLoop& loop,
@@ -21,18 +21,14 @@ SchedulerAction HighwayScheduler::schedule(
         return CHILDREN;
     }
 
-    if (auto map_node = dynamic_cast<structured_control_flow::Map*>(&loop)) {
-        // Apply Highway vectorization to the loop
-        transformations::HighwayTransform highway_transform(*map_node);
-        if (highway_transform.can_be_applied(builder, analysis_manager)) {
-            highway_transform.apply(builder, analysis_manager);
-        }
+    if (dynamic_cast<structured_control_flow::Map*>(&loop)) {
+        return NEXT;
     }
 
     return NEXT;
 }
 
-SchedulerAction HighwayScheduler::schedule(
+SchedulerAction HighwayScheduler::find(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::While& loop,
@@ -44,14 +40,37 @@ SchedulerAction HighwayScheduler::schedule(
     if (!is_innermost) {
         return CHILDREN;
     }
-    // HighwayScheduler does not handle while loops
     return NEXT;
+}
+
+bool HighwayScheduler::can_apply_schedule(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::StructuredLoop& loop,
+    bool offload_unknown_sizes
+) {
+    auto* map = dynamic_cast<structured_control_flow::Map*>(&loop);
+    if (!map) {
+        return false;
+    }
+    transformations::HighwayTransform highway_transform(*map);
+    return highway_transform.can_be_applied(builder, analysis_manager);
+}
+
+void HighwayScheduler::apply_schedule(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::StructuredLoop& loop,
+    bool offload_unknown_sizes
+) {
+    auto* map = dynamic_cast<structured_control_flow::Map*>(&loop);
+    transformations::HighwayTransform highway_transform(*map);
+    highway_transform.apply(builder, analysis_manager);
 }
 
 std::unordered_set<ScheduleTypeCategory> HighwayScheduler::compatible_types() {
     return {ScheduleTypeCategory::None, ScheduleTypeCategory::Parallelizer};
 }
-
 
 } // namespace scheduler
 } // namespace passes
