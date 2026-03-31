@@ -128,8 +128,8 @@ bool LoopSchedulingPass::run_pass_target(
     // Phase 3b: Apply transforms
     for (auto* loop : schedulable_loops) {
         scheduler->apply_schedule(builder, analysis_manager, *loop, offload_unknown_sizes_);
-        analysis_manager.invalidate_all();
     }
+    analysis_manager.invalidate_all();
 
     // ===== Phase 4: Post-schedule =====
     scheduler->post_schedule(builder, analysis_manager, schedulable_loops);
