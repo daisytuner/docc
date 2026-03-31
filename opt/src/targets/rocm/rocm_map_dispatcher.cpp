@@ -52,7 +52,6 @@ void ROCMMapDispatcher::dispatch_node(
 
     auto& used_arguments = arguments_analysis.arguments(analysis_manager, node_);
     auto& locals = arguments_analysis.locals(analysis_manager, node_);
-    auto& argument_sizes = arguments_analysis.argument_sizes(analysis_manager, node_, true);
 
     // filter indvar
     auto indvar = node_.indvar();
