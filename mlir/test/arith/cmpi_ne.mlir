@@ -1,7 +1,7 @@
 // RUN: docc-mlir-translate --mlir-to-sdfg %s | sdfg-json-to-c > %t
 // RUN: FileCheck %s < %t
 
-// CHECK: extern bool __docc_test(int [[a:.*]], int [[b:.*]])
+// CHECK: extern void __docc_test(int [[a:.*]], int [[b:.*]], bool *_docc_ret_0)
 func.func @test(%a : i32, %b : i32) -> i1 {
 // CHECK: bool [[c:.*]];
     // CHECK: {
@@ -12,6 +12,7 @@ func.func @test(%a : i32, %b : i32) -> i1 {
     // CHECK: [[c]] = [[out]];
     // CHECK: }
     %c = arith.cmpi ne, %a, %b : i32
-    // CHECK: return [[c]]
+    // CHECK: {{.*}}_docc_ret_0)[0] = {{.*}}
+    // CHECK: return ;
     func.return %c : i1
 }

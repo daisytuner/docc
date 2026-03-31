@@ -393,6 +393,32 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_einsum",
+            [](PyStructuredSDFGBuilder& self,
+               const std::vector<std::string>& inputs,
+               const std::string& output,
+               const std::vector<std::tuple<std::string, std::string, std::string>>& dims,
+               const std::vector<std::string>& out_indices,
+               const std::vector<std::vector<std::string>>& in_indices,
+               py::list input_types,
+               const sdfg::types::Tensor& output_type,
+               const sdfg::DebugInfo& debug_info) {
+                std::vector<const sdfg::types::Tensor*> types;
+                for (auto item : input_types) {
+                    types.push_back(&item.cast<const sdfg::types::Tensor&>());
+                }
+                self.add_einsum(inputs, output, dims, out_indices, in_indices, types, output_type, debug_info);
+            },
+            py::arg("inputs"),
+            py::arg("output"),
+            py::arg("dims"),
+            py::arg("out_indices"),
+            py::arg("in_indices"),
+            py::arg("input_types"),
+            py::arg("output_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_block",
             &PyStructuredSDFGBuilder::add_block,
             py::arg("debug_info") = sdfg::DebugInfo(),

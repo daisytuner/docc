@@ -15,6 +15,7 @@
 #include "sdfg/function.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
 
@@ -77,6 +78,8 @@ class SDFGTranslator {
 
     std::unordered_map<std::string, std::string> alias_map_;
 
+    std::vector<std::string> output_args_;
+
 public:
     SDFGTranslator();
 
@@ -114,6 +117,23 @@ public:
     std::string store_in_c_order(
         const std::string& container, const TensorInfo& tensor_info, const ::sdfg::types::Scalar& element_type
     );
+
+    /// Set the output argument names for multi-output support
+    void set_output_args(const std::vector<std::string>& output_args);
+
+    /// Get the output argument names
+    const std::vector<std::string>& output_args() const;
+
+    /// Copy tensor data to an output argument container in C-order
+    void copy_to_output(
+        const std::string& src_container,
+        const TensorInfo& tensor_info,
+        const ::sdfg::types::Scalar& element_type,
+        const std::string& output_container
+    );
+
+    /// Copy scalar data to an output argument container
+    void copy_scalar_to_output(const std::string& src_container, const std::string& output_container);
 };
 
 LogicalResult translateOp(SDFGTranslator& translator, Operation* op);

@@ -16,31 +16,32 @@ LogicalResult translateFuncFuncOp(SDFGTranslator& translator, func::FuncOp* func
         return func_op->emitOpError("Currently only one function is supported");
     }
 
-    // Check that at most one type is returned
-    if (func_op->getFunctionType().getNumResults() > 1) {
-        return func_op->emitOpError("Only one result type is supported for SDFGs");
-    }
-
     std::string sdfg_name = func_op->getSymName().data();
     translator.builder().subject().name("__docc_" + sdfg_name);
     translator.builder_empty(false);
     llvm::ScopedHashTableScope<Value, std::string> value_map_scope(translator.value_map());
 
-    // Return type
-    auto function_type = func_op->getFunctionType();
-    assert(function_type.getNumResults() <= 1);
-    if (function_type.getNumResults() == 1) {
-        auto return_type = translator.convertType(function_type.getResult(0));
-        if (!return_type) {
-            return func_op->emitError("Could not convert type ") << function_type.getResult(0) << " to SDFG type";
-        }
-        translator.builder().set_return_type(*return_type);
-    }
-
     // Arguments
     for (auto arg : func_op->getRegion().getArguments()) {
         translator.get_or_create_container(arg, true);
     }
+
+    // Create output argument containers for each result type (void return, output via pointers)
+    auto function_type = func_op->getFunctionType();
+    std::vector<std::string> output_arg_names;
+    for (size_t i = 0; i < function_type.getNumResults(); i++) {
+        std::string output_name = "_docc_ret_" + std::to_string(i);
+        auto result_type = translator.convertType(function_type.getResult(i));
+        if (!result_type) {
+            return func_op->emitError("Could not convert result type ")
+                   << function_type.getResult(i) << " to SDFG type";
+        }
+        // Output arguments are always Pointer types (caller allocates memory)
+        ::sdfg::types::Scalar element_type(result_type->primitive_type());
+        translator.builder().add_container(output_name, ::sdfg::types::Pointer(element_type), true);
+        output_arg_names.push_back(output_name);
+    }
+    translator.set_output_args(output_arg_names);
 
     // Region
     translator.enter_sequence(translator.builder().subject().root());
@@ -55,29 +56,51 @@ LogicalResult translateFuncFuncOp(SDFGTranslator& translator, func::FuncOp* func
 }
 
 LogicalResult translateFuncReturnOp(SDFGTranslator& translator, func::ReturnOp* return_op) {
-    if (return_op->getOperands().size() == 1) {
-        auto return_container = translator.get_or_create_container(return_op->getOperand(0));
-        bool isa_tensor = llvm::isa<TensorType>(return_op->getOperand(0).getType());
+    const auto& output_args = translator.output_args();
+    std::vector<std::string> output_shapes;
+
+    for (size_t i = 0; i < return_op->getOperands().size(); i++) {
+        auto operand = return_op->getOperand(i);
+        auto return_container = translator.get_or_create_container(operand);
+        bool isa_tensor = llvm::isa<TensorType>(operand.getType());
+
         if (isa_tensor) {
-            return_container = translator.store_in_c_order(
-                return_container,
-                translator.get_or_create_tensor_info(
-                    return_container, llvm::dyn_cast<TensorType>(return_op->getOperand(0).getType())
-                ),
-                translator.convertType(return_op->getOperand(0).getType())->primitive_type()
-            );
+            auto tensor_type = llvm::dyn_cast<TensorType>(operand.getType());
+            auto& tensor_info = translator.get_or_create_tensor_info(return_container, tensor_type);
+            auto element_type = translator.convertType(operand.getType())->primitive_type();
+
+            // Copy to output container (always in C-order)
+            translator.copy_to_output(return_container, tensor_info, element_type, output_args[i]);
+
+            // Store shape for metadata
+            output_shapes.push_back(tensor_info.shape_str());
+        } else {
+            // Scalar: copy via simple assignment
+            translator.copy_scalar_to_output(return_container, output_args[i]);
+            output_shapes.push_back("");
         }
-        translator.handle_frees(return_container);
-        translator.builder().add_return(translator.insertion_point(), return_container);
-        if (isa_tensor) {
-            auto result_tensor_type = llvm::dyn_cast<TensorType>(return_op->getOperand(0).getType());
-            translator.builder().subject().add_metadata(
-                "return_shape", translator.get_or_create_tensor_info(return_container, result_tensor_type).shape_str()
-            );
-        }
-    } else if (return_op->getOperands().size() > 1) {
-        return return_op->emitOpError("Only one result type is supported for SDFGs");
     }
+
+    translator.handle_frees();
+
+    // Add metadata for output args
+    std::string output_args_str;
+    for (size_t i = 0; i < output_args.size(); i++) {
+        if (i > 0) output_args_str += ",";
+        output_args_str += output_args[i];
+    }
+    translator.builder().subject().add_metadata("output_args", output_args_str);
+
+    // Add shapes metadata per output
+    for (size_t i = 0; i < output_shapes.size(); i++) {
+        if (!output_shapes[i].empty()) {
+            translator.builder().subject().add_metadata(output_args[i] + "_shape", output_shapes[i]);
+        }
+    }
+
+    // Void return
+    translator.builder().add_return(translator.insertion_point(), "");
+
     return success();
 }
 

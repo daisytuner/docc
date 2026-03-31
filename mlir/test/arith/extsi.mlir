@@ -1,7 +1,7 @@
 // RUN: docc-mlir-translate --mlir-to-sdfg %s | sdfg-json-to-c > %t
 // RUN: FileCheck %s < %t
 
-// CHECK: extern long long __docc_test(int [[a:.*]])
+// CHECK: extern void __docc_test(int [[a:.*]], long long *_docc_ret_0)
 func.func @test(%a : i32) -> i64 {
 // CHECK: long long [[b:.*]];
     // CHECK: {
@@ -11,6 +11,7 @@ func.func @test(%a : i32) -> i64 {
     // CHECK: [[b]] = [[out]];
     // CHECK: }
     %b = arith.extsi %a : i32 to i64
-    // CHECK: return [[b]]
+    // CHECK: {{.*}}_docc_ret_0)[0] = {{.*}}
+    // CHECK: return ;
     func.return %b : i64
 }

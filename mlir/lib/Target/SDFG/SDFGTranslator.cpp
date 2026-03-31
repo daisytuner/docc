@@ -494,5 +494,84 @@ std::string SDFGTranslator::store_in_c_order(
     return new_container;
 }
 
+void SDFGTranslator::set_output_args(const std::vector<std::string>& output_args) { output_args_ = output_args; }
+
+const std::vector<std::string>& SDFGTranslator::output_args() const { return output_args_; }
+
+void SDFGTranslator::copy_to_output(
+    const std::string& src_container,
+    const TensorInfo& tensor_info,
+    const ::sdfg::types::Scalar& element_type,
+    const std::string& output_container
+) {
+    // Create tensor types for source and destination (C-order for output)
+    auto input_type = tensor_info.get_sdfg_tensor(element_type);
+    TensorInfo c_order_tensor_info(tensor_info.shape(), TensorInfo::compute_strides(tensor_info.shape()), 0);
+    auto output_type = c_order_tensor_info.get_sdfg_tensor(element_type);
+
+    // Build nested for-loop, one per dimension
+    ::sdfg::structured_control_flow::Sequence* current_scope = &this->insertion_point();
+    std::vector<::sdfg::symbolic::Expression> loop_vars;
+
+    for (size_t i = 0; i < tensor_info.shape().size(); i++) {
+        std::string indvar_str = builder_.find_new_name("_i");
+        builder_.add_container(indvar_str, ::sdfg::types::Scalar(::sdfg::types::PrimitiveType::UInt64));
+
+        auto indvar = ::sdfg::symbolic::symbol(indvar_str);
+        auto init = ::sdfg::symbolic::zero();
+        auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
+        auto condition = ::sdfg::symbolic::Lt(indvar, ::sdfg::symbolic::integer(tensor_info.shape()[i]));
+
+        auto& loop =
+            builder_.add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create());
+        current_scope = &loop.root();
+        loop_vars.push_back(indvar);
+    }
+
+    // Create a block with a tasklet that copies one element
+    auto& block = builder_.add_block(*current_scope);
+    auto& src_access = builder_.add_access(block, src_container);
+    auto& dst_access = builder_.add_access(block, output_container);
+    auto& tasklet = builder_.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+
+    builder_.add_computational_memlet(block, src_access, tasklet, "_in", loop_vars, *input_type);
+    builder_.add_computational_memlet(block, tasklet, "_out", dst_access, loop_vars, *output_type);
+
+    // Update tensor info for the output container with C-order strides
+    tensor_info_map_.insert({output_container, c_order_tensor_info});
+}
+
+void SDFGTranslator::copy_scalar_to_output(const std::string& src_container, const std::string& output_container) {
+    // Create a block with a tasklet that copies the scalar value
+    auto& block = builder_.add_block(this->insertion_point());
+    auto& src_access = builder_.add_access(block, src_container);
+    auto& dst_access = builder_.add_access(block, output_container);
+    auto& tasklet = builder_.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+
+    // Get the type from the container
+    auto& src_type = builder_.subject().type(src_container);
+
+    // Create memlets for scalar copy (empty indices)
+    builder_.add_computational_memlet(block, src_access, tasklet, "_in", {}, src_type);
+
+    // For output pointer, we store at index 0
+    auto& dst_type = builder_.subject().type(output_container);
+    if (dst_type.type_id() == ::sdfg::types::TypeID::Pointer) {
+        const auto& ptr_type = dynamic_cast<const ::sdfg::types::Pointer&>(dst_type);
+        if (ptr_type.has_pointee_type()) {
+            const auto& pointee = ptr_type.pointee_type();
+            ::sdfg::types::Tensor tensor_type(
+                dynamic_cast<const ::sdfg::types::Scalar&>(pointee),
+                {::sdfg::symbolic::one()},
+                {::sdfg::symbolic::one()}
+            );
+            builder_
+                .add_computational_memlet(block, tasklet, "_out", dst_access, {::sdfg::symbolic::zero()}, tensor_type);
+        }
+    } else {
+        builder_.add_computational_memlet(block, tasklet, "_out", dst_access, {}, dst_type);
+    }
+}
+
 } // namespace sdfg
 } // namespace mlir

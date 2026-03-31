@@ -11,6 +11,8 @@ set(TEST_FILES
     cuda/blas/cublas_test.cpp
     cuda/cuda_kernel_test.cpp
     cuda/cuda_library_nodes_test.cpp
+  einsum/einsum_test.cpp
+  passes/einsum_test.cpp
     passes/normalization/perfect_loop_distribution_test.cpp
     passes/normalization/stride_minimization_test.cpp
     passes/offloading/code_motion/block_hoisting_test.cpp
@@ -33,6 +35,10 @@ set(TEST_FILES
     transformations/omp_transform_test.cpp
     transformations/polly_transform_test.cpp
     transformations/map_collapse_test.cpp
+    transformations/einsum2gemm_test.cpp
+    transformations/einsum_expand_test.cpp
+    transformations/einsum_extend_test.cpp
+    transformations/einsum_lift_test.cpp
     transformations/loop_distribute_test.cpp
     transformations/loop_interchange_test.cpp
     transformations/loop_skewing_test.cpp

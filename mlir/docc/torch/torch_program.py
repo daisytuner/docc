@@ -74,21 +74,12 @@ class TorchProgram(DoccProgram):
         # Convert inputs to numpy
         numpy_args = self._convert_inputs(all_args)
 
-        # Execute
+        # Execute - CompiledSDFG returns tuple for multi-output or single value
         result = self._compiled(*numpy_args)
-
-        # get return shape from metadata
-        return_shape_str = self._compiled.sdfg.metadata("return_shape")
-
-        # parse shape string back to tuple
-        return_shape = tuple(
-            int(dim) for dim in return_shape_str.strip("[]").split(",") if dim
-        )
-        self._output_info = [{"shape": return_shape}]
 
         # Convert outputs back to torch if inputs were torch
         if is_torch_input:
-            result = self._convert_outputs(result, args, return_shape)
+            result = self._convert_outputs(result, args)
 
         return result
 
@@ -229,11 +220,28 @@ class TorchProgram(DoccProgram):
                 for dim_idx in range(len(info["shape"])):
                     shape_sources.append((i, dim_idx))
 
-        # Create CompiledSDFG
+        # Extract output_args metadata for multi-output support
+        output_args_str = sdfg.metadata("output_args")
+        output_args = output_args_str.split(",") if output_args_str else []
+
+        # Extract output shapes from metadata (e.g., "_docc_ret_0_shape")
+        output_shapes = {}
+        for arg_name in output_args:
+            shape_str = sdfg.metadata(f"{arg_name}_shape")
+            if shape_str:
+                # Parse shape string like "[2, 4]" to list of dimension strings
+                dims = [
+                    d.strip() for d in shape_str.strip("[]").split(",") if d.strip()
+                ]
+                output_shapes[arg_name] = dims
+
+        # Create CompiledSDFG with output_args for multi-output support
         compiled = CompiledSDFG(
             lib_path,
             sdfg,
             shape_sources=shape_sources,
+            output_args=output_args,
+            output_shapes=output_shapes,
         )
 
         # Cache
@@ -340,9 +348,7 @@ class TorchProgram(DoccProgram):
 
         return tuple(converted)
 
-    def _convert_outputs(
-        self, result: Any, original_args: tuple, return_shape: tuple
-    ) -> Any:
+    def _convert_outputs(self, result: Any, original_args: tuple) -> Any:
         import torch
         import numpy as np
 
@@ -353,41 +359,24 @@ class TorchProgram(DoccProgram):
                 device = arg.device
                 break
 
-        def convert_single(val, return_shape):
+        def convert_single(val):
             if isinstance(val, np.ndarray):
-                val = val.reshape(return_shape)
-                return torch.from_numpy(val).to(device)
+                return torch.from_numpy(val.copy()).to(device)
             elif isinstance(val, torch.Tensor):
-                return val.reshape(return_shape).to(device)
+                return val.to(device)
+            elif isinstance(val, (int, float)):
+                return torch.tensor(val, device=device)
             else:
-                # Handle ctypes pointers (e.g. LP_c_float from CompiledSDFG)
-                import ctypes
-
-                if hasattr(val, "contents") and hasattr(val, "_type_"):
-                    import math
-
-                    num_elements = math.prod(return_shape)
-                    ctype = val._type_
-                    dtype_map = {
-                        ctypes.c_float: np.float32,
-                        ctypes.c_double: np.float64,
-                        ctypes.c_int: np.int32,
-                        ctypes.c_long: np.int64,
-                    }
-                    np_dtype = dtype_map.get(ctype, np.float32)
-                    # Cast pointer to a ctypes array of the full size,
-                    # then read with np.frombuffer to get all elements
-                    ArrayType = ctype * num_elements
-                    arr_ptr = ctypes.cast(val, ctypes.POINTER(ArrayType))
-                    arr = np.frombuffer(arr_ptr.contents, dtype=np_dtype).copy()
-                    arr = arr.reshape(return_shape)
-                    return torch.from_numpy(arr).to(device)
                 return val
 
         if isinstance(result, tuple):
-            return tuple(convert_single(r, return_shape) for r in result)
+            converted = tuple(convert_single(r) for r in result)
+            # Return single value if only one output
+            if len(converted) == 1:
+                return converted[0]
+            return converted
         else:
-            return convert_single(result, return_shape)
+            return convert_single(result)
 
     def _get_cache_key(self, example_input: Any) -> str:
         import torch

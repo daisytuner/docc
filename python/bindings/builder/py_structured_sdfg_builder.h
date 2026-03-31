@@ -255,6 +255,17 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_einsum(
+        const std::vector<std::string>& inputs,
+        const std::string& output,
+        const std::vector<std::tuple<std::string, std::string, std::string>>& dims,
+        const std::vector<std::string>& out_indices,
+        const std::vector<std::vector<std::string>>& in_indices,
+        const std::vector<const sdfg::types::Tensor*>& input_types,
+        const sdfg::types::Tensor& output_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_conv(
         const std::string& X,
         const std::string& W,

@@ -3,6 +3,6 @@
 
 // CHECK: extern void __docc_test(void)
 func.func @test() {
-    // CHECK-NOT: return
+    // CHECK: return ;
     func.return
 }
