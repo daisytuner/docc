@@ -48,8 +48,9 @@ void PollyScheduler::apply_schedule(
     bool offload_unknown_sizes
 ) {
     transformations::PollyTransform polly_transform(loop, this->tile_);
-    polly_transform.can_be_applied(builder, analysis_manager);
-    polly_transform.apply(builder, analysis_manager);
+    if (polly_transform.can_be_applied(builder, analysis_manager)) {
+        polly_transform.apply(builder, analysis_manager);
+    }
 }
 
 PollyScheduler::PollyScheduler(bool tile) : tile_(tile) {};
