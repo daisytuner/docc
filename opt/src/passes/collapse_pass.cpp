@@ -36,8 +36,8 @@ bool CollapsePass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::A
         candidate.collapse.apply(builder, analysis_manager);
         // Update the map pointer to the collapsed outer loop
         maps_[candidate.map_index] = candidate.collapse.outer_loop();
-        analysis_manager.invalidate_all();
     }
+    analysis_manager.invalidate_all();
 
     return true;
 }

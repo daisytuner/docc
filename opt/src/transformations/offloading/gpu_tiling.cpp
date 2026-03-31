@@ -90,16 +90,12 @@ void GPUTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         }
     }
 
-    analysis_manager.invalidate_all();
-
     passes::SyncConditionPropagation sync_condition_propagation;
     sync_condition_propagation.run_pass(builder, analysis_manager);
 
     applied_ = true;
     inner_loop_ = inner_loop;
     outer_loop_ = outer_loop;
-
-    analysis_manager.invalidate_all();
 
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView users_view_inner_loop(users, inner_loop->root());
@@ -119,7 +115,6 @@ void GPUTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         if (ols.can_be_applied(builder, analysis_manager)) {
             ols.apply(builder, analysis_manager);
         }
-        analysis_manager.invalidate_all();
     }
 }
 

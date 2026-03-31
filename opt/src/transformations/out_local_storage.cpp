@@ -117,8 +117,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
     // End of transformation
 
-    analysis_manager.invalidate_all();
-
     passes::SequenceFusion sf_pass;
     passes::DeadCFGElimination dce_pass;
     bool applies = false;

@@ -189,7 +189,6 @@ void MapCollapse::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
     transition.assignments().clear();
     builder.remove_child(*parent, parent->index(loop_));
 
-    analysis_manager.invalidate_all();
     applied_ = true;
     collapsed_loop_ = &collapsed_map;
 }

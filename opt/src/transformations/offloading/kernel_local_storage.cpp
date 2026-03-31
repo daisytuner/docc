@@ -563,8 +563,6 @@ void KernelLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis
 
     // End of transformation
 
-    analysis_manager.invalidate_all();
-
     passes::SequenceFusion sf_pass;
     passes::DeadCFGElimination dce_pass;
     passes::TrivialArrayElimination tae_pass;
