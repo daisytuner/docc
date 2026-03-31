@@ -26,6 +26,17 @@ set_target_properties(sdfg-py PROPERTIES
     CXX_STANDARD_REQUIRED ON
     OUTPUT_NAME "_sdfg"
 )
+
+set(PYLIBS_SYMLINK_DIR "${CMAKE_CURRENT_BINARY_DIR}/../pylibs/docc/sdfg")
+
+add_custom_command(TARGET sdfg-py POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${PYLIBS_SYMLINK_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink
+        "$<TARGET_FILE:sdfg-py>"
+        "${PYLIBS_SYMLINK_DIR}/$<TARGET_FILE_NAME:sdfg-py>"
+        COMMENT "Creating symlink to docc.sdfg._sdfg in ${PYLIBS_SYMLINK_DIR}"
+)
+
 target_include_directories(sdfg-py
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bindings>
