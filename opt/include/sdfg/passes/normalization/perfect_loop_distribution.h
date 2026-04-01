@@ -2,32 +2,29 @@
 
 #include <sdfg/passes/pass.h>
 #include <sdfg/structured_control_flow/structured_loop.h>
+#include <sdfg/visitor/structured_sdfg_visitor.h>
 
 namespace sdfg {
 namespace passes {
 namespace normalization {
 
-class PerfectLoopDistributionPass : public passes::Pass {
+class PerfectLoopDistribution : public visitor::StructuredSDFGVisitor {
 private:
-    bool can_be_applied(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::StructuredLoop& loop
-    );
+    bool can_be_applied(structured_control_flow::StructuredLoop& loop);
 
-    void apply(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::StructuredLoop& loop
-    );
+    void apply(structured_control_flow::StructuredLoop& loop);
 
 public:
-    PerfectLoopDistributionPass();
+    PerfectLoopDistribution(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    std::string name() override { return "PerfectLoopDistribution"; };
+    static std::string name() { return "PerfectLoopDistribution"; };
 
-    virtual bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    bool accept(structured_control_flow::For& node) override;
+
+    bool accept(structured_control_flow::Map& node) override;
 };
+
+typedef passes::VisitorPass<PerfectLoopDistribution> PerfectLoopDistributionPass;
 
 } // namespace normalization
 } // namespace passes
