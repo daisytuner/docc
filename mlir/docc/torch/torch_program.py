@@ -382,6 +382,13 @@ class TorchProgram(DoccProgram):
         # Translate to Structured SDFG
         mlir_module = MLIRModule(torch_mlir)
         mlir_module.convert()
+
+        # Dump the MLIR code to a file for inspection after conversion
+        if self.debug_dump and output_folder is not None:
+            torch_mlir_converted = mlir_module.to_string()
+            with open(f"{output_folder}/{self.name}_converted.mlir", "w") as f:
+                f.write(torch_mlir_converted)
+
         sdfg_str = mlir_module.translate()
         try:
             sdfg = StructuredSDFG.parse(sdfg_str)

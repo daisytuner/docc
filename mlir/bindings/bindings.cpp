@@ -9,8 +9,8 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
-#include "mlir/Dialect/Linalg/Passes.h"
-#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
+#include "mlir/Dialect/Linalg/CustomPasses.h"
+#include "mlir/Dialect/Linalg/Transforms/CustomTransforms.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/AsmState.h"
@@ -40,16 +40,10 @@ public:
 private:
     MLIRInitializer() {
         // Register only the dialects we actually use for SDFG translation
-        registry_.insert<
-            mlir::arith::ArithDialect,
-            mlir::cf::ControlFlowDialect,
-            mlir::func::FuncDialect,
-            mlir::linalg::LinalgDialect,
-            mlir::math::MathDialect,
-            mlir::tensor::TensorDialect>();
+        mlir::sdfg::dialectRegistration(registry_);
 
         // Register only the passes we need
-        mlir::registerLinalgPasses();
+        mlir::registerLinalgCustomPasses();
 
         // Register SDFG code generators and serializers
         ::sdfg::codegen::register_default_dispatchers();
@@ -81,7 +75,7 @@ public:
 
     void convert() {
         mlir::PassManager pm(context_.get());
-        pm.addPass(mlir::createLinalgSpecializeGenericOpsPass());
+        pm.addPass(mlir::createLinalgCustomSpecializeGenericOpsPass());
         if (mlir::failed(pm.run(*module_))) {
             throw std::runtime_error("Failed to convert MLIR module");
         }

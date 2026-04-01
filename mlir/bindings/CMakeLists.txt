@@ -25,12 +25,13 @@ target_link_libraries(sdfg-mlir PRIVATE
     MLIRArithDialect
     MLIRControlFlowDialect
     MLIRFuncDialect
+    MLIRLinalgCustomDialect
     MLIRLinalgDialect
     MLIRMathDialect
     MLIRTensorDialect
 
     # Linalg passes (for convert())
-    MLIRLinalgTransforms
+    MLIRLinalgCustomTransforms
 
     # SDFG target and libraries
     MLIRTargetSDFG

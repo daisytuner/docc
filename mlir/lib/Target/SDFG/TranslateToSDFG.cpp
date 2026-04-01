@@ -1,8 +1,10 @@
 #include "mlir/Target/SDFG/TranslateToSDFG.h"
+
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/IR/LinalgCustomOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Support/LLVM.h"
@@ -27,19 +29,22 @@ LogicalResult translateToSDFG(Operation* op, raw_ostream& os) {
     return success();
 }
 
+void dialectRegistration(mlir::DialectRegistry& registry) {
+    registry.insert<arith::ArithDialect>();
+    registry.insert<cf::ControlFlowDialect>();
+    registry.insert<func::FuncDialect>();
+    registry.insert<linalg::LinalgDialect>();
+    registry.insert<linalg::custom::LinalgCustomDialect>();
+    registry.insert<math::MathDialect>();
+    registry.insert<tensor::TensorDialect>();
+}
+
 void registerToSDFGTranslation() {
     TranslateFromMLIRRegistration registration(
         "mlir-to-sdfg",
         "translate MLIR to Structured SDFG",
         translateToSDFG,
-        [](mlir::DialectRegistry& registry) {
-            registry.insert<func::FuncDialect>();
-            registry.insert<arith::ArithDialect>();
-            registry.insert<linalg::LinalgDialect>();
-            registry.insert<tensor::TensorDialect>();
-            registry.insert<math::MathDialect>();
-            registry.insert<cf::ControlFlowDialect>();
-        }
+        dialectRegistration
     );
 }
 
