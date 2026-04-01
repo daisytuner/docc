@@ -1426,7 +1426,7 @@ TEST(StrideMinimizationTest, Polybench_fdtd_2d) {
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
-    passes::normalization::PerfectLoopDistributionPass pass;
+    passes::normalization::PerfectLoopDistribution pass(*builder, *analysis_manager);
     passes::normalization::StrideMinimization stride_minimization_pass;
 
     auto root = &builder->subject().root();
@@ -1437,7 +1437,7 @@ TEST(StrideMinimizationTest, Polybench_fdtd_2d) {
     bool applies;
     do {
         applies = false;
-        applies = pass.run_pass(*builder, *analysis_manager);
+        applies = pass.accept(*outermost_loop);
     } while (applies);
 
     do {
