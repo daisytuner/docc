@@ -191,6 +191,7 @@ void MapCollapse::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
 
     applied_ = true;
     collapsed_loop_ = &collapsed_map;
+    analysis_manager.invalidate<analysis::ScopeAnalysis>();
 }
 
 void MapCollapse::to_json(nlohmann::json& j) const {
