@@ -28,7 +28,7 @@ Einsum2Dot::Einsum2Dot(einsum::EinsumNode& einsum_node, const std::string& targe
 std::string Einsum2Dot::name() const { return "Einsum2Dot"; }
 
 std::optional<sdfg::data_flow::ImplementationType> Einsum2Dot::get_impl_type(types::PrimitiveType data_type) {
-    std::optional<sdfg::data_flow::ImplementationType> impl_type;
+    std::optional<sdfg::data_flow::ImplementationType> impl_type; // TODO make generic for any target
     if (target_tune_ == "sequential") {
         impl_type = sdfg::data_flow::ImplementationType_NONE;
     } else if (target_tune_ == "openmp") {

@@ -50,6 +50,8 @@ public:
     virtual bool redundant_with(const offloading::DataOffloadingNode& other) const override;
 
     virtual bool equal_with(const offloading::DataOffloadingNode& other) const override;
+
+    virtual bool is_same_target(const DataOffloadingNode& other) const override;
 };
 
 class CUDADataOffloadingNodeDispatcher : public codegen::LibraryNodeDispatcher {

@@ -128,6 +128,11 @@ bool CUDADataOffloadingNode::equal_with(const offloading::DataOffloadingNode& ot
     return true;
 }
 
+bool CUDADataOffloadingNode::is_same_target(const offloading::DataOffloadingNode& other) const {
+    return dynamic_cast<const CUDADataOffloadingNode*>(&other) != nullptr;
+    // TODO check for dev ID
+}
+
 CUDADataOffloadingNodeDispatcher::CUDADataOffloadingNodeDispatcher(
     codegen::LanguageExtension& language_extension,
     const Function& function,

@@ -2,13 +2,71 @@ import os
 import getpass
 import hashlib
 import shutil
-from typing import Any, Optional
+from typing import Any, Optional, List
 import time
 
 from docc.compiler import CompiledSDFG, DoccProgram
 from docc.compiler.target_registry import reset_target_registry
 from docc.sdfg import StructuredSDFG
 from docc.mlir import MLIRModule
+
+
+def _filter_none_outputs(model) -> List[int]:
+    """Filter None values from FX graph outputs.
+
+    For AOTAutograd backward graphs, None indicates "no gradient for this input".
+    torch-mlir cannot lower torch.constant.none to linalg, so we filter them out
+    before export and restore them after execution.
+
+    Args:
+        model: A torch.fx.GraphModule to potentially modify
+
+    Returns:
+        List of positions where None was filtered out (empty if no changes)
+    """
+    import torch.fx
+
+    if not isinstance(model, torch.fx.GraphModule):
+        return []
+
+    graph = model.graph
+
+    # Find the output node
+    output_node = None
+    for node in graph.nodes:
+        if node.op == "output":
+            output_node = node
+            break
+
+    if output_node is None:
+        return []
+
+    # Get the return args (tuple)
+    ret_args = output_node.args[0]
+    if not isinstance(ret_args, tuple):
+        return []
+
+    # Check if any are None
+    none_positions = []
+    filtered_args = []
+    for i, arg in enumerate(ret_args):
+        if arg is None:
+            none_positions.append(i)
+        else:
+            filtered_args.append(arg)
+
+    if not none_positions:
+        return []  # No Nones to filter
+
+    # Rewrite the output node
+    with graph.inserting_before(output_node):
+        graph.output(tuple(filtered_args))
+    graph.erase_node(output_node)
+
+    # Recompile the graph module
+    model.recompile()
+
+    return none_positions
 
 
 class TorchProgram(DoccProgram):
@@ -52,6 +110,9 @@ class TorchProgram(DoccProgram):
         self._input_info: list = []  # [(shape, dtype), ...] for each input
         self._output_info: list = []  # [(shape, dtype), ...] for each output
         self._frozen_buffer_args: list = []  # buffer tensors not frozen by torch-mlir
+        self._none_output_positions: List[int] = (
+            []
+        )  # positions filtered from backward graph
         self.force_rebuild = force_rebuild
 
     def __call__(self, *args: Any) -> Any:
@@ -167,8 +228,8 @@ class TorchProgram(DoccProgram):
 
         self._input_info = []
         example_inputs = (
-            self.example_input
-            if isinstance(self.example_input, tuple)
+            tuple(self.example_input)
+            if isinstance(self.example_input, (tuple, list))
             else (self.example_input,)
         )
         for inp in example_inputs:
@@ -280,8 +341,8 @@ class TorchProgram(DoccProgram):
         import torch
 
         example_inputs = (
-            self.example_input
-            if isinstance(self.example_input, tuple)
+            tuple(self.example_input)
+            if isinstance(self.example_input, (tuple, list))
             else (self.example_input,)
         )
 
@@ -298,6 +359,11 @@ class TorchProgram(DoccProgram):
                         self._frozen_buffer_args.append(obj.detach().cpu().contiguous())
         except Exception:
             self._frozen_buffer_args = []
+
+        # Filter None outputs from FX graph (AOTAutograd backward graphs use None
+        # to indicate "no gradient for this input"). torch-mlir cannot lower
+        # torch.constant.none, so we filter them here and restore after execution.
+        self._none_output_positions = _filter_none_outputs(self.model)
 
         torch_mlir = fx.export_and_import(
             self.model,
@@ -370,13 +436,19 @@ class TorchProgram(DoccProgram):
                 return val
 
         if isinstance(result, tuple):
-            converted = tuple(convert_single(r) for r in result)
-            # Return single value if only one output
-            if len(converted) == 1:
-                return converted[0]
-            return converted
+            converted = list(convert_single(r) for r in result)
         else:
-            return convert_single(result)
+            converted = [convert_single(result)]
+
+        # Restore None values at recorded positions (filtered from backward graph)
+        if self._none_output_positions:
+            for pos in sorted(self._none_output_positions):
+                converted.insert(pos, None)
+
+        # Return single value if only one output, otherwise tuple
+        if len(converted) == 1:
+            return converted[0]
+        return tuple(converted)
 
     def _get_cache_key(self, example_input: Any) -> str:
         import torch

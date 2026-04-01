@@ -412,6 +412,8 @@ public:
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 
     virtual symbolic::Expression flop() const override;
+
+    std::string toStr() const override;
 };
 
 class CMathNodeSerializer : public serializer::LibraryNodeSerializer {

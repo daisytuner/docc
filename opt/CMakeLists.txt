@@ -27,6 +27,8 @@ set(SOURCE_FILES
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
     src/passes/offloading/sync_condition_propagation.cpp
     src/passes/collapse_pass.cpp
+    src/passes/extended_data_transfer_minimization_pass.cpp
+    src/passes/readonly_transfer_hoisting_pass.cpp
     src/passes/dot_expansion_pass.cpp
     src/passes/gemm_expansion_pass.cpp
     src/passes/opt_pipeline.cpp
@@ -51,7 +53,7 @@ set(SOURCE_FILES
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/gpu/gpu_map_utils.cpp
     src/targets/highway/codegen/highway_map_dispatcher.cpp
-    src/targets/offloading/data_offloading_node.cpp
+    src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/targets/onnx/blas/dot_dispatcher.cpp
@@ -91,6 +93,8 @@ set(SOURCE_FILES
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
     src/transformations/utils.cpp
+    src/passes/code_motion/extended_block_hoisting.cpp
+    src/passes/code_motion/extended_block_sorting.cpp
 )
 add_library(sdfgopt
     ${SOURCE_FILES}

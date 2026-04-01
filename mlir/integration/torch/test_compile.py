@@ -259,32 +259,42 @@ def test_multi_output_strides():
     ), f"res2 strides should be (4, 1), got {res2.stride()}"
 
 
-@pytest.mark.skip(
-    reason="Training requires support for multiple outputs in SDFG translation"
-)
 def test_training():
+    """Verify gradient descent learns a known linear function."""
     docc.torch.set_backend_options(target="none", category="server")
 
+    # Target: learn the 2x2 identity matrix
+    target_weights = torch.eye(2)
+
     class LinearNet(nn.Module):
-        def __init__(self, in_features=4, out_features=2):
+        def __init__(self):
             super().__init__()
-            self.linear = nn.Linear(in_features, out_features, bias=False)
+            self.linear = nn.Linear(2, 2, bias=False)
 
         def forward(self, x: torch.Tensor):
             return self.linear(x)
 
+    torch.manual_seed(42)
     model = LinearNet()
-    model_ref = LinearNet()
-    example_input = torch.randn(2, 4)
-    target = torch.randn(2, 2)
 
     program = torch.compile(model, backend="docc")
-    optimizer = torch.optim.SGD(program.parameters(), lr=0.01)
+    optimizer = torch.optim.SGD(program.parameters(), lr=0.5)
     criterion = nn.MSELoss()
 
-    for _ in range(10):
+    # Train on random inputs, target = input (identity function)
+    for _ in range(20):
+        x = torch.randn(32, 2)
+        target = x  # Identity: output should equal input
+
         optimizer.zero_grad()
-        res = program(example_input)
+        res = program(x)
         loss = criterion(res, target)
         loss.backward()
         optimizer.step()
+
+    # Verify learned weights converged to identity matrix
+    learned_weights = model.linear.weight.detach()
+    print(learned_weights)
+    assert torch.allclose(
+        learned_weights, target_weights, atol=0.05
+    ), f"Expected identity matrix, got:\n{learned_weights}"

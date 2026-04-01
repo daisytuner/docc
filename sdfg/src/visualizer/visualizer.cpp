@@ -46,6 +46,8 @@ constexpr const char* code_to_string(data_flow::TaskletCode c) {
             return "%";
         case data_flow::TaskletCode::fp_fma:
             return "fma";
+        case data_flow::TaskletCode::fp_one:
+            return "of!=";
         default:
             return "?";
     };
@@ -161,6 +163,18 @@ void Visualizer::
         } else {
             this->stream_ << ".member[" << subsetRangeString(sub, subIdx) << "]";
             this->visualizeSubset(function, sub, nullptr, subIdx + 1);
+        }
+    } else if (auto tensor_type = dynamic_cast<const types::Tensor*>(type)) {
+        auto& shape = tensor_type->shape();
+        int tensor_dims = shape.size();
+        int i = 0;
+        while (i < tensor_dims && subIdx < sub.size()) {
+            this->stream_ << "[" << subsetRangeString(sub, i) << ":" << subsetRangeString(shape, i) << "]";
+            ++subIdx;
+            ++i;
+        }
+        if (subIdx < sub.size()) {
+            this->visualizeSubset(function, sub, &tensor_type->element_type(), subIdx);
         }
     } else if (auto array_type = dynamic_cast<const types::Array*>(type)) {
         this->stream_ << "[" << subsetRangeString(sub, subIdx) << "]";

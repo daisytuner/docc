@@ -59,6 +59,8 @@ public:
 
     /// Check if this node is equal to another offloading node
     virtual bool equal_with(const offloading::DataOffloadingNode& other) const override;
+
+    virtual bool is_same_target(const DataOffloadingNode& other) const override;
 };
 
 /**

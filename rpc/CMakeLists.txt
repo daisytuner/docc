@@ -16,6 +16,7 @@ add_library(sdfgrpc
     ${SOURCE_FILES}
 )
 add_library(sdfg::rpc ALIAS sdfgrpc)
+add_library(docc::rpc ALIAS sdfgrpc)
 target_include_directories(sdfgrpc
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

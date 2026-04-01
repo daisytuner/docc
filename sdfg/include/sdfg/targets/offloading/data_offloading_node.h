@@ -65,7 +65,6 @@ public:
     );
 
     DataTransferDirection transfer_direction() const;
-
     BufferLifecycle buffer_lifecycle() const;
 
     const symbolic::Expression size() const;
@@ -83,6 +82,8 @@ public:
     virtual bool redundant_with(const DataOffloadingNode& other) const;
 
     virtual bool equal_with(const DataOffloadingNode& other) const;
+
+    virtual bool is_same_target(const DataOffloadingNode& other) const = 0;
 
     virtual bool blocking() const = 0;
 

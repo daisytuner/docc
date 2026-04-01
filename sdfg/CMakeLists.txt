@@ -82,20 +82,14 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/blas/dot_node.cpp
     src/data_flow/library_nodes/math/blas/gemm_node.cpp
     src/data_flow/library_nodes/math/cmath/cmath_node.cpp
-    src/data_flow/library_nodes/math/tensor/tensor_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_node.cpp
-    src/data_flow/library_nodes/math/tensor/reduce_node.cpp
+    src/data_flow/library_nodes/math/tensor/batchnorm_node.cpp
     src/data_flow/library_nodes/math/tensor/broadcast_node.cpp
     src/data_flow/library_nodes/math/tensor/conv_node.cpp
-    src/data_flow/library_nodes/math/tensor/pooling_node.cpp
-    src/data_flow/library_nodes/math/tensor/matmul_node.cpp
-    src/data_flow/library_nodes/math/tensor/transpose_node.cpp
+    src/data_flow/library_nodes/math/tensor/elementwise_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/elu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.cpp
@@ -103,6 +97,8 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.cpp
+    src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp
+    src/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.cpp
@@ -111,12 +107,18 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.cpp
-    src/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.cpp
-    src/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.cpp
-    src/data_flow/library_nodes/math/tensor/reduce_ops/std_node.cpp
+    src/data_flow/library_nodes/math/tensor/matmul_node.cpp
+    src/data_flow/library_nodes/math/tensor/pooling_node.cpp
+    src/data_flow/library_nodes/math/tensor/reduce_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/max_node.cpp
+    src/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/min_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.cpp
+    src/data_flow/library_nodes/math/tensor/reduce_ops/std_node.cpp
+    src/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.cpp
+    src/data_flow/library_nodes/math/tensor/tensor_layout.cpp
+    src/data_flow/library_nodes/math/tensor/tensor_node.cpp
+    src/data_flow/library_nodes/math/tensor/transpose_node.cpp
     src/data_flow/library_nodes/stdlib/alloca.cpp
     src/data_flow/library_nodes/stdlib/assert.cpp
     src/data_flow/library_nodes/stdlib/calloc.cpp
@@ -130,6 +132,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/stdlib/unreachable.cpp
     src/deepcopy/structured_sdfg_deep_copy.cpp
     src/graph/graph.cpp
+    src/offloading/data_offloading_node.cpp
     src/optimization_report/optimization_report.cpp
     src/passes/pass.cpp
     src/passes/pipeline.cpp

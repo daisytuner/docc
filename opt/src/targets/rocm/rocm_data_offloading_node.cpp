@@ -128,6 +128,11 @@ bool ROCMDataOffloadingNode::equal_with(const offloading::DataOffloadingNode& ot
     return true;
 }
 
+bool ROCMDataOffloadingNode::is_same_target(const DataOffloadingNode& other) const {
+    return dynamic_cast<const ROCMDataOffloadingNode*>(&other) != nullptr;
+    // TODO check device id
+}
+
 ROCMDataOffloadingNodeDispatcher::ROCMDataOffloadingNodeDispatcher(
     codegen::LanguageExtension& language_extension,
     const Function& function,

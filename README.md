@@ -17,14 +17,12 @@ Furthermore, the repository contains runtime libraries for code instrumentation 
 
 |                      | Highway | OpenMP | CUDA | ROCm | Metal |
 |----------------------|:-------:|:------:|:----:|:----:|:-----:|
-| Python (Linux)       | ✅      | ✅     | ✅   | ✅   | ❌    |
-| Python (macOS)       | ✅      | ✅     | ❌   | ❌   | 🚧    |
-| PyTorch (Linux)      | ✅      | ✅     | ✅   | ✅   | ❌    |
-| PyTorch (macOS)      | 🚧      | 🚧     | 🚧   | 🚧   | 🚧    |
-<!-- | ONNX (Linux)         | 🚧      | 🚧     | 🚧   | 🚧   | 🚧    |
-| ONNX (macOS)         | 🚧      | 🚧     | 🚧   | 🚧   | 🚧    | -->
+| Python (Linux)       | ✅      | ✅     | ✅   | ✅   | —     |
+| PyTorch (Linux)      | ✅      | ✅     | ✅   | ✅   | —     |
+| Python (macOS)       | ✅      | ✅     | —    | —    | 🚧    |
+| PyTorch (macOS)      | 🚧      | 🚧     | —   | —   | 🚧    |
 
-✅ Supported | ❌ Not supported | 🚧 Work in progress / planned
+✅ Supported | 🚧 Work in progress
 
 ### Targets
 
@@ -32,10 +30,10 @@ Each target enables a specific combination of backends:
 
 | Target       | Transfer Tuning | Highway | OpenMP | CUDA | ROCm | Metal |
 |--------------|:---------------:|:-------:|:------:|:----:|:----:|:-----:|
-| `sequential` | ✅              | ✅      | ❌     | ❌   | ❌   | ❌    |
-| `openmp`     | 🚧              | ✅      | ✅     | ❌   | ❌   | ❌    |
-| `cuda`       | 🚧              | ✅      | ✅     | ✅   | ❌   | ❌    |
-| `rocm`       | 🚧              | ✅      | ✅     | ❌   | ✅   | ❌    |
+| `sequential` | ✅              | ✅      | —      | —    | —    | —     |
+| `openmp`     | 🚧              | ✅      | ✅     | —    | —    | —     |
+| `cuda`       | 🚧              | ✅      | ✅     | ✅   | —    | —     |
+| `rocm`       | 🚧              | ✅      | ✅     | —    | ✅   | —     |
 <!-- | `metal`      | 🚧              | ✅      | ✅     | ❌   | ✅    | -->
 
 Transfer Tuning refers to a collection of dataflow optimizations using optimization databases.
@@ -77,16 +75,18 @@ For further details, check out the [component's README.md](./python/).
 The MLIR frontend can be installed from PyPi:
 
 ```bash
-pip install docc-ai # (soon)
+pip install docc-ai
 ```
 
 To use the frontend with PyTorch, also install `torch-mlir`, which we use to translate models to core MLIR dialects initially:
 
 ```bash
-pip install --pre torch-mlir torchvision --extra-index-url https://download.pytorch.org/whl/nightly/cpu -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
+pip install torch==2.10.0+cpu torchvision==0.25.0+cpu --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install torch-mlir==20260309.746 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
 ```
 
-This allows you to import models directly from PyTorch and generate an optimized SDFG:
+This allows you to import models directly from PyTorch, generate an optimized SDFG, and run inference.
+For this, make sure to use the `torch.no_grad()` mode to enforce inference via the dynamo backend:
 
 ```python
 import torch
@@ -95,22 +95,59 @@ import torch.nn as nn
 import docc.torch
 docc.torch.set_backend_options(target="openmp", category="server")
 
-class IdentityNet(nn.Module):
-    def __init__(self):
+class LinearRegression(nn.Module):
+    def __init__(self, in_features=4, out_features=2):
         super().__init__()
+        self.linear = nn.Linear(in_features, out_features, bias=False)
 
     def forward(self, x: torch.Tensor):
-        return x
+        return self.linear(x)
 
-model = IdentityNet()
-example_input = torch.randn(2, 1)
+model = LinearRegression()
+example_input = torch.randn(2, 4)
 
 # Compile model
 with torch.no_grad():
-  compiled_model = torch.compile(model, backend="docc")
+    compiled_model = torch.compile(model, backend="docc")
 
 # Forward
 res = compiled_model(example_input)
+```
+
+Similarly, we have experimental support for training models via an AOTAutograd integration:
+
+```python
+import torch
+import torch.nn as nn
+
+import docc.torch
+
+docc.torch.set_backend_options(target="openmp", category="server")
+
+class LinearRegression(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(2, 2, bias=False)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+torch.manual_seed(42)
+model = LinearRegression()
+
+program = torch.compile(model, backend="docc")
+optimizer = torch.optim.SGD(program.parameters(), lr=0.5)
+criterion = nn.MSELoss()
+
+for _ in range(20):
+    x = torch.randn(32, 2)
+    target = x  # Identity: output should equal input (example purposes)
+
+    optimizer.zero_grad()
+    res = program(x)
+    loss = criterion(res, target)
+    loss.backward()
+    optimizer.step()
 ```
 
 For further details, check out the [component's README.md](./mlir/).

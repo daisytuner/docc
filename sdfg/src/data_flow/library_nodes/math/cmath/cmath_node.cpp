@@ -313,6 +313,10 @@ std::unique_ptr<data_flow::DataFlowNode> CMathNode::
 
 symbolic::Expression CMathNode::flop() const { return symbolic::one(); }
 
+std::string CMathNode::toStr() const {
+    return LibraryNode::toStr() + "(" + get_cmath_intrinsic_name(this->function_, this->primitive_type_) + ")";
+}
+
 nlohmann::json CMathNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const CMathNode& node = static_cast<const CMathNode&>(library_node);
     nlohmann::json j;

@@ -23,24 +23,6 @@ void TensorNode::validate(const Function& function) const {
 
     auto& graph = this->get_parent();
 
-    // Check that all input memlets are tensor of scalar
-    for (auto& iedge : graph.in_edges(*this)) {
-        if (iedge.base_type().type_id() != types::TypeID::Tensor) {
-            throw InvalidSDFGException(
-                "TensorNode: Input memlet must be of tensor type. Found type: " + iedge.base_type().print()
-            );
-        }
-    }
-
-    // Check that all output memlets are tensor of scalar
-    for (auto& oedge : graph.out_edges(*this)) {
-        if (oedge.base_type().type_id() != types::TypeID::Tensor) {
-            throw InvalidSDFGException(
-                "TensorNode: Output memlet must be of tensor type. Found type: " + oedge.base_type().print()
-            );
-        }
-    }
-
     // Validate that all memlets have the same primitive type
     types::PrimitiveType prim_type = primitive_type(graph);
 

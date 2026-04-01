@@ -97,6 +97,10 @@ bool PrintfDataOffloadingNode::equal_with(const offloading::DataOffloadingNode& 
     return offloading::DataOffloadingNode::equal_with(other);
 }
 
+bool PrintfDataOffloadingNode::is_same_target(const DataOffloadingNode& other) const {
+    return dynamic_cast<const PrintfDataOffloadingNode*>(&other) != nullptr;
+}
+
 // ============================================================================
 // Dispatcher Implementation
 // ============================================================================

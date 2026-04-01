@@ -437,7 +437,7 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         lda = strides_a_[strides_a_.size() - 2];
     } else {
         // For row-major A [m * k] -> lda = m
-        ldb = strides_a_[strides_a_.size() - 1];
+        lda = strides_a_[strides_a_.size() - 1];
     }
     if (trans_b == blas::BLAS_Transpose::No) {
         // For row-major B [k * n] -> ldb = n

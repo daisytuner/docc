@@ -28,7 +28,8 @@ steps:
     pip install --no-build-isolation -e python/
     pip install --no-build-isolation -e mlir/
 
-    pip install torch-mlir torchvision --extra-index-url https://download.pytorch.org/whl/cpu -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
+    pip install torch==2.10.0+cpu torchvision==0.25.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
+    pip install torch-mlir==20260309.746 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
 
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=sequential
