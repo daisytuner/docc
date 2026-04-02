@@ -31,10 +31,49 @@ steps:
     pip install torch==2.10.0+cpu torchvision==0.25.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
     pip install torch-mlir==20260309.746 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --docc --target=cuda
+
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --docc --target=cuda
 
     # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --docc --target=none
     # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --docc --target=sequential
@@ -49,12 +88,6 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --torch
       energy: true
       measurements: 3
-    bn_conv_bn_relu_maxpool_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --docc --target=none
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
     bn_conv_bn_relu_maxpool_run_sequential:
       command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --docc --target=sequential
       energy: true
@@ -74,7 +107,257 @@ steps:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
 
-    # model resnet18
+    # model resnet18 BN -> ReLU -> Conv
+
+    resnet18_bn_relu_conv_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_bn_relu_conv_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_bn_relu_conv_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_bn_relu_conv_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 basic block
+
+    resnet18_basic_block_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_basic_block_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_basic_block_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_basic_block_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 downsample block
+
+    resnet18_downsample_block_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_downsample_block_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_downsample_block_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_downsample_block_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 stage1
+
+    resnet18_stage1_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_stage1_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_stage1_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_stage1_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 stage2
+
+    resnet18_stage2_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_stage2_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_stage2_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_stage2_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 stem + stage1
+
+    resnet18_stem_stage1_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_stem_stage1_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_stem_stage1_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_stem_stage1_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 first half
+
+    resnet18_first_half_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_first_half_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_first_half_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_first_half_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 second half
+
+    resnet18_second_half_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_second_half_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_second_half_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_second_half_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 avgpool + FC
+
+    resnet18_avgpool_fc_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_avgpool_fc_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_avgpool_fc_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_avgpool_fc_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 tail
+
+    resnet18_tail_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --torch
+      energy: true
+      measurements: 3
+    resnet18_tail_run_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --docc --target=sequential
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_tail_run_openmp:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --docc --target=openmp
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    resnet18_tail_run_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --docc --target=cuda
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+
+    # model resnet18 (full)
 
     # resnet18_torch:
     #   command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --torch
