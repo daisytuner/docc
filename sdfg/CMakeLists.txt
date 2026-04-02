@@ -6,10 +6,13 @@ set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME sdfglib-development)
 
 set(WITH_SYMENGINE_THREAD_SAFE ON CACHE BOOL "override" FORCE)
 set(WITH_SYMENGINE_RCP ON CACHE BOOL "override" FORCE)
+set(_BUILD_TESTS ${BUILD_TESTS})
+set(BUILD_TESTS OFF)
 
 add_subdirectory(3rdParty/symengine)
 # Restore install dirs for sub-projects to avoid conflicts
 set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME ${_CMAKE_INSTALL_DEFAULT_COMPONENT_NAME})
+set(BUILD_TESTS ${_BUILD_TESTS})
 
 # NLohmann json
 find_package(nlohmann_json REQUIRED)
