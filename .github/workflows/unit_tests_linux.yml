@@ -202,8 +202,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-    env:
-      PYTHONPATH: "${{GITHUB_WORKSPACE}}/python:${{GITHUB_WORKSPACE}}/mlir"
 
     steps:
       - uses: actions/checkout@v4
@@ -219,6 +217,7 @@ jobs:
         run: |
           python -m venv .venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
 
       - name: Mark GitHub Actions workdir as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -240,7 +239,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPYTHON_BUILD_FRONTEND=ON \
-            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python3.12/site-packages/pybind11/share/cmake/pybind11
+            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
             -DMLIR_BUILD_BINDINGS=ON \
             -DMLIR_BUILD_TESTS=ON \
