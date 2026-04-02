@@ -2,6 +2,9 @@
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/offloading/gpu_tiling.h"
 
 namespace sdfg {
@@ -20,23 +23,56 @@ bool GPUTilingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::
     // Phase 1: Collect all applicable tiling targets
     std::vector<structured_control_flow::StructuredLoop*> candidates;
 
+    // Find targets for normal loop tiling
     for (auto* map : maps_) {
+        for (auto* descendant : loop_analysis.descendants(map)) {
+            auto* struc_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant);
+            if (!struc_loop) continue;
+
+            auto* as_map = dynamic_cast<structured_control_flow::Map*>(struc_loop);
+            if (as_map && as_map->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::None)
+                continue;
+
+            size_t cuda_map_ancestors = 0;
+            for (auto* node = loop_analysis.parent_loop(struc_loop); node != nullptr;
+                 node = loop_analysis.parent_loop(node)) {
+                auto* parent_map = dynamic_cast<structured_control_flow::Map*>(node);
+                if (!parent_map) continue;
+                if (parent_map->schedule_type().value() == cuda::ScheduleType_CUDA::value() ||
+                    parent_map->schedule_type().value() == rocm::ScheduleType_ROCM::value()) {
+                    cuda_map_ancestors++;
+                }
+            }
+
+
+            if (cuda_map_ancestors < 2) continue;
+
+            transformations::LoopTiling tiling(*struc_loop, tile_size_);
+            if (tiling.can_be_applied(builder, analysis_manager)) {
+                candidates.push_back(struc_loop);
+            }
+        }
+    }
+
+    std::vector<structured_control_flow::StructuredLoop*> tilable_loops;
+
+    for (auto* map : candidates) {
         for (auto* descendant : loop_analysis.descendants(map)) {
             if (auto* target_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant)) {
                 transformations::GPUTiling tiling(*target_loop, tile_size_);
                 if (tiling.can_be_applied(builder, analysis_manager)) {
-                    candidates.push_back(target_loop);
+                    tilable_loops.push_back(target_loop);
                 }
             }
         }
     }
 
-    if (candidates.empty()) {
+    if (tilable_loops.empty()) {
         return false;
     }
 
     // Phase 2: Apply all tilings
-    for (auto* target_loop : candidates) {
+    for (auto* target_loop : tilable_loops) {
         transformations::GPUTiling tiling(*target_loop, tile_size_);
         tiling.apply(builder, analysis_manager);
     }
