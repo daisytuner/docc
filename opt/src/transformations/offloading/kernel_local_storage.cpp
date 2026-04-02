@@ -198,22 +198,26 @@ std::tuple<bool, bool, bool> KernelLocalStorage::
     return {x_dim_available, y_dim_available, z_dim_available};
 }
 
-bool KernelLocalStorage::
-    can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+bool KernelLocalStorage::is_candidate(
+    structured_control_flow::StructuredLoop& loop,
+    const std::string& container,
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager
+) {
     auto& sdfg = builder.subject();
 
     // Criterion: transformation cannot be applied twice on the same container
     std::set<std::string> containers(sdfg.containers().begin(), sdfg.containers().end());
-    std::string shared_container_name = "__daisy_shared_" + container_;
+    std::string shared_container_name = "__daisy_shared_" + container;
     if (containers.find(shared_container_name) != containers.end()) {
         return false;
     }
 
     auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto ancestors = scope_analysis.ancestor_scopes(&loop_);
+    auto ancestors = scope_analysis.ancestor_scopes(&loop);
 
     // Criterion: Must not be a GPU map itself
-    if (auto loop_map = dynamic_cast<structured_control_flow::Map*>(&loop_)) {
+    if (auto loop_map = dynamic_cast<structured_control_flow::Map*>(&loop)) {
         if (gpu::is_gpu_schedule(loop_map->schedule_type())) {
             return false;
         }
@@ -236,46 +240,29 @@ bool KernelLocalStorage::
         return false;
     }
 
-    auto& inner_body = this->loop_.root();
-
     // Criterion: Container is contiguous (Maybe can be relaxed later)
     auto& type_analysis = analysis_manager.get<analysis::TypeAnalysis>();
-    auto type = type_analysis.get_outer_type(container_);
+    auto type = type_analysis.get_outer_type(container);
     auto& peeled_type = types::peel_to_innermost_element(*type);
     if (peeled_type.type_id() == types::TypeID::Pointer) {
         return false;
     }
 
-
-    // Criterion: Iteration count is known and an Integer
-    symbolic::Integer iteration_count = get_iteration_count(loop_);
-    if (iteration_count == SymEngine::null) {
-        return false;
-    }
-
-    // Criterion: All block dimensions are known and an Integer
-    auto [x_dim_size, y_dim_size, z_dim_size] = dim_size(ancestors);
-    if (x_dim_size == SymEngine::null || y_dim_size == SymEngine::null || z_dim_size == SymEngine::null) {
-        return false;
-    }
-
-    // Criteria related to memory accesses
+    auto& inner_body = loop.root();
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView inner_body_users(users, inner_body);
 
     // Criterion: Container is read-only
-    if (!inner_body_users.writes(this->container_).empty() || !inner_body_users.views(this->container_).empty() ||
-        !inner_body_users.moves(this->container_).empty()) {
+    if (!inner_body_users.writes(container).empty() || !inner_body_users.views(container).empty() ||
+        !inner_body_users.moves(container).empty()) {
         return false;
     }
-    if (inner_body_users.reads(this->container_).empty()) {
+    if (inner_body_users.reads(container).empty()) {
         return false;
     }
-
-    // Collect moving symbols
 
     // Criterion: Memory accesses do not depend on moving symbols
-    for (auto& user : inner_body_users.uses(this->container_)) {
+    for (auto& user : inner_body_users.uses(container)) {
         auto& subsets = user->subsets();
         for (auto& subset : subsets) {
             for (auto& expr : subset) {
@@ -291,41 +278,36 @@ bool KernelLocalStorage::
         }
     }
 
-    // Criterion: Check if all memory accesses are affine w.r.t the inner loop index
-
     // Limitations: single memory access
-    if (inner_body_users.reads(this->container_).size() != 1) {
+    if (inner_body_users.reads(container).size() != 1) {
         return false;
     }
-    auto read = inner_body_users.reads(this->container_).at(0);
+    auto read = inner_body_users.reads(container).at(0);
     if (read->subsets().size() != 1) {
         return false;
     }
     auto subsets = read->subsets().at(0);
 
-    // Criterion: more than one dimension is available.
-    auto [x_dim_indvar, y_dim_indvar, z_dim_indvar] = dim_indvars(ancestors);
+    // Criterion: more than one GPU dimension is available
     symbolic::SymbolVec indvars;
-    if (x_dim_indvar != SymEngine::null) {
-        indvars.push_back(x_dim_indvar);
+    for (auto node : ancestors) {
+        if (auto ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+            auto schedule_type = ancestor_map->schedule_type();
+            if (!gpu::is_gpu_schedule(schedule_type)) {
+                continue;
+            }
+            indvars.push_back(ancestor_map->indvar());
+        }
     }
-    if (y_dim_indvar != SymEngine::null) {
-        indvars.push_back(y_dim_indvar);
-    }
-    if (z_dim_indvar != SymEngine::null) {
-        indvars.push_back(z_dim_indvar);
-    }
-
     if (indvars.size() <= 1) {
         return false;
     }
 
-    indvars.push_back(loop_.indvar());
+    indvars.push_back(loop.indvar());
 
     // Criterion: Memory access is polynomial of
     // c_0 * a + c_1 * b + c_2 * c + c_3 * k, where a, b, c are x-threads, y-threads, z-threads
     // and k is the inner loop index
-
     for (auto subset : subsets) {
         if (symbolic::polynomial(subset, indvars) == SymEngine::null) {
             return false;
@@ -336,7 +318,7 @@ bool KernelLocalStorage::
     bool uses_inner_indvar = false;
     for (auto subset : subsets) {
         for (auto atom : symbolic::atoms(subset)) {
-            if (symbolic::eq(atom, loop_.indvar())) {
+            if (symbolic::eq(atom, loop.indvar())) {
                 uses_inner_indvar = true;
             }
         }
@@ -357,9 +339,37 @@ bool KernelLocalStorage::
         }
     }
 
-    // Criterion: Has a free dimension to map to and that dimension is big enough
-    auto [x_dim_available, y_dim_available, z_dim_available] = available_dims(subsets, analysis_manager);
+    return true;
+}
 
+bool KernelLocalStorage::
+    can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (!is_candidate(loop_, container_, builder, analysis_manager)) {
+        return false;
+    }
+
+    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
+    auto ancestors = scope_analysis.ancestor_scopes(&loop_);
+
+    // Criterion: Iteration count is known and an Integer
+    symbolic::Integer iteration_count = get_iteration_count(loop_);
+    if (iteration_count == SymEngine::null) {
+        return false;
+    }
+
+    // Criterion: All block dimensions are known and an Integer
+    auto [x_dim_size, y_dim_size, z_dim_size] = dim_size(ancestors);
+    if (x_dim_size == SymEngine::null || y_dim_size == SymEngine::null || z_dim_size == SymEngine::null) {
+        return false;
+    }
+
+    // Criterion: Has a free dimension to map to and that dimension is big enough
+    auto& users = analysis_manager.get<analysis::Users>();
+    analysis::UsersView inner_body_users(users, loop_.root());
+    auto read = inner_body_users.reads(container_).at(0);
+    auto subsets = read->subsets().at(0);
+
+    auto [x_dim_available, y_dim_available, z_dim_available] = available_dims(subsets, analysis_manager);
     if (!x_dim_available && !y_dim_available && !z_dim_available) {
         return false;
     }

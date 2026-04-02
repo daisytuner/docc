@@ -1,11 +1,13 @@
 #include "sdfg/passes/offloading/gpu_tiling_pass.h"
 
 #include "sdfg/analysis/loop_analysis.h"
+#include "sdfg/analysis/users.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/offloading/gpu_tiling.h"
+#include "sdfg/transformations/offloading/kernel_local_storage.h"
 
 namespace sdfg {
 namespace passes {
@@ -22,6 +24,7 @@ bool GPUTilingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::
 
     // Phase 1: Collect all applicable tiling targets
     std::vector<structured_control_flow::StructuredLoop*> candidates;
+    auto& users = analysis_manager.get<analysis::Users>();
 
     // Find targets for normal loop tiling
     for (auto* map : maps_) {
@@ -29,23 +32,17 @@ bool GPUTilingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::
             auto* struc_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant);
             if (!struc_loop) continue;
 
-            auto* as_map = dynamic_cast<structured_control_flow::Map*>(struc_loop);
-            if (as_map && as_map->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::None)
-                continue;
 
-            size_t cuda_map_ancestors = 0;
-            for (auto* node = loop_analysis.parent_loop(struc_loop); node != nullptr;
-                 node = loop_analysis.parent_loop(node)) {
-                auto* parent_map = dynamic_cast<structured_control_flow::Map*>(node);
-                if (!parent_map) continue;
-                if (parent_map->schedule_type().value() == cuda::ScheduleType_CUDA::value() ||
-                    parent_map->schedule_type().value() == rocm::ScheduleType_ROCM::value()) {
-                    cuda_map_ancestors++;
+            // Pre-filter: check if any container used in the loop is a KLS candidate
+            analysis::UsersView users_view(users, struc_loop->root());
+            bool has_kls_candidate = false;
+            for (const auto& container : users_view.all_containers_in_order()) {
+                if (transformations::KernelLocalStorage::is_candidate(*struc_loop, container, builder, analysis_manager)) {
+                    has_kls_candidate = true;
+                    break;
                 }
             }
-
-
-            if (cuda_map_ancestors < 2) continue;
+            if (!has_kls_candidate) continue;
 
             transformations::LoopTiling tiling(*struc_loop, tile_size_);
             if (tiling.can_be_applied(builder, analysis_manager)) {
