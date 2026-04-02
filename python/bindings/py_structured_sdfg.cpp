@@ -49,7 +49,7 @@
 #include <sdfg/helpers/helpers.h>
 #include <sdfg/visualizer/dot_visualizer.h>
 
-#include "../../c-compile/include/docc/util/docc_paths.h"
+#include "docc/util/docc_paths.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
