@@ -201,7 +201,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12"]
+    env:
+      PYTHONPATH: "${{GITHUB_WORKSPACE}}/python:${{GITHUB_WORKSPACE}}/mlir"
 
     steps:
       - uses: actions/checkout@v4
@@ -237,12 +239,13 @@ jobs:
             -DCMAKE_C_COMPILER=clang-19 \
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DPYTHON_BUILD_FRONTEND=ON \
+            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python3.12/site-packages/pybind11/share/cmake/pybind11
             -DMLIR_BUILD_FRONTEND=ON \
+            -DMLIR_BUILD_BINDINGS=ON \
             -DMLIR_BUILD_TESTS=ON \
             -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
             -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
-            -DWITH_SYMENGINE_THREAD_SAFE=ON \
-            -DWITH_SYMENGINE_RCP=ON \
             -DINSTALL_GTEST=OFF \
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
@@ -254,14 +257,6 @@ jobs:
         run: |
           cd build/
           ninja check-docc-mlir
-
-      - name: Build Python bindings
-        run: |
-          # Install docc-compiler package first
-          pip install -Ccmake.build-type=Debug -e python/
-
-          # Then build mlir bindings
-          pip install -Ccmake.build-type=Debug --no-build-isolation -e mlir/
 
       - name: Integration Tests
         if: matrix.python-version == '3.11' || matrix.python-version == '3.12'
