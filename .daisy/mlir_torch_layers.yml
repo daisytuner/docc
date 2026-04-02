@@ -31,32 +31,32 @@ steps:
     pip install torch==2.10.0+cpu torchvision==0.25.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
     pip install torch-mlir==20260309.746 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=none
+    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=none
+    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=none
+    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=none
+    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=none
+    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=none
+    # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=cuda
@@ -69,12 +69,12 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --torch
       energy: true
       measurements: 3
-    batchnorm_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --docc --target=none
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+    # batchnorm_run_none:
+    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --docc --target=none
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    #     DOCC_REUSE_BINARIES: 1
     batchnorm_run_sequential:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --docc --target=sequential
       energy: true
@@ -131,12 +131,12 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --torch
       energy: true
       measurements: 3
-    linear_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --docc --target=none
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+    # linear_run_none:
+    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --docc --target=none
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    #     DOCC_REUSE_BINARIES: 1
     linear_run_sequential:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --docc --target=sequential
       energy: true
@@ -162,12 +162,12 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --torch
       energy: true
       measurements: 3
-    matmul_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --docc --target=none
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+    # matmul_run_none:
+    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --docc --target=none
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    #     DOCC_REUSE_BINARIES: 1
     matmul_run_sequential:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --docc --target=sequential
       energy: true
@@ -193,12 +193,12 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --torch
       energy: true
       measurements: 3
-    pooling_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --docc --target=none
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+    # pooling_run_none:
+    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --docc --target=none
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    #     DOCC_REUSE_BINARIES: 1
     pooling_run_sequential:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --docc --target=sequential
       energy: true
@@ -224,12 +224,12 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --torch
       energy: true
       measurements: 3
-    relu_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --docc --target=none
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+    # relu_run_none:
+    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --docc --target=none
+    #   energy: true
+    #   env:
+    #     DOCC_CI: regions
+    #     DOCC_REUSE_BINARIES: 1
     relu_run_sequential:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --docc --target=sequential
       energy: true
