@@ -107,6 +107,52 @@ class StemPlusStage1(nn.Module):
         return self.stage1(x)
 
 
+class ResNet18FirstHalf(nn.Module):
+    """Stem + Stage 1 + Stage 2 (input 3ch 224x224 -> output 128ch 28x28)."""
+
+    def __init__(self):
+        super().__init__()
+        self.bn0 = nn.BatchNorm2d(3)
+        self.conv0 = nn.Conv2d(3, 64, 7, 2, 3, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu0 = nn.ReLU()
+        self.pool = nn.MaxPool2d(3, 2, 1)
+        self.s1_block1 = BasicBlock(64)
+        self.s1_block2 = BasicBlock(64)
+        self.s2_down = DownsampleBlock(64, 128)
+        self.s2_block = BasicBlock(128)
+
+    def forward(self, x):
+        x = self.pool(self.relu0(self.bn1(self.conv0(self.bn0(x)))))
+        x = self.s1_block2(self.s1_block1(x))
+        x = self.s2_block(self.s2_down(x))
+        return x
+
+
+class ResNet18SecondHalf(nn.Module):
+    """Stage 3 + Stage 4 + Tail (input 128ch 28x28 -> output 1000 logits)."""
+
+    def __init__(self):
+        super().__init__()
+        self.s3_down = DownsampleBlock(128, 256)
+        self.s3_block = BasicBlock(256)
+        self.s4_down = DownsampleBlock(256, 512)
+        self.s4_block = BasicBlock(512)
+        self.bn_tail = nn.BatchNorm2d(512)
+        self.relu_tail = nn.ReLU()
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(512, 1000)
+
+    def forward(self, x):
+        x = self.s3_block(self.s3_down(x))
+        x = self.s4_block(self.s4_down(x))
+        x = self.relu_tail(self.bn_tail(x))
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
+        return x
+
+
 class GlobalAvgPoolFC(nn.Module):
     """AvgPool -> Flatten -> FC classifier head."""
 
@@ -144,6 +190,8 @@ SUBMODELS = [
     ("stage1", lambda: Stage1(), (1, 64, 56, 56)),
     ("stage2", lambda: Stage2(), (1, 64, 56, 56)),
     ("stem_stage1", lambda: StemPlusStage1(), (1, 3, 224, 224)),
+    ("first_half", lambda: ResNet18FirstHalf(), (1, 3, 224, 224)),
+    ("second_half", lambda: ResNet18SecondHalf(), (1, 128, 28, 28)),
     ("avgpool_fc", lambda: GlobalAvgPoolFC(512, 1000), (1, 512, 7, 7)),
     ("tail", lambda: Tail(512, 1000), (1, 512, 7, 7)),
 ]
