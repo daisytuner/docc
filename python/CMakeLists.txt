@@ -27,14 +27,11 @@ set_target_properties(sdfg-py PROPERTIES
     OUTPUT_NAME "_sdfg"
 )
 
-set(PYLIBS_SYMLINK_DIR "${CMAKE_CURRENT_BINARY_DIR}/../pylibs/docc/sdfg")
-
 add_custom_command(TARGET sdfg-py POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${PYLIBS_SYMLINK_DIR}"
         COMMAND ${CMAKE_COMMAND} -E create_symlink
         "$<TARGET_FILE:sdfg-py>"
-        "${PYLIBS_SYMLINK_DIR}/$<TARGET_FILE_NAME:sdfg-py>"
-        COMMENT "Creating symlink to docc.sdfg._sdfg in ${PYLIBS_SYMLINK_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/docc/sdfg/$<TARGET_FILE_NAME:sdfg-py>"
+        COMMENT "Creating symlink to docc.sdfg._sdfg in src dir"
 )
 
 target_include_directories(sdfg-py
@@ -42,7 +39,7 @@ target_include_directories(sdfg-py
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bindings>
 )
 
-target_link_libraries(sdfg-py PRIVATE sdfg::sdfg sdfg::opt sdfg::rpc nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
+target_link_libraries(sdfg-py PRIVATE sdfg::sdfg sdfg::opt sdfg::rpc docc::c-compile nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
 
 if(TARGET docc::target::et)
     target_link_libraries(sdfg-py PRIVATE docc::target::et)

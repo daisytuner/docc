@@ -45,14 +45,11 @@ target_include_directories(sdfg-mlir PRIVATE
     ${PROJECT_BINARY_DIR}/include
 )
 
-set(PYLIBS_SYMLINK_DIR "${CMAKE_CURRENT_BINARY_DIR}/../../pylibs/docc/sdfg")
-
 add_custom_command(TARGET sdfg-mlir POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${PYLIBS_SYMLINK_DIR}"
         COMMAND ${CMAKE_COMMAND} -E create_symlink
         "$<TARGET_FILE:sdfg-mlir>"
-        "${PYLIBS_SYMLINK_DIR}/$<TARGET_FILE_NAME:sdfg-mlir>"
-        COMMENT "Creating symlink to docc.sdfg._sdfg_mlir in ${PYLIBS_SYMLINK_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../docc/mlir/$<TARGET_FILE_NAME:sdfg-mlir>"
+        COMMENT "Creating symlink to docc.mlir._sdfg_mlir in src dir"
 )
 
 # Install the Python module to the docc/mlir package directory

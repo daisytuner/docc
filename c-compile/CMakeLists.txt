@@ -1,6 +1,7 @@
 
 
 set(SOURCE_FILES
+    src/util/docc_paths.cpp
     src/util/offloading_instrumentation_plan.cpp
     src/util/offloading_type_collector.cpp
 )
