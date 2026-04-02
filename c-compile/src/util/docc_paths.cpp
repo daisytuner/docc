@@ -60,7 +60,7 @@ std::unique_ptr<DefaultDoccPaths> DefaultDoccPaths::from_lib_location(std::optio
                         if (test_path && std::filesystem::exists(*test_path) &&
                             std::filesystem::is_directory(*test_path)) {
                             if (suffix.empty()) {
-                                return std::make_unique<DefaultDoccPaths>(parent, parent / "..", DoccRootMode::None);
+                                return std::make_unique<DefaultDoccPaths>(parent, parent / "..", DoccRootMode::CMake);
                             } else {
                                 return std::make_unique<
                                     DefaultDoccPaths>(parent / suffix, parent / ".." / suffix, DoccRootMode::CMake);
