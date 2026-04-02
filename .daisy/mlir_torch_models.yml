@@ -31,46 +31,57 @@ steps:
     pip install torch==2.10.0+cpu torchvision==0.25.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
     pip install torch-mlir==20260309.746 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_bn_relu_conv.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_basic_block.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_downsample_block.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage1.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stage2.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_stem_stage1.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_first_half.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_second_half.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_avgpool_fc.py --n_runs=1 --docc --target=cuda
 
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18_tail.py --n_runs=1 --docc --target=cuda
@@ -85,23 +96,23 @@ steps:
     # model BatchNorm -> Convolution -> BatchNorm -> ReLU -> Maxpool
 
     bn_conv_bn_relu_maxpool_torch:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --torch
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --torch
       energy: true
       measurements: 3
     bn_conv_bn_relu_maxpool_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --docc --target=sequential
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=sequential
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     bn_conv_bn_relu_maxpool_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --docc --target=openmp
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=openmp
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     bn_conv_bn_relu_maxpool_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --docc --target=cuda
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --n_runs=1 --docc --target=cuda
       energy: true
       env:
         DOCC_CI: regions

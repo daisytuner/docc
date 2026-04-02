@@ -32,31 +32,37 @@ steps:
     pip install torch-mlir==20260309.746 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
 
     # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=none
+    venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=cuda
 
     # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=none
+    venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=cuda
 
     # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=none
+    venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=cuda
 
     # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=none
+    venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=cuda
 
     # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=none
+    venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=cuda
 
     # DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=none
+    venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --torch
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=openmp
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=cuda
