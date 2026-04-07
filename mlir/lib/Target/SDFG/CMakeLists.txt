@@ -18,12 +18,16 @@ add_mlir_translation_library(MLIRTargetSDFG
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include/mlir/Target/SDFG
 
+    DEPENDS
+    MLIRLinalgCustomDialect
+
     LINK_LIBS PUBLIC
     MLIRIR
     MLIRSupport
     MLIRTranslateLib
     MLIRFuncDialect
     MLIRArithDialect
+    MLIRLinalgCustomDialect
     MLIRLinalgDialect
     MLIRTensorDialect
     MLIRMathDialect

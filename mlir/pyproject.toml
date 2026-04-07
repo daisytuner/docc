@@ -34,7 +34,6 @@ keywords = ["pytorch", "mlir", "sdfg", "compiler", "optimization"]
 dependencies = [
     # "docc-compiler",
     "numpy>=1.19.0",
-    "scipy>=1.7.0",
     "ml_dtypes>=0.5.4"
 ]
 
@@ -71,7 +70,7 @@ manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 
 test-command = "python -c \"import docc.mlir; print('docc-ai imported successfully')\""
-test-requires = ["numpy", "ml_dtypes", "pytest", "scipy"]
+test-requires = ["numpy", "ml_dtypes", "pytest"]
 
 [tool.cibuildwheel.linux]
 before-all = [

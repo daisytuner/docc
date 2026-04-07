@@ -5,6 +5,7 @@
 #include <isl/set.h>
 #include <isl/space.h>
 
+#include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/utils.h"
 
 namespace sdfg {
@@ -17,8 +18,20 @@ bool is_subset(
         return true;
     }
 
-    auto expr1_delinearized = delinearize(expr1, assums1);
-    auto expr2_delinearized = delinearize(expr2, assums2);
+    auto expr1_delinearized = expr1;
+    if (expr1.size() == 1) {
+        auto result = symbolic::delinearize(expr1.at(0), assums1);
+        if (result.success) {
+            expr1_delinearized = result.indices;
+        }
+    }
+    auto expr2_delinearized = expr2;
+    if (expr2.size() == 1) {
+        auto result = symbolic::delinearize(expr2.at(0), assums2);
+        if (result.success) {
+            expr2_delinearized = result.indices;
+        }
+    }
 
     std::string map_1_str = expression_to_map_str(expr1_delinearized, assums1);
     std::string map_2_str = expression_to_map_str(expr2_delinearized, assums2);
@@ -73,8 +86,20 @@ bool is_subset(
 bool is_disjoint(
     const MultiExpression& expr1, const MultiExpression& expr2, const Assumptions& assums1, const Assumptions& assums2
 ) {
-    auto expr1_delinearized = delinearize(expr1, assums1);
-    auto expr2_delinearized = delinearize(expr2, assums2);
+    auto expr1_delinearized = expr1;
+    if (expr1.size() == 1) {
+        auto result = symbolic::delinearize(expr1.at(0), assums1);
+        if (result.success) {
+            expr1_delinearized = result.indices;
+        }
+    }
+    auto expr2_delinearized = expr2;
+    if (expr2.size() == 1) {
+        auto result = symbolic::delinearize(expr2.at(0), assums2);
+        if (result.success) {
+            expr2_delinearized = result.indices;
+        }
+    }
 
     std::string map_1_str = expression_to_map_str(expr1_delinearized, assums1);
     std::string map_2_str = expression_to_map_str(expr2_delinearized, assums2);

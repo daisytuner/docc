@@ -1,6 +1,5 @@
 #include "sdfg/passes/structured_control_flow/for2map.h"
 
-#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
@@ -16,9 +15,7 @@ bool For2MapPass::can_be_applied(
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::For& for_stmt
 ) {
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    bool is_monotonic = analysis::LoopAnalysis::is_monotonic(&for_stmt, assumptions_analysis);
-    if (!is_monotonic) {
+    if (!for_stmt.is_monotonic()) {
         return false;
     }
 

@@ -31,24 +31,9 @@ bool Einsum2Gemm::check_matrix_indices(long long mat, const symbolic::Symbol& in
             symbolic::eq(this->einsum_node_.in_index(mat, 1), indvar2));
 }
 
-Einsum2Gemm::Einsum2Gemm(einsum::EinsumNode& einsum_node, const std::string& target_tune)
-    : einsum_node_(einsum_node), target_tune_(target_tune) {}
+Einsum2Gemm::Einsum2Gemm(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
 
 std::string Einsum2Gemm::name() const { return "Einsum2Gemm"; }
-
-std::optional<sdfg::data_flow::ImplementationType> Einsum2Gemm::get_impl_type(types::PrimitiveType data_type) {
-    std::optional<sdfg::data_flow::ImplementationType> impl_type = std::nullopt; // TODO make generic for any target
-    if (this->target_tune_ == "openmp") {
-        impl_type = std::make_optional(sdfg::math::blas::ImplementationType_BLAS);
-    } else if (this->target_tune_ == "tenstorrent") {
-        if (data_type == types::PrimitiveType::Float) {
-            impl_type = data_flow::ImplementationType{"TENSTORRENT_WithTransfers"};
-        }
-    }
-    // TODO: Implement GEMM dispatcher for CUBLAS
-
-    return impl_type;
-}
 
 bool Einsum2Gemm::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Check dims
@@ -164,10 +149,6 @@ bool Einsum2Gemm::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
         }
     }
 
-    if (!this->get_impl_type(data_type)) { // no implementation for the given tune exists
-        return false;
-    }
-
     return true;
 }
 
@@ -267,7 +248,7 @@ void Einsum2Gemm::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
     auto& libnode = builder.add_library_node<math::blas::GEMMNode>(
         *block,
         this->einsum_node_.debug_info(),
-        this->get_impl_type(data_type).value(),
+        sdfg::math::blas::ImplementationType_BLAS,
         precision,
         math::blas::BLAS_Layout::RowMajor,
         transA,
@@ -376,13 +357,11 @@ void Einsum2Gemm::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
 void Einsum2Gemm::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["einsum_node_element_id"] = this->einsum_node_.element_id();
-    j["target_tune"] = this->target_tune_;
 }
 
 Einsum2Gemm Einsum2Gemm::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     assert(j.contains("einsum_node_element_id"));
     assert(j["einsum_node_element_id"].is_number_unsigned());
-    assert(j.contains("impl_type"));
 
     size_t einsum_node_id = j["einsum_node_element_id"].get<size_t>();
     auto* einsum_node_element = builder.find_element_by_id(einsum_node_id);
@@ -398,14 +377,7 @@ Einsum2Gemm Einsum2Gemm::from_json(builder::StructuredSDFGBuilder& builder, cons
         );
     }
 
-    std::string target_tune;
-    if (j.contains("target_tune")) {
-        target_tune = j.at("target_tune").get<std::string>();
-    } else {
-        target_tune = "none";
-    }
-
-    return Einsum2Gemm(*einsum_node, target_tune);
+    return Einsum2Gemm(*einsum_node);
 }
 
 } // namespace transformations

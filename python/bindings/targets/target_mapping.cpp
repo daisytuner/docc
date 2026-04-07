@@ -1,7 +1,6 @@
 #include "target_mapping.h"
 
 #include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
-#include "sdfg/passes/offloading/onnx_library_node_rewriter_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_rewriter_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
 #include "sdfg/plugins/target_mapping.h"
@@ -20,9 +19,6 @@ void apply_lib_node_target_mapping(
     if (options.target == "cuda") {
         sdfg::cuda::CudaLibraryNodeRewriterPass cuda_pass;
         cuda_pass.run(builder, analysis_manager);
-    } else if (options.target == "onnx") {
-        sdfg::passes::ONNXLibraryNodeRewriterPass onnx_library_node_rewriter_pass;
-        onnx_library_node_rewriter_pass.run(builder, analysis_manager);
     } else if (options.target == "etsoc") {
 #ifdef DOCC_HAS_TARGET_ET
         docc::target::et::et_scheduling_passes(builder, analysis_manager, options.category);

@@ -2464,7 +2464,7 @@ class NumPyHandler:
         if output_shape:
             output_strides = self._compute_strides(output_shape, "C")
             tmp_name = self._create_array_temp(
-                output_shape, dtype, strides=output_strides
+                output_shape, dtype, strides=output_strides, zero_init=True
             )
         else:
             # Scalar output

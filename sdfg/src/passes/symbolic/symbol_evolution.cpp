@@ -6,7 +6,6 @@
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/symbolic/polynomials.h"
-#include "sdfg/symbolic/series.h"
 
 namespace sdfg {
 namespace passes {
@@ -61,7 +60,7 @@ symbolic::Expression scalar_evolution(
         return indvar;
     }
 
-    auto stride = analysis::LoopAnalysis::stride(&loop);
+    auto stride = loop.stride();
     if (stride == SymEngine::null) {
         return SymEngine::null;
     }

@@ -62,7 +62,6 @@ void DataDependencyAnalysis::visit_block(
     std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
     std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
 ) {
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
     auto& dominance_analysis = analysis_manager.get<analysis::DominanceAnalysis>();
     auto& users = analysis_manager.get<analysis::Users>();
 
@@ -347,9 +346,7 @@ void DataDependencyAnalysis::visit_for(
     }
 
     // Add loop-carried dependencies
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    bool is_monotonic = LoopAnalysis::is_monotonic(&for_loop, assumptions_analysis);
-    if (this->detailed_ && is_monotonic) {
+    if (this->detailed_ && for_loop.is_monotonic()) {
         // Case: Can analyze
         bool success = this->loop_carried_dependencies_.insert({&for_loop, {}}).second;
         assert(success);

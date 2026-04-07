@@ -18,26 +18,26 @@
 #include <sdfg/codegen/instrumentation/arg_capture_plan.h>
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
+#include <sdfg/einsum/einsum.h>
 #include <sdfg/passes/dataflow/constant_propagation.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dot_expansion_pass.h>
+#include <sdfg/passes/einsum.h>
 #include <sdfg/passes/gemm_expansion_pass.h>
+#include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
-#include <sdfg/passes/offloading/onnx_library_node_rewriter_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/scheduler/cuda_scheduler.h>
 #include <sdfg/passes/scheduler/highway_scheduler.h>
 #include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/passes/scheduler/omp_scheduler.h>
-#include <sdfg/passes/scheduler/polly_scheduler.h>
 #include <sdfg/passes/scheduler/scheduler_registry.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
 #include <sdfg/passes/structured_control_flow/for2map.h>
-#include <sdfg/passes/structured_control_flow/loop_normalization.h>
 #include <sdfg/passes/structured_control_flow/pointer_evolution.h>
 #include <sdfg/passes/structured_control_flow/while_to_for_conversion.h>
 #include <sdfg/passes/symbolic/symbol_evolution.h>
@@ -49,6 +49,7 @@
 #include <sdfg/helpers/helpers.h>
 #include <sdfg/visualizer/dot_visualizer.h>
 
+#include "docc/util/docc_paths.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
@@ -123,16 +124,26 @@ pybind11::dict PyStructuredSDFG::containers() const {
     return result;
 }
 
-namespace {
-void _anchor() {}
-} // namespace
-
 void PyStructuredSDFG::validate() { sdfg_->validate(); }
 
 void PyStructuredSDFG::expand() {
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
+    // Preparation: Lift Einsum nodes to detect more library nodes (offloading)
+    // BUT: Place after simplify (e.g., schedule())
+    // sdfg::passes::EinsumLiftPass einsum_lift_pass;
+    // einsum_lift_pass.run(builder_opt, analysis_manager);
+    // sdfg::passes::EinsumExtendPass einsum_extend_pass;
+    // einsum_extend_pass.run(builder_opt, analysis_manager);
+    // sdfg::passes::EinsumExpandPass einsum_expand_pass;
+    // einsum_expand_pass.run(builder_opt, analysis_manager);
+
+    // Convert einsum into blas nodes (best-effort)
+    sdfg::passes::EinsumConversionPass einsum_conversion_pass;
+    einsum_conversion_pass.run(builder_opt, analysis_manager);
+
+    // Expand library nodes
     sdfg::passes::Pipeline libnode_expansion = sdfg::passes::Pipeline::expansion();
     libnode_expansion.run(builder_opt, analysis_manager);
 
@@ -215,18 +226,21 @@ void PyStructuredSDFG::simplify() {
     }
 
     // Normalize loop condition and update (run twice)
-    sdfg::passes::LoopNormalizationPass loop_normalization_pass;
+    sdfg::passes::normalization::LoopNormalFormPass loop_normalization_pass;
     loop_normalization_pass.run(builder_opt, analysis_manager);
-    loop_normalization_pass.run(builder_opt, analysis_manager);
-
-    // Eliminate symbols correlated to loop iterators
-    // sdfg::passes::SymbolEvolution symbol_evolution_pass;
-    // symbol_evolution_pass.run(builder_opt, analysis_manager);
 
     // Dead code elimination
     symbol_propagation_pass.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
+
+    // Eliminate symbols correlated to loop iterators
+    // sdfg::passes::SymbolEvolution symbol_evolution_pass;
+    // symbol_evolution_pass.run(builder_opt, analysis_manager);
+    // symbol_propagation_pass.run(builder_opt, analysis_manager);
+    // dde.run(builder_opt, analysis_manager);
+    // dce.run(builder_opt, analysis_manager);
+
 
     /***** Data Parallelism *****/
 
@@ -366,8 +380,6 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     // GPU Opt Pipeline
     else if (target == "cuda" || target == "rocm") {
         schedulers.push_back(target);
-    } else if (target == "onnx") {
-        // nothing
     } else if (target == "etsoc") {
 #ifdef DOCC_HAS_TARGET_ET
 
@@ -452,18 +464,7 @@ std::string PyStructuredSDFG::compile(
     }
 
     // Find libraries relative to the module location
-    Dl_info info;
-    fs::path package_path;
-    std::string package_path_str;
-    std::string package_lib_path_str;
-    std::string package_include_path_str;
-    if (dladdr((void*) &_anchor, &info)) {
-        fs::path lib_path = fs::canonical(info.dli_fname);
-        package_path = lib_path.parent_path().parent_path();
-        package_path_str = package_path.string();
-        package_lib_path_str = (package_path / "lib").string();
-        package_include_path_str = (package_path / "include").string();
-    }
+    auto paths = docc::util::DefaultDoccPaths::from_lib_location(docc::util::find_lib_location());
 
     bool has_highway = false;
     std::unordered_set<std::string> object_files;
@@ -476,7 +477,7 @@ std::string PyStructuredSDFG::compile(
 
 #ifdef DOCC_HAS_TARGET_ET
         if (extension == docc::target::et::ETSOC_KERNEL_FILE_EXT) {
-            docc::target::et::EtBuildArgs args{.build_dir = build_path, .plugin_rt_dir = package_path};
+            docc::target::et::EtBuildArgs args{.build_dir = build_path, .plugin_rt_dir = paths->bin_root()};
             auto et_k_file = docc::target::et::et_build_kernel(*sdfg_, *snippet_factory, lib_file, args);
             DEBUG_PRINTLN("Generated ET Kernel to: " << et_k_file);
             continue;
@@ -490,10 +491,13 @@ std::string PyStructuredSDFG::compile(
 #else
         cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3 -fopenmp -march=native -mtune=native -funroll-loops";
 #endif
-        if (!package_path_str.empty()) {
-            cmd << " -L" << package_lib_path_str;
-            cmd << " -I" << package_include_path_str;
+        for (auto& inc_path : paths->get_default_include_paths()) {
+            cmd << " -I" << inc_path;
         }
+        for (auto& ld_path : paths->get_default_library_paths()) {
+            cmd << " -L" << ld_path;
+        }
+
 #if defined(__APPLE__)
         cmd << " -I/opt/homebrew/include";
 #endif
@@ -525,9 +529,8 @@ std::string PyStructuredSDFG::compile(
 #else
         cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3 -fopenmp -march=native -mtune=native -funroll-loops";
 #endif
-        if (!package_path_str.empty()) {
-            cmd << " -L" << package_lib_path_str;
-            cmd << " -I" << package_include_path_str;
+        for (auto& inc_path : paths->get_default_include_paths()) {
+            cmd << " -I" << inc_path;
         }
         if (target == "cuda") {
             cmd << " -x cuda -lcuda";
@@ -559,9 +562,8 @@ std::string PyStructuredSDFG::compile(
 #else
     cmd << DOCC_CXX_COMPILER << " -shared -fopenmp -fPIC -O3";
 #endif
-    if (!package_path_str.empty()) {
-        cmd << " -L" << package_lib_path_str;
-        cmd << " -I" << package_include_path_str;
+    for (auto& ld_path : paths->get_default_library_paths()) {
+        cmd << " -L" << ld_path;
     }
     // cmd << " " << source_path.string();
     for (const auto& object_file : object_files) {
@@ -587,10 +589,6 @@ std::string PyStructuredSDFG::compile(
         cmd << " /opt/rocm/lib/libamdhip64.so";
         cmd << " /opt/rocm/lib/libhiprtc.so";
         cmd << " /opt/rocm/lib/libhipblas.so";
-    } else if (target == "onnx") {
-        cmd << " -L/usr/local/onnxruntime/lib";
-        cmd << " -lonnxruntime";
-        cmd << " -ldl"; // Required for dladdr()
     } else if (target == "etsoc") {
 #ifdef DOCC_HAS_TARGET_ET
         cmd << " " << docc::target::et::et_get_host_additional_link_args(*sdfg_, *snippet_factory);

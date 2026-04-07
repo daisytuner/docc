@@ -269,4 +269,289 @@ TEST(LoopTest, NestedLoops) {
     EXPECT_EQ(inner_root.size(), 1);
 }
 
+// ============================================================================
+// Tests for stride() and canonical_bound() methods
+// ============================================================================
+
+// Test stride extraction for positive unit stride
+TEST(StructuredLoopTest, StridePositiveUnit) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+
+    auto& root = builder.subject().root();
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)) // i = i + 1
+    );
+
+    auto stride = loop.stride();
+    ASSERT_FALSE(stride.is_null());
+    EXPECT_EQ(stride->as_int(), 1);
+}
+
+// Test stride extraction for negative unit stride
+TEST(StructuredLoopTest, StrideNegativeUnit) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+
+    auto& root = builder.subject().root();
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::integer(0), symbolic::symbol("i")),
+        symbolic::integer(10),
+        symbolic::sub(symbolic::symbol("i"), symbolic::integer(1)) // i = i - 1
+    );
+
+    auto stride = loop.stride();
+    ASSERT_FALSE(stride.is_null());
+    EXPECT_EQ(stride->as_int(), -1);
+}
+
+// Test stride extraction for positive non-unit stride
+TEST(StructuredLoopTest, StridePositiveNonUnit) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+
+    auto& root = builder.subject().root();
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(32)) // i = i + 32
+    );
+
+    auto stride = loop.stride();
+    ASSERT_FALSE(stride.is_null());
+    EXPECT_EQ(stride->as_int(), 32);
+}
+
+// Test canonical bound for simple i < N
+TEST(StructuredLoopTest, CanonicalBoundSimple) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+    builder.add_container("N", int_type, true);
+
+    auto& root = builder.subject().root();
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto bound = loop.canonical_bound();
+    ASSERT_FALSE(bound.is_null());
+    EXPECT_TRUE(symbolic::eq(bound, symbolic::symbol("N")));
+}
+
+// Test canonical bound for i < N - 1
+TEST(StructuredLoopTest, CanonicalBoundWithOffset) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+    builder.add_container("N", int_type, true);
+
+    auto& root = builder.subject().root();
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto bound = loop.canonical_bound();
+    ASSERT_FALSE(bound.is_null());
+    // N - 1
+    EXPECT_TRUE(symbolic::eq(bound, symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))));
+}
+
+// Test canonical bound for i + offset < N (should isolate to i < N - offset)
+TEST(StructuredLoopTest, CanonicalBoundIndvarWithOffset) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+    builder.add_container("N", int_type, true);
+
+    auto& root = builder.subject().root();
+    // Condition: i + 1 < N  =>  bound = N - 1
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::add(symbolic::symbol("i"), symbolic::integer(1)), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto bound = loop.canonical_bound();
+    ASSERT_FALSE(bound.is_null());
+    // N - 1
+    EXPECT_TRUE(symbolic::eq(bound, symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))));
+}
+
+// Test canonical bound for skewed loop: i - 32*t < N (should give N + 32*t)
+TEST(StructuredLoopTest, CanonicalBoundSkewed) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+    builder.add_container("t", int_type);
+    builder.add_container("N", int_type, true);
+
+    auto& root = builder.subject().root();
+    // Condition: i - 32*t < N  =>  bound = N + 32*t
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::
+            Lt(symbolic::sub(symbolic::symbol("i"), symbolic::mul(symbolic::integer(32), symbolic::symbol("t"))),
+               symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto bound = loop.canonical_bound();
+    ASSERT_FALSE(bound.is_null());
+    // N + 32*t
+    auto expected = symbolic::add(symbolic::symbol("N"), symbolic::mul(symbolic::integer(32), symbolic::symbol("t")));
+    EXPECT_TRUE(symbolic::eq(bound, expected));
+}
+
+// Test canonical bound for i <= N (should give N + 1)
+TEST(StructuredLoopTest, CanonicalBoundLessEqual) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+    builder.add_container("N", int_type, true);
+
+    auto& root = builder.subject().root();
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Le(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto bound = loop.canonical_bound();
+    ASSERT_FALSE(bound.is_null());
+    // N + 1
+    EXPECT_TRUE(symbolic::eq(bound, symbolic::add(symbolic::symbol("N"), symbolic::integer(1))));
+}
+
+// Test canonical bound for negative stride: bound < i (lower bound)
+TEST(StructuredLoopTest, CanonicalBoundNegativeStride) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+
+    auto& root = builder.subject().root();
+    // Loop from 10 down to > 0: i > 0  =>  bound = 0
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::integer(0), symbolic::symbol("i")), // 0 < i
+        symbolic::integer(10),
+        symbolic::sub(symbolic::symbol("i"), symbolic::integer(1)) // i = i - 1
+    );
+
+    auto bound = loop.canonical_bound();
+    ASSERT_FALSE(bound.is_null());
+    // For negative stride, this should extract lower bound = 0
+    EXPECT_TRUE(symbolic::eq(bound, symbolic::integer(0)));
+}
+
+// Test canonical bound for integer constant
+TEST(StructuredLoopTest, CanonicalBoundIntegerConstant) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+
+    auto& root = builder.subject().root();
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto bound = loop.canonical_bound();
+    ASSERT_FALSE(bound.is_null());
+    EXPECT_TRUE(symbolic::eq(bound, symbolic::integer(100)));
+}
+
+// Test canonical bound for Map (should work the same as For)
+TEST(StructuredLoopTest, CanonicalBoundMap) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+    builder.add_container("N", int_type, true);
+
+    auto& root = builder.subject().root();
+    auto& map = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        ScheduleType_Sequential::create()
+    );
+
+    auto bound = map.canonical_bound();
+    ASSERT_FALSE(bound.is_null());
+    EXPECT_TRUE(symbolic::eq(bound, symbolic::symbol("N")));
+}
+
+// Test canonical bound with complex offset: 1 + i - 32*t < NX (the FDTD2D case)
+TEST(StructuredLoopTest, CanonicalBoundComplexOffset) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+    builder.add_container("t", int_type);
+    builder.add_container("NX", int_type, true);
+
+    auto& root = builder.subject().root();
+    // Condition: 1 + i - 32*t < NX  =>  bound = NX - 1 + 32*t
+    auto lhs = symbolic::
+        add(symbolic::integer(1),
+            symbolic::sub(symbolic::symbol("i"), symbolic::mul(symbolic::integer(32), symbolic::symbol("t"))));
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(lhs, symbolic::symbol("NX")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto bound = loop.canonical_bound();
+    ASSERT_FALSE(bound.is_null());
+    // NX - 1 + 32*t
+    auto expected = symbolic::
+        add(symbolic::sub(symbolic::symbol("NX"), symbolic::integer(1)),
+            symbolic::mul(symbolic::integer(32), symbolic::symbol("t")));
+    EXPECT_TRUE(symbolic::eq(bound, expected));
+}
+
 } // namespace sdfg::structured_control_flow

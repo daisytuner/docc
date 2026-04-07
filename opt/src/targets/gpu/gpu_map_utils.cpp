@@ -74,11 +74,6 @@ symbolic::Expression find_nested_gpu_iterations(
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto loops = loop_analysis.descendants(&node);
     loops.insert(&node);
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-
-    symbolic::Expression init = SymEngine::null;
-    symbolic::Expression stride = SymEngine::null;
-    symbolic::Expression bound = SymEngine::null;
 
     for (auto loop : loops) {
         if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
@@ -92,41 +87,21 @@ symbolic::Expression find_nested_gpu_iterations(
             if (ScheduleT::dimension(map->schedule_type()) != dimension) {
                 continue;
             }
-            if (init != SymEngine::null) {
-                if (symbolic::eq(init, map->init())) {
-                    throw InvalidSDFGException("Nested map in GPU kernel has repeated dimension with different init");
-                }
-            }
 
-            init = map->init();
+            auto init = map->init();
             if (!symbolic::eq(init, symbolic::zero())) {
                 throw InvalidSDFGException("Init is not zero");
             }
 
-            if (stride != SymEngine::null) {
-                if (!symbolic::eq(stride, analysis::LoopAnalysis::stride(map))) {
-                    throw InvalidSDFGException("Nested map in GPU kernel has repeated dimension with different stride");
-                }
-            }
-
-            stride = analysis::LoopAnalysis::stride(map);
+            auto stride = map->stride();
             if (!symbolic::eq(stride, symbolic::one())) {
                 throw InvalidSDFGException("Stride is not one");
             }
 
-            if (bound != SymEngine::null) {
-                if (!symbolic::eq(bound, analysis::LoopAnalysis::canonical_bound(map, assumptions_analysis))) {
-                    throw InvalidSDFGException("Nested map in GPU kernel has repeated dimension with different bound");
-                }
+            auto num_iterations = map->num_iterations();
+            if (num_iterations.is_null()) {
+                throw InvalidSDFGException("Cannot determine number of iterations for nested map in GPU kernel");
             }
-
-            bound = analysis::LoopAnalysis::canonical_bound(map, assumptions_analysis);
-            if (bound == SymEngine::null) {
-                throw InvalidSDFGException("Canonical bound is null");
-            }
-            auto num_iterations = symbolic::div(bound, stride);
-            num_iterations = symbolic::sub(num_iterations, init);
-
             return num_iterations;
         }
     }

@@ -59,7 +59,7 @@ bool ROCMParallelizeNestedMap::
     }
 
     // Condition: Loop has a stride of 1
-    auto stride = analysis::LoopAnalysis::stride(&loop_);
+    auto stride = loop_.stride();
     if (!symbolic::eq(stride, symbolic::one())) {
         return false;
     }

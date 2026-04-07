@@ -47,14 +47,12 @@ typedef VisitorPass<EinsumExpand> EinsumExpandPass;
 
 class EinsumConversion : public visitor::NonStoppingStructuredSDFGVisitor {
 private:
-    std::string target_tune_;
     sdfg::PassReportConsumer* report_;
 
 public:
     EinsumConversion(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
-        std::string target_tune,
         sdfg::PassReportConsumer* report = nullptr
     );
 
@@ -62,6 +60,8 @@ public:
 
     virtual bool accept(structured_control_flow::Block& block) override;
 };
+
+typedef VisitorPass<EinsumConversion> EinsumConversionPass;
 
 class EinsumLower : public visitor::StructuredSDFGVisitor {
 public:

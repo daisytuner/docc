@@ -106,6 +106,76 @@ public:
      * @param new_expression Expression to replace with
      */
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
+
+    /**
+     * @brief Describes the stride of a loop's update as a constant.
+     *
+     * @return The stride of the loop's update as a constant, otherwise null.
+     */
+    symbolic::Integer stride();
+
+    /**
+     * @brief Checks if the loop has a positive unit stride (i.e., update is indvar + 1).
+     *
+     * @return True if the loop has a positive unit stride, false otherwise.
+     */
+    bool is_contiguous();
+
+    /**
+     * @brief Checks if the loop is monotonic (i.e., stride is a positive integer).
+     *
+     * @return True if the loop is monotonic, false otherwise.
+     */
+    bool is_monotonic();
+
+    /**
+     * @brief Describes the bound of a loop as a closed-form expression.
+     *
+     * Example: i <= N && i < M -> i < min(N + 1, M)
+     *
+     * @return The bound of the loop as a closed-form expression, otherwise null.
+     */
+    symbolic::Expression canonical_bound();
+
+    /**
+     * @brief Describes the upper bound of a loop (for positive stride).
+     *
+     * Extracts the exclusive upper bound from conditions like:
+     *   - i < N -> N
+     *   - i <= N -> N + 1
+     *   - i + offset < N -> N - offset
+     *
+     * @return The upper bound expression, or null if not extractable.
+     */
+    symbolic::Expression canonical_bound_upper();
+
+    /**
+     * @brief Describes the lower bound of a loop (for negative stride).
+     *
+     * Extracts the exclusive lower bound from conditions like:
+     *   - bound < i -> bound
+     *   - bound <= i -> bound - 1
+     *
+     * @return The lower bound expression, or null if not extractable.
+     */
+    symbolic::Expression canonical_bound_lower();
+
+    /**
+     * @brief Describes the number of iterations of a loop as a closed-form expression.
+     *
+     * @return The number of iterations of the loop as a closed-form expression, otherwise null.
+     */
+    symbolic::Expression num_iterations();
+
+    /**
+     * @brief Checks if the loop is in a normal form.
+     *
+     * Criteria:
+     *      - Loop starts from zero
+     *      - Loop has positive unit stride (i + 1)
+     *      - Loop has canonical bound
+     */
+    bool is_loop_normal_form();
 };
 
 } // namespace structured_control_flow

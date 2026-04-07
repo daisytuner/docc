@@ -8,6 +8,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/IR/LinalgCustomOps.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -21,10 +22,13 @@
 #include "mlir/Target/SDFG/helper.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/batchnorm_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sigmoid_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/pooling_node.h"
@@ -53,14 +57,36 @@ LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, El
     auto output_container = translator.get_or_copy_output_container(output);
     auto result_container = translator.get_or_create_container(result);
 
-    auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
-    auto tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+    auto input1_tensor_type = llvm::dyn_cast<TensorType>(input1.getType());
+    std::unique_ptr<::sdfg::types::IType> input1_sdfg_tensor;
+    if (input1_tensor_type.getRank() == 0) {
+        input1_sdfg_tensor = translator.convertType(input1_tensor_type);
+    } else {
+        auto input1_tensor_info = translator.get_or_create_tensor_info(input1_container, input1_tensor_type);
+        auto input1_element_type = translator.convertType(input1_tensor_type.getElementType());
+        input1_sdfg_tensor = input1_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input1_element_type
+        ));
+    }
 
-    auto element_type = translator.convertType(result_tensor_type.getElementType());
-    auto sdfg_tensor = tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
+    auto input2_tensor_type = llvm::dyn_cast<TensorType>(input2.getType());
+    std::unique_ptr<::sdfg::types::IType> input2_sdfg_tensor;
+    if (input2_tensor_type.getRank() == 0) {
+        input2_sdfg_tensor = translator.convertType(input2_tensor_type);
+    } else {
+        auto input2_tensor_info = translator.get_or_create_tensor_info(input2_container, input2_tensor_type);
+        auto input2_element_type = translator.convertType(input2_tensor_type.getElementType());
+        input2_sdfg_tensor = input2_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input2_element_type
+        ));
+    }
+
+    auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
+    auto result_tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+    auto result_element_type = translator.convertType(result_tensor_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
 
     ::sdfg::data_flow::TaskletCode code;
-    if (::sdfg::types::is_floating_point(sdfg_tensor->primitive_type())) {
+    if (::sdfg::types::is_floating_point(result_sdfg_tensor->primitive_type())) {
         code = fp_code;
     } else {
         code = int_code;
@@ -79,11 +105,11 @@ LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, El
         code,
         std::vector<std::string>({"_out"}),
         std::vector<std::string>({"_in1", "_in2"}),
-        sdfg_tensor->shape()
+        result_sdfg_tensor->shape()
     );
-    builder.add_computational_memlet(block, input1_access, libnode, "_in1", {}, *sdfg_tensor);
-    builder.add_computational_memlet(block, input2_access, libnode, "_in2", {}, *sdfg_tensor);
-    builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor);
+    builder.add_computational_memlet(block, input1_access, libnode, "_in1", {}, *input1_sdfg_tensor);
+    builder.add_computational_memlet(block, input2_access, libnode, "_in2", {}, *input2_sdfg_tensor);
+    builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *result_sdfg_tensor);
 
     return success();
 }
@@ -369,6 +395,160 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
     return success();
 }
 
+LogicalResult translateLinalgCustomReLUOp(SDFGTranslator& translator, linalg::custom::ReLUOp* relu_op) {
+    Value input = relu_op->getInput();
+    Value output = relu_op->getOutput();
+    Value result = relu_op->getResult();
+
+    auto& builder = translator.builder();
+    auto input_container = translator.get_or_create_container(input);
+    auto output_container = translator.get_or_copy_output_container(output);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto input_tensor_type = llvm::dyn_cast<TensorType>(input.getType());
+    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input_tensor_type);
+    auto input_element_type = translator.convertType(input_tensor_type.getElementType());
+    auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input_element_type)
+    );
+
+    auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
+    auto result_tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+    auto result_element_type = translator.convertType(result_tensor_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
+    translator.add_reference(output_container, result_container);
+
+    auto& block = builder.add_block(translator.insertion_point());
+    auto& input_access = builder.add_access(block, input_container);
+    auto& result_access = builder.add_access(block, result_container);
+    auto& libnode =
+        builder
+            .add_library_node<::sdfg::math::tensor::ReLUNode>(block, ::sdfg::DebugInfo(), result_sdfg_tensor->shape());
+    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor);
+    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor);
+
+    return success();
+}
+
+LogicalResult translateLinalgCustomSigmoidOp(SDFGTranslator& translator, linalg::custom::SigmoidOp* sigmoid_op) {
+    Value input = sigmoid_op->getInput();
+    Value output = sigmoid_op->getOutput();
+    Value result = sigmoid_op->getResult();
+
+    auto& builder = translator.builder();
+    auto input_container = translator.get_or_create_container(input);
+    auto output_container = translator.get_or_copy_output_container(output);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto input_tensor_type = llvm::dyn_cast<TensorType>(input.getType());
+    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input_tensor_type);
+    auto input_element_type = translator.convertType(input_tensor_type.getElementType());
+    auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input_element_type)
+    );
+
+    auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
+    auto result_tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+    auto result_element_type = translator.convertType(result_tensor_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
+    translator.add_reference(output_container, result_container);
+
+    auto& block = builder.add_block(translator.insertion_point());
+    auto& input_access = builder.add_access(block, input_container);
+    auto& result_access = builder.add_access(block, result_container);
+    auto& libnode = builder.add_library_node<
+        ::sdfg::math::tensor::SigmoidNode>(block, ::sdfg::DebugInfo(), result_sdfg_tensor->shape());
+    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor);
+    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor);
+
+    return success();
+}
+
+LogicalResult
+translateLinalgCustomBatchNorm2DNchw(SDFGTranslator& translator, linalg::custom::BatchNorm2DNchwOp* batch_norm_op) {
+    Value batch = batch_norm_op->getBatch();
+    Value e = batch_norm_op->getE();
+    Value var = batch_norm_op->getVar();
+    Value gamma = batch_norm_op->getGamma();
+    Value beta = batch_norm_op->getBeta();
+    Value eps = batch_norm_op->getEps();
+    Value output = batch_norm_op->getOutput();
+    Value result = batch_norm_op->getResult();
+
+    auto& builder = translator.builder();
+    auto batch_container = translator.get_or_create_container(batch);
+    auto e_container = translator.get_or_create_container(e);
+    auto var_container = translator.get_or_create_container(var);
+    auto gamma_container = translator.get_or_create_container(gamma);
+    auto beta_container = translator.get_or_create_container(beta);
+    auto eps_container = translator.get_or_create_container(eps);
+    auto output_container = translator.get_or_copy_output_container(output);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto batch_tensor_type = llvm::dyn_cast<TensorType>(batch.getType());
+    auto batch_tensor_info = translator.get_or_create_tensor_info(batch_container, batch_tensor_type);
+    auto batch_element_type = translator.convertType(batch_tensor_type.getElementType());
+    auto batch_sdfg_tensor = batch_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*batch_element_type)
+    );
+
+    auto e_tensor_type = llvm::dyn_cast<TensorType>(e.getType());
+    auto e_tensor_info = translator.get_or_create_tensor_info(e_container, e_tensor_type);
+    auto e_element_type = translator.convertType(e_tensor_type.getElementType());
+    auto e_sdfg_tensor = e_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*e_element_type));
+
+    auto var_tensor_type = llvm::dyn_cast<TensorType>(var.getType());
+    auto var_tensor_info = translator.get_or_create_tensor_info(var_container, var_tensor_type);
+    auto var_element_type = translator.convertType(var_tensor_type.getElementType());
+    auto var_sdfg_tensor = var_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*var_element_type));
+
+    auto gamma_tensor_type = llvm::dyn_cast<TensorType>(gamma.getType());
+    auto gamma_tensor_info = translator.get_or_create_tensor_info(gamma_container, gamma_tensor_type);
+    auto gamma_element_type = translator.convertType(gamma_tensor_type.getElementType());
+    auto gamma_sdfg_tensor = gamma_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*gamma_element_type)
+    );
+
+    auto beta_tensor_type = llvm::dyn_cast<TensorType>(beta.getType());
+    auto beta_tensor_info = translator.get_or_create_tensor_info(beta_container, beta_tensor_type);
+    auto beta_element_type = translator.convertType(beta_tensor_type.getElementType());
+    auto beta_sdfg_tensor = beta_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*beta_element_type));
+
+    auto eps_tensor_type = llvm::dyn_cast<TensorType>(eps.getType());
+    auto eps_tensor_info = translator.get_or_create_tensor_info(eps_container, eps_tensor_type);
+    auto eps_element_type = translator.convertType(eps_tensor_type.getElementType());
+    auto eps_sdfg_tensor = eps_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*eps_element_type));
+
+    auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
+    auto result_tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+    auto result_element_type = translator.convertType(result_tensor_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
+    translator.add_reference(output_container, result_container);
+
+    auto& block = builder.add_block(translator.insertion_point());
+    auto& batch_access = builder.add_access(block, batch_container);
+    auto& e_access = builder.add_access(block, e_container);
+    auto& var_access = builder.add_access(block, var_container);
+    auto& gamma_access = builder.add_access(block, gamma_container);
+    auto& beta_access = builder.add_access(block, beta_container);
+    auto& eps_access = builder.add_access(block, eps_container);
+    auto& result_access = builder.add_access(block, result_container);
+    auto& libnode = builder.add_library_node<::sdfg::math::tensor::BatchNormNode>(
+        block, ::sdfg::DebugInfo(), batch_sdfg_tensor->shape(), batch_element_type->primitive_type()
+    );
+    builder.add_computational_memlet(block, batch_access, libnode, "Batch", {}, *batch_sdfg_tensor);
+    builder.add_computational_memlet(block, e_access, libnode, "E", {}, *e_sdfg_tensor);
+    builder.add_computational_memlet(block, var_access, libnode, "Var", {}, *var_sdfg_tensor);
+    builder.add_computational_memlet(block, gamma_access, libnode, "Gamma", {}, *gamma_sdfg_tensor);
+    builder.add_computational_memlet(block, beta_access, libnode, "Beta", {}, *beta_sdfg_tensor);
+    builder.add_computational_memlet(block, eps_access, libnode, "epsilon", {}, *eps_sdfg_tensor);
+    builder.add_computational_memlet(block, result_access, libnode, "B_out", {}, *result_sdfg_tensor);
+
+    return success();
+}
+
 template<typename PoolOp>
 LogicalResult translateLinalgPoolingNchwOp(SDFGTranslator& translator, PoolOp* op, ::sdfg::math::tensor::PoolingMode mode);
 
@@ -485,6 +665,15 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
         })
         .Case<linalg::PoolingNchwSumOp>([&](linalg::PoolingNchwSumOp pool_op) {
             return translateLinalgPoolingNchwOp(translator, &pool_op, ::sdfg::math::tensor::PoolingMode::Sum);
+        })
+        .Case<linalg::custom::ReLUOp>([&](linalg::custom::ReLUOp relu_op) {
+            return translateLinalgCustomReLUOp(translator, &relu_op);
+        })
+        .Case<linalg::custom::SigmoidOp>([&](linalg::custom::SigmoidOp sigmoid_op) {
+            return translateLinalgCustomSigmoidOp(translator, &sigmoid_op);
+        })
+        .Case<linalg::custom::BatchNorm2DNchwOp>([&](linalg::custom::BatchNorm2DNchwOp batch_norm_op) {
+            return translateLinalgCustomBatchNorm2DNchw(translator, &batch_norm_op);
         })
         .Default([&](Operation* op) {
             return op->emitError("Unknown operation from linalg dialect encountered: ") << op->getName();

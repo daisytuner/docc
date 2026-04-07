@@ -2,6 +2,7 @@
 
 #include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/transformations/loop_interchange.h>
+#include <unordered_map>
 
 namespace sdfg {
 namespace passes {
@@ -280,9 +281,8 @@ void StrideMinimization::apply(
                 auto first_loop = static_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(j));
                 auto second_loop = static_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(j + 1));
                 transformations::LoopInterchange loop_interchange(*first_loop, *second_loop);
-                if (!loop_interchange.can_be_applied(builder, analysis_manager)) {
-                    throw std::runtime_error("Loop interchange cannot be applied");
-                }
+                // given that the permutation is admissible, the interchange must be applicable, else the permutation
+                // would not be admissible
                 loop_interchange.apply(builder, analysis_manager);
                 std::swap(permutation_indices[j], permutation_indices[j + 1]);
             }
@@ -300,20 +300,34 @@ bool StrideMinimization::run_pass(builder::StructuredSDFGBuilder& builder, analy
     // Collect outermost loops
     std::vector<structured_control_flow::ControlFlowNode*> outer_loops = loop_tree_analysis.outermost_loops();
 
-    // Apply stride minimization
+    std::unordered_map<
+        structured_control_flow::ControlFlowNode*,
+        std::vector<std::pair<std::vector<std::string>, std::vector<structured_control_flow::ControlFlowNode*>>>>
+        loop_permutations;
+
+    // Find loop nests for stride minimization
     for (auto& outer_loop : outer_loops) {
         auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
         auto paths = loop_analysis.loop_tree_paths(outer_loop);
         for (auto& path : paths) {
             auto [applicable, permutation] = this->can_be_applied(builder, analysis_manager, path);
             if (applicable) {
-                this->apply(builder, analysis_manager, path, permutation);
-                applied = true;
-                break;
+                if (loop_permutations.find(path.at(0)) == loop_permutations.end()) {
+                    loop_permutations.insert({path.at(0), {}});
+                }
+                loop_permutations[path.at(0)].push_back({permutation, path});
             }
         }
     }
 
+    // Apply stride minimization
+    for (auto& [loop, permutations] : loop_permutations) {
+        auto& permutation = permutations.at(0).first;
+        auto& path = permutations.at(0).second;
+
+        this->apply(builder, analysis_manager, path, permutation);
+        applied = true;
+    }
     return applied;
 };
 

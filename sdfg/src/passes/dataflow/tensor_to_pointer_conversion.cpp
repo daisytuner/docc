@@ -55,6 +55,8 @@ bool TensorToPointerConversion::accept(structured_control_flow::Block& block) {
 
         // For pointer containers, we need a non-empty subset to linearize
         if (memlet.subset().empty()) {
+            memlet.set_base_type(*container_type);
+            applied = true;
             continue;
         }
 

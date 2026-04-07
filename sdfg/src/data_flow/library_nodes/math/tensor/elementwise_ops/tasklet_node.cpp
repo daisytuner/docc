@@ -27,6 +27,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
+#include "sdfg/types/type.h"
 
 namespace sdfg {
 namespace math {
@@ -55,9 +56,27 @@ TaskletTensorNode::TaskletTensorNode(
       tasklet_code_(tasklet_code), shape_(shape) {}
 
 void TaskletTensorNode::validate(const Function& function) const {
-    TensorNode::validate(function);
-
     auto& graph = this->get_parent();
+
+    // Check that all input memlets are scalar or tensor of scalar
+    for (auto& iedge : graph.in_edges(*this)) {
+        if (iedge.base_type().type_id() != types::TypeID::Tensor &&
+            iedge.base_type().type_id() != types::TypeID::Scalar) {
+            throw InvalidSDFGException(
+                "TensorNode: Input memlet must be of tensor type. Found type: " + iedge.base_type().print()
+            );
+        }
+    }
+
+    // Check that all output memlets are scalar or tensor of scalar
+    for (auto& oedge : graph.out_edges(*this)) {
+        if (oedge.base_type().type_id() != types::TypeID::Tensor &&
+            oedge.base_type().type_id() != types::TypeID::Scalar) {
+            throw InvalidSDFGException(
+                "TensorNode: Output memlet must be of tensor type. Found type: " + oedge.base_type().print()
+            );
+        }
+    }
 
     // Validate: inputs match arity
     if (data_flow::arity(this->tasklet_code()) != this->inputs_.size()) {
@@ -103,6 +122,9 @@ void TaskletTensorNode::validate(const Function& function) const {
     }
 
     for (auto& iedge : graph.in_edges(*this)) {
+        if (iedge.base_type().type_id() == types::TypeID::Scalar) {
+            continue;
+        }
         auto& tensor_input = static_cast<const types::Tensor&>(iedge.base_type());
         // Case 1: Scalar input is allowed as secondary input
         if (tensor_input.is_scalar()) {
@@ -227,7 +249,8 @@ bool TaskletTensorNode::expand(builder::StructuredSDFGBuilder& builder, analysis
             container_map.insert({data, new_access_node});
         }
         const auto& iedge_base_type = static_cast<const types::Tensor&>(iedges[i]->base_type());
-        if (builder.subject().exists(data) && iedge_base_type.is_scalar()) {
+        if (builder.subject().exists(data) &&
+            (iedge_base_type.is_scalar() || iedge_base_type.type_id() == types::TypeID::Scalar)) {
             builder.add_computational_memlet(
                 code_block, *new_access_node, tasklet, this->input(i), {}, iedge_base_type, iedges[i]->debug_info()
             );

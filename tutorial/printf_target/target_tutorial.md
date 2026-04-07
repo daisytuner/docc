@@ -320,14 +320,10 @@ void PrintfMapDispatcher::dispatch_node(
     // 1. Analyze arguments and loop structure
     analysis::AnalysisManager analysis_manager(sdfg_);
     analysis::ArgumentsAnalysis& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
 
     auto& used_arguments = arguments_analysis.arguments(analysis_manager, node_);
     auto indvar = node_.indvar();
-    symbolic::Expression stride = loop_analysis.stride(&node_);
-    symbolic::Expression bound = loop_analysis.canonical_bound(&node_, assumptions_analysis);
-    auto num_iterations = symbolic::div(bound, stride);
+    auto num_iterations = node_.num_iterations();
 
     // 2. Collect and sort argument names
     std::vector<std::string> argument_names;

@@ -258,6 +258,7 @@ TEST(TileFusionTest, NonConsecutiveMaps_ShouldFail) {
     types::Array desc_1d(elem_desc, symbolic::symbol("N"));
     builder.add_container("A", desc_1d, true);
     builder.add_container("B", desc_1d, true);
+    builder.add_container("C", desc_1d, true);
 
     auto& root = builder.subject().root();
 
@@ -299,10 +300,11 @@ TEST(TileFusionTest, NonConsecutiveMaps_ShouldFail) {
     );
     {
         auto& block = builder.add_block(blocker.root());
-        auto& a = builder.add_access(block, "A");
+        auto& a_in = builder.add_access(block, "A");
+        auto& c_out = builder.add_access(block, "C");
         auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-        builder.add_computational_memlet(block, a, tasklet, "_in", {symbolic::symbol("k")}, desc_1d);
-        builder.add_computational_memlet(block, tasklet, "_out", a, {symbolic::symbol("k")}, desc_1d);
+        builder.add_computational_memlet(block, a_in, tasklet, "_in", {symbolic::symbol("k")}, desc_1d);
+        builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::symbol("k")}, desc_1d);
     }
 
     // Map 2

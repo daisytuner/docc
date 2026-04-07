@@ -2,8 +2,6 @@
 
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/analysis/arguments_analysis.h>
-#include <sdfg/analysis/assumptions_analysis.h>
-#include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/analysis/users.h>
 #include <sdfg/codegen/dispatchers/sequence_dispatcher.h>
 #include <sdfg/helpers/helpers.h>
@@ -35,20 +33,13 @@ void PrintfMapDispatcher::dispatch_node(
     // Analyze arguments and locals
     analysis::AnalysisManager analysis_manager(sdfg_);
     analysis::ArgumentsAnalysis& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
 
     auto& used_arguments = arguments_analysis.arguments(analysis_manager, node_);
     auto& locals = arguments_analysis.locals(analysis_manager, node_);
 
 
     auto indvar = node_.indvar();
-    symbolic::Expression init = node_.init();
-    symbolic::Expression stride = loop_analysis.stride(&node_);
-    symbolic::Expression bound = loop_analysis.canonical_bound(&node_, assumptions_analysis);
-
-    auto num_iterations = symbolic::div(bound, stride);
-    num_iterations = symbolic::sub(num_iterations, init);
+    auto num_iterations = node_.num_iterations();
 
     // Collect argument names
     std::vector<std::string> argument_names;

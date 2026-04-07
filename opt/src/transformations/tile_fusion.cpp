@@ -15,11 +15,42 @@
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/symbolic/utils.h"
 
 namespace sdfg {
 namespace transformations {
+
+namespace {
+
+/// Collect all Block nodes reachable from a Sequence, including through nested For/Map loops.
+void collect_blocks(structured_control_flow::Sequence& seq, std::vector<structured_control_flow::Block*>& blocks) {
+    for (size_t i = 0; i < seq.size(); ++i) {
+        auto& child = seq.at(i).first;
+        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&child)) {
+            blocks.push_back(block);
+        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+            collect_blocks(loop->root(), blocks);
+        }
+    }
+}
+
+/// Get the first block from a sequence, recursively descending into loops.
+structured_control_flow::Block* get_first_block(structured_control_flow::Sequence& seq) {
+    for (size_t i = 0; i < seq.size(); ++i) {
+        auto& child = seq.at(i).first;
+        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&child)) {
+            return block;
+        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+            auto* result = get_first_block(loop->root());
+            if (result) return result;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
 
 TileFusion::TileFusion(structured_control_flow::Map& first_map, structured_control_flow::Map& second_map)
     : first_map_(first_map), second_map_(second_map) {}
@@ -39,9 +70,12 @@ int TileFusion::compute_radius(
     }
 
     // Delinearize the producer write subset
-    auto producer_sub = symbolic::delinearize(producer_write_subset, producer_assumptions);
-    if (producer_sub.empty()) {
-        return -1;
+    auto producer_sub = producer_write_subset;
+    if (producer_sub.size() == 1) {
+        auto producer_result = symbolic::delinearize(producer_write_subset.at(0), producer_assumptions);
+        if (producer_result.success) {
+            producer_sub = producer_result.indices;
+        }
     }
 
     // Extract the innermost producer loop indvar (the spatial iteration variable)
@@ -55,8 +89,13 @@ int TileFusion::compute_radius(
     int max_radius = 0;
 
     for (const auto& consumer_read_subset : consumer_read_subsets) {
-        auto consumer_sub = symbolic::delinearize(consumer_read_subset, consumer_assumptions);
-
+        auto consumer_sub = consumer_read_subset;
+        if (consumer_sub.size() == 1) {
+            auto consumer_result = symbolic::delinearize(consumer_read_subset.at(0), consumer_assumptions);
+            if (consumer_result.success) {
+                consumer_sub = consumer_result.indices;
+            }
+        }
         if (consumer_sub.size() != producer_sub.size()) {
             return -1;
         }
@@ -68,7 +107,13 @@ int TileFusion::compute_radius(
 
         SymEngine::vec_basic equations;
         for (size_t d = 0; d < producer_sub.size(); ++d) {
-            equations.push_back(symbolic::sub(producer_sub.at(d), consumer_sub.at(d)));
+            auto diff = symbolic::sub(producer_sub.at(d), consumer_sub.at(d));
+            if (symbolic::uses(diff, producer_indvar->get_name())) {
+                // This dimension depends on the producer indvar — include in system
+                equations.push_back(diff);
+            }
+            // Dimensions not involving the producer indvar are independent
+            // (e.g., inner loop variables in 2D stencils) — skip them.
         }
 
         if (equations.size() != producer_vars.size()) {
@@ -118,8 +163,15 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     candidates_.clear();
     radius_ = 0;
 
-    // Criterion 1: Both maps are in the same parent sequence, consecutive
+    // Get analyses upfront
     auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
+
+    // ==========================================================================
+    // Criterion 1: Both maps are in the same parent sequence, consecutive
+    // ==========================================================================
     auto* first_parent = scope_analysis.parent_scope(&first_map_);
     auto* second_parent = scope_analysis.parent_scope(&second_map_);
     if (first_parent == nullptr || second_parent == nullptr) {
@@ -143,14 +195,46 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
         return false;
     }
 
+    // ==========================================================================
     // Criterion 2: Transition between them is empty
+    // ==========================================================================
     auto& transition = parent_sequence->at(first_index).second;
     if (!transition.empty()) {
         return false;
     }
 
-    // Criterion 3: Both are tiled Maps — perfectly nested with exactly one child that is a Map
-    // First map: outer tile Map -> inner iteration Map
+    // ==========================================================================
+    // Criterion 3: Both are perfectly nested tile structures with Maps
+    // Structure required: outer tile Map -> inner iteration Map(s) -> Block(s)
+    // ==========================================================================
+    auto first_loop_info = loop_analysis.loop_info(&first_map_);
+    auto second_loop_info = loop_analysis.loop_info(&second_map_);
+
+    // Must be perfectly nested (no side code between loop levels)
+    if (!first_loop_info.is_perfectly_nested) {
+        return false;
+    }
+    if (!second_loop_info.is_perfectly_nested) {
+        return false;
+    }
+
+    // Must be all Maps (perfectly parallel) - this is a tile fusion on parallel maps
+    if (!first_loop_info.is_perfectly_parallel) {
+        return false;
+    }
+    if (!second_loop_info.is_perfectly_parallel) {
+        return false;
+    }
+
+    // Must have at least depth 2 (outer tile + inner iteration)
+    if (first_loop_info.max_depth < 2) {
+        return false;
+    }
+    if (second_loop_info.max_depth < 2) {
+        return false;
+    }
+
+    // The immediate child must be a Map (the inner iteration map)
     if (first_map_.root().size() != 1) {
         return false;
     }
@@ -158,10 +242,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     if (first_inner_map == nullptr) {
         return false;
     }
-    // Inner map should not have another map nested inside (depth exactly 2)
-    // The inner map body should contain blocks (the actual computation)
 
-    // Second map: outer tile Map -> inner iteration Map
     if (second_map_.root().size() != 1) {
         return false;
     }
@@ -170,16 +251,15 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
         return false;
     }
 
-    // Criterion 4: Compatible tile bounds
-    // Same init
+    // ==========================================================================
+    // Criterion 4: Compatible tile bounds (same init and stride)
+    // ==========================================================================
     if (!symbolic::eq(first_map_.init(), second_map_.init())) {
         return false;
     }
 
-    // Same tile step (stride of the outer loops)
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    auto first_stride = analysis::LoopAnalysis::stride(&first_map_);
-    auto second_stride = analysis::LoopAnalysis::stride(&second_map_);
+    auto first_stride = first_map_.stride();
+    auto second_stride = second_map_.stride();
     if (first_stride.is_null() || second_stride.is_null()) {
         return false;
     }
@@ -196,9 +276,10 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
         return false;
     }
 
-    // Criterion 5: Shared intermediate container
+    // ==========================================================================
+    // Criterion 5: Shared intermediate container exists
     // First writes C, second reads C, second does NOT write C
-    auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
+    // ==========================================================================
     auto first_args = arguments_analysis.arguments(analysis_manager, first_map_);
     auto second_args = arguments_analysis.arguments(analysis_manager, second_map_);
 
@@ -224,18 +305,31 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
         return false;
     }
 
+    // ==========================================================================
     // Criterion 6: Compute radius for each shared container
-    // Navigate to the innermost block of each map for access analysis
+    // ==========================================================================
+    // Collect the loop hierarchy for producer and consumer
     std::vector<structured_control_flow::StructuredLoop*> producer_loops = {&first_map_, first_inner_map};
     std::vector<structured_control_flow::StructuredLoop*> consumer_loops = {&second_map_, second_inner_map};
 
-    // Get the innermost body of each map for assumptions
-    auto& producer_assumptions = assumptions_analysis.get(first_inner_map->root().at(0).first);
-    auto& consumer_assumptions = assumptions_analysis.get(second_inner_map->root().at(0).first);
+    // Get assumptions from the innermost block (recursively find it)
+    auto* first_block = get_first_block(first_inner_map->root());
+    if (first_block == nullptr) {
+        return false;
+    }
+    auto& producer_assumptions = assumptions_analysis.get(*first_block);
 
-    // Find the innermost block(s) of the producer
-    structured_control_flow::Sequence* producer_body = &first_inner_map->root();
-    structured_control_flow::Sequence* consumer_body = &second_inner_map->root();
+    auto* second_block = get_first_block(second_inner_map->root());
+    if (second_block == nullptr) {
+        return false;
+    }
+    auto& consumer_assumptions = assumptions_analysis.get(*second_block);
+
+    // Collect all blocks in producer and consumer
+    std::vector<structured_control_flow::Block*> producer_blocks;
+    collect_blocks(first_inner_map->root(), producer_blocks);
+    std::vector<structured_control_flow::Block*> consumer_blocks;
+    collect_blocks(second_inner_map->root(), consumer_blocks);
 
     int overall_radius = 0;
 
@@ -244,11 +338,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
         data_flow::Subset producer_write_subset;
         bool found_producer = false;
 
-        for (size_t i = 0; i < producer_body->size(); ++i) {
-            auto* block = dynamic_cast<structured_control_flow::Block*>(&producer_body->at(i).first);
-            if (block == nullptr) {
-                continue;
-            }
+        for (auto* block : producer_blocks) {
             auto& dataflow = block->dataflow();
             for (auto& node : dataflow.nodes()) {
                 auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
@@ -275,11 +365,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
 
         // Collect all consumer read subsets for this container
         std::vector<data_flow::Subset> consumer_read_subsets;
-        for (size_t i = 0; i < consumer_body->size(); ++i) {
-            auto* block = dynamic_cast<structured_control_flow::Block*>(&consumer_body->at(i).first);
-            if (block == nullptr) {
-                continue;
-            }
+        for (auto* block : consumer_blocks) {
             auto& dataflow = block->dataflow();
             for (auto& node : dataflow.nodes()) {
                 auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
@@ -332,7 +418,9 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
             return false;
         }
 
+        // ==========================================================================
         // Criterion 7: Radius must be less than tile size
+        // ==========================================================================
         if (radius >= tile_size) {
             return false;
         }
@@ -367,7 +455,7 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     auto tile_update = first_map_.update();
 
     // Extract tile size
-    auto stride = analysis::LoopAnalysis::stride(&first_map_);
+    auto stride = first_map_.stride();
     auto tile_size_expr = stride;
 
     // Get references to inner maps before moving
@@ -436,7 +524,7 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
             symbolic::Lt(first_inner_indvar, symbolic::add(new_tile_indvar, symbolic::add(tile_size_expr, radius_expr)));
 
         // Get the original non-tile bound from the canonical bound of the original inner map
-        auto canonical = analysis::LoopAnalysis::canonical_bound(first_inner_map, assumptions_analysis);
+        auto canonical = first_inner_map->canonical_bound();
         if (!canonical.is_null()) {
             auto original_bound = symbolic::Lt(first_inner_indvar, canonical);
             new_first_inner_condition = symbolic::And(extended_tile_bound, original_bound);

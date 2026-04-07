@@ -92,17 +92,5 @@ std::string constraint_to_isl_str(const Expression con);
  */
 void canonicalize_map_dims(isl_map* map, const std::string& in_prefix, const std::string& out_prefix);
 
-/**
- * @brief Delinearizes a multi-dimensional expression
- * @param expr Multi-dimensional expression potentially containing linearized indices
- * @param assums Assumptions about symbols
- * @return Delinearized multi-dimensional expression
- *
- * Attempts to recover multi-dimensional structure from linearized expressions.
- * For example, if an expression represents a linearized 2D array access A[i*N + j],
- * this function tries to recover the 2D indices [i, j].
- */
-MultiExpression delinearize(const MultiExpression& expr, const Assumptions& assums);
-
 } // namespace symbolic
 } // namespace sdfg
