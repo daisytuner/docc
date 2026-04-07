@@ -45,16 +45,17 @@ namespace mlir {
 namespace sdfg {
 
 template<typename ElemOp, ::sdfg::data_flow::TaskletCode fp_code, ::sdfg::data_flow::TaskletCode int_code>
-LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, ElemOp* add_op) {
-    Value input1 = add_op->getInputs()[0];
-    Value input2 = add_op->getInputs()[1];
-    Value output = add_op->getOutputs()[0];
-    Value result = add_op->getResultTensors()[0];
+LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, ElemOp* op) {
+    Value input1 = op->getInputs()[0];
+    Value input2 = op->getInputs()[1];
+    Value output = op->getOutputs()[0];
+    Value result = op->getResultTensors()[0];
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
     auto& builder = translator.builder();
     auto input1_container = translator.get_or_create_container(input1);
     auto input2_container = translator.get_or_create_container(input2);
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
     auto input1_tensor_type = llvm::dyn_cast<TensorType>(input1.getType());
@@ -92,24 +93,25 @@ LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, El
         code = int_code;
     }
 
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& input1_access = builder.add_access(block, input1_container);
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& input1_access = builder.add_access(block, input1_container, deb_info);
     auto& input2_access =
-        *(input1_container == input2_container ? &input1_access : &builder.add_access(block, input2_container));
-    auto& result_access = builder.add_access(block, result_container);
+        *(input1_container == input2_container ? &input1_access : &builder.add_access(block, input2_container, deb_info)
+        );
+    auto& result_access = builder.add_access(block, result_container, deb_info);
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::TaskletTensorNode>(
         block,
-        ::sdfg::DebugInfo(),
+        deb_info,
         code,
         std::vector<std::string>({"_out"}),
         std::vector<std::string>({"_in1", "_in2"}),
         result_sdfg_tensor->shape()
     );
-    builder.add_computational_memlet(block, input1_access, libnode, "_in1", {}, *input1_sdfg_tensor);
-    builder.add_computational_memlet(block, input2_access, libnode, "_in2", {}, *input2_sdfg_tensor);
-    builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *result_sdfg_tensor);
+    builder.add_computational_memlet(block, input1_access, libnode, "_in1", {}, *input1_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, input2_access, libnode, "_in2", {}, *input2_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -119,10 +121,11 @@ LogicalResult translateLinalgElementwiseCMathOp(SDFGTranslator& translator, Elem
     Value input = op->getInputs()[0];
     Value output = op->getOutputs()[0];
     Value result = op->getResultTensors()[0];
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
     auto& builder = translator.builder();
     auto input_container = translator.get_or_create_container(input);
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
     auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
@@ -131,21 +134,21 @@ LogicalResult translateLinalgElementwiseCMathOp(SDFGTranslator& translator, Elem
     auto element_type = translator.convertType(result_tensor_type.getElementType());
     auto sdfg_tensor = tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
 
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& input_access = builder.add_access(block, input_container);
-    auto& result_access = builder.add_access(block, result_container);
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& input_access = builder.add_access(block, input_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::CMathTensorNode>(
         block,
-        ::sdfg::DebugInfo(),
+        deb_info,
         function,
         std::vector<std::string>({"_out"}),
         std::vector<std::string>({"_in"}),
         sdfg_tensor->shape()
     );
-    builder.add_computational_memlet(block, input_access, libnode, "_in", {}, *sdfg_tensor);
-    builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor);
+    builder.add_computational_memlet(block, input_access, libnode, "_in", {}, *sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor, deb_info);
 
     return success();
 }
@@ -164,6 +167,7 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
         return generic_op->emitOpError("number of outputs != number of results: ")
                << outputs.size() << " != " << results.size();
     }
+    auto deb_info = translator.get_debug_info(generic_op->getOperationName(), generic_op->getLoc());
 
     // Determine all dimensions
     std::vector<int64_t> dimensions;
@@ -249,7 +253,7 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
     }
     output_containers.reserve(outputs.size());
     for (auto output : outputs) {
-        output_containers.push_back(translator.get_or_copy_output_container(output));
+        output_containers.push_back(translator.get_or_copy_output_container(output, deb_info));
     }
     result_containers.reserve(results.size());
     for (auto result : results) {
@@ -258,7 +262,7 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
 
     // Create references
     for (size_t i = 0; i < outputs.size(); i++) {
-        translator.add_reference(output_containers.at(i), result_containers.at(i));
+        translator.add_reference(output_containers.at(i), result_containers.at(i), deb_info);
     }
 
     // Create loops
@@ -280,7 +284,7 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
         auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
 
         if (iterator_type_attr.getValue() == utils::IteratorType::reduction) {
-            auto& for_loop = builder.add_for(*current_seq, indvar, condition, init, update);
+            auto& for_loop = builder.add_for(*current_seq, indvar, condition, init, update, {}, deb_info);
             current_seq = &for_loop.root();
         } else {
             auto& map = builder.add_map(
@@ -289,7 +293,9 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
                 condition,
                 init,
                 update,
-                ::sdfg::structured_control_flow::ScheduleType_Sequential::create()
+                ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
+                {},
+                deb_info
             );
             current_seq = &map.root();
         }
@@ -314,14 +320,15 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
         auto outer_container = (i < inputs.size()) ? input_containers.at(i) : output_containers.at(i - inputs.size());
         auto outer_type = (i < inputs.size()) ? inputs[i].getType() : outputs[i - inputs.size()].getType();
 
-        auto& sdfg_block = builder.add_block(*current_seq);
-        auto& outer_access = builder.add_access(sdfg_block, outer_container);
-        auto& argument_access = builder.add_access(sdfg_block, argument_container);
-        auto& tasklet = builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-        builder.add_computational_memlet(sdfg_block, tasklet, "_out", argument_access, {});
+        auto& sdfg_block = builder.add_block(*current_seq, {}, deb_info);
+        auto& outer_access = builder.add_access(sdfg_block, outer_container, deb_info);
+        auto& argument_access = builder.add_access(sdfg_block, argument_container, deb_info);
+        auto& tasklet =
+            builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+        builder.add_computational_memlet(sdfg_block, tasklet, "_out", argument_access, {}, deb_info);
 
         if (is_sdfg_primitive(outer_type)) {
-            builder.add_computational_memlet(sdfg_block, outer_access, tasklet, "_in", {});
+            builder.add_computational_memlet(sdfg_block, outer_access, tasklet, "_in", {}, deb_info);
         } else if (is_tensor_of_sdfg_primitive(outer_type)) {
             auto tensor_type = llvm::dyn_cast<TensorType>(outer_type);
             auto tensor_info = translator.get_or_create_tensor_info(outer_container, tensor_type);
@@ -330,7 +337,7 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
             auto sdfg_tensor = tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
 
             auto subset = affine_map_to_subset(affine_maps.at(i), indvars);
-            builder.add_computational_memlet(sdfg_block, outer_access, tasklet, "_in", subset, *sdfg_tensor);
+            builder.add_computational_memlet(sdfg_block, outer_access, tasklet, "_in", subset, *sdfg_tensor, deb_info);
         } else {
             return generic_op
                 ->emitOpError("Only primitive types or tensors are supported for linalg.generic block arguments");
@@ -350,12 +357,12 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
             for (size_t i = 0; i < values.size(); i++) {
                 auto value_container = translator.get_or_create_container(values[i]);
 
-                auto& sdfg_block = builder.add_block(translator.insertion_point());
-                auto& value_access = builder.add_access(sdfg_block, value_container);
-                auto& result_access = builder.add_access(sdfg_block, result_containers.at(i));
+                auto& sdfg_block = builder.add_block(translator.insertion_point(), {}, deb_info);
+                auto& value_access = builder.add_access(sdfg_block, value_container, deb_info);
+                auto& result_access = builder.add_access(sdfg_block, result_containers.at(i), deb_info);
                 auto& tasklet =
-                    builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-                builder.add_computational_memlet(sdfg_block, value_access, tasklet, "_in", {});
+                    builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+                builder.add_computational_memlet(sdfg_block, value_access, tasklet, "_in", {}, deb_info);
 
                 auto tensor_type = llvm::dyn_cast<TensorType>(results[i].getType());
                 auto tensor_info = translator.get_or_create_tensor_info(result_containers.at(i), tensor_type);
@@ -364,7 +371,8 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
                 auto sdfg_tensor = tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
 
                 auto subset = affine_map_to_subset(affine_maps.at(inputs.size() + i), indvars);
-                builder.add_computational_memlet(sdfg_block, tasklet, "_out", result_access, subset, *sdfg_tensor);
+                builder
+                    .add_computational_memlet(sdfg_block, tasklet, "_out", result_access, subset, *sdfg_tensor, deb_info);
             }
             break;
         } else if (auto index_op = llvm::dyn_cast_or_null<linalg::IndexOp>(op)) {
@@ -378,12 +386,13 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
             Value result = index_op.getResult();
             auto result_container = translator.get_or_create_container(result);
 
-            auto& sdfg_block = builder.add_block(translator.insertion_point());
-            auto& indvar_access = builder.add_access(sdfg_block, indvar_container);
-            auto& result_access = builder.add_access(sdfg_block, result_container);
-            auto& tasklet = builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-            builder.add_computational_memlet(sdfg_block, indvar_access, tasklet, "_in", {});
-            builder.add_computational_memlet(sdfg_block, tasklet, "_out", result_access, {});
+            auto& sdfg_block = builder.add_block(translator.insertion_point(), {}, deb_info);
+            auto& indvar_access = builder.add_access(sdfg_block, indvar_container, deb_info);
+            auto& result_access = builder.add_access(sdfg_block, result_container, deb_info);
+            auto& tasklet =
+                builder.add_tasklet(sdfg_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+            builder.add_computational_memlet(sdfg_block, indvar_access, tasklet, "_in", {}, deb_info);
+            builder.add_computational_memlet(sdfg_block, tasklet, "_out", result_access, {}, deb_info);
         } else {
             if (failed(translateOp(translator, &op))) {
                 return failure();
@@ -399,10 +408,11 @@ LogicalResult translateLinalgCustomReLUOp(SDFGTranslator& translator, linalg::cu
     Value input = relu_op->getInput();
     Value output = relu_op->getOutput();
     Value result = relu_op->getResult();
+    auto deb_info = translator.get_debug_info(relu_op->getOperationName(), relu_op->getLoc());
 
     auto& builder = translator.builder();
     auto input_container = translator.get_or_create_container(input);
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
     auto input_tensor_type = llvm::dyn_cast<TensorType>(input.getType());
@@ -417,16 +427,15 @@ LogicalResult translateLinalgCustomReLUOp(SDFGTranslator& translator, linalg::cu
     auto result_sdfg_tensor =
         result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
 
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& input_access = builder.add_access(block, input_container);
-    auto& result_access = builder.add_access(block, result_container);
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& input_access = builder.add_access(block, input_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
     auto& libnode =
-        builder
-            .add_library_node<::sdfg::math::tensor::ReLUNode>(block, ::sdfg::DebugInfo(), result_sdfg_tensor->shape());
-    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor);
-    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor);
+        builder.add_library_node<::sdfg::math::tensor::ReLUNode>(block, deb_info, result_sdfg_tensor->shape());
+    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -435,10 +444,11 @@ LogicalResult translateLinalgCustomSigmoidOp(SDFGTranslator& translator, linalg:
     Value input = sigmoid_op->getInput();
     Value output = sigmoid_op->getOutput();
     Value result = sigmoid_op->getResult();
+    auto deb_info = translator.get_debug_info(sigmoid_op->getOperationName(), sigmoid_op->getLoc());
 
     auto& builder = translator.builder();
     auto input_container = translator.get_or_create_container(input);
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
     auto input_tensor_type = llvm::dyn_cast<TensorType>(input.getType());
@@ -453,15 +463,15 @@ LogicalResult translateLinalgCustomSigmoidOp(SDFGTranslator& translator, linalg:
     auto result_sdfg_tensor =
         result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
 
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& input_access = builder.add_access(block, input_container);
-    auto& result_access = builder.add_access(block, result_container);
-    auto& libnode = builder.add_library_node<
-        ::sdfg::math::tensor::SigmoidNode>(block, ::sdfg::DebugInfo(), result_sdfg_tensor->shape());
-    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor);
-    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor);
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& input_access = builder.add_access(block, input_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
+    auto& libnode =
+        builder.add_library_node<::sdfg::math::tensor::SigmoidNode>(block, deb_info, result_sdfg_tensor->shape());
+    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -476,6 +486,7 @@ translateLinalgCustomBatchNorm2DNchw(SDFGTranslator& translator, linalg::custom:
     Value eps = batch_norm_op->getEps();
     Value output = batch_norm_op->getOutput();
     Value result = batch_norm_op->getResult();
+    auto deb_info = translator.get_debug_info(batch_norm_op->getOperationName(), batch_norm_op->getLoc());
 
     auto& builder = translator.builder();
     auto batch_container = translator.get_or_create_container(batch);
@@ -484,7 +495,7 @@ translateLinalgCustomBatchNorm2DNchw(SDFGTranslator& translator, linalg::custom:
     auto gamma_container = translator.get_or_create_container(gamma);
     auto beta_container = translator.get_or_create_container(beta);
     auto eps_container = translator.get_or_create_container(eps);
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
     auto batch_tensor_type = llvm::dyn_cast<TensorType>(batch.getType());
@@ -525,26 +536,26 @@ translateLinalgCustomBatchNorm2DNchw(SDFGTranslator& translator, linalg::custom:
     auto result_sdfg_tensor =
         result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
 
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& batch_access = builder.add_access(block, batch_container);
-    auto& e_access = builder.add_access(block, e_container);
-    auto& var_access = builder.add_access(block, var_container);
-    auto& gamma_access = builder.add_access(block, gamma_container);
-    auto& beta_access = builder.add_access(block, beta_container);
-    auto& eps_access = builder.add_access(block, eps_container);
-    auto& result_access = builder.add_access(block, result_container);
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& batch_access = builder.add_access(block, batch_container, deb_info);
+    auto& e_access = builder.add_access(block, e_container, deb_info);
+    auto& var_access = builder.add_access(block, var_container, deb_info);
+    auto& gamma_access = builder.add_access(block, gamma_container, deb_info);
+    auto& beta_access = builder.add_access(block, beta_container, deb_info);
+    auto& eps_access = builder.add_access(block, eps_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::BatchNormNode>(
-        block, ::sdfg::DebugInfo(), batch_sdfg_tensor->shape(), batch_element_type->primitive_type()
+        block, deb_info, batch_sdfg_tensor->shape(), batch_element_type->primitive_type()
     );
-    builder.add_computational_memlet(block, batch_access, libnode, "Batch", {}, *batch_sdfg_tensor);
-    builder.add_computational_memlet(block, e_access, libnode, "E", {}, *e_sdfg_tensor);
-    builder.add_computational_memlet(block, var_access, libnode, "Var", {}, *var_sdfg_tensor);
-    builder.add_computational_memlet(block, gamma_access, libnode, "Gamma", {}, *gamma_sdfg_tensor);
-    builder.add_computational_memlet(block, beta_access, libnode, "Beta", {}, *beta_sdfg_tensor);
-    builder.add_computational_memlet(block, eps_access, libnode, "epsilon", {}, *eps_sdfg_tensor);
-    builder.add_computational_memlet(block, result_access, libnode, "B_out", {}, *result_sdfg_tensor);
+    builder.add_computational_memlet(block, batch_access, libnode, "Batch", {}, *batch_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, e_access, libnode, "E", {}, *e_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, var_access, libnode, "Var", {}, *var_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, gamma_access, libnode, "Gamma", {}, *gamma_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, beta_access, libnode, "Beta", {}, *beta_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, eps_access, libnode, "epsilon", {}, *eps_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "B_out", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -686,14 +697,16 @@ LogicalResult translateLinalgFillOp(SDFGTranslator& translator, linalg::FillOp* 
     Value value = op->value();
     Value output = op->output();
     Value result = op->result();
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
     auto value_container = translator.get_or_create_container(value);
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
-    auto& block = translator.builder().add_block(sequence);
+    auto& builder = translator.builder();
+    auto& block = builder.add_block(sequence, {}, deb_info);
 
     auto result_type = dyn_cast_or_null<RankedTensorType>(result.getType());
     if (!result_type) {
@@ -707,22 +720,23 @@ LogicalResult translateLinalgFillOp(SDFGTranslator& translator, linalg::FillOp* 
     auto tensor_type = tensor_info.get_sdfg_tensor(base_type);
 
 
-    auto& lib_node =
-        translator.builder()
-            .add_library_node<::sdfg::math::tensor::FillNode>(block, ::sdfg::DebugInfo(), tensor_type->shape());
+    auto& lib_node = builder.add_library_node<::sdfg::math::tensor::FillNode>(block, deb_info, tensor_type->shape());
 
     if (auto constant_op = dyn_cast_or_null<arith::ConstantOp>(value.getDefiningOp())) {
-        auto& inaccess = translator.builder().add_constant(
-            block, translator.convertTypedAttr(constant_op.getValue()), *translator.convertType(constant_op.getType())
+        auto& inaccess = builder.add_constant(
+            block,
+            translator.convertTypedAttr(constant_op.getValue()),
+            *translator.convertType(constant_op.getType()),
+            deb_info
         );
-        translator.builder().add_computational_memlet(block, inaccess, lib_node, "X", {}, base_type);
+        builder.add_computational_memlet(block, inaccess, lib_node, "X", {}, base_type, deb_info);
     } else {
-        auto& in_access = translator.builder().add_access(block, translator.get_or_create_container(value));
-        translator.builder().add_computational_memlet(block, in_access, lib_node, "X", {}, base_type);
+        auto& in_access = builder.add_access(block, translator.get_or_create_container(value), deb_info);
+        builder.add_computational_memlet(block, in_access, lib_node, "X", {}, base_type, deb_info);
     }
 
-    auto& out_access = translator.builder().add_access(block, translator.get_or_create_container(result));
-    translator.builder().add_computational_memlet(block, lib_node, "Y", out_access, {}, *tensor_type);
+    auto& out_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
+    builder.add_computational_memlet(block, lib_node, "Y", out_access, {}, *tensor_type, deb_info);
 
     return success();
 }
@@ -732,11 +746,12 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
 
     auto output = op->getOutputs()[0];
     auto result = op->getResult(0);
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
     // For now, only handle 2D matmul with no transposes or broadcasts
     auto lhs_type = dyn_cast_or_null<RankedTensorType>(op->getOperand(0).getType());
@@ -751,15 +766,16 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
     auto in_container_rhs = translator.get_or_create_container(op->getOperand(1));
     auto out_container = translator.get_or_create_container(op->getResult(0));
 
-    auto& block = translator.builder().add_block(sequence);
+    auto& builder = translator.builder();
+    auto& block = builder.add_block(sequence, {}, deb_info);
 
-    ::sdfg::data_flow::AccessNode* lhs_access = &translator.builder().add_access(block, in_container_lhs);
+    ::sdfg::data_flow::AccessNode* lhs_access = &builder.add_access(block, in_container_lhs, deb_info);
     ::sdfg::data_flow::AccessNode* rhs_access;
 
     if (in_container_lhs == in_container_rhs) {
         rhs_access = lhs_access;
     } else {
-        rhs_access = &translator.builder().add_access(block, in_container_rhs);
+        rhs_access = &builder.add_access(block, in_container_rhs, deb_info);
     }
 
     // Get tensor info after possible reordering
@@ -794,9 +810,9 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
         strides_rhs.push_back(::sdfg::symbolic::integer(entry));
     }
 
-    auto& libnode = translator.builder().add_library_node<::sdfg::math::tensor::MatMulNode>(
+    auto& libnode = builder.add_library_node<::sdfg::math::tensor::MatMulNode>(
         block,
-        ::sdfg::DebugInfo(),
+        deb_info,
         shape_lhs,
         shape_rhs,
         strides_lhs,
@@ -812,12 +828,12 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
     auto output_primitive_type = translator.convertType(output_type)->primitive_type();
     ::sdfg::types::Tensor output_tensor_type(output_primitive_type, shape_out);
 
-    translator.builder().add_computational_memlet(block, *lhs_access, libnode, "A", {}, lhs_tensor_type);
-    translator.builder().add_computational_memlet(block, *rhs_access, libnode, "B", {}, rhs_tensor_type);
+    builder.add_computational_memlet(block, *lhs_access, libnode, "A", {}, lhs_tensor_type, deb_info);
+    builder.add_computational_memlet(block, *rhs_access, libnode, "B", {}, rhs_tensor_type, deb_info);
 
-    auto& write_access = translator.builder().add_access(block, out_container);
+    auto& write_access = builder.add_access(block, out_container, deb_info);
 
-    translator.builder().add_computational_memlet(block, libnode, "Y", write_access, {}, output_tensor_type);
+    builder.add_computational_memlet(block, libnode, "Y", write_access, {}, output_tensor_type, deb_info);
 
     return success();
 }
@@ -827,11 +843,12 @@ LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::B
 
     auto output = op->getOutputs()[0];
     auto result = op->getResult(0);
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
     auto lhs_type = dyn_cast_or_null<RankedTensorType>(op->getOperand(0).getType());
     auto rhs_type = dyn_cast_or_null<RankedTensorType>(op->getOperand(1).getType());
@@ -845,15 +862,16 @@ LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::B
     auto in_container_rhs = translator.get_or_create_container(op->getOperand(1));
     auto out_container = translator.get_or_create_container(op->getResult(0));
 
-    auto& block = translator.builder().add_block(sequence);
+    auto& builder = translator.builder();
+    auto& block = builder.add_block(sequence, {}, deb_info);
 
-    ::sdfg::data_flow::AccessNode* lhs_access = &translator.builder().add_access(block, in_container_lhs);
+    ::sdfg::data_flow::AccessNode* lhs_access = &builder.add_access(block, in_container_lhs, deb_info);
     ::sdfg::data_flow::AccessNode* rhs_access;
 
     if (in_container_lhs == in_container_rhs) {
         rhs_access = lhs_access;
     } else {
-        rhs_access = &translator.builder().add_access(block, in_container_rhs);
+        rhs_access = &builder.add_access(block, in_container_rhs, deb_info);
     }
 
     // Get tensor info after possible reordering
@@ -887,9 +905,9 @@ LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::B
         strides_rhs.push_back(::sdfg::symbolic::integer(entry));
     }
 
-    auto& libnode = translator.builder().add_library_node<::sdfg::math::tensor::MatMulNode>(
+    auto& libnode = builder.add_library_node<::sdfg::math::tensor::MatMulNode>(
         block,
-        ::sdfg::DebugInfo(),
+        deb_info,
         shape_lhs,
         shape_rhs,
         strides_lhs,
@@ -905,12 +923,12 @@ LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::B
     auto output_primitive_type = translator.convertType(output_type)->primitive_type();
     ::sdfg::types::Tensor output_tensor_type(output_primitive_type, shape_out);
 
-    translator.builder().add_computational_memlet(block, *lhs_access, libnode, "A", {}, lhs_tensor_type);
-    translator.builder().add_computational_memlet(block, *rhs_access, libnode, "B", {}, rhs_tensor_type);
+    builder.add_computational_memlet(block, *lhs_access, libnode, "A", {}, lhs_tensor_type, deb_info);
+    builder.add_computational_memlet(block, *rhs_access, libnode, "B", {}, rhs_tensor_type, deb_info);
 
-    auto& write_access = translator.builder().add_access(block, out_container);
+    auto& write_access = builder.add_access(block, out_container, deb_info);
 
-    translator.builder().add_computational_memlet(block, libnode, "Y", write_access, {}, output_tensor_type);
+    builder.add_computational_memlet(block, libnode, "Y", write_access, {}, output_tensor_type, deb_info);
 
     return success();
 }
@@ -918,6 +936,7 @@ LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::B
 LogicalResult translateLinalgTransposeOp(SDFGTranslator& translator, linalg::TransposeOp* op) {
     Value input = op->getInput();
     Value result = op->getResult()[0];
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
     // Check that input and output types are ranked tensors
     auto input_tensor_type = dyn_cast_or_null<TensorType>(input.getType());
@@ -931,7 +950,7 @@ LogicalResult translateLinalgTransposeOp(SDFGTranslator& translator, linalg::Tra
     auto in_container = translator.get_or_create_container(input);
     auto out_container = translator.get_or_create_container(result);
 
-    translator.add_reference(in_container, out_container);
+    translator.add_reference(in_container, out_container, deb_info);
 
     // Compute and store tensor info for input and output tensors. This will be used for libnode generation later on.
     auto& in_tensor_info = translator.get_or_create_tensor_info(in_container, input_tensor_type);
@@ -950,6 +969,7 @@ LogicalResult translateLinalgBroadcastOp(SDFGTranslator& translator, linalg::Bro
         return op->emitError("Expected exactly one result for linalg.broadcast");
     }
     Value result = results[0];
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
     // Validate tensor types
     auto input_type = dyn_cast_or_null<RankedTensorType>(input.getType());
@@ -960,10 +980,10 @@ LogicalResult translateLinalgBroadcastOp(SDFGTranslator& translator, linalg::Bro
 
     auto& builder = translator.builder();
     auto input_container = translator.get_or_create_container(input);
-    auto init_container = translator.get_or_copy_output_container(init);
+    auto init_container = translator.get_or_copy_output_container(init, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
-    translator.add_reference(init_container, result_container);
+    translator.add_reference(init_container, result_container, deb_info);
 
     // Get element type
     auto element_type = translator.convertType(input_type.getElementType());
@@ -986,15 +1006,15 @@ LogicalResult translateLinalgBroadcastOp(SDFGTranslator& translator, linalg::Bro
     }
 
     // Create block and BroadcastNode library node
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& lib_node = builder.add_library_node<
-        ::sdfg::math::tensor::BroadcastNode>(block, ::sdfg::DebugInfo(), input_shape, output_shape);
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& lib_node =
+        builder.add_library_node<::sdfg::math::tensor::BroadcastNode>(block, deb_info, input_shape, output_shape);
 
     // Connect input to "X" and output to "Y"
-    auto& in_access = builder.add_access(block, input_container);
-    auto& out_access = builder.add_access(block, result_container);
-    builder.add_computational_memlet(block, in_access, lib_node, "X", {}, *input_sdfg_tensor);
-    builder.add_computational_memlet(block, lib_node, "Y", out_access, {}, *result_sdfg_tensor);
+    auto& in_access = builder.add_access(block, input_container, deb_info);
+    auto& out_access = builder.add_access(block, result_container, deb_info);
+    builder.add_computational_memlet(block, in_access, lib_node, "X", {}, *input_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, lib_node, "Y", out_access, {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -1007,10 +1027,11 @@ LogicalResult translateLinalgDepthwiseConv2DNchwChwOp(SDFGTranslator& translator
     auto weight = op->getInputs()[1]; // W: [C, kH, kW]
     auto output = op->getOutputs()[0];
     auto result = op->getResult(0); // Y: [N, C, H_out, W_out]
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
     // Get tensor types
     auto input_type = dyn_cast_or_null<RankedTensorType>(input.getType());
@@ -1035,11 +1056,11 @@ LogicalResult translateLinalgDepthwiseConv2DNchwChwOp(SDFGTranslator& translator
     // Ensure inputs are in C order
     {
         auto& tensor_info_in = translator.get_or_create_tensor_info(in_container, input_type);
-        in_container = translator.store_in_c_order(in_container, tensor_info_in, scalar_type);
+        in_container = translator.store_in_c_order(in_container, tensor_info_in, scalar_type, deb_info);
     }
     {
         auto& tensor_info_w = translator.get_or_create_tensor_info(w_container, weight_type);
-        w_container = translator.store_in_c_order(w_container, tensor_info_w, scalar_type);
+        w_container = translator.store_in_c_order(w_container, tensor_info_w, scalar_type, deb_info);
     }
 
     // Get tensor info after possible reordering
@@ -1094,9 +1115,10 @@ LogicalResult translateLinalgDepthwiseConv2DNchwChwOp(SDFGTranslator& translator
     auto group = ::sdfg::symbolic::integer(channels);
 
     // Create block and library node
-    auto& block = translator.builder().add_block(sequence);
-    auto& libnode = translator.builder().add_library_node<::sdfg::math::tensor::ConvNode>(
-        block, ::sdfg::DebugInfo(), shape, kernel_shape, strides, pads, dilations, output_channels, group
+    auto& builder = translator.builder();
+    auto& block = builder.add_block(sequence, {}, deb_info);
+    auto& libnode = builder.add_library_node<::sdfg::math::tensor::ConvNode>(
+        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group
     );
 
     // Build tensor types for memlets
@@ -1122,13 +1144,13 @@ LogicalResult translateLinalgDepthwiseConv2DNchwChwOp(SDFGTranslator& translator
     ::sdfg::types::Tensor output_tensor_type(primitive, shape_out);
 
     // Access nodes and memlets
-    auto& x_access = translator.builder().add_access(block, in_container);
-    auto& w_access = translator.builder().add_access(block, w_container);
-    auto& y_access = translator.builder().add_access(block, out_container);
+    auto& x_access = builder.add_access(block, in_container, deb_info);
+    auto& w_access = builder.add_access(block, w_container, deb_info);
+    auto& y_access = builder.add_access(block, out_container, deb_info);
 
-    translator.builder().add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type);
-    translator.builder().add_computational_memlet(block, w_access, libnode, "W", {}, weight_tensor_type);
-    translator.builder().add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type);
+    builder.add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type, deb_info);
+    builder.add_computational_memlet(block, w_access, libnode, "W", {}, weight_tensor_type, deb_info);
+    builder.add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type, deb_info);
 
     return success();
 }
@@ -1152,10 +1174,11 @@ LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg
         bias_value = broadcast_op.getInput();
         has_bias = true;
     }
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
     // Get tensor types
     auto input_type = dyn_cast_or_null<RankedTensorType>(input.getType());
@@ -1180,11 +1203,11 @@ LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg
     // Ensure inputs are in C order (ConvNode requires contiguous data)
     {
         auto& tensor_info_in = translator.get_or_create_tensor_info(in_container, input_type);
-        in_container = translator.store_in_c_order(in_container, tensor_info_in, scalar_type);
+        in_container = translator.store_in_c_order(in_container, tensor_info_in, scalar_type, deb_info);
     }
     {
         auto& tensor_info_w = translator.get_or_create_tensor_info(w_container, weight_type);
-        w_container = translator.store_in_c_order(w_container, tensor_info_w, scalar_type);
+        w_container = translator.store_in_c_order(w_container, tensor_info_w, scalar_type, deb_info);
     }
 
     // Get tensor info after possible reordering
@@ -1234,9 +1257,10 @@ LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg
     auto group = ::sdfg::symbolic::one();
 
     // Create block and library node
-    auto& block = translator.builder().add_block(sequence);
-    auto& libnode = translator.builder().add_library_node<::sdfg::math::tensor::ConvNode>(
-        block, ::sdfg::DebugInfo(), shape, kernel_shape, strides, pads, dilations, output_channels, group
+    auto& builder = translator.builder();
+    auto& block = builder.add_block(sequence, {}, deb_info);
+    auto& libnode = builder.add_library_node<::sdfg::math::tensor::ConvNode>(
+        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group
     );
 
     // Build tensor types for memlets (all C-order after store_in_c_order)
@@ -1261,17 +1285,17 @@ LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg
     ::sdfg::types::Tensor output_tensor_type(primitive, shape_out);
 
     // Access nodes and memlets
-    auto& x_access = translator.builder().add_access(block, in_container);
-    auto& w_access = translator.builder().add_access(block, w_container);
-    auto& y_access = translator.builder().add_access(block, out_container);
+    auto& x_access = builder.add_access(block, in_container, deb_info);
+    auto& w_access = builder.add_access(block, w_container, deb_info);
+    auto& y_access = builder.add_access(block, out_container, deb_info);
 
-    translator.builder().add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type);
-    translator.builder().add_computational_memlet(block, w_access, libnode, "W", {}, weight_tensor_type);
+    builder.add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type, deb_info);
+    builder.add_computational_memlet(block, w_access, libnode, "W", {}, weight_tensor_type, deb_info);
 
     // Connect bias to ConvNode "B" connector if outs came from a broadcast
     if (has_bias) {
         auto bias_container = translator.get_or_create_container(bias_value);
-        auto& b_access = translator.builder().add_access(block, bias_container);
+        auto& b_access = builder.add_access(block, bias_container, deb_info);
 
         auto bias_ranked_type = dyn_cast_or_null<RankedTensorType>(bias_value.getType());
         auto& bias_tensor_info = translator.get_or_create_tensor_info(bias_container, bias_ranked_type);
@@ -1282,10 +1306,10 @@ LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg
         }
         ::sdfg::types::Tensor bias_tensor_type(primitive, bias_shape);
 
-        translator.builder().add_computational_memlet(block, b_access, libnode, "B", {}, bias_tensor_type);
+        builder.add_computational_memlet(block, b_access, libnode, "B", {}, bias_tensor_type, deb_info);
     }
 
-    translator.builder().add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type);
+    builder.add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type, deb_info);
 
     return success();
 }
@@ -1299,10 +1323,11 @@ LogicalResult translateLinalgPoolingNchwOp(SDFGTranslator& translator, PoolOp* o
     auto window = op->getInputs()[1]; // window tensor defining kernel shape
     auto output = op->getOutputs()[0];
     auto result = op->getResult(0); // Y: [N, C, H_out, W_out]
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
-    auto output_container = translator.get_or_copy_output_container(output);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
-    translator.add_reference(output_container, result_container);
+    translator.add_reference(output_container, result_container, deb_info);
 
     // Get tensor types
     auto input_type = dyn_cast_or_null<RankedTensorType>(input.getType());
@@ -1326,7 +1351,7 @@ LogicalResult translateLinalgPoolingNchwOp(SDFGTranslator& translator, PoolOp* o
     // Ensure input is in C order
     {
         auto& tensor_info_in = translator.get_or_create_tensor_info(in_container, input_type);
-        in_container = translator.store_in_c_order(in_container, tensor_info_in, scalar_type);
+        in_container = translator.store_in_c_order(in_container, tensor_info_in, scalar_type, deb_info);
     }
 
     auto& final_info_in = translator.get_or_create_tensor_info(in_container, input_type);
@@ -1366,10 +1391,10 @@ LogicalResult translateLinalgPoolingNchwOp(SDFGTranslator& translator, PoolOp* o
     }
 
     // Create block and PoolingNode
-    auto& block = translator.builder().add_block(sequence);
-    auto& libnode = translator.builder().add_library_node<::sdfg::math::tensor::PoolingNode>(
-        block, ::sdfg::DebugInfo(), mode, shape, kernel_shape, strides, pads, dilations
-    );
+    auto& builder = translator.builder();
+    auto& block = builder.add_block(sequence, {}, deb_info);
+    auto& libnode = builder.add_library_node<
+        ::sdfg::math::tensor::PoolingNode>(block, deb_info, mode, shape, kernel_shape, strides, pads, dilations);
 
     // Build tensor types for memlets
     auto primitive = scalar_type.primitive_type();
@@ -1387,11 +1412,11 @@ LogicalResult translateLinalgPoolingNchwOp(SDFGTranslator& translator, PoolOp* o
     ::sdfg::types::Tensor output_tensor_type(primitive, shape_out);
 
     // Access nodes and memlets
-    auto& x_access = translator.builder().add_access(block, in_container);
-    auto& y_access = translator.builder().add_access(block, out_container);
+    auto& x_access = builder.add_access(block, in_container, deb_info);
+    auto& y_access = builder.add_access(block, out_container, deb_info);
 
-    translator.builder().add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type);
-    translator.builder().add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type);
+    builder.add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type, deb_info);
+    builder.add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type, deb_info);
 
     return success();
 }

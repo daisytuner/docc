@@ -58,6 +58,7 @@ LogicalResult translateFuncFuncOp(SDFGTranslator& translator, func::FuncOp* func
 LogicalResult translateFuncReturnOp(SDFGTranslator& translator, func::ReturnOp* return_op) {
     const auto& output_args = translator.output_args();
     std::vector<std::string> output_shapes;
+    auto deb_info = translator.get_debug_info(return_op->getOperationName(), return_op->getLoc());
 
     for (size_t i = 0; i < return_op->getOperands().size(); i++) {
         auto operand = return_op->getOperand(i);
@@ -70,18 +71,18 @@ LogicalResult translateFuncReturnOp(SDFGTranslator& translator, func::ReturnOp* 
             auto element_type = translator.convertType(operand.getType())->primitive_type();
 
             // Copy to output container (always in C-order)
-            translator.copy_to_output(return_container, tensor_info, element_type, output_args[i]);
+            translator.copy_to_output(return_container, tensor_info, element_type, output_args[i], deb_info);
 
             // Store shape for metadata
             output_shapes.push_back(tensor_info.shape_str());
         } else {
             // Scalar: copy via simple assignment
-            translator.copy_scalar_to_output(return_container, output_args[i]);
+            translator.copy_scalar_to_output(return_container, output_args[i], deb_info);
             output_shapes.push_back("");
         }
     }
 
-    translator.handle_frees();
+    translator.handle_frees("", deb_info);
 
     // Add metadata for output args
     std::string output_args_str;
@@ -99,7 +100,7 @@ LogicalResult translateFuncReturnOp(SDFGTranslator& translator, func::ReturnOp* 
     }
 
     // Void return
-    translator.builder().add_return(translator.insertion_point(), "");
+    translator.builder().add_return(translator.insertion_point(), "", {}, deb_info);
 
     return success();
 }

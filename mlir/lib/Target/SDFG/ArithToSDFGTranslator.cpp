@@ -32,6 +32,7 @@ LogicalResult translateArithBinaryOp(SDFGTranslator& translator, Op* op) {
     Value lhs = op->getLhs();
     Value rhs = op->getRhs();
     Value result = op->getResult();
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
     auto& builder = translator.builder();
     auto lhs_container = translator.get_or_create_container(lhs);
@@ -39,14 +40,14 @@ LogicalResult translateArithBinaryOp(SDFGTranslator& translator, Op* op) {
     auto result_container = translator.get_or_create_container(result);
 
     if (is_sdfg_primitive(lhs.getType()) && is_sdfg_primitive(rhs.getType()) && is_sdfg_primitive(result.getType())) {
-        auto& block = builder.add_block(translator.insertion_point());
-        auto& lhs_access = builder.add_access(block, lhs_container);
-        auto& rhs_access = builder.add_access(block, rhs_container);
-        auto& result_access = builder.add_access(block, result_container);
-        auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"});
-        builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {});
-        builder.add_computational_memlet(block, rhs_access, tasklet, "_in2", {});
-        builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+        auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+        auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
+        auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+        auto& result_access = builder.add_access(block, result_container, deb_info);
+        auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"}, deb_info);
+        builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {}, deb_info);
+        builder.add_computational_memlet(block, rhs_access, tasklet, "_in2", {}, deb_info);
+        builder.add_computational_memlet(block, tasklet, "_out", result_access, {}, deb_info);
     } else if (is_tensor_of_sdfg_primitive(lhs.getType()) && is_tensor_of_sdfg_primitive(rhs.getType()) &&
                is_tensor_of_sdfg_primitive(result.getType())) {
         auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
@@ -61,24 +62,25 @@ LogicalResult translateArithBinaryOp(SDFGTranslator& translator, Op* op) {
         }
         translator.handle_malloc(
             result_container,
-            ::sdfg::symbolic::mul(::sdfg::symbolic::integer(size), ::sdfg::symbolic::size_of_type(*element_type))
+            ::sdfg::symbolic::mul(::sdfg::symbolic::integer(size), ::sdfg::symbolic::size_of_type(*element_type)),
+            deb_info
         );
-        auto& block = builder.add_block(translator.insertion_point());
-        auto& lhs_access = builder.add_access(block, lhs_container);
-        auto& rhs_access = builder.add_access(block, rhs_container);
-        auto& result_access = builder.add_access(block, result_container);
+        auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+        auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
+        auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+        auto& result_access = builder.add_access(block, result_container, deb_info);
         std::vector<::sdfg::symbolic::Expression> shape;
         auto& libnode = builder.add_library_node<::sdfg::math::tensor::TaskletTensorNode>(
             block,
-            ::sdfg::DebugInfo(),
+            deb_info,
             code,
             std::vector<std::string>({"_out"}),
             std::vector<std::string>({"_in1", "_in2"}),
             sdfg_tensor->shape()
         );
-        builder.add_computational_memlet(block, lhs_access, libnode, "_in1", {}, *sdfg_tensor);
-        builder.add_computational_memlet(block, rhs_access, libnode, "_in2", {}, *sdfg_tensor);
-        builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor);
+        builder.add_computational_memlet(block, lhs_access, libnode, "_in1", {}, *sdfg_tensor, deb_info);
+        builder.add_computational_memlet(block, rhs_access, libnode, "_in2", {}, *sdfg_tensor, deb_info);
+        builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor, deb_info);
     } else {
         return op->emitOpError("Unsupported type(s)");
     }
@@ -91,6 +93,7 @@ LogicalResult translateArithCMathBinaryOp(SDFGTranslator& translator, Op* op) {
     Value lhs = op->getLhs();
     Value rhs = op->getRhs();
     Value result = op->getResult();
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
     if (!is_sdfg_primitive(lhs.getType()) || !is_sdfg_primitive(rhs.getType()) ||
         !is_sdfg_primitive(result.getType())) {
@@ -103,16 +106,18 @@ LogicalResult translateArithCMathBinaryOp(SDFGTranslator& translator, Op* op) {
     auto rhs_container = translator.get_or_create_container(rhs);
     auto result_container = translator.get_or_create_container(result);
 
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& lhs_access = builder.add_access(block, lhs_container);
-    auto& rhs_access = builder.add_access(block, rhs_container);
-    auto& result_access = builder.add_access(block, result_container);
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
+    auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
     auto& libnode = builder.add_library_node<
-        ::sdfg::math::cmath::CMathNode>(block, ::sdfg::DebugInfo(), function, lhs_container_type.primitive_type());
-    builder.add_computational_memlet(block, lhs_access, libnode, "_in1", {}, lhs_container_type);
-    builder.add_computational_memlet(block, rhs_access, libnode, "_in2", {}, builder.subject().type(rhs_container));
+        ::sdfg::math::cmath::CMathNode>(block, deb_info, function, lhs_container_type.primitive_type());
+    builder.add_computational_memlet(block, lhs_access, libnode, "_in1", {}, lhs_container_type, deb_info);
     builder
-        .add_computational_memlet(block, libnode, "_out", result_access, {}, builder.subject().type(result_container));
+        .add_computational_memlet(block, rhs_access, libnode, "_in2", {}, builder.subject().type(rhs_container), deb_info);
+    builder.add_computational_memlet(
+        block, libnode, "_out", result_access, {}, builder.subject().type(result_container), deb_info
+    );
 
     return success();
 }
@@ -121,6 +126,7 @@ template<typename Op>
 LogicalResult translateArithCastOp(SDFGTranslator& translator, Op* op) {
     Value in = op->getIn();
     Value result = op->getResult();
+    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
     // Types must be primitive for now
     if (!is_sdfg_primitive(in.getType()) || !is_sdfg_primitive(result.getType())) {
@@ -128,12 +134,12 @@ LogicalResult translateArithCastOp(SDFGTranslator& translator, Op* op) {
     }
 
     auto& builder = translator.builder();
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& in_access = builder.add_access(block, translator.get_or_create_container(in));
-    auto& result_access = builder.add_access(block, translator.get_or_create_container(result));
-    auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-    builder.add_computational_memlet(block, in_access, tasklet, "_in", {});
-    builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& in_access = builder.add_access(block, translator.get_or_create_container(in), deb_info);
+    auto& result_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
+    auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+    builder.add_computational_memlet(block, in_access, tasklet, "_in", {}, deb_info);
+    builder.add_computational_memlet(block, tasklet, "_out", result_access, {}, deb_info);
 
     return success();
 }
@@ -142,6 +148,7 @@ LogicalResult translateArithCmpFOp(SDFGTranslator& translator, arith::CmpFOp* cm
     Value lhs = cmpf_op->getLhs();
     Value rhs = cmpf_op->getRhs();
     Value result = cmpf_op->getResult();
+    auto deb_info = translator.get_debug_info(cmpf_op->getOperationName(), cmpf_op->getLoc());
 
     // Types must be primitive for now
     if (!is_sdfg_primitive(lhs.getType()) || !is_sdfg_primitive(rhs.getType()) ||
@@ -150,7 +157,7 @@ LogicalResult translateArithCmpFOp(SDFGTranslator& translator, arith::CmpFOp* cm
     }
 
     auto& builder = translator.builder();
-    auto& block = builder.add_block(translator.insertion_point());
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
 
     // Handle AlwaysFalse and AlwaysTrue separately
     if (cmpf_op->getPredicate() == arith::CmpFPredicate::AlwaysFalse ||
@@ -158,11 +165,11 @@ LogicalResult translateArithCmpFOp(SDFGTranslator& translator, arith::CmpFOp* cm
         std::string val = (cmpf_op->getPredicate() == arith::CmpFPredicate::AlwaysTrue) ? "true" : "false";
         ::sdfg::types::Scalar bool_type(::sdfg::types::PrimitiveType::Bool);
 
-        auto& constant_access = builder.add_constant(block, val, bool_type);
-        auto& result_access = builder.add_access(block, translator.get_or_create_container(result));
-        auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-        builder.add_computational_memlet(block, constant_access, tasklet, "_in", {});
-        builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+        auto& constant_access = builder.add_constant(block, val, bool_type, deb_info);
+        auto& result_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
+        auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+        builder.add_computational_memlet(block, constant_access, tasklet, "_in", {}, deb_info);
+        builder.add_computational_memlet(block, tasklet, "_out", result_access, {}, deb_info);
 
         return success();
     }
@@ -216,13 +223,13 @@ LogicalResult translateArithCmpFOp(SDFGTranslator& translator, arith::CmpFOp* cm
             return failure();
     }
 
-    auto& lhs_access = builder.add_access(block, translator.get_or_create_container(lhs));
-    auto& rhs_access = builder.add_access(block, translator.get_or_create_container(rhs));
-    auto& result_access = builder.add_access(block, translator.get_or_create_container(result));
-    auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {});
-    builder.add_computational_memlet(block, rhs_access, tasklet, "_in2", {});
-    builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+    auto& lhs_access = builder.add_access(block, translator.get_or_create_container(lhs), deb_info);
+    auto& rhs_access = builder.add_access(block, translator.get_or_create_container(rhs), deb_info);
+    auto& result_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
+    auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"}, deb_info);
+    builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {}, deb_info);
+    builder.add_computational_memlet(block, rhs_access, tasklet, "_in2", {}, deb_info);
+    builder.add_computational_memlet(block, tasklet, "_out", result_access, {}, deb_info);
 
     return success();
 }
@@ -231,6 +238,7 @@ LogicalResult translateArithCmpIOp(SDFGTranslator& translator, arith::CmpIOp* cm
     Value lhs = cmpi_op->getLhs();
     Value rhs = cmpi_op->getRhs();
     Value result = cmpi_op->getResult();
+    auto deb_info = translator.get_debug_info(cmpi_op->getOperationName(), cmpi_op->getLoc());
 
     // Types must be primitive for now
     if (!is_sdfg_primitive(lhs.getType()) || !is_sdfg_primitive(rhs.getType()) ||
@@ -274,14 +282,14 @@ LogicalResult translateArithCmpIOp(SDFGTranslator& translator, arith::CmpIOp* cm
     }
 
     auto& builder = translator.builder();
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& lhs_access = builder.add_access(block, translator.get_or_create_container(lhs));
-    auto& rhs_access = builder.add_access(block, translator.get_or_create_container(rhs));
-    auto& result_access = builder.add_access(block, translator.get_or_create_container(result));
-    auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {});
-    builder.add_computational_memlet(block, rhs_access, tasklet, "_in2", {});
-    builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& lhs_access = builder.add_access(block, translator.get_or_create_container(lhs), deb_info);
+    auto& rhs_access = builder.add_access(block, translator.get_or_create_container(rhs), deb_info);
+    auto& result_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
+    auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"}, deb_info);
+    builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {}, deb_info);
+    builder.add_computational_memlet(block, rhs_access, tasklet, "_in2", {}, deb_info);
+    builder.add_computational_memlet(block, tasklet, "_out", result_access, {}, deb_info);
 
     return success();
 }
@@ -315,6 +323,7 @@ LogicalResult translateArithConstantOp(SDFGTranslator& translator, arith::Consta
 
     auto mlir_type = constant_op->getValue().getType();
     auto val_type = translator.convertType(mlir_type);
+    auto deb_info = translator.get_debug_info(constant_op->getOperationName(), constant_op->getLoc());
 
     if (!val_type) {
         return constant_op->emitOpError("Unmapped type of arith.constant");
@@ -359,12 +368,13 @@ LogicalResult translateArithConstantOp(SDFGTranslator& translator, arith::Consta
                               .Default([](TypedAttr attr) { return ""; });
         if (!val.empty()) { // scalar constant, trivially representable with Const-Node
             auto& builder = translator.builder();
-            auto& block = builder.add_block(translator.insertion_point());
-            auto& in_access = builder.add_constant(block, val, *val_type);
-            auto& result_access = builder.add_access(block, translator.get_or_create_container(result));
-            auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-            builder.add_computational_memlet(block, in_access, tasklet, "_in", {});
-            builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+            auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+            auto& in_access = builder.add_constant(block, val, *val_type, deb_info);
+            auto& result_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
+            auto& tasklet =
+                builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+            builder.add_computational_memlet(block, in_access, tasklet, "_in", {}, deb_info);
+            builder.add_computational_memlet(block, tasklet, "_out", result_access, {}, deb_info);
 
             return success();
         } else {
@@ -405,16 +415,17 @@ LogicalResult translateArithConstantOp(SDFGTranslator& translator, arith::Consta
             }
 
             auto& builder = translator.builder();
-            auto& block = builder.add_block(translator.insertion_point());
+            auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
             const uint8_t* data_start = reinterpret_cast<const uint8_t*>(ref.data);
             auto& load_const = builder.add_library_node<::sdfg::data_flow::LoadConstNode>(
                 block,
-                {},
+                deb_info,
                 val_type->clone(),
                 std::make_unique<::sdfg::data_flow::InMemoryConstSource>(data_start, data_start + ref.bytes)
             );
-            auto& dst_access = builder.add_access(block, translator.get_or_create_container(result));
-            builder.add_computational_memlet(block, load_const, load_const.outputs()[0], dst_access, {}, *val_type);
+            auto& dst_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
+            builder
+                .add_computational_memlet(block, load_const, load_const.outputs()[0], dst_access, {}, *val_type, deb_info);
 
             return success();
         } else if (auto dense_elements_attr = dyn_cast<DenseIntOrFPElementsAttr>(constant_op->getValue())) {
@@ -488,15 +499,16 @@ LogicalResult translateArithConstantOp(SDFGTranslator& translator, arith::Consta
             }
 
             auto& builder = translator.builder();
-            auto& block = builder.add_block(translator.insertion_point());
+            auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
             auto& load_const = builder.add_library_node<::sdfg::data_flow::LoadConstNode>(
                 block,
-                ::sdfg::DebugInfo(),
+                deb_info,
                 val_type->clone(),
                 std::make_unique<::sdfg::data_flow::InMemoryConstSource>(data.begin(), data.end())
             );
-            auto& dst_access = builder.add_access(block, translator.get_or_create_container(result));
-            builder.add_computational_memlet(block, load_const, load_const.outputs()[0], dst_access, {}, *val_type);
+            auto& dst_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
+            builder
+                .add_computational_memlet(block, load_const, load_const.outputs()[0], dst_access, {}, *val_type, deb_info);
 
             return success();
         } else {
@@ -510,6 +522,7 @@ LogicalResult translateArithConstantOp(SDFGTranslator& translator, arith::Consta
 LogicalResult translateArithNegFOp(SDFGTranslator& translator, arith::NegFOp* negf_op) {
     Value operand = negf_op->getOperand();
     Value result = negf_op->getResult();
+    auto deb_info = translator.get_debug_info(negf_op->getOperationName(), negf_op->getLoc());
 
     // Types must be primitive for now
     if (!is_sdfg_primitive(operand.getType()) || !is_sdfg_primitive(result.getType())) {
@@ -517,12 +530,12 @@ LogicalResult translateArithNegFOp(SDFGTranslator& translator, arith::NegFOp* ne
     }
 
     auto& builder = translator.builder();
-    auto& block = builder.add_block(translator.insertion_point());
-    auto& in_access = builder.add_access(block, translator.get_or_create_container(operand));
-    auto& result_access = builder.add_access(block, translator.get_or_create_container(result));
-    auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::fp_neg, "_out", {"_in"});
-    builder.add_computational_memlet(block, in_access, tasklet, "_in", {});
-    builder.add_computational_memlet(block, tasklet, "_out", result_access, {});
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& in_access = builder.add_access(block, translator.get_or_create_container(operand), deb_info);
+    auto& result_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
+    auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::fp_neg, "_out", {"_in"}, deb_info);
+    builder.add_computational_memlet(block, in_access, tasklet, "_in", {}, deb_info);
+    builder.add_computational_memlet(block, tasklet, "_out", result_access, {}, deb_info);
 
     return success();
 }
@@ -532,6 +545,7 @@ LogicalResult translateArithSelectOp(SDFGTranslator& translator, arith::SelectOp
     Value true_value = select_op->getTrueValue();
     Value false_value = select_op->getFalseValue();
     Value result = select_op->getResult();
+    auto deb_info = translator.get_debug_info(select_op->getOperationName(), select_op->getLoc());
 
     auto& builder = translator.builder();
     auto condition_container = translator.get_or_create_container(condition);
@@ -541,27 +555,33 @@ LogicalResult translateArithSelectOp(SDFGTranslator& translator, arith::SelectOp
 
     if (is_sdfg_primitive(condition.getType()) && is_sdfg_primitive(true_value.getType()) &&
         is_sdfg_primitive(false_value.getType()) && is_sdfg_primitive(result.getType())) {
-        auto& if_else = builder.add_if_else(translator.insertion_point());
+        auto& if_else = builder.add_if_else(translator.insertion_point(), {}, deb_info);
         auto& true_case = builder.add_case(
-            if_else, ::sdfg::symbolic::Eq(::sdfg::symbolic::symbol(condition_container), ::sdfg::symbolic::__true__())
+            if_else,
+            ::sdfg::symbolic::Eq(::sdfg::symbolic::symbol(condition_container), ::sdfg::symbolic::__true__()),
+            deb_info
         );
         auto& false_case = builder.add_case(
-            if_else, ::sdfg::symbolic::Eq(::sdfg::symbolic::symbol(condition_container), ::sdfg::symbolic::__false__())
+            if_else,
+            ::sdfg::symbolic::Eq(::sdfg::symbolic::symbol(condition_container), ::sdfg::symbolic::__false__()),
+            deb_info
         );
 
-        auto& true_block = builder.add_block(true_case);
-        auto& true_value_access = builder.add_access(true_block, true_value_container);
-        auto& true_result_access = builder.add_access(true_block, result_container);
-        auto& true_tasklet = builder.add_tasklet(true_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-        builder.add_computational_memlet(true_block, true_value_access, true_tasklet, "_in", {});
-        builder.add_computational_memlet(true_block, true_tasklet, "_out", true_result_access, {});
+        auto& true_block = builder.add_block(true_case, {}, deb_info);
+        auto& true_value_access = builder.add_access(true_block, true_value_container, deb_info);
+        auto& true_result_access = builder.add_access(true_block, result_container, deb_info);
+        auto& true_tasklet =
+            builder.add_tasklet(true_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+        builder.add_computational_memlet(true_block, true_value_access, true_tasklet, "_in", {}, deb_info);
+        builder.add_computational_memlet(true_block, true_tasklet, "_out", true_result_access, {}, deb_info);
 
-        auto& false_block = builder.add_block(false_case);
-        auto& false_value_access = builder.add_access(false_block, false_value_container);
-        auto& false_result_access = builder.add_access(false_block, result_container);
-        auto& false_tasklet = builder.add_tasklet(false_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-        builder.add_computational_memlet(false_block, false_value_access, false_tasklet, "_in", {});
-        builder.add_computational_memlet(false_block, false_tasklet, "_out", false_result_access, {});
+        auto& false_block = builder.add_block(false_case, {}, deb_info);
+        auto& false_value_access = builder.add_access(false_block, false_value_container, deb_info);
+        auto& false_result_access = builder.add_access(false_block, result_container, deb_info);
+        auto& false_tasklet =
+            builder.add_tasklet(false_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+        builder.add_computational_memlet(false_block, false_value_access, false_tasklet, "_in", {}, deb_info);
+        builder.add_computational_memlet(false_block, false_tasklet, "_out", false_result_access, {}, deb_info);
     } else {
         return select_op->emitOpError("Unsupported type(s)");
     }

@@ -1,6 +1,7 @@
 #include "mlir/Target/SDFG/SDFGTranslator.h"
 #include <cmath>
 #include <cstdint>
+#include <list>
 #include <llvm/ADT/TypeSwitch.h>
 #include <memory>
 #include <stdexcept>
@@ -290,12 +291,14 @@ std::string SDFGTranslator::convertTypedAttr(const TypedAttr attr) {
         .Default([](TypedAttr attr) { return ""; });
 }
 
-void SDFGTranslator::add_reference(const std::string& src_container, const std::string& dst_container) {
-    auto& block = this->builder_.add_block(this->insertion_point());
-    auto& src_access = this->builder_.add_access(block, src_container);
-    auto& dst_access = this->builder_.add_access(block, dst_container);
+void SDFGTranslator::add_reference(
+    const std::string& src_container, const std::string& dst_container, const ::sdfg::DebugInfo& deb_info
+) {
+    auto& block = this->builder_.add_block(this->insertion_point(), {}, deb_info);
+    auto& src_access = this->builder_.add_access(block, src_container, deb_info);
+    auto& dst_access = this->builder_.add_access(block, dst_container, deb_info);
     this->builder_.add_reference_memlet(
-        block, src_access, dst_access, {::sdfg::symbolic::zero()}, this->builder_.subject().type(dst_container)
+        block, src_access, dst_access, {::sdfg::symbolic::zero()}, this->builder_.subject().type(dst_container), deb_info
     );
 
     if (this->alias_map_.contains(src_container)) {
@@ -305,21 +308,22 @@ void SDFGTranslator::add_reference(const std::string& src_container, const std::
     }
 }
 
-void SDFGTranslator::handle_malloc(std::string container, const ::sdfg::symbolic::Expression size) {
+void SDFGTranslator::
+    handle_malloc(std::string container, const ::sdfg::symbolic::Expression size, const ::sdfg::DebugInfo& deb_info) {
     if (!this->builder_.subject().exists(container)) {
         throw std::runtime_error("Called handle_malloc with container that does not exist: " + container);
     }
 
     auto& container_type = this->builder_.subject().type(container);
-    auto& block = this->builder_.add_block(this->insertion_point());
-    auto& access = this->builder_.add_access(block, container);
-    auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::MallocNode>(block, ::sdfg::DebugInfo(), size);
-    this->builder_.add_computational_memlet(block, libnode, "_ret", access, {}, container_type);
+    auto& block = this->builder_.add_block(this->insertion_point(), {}, deb_info);
+    auto& access = this->builder_.add_access(block, container, deb_info);
+    auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::MallocNode>(block, deb_info, size);
+    this->builder_.add_computational_memlet(block, libnode, "_ret", access, {}, container_type, deb_info);
 
     this->memory_map_.at(&this->insertion_point()).push_back(container);
 }
 
-void SDFGTranslator::handle_frees(std::string return_container) {
+void SDFGTranslator::handle_frees(std::string return_container, const ::sdfg::DebugInfo& deb_info) {
     std::string spared_container;
     if (!return_container.empty()) {
         if (this->alias_map_.contains(return_container)) {
@@ -339,12 +343,12 @@ void SDFGTranslator::handle_frees(std::string return_container) {
         }
 
         auto& container_type = this->builder_.subject().type(container);
-        auto& block = this->builder_.add_block(this->insertion_point());
-        auto& ptr_in = this->builder_.add_access(block, container);
-        auto& ptr_out = this->builder_.add_access(block, container);
-        auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::FreeNode>(block, ::sdfg::DebugInfo());
-        this->builder_.add_computational_memlet(block, ptr_in, libnode, "_ptr", {}, container_type);
-        this->builder_.add_computational_memlet(block, libnode, "_ptr", ptr_out, {}, container_type);
+        auto& block = this->builder_.add_block(this->insertion_point(), {}, deb_info);
+        auto& ptr_in = this->builder_.add_access(block, container, deb_info);
+        auto& ptr_out = this->builder_.add_access(block, container, deb_info);
+        auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::FreeNode>(block, deb_info);
+        this->builder_.add_computational_memlet(block, ptr_in, libnode, "_ptr", {}, container_type, deb_info);
+        this->builder_.add_computational_memlet(block, libnode, "_ptr", ptr_out, {}, container_type, deb_info);
     }
 }
 
@@ -364,7 +368,7 @@ static int count_linalg_output_uses(Value value) {
     return count;
 }
 
-std::string SDFGTranslator::get_or_copy_output_container(Value output) {
+std::string SDFGTranslator::get_or_copy_output_container(Value output, const ::sdfg::DebugInfo& deb_info) {
     auto output_container = this->get_or_create_container(output);
 
     if (count_linalg_output_uses(output) <= 1) {
@@ -390,19 +394,18 @@ std::string SDFGTranslator::get_or_copy_output_container(Value output) {
     std::string copy_container = builder_.find_new_name(output_container + "_copy");
     builder_.add_container(copy_container, ::sdfg::types::Pointer(scalar_type));
 
-    this->handle_malloc(copy_container, byte_count);
+    this->handle_malloc(copy_container, byte_count, deb_info);
 
     // Skip memcpy if the output is defined by tensor.empty (uninitialized data)
     if (!output.getDefiningOp() || !llvm::isa<tensor::EmptyOp>(output.getDefiningOp())) {
         auto& src_type = builder_.subject().type(output_container);
         auto& dst_type = builder_.subject().type(copy_container);
-        auto& block = builder_.add_block(this->insertion_point());
-        auto& src_access = builder_.add_access(block, output_container);
-        auto& dst_access = builder_.add_access(block, copy_container);
-        auto& memcpy_node =
-            builder_.add_library_node<::sdfg::stdlib::MemcpyNode>(block, ::sdfg::DebugInfo(), byte_count);
-        builder_.add_computational_memlet(block, src_access, memcpy_node, "_src", {}, src_type);
-        builder_.add_computational_memlet(block, memcpy_node, "_dst", dst_access, {}, dst_type);
+        auto& block = builder_.add_block(this->insertion_point(), {}, deb_info);
+        auto& src_access = builder_.add_access(block, output_container, deb_info);
+        auto& dst_access = builder_.add_access(block, copy_container, deb_info);
+        auto& memcpy_node = builder_.add_library_node<::sdfg::stdlib::MemcpyNode>(block, deb_info, byte_count);
+        builder_.add_computational_memlet(block, src_access, memcpy_node, "_src", {}, src_type, deb_info);
+        builder_.add_computational_memlet(block, memcpy_node, "_dst", dst_access, {}, dst_type, deb_info);
     }
 
     this->tensor_info_map_.insert({copy_container, tensor_info});
@@ -439,7 +442,10 @@ LogicalResult emitJSON(SDFGTranslator& translator, raw_ostream& os) {
 }
 
 std::string SDFGTranslator::store_in_c_order(
-    const std::string& container, const TensorInfo& tensor_info, const ::sdfg::types::Scalar& element_type
+    const std::string& container,
+    const TensorInfo& tensor_info,
+    const ::sdfg::types::Scalar& element_type,
+    const ::sdfg::DebugInfo& deb_info
 ) {
     // If already in C order, do nothing
     if (tensor_info.has_basic_strides()) {
@@ -457,7 +463,8 @@ std::string SDFGTranslator::store_in_c_order(
     // Malloc the new container
     handle_malloc(
         new_container,
-        ::sdfg::symbolic::mul(c_order_type->total_elements(), ::sdfg::symbolic::size_of_type(element_type))
+        ::sdfg::symbolic::mul(c_order_type->total_elements(), ::sdfg::symbolic::size_of_type(element_type)),
+        deb_info
     );
 
     // Build nested for-loop, one per dimension
@@ -474,19 +481,20 @@ std::string SDFGTranslator::store_in_c_order(
         auto condition = ::sdfg::symbolic::Lt(indvar, ::sdfg::symbolic::integer(tensor_info.shape()[i]));
 
         auto& loop =
-            builder_.add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create());
+            builder_
+                .add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create(), {}, deb_info);
         current_scope = &loop.root();
         loop_vars.push_back(indvar);
     }
 
     // Create a block with a tasklet that copies one element
-    auto& block = builder_.add_block(*current_scope);
-    auto& src_access = builder_.add_access(block, container);
-    auto& dst_access = builder_.add_access(block, new_container);
-    auto& tasklet = builder_.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto& block = builder_.add_block(*current_scope, {}, deb_info);
+    auto& src_access = builder_.add_access(block, container, deb_info);
+    auto& dst_access = builder_.add_access(block, new_container, deb_info);
+    auto& tasklet = builder_.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
 
-    builder_.add_computational_memlet(block, src_access, tasklet, "_in", loop_vars, *input_type);
-    builder_.add_computational_memlet(block, tasklet, "_out", dst_access, loop_vars, *c_order_type);
+    builder_.add_computational_memlet(block, src_access, tasklet, "_in", loop_vars, *input_type, deb_info);
+    builder_.add_computational_memlet(block, tasklet, "_out", dst_access, loop_vars, *c_order_type, deb_info);
 
     // Update tensor info for the new container with C-order strides
     tensor_info_map_.insert({new_container, c_order_tensor_info});
@@ -502,7 +510,8 @@ void SDFGTranslator::copy_to_output(
     const std::string& src_container,
     const TensorInfo& tensor_info,
     const ::sdfg::types::Scalar& element_type,
-    const std::string& output_container
+    const std::string& output_container,
+    const ::sdfg::DebugInfo& deb_info
 ) {
     // Create tensor types for source and destination (C-order for output)
     auto input_type = tensor_info.get_sdfg_tensor(element_type);
@@ -523,36 +532,39 @@ void SDFGTranslator::copy_to_output(
         auto condition = ::sdfg::symbolic::Lt(indvar, ::sdfg::symbolic::integer(tensor_info.shape()[i]));
 
         auto& loop =
-            builder_.add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create());
+            builder_
+                .add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create(), {}, deb_info);
         current_scope = &loop.root();
         loop_vars.push_back(indvar);
     }
 
     // Create a block with a tasklet that copies one element
-    auto& block = builder_.add_block(*current_scope);
-    auto& src_access = builder_.add_access(block, src_container);
-    auto& dst_access = builder_.add_access(block, output_container);
-    auto& tasklet = builder_.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto& block = builder_.add_block(*current_scope, {}, deb_info);
+    auto& src_access = builder_.add_access(block, src_container, deb_info);
+    auto& dst_access = builder_.add_access(block, output_container, deb_info);
+    auto& tasklet = builder_.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
 
-    builder_.add_computational_memlet(block, src_access, tasklet, "_in", loop_vars, *input_type);
-    builder_.add_computational_memlet(block, tasklet, "_out", dst_access, loop_vars, *output_type);
+    builder_.add_computational_memlet(block, src_access, tasklet, "_in", loop_vars, *input_type, deb_info);
+    builder_.add_computational_memlet(block, tasklet, "_out", dst_access, loop_vars, *output_type, deb_info);
 
     // Update tensor info for the output container with C-order strides
     tensor_info_map_.insert({output_container, c_order_tensor_info});
 }
 
-void SDFGTranslator::copy_scalar_to_output(const std::string& src_container, const std::string& output_container) {
+void SDFGTranslator::copy_scalar_to_output(
+    const std::string& src_container, const std::string& output_container, const ::sdfg::DebugInfo& deb_info
+) {
     // Create a block with a tasklet that copies the scalar value
-    auto& block = builder_.add_block(this->insertion_point());
-    auto& src_access = builder_.add_access(block, src_container);
-    auto& dst_access = builder_.add_access(block, output_container);
-    auto& tasklet = builder_.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto& block = builder_.add_block(this->insertion_point(), {}, deb_info);
+    auto& src_access = builder_.add_access(block, src_container, deb_info);
+    auto& dst_access = builder_.add_access(block, output_container, deb_info);
+    auto& tasklet = builder_.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
 
     // Get the type from the container
     auto& src_type = builder_.subject().type(src_container);
 
     // Create memlets for scalar copy (empty indices)
-    builder_.add_computational_memlet(block, src_access, tasklet, "_in", {}, src_type);
+    builder_.add_computational_memlet(block, src_access, tasklet, "_in", {}, src_type, deb_info);
 
     // For output pointer, we store at index 0
     auto& dst_type = builder_.subject().type(output_container);
@@ -565,12 +577,61 @@ void SDFGTranslator::copy_scalar_to_output(const std::string& src_container, con
                 {::sdfg::symbolic::one()},
                 {::sdfg::symbolic::one()}
             );
-            builder_
-                .add_computational_memlet(block, tasklet, "_out", dst_access, {::sdfg::symbolic::zero()}, tensor_type);
+            builder_.add_computational_memlet(
+                block, tasklet, "_out", dst_access, {::sdfg::symbolic::zero()}, tensor_type, deb_info
+            );
         }
     } else {
-        builder_.add_computational_memlet(block, tasklet, "_out", dst_access, {}, dst_type);
+        builder_.add_computational_memlet(block, tasklet, "_out", dst_access, {}, dst_type, deb_info);
     }
+}
+
+::sdfg::DebugInfo SDFGTranslator::get_debug_info(llvm::StringLiteral operation_name, Location loc) {
+    std::string filename = "";
+    long long start_line = -1, start_column = -1, end_line = -1, end_column = -1;
+
+    if (!this->builder_empty()) {
+        filename = this->builder().subject().name();
+    }
+
+    std::list<Location> queue = {loc};
+    while (!queue.empty()) {
+        Location current = queue.front();
+        queue.pop_front();
+
+        if (auto cs_loc = llvm::dyn_cast<CallSiteLoc>(current)) {
+            queue.push_back(cs_loc.getCallee());
+            queue.push_back(cs_loc.getCaller());
+        } else if (auto flc_loc = llvm::dyn_cast<FileLineColLoc>(current)) {
+            if (start_line == -1 || flc_loc.getLine() < start_line) {
+                start_line = flc_loc.getLine();
+                start_column = flc_loc.getColumn();
+            } else if (flc_loc.getLine() == start_line && flc_loc.getColumn() < start_column) {
+                start_column = flc_loc.getColumn();
+            }
+            if (end_line == -1 || flc_loc.getLine() > end_line) {
+                end_line = flc_loc.getLine();
+                end_column = flc_loc.getColumn();
+            } else if (flc_loc.getLine() == end_line && flc_loc.getColumn() > end_column) {
+                end_column = flc_loc.getColumn();
+            }
+        } else if (auto fused_loc = llvm::dyn_cast<FusedLoc>(current)) {
+            for (Location location : fused_loc.getLocations()) {
+                queue.push_back(location);
+            }
+        } else if (auto name_loc = llvm::dyn_cast<NameLoc>(current)) {
+            queue.push_back(name_loc.getChildLoc());
+        } else if (auto opaque_loc = llvm::dyn_cast<OpaqueLoc>(current)) {
+            queue.push_back(opaque_loc.getFallbackLocation());
+        }
+    }
+
+    start_line = (start_line == -1) ? 0 : start_line;
+    start_column = (start_column == -1) ? 0 : start_column;
+    end_line = (end_line == -1) ? 0 : end_line;
+    end_column = (end_column == -1) ? 0 : end_column;
+
+    return ::sdfg::DebugInfo(filename, operation_name.data(), start_line, start_column, end_line, end_column);
 }
 
 } // namespace sdfg

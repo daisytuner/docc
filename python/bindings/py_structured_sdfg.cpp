@@ -59,6 +59,7 @@
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
+#include "sdfg/util/offloading_instrumentation_plan.h"
 #include "targets/target_mapping.h"
 
 #ifdef DOCC_HAS_TARGET_ET
@@ -425,6 +426,7 @@ std::string PyStructuredSDFG::compile(
         instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg_);
     } else if (instrumentation_mode == "ols") {
         instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*sdfg_);
+        sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *sdfg_);
     } else {
         throw std::runtime_error("Unsupported instrumentation plan: " + instrumentation_mode);
     }

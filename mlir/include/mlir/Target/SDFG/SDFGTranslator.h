@@ -12,10 +12,10 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/element.h"
 #include "sdfg/function.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
-#include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
 
@@ -104,18 +104,29 @@ public:
 
     std::string convertTypedAttr(const TypedAttr attr);
 
-    void add_reference(const std::string& src_container, const std::string& dst_container);
+    void add_reference(
+        const std::string& src_container,
+        const std::string& dst_container,
+        const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo()
+    );
 
-    void handle_malloc(std::string container, const ::sdfg::symbolic::Expression size);
-    void handle_frees(std::string return_container = "");
+    void handle_malloc(
+        std::string container,
+        const ::sdfg::symbolic::Expression size,
+        const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo()
+    );
+    void handle_frees(std::string return_container = "", const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo());
 
     /// If `output` is used as a DPS init by more than one linalg op, allocate a fresh
     /// copy via malloc + memcpy and return the new container name.
     /// Otherwise return the original container for `output`.
-    std::string get_or_copy_output_container(Value output);
+    std::string get_or_copy_output_container(Value output, const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo());
 
     std::string store_in_c_order(
-        const std::string& container, const TensorInfo& tensor_info, const ::sdfg::types::Scalar& element_type
+        const std::string& container,
+        const TensorInfo& tensor_info,
+        const ::sdfg::types::Scalar& element_type,
+        const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo()
     );
 
     /// Set the output argument names for multi-output support
@@ -129,11 +140,19 @@ public:
         const std::string& src_container,
         const TensorInfo& tensor_info,
         const ::sdfg::types::Scalar& element_type,
-        const std::string& output_container
+        const std::string& output_container,
+        const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo()
     );
 
     /// Copy scalar data to an output argument container
-    void copy_scalar_to_output(const std::string& src_container, const std::string& output_container);
+    void copy_scalar_to_output(
+        const std::string& src_container,
+        const std::string& output_container,
+        const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo()
+    );
+
+    /// Creates an SDFG debug info from an operation
+    ::sdfg::DebugInfo get_debug_info(llvm::StringLiteral operation_name, Location loc);
 };
 
 LogicalResult translateOp(SDFGTranslator& translator, Operation* op);
