@@ -25,7 +25,8 @@ public:
         graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
         TensorLayout layout,
-        types::PrimitiveType quantization
+        types::PrimitiveType quantization,
+        data_flow::ImplementationType impl_type = data_flow::ImplementationType_NONE
     );
 
     const TensorLayout& batch_layout() const { return layout_; }
@@ -49,6 +50,8 @@ public:
     std::string toStr() const override;
 
     bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
+    symbolic::Expression flop() const override;
 
     bool supports_integer_types() const override { return false; }
 };

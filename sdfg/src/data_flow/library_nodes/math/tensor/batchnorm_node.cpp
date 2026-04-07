@@ -16,7 +16,8 @@ BatchNormNode::BatchNormNode(
     graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
     TensorLayout layout,
-    types::PrimitiveType quantization
+    types::PrimitiveType quantization,
+    data_flow::ImplementationType impl_type
 )
     : TensorNode(
           element_id,
@@ -26,7 +27,7 @@ BatchNormNode::BatchNormNode(
           LibraryNodeType_BatchNorm,
           {},
           {"Batch", "Var", "E", "Gamma", "Beta", "epsilon", "B_out"},
-          data_flow::ImplementationType_NONE
+          std::move(impl_type)
       ),
       layout_(std::move(layout)), quantization_(quantization) {}
 
@@ -46,9 +47,9 @@ void BatchNormNode::replace(const symbolic::Expression old_expression, const sym
 
 std::unique_ptr<data_flow::DataFlowNode> BatchNormNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<data_flow::DataFlowNode>(
-        new BatchNormNode(element_id, debug_info(), vertex, parent, this->layout_, this->quantization_)
-    );
+    return std::unique_ptr<data_flow::DataFlowNode>(new BatchNormNode(
+        element_id, debug_info(), vertex, parent, this->layout_, this->quantization_, this->implementation_type_
+    ));
 }
 
 std::string BatchNormNode::toStr() const { return "BatchNorm(" + layout_.toStr() + ")"; }
@@ -189,14 +190,23 @@ bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
 
     builder.add_computational_memlet(inter_block, add_eps_op, "_out", tmp_eps, {}, scalar_type);
 
-    auto& interm_store = builder.add_access(inter_block, interm_name);
+    auto tmp_sqrt_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+    auto& tmp_sqrt = builder.add_access(inter_block, tmp_sqrt_name);
 
     auto& sqrt_op = builder.add_library_node<
         cmath::CMathNode>(inter_block, debug_info(), cmath::CMathFunction::sqrt, data_type.primitive_type());
 
     builder.add_computational_memlet(inter_block, tmp_eps, sqrt_op, "_in1", {}, scalar_type);
 
-    builder.add_computational_memlet(inter_block, sqrt_op, "_out", interm_store, {}, scalar_type);
+    builder.add_computational_memlet(inter_block, sqrt_op, "_out", tmp_sqrt, {}, scalar_type);
+
+    auto& one_const = builder.add_constant(inter_block, "1.0", scalar_type);
+    auto& div_op = builder.add_tasklet(inter_block, data_flow::fp_div, "_out", {"one", "sqrt"});
+    builder.add_computational_memlet(inter_block, one_const, div_op, "one", {}, scalar_type);
+    builder.add_computational_memlet(inter_block, tmp_sqrt, div_op, "sqrt", {}, scalar_type);
+
+    auto& interm_store = builder.add_access(inter_block, interm_name);
+    builder.add_computational_memlet(inter_block, div_op, "_out", interm_store, {}, scalar_type);
 
     auto& innermost_dim = loop_dims.at(layout_.dims() - 1);
 
@@ -259,6 +269,17 @@ bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
     builder.remove_child(parent, index + 1);
 
     return true;
+}
+
+symbolic::Expression BatchNormNode::flop() const {
+    auto inner_elems = symbolic::mul(layout_.get_dim_innermost(0), layout_.get_dim_innermost(1));
+    auto outer_elems = symbolic::mul(layout_.shape().at(0), layout_.shape().at(1));
+
+    // (x-e) * sqrt_pre_calc * g + b = 4 flops
+    auto inner_flops = symbolic::mul(symbolic::integer(4), inner_elems);
+    // sqrt_pre_calc = 1/sqrt(var + eps) // 3 flops
+    auto outer_flops = symbolic::mul(symbolic::add(inner_flops, symbolic::integer(3)), outer_elems);
+    return outer_flops;
 }
 
 nlohmann::json BatchNormNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
