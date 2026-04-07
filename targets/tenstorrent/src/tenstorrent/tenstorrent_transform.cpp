@@ -73,17 +73,9 @@ bool TenstorrentTransform::
 
 std::unique_ptr<TransformPlan> TenstorrentTransform::
     try_create_transform_plan(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto stride = analysis::LoopAnalysis::stride(&map_);
+    auto stride = map_.stride();
     if (!symbolic::eq(stride, symbolic::one())) { // map stride must be 1 for convenient tiling
         if (report_) report_->transform_impossible(this, "non-1 stride");
-        return {};
-    }
-
-    auto condition = map_.condition();
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    auto bound = analysis::LoopAnalysis::canonical_bound(&map_, assumptions_analysis);
-    if (bound == SymEngine::null) {
-        if (report_) report_->transform_impossible(this, "upper bound unknown");
         return {};
     }
 
@@ -93,8 +85,7 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
         return {};
     }
 
-    auto num_iterations = symbolic::div(bound, stride);
-    num_iterations = symbolic::sub(num_iterations, map_.init());
+    auto num_iterations = map_.num_iterations();
     DEBUG_PRINTLN(
         "TTT: " << builder.subject().name() << ":n" << map_.element_id()
                 << ": num strides: " << num_iterations->__str__()

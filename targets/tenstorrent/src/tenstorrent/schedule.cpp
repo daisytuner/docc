@@ -5,7 +5,6 @@
 #include "docc/target/tenstorrent/tenstorrent_offloading_expansion.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/arguments_analysis.h"
-#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/codegen/dispatchers/sequence_dispatcher.h"
@@ -444,7 +443,7 @@ void TenstorrentMapDispatcher::generate_combined_kernel(
 
     auto& indvar_name = map_.indvar()->get_name();
     auto& indvar_type = sdfg_.type(map_.indvar()->get_name());
-    auto stride = analysis::LoopAnalysis::stride(&map_);
+    auto stride = map_.stride();
 
     stream << "uint32_t tt_last_unit = tt_first_unit + tt_work_units;" << std::endl;
     stream << indvar_name << " = tt_first_unit*" << language_extension_.expression(stride) << ";" << std::endl;
@@ -827,17 +826,12 @@ void TenstorrentMapDispatcher::dispatch_node(
     if (!symbolic::eq(init, symbolic::zero())) {
         throw std::runtime_error("Init is not zero");
     }
-    auto update = map_.update();
-    auto stride = analysis::LoopAnalysis::stride(&map_);
+    auto stride = map_.stride();
     auto its_per_work_unit = stride;
-    auto condition = map_.condition();
-    auto& assumptions_analysis = ana_mgr.get<analysis::AssumptionsAnalysis>();
-    auto bound = analysis::LoopAnalysis::canonical_bound(&map_, assumptions_analysis);
-    if (bound == SymEngine::null) {
-        throw std::runtime_error("Canonical bound is null");
+    auto workUnits = map_.num_iterations();
+    if (workUnits.is_null()) {
+        throw std::runtime_error("Could not compute number of iterations for TT Map " + std::to_string(map_.element_id()));
     }
-    auto workUnits = symbolic::div(symbolic::add(bound, symbolic::sub(stride, symbolic::one())), stride);
-    workUnits = symbolic::sub(workUnits, init);
     DEBUG_PRINTLN("TT Work Units: " << workUnits->__str__());
 
     std::string instance_suffix = std::to_string(map_.element_id());

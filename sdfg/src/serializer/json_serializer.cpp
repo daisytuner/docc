@@ -3,6 +3,7 @@
 #include <cassert>
 #include <memory>
 #include <sdfg/data_flow/library_nodes/load_const_node.h>
+#include <sdfg/einsum/einsum.h>
 #include <utility>
 #include <vector>
 
@@ -1511,6 +1512,12 @@ void register_default_serializers() {
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Std.value(), []() {
             return std::make_unique<math::tensor::StdNodeSerializer>();
+        });
+
+    // Einsum
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(einsum::LibraryNodeType_Einsum.value(), []() {
+            return std::make_unique<einsum::EinsumSerializer>();
         });
 }
 

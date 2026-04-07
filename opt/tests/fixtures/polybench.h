@@ -1982,3 +1982,254 @@ inline std::unique_ptr<StructuredSDFG> fdtd_2d() {
 
     return builder.move();
 }
+
+inline std::unique_ptr<StructuredSDFG> jacobi_2d() {
+    /***
+    for (t = 0; t < _PB_TSTEPS; t++) {
+        for (i = 1; i < _PB_N - 1; i++)
+            for (j = 1; j < _PB_N - 1; j++)
+                B[i][j] = 0.2 * (A[i][j] + A[i-1][j] + A[i+1][j] + A[i][j-1] + A[i][j+1]);
+        for (i = 1; i < _PB_N - 1; i++)
+            for (j = 1; j < _PB_N - 1; j++)
+                A[i][j] = 0.2 * (B[i][j] + B[i-1][j] + B[i+1][j] + B[i][j-1] + B[i][j+1]);
+    }
+    ***/
+
+    builder::StructuredSDFGBuilder builder("jacobi_2d", FunctionType_CPU);
+
+    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    builder.add_container("TSTEPS", desc_symbols, true);
+    builder.add_container("N", desc_symbols, true);
+    builder.add_container("t", desc_symbols);
+    builder.add_container("i_1", desc_symbols);
+    builder.add_container("j_1", desc_symbols);
+    builder.add_container("i_2", desc_symbols);
+    builder.add_container("j_2", desc_symbols);
+
+    types::Scalar desc_element(types::PrimitiveType::Double);
+    // Temporaries for K1: 5-point stencil accumulation
+    builder.add_container("k1_tmp1", desc_element);
+    builder.add_container("k1_tmp2", desc_element);
+    builder.add_container("k1_tmp3", desc_element);
+    builder.add_container("k1_tmp4", desc_element);
+    // Temporaries for K2: 5-point stencil accumulation
+    builder.add_container("k2_tmp1", desc_element);
+    builder.add_container("k2_tmp2", desc_element);
+    builder.add_container("k2_tmp3", desc_element);
+    builder.add_container("k2_tmp4", desc_element);
+
+    types::Array desc_1d(desc_element, symbolic::symbol("N"));
+    types::Pointer desc_2d(desc_1d);
+    builder.add_container("A", desc_2d, true);
+    builder.add_container("B", desc_2d, true);
+
+    auto& root = builder.subject().root();
+
+    // Time loop: for t = 0..TSTEPS
+    auto& loop_t = builder.add_for(
+        root,
+        symbolic::symbol("t"),
+        symbolic::Lt(symbolic::symbol("t"), symbolic::symbol("TSTEPS")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("t"), symbolic::integer(1))
+    );
+    auto& body_t = loop_t.root();
+
+    // K1: map i = 1..N-1: map j = 1..N-1: B[i][j] = 0.2 * (5-point stencil of A)
+    auto& map_i_1 = builder.add_map(
+        body_t,
+        symbolic::symbol("i_1"),
+        symbolic::Lt(symbolic::symbol("i_1"), symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("i_1"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    {
+        auto& map_j_1 = builder.add_map(
+            map_i_1.root(),
+            symbolic::symbol("j_1"),
+            symbolic::Lt(symbolic::symbol("j_1"), symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))),
+            symbolic::integer(1),
+            symbolic::add(symbolic::symbol("j_1"), symbolic::integer(1)),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        {
+            // Block 1: k1_tmp1 = A[i][j] + A[i-1][j]
+            auto& block1 = builder.add_block(map_j_1.root());
+            auto& a_in1 = builder.add_access(block1, "A");
+            auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+            auto& tmp1_out = builder.add_access(block1, "k1_tmp1");
+            builder.add_computational_memlet(
+                block1, a_in1, tasklet1, "_in1", {symbolic::symbol("i_1"), symbolic::symbol("j_1")}
+            );
+            builder.add_computational_memlet(
+                block1,
+                a_in1,
+                tasklet1,
+                "_in2",
+                {symbolic::sub(symbolic::symbol("i_1"), symbolic::integer(1)), symbolic::symbol("j_1")}
+            );
+            builder.add_computational_memlet(block1, tasklet1, "_out", tmp1_out, {});
+
+            // Block 2: k1_tmp2 = k1_tmp1 + A[i+1][j]
+            auto& block2 = builder.add_block(map_j_1.root());
+            auto& tmp1_in = builder.add_access(block2, "k1_tmp1");
+            auto& a_in2 = builder.add_access(block2, "A");
+            auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+            auto& tmp2_out = builder.add_access(block2, "k1_tmp2");
+            builder.add_computational_memlet(block2, tmp1_in, tasklet2, "_in1", {});
+            builder.add_computational_memlet(
+                block2,
+                a_in2,
+                tasklet2,
+                "_in2",
+                {symbolic::add(symbolic::symbol("i_1"), symbolic::integer(1)), symbolic::symbol("j_1")}
+            );
+            builder.add_computational_memlet(block2, tasklet2, "_out", tmp2_out, {});
+
+            // Block 3: k1_tmp3 = k1_tmp2 + A[i][j-1]
+            auto& block3 = builder.add_block(map_j_1.root());
+            auto& tmp2_in = builder.add_access(block3, "k1_tmp2");
+            auto& a_in3 = builder.add_access(block3, "A");
+            auto& tasklet3 = builder.add_tasklet(block3, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+            auto& tmp3_out = builder.add_access(block3, "k1_tmp3");
+            builder.add_computational_memlet(block3, tmp2_in, tasklet3, "_in1", {});
+            builder.add_computational_memlet(
+                block3,
+                a_in3,
+                tasklet3,
+                "_in2",
+                {symbolic::symbol("i_1"), symbolic::sub(symbolic::symbol("j_1"), symbolic::integer(1))}
+            );
+            builder.add_computational_memlet(block3, tasklet3, "_out", tmp3_out, {});
+
+            // Block 4: k1_tmp4 = k1_tmp3 + A[i][j+1]
+            auto& block4 = builder.add_block(map_j_1.root());
+            auto& tmp3_in = builder.add_access(block4, "k1_tmp3");
+            auto& a_in4 = builder.add_access(block4, "A");
+            auto& tasklet4 = builder.add_tasklet(block4, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+            auto& tmp4_out = builder.add_access(block4, "k1_tmp4");
+            builder.add_computational_memlet(block4, tmp3_in, tasklet4, "_in1", {});
+            builder.add_computational_memlet(
+                block4,
+                a_in4,
+                tasklet4,
+                "_in2",
+                {symbolic::symbol("i_1"), symbolic::add(symbolic::symbol("j_1"), symbolic::integer(1))}
+            );
+            builder.add_computational_memlet(block4, tasklet4, "_out", tmp4_out, {});
+
+            // Block 5: B[i][j] = 0.2 * k1_tmp4
+            auto& block5 = builder.add_block(map_j_1.root());
+            auto& tmp4_in = builder.add_access(block5, "k1_tmp4");
+            auto& const_node = builder.add_constant(block5, "0.2", desc_element);
+            auto& tasklet5 = builder.add_tasklet(block5, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+            auto& b_out = builder.add_access(block5, "B");
+            builder.add_computational_memlet(block5, const_node, tasklet5, "_in1", {});
+            builder.add_computational_memlet(block5, tmp4_in, tasklet5, "_in2", {});
+            builder.add_computational_memlet(
+                block5, tasklet5, "_out", b_out, {symbolic::symbol("i_1"), symbolic::symbol("j_1")}
+            );
+        }
+    }
+
+    // K2: map i = 1..N-1: map j = 1..N-1: A[i][j] = 0.2 * (5-point stencil of B)
+    auto& map_i_2 = builder.add_map(
+        body_t,
+        symbolic::symbol("i_2"),
+        symbolic::Lt(symbolic::symbol("i_2"), symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("i_2"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    {
+        auto& map_j_2 = builder.add_map(
+            map_i_2.root(),
+            symbolic::symbol("j_2"),
+            symbolic::Lt(symbolic::symbol("j_2"), symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))),
+            symbolic::integer(1),
+            symbolic::add(symbolic::symbol("j_2"), symbolic::integer(1)),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        {
+            // Block 1: k2_tmp1 = B[i][j] + B[i-1][j]
+            auto& block1 = builder.add_block(map_j_2.root());
+            auto& b_in1 = builder.add_access(block1, "B");
+            auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+            auto& tmp1_out = builder.add_access(block1, "k2_tmp1");
+            builder.add_computational_memlet(
+                block1, b_in1, tasklet1, "_in1", {symbolic::symbol("i_2"), symbolic::symbol("j_2")}
+            );
+            builder.add_computational_memlet(
+                block1,
+                b_in1,
+                tasklet1,
+                "_in2",
+                {symbolic::sub(symbolic::symbol("i_2"), symbolic::integer(1)), symbolic::symbol("j_2")}
+            );
+            builder.add_computational_memlet(block1, tasklet1, "_out", tmp1_out, {});
+
+            // Block 2: k2_tmp2 = k2_tmp1 + B[i+1][j]
+            auto& block2 = builder.add_block(map_j_2.root());
+            auto& tmp1_in = builder.add_access(block2, "k2_tmp1");
+            auto& b_in2 = builder.add_access(block2, "B");
+            auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+            auto& tmp2_out = builder.add_access(block2, "k2_tmp2");
+            builder.add_computational_memlet(block2, tmp1_in, tasklet2, "_in1", {});
+            builder.add_computational_memlet(
+                block2,
+                b_in2,
+                tasklet2,
+                "_in2",
+                {symbolic::add(symbolic::symbol("i_2"), symbolic::integer(1)), symbolic::symbol("j_2")}
+            );
+            builder.add_computational_memlet(block2, tasklet2, "_out", tmp2_out, {});
+
+            // Block 3: k2_tmp3 = k2_tmp2 + B[i][j-1]
+            auto& block3 = builder.add_block(map_j_2.root());
+            auto& tmp2_in = builder.add_access(block3, "k2_tmp2");
+            auto& b_in3 = builder.add_access(block3, "B");
+            auto& tasklet3 = builder.add_tasklet(block3, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+            auto& tmp3_out = builder.add_access(block3, "k2_tmp3");
+            builder.add_computational_memlet(block3, tmp2_in, tasklet3, "_in1", {});
+            builder.add_computational_memlet(
+                block3,
+                b_in3,
+                tasklet3,
+                "_in2",
+                {symbolic::symbol("i_2"), symbolic::sub(symbolic::symbol("j_2"), symbolic::integer(1))}
+            );
+            builder.add_computational_memlet(block3, tasklet3, "_out", tmp3_out, {});
+
+            // Block 4: k2_tmp4 = k2_tmp3 + B[i][j+1]
+            auto& block4 = builder.add_block(map_j_2.root());
+            auto& tmp3_in = builder.add_access(block4, "k2_tmp3");
+            auto& b_in4 = builder.add_access(block4, "B");
+            auto& tasklet4 = builder.add_tasklet(block4, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+            auto& tmp4_out = builder.add_access(block4, "k2_tmp4");
+            builder.add_computational_memlet(block4, tmp3_in, tasklet4, "_in1", {});
+            builder.add_computational_memlet(
+                block4,
+                b_in4,
+                tasklet4,
+                "_in2",
+                {symbolic::symbol("i_2"), symbolic::add(symbolic::symbol("j_2"), symbolic::integer(1))}
+            );
+            builder.add_computational_memlet(block4, tasklet4, "_out", tmp4_out, {});
+
+            // Block 5: A[i][j] = 0.2 * k2_tmp4
+            auto& block5 = builder.add_block(map_j_2.root());
+            auto& tmp4_in = builder.add_access(block5, "k2_tmp4");
+            auto& const_node = builder.add_constant(block5, "0.2", desc_element);
+            auto& tasklet5 = builder.add_tasklet(block5, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+            auto& a_out = builder.add_access(block5, "A");
+            builder.add_computational_memlet(block5, const_node, tasklet5, "_in1", {});
+            builder.add_computational_memlet(block5, tmp4_in, tasklet5, "_in2", {});
+            builder.add_computational_memlet(
+                block5, tasklet5, "_out", a_out, {symbolic::symbol("i_2"), symbolic::symbol("j_2")}
+            );
+        }
+    }
+
+    return builder.move();
+}

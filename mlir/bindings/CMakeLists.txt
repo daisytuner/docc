@@ -25,12 +25,13 @@ target_link_libraries(sdfg-mlir PRIVATE
     MLIRArithDialect
     MLIRControlFlowDialect
     MLIRFuncDialect
+    MLIRLinalgCustomDialect
     MLIRLinalgDialect
     MLIRMathDialect
     MLIRTensorDialect
 
     # Linalg passes (for convert())
-    MLIRLinalgTransforms
+    MLIRLinalgCustomTransforms
 
     # SDFG target and libraries
     MLIRTargetSDFG
@@ -43,6 +44,13 @@ target_link_libraries(sdfg-mlir PRIVATE
 target_include_directories(sdfg-mlir PRIVATE
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_BINARY_DIR}/include
+)
+
+add_custom_command(TARGET sdfg-mlir POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E create_symlink
+        "$<TARGET_FILE:sdfg-mlir>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../docc/mlir/$<TARGET_FILE_NAME:sdfg-mlir>"
+        COMMENT "Creating symlink to docc.mlir._sdfg_mlir in src dir"
 )
 
 # Install the Python module to the docc/mlir package directory

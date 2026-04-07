@@ -73,18 +73,16 @@ bool EinsumExpand::accept(structured_control_flow::Block& block) {
 EinsumConversion::EinsumConversion(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
-    std::string target_tune,
     sdfg::PassReportConsumer* report
 )
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), target_tune_(std::move(target_tune)),
-      report_(report) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), report_(report) {}
 
 bool EinsumConversion::accept(structured_control_flow::Block& block) {
     bool applied = false;
 
     for (auto* libnode : block.dataflow().library_nodes()) {
         if (auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode)) {
-            transformations::Einsum2Dot dot_transformation(*einsum_node, this->target_tune_);
+            transformations::Einsum2Dot dot_transformation(*einsum_node);
             if (report_) {
                 dot_transformation.set_report(report_);
             }
@@ -96,7 +94,7 @@ bool EinsumConversion::accept(structured_control_flow::Block& block) {
                 continue;
             }
 
-            transformations::Einsum2Gemm gemm_transformation(*einsum_node, this->target_tune_);
+            transformations::Einsum2Gemm gemm_transformation(*einsum_node);
             if (report_) {
                 gemm_transformation.set_report(report_);
             }

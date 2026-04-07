@@ -15,14 +15,11 @@ namespace transformations {
 class Einsum2Dot : public Transformation {
 private:
     einsum::EinsumNode& einsum_node_;
-    const std::string& target_tune_;
 
 public:
-    Einsum2Dot(einsum::EinsumNode& einsum_node, const std::string& target_tune);
+    Einsum2Dot(einsum::EinsumNode& einsum_node);
 
     virtual std::string name() const override;
-
-    std::optional<sdfg::data_flow::ImplementationType> get_impl_type(types::PrimitiveType data_type);
 
     virtual bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
         override;

@@ -4,7 +4,6 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/conjunctive_normal_form.h"
-#include "sdfg/symbolic/series.h"
 
 namespace sdfg {
 namespace passes {
@@ -31,18 +30,14 @@ bool DeadCFGElimination::is_dead(const structured_control_flow::ControlFlowNode&
 
 bool DeadCFGElimination::is_trivial(structured_control_flow::Map* loop) {
     // Check if stride is 1
-    if (!analysis::LoopAnalysis::is_contiguous(loop, symbolic::Assumptions())) {
+    if (!loop->is_contiguous()) {
         return false;
     }
-
-    auto bound = analysis::LoopAnalysis::canonical_bound(loop, symbolic::Assumptions());
-    if (bound.is_null()) {
-        return false;
-    }
-    auto init = loop->init();
-
     // Check if bound - init == 1
-    auto trip_count = symbolic::sub(bound, init);
+    auto trip_count = loop->num_iterations();
+    if (trip_count.is_null()) {
+        return false;
+    }
     return symbolic::eq(trip_count, symbolic::one());
 }
 

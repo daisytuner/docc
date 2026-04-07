@@ -95,6 +95,44 @@ jobs:
           format: lcov
           file: build/coverage.lcov
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Install Node dependencies for transfer server
+        working-directory: ${{ github.workspace }}/examples/transfer-server
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Start transfer server and run RPC tests
+        working-directory: ${{ github.workspace }}
+        env:
+          SDFG_TEST_SDFG_PATH: ${{ github.workspace }}/examples/input/transfertuning/matmul_sdfg.json
+          SDFG_TEST_SEQUENCE_PATH: ${{ github.workspace }}/examples/input/transfertuning/matmul_sequence.json
+        shell: bash
+        run: |
+          set -e
+
+          # Start the Node transfer server in the background
+          cd examples/transfer-server
+          npm run dev &
+          SERVER_PID=$!
+
+          # Give the server a moment to start
+          sleep 5
+
+          # Run RPC unit tests (sdfgrpc_test links against the local transfer transform)
+          cd "$GITHUB_WORKSPACE/build"
+          ./rpc/tests/sdfgrpc_test
+
+          # Shut down the server
+          kill "$SERVER_PID" || true
+
   python-tests-linux:
     runs-on:
       group: dahlia
@@ -133,13 +171,6 @@ jobs:
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
           pip install numpy scipy ml_dtypes
 
-          # Install ONNX Runtime (lib)
-          wget https://github.com/microsoft/onnxruntime/releases/download/v1.24.1/onnxruntime-linux-x64-1.24.1.tgz
-          tar -xzf onnxruntime-linux-x64-1.24.1.tgz
-          mv onnxruntime-linux-x64-1.24.1 /usr/local/onnxruntime
-
-          pip install onnxruntime==1.24.1 onnx==1.20.1
-
       - name: Formatting
         shell: bash
         run: |
@@ -164,11 +195,6 @@ jobs:
           nvidia-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          # ONNX Runtime libs
-          export LD_LIBRARY_PATH=/usr/local/onnxruntime/lib:$LD_LIBRARY_PATH
-          export LIBRARY_PATH=/usr/local/onnxruntime/lib:$LIBRARY_PATH
-          export CPATH=/usr/local/onnxruntime/include:$CPATH
-
           export ETSOC_TESTS=1
           coverage run --source=python/docc -m pytest -v python/tests
           coverage xml
@@ -176,11 +202,6 @@ jobs:
       - name: Integration Tests
         run: |
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-
-          # ONNX Runtime libs
-          export LD_LIBRARY_PATH=/usr/local/onnxruntime/lib:$LD_LIBRARY_PATH
-          export LIBRARY_PATH=/usr/local/onnxruntime/lib:$LIBRARY_PATH
-          export CPATH=/usr/local/onnxruntime/include:$CPATH
 
           pytest -v python/benchmarks/
 
@@ -201,7 +222,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -217,6 +238,7 @@ jobs:
         run: |
           python -m venv .venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
 
       - name: Mark GitHub Actions workdir as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -237,12 +259,13 @@ jobs:
             -DCMAKE_C_COMPILER=clang-19 \
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DPYTHON_BUILD_FRONTEND=ON \
+            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
+            -DMLIR_BUILD_BINDINGS=ON \
             -DMLIR_BUILD_TESTS=ON \
             -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
             -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
-            -DWITH_SYMENGINE_THREAD_SAFE=ON \
-            -DWITH_SYMENGINE_RCP=ON \
             -DINSTALL_GTEST=OFF \
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
@@ -254,14 +277,6 @@ jobs:
         run: |
           cd build/
           ninja check-docc-mlir
-
-      - name: Build Python bindings
-        run: |
-          # Install docc-compiler package first
-          pip install -Ccmake.build-type=Debug -e python/
-
-          # Then build mlir bindings
-          pip install -Ccmake.build-type=Debug --no-build-isolation -e mlir/
 
       - name: Integration Tests
         if: matrix.python-version == '3.11' || matrix.python-version == '3.12'

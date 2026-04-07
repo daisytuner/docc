@@ -91,7 +91,7 @@ TEST(Einsum2GemmTest, Simple) {
     ASSERT_TRUE(einsum_node);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::Einsum2Gemm transformation(*einsum_node, "openmp");
+    transformations::Einsum2Gemm transformation(*einsum_node);
     ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
@@ -188,7 +188,7 @@ TEST(Einsum2GemmTest, WithAlpha) {
     ASSERT_TRUE(einsum_node);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::Einsum2Gemm transformation(*einsum_node, "openmp");
+    transformations::Einsum2Gemm transformation(*einsum_node);
     ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 

@@ -22,31 +22,9 @@
 namespace sdfg {
 namespace transformations {
 
-Einsum2Dot::Einsum2Dot(einsum::EinsumNode& einsum_node, const std::string& target_tune)
-    : einsum_node_(einsum_node), target_tune_(target_tune) {}
+Einsum2Dot::Einsum2Dot(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
 
 std::string Einsum2Dot::name() const { return "Einsum2Dot"; }
-
-std::optional<sdfg::data_flow::ImplementationType> Einsum2Dot::get_impl_type(types::PrimitiveType data_type) {
-    std::optional<sdfg::data_flow::ImplementationType> impl_type; // TODO make generic for any target
-    if (target_tune_ == "sequential") {
-        impl_type = sdfg::data_flow::ImplementationType_NONE;
-    } else if (target_tune_ == "openmp") {
-        impl_type = sdfg::math::blas::ImplementationType_BLAS;
-    } else if (target_tune_ == "cuda") {
-        impl_type = sdfg::cuda::blas::ImplementationType_CUBLASWithTransfers;
-    } else if (target_tune_ == "tenstorrent") {
-        if (data_type == types::PrimitiveType::Float) {
-            impl_type = data_flow::ImplementationType{"TENSTORRENT_WithTransfers"};
-        }
-    }
-
-    if (impl_type) {
-        return impl_type;
-    } else {
-        return std::nullopt;
-    }
-}
 
 bool Einsum2Dot::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Check dims
@@ -90,10 +68,6 @@ bool Einsum2Dot::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
         }
     }
 
-    if (!get_impl_type(data_type)) { // no implementation for the given tune exists
-        return false;
-    }
-
     return true;
 }
 
@@ -124,7 +98,7 @@ void Einsum2Dot::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
         const data_flow::ImplementationType&,
         const math::blas::BLAS_Precision&,
         symbolic::Expression>(
-        *block, this->einsum_node_.debug_info(), this->get_impl_type(data_type).value(), precision, n
+        *block, this->einsum_node_.debug_info(), sdfg::math::blas::ImplementationType_BLAS, precision, n
     );
 
     // Copy the memlets
@@ -193,13 +167,11 @@ void Einsum2Dot::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 void Einsum2Dot::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["einsum_node_element_id"] = this->einsum_node_.element_id();
-    j["target_tune"] = this->target_tune_;
 }
 
 Einsum2Dot Einsum2Dot::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     assert(j.contains("einsum_node_element_id"));
     assert(j["einsum_node_element_id"].is_number_unsigned());
-    assert(j.contains("impl_type"));
 
     size_t einsum_node_id = j["einsum_node_element_id"].get<size_t>();
     auto* einsum_node_element = builder.find_element_by_id(einsum_node_id);
@@ -215,14 +187,7 @@ Einsum2Dot Einsum2Dot::from_json(builder::StructuredSDFGBuilder& builder, const 
         );
     }
 
-    std::string target_tune;
-    if (j.contains("target_tune")) {
-        target_tune = j.at("target_tune").get<std::string>();
-    } else {
-        target_tune = "none";
-    }
-
-    return Einsum2Dot(*einsum_node, target_tune);
+    return Einsum2Dot(*einsum_node);
 }
 
 } // namespace transformations

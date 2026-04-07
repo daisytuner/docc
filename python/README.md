@@ -22,7 +22,6 @@ pip install -e python/
 
 - Python >= 3.11
 - NumPy >= 1.19.0
-- SciPy >= 1.7.0
 
 #### System Dependencies
 

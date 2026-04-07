@@ -10,6 +10,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/IR/LinalgCustomOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -34,8 +35,6 @@
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
 #include "sdfg/types/type.h"
-
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
 
 namespace mlir {
 namespace sdfg {
@@ -420,7 +419,8 @@ LogicalResult translateOp(SDFGTranslator& translator, Operation* op) {
         return translateCfOp(translator, op);
     } else if (op->getDialect()->getNamespace() == func::FuncDialect::getDialectNamespace()) {
         return translateFuncOp(translator, op);
-    } else if (op->getDialect()->getNamespace() == linalg::LinalgDialect::getDialectNamespace()) {
+    } else if (op->getDialect()->getNamespace() == linalg::LinalgDialect::getDialectNamespace() ||
+               op->getDialect()->getNamespace() == linalg::custom::LinalgCustomDialect::getDialectNamespace()) {
         return translateLinalgOp(translator, op);
     } else if (op->getDialect()->getNamespace() == math::MathDialect::getDialectNamespace()) {
         return translateMathOp(translator, op);

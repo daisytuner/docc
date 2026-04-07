@@ -7,7 +7,6 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_control_flow/while.h"
 #include "sdfg/symbolic/conjunctive_normal_form.h"
-#include "sdfg/symbolic/series.h"
 
 namespace sdfg {
 namespace analysis {
@@ -180,9 +179,7 @@ void LoopAnalysis::compute_loop_infos(structured_control_flow::ControlFlowNode* 
     if (info.is_elementwise) {
         if (info.is_perfectly_nested && info.is_perfectly_parallel) {
             auto loop_stmt = dynamic_cast<structured_control_flow::Map*>(loop);
-            bool is_contiguous =
-                symbolic::series::is_contiguous(loop_stmt->update(), loop_stmt->indvar(), symbolic::Assumptions());
-            info.is_elementwise = is_contiguous;
+            info.is_elementwise = loop_stmt->is_contiguous();
         } else {
             info.is_elementwise = false;
         }
@@ -221,120 +218,6 @@ structured_control_flow::ControlFlowNode* LoopAnalysis::find_loop_by_indvar(cons
         }
     }
     return nullptr;
-}
-
-bool LoopAnalysis::is_monotonic(structured_control_flow::StructuredLoop* loop, AssumptionsAnalysis& assumptions_analysis) {
-    auto assums = assumptions_analysis.get(*loop, true);
-
-    return symbolic::series::is_monotonic(loop->update(), loop->indvar(), assums);
-}
-
-bool LoopAnalysis::is_monotonic(structured_control_flow::StructuredLoop* loop, const symbolic::Assumptions& assumptions) {
-    return symbolic::series::is_monotonic(loop->update(), loop->indvar(), assumptions);
-}
-
-bool LoopAnalysis::is_contiguous(structured_control_flow::StructuredLoop* loop, AssumptionsAnalysis& assumptions_analysis) {
-    auto assums = assumptions_analysis.get(*loop, true);
-
-    return symbolic::series::is_contiguous(loop->update(), loop->indvar(), assums);
-}
-
-bool LoopAnalysis::is_contiguous(structured_control_flow::StructuredLoop* loop, const symbolic::Assumptions& assumptions) {
-    return symbolic::series::is_contiguous(loop->update(), loop->indvar(), assumptions);
-}
-
-symbolic::Expression LoopAnalysis::
-    canonical_bound(structured_control_flow::StructuredLoop* loop, AssumptionsAnalysis& assumptions_analysis) {
-    auto assums = assumptions_analysis.get(*loop, true);
-    return LoopAnalysis::canonical_bound(loop, assums);
-}
-
-symbolic::Expression LoopAnalysis::
-    canonical_bound(structured_control_flow::StructuredLoop* loop, const symbolic::Assumptions& assumptions) {
-    if (!LoopAnalysis::is_monotonic(loop, assumptions)) {
-        return SymEngine::null;
-    }
-
-    symbolic::CNF cnf;
-    try {
-        cnf = symbolic::conjunctive_normal_form(loop->condition());
-    } catch (const std::runtime_error& e) {
-        return SymEngine::null;
-    }
-
-    bool has_complex_clauses = false;
-    for (auto& clause : cnf) {
-        if (clause.size() > 1) {
-            has_complex_clauses = true;
-            break;
-        }
-    }
-    if (has_complex_clauses) {
-        return SymEngine::null;
-    }
-
-    auto indvar = loop->indvar();
-    symbolic::Expression bound = SymEngine::null;
-    for (auto& clause : cnf) {
-        for (auto& literal : clause) {
-            if (SymEngine::is_a<SymEngine::StrictLessThan>(*literal)) {
-                auto lt = SymEngine::rcp_dynamic_cast<const SymEngine::StrictLessThan>(literal);
-                auto lhs = lt->get_args()[0];
-                auto rhs = lt->get_args()[1];
-                if (SymEngine::eq(*lhs, *indvar)) {
-                    if (bound == SymEngine::null) {
-                        bound = rhs;
-                    } else {
-                        bound = symbolic::min(bound, rhs);
-                    }
-                } else {
-                    return SymEngine::null;
-                }
-            } else if (SymEngine::is_a<SymEngine::LessThan>(*literal)) {
-                auto le = SymEngine::rcp_dynamic_cast<const SymEngine::LessThan>(literal);
-                auto lhs = le->get_args()[0];
-                auto rhs = le->get_args()[1];
-                if (SymEngine::eq(*lhs, *indvar)) {
-                    if (bound == SymEngine::null) {
-                        bound = symbolic::add(rhs, symbolic::one());
-                    } else {
-                        bound = symbolic::min(bound, symbolic::add(rhs, symbolic::one()));
-                    }
-                } else {
-                    return SymEngine::null;
-                }
-            } else {
-                return SymEngine::null;
-            }
-        }
-    }
-
-    return bound;
-}
-
-symbolic::Integer LoopAnalysis::stride(structured_control_flow::StructuredLoop* loop) {
-    auto expr = loop->update();
-    auto indvar = loop->indvar();
-
-    if (SymEngine::is_a<SymEngine::Add>(*expr)) {
-        auto add_expr = SymEngine::rcp_static_cast<const SymEngine::Add>(expr);
-        if (add_expr->get_args().size() != 2) {
-            return SymEngine::null;
-        }
-        auto arg1 = add_expr->get_args()[0];
-        auto arg2 = add_expr->get_args()[1];
-        if (symbolic::eq(arg1, indvar)) {
-            if (SymEngine::is_a<SymEngine::Integer>(*arg2)) {
-                return SymEngine::rcp_static_cast<const SymEngine::Integer>(arg2);
-            }
-        }
-        if (symbolic::eq(arg2, indvar)) {
-            if (SymEngine::is_a<SymEngine::Integer>(*arg1)) {
-                return SymEngine::rcp_static_cast<const SymEngine::Integer>(arg1);
-            }
-        }
-    }
-    return SymEngine::null;
 }
 
 const std::map<structured_control_flow::ControlFlowNode*, structured_control_flow::ControlFlowNode*, DFSLoopComparator>&

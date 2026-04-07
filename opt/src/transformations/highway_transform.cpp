@@ -3,7 +3,6 @@
 #include <list>
 #include <stdexcept>
 
-#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/optimization_report/pass_report_consumer.h"
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/targets/highway/codegen/highway_map_dispatcher.h"
@@ -24,8 +23,7 @@ bool HighwayTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
     }
 
     // Check for contiguous loop stride
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    if (!analysis::LoopAnalysis::is_contiguous(&this->map_, assumptions_analysis)) {
+    if (!map_.is_contiguous()) {
         if (report_) {
             report_->transform_impossible(this, "not contiguous");
         }

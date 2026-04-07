@@ -63,6 +63,7 @@ set(TEST_FILES
     data_flow/library_nodes/math/tensor/pooling_test.cpp
     data_flow/library_nodes/math/tensor/tasklet_node_test.cpp
     deepcopy/structured_sdfg_deep_copy_test.cpp
+    einsum/einsum_test.cpp
     element_test.cpp
     graph/graph_algorithms_test.cpp
     helpers/helpers_test.cpp
@@ -83,7 +84,6 @@ set(TEST_FILES
     passes/structured_control_flow/dead_cfg_elimination_test.cpp
     passes/structured_control_flow/for2map_test.cpp
     passes/structured_control_flow/pointer_evolution_test.cpp
-    passes/structured_control_flow/loop_normalization_test.cpp
     passes/debug_info_propagation_test.cpp
     passes/symbolic/symbol_evolution_test.cpp
     passes/symbolic/symbol_promotion_test.cpp
@@ -104,7 +104,7 @@ set(TEST_FILES
     symbolic/polynomials_test.cpp
     symbolic/symbolic_test.cpp
     symbolic/sets_test.cpp
-    symbolic/utils_test.cpp
+    symbolic/delinearization_test.cpp
     types/array_test.cpp
     types/function_test.cpp
     types/pointer_test.cpp

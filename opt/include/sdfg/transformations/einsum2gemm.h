@@ -16,16 +16,13 @@ namespace transformations {
 class Einsum2Gemm : public Transformation {
 private:
     einsum::EinsumNode& einsum_node_;
-    const std::string target_tune_;
 
     bool check_matrix_indices(long long mat, const symbolic::Symbol& indvar1, const symbolic::Symbol& indvar2);
 
 public:
-    Einsum2Gemm(einsum::EinsumNode& einsum_node, const std::string& target_tune);
+    Einsum2Gemm(einsum::EinsumNode& einsum_node);
 
     virtual std::string name() const override;
-
-    std::optional<sdfg::data_flow::ImplementationType> get_impl_type(types::PrimitiveType data_type);
 
     virtual bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
         override;

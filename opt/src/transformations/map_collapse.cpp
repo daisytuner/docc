@@ -1,6 +1,5 @@
 #include "sdfg/transformations/map_collapse.h"
 
-#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -20,8 +19,6 @@ bool MapCollapse::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
     if (count_ < 2) {
         return false;
     }
-
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
 
     // Collect the chain of count_ perfectly-nested maps
     std::vector<structured_control_flow::Map*> maps;
@@ -52,7 +49,7 @@ bool MapCollapse::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
 
     // Criterion: All maps must be contiguous (stride 1)
     for (auto* map : maps) {
-        if (!analysis::LoopAnalysis::is_contiguous(map, assumptions_analysis)) {
+        if (!map->is_contiguous()) {
             return false;
         }
     }
@@ -76,8 +73,9 @@ bool MapCollapse::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
     // Criterion: Map bounds may not depend on any of the loop induction variables
     // of the maps being collapsed
     for (auto* map : maps) {
-        auto bound = analysis::LoopAnalysis::canonical_bound(map, assumptions_analysis);
-        if (bound == SymEngine::null) {
+        auto bound = map->canonical_bound();
+        if (bound.is_null()) {
+            // If we can't even compute a closed-form bound, be conservative and disallow collapsing
             return false;
         }
         for (auto& iv : indvars) {
@@ -92,7 +90,6 @@ bool MapCollapse::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
 
 void MapCollapse::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
     auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
 
     // Step 1: Gather the maps to collapse and their bounds
@@ -109,7 +106,7 @@ void MapCollapse::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
     std::vector<symbolic::Expression> bounds;
     for (auto* map : maps) {
         indvars.push_back(map->indvar());
-        bounds.push_back(analysis::LoopAnalysis::canonical_bound(map, assumptions_analysis));
+        bounds.push_back(map->canonical_bound());
     }
 
     // Step 2: Compute total iteration count = product of all bounds

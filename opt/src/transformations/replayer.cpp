@@ -1,9 +1,11 @@
+#include <sdfg/transformations/accumulator_tile.h>
 #include <sdfg/transformations/einsum2dot.h>
 #include <sdfg/transformations/einsum2gemm.h>
 #include <sdfg/transformations/einsum_expand.h>
 #include <sdfg/transformations/einsum_extend.h>
 #include <sdfg/transformations/einsum_lift.h>
 #include <sdfg/transformations/highway_transform.h>
+#include <sdfg/transformations/in_local_storage.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_tiling.h>
@@ -17,7 +19,6 @@
 #include <sdfg/transformations/offloading/rocm_transform.h>
 #include <sdfg/transformations/omp_transform.h>
 #include <sdfg/transformations/out_local_storage.h>
-#include <sdfg/transformations/polly_transform.h>
 #include <sdfg/transformations/replayer.h>
 #include <sdfg/transformations/tile_fusion.h>
 
@@ -38,7 +39,9 @@ void Replayer::replay(
     for (const auto& desc : transformation_data) {
         auto transformation_name = desc["transformation_type"];
 
-        if (transformation_name == "LoopTiling") {
+        if (transformation_name == "AccumulatorTile") {
+            this->apply<transformations::AccumulatorTile>(builder, analysis_manager, desc, skip_if_not_applicable);
+        } else if (transformation_name == "LoopTiling") {
             this->apply<transformations::LoopTiling>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "LoopDistribute") {
             this->apply<transformations::LoopDistribute>(builder, analysis_manager, desc, skip_if_not_applicable);
@@ -46,14 +49,14 @@ void Replayer::replay(
             this->apply<transformations::LoopInterchange>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "OutLocalStorage") {
             this->apply<transformations::OutLocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
+        } else if (transformation_name == "InLocalStorage") {
+            this->apply<transformations::InLocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "TileFusion") {
             this->apply<transformations::TileFusion>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "OMPTransform") {
             this->apply<transformations::OMPTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "HighwayTransform") {
             this->apply<transformations::HighwayTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "PollyTransform") {
-            this->apply<transformations::PollyTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "CUDATransform") {
             this->apply<cuda::CUDATransform>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "CUDAParallelizeNestedMap") {

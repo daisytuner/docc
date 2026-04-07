@@ -6,10 +6,13 @@ set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME sdfglib-development)
 
 set(WITH_SYMENGINE_THREAD_SAFE ON CACHE BOOL "override" FORCE)
 set(WITH_SYMENGINE_RCP ON CACHE BOOL "override" FORCE)
+set(_BUILD_TESTS ${BUILD_TESTS})
+set(BUILD_TESTS OFF)
 
 add_subdirectory(3rdParty/symengine)
 # Restore install dirs for sub-projects to avoid conflicts
 set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME ${_CMAKE_INSTALL_DEFAULT_COMPONENT_NAME})
+set(BUILD_TESTS ${_BUILD_TESTS})
 
 # NLohmann json
 find_package(nlohmann_json REQUIRED)
@@ -131,6 +134,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/stdlib/trap.cpp
     src/data_flow/library_nodes/stdlib/unreachable.cpp
     src/deepcopy/structured_sdfg_deep_copy.cpp
+    src/einsum/einsum.cpp
     src/graph/graph.cpp
     src/offloading/data_offloading_node.cpp
     src/optimization_report/optimization_report.cpp
@@ -159,7 +163,6 @@ set(SOURCE_FILES
     src/passes/structured_control_flow/dead_cfg_elimination.cpp
     src/passes/structured_control_flow/for2map.cpp
     src/passes/structured_control_flow/pointer_evolution.cpp
-    src/passes/structured_control_flow/loop_normalization.cpp
     src/passes/structured_control_flow/sequence_fusion.cpp
     src/passes/structured_control_flow/unify_loop_exits.cpp
     src/passes/structured_control_flow/while_to_for_conversion.cpp
@@ -176,10 +179,10 @@ set(SOURCE_FILES
     src/structured_control_flow/while.cpp
     src/symbolic/assumptions.cpp
     src/symbolic/conjunctive_normal_form.cpp
+    src/symbolic/delinearization.cpp
     src/symbolic/extreme_values.cpp
     src/symbolic/maps.cpp
     src/symbolic/polynomials.cpp
-    src/symbolic/series.cpp
     src/symbolic/sets.cpp
     src/symbolic/symbolic.cpp
     src/symbolic/utils.cpp

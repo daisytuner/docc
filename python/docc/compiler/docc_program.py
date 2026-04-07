@@ -85,14 +85,13 @@ class DoccProgram(ABC):
         sdfg.validate()
 
         # Tensor targets keep tensor nodes
-        if self.target != "onnx":
-            custom_expand_fn = get_target_expand_fn(self.target)
-            if custom_expand_fn is not None:
-                custom_expand_fn(sdfg, self.category, {})
-            else:
-                sdfg.expand()
-            if self.debug_dump:
-                sdfg.dump(output_folder, "py1.expanded", dump_dot=True)
+        custom_expand_fn = get_target_expand_fn(self.target)
+        if custom_expand_fn is not None:
+            custom_expand_fn(sdfg, self.category, {})
+        else:
+            sdfg.expand()
+        if self.debug_dump:
+            sdfg.dump(output_folder, "py1.expanded", dump_dot=True)
 
         # Simplify pipelines
         sdfg.simplify()

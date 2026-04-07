@@ -8,9 +8,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(ISL REQUIRED IMPORTED_TARGET isl)
 
 set(SOURCE_FILES
-    src/analysis/scop_analysis.cpp
-    src/einsum/einsum.cpp
     src/passes/einsum.cpp
+    src/passes/normalization/loop_normal_form.cpp
     src/passes/normalization/perfect_loop_distribution.cpp
     src/passes/normalization/stride_minimization.cpp
     src/passes/normalization/map_fusion.cpp
@@ -22,7 +21,6 @@ set(SOURCE_FILES
     src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_parallelization_pass.cpp
     src/passes/offloading/gpu_tiling_pass.cpp
-    src/passes/offloading/onnx_library_node_rewriter_pass.cpp
     src/passes/offloading/remove_redundant_transfers_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
     src/passes/offloading/sync_condition_propagation.cpp
@@ -37,7 +35,6 @@ set(SOURCE_FILES
     src/passes/scheduler/highway_scheduler.cpp
     src/passes/scheduler/loop_scheduling_pass.cpp
     src/passes/scheduler/omp_scheduler.cpp
-    src/passes/scheduler/polly_scheduler.cpp
     src/passes/scheduler/scheduler_registry.cpp
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
@@ -56,13 +53,6 @@ set(SOURCE_FILES
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
-    src/targets/onnx/blas/dot_dispatcher.cpp
-    src/targets/onnx/blas/gemm_dispatcher.cpp
-    src/targets/onnx/tensor/broadcast_dispatcher.cpp
-    src/targets/onnx/tensor/conv_dispatcher.cpp
-    src/targets/onnx/tensor/elementwise_dispatcher.cpp
-    src/targets/onnx/tensor/reduce_dispatcher.cpp
-    src/targets/onnx/tensor/transpose_dispatcher.cpp
     src/transformations/offloading/cublas_offloading_expansion.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_transform.cpp
@@ -76,7 +66,6 @@ set(SOURCE_FILES
     src/transformations/highway_transform.cpp
     src/transformations/omp_transform.cpp
     src/transformations/offloading/offload_transform.cpp
-    src/transformations/polly_transform.cpp
     src/transformations/map_collapse.cpp
     src/transformations/loop_distribute.cpp
     src/transformations/einsum2dot.cpp
@@ -84,12 +73,19 @@ set(SOURCE_FILES
     src/transformations/einsum_expand.cpp
     src/transformations/einsum_extend.cpp
     src/transformations/einsum_lift.cpp
+    src/transformations/loop_condition_normalize.cpp
+    src/transformations/loop_indvar_finalize.cpp
     src/transformations/loop_interchange.cpp
+    src/transformations/loop_rotate.cpp
+    src/transformations/loop_shift.cpp
     src/transformations/loop_skewing.cpp
     src/transformations/loop_tiling.cpp
+    src/transformations/loop_unit_stride.cpp
     src/transformations/map_fusion.cpp
     src/transformations/tile_fusion.cpp
     src/transformations/out_local_storage.cpp
+    src/transformations/in_local_storage.cpp
+    src/transformations/accumulator_tile.cpp
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
     src/transformations/utils.cpp
