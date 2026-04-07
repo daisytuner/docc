@@ -47,7 +47,10 @@
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
+#include <sdfg/passes/statistics.h>
 #include <sdfg/visualizer/dot_visualizer.h>
+
+#include <chrono>
 
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
@@ -437,15 +440,33 @@ std::string PyStructuredSDFG::compile(
     std::pair<std::filesystem::path, std::filesystem::path> lib_config = std::make_pair(build_path, header_path);
     std::shared_ptr<sdfg::codegen::CodeSnippetFactory> snippet_factory =
         std::make_shared<sdfg::codegen::CodeSnippetFactory>(&lib_config);
+
+    // Code generation
+    std::chrono::high_resolution_clock::time_point codegen_start;
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        codegen_start = std::chrono::high_resolution_clock::now();
+    }
+
     sdfg::codegen::CPPCodeGenerator
         generator(*sdfg_, analysis_manager, *instrumentation_plan, *arg_capture_plan, snippet_factory);
     generator.generate();
 
     generator.as_source(header_path, source_path);
 
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        auto codegen_end = std::chrono::high_resolution_clock::now();
+        auto codegen_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(codegen_end - codegen_start).count();
+        sdfg::passes::CodegenStatistics::instance().add_codegen("code_generation", codegen_duration);
+    }
+
     // Write library snippets
     std::unordered_map<std::string, SnippetMetadata> lib_files;
     for (auto& [name, snippet] : snippet_factory->snippets()) {
+        std::chrono::high_resolution_clock::time_point snipped_gen_start;
+        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+            snipped_gen_start = std::chrono::high_resolution_clock::now();
+        }
         if (snippet.is_as_file()) {
             auto p = build_path / (name + "." + snippet.extension());
             std::ofstream outfile_lib;
@@ -461,6 +482,13 @@ std::string PyStructuredSDFG::compile(
             outfile_lib << snippet.stream().str() << std::endl;
             outfile_lib.close();
         }
+
+        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+            auto snippet_gen_end = std::chrono::high_resolution_clock::now();
+            auto snippet_gen_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(snippet_gen_end - snipped_gen_start).count();
+            sdfg::passes::CodegenStatistics::instance().add_codegen("snippet_generation", snippet_gen_duration);
+        }
     }
 
     // Find libraries relative to the module location
@@ -469,6 +497,11 @@ std::string PyStructuredSDFG::compile(
     bool has_highway = false;
     std::unordered_set<std::string> object_files;
     for (const auto& [lib_file, meta] : lib_files) {
+        std::chrono::high_resolution_clock::time_point snippet_compile_start;
+        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+            snippet_compile_start = std::chrono::high_resolution_clock::now();
+        }
+
         std::filesystem::path lib_path(lib_file);
         auto& [snippet_name, extension] = meta;
         if (extension == "json") {
@@ -519,6 +552,19 @@ std::string PyStructuredSDFG::compile(
             throw std::runtime_error("Compilation failed: " + cmd.str());
         }
         object_files.insert(object_file);
+
+        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+            auto snippet_compile_end = std::chrono::high_resolution_clock::now();
+            auto snippet_compile_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(snippet_compile_end - snippet_compile_start)
+                    .count();
+            sdfg::passes::CodegenStatistics::instance().add_codegen("snippet_compilation", snippet_compile_duration);
+        }
+    }
+
+    std::chrono::high_resolution_clock::time_point compile_start;
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        compile_start = std::chrono::high_resolution_clock::now();
     }
 
     // Compile
@@ -549,6 +595,13 @@ std::string PyStructuredSDFG::compile(
             throw std::runtime_error("Compilation failed: " + cmd.str());
         }
         object_files.insert((build_path / (sdfg_->name() + ".o")).string());
+    }
+
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        auto compile_end = std::chrono::high_resolution_clock::now();
+        auto compile_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(compile_end - compile_start).count();
+        sdfg::passes::CodegenStatistics::instance().add_codegen("compilation", compile_duration);
     }
 
     // Link into shared library
@@ -596,10 +649,21 @@ std::string PyStructuredSDFG::compile(
     }
     cmd << " -o " << lib_path.string();
 
+    std::chrono::high_resolution_clock::time_point link_start;
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        link_start = std::chrono::high_resolution_clock::now();
+    }
+
     DEBUG_PRINTLN("Link: " << cmd.str());
     int ret = std::system(cmd.str().c_str());
     if (ret != 0) {
         throw std::runtime_error("Compilation failed: " + cmd.str());
+    }
+
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        auto link_end = std::chrono::high_resolution_clock::now();
+        auto link_duration = std::chrono::duration_cast<std::chrono::milliseconds>(link_end - link_start).count();
+        sdfg::passes::CodegenStatistics::instance().add_codegen("linking", link_duration);
     }
 
     return lib_path.string();

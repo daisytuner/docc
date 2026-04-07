@@ -77,5 +77,25 @@ public:
     std::string summary();
 };
 
+class CodegenStatistics {
+private:
+    bool enabled_ = false;
+    std::unordered_map<std::string, uint64_t> count_, time_;
+
+public:
+    static CodegenStatistics& instance() {
+        static CodegenStatistics codegen_statistics;
+        return codegen_statistics;
+    }
+
+    bool enabled() { return enabled_; }
+    void enable() { enabled_ = true; }
+    void disable() { enabled_ = false; }
+
+    void add_codegen(const std::string& name, uint64_t milliseconds);
+
+    std::string summary();
+};
+
 } // namespace passes
 } // namespace sdfg

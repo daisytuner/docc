@@ -370,7 +370,7 @@ void TenstorrentMapDispatcher::generate_combined_kernel(
     stream.changeIndent(+4);
 
     std::vector<std::tuple<const TTDataMovementConfig&, std::string, std::string, int>> bufs;
-    std::vector<ArgDesc> selected_args{LateArg(TT_FIRST_UNIT), LateArg(TT_WORK_UNITS)};
+    std::vector<ArgDesc> selected_args{LateArg{TT_FIRST_UNIT}, LateArg{TT_WORK_UNITS}};
 
     stream << "uint32_t tt_first_unit = get_arg_val<uint32_t>(0);" << std::endl;
     stream << "uint32_t tt_work_units = get_arg_val<uint32_t>(1);" << std::endl;
@@ -771,7 +771,7 @@ TTKernelConfig TenstorrentMapDispatcher::generate_compute_kernel(
     return kernel_config;
 }
 
-constexpr std::string TT_SCALAR_COPY_PREFIX = "tt_scalar_arg";
+constexpr std::string_view TT_SCALAR_COPY_PREFIX = "tt_scalar_arg";
 
 void TenstorrentMapDispatcher::
     add_with_cast_if_needed(std::vector<std::tuple<std::string, std::string>>& kernel_args, std::string name) {

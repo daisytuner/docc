@@ -576,6 +576,7 @@ PYBIND11_MODULE(_sdfg, m) {
             sdfg::passes::PassStatistics::instance().enable();
             sdfg::passes::PipelineStatistics::instance().enable();
             sdfg::passes::AnalysisStatistics::instance().enable();
+            sdfg::passes::CodegenStatistics::instance().enable();
         },
         "Enable pass, pipeline, and analysis statistics collection"
     );
@@ -591,6 +592,7 @@ PYBIND11_MODULE(_sdfg, m) {
             result += sdfg::passes::PassStatistics::instance().summary();
             result += sdfg::passes::PipelineStatistics::instance().summary();
             result += sdfg::passes::AnalysisStatistics::instance().summary();
+            result += sdfg::passes::CodegenStatistics::instance().summary();
             return result;
         },
         "Get pass and pipeline statistics summary"

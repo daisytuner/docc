@@ -128,10 +128,6 @@ class DoccProgram(ABC):
 
         self.last_sdfg = sdfg
 
-        # Dump statistics before compile
-        if _statistics_enabled_by_env():
-            print(_statistics_summary(), file=sys.stderr)
-
         custom_compile_fn = get_target_compile_fn(self.target)
         if custom_compile_fn is not None:
             lib_path = custom_compile_fn(
@@ -144,6 +140,10 @@ class DoccProgram(ABC):
                 instrumentation_mode=instrumentation_mode,
                 capture_args=capture_args,
             )
+
+        # Dump statistics after compile
+        if _statistics_enabled_by_env():
+            print(_statistics_summary(), file=sys.stderr)
 
         return lib_path
 

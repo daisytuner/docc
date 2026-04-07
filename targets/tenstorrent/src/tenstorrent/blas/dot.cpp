@@ -302,7 +302,7 @@ void DotNodeDispatcher_Tenstorrent::dispatch(
     auto fw_reader = codegen.add_kernel(
         reader_snippet,
         TTKernelTarget::DatMovRd,
-        {LiteralArg("")},
+        {LiteralArg{""}},
         {
             MemArg{0, MemArgType::ADDR},
             MemArg{1, MemArgType::ADDR},
