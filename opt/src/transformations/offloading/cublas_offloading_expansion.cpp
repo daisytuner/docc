@@ -294,6 +294,11 @@ void CUBLASOffloadingExpansion::apply(builder::StructuredSDFGBuilder& builder, a
         );
         this->create_deallocate(builder, *sequence, *block, dA, type);
         this->create_deallocate(builder, *sequence, *block, dB, type);
+
+        in_access.at("__A").data(dA);
+        in_access.at("__B").data(dB);
+        in_access.at("__C").data(dC);
+        out_access.at("__C").data(dC);
     } else {
         throw InvalidSDFGException("CUBLASOffloadingExpansion: Unsupported BLAS type");
     }
