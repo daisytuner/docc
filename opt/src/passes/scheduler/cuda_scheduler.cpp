@@ -3,6 +3,7 @@
 #include "sdfg/passes/collapse_pass.h"
 #include "sdfg/passes/dataflow/dead_data_elimination.h"
 #include "sdfg/passes/dataflow/memlet_simplification.h"
+#include "sdfg/passes/offloading/cublas_offloading_expansion_pass.h"
 #include "sdfg/passes/offloading/gpu_loop_reordering_pass.h"
 #include "sdfg/passes/offloading/gpu_nested_parallelization_pass.h"
 #include "sdfg/passes/offloading/gpu_tiling_pass.h"
@@ -139,6 +140,10 @@ void CUDAScheduler::post_schedule(
 
     GPUTilingPass tiling_pass(gpu_maps, 8);
     tiling_pass.run(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+
+    cuda::CublasBLASOffloadingExpansionPass blas_offloading_pass;
+    blas_offloading_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
 }
 
