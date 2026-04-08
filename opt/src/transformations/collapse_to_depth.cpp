@@ -1,6 +1,8 @@
 #include "sdfg/transformations/collapse_to_depth.h"
+#include <cstddef>
 
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/transformations/map_collapse.h"
 
 namespace sdfg {
@@ -10,9 +12,11 @@ namespace transformations {
 // Helpers
 // ---------------------------------------------------------------------------
 
-static size_t perfectly_nested_map_depth(structured_control_flow::Map& map) {
+static size_t perfectly_nested_map_depth(structured_control_flow::Map& map, bool single_fuse) {
     size_t depth = 1;
     auto* current = &map;
+    symbolic::SymbolSet indvars;
+    indvars.insert(map.indvar());
     while (true) {
         auto& body = current->root();
         if (body.size() != 1) {
@@ -22,8 +26,21 @@ static size_t perfectly_nested_map_depth(structured_control_flow::Map& map) {
         if (!next) {
             break;
         }
+        if (single_fuse) {
+            for (const auto& atom : symbolic::atoms(next->init())) {
+                if (indvars.contains(atom)) {
+                    return depth;
+                }
+            }
+            for (const auto& atom : symbolic::atoms(next->condition())) {
+                if (indvars.contains(atom)) {
+                    return depth;
+                }
+            }
+        }
         ++depth;
         current = next;
+        indvars.insert(current->indvar());
     }
     return depth;
 }
@@ -42,7 +59,7 @@ bool CollapseToDepth::can_be_applied(builder::StructuredSDFGBuilder& builder, an
         return false;
     }
 
-    size_t depth = perfectly_nested_map_depth(loop_);
+    size_t depth = perfectly_nested_map_depth(loop_, target_loops_ == 1);
     if (depth <= target_loops_) {
         return false;
     }
@@ -80,7 +97,7 @@ bool CollapseToDepth::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 }
 
 void CollapseToDepth::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    size_t depth = perfectly_nested_map_depth(loop_);
+    size_t depth = perfectly_nested_map_depth(loop_, target_loops_ == 1);
 
     if (target_loops_ == 1) {
         MapCollapse t(loop_, depth);
