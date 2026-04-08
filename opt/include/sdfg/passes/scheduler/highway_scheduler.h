@@ -8,20 +8,33 @@ namespace scheduler {
 
 class HighwayScheduler : public LoopScheduler {
 public:
-    SchedulerAction schedule(
+    SchedulerAction find(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         structured_control_flow::StructuredLoop& loop,
         bool offload_unknown_sizes = false
     ) override;
 
-    SchedulerAction schedule(
+    SchedulerAction find(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         structured_control_flow::While& loop,
         bool offload_unknown_sizes = false
     ) override;
 
+    bool can_apply_schedule(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::StructuredLoop& loop,
+        bool offload_unknown_sizes = false
+    ) override;
+
+    void apply_schedule(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::StructuredLoop& loop,
+        bool offload_unknown_sizes = false
+    ) override;
 
     static std::string target() { return "highway"; };
 

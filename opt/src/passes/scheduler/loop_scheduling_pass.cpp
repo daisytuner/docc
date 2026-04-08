@@ -1,4 +1,5 @@
 #include "sdfg/passes/scheduler/loop_scheduling_pass.h"
+
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
 #include "sdfg/passes/scheduler/scheduler_registry.h"
@@ -11,6 +12,13 @@ namespace scheduler {
 bool LoopSchedulingPass::run_pass_target(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, const std::string& target
 ) {
+    auto scheduler = SchedulerRegistry::instance().get_loop_scheduler(target);
+    if (!scheduler) {
+        throw std::runtime_error("Unsupported scheduling target: " + target);
+    }
+    scheduler->set_report(report_);
+
+    // ===== Phase 1: Find all applicable loops =====
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto& flop_analysis = analysis_manager.get<analysis::FlopAnalysis>();
 
@@ -29,14 +37,7 @@ bool LoopSchedulingPass::run_pass_target(
         return false;
     }
 
-
-    auto scheduler = SchedulerRegistry::instance().get_loop_scheduler(target);
-    if (!scheduler) {
-        throw std::runtime_error("Unsupported scheduling target: " + target);
-    }
-    scheduler->set_report(report_);
-
-    // filter by compatible types, ensure that a scheduler does not encounter maps with incompatible schedule types
+    // Filter by compatible types
     for (int i = 0; i < queue.size(); i++) {
         auto loop = queue.front();
         queue.pop_front();
@@ -59,8 +60,8 @@ bool LoopSchedulingPass::run_pass_target(
         }
     }
 
-    // Scheduling state machine
-    bool applied = false;
+    // Traverse loop tree using scheduler's find() to collect applicable loops
+    std::vector<structured_control_flow::StructuredLoop*> applicable_loops;
     while (!queue.empty()) {
         auto loop = queue.front();
         queue.pop_front();
@@ -68,41 +69,35 @@ bool LoopSchedulingPass::run_pass_target(
         auto scheduling_info = scheduling_info_map.at(loop);
         scheduling_info_map.erase(loop);
 
-        // Set the report context to the current loop's index so transforms can report properly
+        // Set the report context
         if (report_ && scheduling_info.loop_info.loopnest_index >= 0) {
             report_->in_outermost_loop(scheduling_info.loop_info.loopnest_index);
         }
 
         SchedulerAction action;
         if (auto while_loop = dynamic_cast<structured_control_flow::While*>(loop)) {
-            action = scheduler->schedule(builder, analysis_manager, *while_loop, offload_unknown_sizes_);
+            action = scheduler->find(builder, analysis_manager, *while_loop, offload_unknown_sizes_);
         } else if (auto structured_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
-            action = scheduler->schedule(builder, analysis_manager, *structured_loop, offload_unknown_sizes_);
+            action = scheduler->find(builder, analysis_manager, *structured_loop, offload_unknown_sizes_);
         } else {
             throw InvalidSDFGException("LoopScheduler encountered non-loop in loop analysis.");
         }
 
-        analysis_manager.invalidate_all();
-
-        auto& loop_analysis2 = analysis_manager.get<analysis::LoopAnalysis>();
-        auto& flop_analysis2 = analysis_manager.get<analysis::FlopAnalysis>();
-
         switch (action) {
             case SchedulerAction::NEXT: {
-                applied = true;
+                if (auto structured_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+                    applicable_loops.push_back(structured_loop);
+                }
                 break;
             }
             case SchedulerAction::CHILDREN: {
-                auto children = loop_analysis2.children(loop);
-                if (children.empty()) {
-                    continue;
-                }
+                auto children = loop_analysis.children(loop);
                 for (auto& child : children) {
                     queue.push_front(child);
 
                     SchedulerLoopInfo info;
-                    info.loop_info = loop_analysis2.loop_info(child);
-                    info.flop = flop_analysis2.get(child);
+                    info.loop_info = loop_analysis.loop_info(child);
+                    info.flop = flop_analysis.get(child);
                     scheduling_info_map[child] = info;
                 }
                 break;
@@ -110,7 +105,36 @@ bool LoopSchedulingPass::run_pass_target(
         }
     }
 
-    return applied;
+    if (applicable_loops.empty()) {
+        return false;
+    }
+
+    // ===== Phase 2: Pre-schedule (collapse + cleanup) =====
+    scheduler->pre_schedule(builder, analysis_manager, applicable_loops);
+
+    // ===== Phase 3: Apply scheduling transforms =====
+    // Phase 3a: Collect loops where transform can be applied
+    std::vector<structured_control_flow::StructuredLoop*> schedulable_loops;
+    for (auto* loop : applicable_loops) {
+        if (scheduler->can_apply_schedule(builder, analysis_manager, *loop, offload_unknown_sizes_)) {
+            schedulable_loops.push_back(loop);
+        }
+    }
+
+    if (schedulable_loops.empty()) {
+        return false;
+    }
+
+    // Phase 3b: Apply transforms
+    for (auto* loop : schedulable_loops) {
+        scheduler->apply_schedule(builder, analysis_manager, *loop, offload_unknown_sizes_);
+    }
+    analysis_manager.invalidate_all();
+
+    // ===== Phase 4: Post-schedule =====
+    scheduler->post_schedule(builder, analysis_manager, schedulable_loops);
+
+    return true;
 }
 
 bool LoopSchedulingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

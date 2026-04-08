@@ -100,48 +100,4 @@ public:
     loop_tree_paths(sdfg::structured_control_flow::ControlFlowNode* loop) const {
         return analysis_.loop_tree_paths(loop);
     }
-
-    /**
-     * @brief Check if a loop's update is monotonic (static method wrapper)
-     */
-    static bool is_monotonic(
-        sdfg::structured_control_flow::StructuredLoop* loop, sdfg::analysis::AssumptionsAnalysis& assumptions_analysis
-    ) {
-        return sdfg::analysis::LoopAnalysis::is_monotonic(loop, assumptions_analysis);
-    }
-
-    /**
-     * @brief Check if a loop's update is contiguous (static method wrapper)
-     */
-    static bool is_contiguous(
-        sdfg::structured_control_flow::StructuredLoop* loop, sdfg::analysis::AssumptionsAnalysis& assumptions_analysis
-    ) {
-        return sdfg::analysis::LoopAnalysis::is_contiguous(loop, assumptions_analysis);
-    }
-
-    /**
-     * @brief Get the canonical bound of a loop as a closed-form expression
-     * @return The bound expression as a string, or empty string if not computable
-     */
-    static std::string canonical_bound(
-        sdfg::structured_control_flow::StructuredLoop* loop, sdfg::analysis::AssumptionsAnalysis& assumptions_analysis
-    ) {
-        auto expr = sdfg::analysis::LoopAnalysis::canonical_bound(loop, assumptions_analysis);
-        if (!expr.is_null()) {
-            return expr->__str__();
-        }
-        return "";
-    }
-
-    /**
-     * @brief Get the stride of a loop's update
-     * @return The stride as a string, or empty string if not computable
-     */
-    static std::string stride(sdfg::structured_control_flow::StructuredLoop* loop) {
-        auto s = sdfg::analysis::LoopAnalysis::stride(loop);
-        if (!s.is_null()) {
-            return s->__str__();
-        }
-        return "";
-    }
 };

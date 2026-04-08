@@ -14,4 +14,11 @@ def LinalgCustomSpecializeGenericOpsPass : Pass<"linalg-custom-specialize-generi
     ];
 }
 
+def LinalgCustomRemoveRedundantOpsPass : Pass<"linalg-custom-remove-redundant-ops"> {
+    let summary = "Remove redundant ops (custom DOCC MLIR pass)";
+    let dependentDialects = [
+        "linalg::LinalgDialect"
+    ];
+}
+
 #endif // MLIR_DIALECT_LINALG_CUSTOM_PASSES

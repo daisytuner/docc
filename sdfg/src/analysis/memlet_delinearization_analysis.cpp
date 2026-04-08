@@ -6,7 +6,7 @@
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_control_flow/while.h"
-#include "sdfg/symbolic/utils.h"
+#include "sdfg/symbolic/delinearization.h"
 
 namespace sdfg {
 namespace analysis {
@@ -48,12 +48,16 @@ void MemletDelinearizationAnalysis::
         const auto& subset = memlet.subset();
 
         // Skip empty subsets
-        if (subset.empty()) {
+        if (subset.size() != 1) {
             continue;
         }
 
         // Attempt to delinearize the subset
-        auto delinearized = symbolic::delinearize(subset, assumptions);
+        auto result = symbolic::delinearize(subset.at(0), assumptions);
+        if (!result.success) {
+            continue;
+        }
+        const auto& delinearized = result.indices;
 
         // Check if delinearization changed the subset
         bool changed = (delinearized.size() != subset.size());

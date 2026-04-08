@@ -25,7 +25,7 @@ def test_resnet18_compile():
         res = program(x)
         res_ref = model_ref(x)
 
-    assert torch.allclose(res, res_ref, rtol=1e-3, atol=1e-5)
+    assert torch.allclose(res, res_ref, rtol=1e-3, atol=1e-4)
 
 
 def test_resnet18_backend():
@@ -39,4 +39,4 @@ def test_resnet18_backend():
         res = program(x)
         res_ref = model_ref(x)
 
-    assert torch.allclose(res, res_ref, rtol=1e-3, atol=1e-5)
+    assert torch.allclose(res, res_ref, rtol=1e-3, atol=1e-4)

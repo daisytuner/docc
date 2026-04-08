@@ -22,6 +22,13 @@ public:
 
     virtual std::string name() const override;
 
+    static bool is_candidate(
+        structured_control_flow::StructuredLoop& loop,
+        const std::string& container,
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager
+    );
+
     virtual bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
         override;
 

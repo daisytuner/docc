@@ -42,7 +42,6 @@
 #include <sdfg/targets/cuda/plugin.h>
 #include <sdfg/targets/highway/plugin.h>
 #include <sdfg/targets/omp/plugin.h>
-#include <sdfg/targets/onnx/plugin.h>
 #include <sdfg/targets/rocm/plugin.h>
 
 #include <sdfg/passes/statistics.h>
@@ -63,7 +62,6 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::codegen::register_default_dispatchers();
     sdfg::serializer::register_default_serializers();
     sdfg::omp::register_omp_plugin();
-    sdfg::onnx::register_onnx_plugin();
     sdfg::highway::register_highway_plugin();
     sdfg::cuda::register_cuda_plugin();
     sdfg::rocm::register_rocm_plugin();
@@ -578,6 +576,7 @@ PYBIND11_MODULE(_sdfg, m) {
             sdfg::passes::PassStatistics::instance().enable();
             sdfg::passes::PipelineStatistics::instance().enable();
             sdfg::passes::AnalysisStatistics::instance().enable();
+            sdfg::passes::CodegenStatistics::instance().enable();
         },
         "Enable pass, pipeline, and analysis statistics collection"
     );
@@ -593,6 +592,7 @@ PYBIND11_MODULE(_sdfg, m) {
             result += sdfg::passes::PassStatistics::instance().summary();
             result += sdfg::passes::PipelineStatistics::instance().summary();
             result += sdfg::passes::AnalysisStatistics::instance().summary();
+            result += sdfg::passes::CodegenStatistics::instance().summary();
             return result;
         },
         "Get pass and pipeline statistics summary"

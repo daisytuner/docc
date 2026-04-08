@@ -16,6 +16,7 @@
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
+#include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/utils.h"
 
 namespace sdfg {
@@ -36,8 +37,20 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_
 ) {
     // Delinearize subsets to recover multi-dimensional structure from linearized accesses
     // e.g. T[i*N + j] with assumptions on bounds -> T[i, j]
-    auto producer_sub = symbolic::delinearize(producer_subset, producer_assumptions);
-    auto consumer_sub = symbolic::delinearize(consumer_subset, consumer_assumptions);
+    auto producer_sub = producer_subset;
+    if (producer_sub.size() == 1) {
+        auto producer_result = symbolic::delinearize(producer_sub.at(0), producer_assumptions);
+        if (producer_result.success) {
+            producer_sub = producer_result.indices;
+        }
+    }
+    auto consumer_sub = consumer_subset;
+    if (consumer_sub.size() == 1) {
+        auto consumer_result = symbolic::delinearize(consumer_sub.at(0), consumer_assumptions);
+        if (consumer_result.success) {
+            consumer_sub = consumer_result.indices;
+        }
+    }
 
     // Subset dimensions must match
     if (producer_sub.size() != consumer_sub.size()) {

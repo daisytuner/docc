@@ -75,6 +75,7 @@ set(TEST_FILES
     passes/dataflow/reference_propagation_test.cpp
     passes/dataflow/tasklet_fusion_test.cpp
     passes/dataflow/memlet_linearization_test.cpp
+    passes/dataflow/memlet_simplification_test.cpp
     passes/dataflow/tensor_to_pointer_conversion_test.cpp
     passes/memory/allocation_management_test.cpp
     passes/pipeline_test.cpp
@@ -84,7 +85,6 @@ set(TEST_FILES
     passes/structured_control_flow/dead_cfg_elimination_test.cpp
     passes/structured_control_flow/for2map_test.cpp
     passes/structured_control_flow/pointer_evolution_test.cpp
-    passes/structured_control_flow/loop_normalization_test.cpp
     passes/debug_info_propagation_test.cpp
     passes/symbolic/symbol_evolution_test.cpp
     passes/symbolic/symbol_promotion_test.cpp
@@ -105,7 +105,7 @@ set(TEST_FILES
     symbolic/polynomials_test.cpp
     symbolic/symbolic_test.cpp
     symbolic/sets_test.cpp
-    symbolic/utils_test.cpp
+    symbolic/delinearization_test.cpp
     types/array_test.cpp
     types/function_test.cpp
     types/pointer_test.cpp

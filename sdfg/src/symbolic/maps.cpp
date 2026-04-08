@@ -6,6 +6,7 @@
 #include <isl/set.h>
 #include <isl/space.h>
 
+#include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/utils.h"
@@ -94,8 +95,21 @@ DependenceDeltas compute_deltas_isl(
     }
 
     // Transform both expressions into two maps with separate dimensions
-    auto expr1_delinearized = delinearize(expr1, assums1);
-    auto expr2_delinearized = delinearize(expr2, assums2);
+    auto expr1_delinearized = expr1;
+    if (expr1.size() == 1) {
+        auto result = symbolic::delinearize(expr1.at(0), assums1);
+        if (result.success) {
+            expr1_delinearized = result.indices;
+        }
+    }
+    auto expr2_delinearized = expr2;
+    if (expr2.size() == 1) {
+        auto result = symbolic::delinearize(expr2.at(0), assums2);
+        if (result.success) {
+            expr2_delinearized = result.indices;
+        }
+    }
+
     if (expr1_delinearized.size() != expr2_delinearized.size()) {
         return DependenceDeltas{false, "", {}};
     }

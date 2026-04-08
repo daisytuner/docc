@@ -25,7 +25,7 @@ inline data_flow::ImplementationType ImplementationType_Tenstorrent_WithoutTrans
  */
 class ScheduleType_Tenstorrent_Device {
 public:
-    static constexpr std::string BLOCKING_KEY = "blocking";
+    static constexpr const char *BLOCKING_KEY = "blocking";
     static const std::string value() { return "TENSTORRENT_Dev"; }
 
     static void set_blocking(structured_control_flow::ScheduleType &schedule, bool blocking) {

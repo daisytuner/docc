@@ -9,11 +9,11 @@ FetchContent_MakeAvailable(googletest)
 option(DOCC_TESTS_ENABLE_DUMP "Enable dumping intermediary files of test cases" OFF)
 
 set(TEST_FILES
-    analysis/scop_analysis_test.cpp
     cuda/blas/cublas_test.cpp
     cuda/cuda_kernel_test.cpp
     cuda/cuda_library_nodes_test.cpp
     passes/einsum_test.cpp
+    passes/normalization/loop_normal_form_test.cpp
     passes/normalization/perfect_loop_distribution_test.cpp
     passes/normalization/stride_minimization_test.cpp
     passes/offloading/code_motion/block_hoisting_test.cpp
@@ -23,31 +23,36 @@ set(TEST_FILES
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/gpu_tiling_test.cpp
     transformations/offloading/kernel_local_storage_test.cpp
-    transformations/polly_transform_test.cpp
     passes/scheduler/cuda_scheduler_test.cpp
     passes/scheduler/highway_scheduler_test.cpp
     passes/scheduler/omp_scheduler_test.cpp
-    passes/scheduler/polly_scheduler_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
     targets/omp/schedule_test.cpp
     targets/highway/codegen/highway_map_dispatcher_test.cpp
     transformations/collapse_to_depth_test.cpp
     transformations/highway_transform_test.cpp
     transformations/omp_transform_test.cpp
-    transformations/polly_transform_test.cpp
     transformations/map_collapse_test.cpp
     transformations/einsum2gemm_test.cpp
     transformations/einsum_expand_test.cpp
     transformations/einsum_extend_test.cpp
     transformations/einsum_lift_test.cpp
+    transformations/loop_condition_normalize_test.cpp
     transformations/loop_distribute_test.cpp
+    transformations/loop_indvar_finalize_test.cpp
     transformations/loop_interchange_test.cpp
+    transformations/loop_rotate_test.cpp
+    transformations/loop_shift_test.cpp
     transformations/loop_skewing_test.cpp
     transformations/loop_tiling_test.cpp
+    transformations/loop_unit_stride_test.cpp
     transformations/map_fusion_test.cpp
     transformations/tile_fusion_test.cpp
     transformations/out_local_storage_test.cpp
+    transformations/in_local_storage_test.cpp
     transformations/recorder_test.cpp
+    transformations/optimizations/diamond_tiling_test.cpp
+    transformations/optimizations/blocking_test.cpp
     test.cpp
 )
 

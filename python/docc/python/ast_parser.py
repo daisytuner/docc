@@ -25,7 +25,6 @@ from docc.python.types import (
 from docc.python.functions.numpy import NumPyHandler
 from docc.python.functions.math import MathHandler
 from docc.python.functions.python import PythonHandler
-from docc.python.functions.scipy import SciPyHandler
 from docc.python.memory import ManagedMemoryHandler
 
 
@@ -80,7 +79,6 @@ class ASTParser(ast.NodeVisitor):
         self.numpy_visitor = NumPyHandler(self)
         self.math_handler = MathHandler(self)
         self.python_handler = PythonHandler(self)
-        self.scipy_handler = SciPyHandler(self)
 
     def visit_Constant(self, node):
         if isinstance(node.value, bool):
@@ -775,9 +773,6 @@ class ASTParser(ast.NodeVisitor):
         if self.numpy_visitor.is_outer(node.value):
             if self.numpy_visitor.handle_outer(target, node.value):
                 return
-        if self.scipy_handler.is_correlate2d(node.value):
-            if self.scipy_handler.handle_correlate2d(target, node.value):
-                return
         if self.numpy_visitor.is_transpose(node.value):
             if self.numpy_visitor.handle_transpose(target, node.value):
                 return
@@ -1240,13 +1235,6 @@ class ASTParser(ast.NodeVisitor):
             elif isinstance(node.func.value, ast.Attribute):
                 if (
                     isinstance(node.func.value.value, ast.Name)
-                    and node.func.value.value.id == "scipy"
-                ):
-                    module_name = "scipy"
-                    submodule_name = node.func.value.attr
-                    func_name = node.func.attr
-                elif (
-                    isinstance(node.func.value.value, ast.Name)
                     and node.func.value.value.id in ["numpy", "np"]
                     and node.func.attr == "outer"
                 ):
@@ -1263,12 +1251,6 @@ class ASTParser(ast.NodeVisitor):
         if module_name == "math":
             if self.math_handler.has_handler(func_name):
                 return self.math_handler.handle_math_call(node, func_name)
-
-        if module_name == "scipy":
-            if self.scipy_handler.has_handler(submodule_name, func_name):
-                return self.scipy_handler.handle_scipy_call(
-                    node, submodule_name, func_name
-                )
 
         if self.python_handler.has_handler(func_name):
             return self.python_handler.handle_python_call(node, func_name)

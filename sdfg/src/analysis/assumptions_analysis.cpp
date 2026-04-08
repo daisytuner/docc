@@ -10,7 +10,6 @@
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/assumptions.h"
-#include "sdfg/symbolic/series.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
@@ -227,7 +226,7 @@ void AssumptionsAnalysis::traverse_structured_loop(
     }
 
     // Prove that update is monotonic -> assume bounds
-    if (!symbolic::series::is_monotonic(update, indvar, outer_assumptions_with_trivial)) {
+    if (!loop->is_monotonic()) {
         this->propagate(body, body_assumptions, outer_assumptions, outer_assumptions_with_trivial);
         this->traverse(body, this->assumptions_[&body], this->assumptions_with_trivial_[&body]);
         return;
@@ -268,7 +267,7 @@ void AssumptionsAnalysis::traverse_structured_loop(
     body_assumptions[indvar].upper_bound_deprecated(ub);
     // TODO: handle non-contiguous tight upper bounds with modulo
     // Example: for (i = 0; i < n; i += 3) -> tight_upper_bound = (n - 1) - ((n - 1) % 3)
-    if (symbolic::series::is_contiguous(update, indvar, outer_assumptions_with_trivial)) {
+    if (loop->is_contiguous()) {
         body_assumptions[indvar].tight_upper_bound(ub);
     }
 

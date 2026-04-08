@@ -2,6 +2,7 @@
 
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -175,7 +176,8 @@ bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
     );
 
     auto& var_elem_in = builder.add_access(inter_block, var_in.name);
-    auto& epsilon_const = builder.add_constant(inter_block, eps_in.name, scalar_type);
+    data_flow::AccessNode& epsilon_const = eps_in.is_const ? builder.add_constant(inter_block, eps_in.name, scalar_type)
+                                                           : builder.add_access(inter_block, eps_in.name);
 
     auto& add_eps_op = builder.add_tasklet(inter_block, data_flow::fp_add, "_out", {"var", "eps"}, debug_info());
 

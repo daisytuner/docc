@@ -27,7 +27,6 @@ def test_einsum_1d_sum():
     assert array_sum(a) == 10.0
 
 
-@pytest.mark.skip(reason="Not yet supported")
 def test_einsum_outer_product():
 
     @native
@@ -41,7 +40,6 @@ def test_einsum_outer_product():
     assert np.allclose(result, expected)
 
 
-@pytest.mark.skip(reason="Not yet supported")
 def test_einsum_matrix_transpose():
 
     @native
@@ -116,7 +114,6 @@ def test_einsum_3d_sum_axis():
     assert np.allclose(result, expected)
 
 
-@pytest.mark.skip(reason="Not yet supported")
 def test_einsum_3d_permute():
 
     @native
@@ -159,7 +156,6 @@ def test_einsum_batch_matmul():
     assert np.allclose(result, expected)
 
 
-@pytest.mark.skip(reason="Not yet supported")
 def test_einsum_3d_contract():
 
     @native

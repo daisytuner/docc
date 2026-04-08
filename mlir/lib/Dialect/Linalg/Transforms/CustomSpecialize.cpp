@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <llvm/ADT/APFloat.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/LogicalResult.h>
 
@@ -6,6 +7,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/IR/LinalgCustomOps.h"
+#include "mlir/Dialect/Linalg/Transforms/CustomSpecializeBatchNorm.h"
 #include "mlir/Dialect/Linalg/Transforms/CustomTransforms.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
@@ -24,7 +26,6 @@ namespace mlir {
 
 namespace linalg {
 
-// TODO Improve regarding constants. Needs explicit hoisting rather than general
 struct LinalgGenericConstDependentHoisting : public OpRewritePattern<GenericOp> {
     using OpRewritePattern<GenericOp>::OpRewritePattern;
 
@@ -38,15 +39,23 @@ struct LinalgGenericConstDependentHoisting : public OpRewritePattern<GenericOp> 
         do {
             applied = false;
             for (auto& op : block.getOperations()) {
-                bool const_dependent = true;
-                for (auto operand : op.getOperands()) {
-                    if (!llvm::dyn_cast_or_null<arith::ConstantOp>(operand.getDefiningOp())) {
-                        const_dependent = false;
-                        break;
+                if (auto truncf_op = llvm::dyn_cast_or_null<arith::TruncFOp>(op)) {
+                    auto constant_op = llvm::dyn_cast_or_null<arith::ConstantOp>(truncf_op.getIn().getDefiningOp());
+                    if (!constant_op) {
+                        continue;
                     }
-                }
-                if (const_dependent) {
-                    rewriter.moveOpBefore(&op, generic_op);
+                    FloatAttr float_attr = llvm::dyn_cast_or_null<FloatAttr>(constant_op.getValue());
+                    if (!float_attr) {
+                        continue;
+                    }
+                    FloatType new_type = llvm::dyn_cast<FloatType>(truncf_op.getOut().getType());
+                    llvm::APFloat value = float_attr.getValue();
+                    bool losesInfo = false;
+                    value.convert(new_type.getFloatSemantics(), llvm::APFloat::rmNearestTiesToEven, &losesInfo);
+                    FloatAttr new_float_attr = FloatAttr::get(new_type, value);
+                    auto new_constant_op =
+                        rewriter.create<arith::ConstantOp>(truncf_op.getLoc(), new_type, new_float_attr);
+                    rewriter.replaceOp(truncf_op, new_constant_op);
                     applied = true;
                     break;
                 }
@@ -541,7 +550,7 @@ struct LinalgCustomSpecializeGenericOpsPass
 
 void populateLinalgCustomSpecializeGenericOpsPass(RewritePatternSet& patterns) {
     patterns.add<
-        // LinalgGenericConstDependentHoisting, // Decativated for now because it also hoists linalg.index
+        LinalgGenericConstDependentHoisting,
         LinalgGenericToLinalgElementwiseUnary<math::ExpOp, ExpOp>,
         LinalgGenericToLinalgElementwiseUnary<math::SqrtOp, SqrtOp>,
         LinalgGenericToLinalgElementwiseBinary<arith::AddFOp, AddOp>,
@@ -555,7 +564,8 @@ void populateLinalgCustomSpecializeGenericOpsPass(RewritePatternSet& patterns) {
         LinalgGenericToLinalgElementwiseBinary<arith::SubIOp, SubOp>,
         LinalgGenericToSpecialLinalgDivF,
         LinalgGenericToLinalgCustomReLU,
-        LinalgGenericToLinalgCustomSigmoid>(patterns.getContext());
+        LinalgGenericToLinalgCustomSigmoid,
+        LinalgGenericToLinalgCustomBatchNorm2DNchw>(patterns.getContext());
 }
 
 } // namespace linalg

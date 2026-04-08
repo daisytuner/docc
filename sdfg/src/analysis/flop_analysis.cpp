@@ -307,7 +307,7 @@ symbolic::Expression FlopAnalysis::visit_structured_loop_with_scope(
         }
     }
     if (!done) {
-        auto canonical_bound = LoopAnalysis::canonical_bound(&loop, assumptions_analysis);
+        auto canonical_bound = loop.canonical_bound();
         if (!canonical_bound.is_null()) {
             bound =
                 this->replace_loop_indices(parameters, symbolic::sub(canonical_bound, symbolic::one()), loop_assumptions);

@@ -25,21 +25,19 @@
 #include <sdfg/passes/dot_expansion_pass.h>
 #include <sdfg/passes/einsum.h>
 #include <sdfg/passes/gemm_expansion_pass.h>
+#include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
-#include <sdfg/passes/offloading/onnx_library_node_rewriter_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/scheduler/cuda_scheduler.h>
 #include <sdfg/passes/scheduler/highway_scheduler.h>
 #include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/passes/scheduler/omp_scheduler.h>
-#include <sdfg/passes/scheduler/polly_scheduler.h>
 #include <sdfg/passes/scheduler/scheduler_registry.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
 #include <sdfg/passes/structured_control_flow/for2map.h>
-#include <sdfg/passes/structured_control_flow/loop_normalization.h>
 #include <sdfg/passes/structured_control_flow/pointer_evolution.h>
 #include <sdfg/passes/structured_control_flow/while_to_for_conversion.h>
 #include <sdfg/passes/symbolic/symbol_evolution.h>
@@ -49,13 +47,19 @@
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
+#include <sdfg/passes/statistics.h>
 #include <sdfg/visualizer/dot_visualizer.h>
 
+#include <chrono>
+
+#include "docc/util/docc_paths.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
+#include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
+#include "sdfg/util/offloading_instrumentation_plan.h"
 #include "targets/target_mapping.h"
 
 #ifdef DOCC_HAS_TARGET_ET
@@ -123,10 +127,6 @@ pybind11::dict PyStructuredSDFG::containers() const {
     }
     return result;
 }
-
-namespace {
-void _anchor() {}
-} // namespace
 
 void PyStructuredSDFG::validate() { sdfg_->validate(); }
 
@@ -230,18 +230,21 @@ void PyStructuredSDFG::simplify() {
     }
 
     // Normalize loop condition and update (run twice)
-    sdfg::passes::LoopNormalizationPass loop_normalization_pass;
+    sdfg::passes::normalization::LoopNormalFormPass loop_normalization_pass;
     loop_normalization_pass.run(builder_opt, analysis_manager);
-    loop_normalization_pass.run(builder_opt, analysis_manager);
-
-    // Eliminate symbols correlated to loop iterators
-    // sdfg::passes::SymbolEvolution symbol_evolution_pass;
-    // symbol_evolution_pass.run(builder_opt, analysis_manager);
 
     // Dead code elimination
     symbol_propagation_pass.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
+
+    // Eliminate symbols correlated to loop iterators
+    // sdfg::passes::SymbolEvolution symbol_evolution_pass;
+    // symbol_evolution_pass.run(builder_opt, analysis_manager);
+    // symbol_propagation_pass.run(builder_opt, analysis_manager);
+    // dde.run(builder_opt, analysis_manager);
+    // dce.run(builder_opt, analysis_manager);
+
 
     /***** Data Parallelism *****/
 
@@ -249,6 +252,8 @@ void PyStructuredSDFG::simplify() {
     memlet_combine.run(builder_opt, analysis_manager);
 
     // Move code out of loops where possible
+    // sdfg::passes::BlockSortingPass block_sorting_pass;
+    // block_sorting_pass.run(builder_opt, analysis_manager);
     sdfg::passes::BlockHoistingPass block_hoisting;
     block_hoisting.run(builder_opt, analysis_manager);
 
@@ -271,6 +276,7 @@ void PyStructuredSDFG::simplify() {
     map_conversion_pass.run(builder_opt, analysis_manager);
 
     // Move code out of maps where possible
+    // block_sorting_pass.run(builder_opt, analysis_manager);
     block_hoisting.run(builder_opt, analysis_manager);
 
     // Dead code elimination
@@ -378,8 +384,6 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     // GPU Opt Pipeline
     else if (target == "cuda" || target == "rocm") {
         schedulers.push_back(target);
-    } else if (target == "onnx") {
-        // nothing
     } else if (target == "etsoc") {
 #ifdef DOCC_HAS_TARGET_ET
 
@@ -422,6 +426,7 @@ std::string PyStructuredSDFG::compile(
         instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg_);
     } else if (instrumentation_mode == "ols") {
         instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*sdfg_);
+        sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *sdfg_);
     } else {
         throw std::runtime_error("Unsupported instrumentation plan: " + instrumentation_mode);
     }
@@ -437,15 +442,33 @@ std::string PyStructuredSDFG::compile(
     std::pair<std::filesystem::path, std::filesystem::path> lib_config = std::make_pair(build_path, header_path);
     std::shared_ptr<sdfg::codegen::CodeSnippetFactory> snippet_factory =
         std::make_shared<sdfg::codegen::CodeSnippetFactory>(&lib_config);
+
+    // Code generation
+    std::chrono::high_resolution_clock::time_point codegen_start;
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        codegen_start = std::chrono::high_resolution_clock::now();
+    }
+
     sdfg::codegen::CPPCodeGenerator
         generator(*sdfg_, analysis_manager, *instrumentation_plan, *arg_capture_plan, snippet_factory);
     generator.generate();
 
     generator.as_source(header_path, source_path);
 
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        auto codegen_end = std::chrono::high_resolution_clock::now();
+        auto codegen_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(codegen_end - codegen_start).count();
+        sdfg::passes::CodegenStatistics::instance().add_codegen("code_generation", codegen_duration);
+    }
+
     // Write library snippets
     std::unordered_map<std::string, SnippetMetadata> lib_files;
     for (auto& [name, snippet] : snippet_factory->snippets()) {
+        std::chrono::high_resolution_clock::time_point snipped_gen_start;
+        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+            snipped_gen_start = std::chrono::high_resolution_clock::now();
+        }
         if (snippet.is_as_file()) {
             auto p = build_path / (name + "." + snippet.extension());
             std::ofstream outfile_lib;
@@ -461,25 +484,26 @@ std::string PyStructuredSDFG::compile(
             outfile_lib << snippet.stream().str() << std::endl;
             outfile_lib.close();
         }
+
+        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+            auto snippet_gen_end = std::chrono::high_resolution_clock::now();
+            auto snippet_gen_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(snippet_gen_end - snipped_gen_start).count();
+            sdfg::passes::CodegenStatistics::instance().add_codegen("snippet_generation", snippet_gen_duration);
+        }
     }
 
     // Find libraries relative to the module location
-    Dl_info info;
-    fs::path package_path;
-    std::string package_path_str;
-    std::string package_lib_path_str;
-    std::string package_include_path_str;
-    if (dladdr((void*) &_anchor, &info)) {
-        fs::path lib_path = fs::canonical(info.dli_fname);
-        package_path = lib_path.parent_path().parent_path();
-        package_path_str = package_path.string();
-        package_lib_path_str = (package_path / "lib").string();
-        package_include_path_str = (package_path / "include").string();
-    }
+    auto paths = docc::util::DefaultDoccPaths::from_lib_location(docc::util::find_lib_location());
 
     bool has_highway = false;
     std::unordered_set<std::string> object_files;
     for (const auto& [lib_file, meta] : lib_files) {
+        std::chrono::high_resolution_clock::time_point snippet_compile_start;
+        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+            snippet_compile_start = std::chrono::high_resolution_clock::now();
+        }
+
         std::filesystem::path lib_path(lib_file);
         auto& [snippet_name, extension] = meta;
         if (extension == "json") {
@@ -488,7 +512,7 @@ std::string PyStructuredSDFG::compile(
 
 #ifdef DOCC_HAS_TARGET_ET
         if (extension == docc::target::et::ETSOC_KERNEL_FILE_EXT) {
-            docc::target::et::EtBuildArgs args{.build_dir = build_path, .plugin_rt_dir = package_path};
+            docc::target::et::EtBuildArgs args{.build_dir = build_path, .plugin_rt_dir = paths->bin_root()};
             auto et_k_file = docc::target::et::et_build_kernel(*sdfg_, *snippet_factory, lib_file, args);
             DEBUG_PRINTLN("Generated ET Kernel to: " << et_k_file);
             continue;
@@ -502,10 +526,13 @@ std::string PyStructuredSDFG::compile(
 #else
         cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3 -fopenmp -march=native -mtune=native -funroll-loops";
 #endif
-        if (!package_path_str.empty()) {
-            cmd << " -L" << package_lib_path_str;
-            cmd << " -I" << package_include_path_str;
+        for (auto& inc_path : paths->get_default_include_paths()) {
+            cmd << " -I" << inc_path;
         }
+        for (auto& ld_path : paths->get_default_library_paths()) {
+            cmd << " -L" << ld_path;
+        }
+
 #if defined(__APPLE__)
         cmd << " -I/opt/homebrew/include";
 #endif
@@ -527,6 +554,19 @@ std::string PyStructuredSDFG::compile(
             throw std::runtime_error("Compilation failed: " + cmd.str());
         }
         object_files.insert(object_file);
+
+        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+            auto snippet_compile_end = std::chrono::high_resolution_clock::now();
+            auto snippet_compile_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(snippet_compile_end - snippet_compile_start)
+                    .count();
+            sdfg::passes::CodegenStatistics::instance().add_codegen("snippet_compilation", snippet_compile_duration);
+        }
+    }
+
+    std::chrono::high_resolution_clock::time_point compile_start;
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        compile_start = std::chrono::high_resolution_clock::now();
     }
 
     // Compile
@@ -537,9 +577,8 @@ std::string PyStructuredSDFG::compile(
 #else
         cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3 -fopenmp -march=native -mtune=native -funroll-loops";
 #endif
-        if (!package_path_str.empty()) {
-            cmd << " -L" << package_lib_path_str;
-            cmd << " -I" << package_include_path_str;
+        for (auto& inc_path : paths->get_default_include_paths()) {
+            cmd << " -I" << inc_path;
         }
         if (target == "cuda") {
             cmd << " -x cuda -lcuda";
@@ -560,6 +599,13 @@ std::string PyStructuredSDFG::compile(
         object_files.insert((build_path / (sdfg_->name() + ".o")).string());
     }
 
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        auto compile_end = std::chrono::high_resolution_clock::now();
+        auto compile_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(compile_end - compile_start).count();
+        sdfg::passes::CodegenStatistics::instance().add_codegen("compilation", compile_duration);
+    }
+
     // Link into shared library
     fs::path lib_path = build_path / ("lib" + sdfg_->name() + ".so");
 
@@ -571,9 +617,8 @@ std::string PyStructuredSDFG::compile(
 #else
     cmd << DOCC_CXX_COMPILER << " -shared -fopenmp -fPIC -O3";
 #endif
-    if (!package_path_str.empty()) {
-        cmd << " -L" << package_lib_path_str;
-        cmd << " -I" << package_include_path_str;
+    for (auto& ld_path : paths->get_default_library_paths()) {
+        cmd << " -L" << ld_path;
     }
     // cmd << " " << source_path.string();
     for (const auto& object_file : object_files) {
@@ -599,10 +644,6 @@ std::string PyStructuredSDFG::compile(
         cmd << " /opt/rocm/lib/libamdhip64.so";
         cmd << " /opt/rocm/lib/libhiprtc.so";
         cmd << " /opt/rocm/lib/libhipblas.so";
-    } else if (target == "onnx") {
-        cmd << " -L/usr/local/onnxruntime/lib";
-        cmd << " -lonnxruntime";
-        cmd << " -ldl"; // Required for dladdr()
     } else if (target == "etsoc") {
 #ifdef DOCC_HAS_TARGET_ET
         cmd << " " << docc::target::et::et_get_host_additional_link_args(*sdfg_, *snippet_factory);
@@ -610,10 +651,21 @@ std::string PyStructuredSDFG::compile(
     }
     cmd << " -o " << lib_path.string();
 
+    std::chrono::high_resolution_clock::time_point link_start;
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        link_start = std::chrono::high_resolution_clock::now();
+    }
+
     DEBUG_PRINTLN("Link: " << cmd.str());
     int ret = std::system(cmd.str().c_str());
     if (ret != 0) {
         throw std::runtime_error("Compilation failed: " + cmd.str());
+    }
+
+    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
+        auto link_end = std::chrono::high_resolution_clock::now();
+        auto link_duration = std::chrono::duration_cast<std::chrono::milliseconds>(link_end - link_start).count();
+        sdfg::passes::CodegenStatistics::instance().add_codegen("linking", link_duration);
     }
 
     return lib_path.string();

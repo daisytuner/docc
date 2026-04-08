@@ -8,18 +8,38 @@ namespace scheduler {
 
 class OMPScheduler : public LoopScheduler {
 public:
-    SchedulerAction schedule(
+    SchedulerAction find(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         structured_control_flow::StructuredLoop& loop,
         bool offload_unknown_sizes = false
     ) override;
 
-    SchedulerAction schedule(
+    SchedulerAction find(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         structured_control_flow::While& loop,
         bool offload_unknown_sizes = false
+    ) override;
+
+    bool can_apply_schedule(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::StructuredLoop& loop,
+        bool offload_unknown_sizes = false
+    ) override;
+
+    void apply_schedule(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::StructuredLoop& loop,
+        bool offload_unknown_sizes = false
+    ) override;
+
+    void pre_schedule(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        std::vector<structured_control_flow::StructuredLoop*>& applicable_loops
     ) override;
 
     static std::string target() { return "openmp"; };

@@ -85,14 +85,13 @@ class DoccProgram(ABC):
         sdfg.validate()
 
         # Tensor targets keep tensor nodes
-        if self.target != "onnx":
-            custom_expand_fn = get_target_expand_fn(self.target)
-            if custom_expand_fn is not None:
-                custom_expand_fn(sdfg, self.category, {})
-            else:
-                sdfg.expand()
-            if self.debug_dump:
-                sdfg.dump(output_folder, "py1.expanded", dump_dot=True)
+        custom_expand_fn = get_target_expand_fn(self.target)
+        if custom_expand_fn is not None:
+            custom_expand_fn(sdfg, self.category, {})
+        else:
+            sdfg.expand()
+        if self.debug_dump:
+            sdfg.dump(output_folder, "py1.expanded", dump_dot=True)
 
         # Simplify pipelines
         sdfg.simplify()
@@ -129,10 +128,6 @@ class DoccProgram(ABC):
 
         self.last_sdfg = sdfg
 
-        # Dump statistics before compile
-        if _statistics_enabled_by_env():
-            print(_statistics_summary(), file=sys.stderr)
-
         custom_compile_fn = get_target_compile_fn(self.target)
         if custom_compile_fn is not None:
             lib_path = custom_compile_fn(
@@ -145,6 +140,10 @@ class DoccProgram(ABC):
                 instrumentation_mode=instrumentation_mode,
                 capture_args=capture_args,
             )
+
+        # Dump statistics after compile
+        if _statistics_enabled_by_env():
+            print(_statistics_summary(), file=sys.stderr)
 
         return lib_path
 

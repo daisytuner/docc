@@ -335,39 +335,6 @@ inline void register_analysis(py::module& m) {
             py::return_value_policy::reference,
             "Get all paths from the given loop to leaf loops in the loop tree"
         )
-        .def_static(
-            "is_monotonic",
-            [](sdfg::structured_control_flow::StructuredLoop* loop, PyAssumptionsAnalysis& assumptions) {
-                return PyLoopAnalysis::is_monotonic(loop, assumptions.analysis());
-            },
-            py::arg("loop"),
-            py::arg("assumptions_analysis"),
-            "Check if a loop's update is monotonic"
-        )
-        .def_static(
-            "is_contiguous",
-            [](sdfg::structured_control_flow::StructuredLoop* loop, PyAssumptionsAnalysis& assumptions) {
-                return PyLoopAnalysis::is_contiguous(loop, assumptions.analysis());
-            },
-            py::arg("loop"),
-            py::arg("assumptions_analysis"),
-            "Check if a loop's update is contiguous"
-        )
-        .def_static(
-            "canonical_bound",
-            [](sdfg::structured_control_flow::StructuredLoop* loop, PyAssumptionsAnalysis& assumptions) {
-                return PyLoopAnalysis::canonical_bound(loop, assumptions.analysis());
-            },
-            py::arg("loop"),
-            py::arg("assumptions_analysis"),
-            "Get the canonical bound of a loop as a closed-form expression (empty string if not computable)"
-        )
-        .def_static(
-            "stride",
-            &PyLoopAnalysis::stride,
-            py::arg("loop"),
-            "Get the stride of a loop's update (empty string if not computable)"
-        )
         .def("__repr__", [](const PyLoopAnalysis&) { return "<LoopAnalysis>"; });
 
     py::class_<PyTypeAnalysis>(m, "TypeAnalysis").def("__repr__", [](const PyTypeAnalysis&) {

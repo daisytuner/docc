@@ -8,8 +8,8 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/CustomPasses.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Transforms/CustomTransforms.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
@@ -76,6 +76,7 @@ public:
     void convert() {
         mlir::PassManager pm(context_.get());
         pm.addPass(mlir::createLinalgCustomSpecializeGenericOpsPass());
+        pm.addPass(mlir::createLinalgCustomRemoveRedundantOpsPass());
         if (mlir::failed(pm.run(*module_))) {
             throw std::runtime_error("Failed to convert MLIR module");
         }

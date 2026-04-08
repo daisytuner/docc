@@ -48,4 +48,29 @@ def LinalgCustom_SigmoidOp : LinalgCustom_Op<"sigmoid",
     let hasVerifier = 1;
 }
 
+def LinalgCustom_BatchNorm2DNchwOp : LinalgCustom_Op<"batchnorm_2d_nchw",
+        [PredOpTrait<"element types must be the same", TCopVTEtAreSameAt<[0, 1, 2, 3, 4, 5, 6]>>]> {
+    let summary = "Performs 2-D Batch Normalization";
+
+    let arguments = (ins TensorRankOf<[AnyType], [4]>:$batch,
+                         TensorRankOf<[AnyType], [1]>:$e,
+                         TensorRankOf<[AnyType], [1]>:$var,
+                         TensorRankOf<[AnyType], [1]>:$gamma,
+                         TensorRankOf<[AnyType], [1]>:$beta,
+                         TensorRankOf<[AnyType], [4]>:$output,
+                         TensorRankOf<[AnyType], [0]>:$eps);
+    let results = (outs TensorRankOf<[AnyType], [4]>:$result);
+    let assemblyFormat = [{
+        attr-dict
+        `ins` `(`
+            $batch `,` $e `,` $var `,` $gamma `,` $beta `,` $eps
+            `:`
+            type($batch) `,` type($e) `,` type($var) `,` type($gamma) `,` type($beta) `,` type($eps)
+        `)`
+        `outs` `(` $output `:` type($output) `)`
+        `->` type($result)
+    }];
+    let hasVerifier = 1;
+}
+
 #endif // LINALG_CUSTOM_OPS

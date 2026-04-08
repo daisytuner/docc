@@ -7,5 +7,7 @@ namespace linalg {
 
 void populateLinalgCustomSpecializeGenericOpsPass(RewritePatternSet& patterns);
 
+void populateLinalgCustomRemoveRedundantOpsPass(RewritePatternSet& patterns);
+
 } // namespace linalg
 } // namespace mlir
