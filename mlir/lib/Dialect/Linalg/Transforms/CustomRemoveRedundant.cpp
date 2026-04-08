@@ -1,3 +1,4 @@
+#include <cstdint>
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Transforms/CustomTransforms.h"
@@ -10,10 +11,11 @@ namespace mlir {
 
 namespace linalg {
 
-struct LinalgConv2DNchwFchwRemoveLinalgFill : public OpRewritePattern<Conv2DNchwFchwOp> {
-    using OpRewritePattern<Conv2DNchwFchwOp>::OpRewritePattern;
+template<typename Op2D, uint64_t InitValue>
+struct Linalg2DNchwRemoveLinalgFill : public OpRewritePattern<Op2D> {
+    using OpRewritePattern<Op2D>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(Conv2DNchwFchwOp conv_op, PatternRewriter& rewriter) const override {
+    LogicalResult matchAndRewrite(Op2D conv_op, PatternRewriter& rewriter) const override {
         // Only accept one output
         if (conv_op.getOutputs().size() != 1) {
             return failure();
@@ -29,8 +31,8 @@ struct LinalgConv2DNchwFchwRemoveLinalgFill : public OpRewritePattern<Conv2DNchw
         }
 
         // Check that dilations are 1
-        for (auto dilation : conv_op.getDilations().getValues<int64_t>()) {
-            if (dilation != 1) {
+        for (auto dilation : conv_op.getDilations()) {
+            if (dilation.getSExtValue() != 1) {
                 return failure();
             }
         }
@@ -44,11 +46,11 @@ struct LinalgConv2DNchwFchwRemoveLinalgFill : public OpRewritePattern<Conv2DNchw
             return failure();
         }
         if (auto float_attr = llvm::dyn_cast<FloatAttr>(constant_op.getValue())) {
-            if (float_attr.getValueAsDouble() != 0.0) {
+            if (std::bit_cast<uint64_t>(float_attr.getValueAsDouble()) != InitValue) {
                 return failure();
             }
         } else if (auto integer_attr = llvm::dyn_cast<IntegerAttr>(constant_op.getValue())) {
-            if (integer_attr.getInt() != 0) {
+            if (integer_attr.getUInt() != InitValue) {
                 return failure();
             }
         } else {
@@ -76,7 +78,10 @@ struct LinalgCustomRemoveRedundantOpsPass
 };
 
 void populateLinalgCustomRemoveRedundantOpsPass(RewritePatternSet& patterns) {
-    patterns.add<LinalgConv2DNchwFchwRemoveLinalgFill>(patterns.getContext());
+    patterns.add<
+        Linalg2DNchwRemoveLinalgFill<Conv2DNchwFchwOp, 0x0000000000000000>,
+        Linalg2DNchwRemoveLinalgFill<PoolingNchwMaxOp, 0xFFF0000000000000>,
+        Linalg2DNchwRemoveLinalgFill<PoolingNchwSumOp, 0x0000000000000000>>(patterns.getContext());
 }
 
 } // namespace linalg
