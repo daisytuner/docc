@@ -12,7 +12,7 @@ namespace transformations {
 // Helpers
 // ---------------------------------------------------------------------------
 
-static size_t perfectly_nested_map_depth(structured_control_flow::Map& map, bool single_fuse) {
+static size_t perfectly_nested_map_depth(structured_control_flow::Map& map) {
     size_t depth = 1;
     auto* current = &map;
     symbolic::SymbolSet indvars;
@@ -26,16 +26,14 @@ static size_t perfectly_nested_map_depth(structured_control_flow::Map& map, bool
         if (!next) {
             break;
         }
-        if (single_fuse) {
-            for (const auto& atom : symbolic::atoms(next->init())) {
-                if (indvars.contains(atom)) {
-                    return depth;
-                }
+        for (const auto& atom : symbolic::atoms(next->init())) {
+            if (indvars.contains(atom)) {
+                return depth;
             }
-            for (const auto& atom : symbolic::atoms(next->condition())) {
-                if (indvars.contains(atom)) {
-                    return depth;
-                }
+        }
+        for (const auto& atom : symbolic::atoms(next->condition())) {
+            if (indvars.contains(atom)) {
+                return depth;
             }
         }
         ++depth;
@@ -59,7 +57,7 @@ bool CollapseToDepth::can_be_applied(builder::StructuredSDFGBuilder& builder, an
         return false;
     }
 
-    size_t depth = perfectly_nested_map_depth(loop_, target_loops_ == 1);
+    size_t depth = perfectly_nested_map_depth(loop_);
     if (depth <= target_loops_) {
         return false;
     }
@@ -97,7 +95,7 @@ bool CollapseToDepth::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 }
 
 void CollapseToDepth::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    size_t depth = perfectly_nested_map_depth(loop_, target_loops_ == 1);
+    size_t depth = perfectly_nested_map_depth(loop_);
 
     if (target_loops_ == 1) {
         MapCollapse t(loop_, depth);
