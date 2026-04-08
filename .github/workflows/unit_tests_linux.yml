@@ -13,7 +13,7 @@ jobs:
   cpp-tests-linux:
     runs-on:
       group: dahlia
-      labels: cuda
+      labels: RTX5060
     container:
       image: daisytuner/docc-build-env-llvm19-ubuntu-24.04-et:latest
       options: >-
