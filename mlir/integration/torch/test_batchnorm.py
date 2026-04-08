@@ -138,6 +138,58 @@ def test_batchnorm1d_3d_input_backend():
 # --- BatchNorm2d ---
 
 
+def test_batchnorm2d_math():
+    class BN2dCompile(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bn = nn.BatchNorm2d(2)
+
+        def forward(self, x: torch.Tensor):
+            return self.bn(x)
+
+    model = BN2dCompile()
+    model.eval()
+
+    # Explicitly set batchnorm parameters for predictable math:
+    #   output = (input - running_mean) / sqrt(running_var + eps) * weight + bias
+    with torch.no_grad():
+        model.bn.weight.copy_(torch.tensor([2.0, 0.5]))  # per-channel scale
+        model.bn.bias.copy_(torch.tensor([1.0, -1.0]))  # per-channel shift
+        model.bn.running_mean.copy_(torch.tensor([0.0, 4.0]))  # per-channel mean
+        model.bn.running_var.copy_(torch.tensor([1.0, 4.0]))  # per-channel var
+
+    model_ref = BN2dCompile()
+    model_ref.eval()
+    model_ref.load_state_dict(model.state_dict())
+
+    # Shape: (batch=2, channels=2, h=2, w=2)
+    # Channel 0: weight=2, bias=1, mean=0, var=1  => out = (x - 0)/sqrt(1+eps) * 2 + 1 ≈ 2*x + 1
+    # Channel 1: weight=0.5, bias=-1, mean=4, var=4 => out = (x - 4)/sqrt(4+eps) * 0.5 - 1 ≈ 0.25*(x - 4) - 1
+    example_input = torch.tensor(
+        [
+            [
+                [[0.0, 1.0], [2.0, -1.0]],  # batch 0, channel 0
+                [[4.0, 8.0], [0.0, 6.0]],  # batch 0, channel 1
+            ],
+            [
+                [[3.0, -2.0], [0.5, 4.0]],  # batch 1, channel 0
+                [[10.0, 2.0], [4.0, -4.0]],  # batch 1, channel 1
+            ],
+        ]
+    )
+
+    program = torch.compile(model, backend="docc")
+    with torch.no_grad():
+        res = program(example_input)
+        ref = model_ref(example_input)
+
+    print("Input:\n", example_input)
+    print("Result (docc):\n", res)
+    print("Result (ref):\n", ref)
+
+    assert torch.allclose(res, ref, atol=1e-3)
+
+
 def test_batchnorm2d_compile():
     class BN2dCompile(nn.Module):
         def __init__(self):

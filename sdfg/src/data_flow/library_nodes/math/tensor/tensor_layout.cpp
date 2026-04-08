@@ -33,7 +33,15 @@ void TensorLayout::serialize_to_json(nlohmann::json& j) const {
 
 std::string TensorLayout::toStr() const {
     std::stringstream ss;
-    ss << "TLayout(" << this << ")";
+    ss << "TLayout(shape=[";
+    for (auto& s : shape_) {
+        ss << s->__str__() << ",";
+    }
+    ss << "], strides=[";
+    for (auto& s : strides_) {
+        ss << s->__str__() << ",";
+    }
+    ss << "])";
     return ss.str();
 }
 
