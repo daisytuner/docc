@@ -23,6 +23,8 @@ set(TEST_FILES
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/gpu_tiling_test.cpp
     transformations/offloading/kernel_local_storage_test.cpp
+    transformations/offloading/cublas_offloading_expansion_test.cpp
+    transformations/offloading/rocblas_offloading_expansion_test.cpp
     passes/scheduler/cuda_scheduler_test.cpp
     passes/scheduler/highway_scheduler_test.cpp
     passes/scheduler/omp_scheduler_test.cpp

@@ -6,6 +6,7 @@
 #include "sdfg/passes/offloading/gpu_loop_reordering_pass.h"
 #include "sdfg/passes/offloading/gpu_nested_parallelization_pass.h"
 #include "sdfg/passes/offloading/gpu_tiling_pass.h"
+#include "sdfg/passes/offloading/rocblas_offloading_expansion_pass.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/symbolic/symbol_propagation.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -140,6 +141,10 @@ void ROCMScheduler::post_schedule(
 
     GPUTilingPass tiling_pass(gpu_maps, 8);
     tiling_pass.run(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+
+    rocm::RocblasBLASOffloadingExpansionPass blas_offloading_pass;
+    blas_offloading_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
 }
 

@@ -23,6 +23,8 @@ set(SOURCE_FILES
     src/passes/offloading/gpu_tiling_pass.cpp
     src/passes/offloading/remove_redundant_transfers_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
+    src/passes/offloading/cublas_offloading_expansion_pass.cpp
+    src/passes/offloading/rocblas_offloading_expansion_pass.cpp
     src/passes/offloading/sync_condition_propagation.cpp
     src/passes/collapse_pass.cpp
     src/passes/extended_data_transfer_minimization_pass.cpp
@@ -54,6 +56,7 @@ set(SOURCE_FILES
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/transformations/offloading/cublas_offloading_expansion.cpp
+    src/transformations/offloading/rocblas_offloading_expansion.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_transform.cpp
     src/transformations/offloading/gpu_condition_propagation.cpp

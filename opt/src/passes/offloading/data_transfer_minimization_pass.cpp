@@ -162,8 +162,8 @@ bool DataTransferMinimization::accept(structured_control_flow::Sequence& sequenc
 
             // Maps the device pointers if necessary
             if (copy_out_device_container != copy_in_device_container) {
-                types::Pointer void_pointer;
-                types::Pointer void_pointer_pointer(*void_pointer.clone());
+                auto& container_type = this->builder_.subject().type(copy_out_device_container);
+                auto ref_type = container_type.clone();
                 auto& in_access =
                     this->builder_.add_access(*copy_in_block, copy_out_device_container, copy_out_src_debinfo);
                 auto& out_access =
@@ -173,7 +173,7 @@ bool DataTransferMinimization::accept(structured_control_flow::Sequence& sequenc
                     in_access,
                     out_access,
                     {symbolic::zero()},
-                    void_pointer_pointer,
+                    *ref_type,
                     DebugInfo::merge(copy_out->debug_info(), copy_in->debug_info())
                 );
             }

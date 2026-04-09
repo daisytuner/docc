@@ -392,19 +392,6 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         direction_ = FusionDirection::ProducerIntoConsumer;
     }
 
-    // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
-    // ProducerIntoConsumer: producer is replicated at each consumer site — producer must be all-parallel.
-    // ConsumerIntoProducer: consumer is reordered into producer's nest — consumer must be all-parallel.
-    if (direction_ == FusionDirection::ProducerIntoConsumer) {
-        if (!first_loop_info.is_perfectly_parallel) {
-            return false;
-        }
-    } else {
-        if (!second_loop_info.is_perfectly_parallel) {
-            return false;
-        }
-    }
-
     // Locate producer write point
     producer_loops_.clear();
     producer_body_ = nullptr;
@@ -424,6 +411,15 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         if (producer_block_ == nullptr) {
             return false;
         }
+        // If the body has multiple children, the at(0) walk does not guarantee
+        // we found the correct (or unique) write block. Fall back to deferred
+        // find_write_location resolution.
+        if (producer_body_->size() != 1) {
+            producer_block_ = nullptr;
+            // Keep producer_loops_ and producer_body_ from the walk — they are
+            // still valid for the loop chain. find_write_location will re-resolve
+            // the block within producer_body_.
+        }
     } else {
         // Non-perfectly-nested: search recursively for the write block
         // We need to know which containers to look for, but we don't know them yet.
@@ -435,7 +431,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     consumer_body_ = nullptr;
 
     if (second_nested) {
-        // Perfectly nested: walk the at(0).first chain
+        // Perfectly nested: walk the at(0).first chain through all loop types.
+        // Reduction patterns (e.g. Map{Map{For{T[i,j]+=...}}}) are rejected by
+        // the is_perfectly_parallel check — For loops make it non-parallel.
         consumer_loops_.push_back(&second_loop_);
         consumer_body_ = &second_loop_.root();
         structured_control_flow::ControlFlowNode* node = &second_loop_.root().at(0).first;
@@ -464,28 +462,49 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
     }
 
+    // First pass: identify fusion containers (producer writes, consumer reads)
     std::unordered_set<std::string> fusion_containers;
     for (const auto& [name, arg] : second_args) {
-        if (first_outputs.contains(name)) {
-            if (arg.is_output) {
-                return false;
-            }
-            if (arg.is_input) {
-                fusion_containers.insert(name);
-            }
-        }
-        if (first_inputs.contains(name) && arg.is_output) {
-            return false;
+        if (first_outputs.contains(name) && arg.is_input) {
+            fusion_containers.insert(name);
         }
     }
     if (fusion_containers.empty()) {
         return false;
     }
 
+    // Second pass: check for conflicts on non-fusion containers
+    for (const auto& [name, arg] : second_args) {
+        bool is_fusion = fusion_containers.contains(name);
+        if (first_outputs.contains(name) && arg.is_output && !is_fusion) {
+            return false;
+        }
+        if (first_inputs.contains(name) && arg.is_output && !is_fusion) {
+            return false;
+        }
+    }
+
+    // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
+    // ProducerIntoConsumer: both sides must be all-parallel. The producer is replicated at
+    // each consumer site — it must be reorderable. The consumer must also be all-parallel
+    // because a sequential (For) loop would re-execute the inlined producer on every
+    // iteration (e.g. init T=0 fused into For(k){T+=A[k]} re-initializes each k).
+    // ConsumerIntoProducer: only the consumer (inlined side) must be all-parallel.
+    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+        if (!first_loop_info.is_perfectly_parallel || !second_loop_info.is_perfectly_parallel) {
+            return false;
+        }
+    } else {
+        if (!second_loop_info.is_perfectly_parallel) {
+            return false;
+        }
+    }
+
     // Now that we know the fusion containers, resolve deferred locations
-    if (!first_nested) {
-        // Non-perfectly-nested producer: find write location for the first fusion container
-        // All fusion containers must be written at the same block for this to work
+    if (producer_block_ == nullptr) {
+        // Non-perfectly-nested producer (or perfectly-nested with multi-block body):
+        // find write location for the first fusion container.
+        // All fusion containers must be written at the same block for this to work.
         for (const auto& container : fusion_containers) {
             std::vector<structured_control_flow::StructuredLoop*> write_loops;
             structured_control_flow::Sequence* write_body = nullptr;
@@ -544,6 +563,41 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     auto& producer_assumptions = assumptions_analysis.get(*producer_block_);
     auto& consumer_assumptions = assumptions_analysis.get(consumer_body_->at(0).first);
 
+    // Check if producer actually reads a fusion container in the dataflow.
+    // If so, ProducerIntoConsumer is unsafe (original producer loop mutates the array
+    // before the inlined copy reads it). Force ConsumerIntoProducer.
+    // We check the dataflow directly rather than ArgumentsAnalysis, because the latter
+    // conservatively marks written containers as also read.
+    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+        auto& first_dataflow_check = producer_block_->dataflow();
+        bool producer_reads_fusion = false;
+        for (const auto& container : fusion_containers) {
+            for (auto& node : first_dataflow_check.nodes()) {
+                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+                if (access != nullptr && access->data() == container && first_dataflow_check.out_degree(*access) > 0) {
+                    producer_reads_fusion = true;
+                    break;
+                }
+            }
+            if (producer_reads_fusion) break;
+        }
+        if (producer_reads_fusion) {
+            direction_ = FusionDirection::ConsumerIntoProducer;
+            // Re-check: consumer must be all-parallel for ConsumerIntoProducer
+            if (!second_loop_info.is_perfectly_parallel) {
+                return false;
+            }
+        }
+    }
+
+    // ProducerIntoConsumer only deep-copies producer_block_ into the consumer body.
+    // If the producer body has multiple blocks (e.g. from prior BlockFusion merging
+    // a previous fusion's writeback + inlined blocks), the write block may depend on
+    // intermediates produced by earlier blocks that would NOT be copied. Reject.
+    if (direction_ == FusionDirection::ProducerIntoConsumer && producer_body_->size() > 1) {
+        return false;
+    }
+
     // For each fusion container, find the producer memlet and collect unique consumer subsets
     auto& first_dataflow = producer_block_->dataflow();
     for (const auto& container : fusion_containers) {
@@ -555,6 +609,11 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             if (access == nullptr || access->data() != container) {
                 continue;
             }
+            // Skip read-only access nodes (producer reads the fusion container)
+            if (first_dataflow.in_degree(*access) == 0) {
+                continue;
+            }
+            // Write access: must have exactly one incoming edge and no outgoing
             if (first_dataflow.in_degree(*access) != 1 || first_dataflow.out_degree(*access) != 0) {
                 return false;
             }
@@ -589,6 +648,10 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             for (auto& node : dataflow.nodes()) {
                 auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
                 if (access == nullptr || access->data() != container) {
+                    continue;
+                }
+                // Skip write-only access nodes (consumer also writes the fusion container)
+                if (dataflow.in_degree(*access) > 0 && dataflow.out_degree(*access) == 0) {
                     continue;
                 }
                 if (dataflow.in_degree(*access) != 0 || dataflow.out_degree(*access) == 0) {
@@ -894,7 +957,11 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                     auto* copied = node_mapping[&node];
                     if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(copied)) {
                         if (access_node->data() == candidate.container) {
-                            access_node->data(temp_name);
+                            // Only rename read access nodes to temp; keep write access nodes
+                            // pointing to the original container
+                            if (consumer_dataflow.in_degree(node) == 0) {
+                                access_node->data(temp_name);
+                            }
                         }
                     }
                 }

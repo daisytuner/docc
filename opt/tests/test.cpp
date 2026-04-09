@@ -5,6 +5,7 @@
 #include "sdfg/targets/cuda/plugin.h"
 #include "sdfg/targets/highway/plugin.h"
 #include "sdfg/targets/omp/plugin.h"
+#include "sdfg/targets/rocm/plugin.h"
 #include "sdfg/visualizer/dot_visualizer.h"
 
 static std::optional<std::filesystem::path> test_output_dir;
@@ -13,6 +14,7 @@ int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     sdfg::codegen::register_default_dispatchers();
     sdfg::cuda::register_cuda_plugin();
+    sdfg::rocm::register_rocm_plugin();
     sdfg::serializer::register_default_serializers();
     sdfg::highway::register_highway_plugin();
     sdfg::omp::register_omp_plugin();
