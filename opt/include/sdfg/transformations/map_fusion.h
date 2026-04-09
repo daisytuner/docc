@@ -28,6 +28,7 @@ class MapFusion : public Transformation {
     structured_control_flow::Map& first_map_;
     structured_control_flow::StructuredLoop& second_loop_;
     bool applied_ = false;
+    bool require_consecutive_ = true; // Only fuse if maps are consecutive in the sequence
 
     enum class FusionDirection {
         ProducerIntoConsumer,
@@ -96,8 +97,13 @@ public:
      * @brief Construct a map fusion transformation
      * @param first_map The first map (producer) to be fused
      * @param second_loop The second loop (consumer, can be Map or For) to be fused
+     * @param require_consecutive Whether the maps must be consecutive in the sequence for fusion to be applied
      */
-    MapFusion(structured_control_flow::Map& first_map, structured_control_flow::StructuredLoop& second_loop);
+    MapFusion(
+        structured_control_flow::Map& first_map,
+        structured_control_flow::StructuredLoop& second_loop,
+        bool require_consecutive = true
+    );
 
     /**
      * @brief Get the name of this transformation

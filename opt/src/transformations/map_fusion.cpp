@@ -22,8 +22,12 @@
 namespace sdfg {
 namespace transformations {
 
-MapFusion::MapFusion(structured_control_flow::Map& first_map, structured_control_flow::StructuredLoop& second_loop)
-    : first_map_(first_map), second_loop_(second_loop) {}
+MapFusion::MapFusion(
+    structured_control_flow::Map& first_map,
+    structured_control_flow::StructuredLoop& second_loop,
+    bool require_consecutive
+)
+    : first_map_(first_map), second_loop_(second_loop), require_consecutive_(require_consecutive) {}
 
 std::string MapFusion::name() const { return "MapFusion"; }
 
@@ -359,14 +363,16 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     if (first_index == -1 || second_index == -1) {
         return false;
     }
-    if (second_index != first_index + 1) {
+    if (require_consecutive_ && second_index != first_index + 1) {
         return false;
     }
 
     // Criterion: Transition between maps should have no assignments
-    auto& transition = parent_sequence->at(first_index).second;
-    if (!transition.empty()) {
-        return false;
+    if (require_consecutive_) {
+        auto& transition = parent_sequence->at(first_index).second;
+        if (!transition.empty()) {
+            return false;
+        }
     }
     // Determine fusion pattern based on nesting properties
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();

@@ -76,46 +76,46 @@ def test_adi(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "Free": 5,
-                "MAP": 32,
-                "SEQUENTIAL": 32,
-                "FOR": 37,
-                "Malloc": 19,
+                "Free": 3,
+                "MAP": 24,
+                "SEQUENTIAL": 24,
+                "FOR": 29,
+                "Malloc": 11,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "Free": 5,
-                "HIGHWAY": 10,
-                "MAP": 32,
-                "SEQUENTIAL": 22,
-                "FOR": 37,
-                "Malloc": 19,
+                "Free": 3,
+                "HIGHWAY": 5,
+                "MAP": 24,
+                "SEQUENTIAL": 19,
+                "FOR": 29,
+                "Malloc": 11,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "Free": 5,
+                "Free": 3,
                 "CPU_PARALLEL": 1,
-                "HIGHWAY": 9,
-                "MAP": 31,
-                "SEQUENTIAL": 21,
-                "FOR": 36,
-                "Malloc": 19,
+                "HIGHWAY": 4,
+                "MAP": 23,
+                "SEQUENTIAL": 18,
+                "FOR": 28,
+                "Malloc": 11,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "Free": 5,
+                "Free": 3,
                 "CUDA": 2,
                 "CUDAOffloading": 4,
-                "MAP": 32,
-                "SEQUENTIAL": 30,
-                "FOR": 37,
-                "Malloc": 19,
+                "MAP": 24,
+                "SEQUENTIAL": 22,
+                "FOR": 29,
+                "Malloc": 11,
             }
         )
     else:  # rocm
