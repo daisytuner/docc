@@ -13,9 +13,9 @@
 #include "sdfg/types/pointer.h"
 
 namespace sdfg {
-namespace cuda {
+namespace rocm {
 
-class CUDAStdlibOffloadingExpansion : public transformations::Transformation {
+class ROCMStdlibDataTransferExtraction : public transformations::Transformation {
 private:
     stdlib::MemsetNode& memset_node_;
 
@@ -50,7 +50,7 @@ private:
     );
 
 public:
-    CUDAStdlibOffloadingExpansion(stdlib::MemsetNode& memset_node);
+    ROCMStdlibDataTransferExtraction(stdlib::MemsetNode& memset_node);
 
     virtual std::string name() const override;
 
@@ -62,5 +62,5 @@ public:
     virtual void to_json(nlohmann::json& json) const override;
 };
 
-} // namespace cuda
+} // namespace rocm
 } // namespace sdfg

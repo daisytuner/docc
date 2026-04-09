@@ -8,11 +8,11 @@
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
-#include "sdfg/transformations/offloading/cublas_offloading_expansion.h"
+#include "sdfg/transformations/offloading/cublas_data_transfer_extraction.h"
 
 using namespace sdfg;
 
-TEST(CUBLASOffloadingExpansionTest, DotCanBeApplied) {
+TEST(CUBLASDataTransferExtractionTest, DotCanBeApplied) {
     builder::StructuredSDFGBuilder builder("sdfg_dot", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -49,11 +49,11 @@ TEST(CUBLASOffloadingExpansionTest, DotCanBeApplied) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUBLASOffloadingExpansion expansion(dot_node);
+    cuda::CUBLASDataTransferExtraction expansion(dot_node);
     EXPECT_TRUE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(CUBLASOffloadingExpansionTest, DotApply) {
+TEST(CUBLASDataTransferExtractionTest, DotApply) {
     builder::StructuredSDFGBuilder builder("sdfg_dot", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -90,7 +90,7 @@ TEST(CUBLASOffloadingExpansionTest, DotApply) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUBLASOffloadingExpansion expansion(dot_node);
+    cuda::CUBLASDataTransferExtraction expansion(dot_node);
     ASSERT_TRUE(expansion.can_be_applied(builder, analysis_manager));
     expansion.apply(builder, analysis_manager);
 
@@ -106,7 +106,7 @@ TEST(CUBLASOffloadingExpansionTest, DotApply) {
     EXPECT_NE(b_node.data().find(cuda::CUDA_DEVICE_PREFIX), std::string::npos);
 }
 
-TEST(CUBLASOffloadingExpansionTest, DotWrongImplType) {
+TEST(CUBLASDataTransferExtractionTest, DotWrongImplType) {
     builder::StructuredSDFGBuilder builder("sdfg_dot", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -135,11 +135,11 @@ TEST(CUBLASOffloadingExpansionTest, DotWrongImplType) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUBLASOffloadingExpansion expansion(dot_node);
+    cuda::CUBLASDataTransferExtraction expansion(dot_node);
     EXPECT_FALSE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(CUBLASOffloadingExpansionTest, GemmCanBeApplied) {
+TEST(CUBLASDataTransferExtractionTest, GemmCanBeApplied) {
     builder::StructuredSDFGBuilder builder("sdfg_gemm", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -190,11 +190,11 @@ TEST(CUBLASOffloadingExpansionTest, GemmCanBeApplied) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUBLASOffloadingExpansion expansion(gemm_node);
+    cuda::CUBLASDataTransferExtraction expansion(gemm_node);
     EXPECT_TRUE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(CUBLASOffloadingExpansionTest, GemmApply) {
+TEST(CUBLASDataTransferExtractionTest, GemmApply) {
     builder::StructuredSDFGBuilder builder("sdfg_gemm", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -245,7 +245,7 @@ TEST(CUBLASOffloadingExpansionTest, GemmApply) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUBLASOffloadingExpansion expansion(gemm_node);
+    cuda::CUBLASDataTransferExtraction expansion(gemm_node);
     ASSERT_TRUE(expansion.can_be_applied(builder, analysis_manager));
     expansion.apply(builder, analysis_manager);
 
@@ -258,7 +258,7 @@ TEST(CUBLASOffloadingExpansionTest, GemmApply) {
     EXPECT_EQ(sdfg.root().size(), 7);
 }
 
-TEST(CUBLASOffloadingExpansionTest, GemmWrongImplType) {
+TEST(CUBLASDataTransferExtractionTest, GemmWrongImplType) {
     builder::StructuredSDFGBuilder builder("sdfg_gemm", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -309,11 +309,11 @@ TEST(CUBLASOffloadingExpansionTest, GemmWrongImplType) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUBLASOffloadingExpansion expansion(gemm_node);
+    cuda::CUBLASDataTransferExtraction expansion(gemm_node);
     EXPECT_FALSE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(CUBLASOffloadingExpansionTest, DotSerialization) {
+TEST(CUBLASDataTransferExtractionTest, DotSerialization) {
     builder::StructuredSDFGBuilder builder("sdfg_dot", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -340,20 +340,20 @@ TEST(CUBLASOffloadingExpansionTest, DotSerialization) {
     builder.add_computational_memlet(block, b_node, dot_node, "__y", {symbolic::zero()}, array_desc);
     builder.add_computational_memlet(block, dot_node, "__out", c_node, {}, desc);
 
-    cuda::CUBLASOffloadingExpansion expansion(dot_node);
+    cuda::CUBLASDataTransferExtraction expansion(dot_node);
 
     nlohmann::json j;
     expansion.to_json(j);
 
-    EXPECT_EQ(j["transformation_type"], "CUBLASOffloadingExpansion");
+    EXPECT_EQ(j["transformation_type"], "CUBLASDataTransferExtraction");
     EXPECT_TRUE(j.contains("subgraph"));
     EXPECT_EQ(j["subgraph"]["0"]["element_id"], dot_node.element_id());
 
-    auto deserialized = cuda::CUBLASOffloadingExpansion::from_json(builder, j);
-    EXPECT_EQ(deserialized.name(), "CUBLASOffloadingExpansion");
+    auto deserialized = cuda::CUBLASDataTransferExtraction::from_json(builder, j);
+    EXPECT_EQ(deserialized.name(), "CUBLASDataTransferExtraction");
 }
 
-TEST(CUBLASOffloadingExpansionTest, GemmSerialization) {
+TEST(CUBLASDataTransferExtractionTest, GemmSerialization) {
     builder::StructuredSDFGBuilder builder("sdfg_gemm", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -398,15 +398,15 @@ TEST(CUBLASOffloadingExpansionTest, GemmSerialization) {
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
     builder.add_computational_memlet(block, gemm_node, "__C", c_out_node, {symbolic::zero()}, arr_c_type);
 
-    cuda::CUBLASOffloadingExpansion expansion(gemm_node);
+    cuda::CUBLASDataTransferExtraction expansion(gemm_node);
 
     nlohmann::json j;
     expansion.to_json(j);
 
-    EXPECT_EQ(j["transformation_type"], "CUBLASOffloadingExpansion");
+    EXPECT_EQ(j["transformation_type"], "CUBLASDataTransferExtraction");
     EXPECT_TRUE(j.contains("subgraph"));
     EXPECT_EQ(j["subgraph"]["0"]["element_id"], gemm_node.element_id());
 
-    auto deserialized = cuda::CUBLASOffloadingExpansion::from_json(builder, j);
-    EXPECT_EQ(deserialized.name(), "CUBLASOffloadingExpansion");
+    auto deserialized = cuda::CUBLASDataTransferExtraction::from_json(builder, j);
+    EXPECT_EQ(deserialized.name(), "CUBLASDataTransferExtraction");
 }

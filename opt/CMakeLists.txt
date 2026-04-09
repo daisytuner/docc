@@ -57,10 +57,10 @@ set(SOURCE_FILES
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
-    src/transformations/offloading/cublas_offloading_expansion.cpp
-    src/transformations/offloading/cuda_stdlib_offloading_expansion.cpp
-    src/transformations/offloading/rocblas_offloading_expansion.cpp
-    src/transformations/offloading/rocm_stdlib_offloading_expansion.cpp
+    src/transformations/offloading/cublas_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
+    src/transformations/offloading/rocblas_data_transfer_extraction.cpp
+    src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_transform.cpp
     src/transformations/offloading/gpu_condition_propagation.cpp

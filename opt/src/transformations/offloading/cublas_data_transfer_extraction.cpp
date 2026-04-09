@@ -1,4 +1,4 @@
-#include "sdfg/transformations/offloading/cublas_offloading_expansion.h"
+#include "sdfg/transformations/offloading/cublas_data_transfer_extraction.h"
 
 #include <cassert>
 #include <cstddef>
@@ -28,7 +28,7 @@
 namespace sdfg {
 namespace cuda {
 
-std::string CUBLASOffloadingExpansion::create_device_container(
+std::string CUBLASDataTransferExtraction::create_device_container(
     builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
 ) {
     auto new_type = type.clone();
@@ -40,7 +40,7 @@ std::string CUBLASOffloadingExpansion::create_device_container(
     return device_container;
 }
 
-void CUBLASOffloadingExpansion::create_allocate(
+void CUBLASDataTransferExtraction::create_allocate(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -61,7 +61,7 @@ void CUBLASOffloadingExpansion::create_allocate(
     builder.add_computational_memlet(alloc_block, alloc_node, "_ret", d_cont, {}, type);
 }
 
-void CUBLASOffloadingExpansion::create_deallocate(
+void CUBLASDataTransferExtraction::create_deallocate(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -83,7 +83,7 @@ void CUBLASOffloadingExpansion::create_deallocate(
     builder.add_computational_memlet(dealloc_block, dealloc_node, "_ptr", d_cont_out, {}, type);
 }
 
-void CUBLASOffloadingExpansion::create_copy_to_device(
+void CUBLASDataTransferExtraction::create_copy_to_device(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -107,7 +107,7 @@ void CUBLASOffloadingExpansion::create_copy_to_device(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", d_cont, {}, type);
 }
 
-void CUBLASOffloadingExpansion::create_copy_from_device(
+void CUBLASDataTransferExtraction::create_copy_from_device(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -131,7 +131,7 @@ void CUBLASOffloadingExpansion::create_copy_from_device(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", cont, {}, type);
 }
 
-void CUBLASOffloadingExpansion::create_copy_to_device_with_allocation(
+void CUBLASDataTransferExtraction::create_copy_to_device_with_allocation(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -155,7 +155,7 @@ void CUBLASOffloadingExpansion::create_copy_to_device_with_allocation(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", d_cont, {}, type);
 }
 
-void CUBLASOffloadingExpansion::create_copy_from_device_with_deallocation(
+void CUBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -179,11 +179,11 @@ void CUBLASOffloadingExpansion::create_copy_from_device_with_deallocation(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", cont, {}, type);
 }
 
-CUBLASOffloadingExpansion::CUBLASOffloadingExpansion(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
+CUBLASDataTransferExtraction::CUBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
 
-std::string CUBLASOffloadingExpansion::name() const { return "CUBLASOffloadingExpansion"; }
+std::string CUBLASDataTransferExtraction::name() const { return "CUBLASDataTransferExtraction"; }
 
-bool CUBLASOffloadingExpansion::
+bool CUBLASDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // BLAS node must have implementation type CUBLAS without data transfers
     if (this->blas_node_.implementation_type().value() != cuda::ImplementationType_CUDAWithTransfers.value()) {
@@ -207,7 +207,8 @@ bool CUBLASOffloadingExpansion::
     }
 }
 
-void CUBLASOffloadingExpansion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+void CUBLASDataTransferExtraction::
+    apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get data flow graph and block
     auto& dfg = this->blas_node_.get_parent();
     auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
@@ -231,7 +232,7 @@ void CUBLASOffloadingExpansion::apply(builder::StructuredSDFGBuilder& builder, a
             precision = types::PrimitiveType::Double;
             break;
         default:
-            throw InvalidSDFGException("CUBLASOffloadingExpansion: Unsupported precision");
+            throw InvalidSDFGException("CUBLASDataTransferExtraction: Unsupported precision");
     }
     types::Scalar base_type(precision);
     types::Pointer type(base_type);
@@ -300,14 +301,14 @@ void CUBLASOffloadingExpansion::apply(builder::StructuredSDFGBuilder& builder, a
         in_access.at("__C").data(dC);
         out_access.at("__C").data(dC);
     } else {
-        throw InvalidSDFGException("CUBLASOffloadingExpansion: Unsupported BLAS type");
+        throw InvalidSDFGException("CUBLASDataTransferExtraction: Unsupported BLAS type");
     }
 
     // Change the implementation type to CUBLAS without data transfers
     this->blas_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
 }
 
-void CUBLASOffloadingExpansion::to_json(nlohmann::json& j) const {
+void CUBLASDataTransferExtraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
 
     // BLAS nodes are not loops; they appear as generic elements in GNN data.
@@ -318,7 +319,7 @@ void CUBLASOffloadingExpansion::to_json(nlohmann::json& j) const {
     j["blas_node_element_id"] = this->blas_node_.element_id();
 }
 
-CUBLASOffloadingExpansion CUBLASOffloadingExpansion::
+CUBLASDataTransferExtraction CUBLASDataTransferExtraction::
     from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     size_t blas_node_id;
     if (j.contains("subgraph")) {
@@ -339,7 +340,7 @@ CUBLASOffloadingExpansion CUBLASOffloadingExpansion::
         );
     }
 
-    return CUBLASOffloadingExpansion(*blas_node);
+    return CUBLASDataTransferExtraction(*blas_node);
 }
 
 } // namespace cuda

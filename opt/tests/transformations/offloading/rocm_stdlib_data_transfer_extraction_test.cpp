@@ -7,11 +7,11 @@
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
-#include "sdfg/transformations/offloading/rocm_stdlib_offloading_expansion.h"
+#include "sdfg/transformations/offloading/rocm_stdlib_data_transfer_extraction.h"
 
 using namespace sdfg;
 
-TEST(ROCMStdlibOffloadingExpansionTest, MemsetCanBeApplied) {
+TEST(ROCMStdlibDataTransferExtractionTest, MemsetCanBeApplied) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -34,11 +34,11 @@ TEST(ROCMStdlibOffloadingExpansionTest, MemsetCanBeApplied) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCMStdlibOffloadingExpansion expansion(memset_node);
+    rocm::ROCMStdlibDataTransferExtraction expansion(memset_node);
     EXPECT_TRUE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(ROCMStdlibOffloadingExpansionTest, MemsetApply) {
+TEST(ROCMStdlibDataTransferExtractionTest, MemsetApply) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -61,7 +61,7 @@ TEST(ROCMStdlibOffloadingExpansionTest, MemsetApply) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCMStdlibOffloadingExpansion expansion(memset_node);
+    rocm::ROCMStdlibDataTransferExtraction expansion(memset_node);
     ASSERT_TRUE(expansion.can_be_applied(builder, analysis_manager));
     expansion.apply(builder, analysis_manager);
 
@@ -76,7 +76,7 @@ TEST(ROCMStdlibOffloadingExpansionTest, MemsetApply) {
     EXPECT_NE(buf_node.data().find(rocm::ROCM_DEVICE_PREFIX), std::string::npos);
 }
 
-TEST(ROCMStdlibOffloadingExpansionTest, MemsetWrongImplType) {
+TEST(ROCMStdlibDataTransferExtractionTest, MemsetWrongImplType) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -99,11 +99,11 @@ TEST(ROCMStdlibOffloadingExpansionTest, MemsetWrongImplType) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCMStdlibOffloadingExpansion expansion(memset_node);
+    rocm::ROCMStdlibDataTransferExtraction expansion(memset_node);
     EXPECT_FALSE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(ROCMStdlibOffloadingExpansionTest, MemsetNoneImplType) {
+TEST(ROCMStdlibDataTransferExtractionTest, MemsetNoneImplType) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -125,11 +125,11 @@ TEST(ROCMStdlibOffloadingExpansionTest, MemsetNoneImplType) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCMStdlibOffloadingExpansion expansion(memset_node);
+    rocm::ROCMStdlibDataTransferExtraction expansion(memset_node);
     EXPECT_FALSE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(ROCMStdlibOffloadingExpansionTest, MemsetSerialization) {
+TEST(ROCMStdlibDataTransferExtractionTest, MemsetSerialization) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -150,12 +150,12 @@ TEST(ROCMStdlibOffloadingExpansionTest, MemsetSerialization) {
 
     builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
 
-    rocm::ROCMStdlibOffloadingExpansion expansion(memset_node);
+    rocm::ROCMStdlibDataTransferExtraction expansion(memset_node);
 
     nlohmann::json j;
     expansion.to_json(j);
 
-    EXPECT_EQ(j["transformation_type"], "ROCMStdlibOffloadingExpansion");
+    EXPECT_EQ(j["transformation_type"], "ROCMStdlibDataTransferExtraction");
     EXPECT_TRUE(j.contains("subgraph"));
     EXPECT_EQ(j["subgraph"]["0"]["element_id"], memset_node.element_id());
 }

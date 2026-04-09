@@ -7,11 +7,11 @@
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
-#include "sdfg/transformations/offloading/cuda_stdlib_offloading_expansion.h"
+#include "sdfg/transformations/offloading/cuda_stdlib_data_transfer_extraction.h"
 
 using namespace sdfg;
 
-TEST(CUDAStdlibOffloadingExpansionTest, MemsetCanBeApplied) {
+TEST(CUDAStdlibDataTransferExtractionTest, MemsetCanBeApplied) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -35,11 +35,11 @@ TEST(CUDAStdlibOffloadingExpansionTest, MemsetCanBeApplied) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUDAStdlibOffloadingExpansion expansion(memset_node);
+    cuda::CUDAStdlibDataTransferExtraction expansion(memset_node);
     EXPECT_TRUE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(CUDAStdlibOffloadingExpansionTest, MemsetApply) {
+TEST(CUDAStdlibDataTransferExtractionTest, MemsetApply) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -62,7 +62,7 @@ TEST(CUDAStdlibOffloadingExpansionTest, MemsetApply) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUDAStdlibOffloadingExpansion expansion(memset_node);
+    cuda::CUDAStdlibDataTransferExtraction expansion(memset_node);
     ASSERT_TRUE(expansion.can_be_applied(builder, analysis_manager));
     expansion.apply(builder, analysis_manager);
 
@@ -77,7 +77,7 @@ TEST(CUDAStdlibOffloadingExpansionTest, MemsetApply) {
     EXPECT_NE(buf_node.data().find(cuda::CUDA_DEVICE_PREFIX), std::string::npos);
 }
 
-TEST(CUDAStdlibOffloadingExpansionTest, MemsetWrongImplType) {
+TEST(CUDAStdlibDataTransferExtractionTest, MemsetWrongImplType) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -101,11 +101,11 @@ TEST(CUDAStdlibOffloadingExpansionTest, MemsetWrongImplType) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUDAStdlibOffloadingExpansion expansion(memset_node);
+    cuda::CUDAStdlibDataTransferExtraction expansion(memset_node);
     EXPECT_FALSE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(CUDAStdlibOffloadingExpansionTest, MemsetNoneImplType) {
+TEST(CUDAStdlibDataTransferExtractionTest, MemsetNoneImplType) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -128,11 +128,11 @@ TEST(CUDAStdlibOffloadingExpansionTest, MemsetNoneImplType) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    cuda::CUDAStdlibOffloadingExpansion expansion(memset_node);
+    cuda::CUDAStdlibDataTransferExtraction expansion(memset_node);
     EXPECT_FALSE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(CUDAStdlibOffloadingExpansionTest, MemsetSerialization) {
+TEST(CUDAStdlibDataTransferExtractionTest, MemsetSerialization) {
     builder::StructuredSDFGBuilder builder("sdfg_memset", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -153,12 +153,12 @@ TEST(CUDAStdlibOffloadingExpansionTest, MemsetSerialization) {
 
     builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
 
-    cuda::CUDAStdlibOffloadingExpansion expansion(memset_node);
+    cuda::CUDAStdlibDataTransferExtraction expansion(memset_node);
 
     nlohmann::json j;
     expansion.to_json(j);
 
-    EXPECT_EQ(j["transformation_type"], "CUDAStdlibOffloadingExpansion");
+    EXPECT_EQ(j["transformation_type"], "CUDAStdlibDataTransferExtraction");
     EXPECT_TRUE(j.contains("subgraph"));
     EXPECT_EQ(j["subgraph"]["0"]["element_id"], memset_node.element_id());
 }

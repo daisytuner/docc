@@ -1,4 +1,4 @@
-#include "sdfg/transformations/offloading/rocblas_offloading_expansion.h"
+#include "sdfg/transformations/offloading/rocblas_data_transfer_extraction.h"
 
 #include <cassert>
 #include <cstddef>
@@ -28,7 +28,7 @@
 namespace sdfg {
 namespace rocm {
 
-std::string ROCBLASOffloadingExpansion::create_device_container(
+std::string ROCBLASDataTransferExtraction::create_device_container(
     builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
 ) {
     auto new_type = type.clone();
@@ -40,7 +40,7 @@ std::string ROCBLASOffloadingExpansion::create_device_container(
     return device_container;
 }
 
-void ROCBLASOffloadingExpansion::create_allocate(
+void ROCBLASDataTransferExtraction::create_allocate(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -61,7 +61,7 @@ void ROCBLASOffloadingExpansion::create_allocate(
     builder.add_computational_memlet(alloc_block, alloc_node, "_ret", d_cont, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_deallocate(
+void ROCBLASDataTransferExtraction::create_deallocate(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -83,7 +83,7 @@ void ROCBLASOffloadingExpansion::create_deallocate(
     builder.add_computational_memlet(dealloc_block, dealloc_node, "_ptr", d_cont_out, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_copy_to_device(
+void ROCBLASDataTransferExtraction::create_copy_to_device(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -107,7 +107,7 @@ void ROCBLASOffloadingExpansion::create_copy_to_device(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", d_cont, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_copy_from_device(
+void ROCBLASDataTransferExtraction::create_copy_from_device(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -131,7 +131,7 @@ void ROCBLASOffloadingExpansion::create_copy_from_device(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", cont, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_copy_to_device_with_allocation(
+void ROCBLASDataTransferExtraction::create_copy_to_device_with_allocation(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -155,7 +155,7 @@ void ROCBLASOffloadingExpansion::create_copy_to_device_with_allocation(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", d_cont, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_copy_from_device_with_deallocation(
+void ROCBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -179,11 +179,11 @@ void ROCBLASOffloadingExpansion::create_copy_from_device_with_deallocation(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", cont, {}, type);
 }
 
-ROCBLASOffloadingExpansion::ROCBLASOffloadingExpansion(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
+ROCBLASDataTransferExtraction::ROCBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
 
-std::string ROCBLASOffloadingExpansion::name() const { return "ROCBLASOffloadingExpansion"; }
+std::string ROCBLASDataTransferExtraction::name() const { return "ROCBLASDataTransferExtraction"; }
 
-bool ROCBLASOffloadingExpansion::
+bool ROCBLASDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // BLAS node must have implementation type ROCMBLAS with data transfers
     if (this->blas_node_.implementation_type().value() != rocm::ImplementationType_ROCMWithTransfers.value()) {
@@ -206,7 +206,7 @@ bool ROCBLASOffloadingExpansion::
     }
 }
 
-void ROCBLASOffloadingExpansion::
+void ROCBLASDataTransferExtraction::
     apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get data flow graph and block
     auto& dfg = this->blas_node_.get_parent();
@@ -231,7 +231,7 @@ void ROCBLASOffloadingExpansion::
             precision = types::PrimitiveType::Double;
             break;
         default:
-            throw InvalidSDFGException("ROCBLASOffloadingExpansion: Unsupported precision");
+            throw InvalidSDFGException("ROCBLASDataTransferExtraction: Unsupported precision");
     }
     types::Scalar base_type(precision);
     types::Pointer type(base_type);
@@ -300,14 +300,14 @@ void ROCBLASOffloadingExpansion::
         in_access.at("__C").data(dC);
         out_access.at("__C").data(dC);
     } else {
-        throw InvalidSDFGException("ROCBLASOffloadingExpansion: Unsupported BLAS type");
+        throw InvalidSDFGException("ROCBLASDataTransferExtraction: Unsupported BLAS type");
     }
 
     // Change the implementation type to ROCMBLAS without data transfers
     this->blas_node_.implementation_type() = rocm::ImplementationType_ROCMWithoutTransfers;
 }
 
-void ROCBLASOffloadingExpansion::to_json(nlohmann::json& j) const {
+void ROCBLASDataTransferExtraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
 
     // BLAS nodes are not loops; they appear as generic elements in GNN data.
@@ -318,7 +318,7 @@ void ROCBLASOffloadingExpansion::to_json(nlohmann::json& j) const {
     j["blas_node_element_id"] = this->blas_node_.element_id();
 }
 
-ROCBLASOffloadingExpansion ROCBLASOffloadingExpansion::
+ROCBLASDataTransferExtraction ROCBLASDataTransferExtraction::
     from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     size_t blas_node_id;
     if (j.contains("subgraph")) {
@@ -339,7 +339,7 @@ ROCBLASOffloadingExpansion ROCBLASOffloadingExpansion::
         );
     }
 
-    return ROCBLASOffloadingExpansion(*blas_node);
+    return ROCBLASDataTransferExtraction(*blas_node);
 }
 
 } // namespace rocm
