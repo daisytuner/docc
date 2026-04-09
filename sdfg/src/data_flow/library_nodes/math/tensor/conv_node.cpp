@@ -230,7 +230,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     // Output Y is [N, F, out_shape...] — GEMM writes directly per batch via pointer reference
 
     if (symbolic::eq(this->group_, symbolic::one())) {
-        /* ===== No groups ====================================================================== */
+        /* ===== No groups (H-tiled im2col + GEMM) ============================================= */
 
         // Compute K = C_in * prod(kernel_shape) and spatial = prod(out_shape)
         symbolic::Expression gemm_k = this->shape_[1]; // C_in
@@ -242,8 +242,59 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             spatial = symbolic::mul(spatial, out_shape[i]);
         }
 
-        // Patches buffer: K × spatial (per-batch, reused across batches)
-        symbolic::Expression patches_size = symbolic::mul(gemm_k, spatial);
+        // Compute H-tile parameters for the first spatial output dimension
+        // tail_spatial = prod(out_shape[1:])
+        symbolic::Expression tail_spatial = symbolic::one();
+        for (size_t i = 1; i < dims; i++) {
+            tail_spatial = symbolic::mul(tail_spatial, out_shape[i]);
+        }
+
+        // Compute tile size targeting ~2MB L2 cache
+        symbolic::Expression h_tile = out_shape[0]; // default: no tiling (full H)
+        symbolic::Expression num_h_tiles = symbolic::one();
+        {
+            bool can_compute = true;
+            int64_t K_val = 0, tail_val = 1, h_out_val = 0;
+            size_t elem_size = (base_type.primitive_type() == types::PrimitiveType::Double)  ? 8
+                               : (base_type.primitive_type() == types::PrimitiveType::Float) ? 4
+                                                                                             : 2;
+
+            if (SymEngine::is_a<SymEngine::Integer>(*gemm_k)) {
+                K_val = SymEngine::rcp_static_cast<const SymEngine::Integer>(gemm_k)->as_int();
+            } else {
+                can_compute = false;
+            }
+            if (SymEngine::is_a<SymEngine::Integer>(*out_shape[0])) {
+                h_out_val = SymEngine::rcp_static_cast<const SymEngine::Integer>(out_shape[0])->as_int();
+            } else {
+                can_compute = false;
+            }
+            for (size_t i = 1; i < dims && can_compute; i++) {
+                if (SymEngine::is_a<SymEngine::Integer>(*out_shape[i])) {
+                    tail_val *= SymEngine::rcp_static_cast<const SymEngine::Integer>(out_shape[i])->as_int();
+                } else {
+                    can_compute = false;
+                }
+            }
+
+            if (can_compute && K_val > 0 && tail_val > 0 && h_out_val > 0) {
+                int64_t target_bytes = 2 * 1024 * 1024; // 2 MB
+                int64_t h_tile_val = target_bytes / (K_val * tail_val * (int64_t) elem_size);
+                h_tile_val = (h_tile_val < 1) ? 1 : ((h_tile_val > h_out_val) ? h_out_val : h_tile_val);
+                // Find largest divisor of h_out_val <= h_tile_val
+                while (h_tile_val > 1 && h_out_val % h_tile_val != 0) {
+                    h_tile_val--;
+                }
+                h_tile = SymEngine::integer(h_tile_val);
+                num_h_tiles = SymEngine::integer(h_out_val / h_tile_val);
+            }
+        }
+
+        // tile_n = h_tile × tail_spatial (number of spatial positions per tile)
+        symbolic::Expression tile_n = symbolic::mul(h_tile, tail_spatial);
+
+        // Patches buffer: K × tile_n (tiled, reused across batches and tiles)
+        symbolic::Expression patches_size = symbolic::mul(gemm_k, tile_n);
         types::Pointer patches_type(base_type);
         auto patches_container = builder.find_new_name("_patches");
         builder.add_container(patches_container, patches_type);
@@ -263,8 +314,23 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             block->debug_info()
         );
 
-        // Malloc patches
-        auto& patches_malloc_block = builder.add_block(loop_n.root(), {}, block->debug_info());
+        // H-tile loop (inside batch)
+        auto t_container = builder.find_new_name("_t");
+        builder.add_container(t_container, indvar_type);
+        auto t = symbolic::symbol(t_container);
+        auto& loop_t = builder.add_map(
+            loop_n.root(),
+            t,
+            symbolic::Lt(t, num_h_tiles),
+            symbolic::zero(),
+            symbolic::add(t, symbolic::one()),
+            ScheduleType_Sequential::create(),
+            {},
+            block->debug_info()
+        );
+
+        // Malloc patches (outside batch loop, single allocation reused)
+        auto& patches_malloc_block = builder.add_block(loop_t.root(), {}, block->debug_info());
         {
             auto& patches_access = builder.add_access(patches_malloc_block, patches_container, this->debug_info());
             auto& libnode = builder.add_library_node<stdlib::MallocNode>(
@@ -275,8 +341,8 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        // Memset patches to zero (inside batch loop, per-batch)
-        auto& patches_memset_block = builder.add_block(loop_n.root(), {}, block->debug_info());
+        // Memset patches to zero (per tile)
+        auto& patches_memset_block = builder.add_block(loop_t.root(), {}, block->debug_info());
         {
             auto& patches_access = builder.add_access(patches_memset_block, patches_container, this->debug_info());
             auto& libnode = builder.add_library_node<stdlib::MemsetNode>(
@@ -290,10 +356,9 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        // Im2col: nested loops over channels, kernel, output positions
-        // Loop order: c, k[0..dims-1], o[0..dims-1]
-        // Patches layout: [C_in, kernel..., out_shape...] — row-major gives [K, spatial]
-        structured_control_flow::Sequence* current_seq = &loop_n.root();
+        // Im2col: c, k[0..dims-1], o0_inner ∈ [0,h_tile), o[1..dims-1]
+        // Patches layout: [C_in, kernel..., h_tile, out_shape[1:]...] — row-major [K, tile_n]
+        structured_control_flow::Sequence* current_seq = &loop_t.root();
 
         // Channel loop
         auto c_container = builder.find_new_name("_c");
@@ -332,7 +397,9 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             current_seq = &loop_k.root();
         }
 
-        // Output spatial dimension loops (with padding/dilation bounds check)
+        // Output spatial dimension loops
+        // Dim 0: tiled inner loop o0_inner ∈ [0, h_tile)
+        // Dim 1+: full range o_i ∈ [0, out_shape[i])
         symbolic::SymbolVec os;
         os.reserve(dims);
         for (size_t i = 0; i < dims; i++) {
@@ -340,10 +407,11 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             builder.add_container(o_container, indvar_type);
             auto o = symbolic::symbol(o_container);
             os.push_back(o);
+            symbolic::Expression bound = (i == 0) ? h_tile : out_shape[i];
             auto& loop_o = builder.add_map(
                 *current_seq,
                 o,
-                symbolic::Lt(o, out_shape[i]),
+                symbolic::Lt(o, bound),
                 symbolic::zero(),
                 symbolic::add(o, symbolic::one()),
                 ScheduleType_Sequential::create(),
@@ -353,14 +421,18 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             current_seq = &loop_o.root();
         }
 
-        // Add if/else to stay in bounds for copying
+        // Compute input indices using actual output position
+        // Dim 0: actual_o0 = t * h_tile + o0_inner
+        // Dim i>0: actual_o_i = o_i
         symbolic::MultiExpression is;
         is.reserve(dims);
         symbolic::Condition copy_condition = symbolic::__true__();
         symbolic::Condition zero_condition = symbolic::__false__();
         for (size_t i = 0; i < dims; i++) {
+            symbolic::Expression actual_o = (i == 0) ? symbolic::add(symbolic::mul(t, h_tile), os[0])
+                                                     : symbolic::Expression(os[i]);
             auto i_expr = symbolic::
-                add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
+                add(symbolic::sub(symbolic::mul(actual_o, this->strides_[i]), this->pads_[i]),
                     symbolic::mul(ks[i], this->dilations_[i]));
             is.push_back(i_expr);
             copy_condition = symbolic::
@@ -374,9 +446,8 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         auto& copy_case = builder.add_case(branch, copy_condition, block->debug_info());
         auto& zero_case = builder.add_case(branch, zero_condition, block->debug_info());
 
-        // Patches subset: [c, k0, k1, ..., o0, o1, ...]
-        // Patches shape: [C_in, kH, kW, ..., H_out, W_out, ...]
-        // Determine patches subset & tensor type
+        // Patches subset: [c, k0, k1, ..., o0_inner, o1, ...]
+        // Patches shape: [C_in, kH, kW, ..., h_tile, out_shape[1], ...]
         data_flow::Subset patches_subset;
         patches_subset.push_back(c);
         patches_subset.insert(patches_subset.end(), ks.begin(), ks.end());
@@ -384,7 +455,10 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         symbolic::MultiExpression patches_shape;
         patches_shape.push_back(this->shape_[1]); // C_in
         patches_shape.insert(patches_shape.end(), this->kernel_shape_.begin(), this->kernel_shape_.end());
-        patches_shape.insert(patches_shape.end(), out_shape.begin(), out_shape.end());
+        patches_shape.push_back(h_tile); // tiled first spatial dim
+        for (size_t i = 1; i < dims; i++) {
+            patches_shape.push_back(out_shape[i]);
+        }
         types::Tensor patches_tensor_type(base_type, patches_shape);
 
         // X subset: [n, c, i0, i1, ...]
@@ -393,7 +467,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         subset_X.push_back(c);
         subset_X.insert(subset_X.end(), is.begin(), is.end());
 
-        // Add copy from X to patches
+        // Copy X → patches
         auto& copy_block = builder.add_block(copy_case, {}, block->debug_info());
         {
             auto& X_access = builder.add_access(copy_block, access_X->data(), access_X->debug_info());
@@ -408,7 +482,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        // Add zero assignment to patches
+        // Zero → patches (out-of-bounds padding positions)
         auto& zero_block = builder.add_block(zero_case, {}, block->debug_info());
         {
             auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, this->debug_info());
@@ -422,22 +496,23 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        // Reference to Y[n, :, :, ...] — offset = n * F * spatial
+        // Reference to Y at tile position: Y + n*F*spatial + t*tile_n
         auto ref_Y_container = builder.find_new_name("_ref_Y");
         types::Scalar ref_Y_base_type(builder.subject().type(access_Y->data()).primitive_type());
         types::Pointer ref_Y_type(ref_Y_base_type);
         builder.add_container(ref_Y_container, ref_Y_type);
-        auto ref_Y_offset = symbolic::mul(n, symbolic::mul(this->output_channels_, spatial));
-        auto& ref_Y_block = builder.add_block(loop_n.root(), {}, block->debug_info());
+        auto ref_Y_offset =
+            symbolic::add(symbolic::mul(n, symbolic::mul(this->output_channels_, spatial)), symbolic::mul(t, tile_n));
+        auto& ref_Y_block = builder.add_block(loop_t.root(), {}, block->debug_info());
         {
             auto& Y_access = builder.add_access(ref_Y_block, access_Y->data(), access_Y->debug_info());
             auto& ref_Y_access = builder.add_access(ref_Y_block, ref_Y_container, access_Y->debug_info());
             builder.add_reference_memlet(ref_Y_block, Y_access, ref_Y_access, {ref_Y_offset}, ref_Y_type);
         }
 
-        // GEMM: Y[n][F, spatial] = W[F, K] × patches[K, spatial]
-        // NoTrans × NoTrans, lda=K, ldb=spatial, ldc=spatial
-        auto& gemm_block = builder.add_block(loop_n.root(), {}, block->debug_info());
+        // GEMM: Y_tile[F, tile_n] = W[F, K] × patches[K, tile_n]
+        // ldb = tile_n (patches row stride), ldc = spatial (output row stride in Y)
+        auto& gemm_block = builder.add_block(loop_t.root(), {}, block->debug_info());
         {
             auto& alpha = builder.add_constant(gemm_block, "1.0", base_type, this->debug_info());
             auto& beta = builder.add_constant(gemm_block, "0.0", base_type, this->debug_info());
@@ -454,11 +529,11 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                 blas::BLAS_Transpose::No, // transA
                 blas::BLAS_Transpose::No, // transB
                 this->output_channels_, // m = F
-                spatial, // n = spatial
+                tile_n, // n = tile_n (tiled!)
                 gemm_k, // k = K
                 gemm_k, // lda = K
-                spatial, // ldb = spatial
-                spatial // ldc = spatial
+                tile_n, // ldb = tile_n
+                spatial // ldc = spatial (full output row stride!)
             );
             builder.add_computational_memlet(gemm_block, alpha, libnode, "__alpha", {}, base_type, this->debug_info());
             builder.add_computational_memlet(gemm_block, beta, libnode, "__beta", {}, base_type, this->debug_info());
@@ -482,7 +557,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        // Add bias if available: Y[n, f, o...] += B[f]
+        // Bias (inside batch loop, outside tile loop): Y[n, f, o...] += B[f]
         if (has_bias) {
             auto l_container = builder.find_new_name("_l");
             builder.add_container(l_container, indvar_type);
@@ -545,7 +620,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         }
 
         // Free patches
-        auto& patches_free_block = builder.add_block(loop_n.root(), {}, block->debug_info());
+        auto& patches_free_block = builder.add_block(loop_t.root(), {}, block->debug_info());
         {
             auto& patches_access_in = builder.add_access(patches_free_block, patches_container, this->debug_info());
             auto& patches_access_out = builder.add_access(patches_free_block, patches_container, this->debug_info());
@@ -558,7 +633,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        /* ===== No groups ====================================================================== */
+        /* ===== No groups (H-tiled im2col + GEMM) ============================================= */
 
     } else {
         /* ===== Groups ========================================================================= */
