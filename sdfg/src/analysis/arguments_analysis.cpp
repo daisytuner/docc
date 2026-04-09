@@ -3,6 +3,7 @@
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/codegen/utils.h"
+#include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/helpers/helpers.h"
 #include "sdfg/types/utils.h"
 
@@ -98,6 +99,7 @@ void ArgumentsAnalysis::collect_arg_sizes(
     argument_element_sizes_.insert({&node, {}});
 
     auto& mem_access_ranges = analysis_manager.get<analysis::MemAccessRanges>();
+    auto& users = analysis_manager.get<analysis::Users>();
 
     auto arguments = this->arguments(analysis_manager, node);
     auto locals = this->locals(analysis_manager, node);
@@ -109,6 +111,30 @@ void ArgumentsAnalysis::collect_arg_sizes(
 
     for (auto& [argument, meta] : arguments) {
         if (!meta.is_scalar) {
+            // Check if a Malloc node provides a known host allocation size
+            symbolic::Expression malloc_size = SymEngine::null;
+            for (auto* user : users.writes(argument)) {
+                auto* access_node = dynamic_cast<data_flow::AccessNode*>(user->element());
+                if (!access_node) continue;
+                auto& graph = access_node->get_parent();
+                for (auto& iedge : graph.in_edges(*access_node)) {
+                    auto* malloc_node = dynamic_cast<const stdlib::MallocNode*>(&iedge.src());
+                    if (!malloc_node) continue;
+                    malloc_size = malloc_node->size();
+                    break;
+                }
+                if (!malloc_size.is_null()) break;
+            }
+
+            // If malloc size is known, use it directly — skip range analysis
+            if (!malloc_size.is_null()) {
+                auto base_type = type_analysis.get_outer_type(argument);
+                auto elem_size = types::get_contiguous_element_size(*base_type, true);
+                argument_sizes_.at(&node).insert({argument, malloc_size});
+                argument_element_sizes_.at(&node).insert({argument, elem_size});
+                continue;
+            }
+
             auto range = mem_access_ranges.get(argument, node, internal_vars);
             if (range == nullptr) {
                 if (do_not_throw) {
@@ -118,6 +144,7 @@ void ArgumentsAnalysis::collect_arg_sizes(
                     throw std::runtime_error("Range not found for " + argument);
                 }
             }
+
             auto base_type = type_analysis.get_outer_type(argument);
             auto elem_size = types::get_contiguous_element_size(*base_type, true);
             if (range->is_undefined()) {
@@ -169,6 +196,7 @@ void ArgumentsAnalysis::collect_arg_sizes(
 
 
             size = symbolic::mul(size, elem_size);
+
             DEBUG_PRINTLN("Size of " << argument << " is " << size->__str__());
             if (size.is_null()) {
                 if (do_not_throw) {
