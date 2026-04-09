@@ -53,12 +53,12 @@ LogicalResult SigmoidOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult BatchNorm2DNchwOp::verify() {
-    RankedTensorType batchType = llvm::cast<RankedTensorType>(this->getBatch().getType());
-    RankedTensorType eType = llvm::cast<RankedTensorType>(this->getE().getType());
-    RankedTensorType varType = llvm::cast<RankedTensorType>(this->getVar().getType());
-    RankedTensorType gammaType = llvm::cast<RankedTensorType>(this->getGamma().getType());
-    RankedTensorType betaType = llvm::cast<RankedTensorType>(this->getBeta().getType());
-    RankedTensorType outputType = llvm::cast<RankedTensorType>(this->getOutput().getType());
+    RankedTensorType batchType = this->getBatch().getType();
+    RankedTensorType eType = this->getE().getType();
+    RankedTensorType varType = this->getVar().getType();
+    RankedTensorType gammaType = this->getGamma().getType();
+    RankedTensorType betaType = this->getBeta().getType();
+    RankedTensorType outputType = this->getOutput().getType();
 
     ArrayRef<int64_t> batchShape = batchType.getShape();
     ArrayRef<int64_t> eShape = eType.getShape();
@@ -83,6 +83,59 @@ LogicalResult BatchNorm2DNchwOp::verify() {
     }
     if (betaShape[0] != c) {
         return this->emitOpError("incompatible beta shape");
+    }
+
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Conv2DNchwFchwOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult Conv2DNchwFchwOp::verify() {
+    RankedTensorType inputType = this->getInput().getType();
+    RankedTensorType weightsType = this->getWeights().getType();
+    RankedTensorType outputType = this->getOutput().getType();
+
+    if (inputType.getDimSize(0) != outputType.getDimSize(0)) {
+        return this->emitOpError("incompatible N shape");
+    }
+    if (inputType.getDimSize(1) != weightsType.getDimSize(1)) {
+        return this->emitOpError("incompatible C shape");
+    }
+    if (weightsType.getDimSize(0) != outputType.getDimSize(1)) {
+        return this->emitOpError("incompatible F shape");
+    }
+    if (this->getBias()) {
+        RankedTensorType biasType = this->getBias().getType();
+        if (weightsType.getDimSize(0) != biasType.getDimSize(0)) {
+            return this->emitOpError("incompatible F shape");
+        }
+    }
+
+    if (this->getStrides().size() != 2) {
+        return this->emitOpError("must have exactly two stride values");
+    }
+    if (this->getDilations().size() != 2) {
+        return this->emitOpError("must have exactly two dialtion values");
+    }
+    if (this->getPaddings().size() != 4) {
+        return this->emitOpError("must have exactly four padding values");
+    }
+
+    int64_t Ho = (inputType.getDimSize(2) + this->getPaddings()[0] + this->getPaddings()[2] -
+                  this->getDilations()[0] * (weightsType.getDimSize(2) - 1) - 1) /
+                     this->getStrides()[0] +
+                 1;
+    int64_t Wo = (inputType.getDimSize(3) + this->getPaddings()[1] + this->getPaddings()[3] -
+                  this->getDilations()[1] * (weightsType.getDimSize(3) - 1) - 1) /
+                     this->getStrides()[1] +
+                 1;
+    if (Ho != outputType.getDimSize(2)) {
+        return this->emitOpError("output height should be ") << Ho;
+    }
+    if (Wo != outputType.getDimSize(3)) {
+        return this->emitOpError("output width should be ") << Wo;
     }
 
     return success();

@@ -248,21 +248,6 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        // Memset patches to zero
-        auto& patches_memset_block = builder.add_block(new_sequence, {}, block->debug_info());
-        {
-            auto& patches_access = builder.add_access(patches_memset_block, patches_container, this->debug_info());
-            auto& libnode = builder.add_library_node<stdlib::MemsetNode>(
-                patches_memset_block,
-                this->debug_info(),
-                symbolic::zero(),
-                symbolic::mul(patches_size, symbolic::size_of_type(base_type))
-            );
-            builder.add_computational_memlet(
-                patches_memset_block, libnode, "_ptr", patches_access, {}, patches_type, this->debug_info()
-            );
-        }
-
         // Add malloc for temporary GEMM output
         symbolic::Expression tmp_Y_size = symbolic::mul(this->output_channels_, this->shape_[0]);
         for (size_t i = 0; i < dims; i++) {
@@ -341,21 +326,15 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         // Add loops over kernel shape
         symbolic::SymbolVec ks;
         ks.reserve(dims);
-        symbolic::MultiExpression is;
-        is.reserve(dims);
         for (size_t i = 0; i < dims; i++) {
             auto k_container = builder.find_new_name("_k");
             builder.add_container(k_container, indvar_type);
             auto k = symbolic::symbol(k_container);
             ks.push_back(k);
-            auto i_expr = symbolic::
-                add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
-                    symbolic::mul(k, this->dilations_[i]));
-            is.push_back(i_expr);
             auto& loop_k = builder.add_map(
                 *current_seq,
                 k,
-                symbolic::And(symbolic::Lt(k, this->kernel_shape_[i]), symbolic::Lt(i_expr, this->shape_[i + 2])),
+                symbolic::Lt(k, this->kernel_shape_[i]),
                 symbolic::zero(),
                 symbolic::add(k, symbolic::one()),
                 ScheduleType_Sequential::create(),
@@ -364,6 +343,27 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
             current_seq = &loop_k.root();
         }
+
+        // Add if/else to stay in bounds for copying
+        symbolic::MultiExpression is;
+        is.reserve(dims);
+        symbolic::Condition copy_condition = symbolic::__true__();
+        symbolic::Condition zero_condition = symbolic::__false__();
+        for (size_t i = 0; i < dims; i++) {
+            auto i_expr = symbolic::
+                add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
+                    symbolic::mul(ks[i], this->dilations_[i]));
+            is.push_back(i_expr);
+            copy_condition = symbolic::
+                And(copy_condition,
+                    symbolic::And(symbolic::Lt(i_expr, this->shape_[i + 2]), symbolic::Ge(i_expr, symbolic::zero())));
+            zero_condition = symbolic::
+                Or(zero_condition,
+                   symbolic::Or(symbolic::Ge(i_expr, this->shape_[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
+        }
+        auto& branch = builder.add_if_else(*current_seq, {}, block->debug_info());
+        auto& copy_case = builder.add_case(branch, copy_condition, block->debug_info());
+        auto& zero_case = builder.add_case(branch, zero_condition, block->debug_info());
 
         // Determine patches subset & tensor type
         data_flow::Subset patches_subset;
@@ -385,17 +385,31 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         subset_X.insert(subset_X.end(), is.begin(), is.end());
 
         // Add copy from X to patches
-        auto& true_block = builder.add_block(*current_seq, {}, block->debug_info());
+        auto& copy_block = builder.add_block(copy_case, {}, block->debug_info());
         {
-            auto& X_access = builder.add_access(true_block, access_X->data(), access_X->debug_info());
-            auto& patches_access = builder.add_access(true_block, patches_container, this->debug_info());
+            auto& X_access = builder.add_access(copy_block, access_X->data(), access_X->debug_info());
+            auto& patches_access = builder.add_access(copy_block, patches_container, this->debug_info());
             auto& tasklet =
-                builder.add_tasklet(true_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+                builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
             builder.add_computational_memlet(
-                true_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
+                copy_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
             );
             builder.add_computational_memlet(
-                true_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+                copy_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+            );
+        }
+
+        // Add zero assignment to patches
+        auto& zero_block = builder.add_block(zero_case, {}, block->debug_info());
+        {
+            auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, this->debug_info());
+            auto& patches_access = builder.add_access(zero_block, patches_container, this->debug_info());
+            auto& tasklet =
+                builder.add_tasklet(zero_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+            builder
+                .add_computational_memlet(zero_block, constant_zero, tasklet, "_in", {}, base_type, this->debug_info());
+            builder.add_computational_memlet(
+                zero_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
             );
         }
 
@@ -630,21 +644,6 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        // Memset patches to zero
-        auto& patches_memset_block = builder.add_block(loop_g.root(), {}, block->debug_info());
-        {
-            auto& patches_access = builder.add_access(patches_memset_block, patches_container, this->debug_info());
-            auto& libnode = builder.add_library_node<stdlib::MemsetNode>(
-                patches_memset_block,
-                this->debug_info(),
-                symbolic::zero(),
-                symbolic::mul(patches_size, symbolic::size_of_type(base_type))
-            );
-            builder.add_computational_memlet(
-                patches_memset_block, libnode, "_ptr", patches_access, {}, patches_type, this->debug_info()
-            );
-        }
-
         // Add loops over output dimensions
         structured_control_flow::Sequence* current_seq = &loop_g.root();
         symbolic::SymbolVec os;
@@ -686,21 +685,15 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         // Add loops over kernel shape
         symbolic::SymbolVec ks;
         ks.reserve(dims);
-        symbolic::MultiExpression is;
-        is.reserve(dims);
         for (size_t i = 0; i < dims; i++) {
             auto k_container = builder.find_new_name("_k");
             builder.add_container(k_container, indvar_type);
             auto k = symbolic::symbol(k_container);
             ks.push_back(k);
-            auto i_expr = symbolic::
-                add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
-                    symbolic::mul(k, this->dilations_[i]));
-            is.push_back(i_expr);
             auto& loop_k = builder.add_map(
                 *current_seq,
                 k,
-                symbolic::And(symbolic::Lt(k, this->kernel_shape_[i]), symbolic::Lt(i_expr, this->shape_[i + 2])),
+                symbolic::Lt(k, this->kernel_shape_[i]),
                 symbolic::zero(),
                 symbolic::add(k, symbolic::one()),
                 ScheduleType_Sequential::create(),
@@ -709,6 +702,27 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
             current_seq = &loop_k.root();
         }
+
+        // Add if/else to stay in bounds for copying
+        symbolic::MultiExpression is;
+        is.reserve(dims);
+        symbolic::Condition copy_condition = symbolic::__true__();
+        symbolic::Condition zero_condition = symbolic::__false__();
+        for (size_t i = 0; i < dims; i++) {
+            auto i_expr = symbolic::
+                add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
+                    symbolic::mul(ks[i], this->dilations_[i]));
+            is.push_back(i_expr);
+            copy_condition = symbolic::
+                And(copy_condition,
+                    symbolic::And(symbolic::Lt(i_expr, this->shape_[i + 2]), symbolic::Ge(i_expr, symbolic::zero())));
+            zero_condition = symbolic::
+                Or(zero_condition,
+                   symbolic::Or(symbolic::Ge(i_expr, this->shape_[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
+        }
+        auto& branch = builder.add_if_else(*current_seq, {}, block->debug_info());
+        auto& copy_case = builder.add_case(branch, copy_condition, block->debug_info());
+        auto& zero_case = builder.add_case(branch, zero_condition, block->debug_info());
 
         // Determine patches subset & tensor type
         data_flow::Subset patches_subset;
@@ -728,17 +742,31 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         subset_X.insert(subset_X.end(), is.begin(), is.end());
 
         // Add copy from X to patches
-        auto& true_block = builder.add_block(*current_seq, {}, block->debug_info());
+        auto& copy_block = builder.add_block(copy_case, {}, block->debug_info());
         {
-            auto& X_access = builder.add_access(true_block, access_X->data(), access_X->debug_info());
-            auto& patches_access = builder.add_access(true_block, patches_container, this->debug_info());
+            auto& X_access = builder.add_access(copy_block, access_X->data(), access_X->debug_info());
+            auto& patches_access = builder.add_access(copy_block, patches_container, this->debug_info());
             auto& tasklet =
-                builder.add_tasklet(true_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+                builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
             builder.add_computational_memlet(
-                true_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
+                copy_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
             );
             builder.add_computational_memlet(
-                true_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+                copy_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+            );
+        }
+
+        // Add zero assignment to patches
+        auto& zero_block = builder.add_block(zero_case, {}, block->debug_info());
+        {
+            auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, this->debug_info());
+            auto& patches_access = builder.add_access(zero_block, patches_container, this->debug_info());
+            auto& tasklet =
+                builder.add_tasklet(zero_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+            builder
+                .add_computational_memlet(zero_block, constant_zero, tasklet, "_in", {}, base_type, this->debug_info());
+            builder.add_computational_memlet(
+                zero_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
             );
         }
 
