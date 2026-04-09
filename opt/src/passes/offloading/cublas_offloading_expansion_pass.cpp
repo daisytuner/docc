@@ -1,7 +1,9 @@
 #include "sdfg/passes/offloading/cublas_offloading_expansion_pass.h"
 
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/transformations/offloading/cublas_offloading_expansion.h"
+#include "sdfg/transformations/offloading/cuda_memset_offloading_expansion.h"
 
 namespace sdfg {
 namespace cuda {
@@ -18,6 +20,13 @@ bool CublasBLASOffloadingExpansionVisitor::accept(structured_control_flow::Block
     for (auto lib_node : dataflow.library_nodes()) {
         if (auto* blas_node = dynamic_cast<math::blas::BLASNode*>(lib_node)) {
             CUBLASOffloadingExpansion expansion(*blas_node);
+            if (expansion.can_be_applied(builder_, analysis_manager_)) {
+                expansion.apply(builder_, analysis_manager_);
+                return true;
+            }
+        }
+        if (auto* memset_node = dynamic_cast<stdlib::MemsetNode*>(lib_node)) {
+            CUDAMemsetOffloadingExpansion expansion(*memset_node);
             if (expansion.can_be_applied(builder_, analysis_manager_)) {
                 expansion.apply(builder_, analysis_manager_);
                 return true;

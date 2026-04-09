@@ -1,7 +1,9 @@
 #include "sdfg/passes/offloading/rocblas_offloading_expansion_pass.h"
 
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/transformations/offloading/rocblas_offloading_expansion.h"
+#include "sdfg/transformations/offloading/rocm_memset_offloading_expansion.h"
 
 namespace sdfg {
 namespace rocm {
@@ -18,6 +20,13 @@ bool RocblasBLASOffloadingExpansionVisitor::accept(structured_control_flow::Bloc
     for (auto lib_node : dataflow.library_nodes()) {
         if (auto* blas_node = dynamic_cast<math::blas::BLASNode*>(lib_node)) {
             ROCBLASOffloadingExpansion expansion(*blas_node);
+            if (expansion.can_be_applied(builder_, analysis_manager_)) {
+                expansion.apply(builder_, analysis_manager_);
+                return true;
+            }
+        }
+        if (auto* memset_node = dynamic_cast<stdlib::MemsetNode*>(lib_node)) {
+            ROCMMemsetOffloadingExpansion expansion(*memset_node);
             if (expansion.can_be_applied(builder_, analysis_manager_)) {
                 expansion.apply(builder_, analysis_manager_);
                 return true;

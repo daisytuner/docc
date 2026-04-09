@@ -41,12 +41,14 @@ set(SOURCE_FILES
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp
+    src/targets/cuda/stdlib/memset.cpp
     src/targets/cuda/cuda.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/rocm/blas/dot.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/stdlib/memset.cpp
     src/targets/rocm/rocm.cpp
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
@@ -56,7 +58,9 @@ set(SOURCE_FILES
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/transformations/offloading/cublas_offloading_expansion.cpp
+    src/transformations/offloading/cuda_memset_offloading_expansion.cpp
     src/transformations/offloading/rocblas_offloading_expansion.cpp
+    src/transformations/offloading/rocm_memset_offloading_expansion.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_transform.cpp
     src/transformations/offloading/gpu_condition_propagation.cpp
