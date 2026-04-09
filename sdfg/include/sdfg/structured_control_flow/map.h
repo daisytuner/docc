@@ -74,6 +74,7 @@ public:
         for (const auto& entry : rhs.properties_) {
             properties_.insert(entry);
         }
+        category_ = rhs.category_;
     }
 };
 
