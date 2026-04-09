@@ -36,7 +36,7 @@ TEST(CUBLASOffloadingExpansionTest, DotCanBeApplied) {
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::d,
         n,
         stride_a,
@@ -77,7 +77,7 @@ TEST(CUBLASOffloadingExpansionTest, DotApply) {
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::d,
         n,
         stride_a,
@@ -95,7 +95,7 @@ TEST(CUBLASOffloadingExpansionTest, DotApply) {
     expansion.apply(builder, analysis_manager);
 
     // After apply: implementation type should be WithoutTransfers
-    EXPECT_EQ(dot_node.implementation_type().value(), cuda::blas::ImplementationType_CUBLASWithoutTransfers.value());
+    EXPECT_EQ(dot_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());
 
     // The root sequence should now have 5 blocks:
     // copy_x_to_device, copy_y_to_device, blas_block, dealloc_x, dealloc_y
@@ -126,7 +126,7 @@ TEST(CUBLASOffloadingExpansionTest, DotWrongImplType) {
     auto& c_node = builder.add_access(block, "c");
 
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
-        block, DebugInfo(), cuda::blas::ImplementationType_CUBLASWithoutTransfers, math::blas::BLAS_Precision::d, n
+        block, DebugInfo(), cuda::ImplementationType_CUDAWithoutTransfers, math::blas::BLAS_Precision::d, n
     ));
 
     builder.add_computational_memlet(block, a_node, dot_node, "__x", {symbolic::zero()}, array_desc);
@@ -168,7 +168,7 @@ TEST(CUBLASOffloadingExpansionTest, GemmCanBeApplied) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -223,7 +223,7 @@ TEST(CUBLASOffloadingExpansionTest, GemmApply) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -250,7 +250,7 @@ TEST(CUBLASOffloadingExpansionTest, GemmApply) {
     expansion.apply(builder, analysis_manager);
 
     // After apply: implementation type should be WithoutTransfers
-    EXPECT_EQ(gemm_node.implementation_type().value(), cuda::blas::ImplementationType_CUBLASWithoutTransfers.value());
+    EXPECT_EQ(gemm_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());
 
     // The root sequence should now have 7 blocks:
     // copy_A_to_device, copy_B_to_device, copy_C_to_device, blas_block,
@@ -287,7 +287,7 @@ TEST(CUBLASOffloadingExpansionTest, GemmWrongImplType) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithoutTransfers,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -333,7 +333,7 @@ TEST(CUBLASOffloadingExpansionTest, DotSerialization) {
     auto& c_node = builder.add_access(block, "c");
 
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
-        block, DebugInfo(), cuda::blas::ImplementationType_CUBLASWithTransfers, math::blas::BLAS_Precision::d, n
+        block, DebugInfo(), cuda::ImplementationType_CUDAWithTransfers, math::blas::BLAS_Precision::d, n
     ));
 
     builder.add_computational_memlet(block, a_node, dot_node, "__x", {symbolic::zero()}, array_desc);
@@ -378,7 +378,7 @@ TEST(CUBLASOffloadingExpansionTest, GemmSerialization) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,

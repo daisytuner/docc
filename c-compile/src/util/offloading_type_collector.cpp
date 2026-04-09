@@ -47,8 +47,8 @@ bool OffloadingTypeCollector::accept(Block& node) {
                 sdfg::structured_control_flow::ScheduleType schedule_type =
                     sdfg::tenstorrent::ScheduleType_Tenstorrent_Kernel::create();
                 found_schedule_type(schedule_type);
-            } else if (impl_type == sdfg::cuda::blas::ImplementationType_CUBLASWithTransfers ||
-                       impl_type == sdfg::cuda::blas::ImplementationType_CUBLASWithoutTransfers) {
+            } else if (impl_type == sdfg::cuda::ImplementationType_CUDAWithTransfers ||
+                       impl_type == sdfg::cuda::ImplementationType_CUDAWithoutTransfers) {
                 sdfg::structured_control_flow::ScheduleType schedule_type = sdfg::cuda::ScheduleType_CUDA::create();
                 found_schedule_type(schedule_type);
             } else if (impl_type == sdfg::math::blas::ImplementationType_BLAS ||

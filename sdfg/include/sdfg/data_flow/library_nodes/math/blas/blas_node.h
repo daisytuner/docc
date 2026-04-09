@@ -10,8 +10,8 @@
  *
  * BLAS nodes support multiple implementation types:
  * - ImplementationType_BLAS: Standard CPU BLAS (e.g., OpenBLAS, MKL)
- * - ImplementationType_CUBLASWithTransfers: CUBLAS with automatic data transfers
- * - ImplementationType_CUBLASWithoutTransfers: CUBLAS assuming data is on GPU
+ * - ImplementationType_CUDAWithTransfers: CUDA with automatic data transfers
+ * - ImplementationType_CUDAWithoutTransfers: CUDA assuming data is on GPU
  *
  * The implementation type is used by dispatchers to generate appropriate library calls.
  *

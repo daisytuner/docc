@@ -186,8 +186,7 @@ std::string ROCBLASOffloadingExpansion::name() const { return "ROCBLASOffloading
 bool ROCBLASOffloadingExpansion::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // BLAS node must have implementation type ROCMBLAS with data transfers
-    if (this->blas_node_.implementation_type().value() !=
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers.value()) {
+    if (this->blas_node_.implementation_type().value() != rocm::ImplementationType_ROCMWithTransfers.value()) {
         return false;
     }
 
@@ -305,7 +304,7 @@ void ROCBLASOffloadingExpansion::
     }
 
     // Change the implementation type to ROCMBLAS without data transfers
-    this->blas_node_.implementation_type() = rocm::blas::ImplementationType_ROCMBLASWithoutTransfers;
+    this->blas_node_.implementation_type() = rocm::ImplementationType_ROCMWithoutTransfers;
 }
 
 void ROCBLASOffloadingExpansion::to_json(nlohmann::json& j) const {

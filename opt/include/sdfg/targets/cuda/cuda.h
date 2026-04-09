@@ -13,19 +13,17 @@ namespace cuda {
 
 inline std::string CUDA_DEVICE_PREFIX = "__daisy_cuda_";
 
-namespace blas {
 /**
- * @brief CUBLAS implementation with automatic memory transfers
- * Uses NVIDIA CUBLAS with automatic host-device data transfers
+ * @brief CUDA implementation with automatic memory transfers
+ * Used for CUBLAS, memset, and other CUDA-accelerated library nodes
  */
-inline data_flow::ImplementationType ImplementationType_CUBLASWithTransfers{"CUBLASWithTransfers"};
+inline data_flow::ImplementationType ImplementationType_CUDAWithTransfers{"CUDAWithTransfers"};
 
 /**
- * @brief CUBLAS implementation without memory transfers
- * Uses NVIDIA CUBLAS assuming data is already on GPU
+ * @brief CUDA implementation without memory transfers
+ * Used for CUBLAS, memset, and other CUDA-accelerated library nodes assuming data is already on GPU
  */
-inline data_flow::ImplementationType ImplementationType_CUBLASWithoutTransfers{"CUBLASWithoutTransfers"};
-} // namespace blas
+inline data_flow::ImplementationType ImplementationType_CUDAWithoutTransfers{"CUDAWithoutTransfers"};
 
 // Use shared GPU dimension type
 using CUDADimension = gpu::GPUDimension;

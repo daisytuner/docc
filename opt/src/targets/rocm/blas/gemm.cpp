@@ -171,7 +171,7 @@ void generate_kernel_gemm(
     std::string trans_second_str = (trans_second == sdfg::math::blas::BLAS_Transpose::No) ? "HIPBLAS_OP_N"
                                                                                           : "HIPBLAS_OP_T";
 
-    std::string prefix = gemm_node.implementation_type() == ImplementationType_ROCMBLASWithTransfers ? "d" : "__";
+    std::string prefix = gemm_node.implementation_type() == rocm::ImplementationType_ROCMWithTransfers ? "d" : "__";
 
     stream << "hipblasStatus_t err;" << std::endl;
     stream << "err = hipblas" << type << "gemm(handle, " << trans_first_str << ", " << trans_second_str << ", "

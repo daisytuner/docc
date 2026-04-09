@@ -33,7 +33,7 @@ TEST(CuBlasTest, DotNodeWithDataTransfers) {
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::d,
         n,
         stride_a,
@@ -75,7 +75,7 @@ TEST(CuBlasTest, DotNodeWithoutDataTransfers) {
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithoutTransfers,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         math::blas::BLAS_Precision::d,
         n,
         stride_a,
@@ -122,7 +122,7 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -234,7 +234,7 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        cuda::blas::ImplementationType_CUBLASWithoutTransfers,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,

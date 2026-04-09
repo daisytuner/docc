@@ -36,7 +36,7 @@ TEST(ROCBLASOffloadingExpansionTest, DotCanBeApplied) {
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        rocm::ImplementationType_ROCMWithTransfers,
         math::blas::BLAS_Precision::d,
         n,
         stride_a,
@@ -77,7 +77,7 @@ TEST(ROCBLASOffloadingExpansionTest, DotApply) {
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        rocm::ImplementationType_ROCMWithTransfers,
         math::blas::BLAS_Precision::d,
         n,
         stride_a,
@@ -95,7 +95,7 @@ TEST(ROCBLASOffloadingExpansionTest, DotApply) {
     expansion.apply(builder, analysis_manager);
 
     // After apply: implementation type should be WithoutTransfers
-    EXPECT_EQ(dot_node.implementation_type().value(), rocm::blas::ImplementationType_ROCMBLASWithoutTransfers.value());
+    EXPECT_EQ(dot_node.implementation_type().value(), rocm::ImplementationType_ROCMWithoutTransfers.value());
 
     // The root sequence should now have 5 blocks:
     // copy_x_to_device, copy_y_to_device, blas_block, dealloc_x, dealloc_y
@@ -126,7 +126,7 @@ TEST(ROCBLASOffloadingExpansionTest, DotWrongImplType) {
     auto& c_node = builder.add_access(block, "c");
 
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
-        block, DebugInfo(), rocm::blas::ImplementationType_ROCMBLASWithoutTransfers, math::blas::BLAS_Precision::d, n
+        block, DebugInfo(), rocm::ImplementationType_ROCMWithoutTransfers, math::blas::BLAS_Precision::d, n
     ));
 
     builder.add_computational_memlet(block, a_node, dot_node, "__x", {symbolic::zero()}, array_desc);
@@ -168,7 +168,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmCanBeApplied) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        rocm::ImplementationType_ROCMWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -223,7 +223,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmApply) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        rocm::ImplementationType_ROCMWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -250,7 +250,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmApply) {
     expansion.apply(builder, analysis_manager);
 
     // After apply: implementation type should be WithoutTransfers
-    EXPECT_EQ(gemm_node.implementation_type().value(), rocm::blas::ImplementationType_ROCMBLASWithoutTransfers.value());
+    EXPECT_EQ(gemm_node.implementation_type().value(), rocm::ImplementationType_ROCMWithoutTransfers.value());
 
     // The root sequence should now have 7 blocks:
     // copy_A_to_device, copy_B_to_device, copy_C_to_device, blas_block,
@@ -287,7 +287,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmWrongImplType) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithoutTransfers,
+        rocm::ImplementationType_ROCMWithoutTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -333,7 +333,7 @@ TEST(ROCBLASOffloadingExpansionTest, DotSerialization) {
     auto& c_node = builder.add_access(block, "c");
 
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
-        block, DebugInfo(), rocm::blas::ImplementationType_ROCMBLASWithTransfers, math::blas::BLAS_Precision::d, n
+        block, DebugInfo(), rocm::ImplementationType_ROCMWithTransfers, math::blas::BLAS_Precision::d, n
     ));
 
     builder.add_computational_memlet(block, a_node, dot_node, "__x", {symbolic::zero()}, array_desc);
@@ -378,7 +378,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmSerialization) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        rocm::ImplementationType_ROCMWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,

@@ -170,7 +170,7 @@ void generate_kernel_gemm(
     std::string trans_second_str = (trans_second == sdfg::math::blas::BLAS_Transpose::No) ? "CUBLAS_OP_N"
                                                                                           : "CUBLAS_OP_T";
 
-    std::string prefix = gemm_node.implementation_type() == ImplementationType_CUBLASWithTransfers ? "d" : "__";
+    std::string prefix = gemm_node.implementation_type() == cuda::ImplementationType_CUDAWithTransfers ? "d" : "__";
 
     stream << "cublasStatus_t err;" << std::endl;
     stream << "err = cublas" << type << "gemm(handle, " << trans_first_str << ", " << trans_second_str << ", "
