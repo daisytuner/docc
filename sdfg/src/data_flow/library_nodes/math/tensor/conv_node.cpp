@@ -314,8 +314,6 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         // Kernel dimension loops
         symbolic::SymbolVec ks;
         ks.reserve(dims);
-        symbolic::MultiExpression input_indices; // i_expr for each spatial dim
-        input_indices.reserve(dims);
         for (size_t i = 0; i < dims; i++) {
             auto k_container = builder.find_new_name("_k");
             builder.add_container(k_container, indvar_type);
@@ -342,15 +340,10 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             builder.add_container(o_container, indvar_type);
             auto o = symbolic::symbol(o_container);
             os.push_back(o);
-            // i_expr = o * stride - pad + k * dilation
-            auto i_expr = symbolic::
-                add(symbolic::sub(symbolic::mul(o, this->strides_[i]), this->pads_[i]),
-                    symbolic::mul(ks[i], this->dilations_[i]));
-            input_indices.push_back(i_expr);
             auto& loop_o = builder.add_map(
                 *current_seq,
                 o,
-                symbolic::And(symbolic::Lt(o, out_shape[i]), symbolic::Lt(i_expr, this->shape_[i + 2])),
+                symbolic::Lt(o, out_shape[i]),
                 symbolic::zero(),
                 symbolic::add(o, symbolic::one()),
                 ScheduleType_Sequential::create(),
@@ -360,8 +353,30 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             current_seq = &loop_o.root();
         }
 
+        // Add if/else to stay in bounds for copying
+        symbolic::MultiExpression is;
+        is.reserve(dims);
+        symbolic::Condition copy_condition = symbolic::__true__();
+        symbolic::Condition zero_condition = symbolic::__false__();
+        for (size_t i = 0; i < dims; i++) {
+            auto i_expr = symbolic::
+                add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
+                    symbolic::mul(ks[i], this->dilations_[i]));
+            is.push_back(i_expr);
+            copy_condition = symbolic::
+                And(copy_condition,
+                    symbolic::And(symbolic::Lt(i_expr, this->shape_[i + 2]), symbolic::Ge(i_expr, symbolic::zero())));
+            zero_condition = symbolic::
+                Or(zero_condition,
+                   symbolic::Or(symbolic::Ge(i_expr, this->shape_[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
+        }
+        auto& branch = builder.add_if_else(*current_seq, {}, block->debug_info());
+        auto& copy_case = builder.add_case(branch, copy_condition, block->debug_info());
+        auto& zero_case = builder.add_case(branch, zero_condition, block->debug_info());
+
         // Patches subset: [c, k0, k1, ..., o0, o1, ...]
         // Patches shape: [C_in, kH, kW, ..., H_out, W_out, ...]
+        // Determine patches subset & tensor type
         data_flow::Subset patches_subset;
         patches_subset.push_back(c);
         patches_subset.insert(patches_subset.end(), ks.begin(), ks.end());
@@ -376,20 +391,34 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         data_flow::Subset subset_X;
         subset_X.push_back(n);
         subset_X.push_back(c);
-        subset_X.insert(subset_X.end(), input_indices.begin(), input_indices.end());
+        subset_X.insert(subset_X.end(), is.begin(), is.end());
 
-        // Copy X[n, c, i...] → patches[c, k..., o...]
-        auto& im2col_block = builder.add_block(*current_seq, {}, block->debug_info());
+        // Add copy from X to patches
+        auto& copy_block = builder.add_block(copy_case, {}, block->debug_info());
         {
-            auto& X_access = builder.add_access(im2col_block, access_X->data(), access_X->debug_info());
-            auto& patches_access = builder.add_access(im2col_block, patches_container, this->debug_info());
+            auto& X_access = builder.add_access(copy_block, access_X->data(), access_X->debug_info());
+            auto& patches_access = builder.add_access(copy_block, patches_container, this->debug_info());
             auto& tasklet =
-                builder.add_tasklet(im2col_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+                builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
             builder.add_computational_memlet(
-                im2col_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
+                copy_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
             );
             builder.add_computational_memlet(
-                im2col_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+                copy_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+            );
+        }
+
+        // Add zero assignment to patches
+        auto& zero_block = builder.add_block(zero_case, {}, block->debug_info());
+        {
+            auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, this->debug_info());
+            auto& patches_access = builder.add_access(zero_block, patches_container, this->debug_info());
+            auto& tasklet =
+                builder.add_tasklet(zero_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+            builder
+                .add_computational_memlet(zero_block, constant_zero, tasklet, "_in", {}, base_type, this->debug_info());
+            builder.add_computational_memlet(
+                zero_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
             );
         }
 
@@ -596,21 +625,6 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        // Memset patches to zero (per batch×group iteration)
-        auto& patches_memset_block = builder.add_block(loop_g.root(), {}, block->debug_info());
-        {
-            auto& patches_access = builder.add_access(patches_memset_block, patches_container, this->debug_info());
-            auto& libnode = builder.add_library_node<stdlib::MemsetNode>(
-                patches_memset_block,
-                this->debug_info(),
-                symbolic::zero(),
-                symbolic::mul(patches_size, symbolic::size_of_type(base_type))
-            );
-            builder.add_computational_memlet(
-                patches_memset_block, libnode, "_ptr", patches_access, {}, patches_type, this->debug_info()
-            );
-        }
-
         // Im2col loops: c, k[0..dims-1], o[0..dims-1]
         structured_control_flow::Sequence* current_seq = &loop_g.root();
 
@@ -654,21 +668,15 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         // Output spatial loops (with bounds check for padding/dilation)
         symbolic::SymbolVec os;
         os.reserve(dims);
-        symbolic::MultiExpression input_indices;
-        input_indices.reserve(dims);
         for (size_t i = 0; i < dims; i++) {
             auto o_container = builder.find_new_name("_o");
             builder.add_container(o_container, indvar_type);
             auto o = symbolic::symbol(o_container);
             os.push_back(o);
-            auto i_expr = symbolic::
-                add(symbolic::sub(symbolic::mul(o, this->strides_[i]), this->pads_[i]),
-                    symbolic::mul(ks[i], this->dilations_[i]));
-            input_indices.push_back(i_expr);
             auto& loop_o = builder.add_map(
                 *current_seq,
                 o,
-                symbolic::And(symbolic::Lt(o, out_shape[i]), symbolic::Lt(i_expr, this->shape_[i + 2])),
+                symbolic::Lt(o, out_shape[i]),
                 symbolic::zero(),
                 symbolic::add(o, symbolic::one()),
                 ScheduleType_Sequential::create(),
@@ -678,8 +686,29 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             current_seq = &loop_o.root();
         }
 
+        symbolic::MultiExpression is;
+        is.reserve(dims);
+        symbolic::Condition copy_condition = symbolic::__true__();
+        symbolic::Condition zero_condition = symbolic::__false__();
+        for (size_t i = 0; i < dims; i++) {
+            auto i_expr = symbolic::
+                add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
+                    symbolic::mul(ks[i], this->dilations_[i]));
+            is.push_back(i_expr);
+            copy_condition = symbolic::
+                And(copy_condition,
+                    symbolic::And(symbolic::Lt(i_expr, this->shape_[i + 2]), symbolic::Ge(i_expr, symbolic::zero())));
+            zero_condition = symbolic::
+                Or(zero_condition,
+                   symbolic::Or(symbolic::Ge(i_expr, this->shape_[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
+        }
+        auto& branch = builder.add_if_else(*current_seq, {}, block->debug_info());
+        auto& copy_case = builder.add_case(branch, copy_condition, block->debug_info());
+        auto& zero_case = builder.add_case(branch, zero_condition, block->debug_info());
+
         // Patches subset: [c, k0, k1, ..., o0, o1, ...]
         // Patches shape: [in_channels, kernel..., out_shape...]
+        // Determine patches subset & tensor type
         data_flow::Subset patches_subset;
         patches_subset.push_back(c);
         patches_subset.insert(patches_subset.end(), ks.begin(), ks.end());
@@ -694,20 +723,34 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         data_flow::Subset subset_X;
         subset_X.push_back(n);
         subset_X.push_back(symbolic::add(symbolic::mul(in_channels, g), c));
-        subset_X.insert(subset_X.end(), input_indices.begin(), input_indices.end());
+        subset_X.insert(subset_X.end(), is.begin(), is.end());
 
-        // Copy X → patches
-        auto& im2col_block = builder.add_block(*current_seq, {}, block->debug_info());
+        // Add copy from X to patches
+        auto& copy_block = builder.add_block(copy_case, {}, block->debug_info());
         {
-            auto& X_access = builder.add_access(im2col_block, access_X->data(), access_X->debug_info());
-            auto& patches_access = builder.add_access(im2col_block, patches_container, this->debug_info());
+            auto& X_access = builder.add_access(copy_block, access_X->data(), access_X->debug_info());
+            auto& patches_access = builder.add_access(copy_block, patches_container, this->debug_info());
             auto& tasklet =
-                builder.add_tasklet(im2col_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+                builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
             builder.add_computational_memlet(
-                im2col_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
+                copy_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
             );
             builder.add_computational_memlet(
-                im2col_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+                copy_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
+            );
+        }
+
+        // Add zero assignment to patches
+        auto& zero_block = builder.add_block(zero_case, {}, block->debug_info());
+        {
+            auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, this->debug_info());
+            auto& patches_access = builder.add_access(zero_block, patches_container, this->debug_info());
+            auto& tasklet =
+                builder.add_tasklet(zero_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+            builder
+                .add_computational_memlet(zero_block, constant_zero, tasklet, "_in", {}, base_type, this->debug_info());
+            builder.add_computational_memlet(
+                zero_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, this->debug_info()
             );
         }
 

@@ -560,6 +560,85 @@ translateLinalgCustomBatchNorm2DNchw(SDFGTranslator& translator, linalg::custom:
     return success();
 }
 
+LogicalResult translateLinalgCustomConv2DNchwFchwOp(SDFGTranslator& translator, linalg::custom::Conv2DNchwFchwOp* conv_op) {
+    auto input = conv_op->getInput();
+    auto weights = conv_op->getWeights();
+    auto bias = conv_op->getBias();
+    auto output = conv_op->getOutput();
+    auto result = conv_op->getResult();
+    auto deb_info = translator.get_debug_info(conv_op->getOperationName(), conv_op->getLoc());
+
+    auto& builder = translator.builder();
+    auto input_container = translator.get_or_create_container(input);
+    auto weights_container = translator.get_or_create_container(weights);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input.getType());
+    auto input_element_type = translator.convertType(input.getType().getElementType());
+    auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input_element_type)
+    );
+
+    auto weights_tensor_info = translator.get_or_create_tensor_info(weights_container, weights.getType());
+    auto weights_element_type = translator.convertType(weights.getType().getElementType());
+    auto weights_sdfg_tensor =
+        weights_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*weights_element_type));
+
+    auto result_tensor_info = translator.get_or_create_tensor_info(result_container, result.getType());
+    auto result_element_type = translator.convertType(result.getType().getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
+    translator.add_reference(output_container, result_container, deb_info);
+
+    ::sdfg::symbolic::MultiExpression shape;
+    for (int64_t dim : input.getType().getShape()) {
+        shape.push_back(::sdfg::symbolic::integer(dim));
+    }
+    ::sdfg::symbolic::MultiExpression kernel_shape;
+    kernel_shape.push_back(::sdfg::symbolic::integer(weights.getType().getShape()[2]));
+    kernel_shape.push_back(::sdfg::symbolic::integer(weights.getType().getShape()[3]));
+    ::sdfg::symbolic::MultiExpression strides;
+    for (int64_t stride : conv_op->getStrides()) {
+        strides.push_back(::sdfg::symbolic::integer(stride));
+    }
+    ::sdfg::symbolic::MultiExpression pads;
+    for (int64_t padding : conv_op->getPaddings()) {
+        pads.push_back(::sdfg::symbolic::integer(padding));
+    }
+    ::sdfg::symbolic::MultiExpression dilations;
+    for (int64_t dilation : conv_op->getDilations()) {
+        dilations.push_back(::sdfg::symbolic::integer(dilation));
+    }
+    ::sdfg::symbolic::Expression output_channels = ::sdfg::symbolic::integer(weights.getType().getShape()[0]);
+    ::sdfg::symbolic::Expression group = ::sdfg::symbolic::one();
+
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& input_access = builder.add_access(block, input_container, deb_info);
+    auto& weights_access = builder.add_access(block, weights_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
+    auto& libnode = builder.add_library_node<::sdfg::math::tensor::ConvNode>(
+        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group
+    );
+    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, weights_access, libnode, "W", {}, *weights_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor, deb_info);
+
+    if (bias) {
+        auto bias_container = translator.get_or_create_container(bias);
+
+        auto bias_tensor_info = translator.get_or_create_tensor_info(bias_container, bias.getType());
+        auto bias_element_type = translator.convertType(bias.getType().getElementType());
+        auto bias_sdfg_tensor = bias_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*bias_element_type)
+        );
+
+        auto& bias_access = builder.add_access(block, bias_container, deb_info);
+        builder.add_computational_memlet(block, bias_access, libnode, "B", {}, *bias_sdfg_tensor, deb_info);
+    }
+
+    return success();
+}
+
 template<typename PoolOp>
 LogicalResult translateLinalgPoolingNchwOp(SDFGTranslator& translator, PoolOp* op, ::sdfg::math::tensor::PoolingMode mode);
 
@@ -685,6 +764,9 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
         })
         .Case<linalg::custom::BatchNorm2DNchwOp>([&](linalg::custom::BatchNorm2DNchwOp batch_norm_op) {
             return translateLinalgCustomBatchNorm2DNchw(translator, &batch_norm_op);
+        })
+        .Case<linalg::custom::Conv2DNchwFchwOp>([&](linalg::custom::Conv2DNchwFchwOp conv_op) {
+            return translateLinalgCustomConv2DNchwFchwOp(translator, &conv_op);
         })
         .Default([&](Operation* op) {
             return op->emitError("Unknown operation from linalg dialect encountered: ") << op->getName();

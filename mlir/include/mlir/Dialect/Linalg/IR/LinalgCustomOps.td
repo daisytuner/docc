@@ -1,6 +1,7 @@
 #ifndef LINALG_CUSTOM_OPS
 #define LINALG_CUSTOM_OPS
 
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpBase.td"
 
 def LinalgCustom_Dialect : Dialect {
@@ -67,6 +68,27 @@ def LinalgCustom_BatchNorm2DNchwOp : LinalgCustom_Op<"batchnorm_2d_nchw",
             `:`
             type($batch) `,` type($e) `,` type($var) `,` type($gamma) `,` type($beta) `,` type($eps)
         `)`
+        `outs` `(` $output `:` type($output) `)`
+        `->` type($result)
+    }];
+    let hasVerifier = 1;
+}
+
+def LinalgCustom_Conv2DNchwFchwOp : LinalgCustom_Op<"conv_2d_nchw_fchw",
+        [PredOpTrait<"element types must be the same", TCopVTEtAreSameAt<[0, 1, 2]>>]> {
+    let summary = "Performs 2-D convolution.";
+
+    let arguments = (ins TensorRankOf<[AnyType], [4]>:$input,
+                         TensorRankOf<[AnyType], [4]>:$weights,
+                         Optional<TensorRankOf<[AnyType], [1]>>:$bias,
+                         TensorRankOf<[AnyType], [4]>:$output,
+                         DenseI64ArrayAttr:$strides,
+                         DenseI64ArrayAttr:$dilations,
+                         DenseI64ArrayAttr:$paddings);
+    let results = (outs TensorRankOf<[AnyType], [4]>:$result);
+    let assemblyFormat = [{
+        attr-dict
+        `ins` `(` $input `,` $weights (`,` $bias^)? `:` type($input) `,` type($weights) (`,` type($bias)^)? `)`
         `outs` `(` $output `:` type($output) `)`
         `->` type($result)
     }];

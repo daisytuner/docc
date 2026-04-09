@@ -77,6 +77,7 @@ public:
         mlir::PassManager pm(context_.get());
         pm.addPass(mlir::createLinalgCustomSpecializeGenericOpsPass());
         pm.addPass(mlir::createLinalgCustomRemoveRedundantOpsPass());
+        pm.addPass(mlir::createLinalgCustomFuseConvPaddingPass());
         if (mlir::failed(pm.run(*module_))) {
             throw std::runtime_error("Failed to convert MLIR module");
         }
