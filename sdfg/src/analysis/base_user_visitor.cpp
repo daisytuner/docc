@@ -2,6 +2,14 @@
 
 namespace sdfg::analysis {
 
+void BaseUserVisitor::handle_lib_node(Block& block, data_flow::LibraryNode& libnode) {
+    for (auto atom : libnode.symbols()) {
+        if (!symbolic::is_nullptr(atom)) {
+            use_as_symbol_read(atom->get_name(), &block, &libnode, SymbolReadLocation::LibraryNode, -1, SymEngine::null);
+        }
+    }
+}
+
 bool BaseUserVisitor::visit(sdfg::structured_control_flow::Block& node) {
     auto& dflow = node.dataflow();
     for (auto dnode : dflow.topological_sort()) {
@@ -9,11 +17,7 @@ bool BaseUserVisitor::visit(sdfg::structured_control_flow::Block& node) {
         std::string maybe_container;
 
         if (auto libnode = dynamic_cast<data_flow::LibraryNode*>(dnode)) {
-            for (auto atom : libnode->symbols()) {
-                if (!symbolic::is_nullptr(atom)) {
-                    use_as_symbol_read(atom->get_name(), libnode, SymbolReadLocation::LibraryNode, -1, SymEngine::null);
-                }
-            }
+            handle_lib_node(node, *libnode);
         } else if (auto access_node = dynamic_cast<data_flow::AccessNode*>(dnode)) {
             if (dynamic_cast<data_flow::ConstantNode*>(dnode) == nullptr) {
                 maybe_container = access_node->data();
@@ -32,7 +36,9 @@ bool BaseUserVisitor::visit(sdfg::structured_control_flow::Block& node) {
                 auto& subset_part = edge.subset().at(i);
                 for (auto& atom : symbolic::atoms(subset_part)) {
                     if (!symbolic::is_nullptr(atom)) {
-                        use_as_symbol_read(atom->get_name(), &edge, SymbolReadLocation::MemletSubset, i, subset_part);
+                        use_as_symbol_read(
+                            atom->get_name(), &node, &edge, SymbolReadLocation::MemletSubset, i, subset_part
+                        );
                     }
                 }
             }
@@ -67,7 +73,9 @@ bool BaseUserVisitor::visit(sdfg::structured_control_flow::Sequence& node) {
         for (auto& entry : transition.assignments()) {
             for (auto& atom : symbolic::atoms(entry.second)) {
                 if (!symbolic::is_nullptr(atom)) {
-                    use_as_symbol_read(atom->get_name(), &transition, SymbolReadLocation::Assignment, i, entry.second);
+                    use_as_symbol_read(
+                        atom->get_name(), &node, &transition, SymbolReadLocation::Assignment, i, entry.second
+                    );
                 }
             }
         }
@@ -80,7 +88,7 @@ bool BaseUserVisitor::visit(sdfg::structured_control_flow::IfElse& node) {
         auto [seq, condition] = node.at(i);
         for (auto& atom : symbolic::atoms(condition)) {
             if (!symbolic::is_nullptr(atom)) {
-                use_as_symbol_read(atom->get_name(), &node, SymbolReadLocation::IfHeader, i, condition);
+                use_as_symbol_read(atom->get_name(), &node, &node, SymbolReadLocation::IfHeader, i, condition);
             }
         }
         dispatch(seq);
@@ -88,29 +96,41 @@ bool BaseUserVisitor::visit(sdfg::structured_control_flow::IfElse& node) {
     return true;
 }
 
-bool BaseUserVisitor::handleStructuredLoop(StructuredLoop& loop) {
-    use_as_symbol_write(loop.indvar(), &loop, SymbolWriteLocation::LoopHeader); // for both init and update
+void BaseUserVisitor::handle_structured_loop_before_body(StructuredLoop& loop) {
+    use_as_symbol_write(loop.indvar(), &loop, &loop, SymbolWriteLocation::LoopHeader); // for both init and update
 
     for (auto& atom : symbolic::atoms(loop.init())) {
         if (!symbolic::is_nullptr(atom)) {
-            use_as_symbol_read(atom->get_name(), &loop, SymbolReadLocation::LoopHeader, LOC_LOOP_READ_INIT, loop.init());
+            use_as_symbol_read(
+                atom->get_name(), &loop, &loop, SymbolReadLocation::LoopHeader, LOC_LOOP_READ_INIT, loop.init()
+            );
         }
     }
     for (auto& atom : symbolic::atoms(loop.condition())) {
         if (!symbolic::is_nullptr(atom)) {
             use_as_symbol_read(
-                atom->get_name(), &loop, SymbolReadLocation::LoopHeader, LOC_LOOP_READ_CONDITION, loop.init()
+                atom->get_name(), &loop, &loop, SymbolReadLocation::LoopHeader, LOC_LOOP_READ_CONDITION, loop.init()
             );
         }
     }
+}
+
+void BaseUserVisitor::handle_structured_loop_after_body(StructuredLoop& loop) {
+    for (auto& atom : symbolic::atoms(loop.update())) {
+        if (!symbolic::is_nullptr(atom)) {
+            use_as_symbol_read(
+                atom->get_name(), &loop, &loop, SymbolReadLocation::LoopHeader, LOC_LOOP_READ_UPDATE, loop.init()
+            );
+        }
+    }
+}
+
+bool BaseUserVisitor::handleStructuredLoop(StructuredLoop& loop) {
+    handle_structured_loop_before_body(loop);
 
     ActualStructuredSDFGVisitor::handleStructuredLoop(loop); // descend further
 
-    for (auto& atom : symbolic::atoms(loop.update())) {
-        if (!symbolic::is_nullptr(atom)) {
-            use_as_symbol_read(atom->get_name(), &loop, SymbolReadLocation::LoopHeader, LOC_LOOP_READ_UPDATE, loop.init());
-        }
-    }
+    handle_structured_loop_after_body(loop);
 
     return true;
 }

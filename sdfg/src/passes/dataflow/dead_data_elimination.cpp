@@ -2,6 +2,7 @@
 
 #include "sdfg/analysis/base_user_visitor.h"
 #include "sdfg/analysis/data_dependency_analysis.h"
+#include "sdfg/analysis/pointer_analyzers.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
@@ -17,13 +18,37 @@ DeadDataElimination::DeadDataElimination(bool permissive) : Pass(), permissive_(
 std::string DeadDataElimination::name() { return "DeadDataElimination"; };
 
 /**
+ * Simple escape policy that collects all escape and overwrite events
+ * into a map of container -> {element -> type} entries.
+ */
+class BlockerListPolicy {
+public:
+    enum class BlockerType { Escape, Overwrite };
+
+    using BlockerMap = std::unordered_map<std::string, std::unordered_map<const Element*, BlockerType>>;
+
+protected:
+    BlockerMap blockers_;
+
+public:
+    void on_escape(const std::string& container, const ControlFlowNode* node, const Element* user) {
+        blockers_[container].emplace(user, BlockerType::Escape);
+    }
+
+    void on_overwrite(const std::string& container, const ControlFlowNode* node, const Element* user) {
+        blockers_[container].emplace(user, BlockerType::Overwrite);
+    }
+};
+
+/**
  * Finds memory areas (heap for now) that are wholly owned by the surrounding function. Owned memory can be removed if
  * its no longer used, writes to it can be ellided if the data is never read. This is not true for memory writes in
  * general, as you must prove no reference to that data ever escapes our control
  */
-class MemoryOwnershipAnalysis : public analysis::BaseUserVisitor {
-    enum class BlockerType { Escape, Overwrite };
-
+class MemoryOwnershipAnalysis : public analysis::BaseUserVisitor,
+                                analysis::PointerEscapeAnalyzer<BlockerListPolicy>,
+                                analysis::PointerOverwriteAnalyzer<BlockerListPolicy>,
+                                BlockerListPolicy {
     struct FreeCluster {
         const Block* block;
         const data_flow::Memlet* in;
@@ -49,7 +74,6 @@ private:
     StructuredSDFG& sdfg_;
     // memory that is allocated by us and therefore 'owned' until it escapes
     std::unordered_map<std::string, OwnedArea> originally_owned_data_;
-    std::unordered_map<std::string, std::unordered_map<const Element*, BlockerType>> blockers_;
     std::unordered_set<std::string> fully_owned_; // never escaped
 
 public:
@@ -59,27 +83,45 @@ public:
 
     bool visit(sdfg::structured_control_flow::Block& node) override;
 
-    void use_as_symbol_write(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) override;
+    void use_as_symbol_write(
+        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+    ) override {
+        PointerEscapeAnalyzer::use_as_symbol_write(container, node, user, loc);
+        PointerOverwriteAnalyzer::use_as_symbol_write(container, node, user, loc);
+    }
     void use_as_symbol_read(
         const std::string& container,
+        const ControlFlowNode* node,
         const Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
-    ) override;
+    ) override {
+        PointerEscapeAnalyzer::use_as_symbol_read(container, node, user, loc, loc_index, std::move(expr));
+        PointerOverwriteAnalyzer::use_as_symbol_read(container, node, user, loc, loc_index, std::move(expr));
+    }
     void use_as_src_node(
         const std::string& container,
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
-    ) override;
+    ) override {
+        PointerEscapeAnalyzer::use_as_src_node(container, node, edge, block);
+        PointerOverwriteAnalyzer::use_as_src_node(container, node, edge, block);
+    }
     void use_as_dst_node(
         const std::string& container,
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
-    ) override;
-    void use_as_return_src(const std::string& container, const Return& ret) override;
+    ) override {
+        PointerEscapeAnalyzer::use_as_dst_node(container, node, edge, block);
+        PointerOverwriteAnalyzer::use_as_dst_node(container, node, edge, block);
+    }
+    void use_as_return_src(const std::string& container, const Return& ret) override {
+        PointerEscapeAnalyzer::use_as_return_src(container, ret);
+        PointerOverwriteAnalyzer::use_as_return_src(container, ret);
+    }
 
     const std::unordered_set<std::string>& fully_owned_areas() const { return fully_owned_; }
 
@@ -107,7 +149,8 @@ void MemoryOwnershipAnalysis::OwnedArea::remove_from(builder::StructuredSDFGBuil
     }
 }
 
-MemoryOwnershipAnalysis::MemoryOwnershipAnalysis(StructuredSDFG& sdfg) : sdfg_(sdfg) {}
+MemoryOwnershipAnalysis::MemoryOwnershipAnalysis(StructuredSDFG& sdfg)
+    : sdfg_(sdfg), PointerEscapeAnalyzer(sdfg, *this), PointerOverwriteAnalyzer(sdfg, *this) {}
 
 bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedArea& area) {
     // An escape is excused if it matches the input edge of one of the free_clusters.
@@ -224,53 +267,6 @@ bool MemoryOwnershipAnalysis::visit(sdfg::structured_control_flow::Block& node) 
     return BaseUserVisitor::visit(node);
 }
 
-
-void MemoryOwnershipAnalysis::use_as_return_src(const std::string& container, const Return& ret) {
-    if (sdfg_.type(container).type_id() == types::TypeID::Pointer) {
-        blockers_[container].emplace(&ret, BlockerType::Escape);
-    }
-}
-
-void MemoryOwnershipAnalysis::
-    use_as_symbol_write(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) {
-    auto name = container->get_name();
-    if (sdfg_.type(name).type_id() == types::TypeID::Pointer) {
-        blockers_[name].emplace(user, BlockerType::Overwrite);
-    }
-}
-
-void MemoryOwnershipAnalysis::use_as_symbol_read(
-    const std::string& container, const Element* user, SymbolReadLocation loc, int loc_index, symbolic::Expression expr
-) {
-    auto& type = sdfg_.type(container);
-    if (type.type_id() == types::TypeID::Pointer) {
-        blockers_[container].emplace(user, BlockerType::Escape);
-    }
-}
-
-void MemoryOwnershipAnalysis::use_as_src_node(
-    const std::string& container, const data_flow::AccessNode& node, const data_flow::Memlet& edge, const Block& block
-) {
-    auto& type = sdfg_.type(container);
-    if (edge.is_src_pointed_to_address_leak(type) || edge.is_src_address_leak()) {
-        // pulls a reference to the owned memory area or can alias the entire pointer
-
-        blockers_[container].emplace(&edge, BlockerType::Escape); // it may not be, but this is the safest
-        // assumption. other passes can forward the original container and fold it into accesses
-    }
-}
-
-void MemoryOwnershipAnalysis::use_as_dst_node(
-    const std::string& container, const data_flow::AccessNode& node, const data_flow::Memlet& edge, const Block& block
-) {
-    if (edge.is_dst_write()) { // writes to the ptr
-        auto& type = sdfg_.type(container);
-        if (type.type_id() == types::TypeID::Pointer) {
-            blockers_[container].emplace(&edge, BlockerType::Overwrite);
-        }
-    }
-}
-
 /**
  * Does not care about other types of accesses.
  * Presumes, that the data cannot alias and there is only one SSA-like instance of backing data.
@@ -278,7 +274,8 @@ void MemoryOwnershipAnalysis::use_as_dst_node(
  * Any read of the pointer or getting of an address is considered an escape for which aliasing cannot be excluded,
  * in which case you must not rely on this analysis
  */
-class IndirectMemoryAccessFinder : public analysis::BaseUserVisitor {
+class IndirectMemoryAccessFinder : public analysis::BaseUserVisitor { // TODO update to use the PointerUsedAnalyzer and
+                                                                      // a policy that filters the containstarg
 private:
     std::unordered_map<std::string, std::unordered_set<const data_flow::Memlet*>> indirect_reads_;
     std::unordered_map<std::string, std::unordered_map<const data_flow::Memlet*, const Block*>> writes_to_remove_;
@@ -296,13 +293,15 @@ public:
 
     void use_as_symbol_read(
         const std::string& container,
+        const ControlFlowNode* node,
         const Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
     ) override {}
-    void use_as_symbol_write(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) override {
-    }
+    void use_as_symbol_write(
+        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+    ) override {}
     void use_as_src_node(
         const std::string& container,
         const data_flow::AccessNode& node,

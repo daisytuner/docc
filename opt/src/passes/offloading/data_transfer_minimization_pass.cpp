@@ -141,9 +141,10 @@ bool DataTransferMinimization::accept(structured_control_flow::Sequence& sequenc
 
             // Debug output
             DEBUG_PRINTLN(
-                "  Eliminating " << (read_after ? "(" : "") << "copy-out: " << copy_out_src->data() << " -> "
-                                 << copy_out_dst->data() << (read_after ? ")" : "")
-                                 << " / copy-in: " << copy_in_src->data() << " -> " << copy_in_dst->data()
+                "  Eliminating " << (read_after ? "(" : "") << "copy-out: #" << copy_out->element_id() << " "
+                                 << copy_out_src->data() << " -> " << copy_out_dst->data() << (read_after ? ")" : "")
+                                 << " / copy-in: #" << copy_in->element_id() << " " << copy_in_src->data() << " -> "
+                                 << copy_in_dst->data()
             );
 
             // Get all relevant information
