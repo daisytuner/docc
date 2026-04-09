@@ -73,7 +73,7 @@ public:
 
     bool is_parameter(const std::string& container);
 
-    static symbolic::Expression cnf_to_upper_bound(const symbolic::CNF& cnf, const symbolic::Symbol indvar);
+    static std::vector<symbolic::Expression> cnf_to_upper_bounds(const symbolic::CNF& cnf, const symbolic::Symbol indvar);
 };
 
 } // namespace analysis

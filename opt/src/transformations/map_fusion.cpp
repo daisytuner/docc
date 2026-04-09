@@ -33,7 +33,8 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_
     const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
     const std::vector<structured_control_flow::StructuredLoop*>& consumer_loops,
     const symbolic::Assumptions& producer_assumptions,
-    const symbolic::Assumptions& consumer_assumptions
+    const symbolic::Assumptions& consumer_assumptions,
+    bool invert_range_check
 ) {
     // Delinearize subsets to recover multi-dimensional structure from linearized accesses
     // e.g. T[i*N + j] with assumptions on bounds -> T[i, j]
@@ -208,7 +209,14 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_
             isl_set* producer_range = isl_map_range(constrained_producer);
             isl_set* consumer_range = isl_map_range(consumer_map_copy);
 
-            range_covered = isl_set_is_subset(consumer_range, producer_range) == isl_bool_true;
+            // When arguments are swapped (ConsumerIntoProducer), the "producer"/"consumer"
+            // labels are inverted. Flip the subset check to always verify:
+            // actual_consumer_read_range ⊆ actual_producer_write_range
+            if (invert_range_check) {
+                range_covered = isl_set_is_subset(producer_range, consumer_range) == isl_bool_true;
+            } else {
+                range_covered = isl_set_is_subset(consumer_range, producer_range) == isl_bool_true;
+            }
 
             isl_set_free(producer_range);
             isl_set_free(consumer_range);
@@ -226,6 +234,100 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_
     }
 
     return mappings;
+}
+
+bool MapFusion::find_write_location(
+    structured_control_flow::StructuredLoop& loop,
+    const std::string& container,
+    std::vector<structured_control_flow::StructuredLoop*>& loops,
+    structured_control_flow::Sequence*& body,
+    structured_control_flow::Block*& block
+) {
+    loops.push_back(&loop);
+    auto& seq = loop.root();
+
+    for (size_t i = 0; i < seq.size(); ++i) {
+        auto& child = seq.at(i).first;
+
+        if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&child)) {
+            // Check if this block writes to the container
+            auto& dataflow = blk->dataflow();
+            for (auto& node : dataflow.nodes()) {
+                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+                if (access == nullptr || access->data() != container) {
+                    continue;
+                }
+                // Write access: has incoming edges (sink node)
+                if (dataflow.in_degree(*access) > 0 && dataflow.out_degree(*access) == 0) {
+                    if (block != nullptr) {
+                        // Multiple write blocks found — ambiguous
+                        return false;
+                    }
+                    body = &seq;
+                    block = blk;
+                }
+            }
+        } else if (auto* nested_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+            if (!find_write_location(*nested_loop, container, loops, body, block)) {
+                return false;
+            }
+            // If we didn't find the write in this subtree, pop the loop back off
+            if (loops.back() != &loop && block == nullptr) {
+                // The recursive call already popped — but we need to check
+            }
+        }
+    }
+
+    // If we didn't find the write in this subtree, remove this loop from the chain
+    if (block == nullptr) {
+        loops.pop_back();
+    }
+
+    return true;
+}
+
+bool MapFusion::find_read_location(
+    structured_control_flow::StructuredLoop& loop,
+    const std::string& container,
+    std::vector<structured_control_flow::StructuredLoop*>& loops,
+    structured_control_flow::Sequence*& body
+) {
+    loops.push_back(&loop);
+    auto& seq = loop.root();
+
+    for (size_t i = 0; i < seq.size(); ++i) {
+        auto& child = seq.at(i).first;
+
+        if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&child)) {
+            // Check if this block reads from the container
+            auto& dataflow = blk->dataflow();
+            for (auto& node : dataflow.nodes()) {
+                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+                if (access == nullptr || access->data() != container) {
+                    continue;
+                }
+                // Read access: has outgoing edges (source node)
+                if (dataflow.in_degree(*access) == 0 && dataflow.out_degree(*access) > 0) {
+                    if (body != nullptr && body != &seq) {
+                        // Reads at different sequence levels — ambiguous
+                        return false;
+                    }
+                    body = &seq;
+                }
+            }
+        } else if (auto* nested_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+            if (!find_read_location(*nested_loop, container, loops, body)) {
+                return false;
+            }
+        }
+    }
+
+    // If we didn't find any reads in this subtree, remove this loop from the chain
+    if (body == nullptr) {
+        loops.pop_back();
+    }
+
+    return true;
 }
 
 bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -266,40 +368,84 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     if (!transition.empty()) {
         return false;
     }
-    // Criterion: First loop is perfectly nested
+    // Determine fusion pattern based on nesting properties
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto first_loop_info = loop_analysis.loop_info(&first_map_);
-    if (!first_loop_info.is_perfectly_nested) {
-        return false;
-    }
-    if (!first_loop_info.is_perfectly_parallel) {
-        return false;
-    }
-    std::vector<structured_control_flow::StructuredLoop*> producer_loops = {&first_map_};
-    structured_control_flow::Sequence* producer_body = &first_map_.root();
-    structured_control_flow::ControlFlowNode* producer_node = &first_map_.root().at(0).first;
-    while (auto* nested = dynamic_cast<structured_control_flow::Map*>(producer_node)) {
-        producer_loops.push_back(nested);
-        producer_body = &nested->root();
-        producer_node = &nested->root().at(0).first;
-    }
-    auto* producer_block_ptr = dynamic_cast<structured_control_flow::Block*>(producer_node);
-    if (producer_block_ptr == nullptr) {
+    auto second_loop_info = loop_analysis.loop_info(&second_loop_);
+
+    bool first_nested = first_loop_info.is_perfectly_nested;
+    bool second_nested = second_loop_info.is_perfectly_nested;
+
+    // Both non-perfectly-nested: not supported
+    if (!first_nested && !second_nested) {
         return false;
     }
 
-    // Criterion: Second loop is perfectly nested (but can have non-parallel loops)
-    auto second_loop_info = loop_analysis.loop_info(&second_loop_);
-    if (!second_loop_info.is_perfectly_nested) {
-        return false;
+    if (first_nested && second_nested) {
+        // Pattern 1: Both perfectly nested — producer into consumer (original path)
+        direction_ = FusionDirection::ProducerIntoConsumer;
+    } else if (!first_nested && second_nested) {
+        // Pattern 2: Producer non-perfectly-nested, consumer perfectly nested
+        direction_ = FusionDirection::ConsumerIntoProducer;
+    } else {
+        // Reverse Pattern 2: Producer perfectly nested, consumer non-perfectly-nested
+        direction_ = FusionDirection::ProducerIntoConsumer;
     }
-    std::vector<structured_control_flow::StructuredLoop*> consumer_loops = {&second_loop_};
-    structured_control_flow::Sequence* consumer_body = &second_loop_.root();
-    structured_control_flow::ControlFlowNode* consumer_node = &second_loop_.root().at(0).first;
-    while (auto* nested = dynamic_cast<structured_control_flow::StructuredLoop*>(consumer_node)) {
-        consumer_loops.push_back(nested);
-        consumer_body = &nested->root();
-        consumer_node = &nested->root().at(0).first;
+
+    // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
+    // ProducerIntoConsumer: producer is replicated at each consumer site — producer must be all-parallel.
+    // ConsumerIntoProducer: consumer is reordered into producer's nest — consumer must be all-parallel.
+    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+        if (!first_loop_info.is_perfectly_parallel) {
+            return false;
+        }
+    } else {
+        if (!second_loop_info.is_perfectly_parallel) {
+            return false;
+        }
+    }
+
+    // Locate producer write point
+    producer_loops_.clear();
+    producer_body_ = nullptr;
+    producer_block_ = nullptr;
+
+    if (first_nested) {
+        // Perfectly nested: walk the at(0).first chain
+        producer_loops_.push_back(&first_map_);
+        producer_body_ = &first_map_.root();
+        structured_control_flow::ControlFlowNode* node = &first_map_.root().at(0).first;
+        while (auto* nested = dynamic_cast<structured_control_flow::StructuredLoop*>(node)) {
+            producer_loops_.push_back(nested);
+            producer_body_ = &nested->root();
+            node = &nested->root().at(0).first;
+        }
+        producer_block_ = dynamic_cast<structured_control_flow::Block*>(node);
+        if (producer_block_ == nullptr) {
+            return false;
+        }
+    } else {
+        // Non-perfectly-nested: search recursively for the write block
+        // We need to know which containers to look for, but we don't know them yet.
+        // Defer write location search until after fusion_containers are identified.
+    }
+
+    // Locate consumer read point
+    consumer_loops_.clear();
+    consumer_body_ = nullptr;
+
+    if (second_nested) {
+        // Perfectly nested: walk the at(0).first chain
+        consumer_loops_.push_back(&second_loop_);
+        consumer_body_ = &second_loop_.root();
+        structured_control_flow::ControlFlowNode* node = &second_loop_.root().at(0).first;
+        while (auto* nested = dynamic_cast<structured_control_flow::StructuredLoop*>(node)) {
+            consumer_loops_.push_back(nested);
+            consumer_body_ = &nested->root();
+            node = &nested->root().at(0).first;
+        }
+    } else {
+        // Non-perfectly-nested: defer read location search until after fusion_containers are identified.
     }
 
     // Get arguments analysis to identify inputs/outputs of each loop
@@ -335,15 +481,73 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     if (fusion_containers.empty()) {
         return false;
     }
-    // Get assumptions for the innermost blocks (includes all enclosing loop bounds)
+
+    // Now that we know the fusion containers, resolve deferred locations
+    if (!first_nested) {
+        // Non-perfectly-nested producer: find write location for the first fusion container
+        // All fusion containers must be written at the same block for this to work
+        for (const auto& container : fusion_containers) {
+            std::vector<structured_control_flow::StructuredLoop*> write_loops;
+            structured_control_flow::Sequence* write_body = nullptr;
+            structured_control_flow::Block* write_block = nullptr;
+
+            if (!find_write_location(first_map_, container, write_loops, write_body, write_block)) {
+                return false;
+            }
+            if (write_block == nullptr) {
+                return false;
+            }
+
+            if (producer_block_ == nullptr) {
+                // First container: set the locations
+                producer_loops_ = write_loops;
+                producer_body_ = write_body;
+                producer_block_ = write_block;
+            } else {
+                // Subsequent containers must be in the same block
+                if (write_block != producer_block_) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    if (!second_nested) {
+        // Non-perfectly-nested consumer: find read location for the first fusion container
+        // All fusion containers must be read at the same sequence for this to work
+        for (const auto& container : fusion_containers) {
+            std::vector<structured_control_flow::StructuredLoop*> read_loops;
+            structured_control_flow::Sequence* read_body = nullptr;
+
+            if (!find_read_location(second_loop_, container, read_loops, read_body)) {
+                return false;
+            }
+            if (read_body == nullptr) {
+                return false;
+            }
+
+            if (consumer_body_ == nullptr) {
+                // First container: set the locations
+                consumer_loops_ = read_loops;
+                consumer_body_ = read_body;
+            } else {
+                // Subsequent containers must be at the same sequence
+                if (read_body != consumer_body_) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Get assumptions for the resolved write/read locations
     auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    auto& producer_assumptions = assumptions_analysis.get(*producer_node);
-    auto& consumer_assumptions = assumptions_analysis.get(consumer_body->at(0).first);
+    auto& producer_assumptions = assumptions_analysis.get(*producer_block_);
+    auto& consumer_assumptions = assumptions_analysis.get(consumer_body_->at(0).first);
 
     // For each fusion container, find the producer memlet and collect unique consumer subsets
-    auto& first_dataflow = producer_block_ptr->dataflow();
+    auto& first_dataflow = producer_block_->dataflow();
     for (const auto& container : fusion_containers) {
-        // Find unique producer in first map (producer)
+        // Find unique producer write in first map
         data_flow::Memlet* producer_memlet = nullptr;
 
         for (auto& node : first_dataflow.nodes()) {
@@ -373,12 +577,12 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
 
         // Collect all unique subsets from consumer blocks
-        // Use a vector of subsets and deduplicate manually
         std::vector<data_flow::Subset> unique_subsets;
-        for (size_t i = 0; i < consumer_body->size(); ++i) {
-            auto* block = dynamic_cast<structured_control_flow::Block*>(&consumer_body->at(i).first);
+        for (size_t i = 0; i < consumer_body_->size(); ++i) {
+            auto* block = dynamic_cast<structured_control_flow::Block*>(&consumer_body_->at(i).first);
             if (block == nullptr) {
-                return false;
+                // Skip non-block children (e.g. nested loops that are not related)
+                continue;
             }
 
             auto& dataflow = block->dataflow();
@@ -399,7 +603,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 
                     auto& consumer_subset = memlet.subset();
                     if (consumer_subset.size() != producer_subset.size()) {
-                        return false; // Dimension mismatch
+                        return false;
                     }
 
                     // Check if this subset is already in unique_subsets
@@ -426,15 +630,34 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
 
         // For each unique consumer subset, solve index mappings and create a FusionCandidate
+        // The direction determines which side's indvars are solved for
         for (const auto& consumer_subset : unique_subsets) {
-            auto mappings = solve_subsets(
-                producer_subset,
-                consumer_subset,
-                producer_loops,
-                consumer_loops,
-                producer_assumptions,
-                consumer_assumptions
-            );
+            std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> mappings;
+
+            if (direction_ == FusionDirection::ProducerIntoConsumer) {
+                // Solve producer indvars in terms of consumer indvars
+                mappings = solve_subsets(
+                    producer_subset,
+                    consumer_subset,
+                    producer_loops_,
+                    consumer_loops_,
+                    producer_assumptions,
+                    consumer_assumptions
+                );
+            } else {
+                // ConsumerIntoProducer: solve consumer indvars in terms of producer indvars
+                // Arguments are swapped, so invert the range check direction
+                mappings = solve_subsets(
+                    consumer_subset,
+                    producer_subset,
+                    consumer_loops_,
+                    producer_loops_,
+                    consumer_assumptions,
+                    producer_assumptions,
+                    true
+                );
+            }
+
             if (mappings.empty()) {
                 return false;
             }
@@ -455,170 +678,275 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
 
-    // Navigate to the innermost block of the first map (handling nested maps)
-    structured_control_flow::ControlFlowNode* first_block_node = &first_map_.root().at(0).first;
-    while (auto* nested_map = dynamic_cast<structured_control_flow::Map*>(first_block_node)) {
-        first_block_node = &nested_map->root().at(0).first;
-    }
-    auto* first_block = dynamic_cast<structured_control_flow::Block*>(first_block_node);
-    auto& first_dataflow = first_block->dataflow();
+    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+        // Pattern 1 + Reverse Pattern 2: Inline producer blocks into consumer's read body
+        auto& first_dataflow = producer_block_->dataflow();
 
-    // Navigate to the innermost consumer sequence (handling nested loops)
-    structured_control_flow::Sequence* second_root = &second_loop_.root();
-    structured_control_flow::ControlFlowNode* consumer_node = &second_loop_.root().at(0).first;
-    while (auto* nested = dynamic_cast<structured_control_flow::StructuredLoop*>(consumer_node)) {
-        second_root = &nested->root();
-        consumer_node = &nested->root().at(0).first;
-    }
+        // For each fusion candidate, create a temp and insert a producer block
+        std::vector<std::string> candidate_temps;
 
-    // For each fusion candidate (unique container+subset pair), create a temp and insert a producer block
-    // Track: candidate_index -> temp_name
-    std::vector<std::string> candidate_temps;
+        for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
+            auto& candidate = fusion_candidates_[cand_idx];
 
-    for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
-        auto& candidate = fusion_candidates_[cand_idx];
+            auto& container_type = sdfg.type(candidate.container);
+            std::string temp_name = builder.find_new_name("_fused_tmp");
+            types::Scalar tmp_type(container_type.primitive_type());
+            builder.add_container(temp_name, tmp_type);
+            candidate_temps.push_back(temp_name);
 
-        // Create a temp scalar for this candidate
-        auto& container_type = sdfg.type(candidate.container);
-        std::string temp_name = builder.find_new_name("_fused_tmp");
-        types::Scalar tmp_type(container_type.primitive_type());
-        builder.add_container(temp_name, tmp_type);
-        candidate_temps.push_back(temp_name);
+            // Insert a producer block at the beginning of the consumer's body
+            auto& first_child = consumer_body_->at(0).first;
+            control_flow::Assignments empty_assignments;
+            auto& new_block = builder.add_block_before(*consumer_body_, first_child, empty_assignments);
 
-        // Insert a producer block at the beginning of the consumer's innermost body
-        auto& first_child = second_root->at(0).first;
-        control_flow::Assignments empty_assignments;
-        auto& producer_block = builder.add_block_before(*second_root, first_child, empty_assignments);
-
-        // Deep copy all nodes from first block to producer block
-        std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
-        for (auto& node : first_dataflow.nodes()) {
-            node_mapping[&node] = &builder.copy_node(producer_block, node);
-            auto access = node_mapping[&node];
-            if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(access)) {
-                if (access_node->data() == candidate.container) {
-                    // This is the producer access for this candidate - update to temp
-                    access_node->data(temp_name);
+            // Deep copy all nodes from producer block to new block
+            std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
+            for (auto& node : first_dataflow.nodes()) {
+                node_mapping[&node] = &builder.copy_node(new_block, node);
+                auto* copied = node_mapping[&node];
+                if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(copied)) {
+                    if (access_node->data() == candidate.container) {
+                        access_node->data(temp_name);
+                    }
                 }
             }
-        }
 
-        // Add memlets with index substitution using this candidate's index_mappings
-        for (auto& edge : first_dataflow.edges()) {
-            auto& src_node = edge.src();
-            auto& dst_node = edge.dst();
+            // Add memlets with index substitution (producer indvars → consumer expressions)
+            for (auto& edge : first_dataflow.edges()) {
+                auto& src_node = edge.src();
+                auto& dst_node = edge.dst();
 
-            // Substitute all producer indvars in subset
-            const types::IType* base_type = &edge.base_type();
-            data_flow::Subset new_subset;
-            for (const auto& dim : edge.subset()) {
-                auto new_dim = dim;
-                for (const auto& [pvar, mapping] : candidate.index_mappings) {
-                    new_dim = symbolic::subs(new_dim, pvar, mapping);
+                const types::IType* base_type = &edge.base_type();
+                data_flow::Subset new_subset;
+                for (const auto& dim : edge.subset()) {
+                    auto new_dim = dim;
+                    for (const auto& [pvar, mapping] : candidate.index_mappings) {
+                        new_dim = symbolic::subs(new_dim, pvar, mapping);
+                    }
+                    new_dim = symbolic::expand(new_dim);
+                    new_subset.push_back(new_dim);
                 }
-                new_dim = symbolic::expand(new_dim);
-                new_subset.push_back(new_dim);
+
+                // For output edges to temp scalar, use empty subset
+                auto* dst_access = dynamic_cast<data_flow::AccessNode*>(&dst_node);
+                if (dst_access != nullptr && dst_access->data() == candidate.container &&
+                    first_dataflow.in_degree(*dst_access) > 0) {
+                    new_subset.clear();
+                    base_type = &tmp_type;
+                }
+
+                builder.add_memlet(
+                    new_block,
+                    *node_mapping[&src_node],
+                    edge.src_conn(),
+                    *node_mapping[&dst_node],
+                    edge.dst_conn(),
+                    new_subset,
+                    *base_type,
+                    edge.debug_info()
+                );
             }
-
-            // For output edges (to temp scalar), use empty subset
-            auto* dst_access = dynamic_cast<data_flow::AccessNode*>(&dst_node);
-            if (dst_access != nullptr && dst_access->data() == candidate.container &&
-                first_dataflow.in_degree(*dst_access) > 0) {
-                new_subset.clear(); // Scalar has empty subset
-                base_type = &tmp_type;
-            }
-
-            builder.add_memlet(
-                producer_block,
-                *node_mapping[&src_node],
-                edge.src_conn(),
-                *node_mapping[&dst_node],
-                edge.dst_conn(),
-                new_subset,
-                *base_type,
-                edge.debug_info()
-            );
-        }
-    }
-
-    // Now update all read accesses in consumer blocks to point to the appropriate temp
-    // We need to match each access node's memlet subset to find the right candidate
-    size_t num_producer_blocks = fusion_candidates_.size();
-
-    for (size_t block_idx = num_producer_blocks; block_idx < second_root->size(); ++block_idx) {
-        auto* block = dynamic_cast<structured_control_flow::Block*>(&second_root->at(block_idx).first);
-        if (block == nullptr) {
-            continue;
         }
 
-        auto& dataflow = block->dataflow();
+        // Update all read accesses in consumer blocks to point to the appropriate temp
+        size_t num_producer_blocks = fusion_candidates_.size();
 
-        // Find all read access nodes
-        for (auto& node : dataflow.nodes()) {
-            auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-            if (access == nullptr) {
+        for (size_t block_idx = num_producer_blocks; block_idx < consumer_body_->size(); ++block_idx) {
+            auto* block = dynamic_cast<structured_control_flow::Block*>(&consumer_body_->at(block_idx).first);
+            if (block == nullptr) {
                 continue;
             }
 
-            // Only update read accesses (out_degree > 0)
-            if (dataflow.out_degree(*access) == 0) {
-                continue;
-            }
+            auto& dataflow = block->dataflow();
 
-            // Capture original container name before any modifications
-            std::string original_container = access->data();
-
-            // Check each outgoing memlet to find which candidates match
-            for (auto& memlet : dataflow.out_edges(*access)) {
-                if (memlet.type() != data_flow::MemletType::Computational) {
+            for (auto& node : dataflow.nodes()) {
+                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+                if (access == nullptr || dataflow.out_degree(*access) == 0) {
                     continue;
                 }
 
-                const auto& memlet_subset = memlet.subset();
+                std::string original_container = access->data();
 
-                // Find matching candidate by container and subset
-                for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
-                    auto& candidate = fusion_candidates_[cand_idx];
-
-                    if (original_container != candidate.container) {
+                for (auto& memlet : dataflow.out_edges(*access)) {
+                    if (memlet.type() != data_flow::MemletType::Computational) {
                         continue;
                     }
 
-                    // Check if subset matches
-                    if (memlet_subset.size() != candidate.consumer_subset.size()) {
-                        continue;
-                    }
+                    const auto& memlet_subset = memlet.subset();
 
-                    bool subset_matches = true;
-                    for (size_t d = 0; d < memlet_subset.size(); ++d) {
-                        if (!symbolic::eq(memlet_subset[d], candidate.consumer_subset[d])) {
-                            subset_matches = false;
-                            break;
+                    for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
+                        auto& candidate = fusion_candidates_[cand_idx];
+
+                        if (original_container != candidate.container) {
+                            continue;
+                        }
+
+                        if (memlet_subset.size() != candidate.consumer_subset.size()) {
+                            continue;
+                        }
+
+                        bool subset_matches = true;
+                        for (size_t d = 0; d < memlet_subset.size(); ++d) {
+                            if (!symbolic::eq(memlet_subset[d], candidate.consumer_subset[d])) {
+                                subset_matches = false;
+                                break;
+                            }
+                        }
+
+                        if (!subset_matches) {
+                            continue;
+                        }
+
+                        const auto& temp_name = candidate_temps[cand_idx];
+                        auto& temp_type = sdfg.type(temp_name);
+
+                        access->data(temp_name);
+
+                        memlet.set_subset({});
+                        memlet.set_base_type(temp_type);
+
+                        for (auto& in_edge : dataflow.in_edges(*access)) {
+                            in_edge.set_subset({});
+                            in_edge.set_base_type(temp_type);
+                        }
+
+                        break;
+                    }
+                }
+            }
+        }
+
+    } else {
+        // ConsumerIntoProducer (Pattern 2): Inline consumer blocks into the producer's write body
+        // Modify the producer block in-place to write to a temp scalar, add a writeback block
+        // for the original array, then copy consumer blocks reading from the temp.
+
+        std::vector<std::string> candidate_temps;
+        auto& producer_dataflow = producer_block_->dataflow();
+
+        for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
+            auto& candidate = fusion_candidates_[cand_idx];
+
+            auto& container_type = sdfg.type(candidate.container);
+            std::string temp_name = builder.find_new_name("_fused_tmp");
+            types::Scalar tmp_type(container_type.primitive_type());
+            builder.add_container(temp_name, tmp_type);
+            candidate_temps.push_back(temp_name);
+
+            // Step 1: Modify the original producer block to write to _fused_tmp
+            data_flow::Subset original_write_subset;
+            for (auto& node : producer_dataflow.nodes()) {
+                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+                if (access == nullptr || access->data() != candidate.container) continue;
+                if (producer_dataflow.in_degree(*access) == 0) continue;
+
+                // This is the write access node — save the original subset, then redirect
+                for (auto& in_edge : producer_dataflow.in_edges(*access)) {
+                    original_write_subset = in_edge.subset();
+                    in_edge.set_subset({});
+                    in_edge.set_base_type(tmp_type);
+                }
+                access->data(temp_name);
+                break;
+            }
+
+            // Step 2: Add a writeback block: container[original_subset] = _fused_tmp
+            control_flow::Assignments empty_assignments;
+            auto& wb_block = builder.add_block_after(*producer_body_, *producer_block_, empty_assignments);
+            auto& wb_src = builder.add_access(wb_block, temp_name);
+            auto& wb_dst = builder.add_access(wb_block, candidate.container);
+            auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+            builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", {});
+            builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, original_write_subset);
+
+            // Step 3: Copy consumer blocks after the writeback block
+            structured_control_flow::ControlFlowNode* last_inserted = &wb_block;
+
+            for (size_t i = 0; i < consumer_body_->size(); ++i) {
+                auto* consumer_block = dynamic_cast<structured_control_flow::Block*>(&consumer_body_->at(i).first);
+                if (consumer_block == nullptr) {
+                    continue;
+                }
+
+                auto& consumer_dataflow = consumer_block->dataflow();
+
+                // Check if this block reads from the fusion container
+                bool reads_container = false;
+                for (auto& node : consumer_dataflow.nodes()) {
+                    auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+                    if (access != nullptr && access->data() == candidate.container &&
+                        consumer_dataflow.out_degree(*access) > 0) {
+                        reads_container = true;
+                        break;
+                    }
+                }
+                if (!reads_container) {
+                    continue;
+                }
+
+                // Insert a new block after the last inserted block in the producer's body
+                auto& new_block = builder.add_block_after(*producer_body_, *last_inserted, empty_assignments);
+
+                // Deep copy all nodes from consumer block
+                std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
+                for (auto& node : consumer_dataflow.nodes()) {
+                    node_mapping[&node] = &builder.copy_node(new_block, node);
+                    auto* copied = node_mapping[&node];
+                    if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(copied)) {
+                        if (access_node->data() == candidate.container) {
+                            access_node->data(temp_name);
                         }
                     }
-
-                    if (!subset_matches) {
-                        continue;
-                    }
-
-                    // Found a match - update the access node and memlet
-                    const auto& temp_name = candidate_temps[cand_idx];
-                    auto& temp_type = sdfg.type(temp_name);
-
-                    access->data(temp_name);
-
-                    // Update this memlet
-                    memlet.set_subset({});
-                    memlet.set_base_type(temp_type);
-
-                    // Also update any incoming edges
-                    for (auto& in_edge : dataflow.in_edges(*access)) {
-                        in_edge.set_subset({});
-                        in_edge.set_base_type(temp_type);
-                    }
-
-                    break; // Found the matching candidate
                 }
+
+                // Add memlets with index substitution (consumer indvars → producer expressions)
+                for (auto& edge : consumer_dataflow.edges()) {
+                    auto& src_node = edge.src();
+                    auto& dst_node = edge.dst();
+
+                    const types::IType* base_type = &edge.base_type();
+                    data_flow::Subset new_subset;
+                    for (const auto& dim : edge.subset()) {
+                        auto new_dim = dim;
+                        for (const auto& [cvar, mapping] : candidate.index_mappings) {
+                            new_dim = symbolic::subs(new_dim, cvar, mapping);
+                        }
+                        new_dim = symbolic::expand(new_dim);
+                        new_subset.push_back(new_dim);
+                    }
+
+                    // For read edges from temp scalar, use empty subset
+                    auto* src_access = dynamic_cast<data_flow::AccessNode*>(&src_node);
+                    if (src_access != nullptr && src_access->data() == candidate.container &&
+                        consumer_dataflow.in_degree(*src_access) == 0) {
+                        new_subset.clear();
+                        base_type = &tmp_type;
+                    }
+
+                    builder.add_memlet(
+                        new_block,
+                        *node_mapping[&src_node],
+                        edge.src_conn(),
+                        *node_mapping[&dst_node],
+                        edge.dst_conn(),
+                        new_subset,
+                        *base_type,
+                        edge.debug_info()
+                    );
+                }
+
+                last_inserted = &new_block;
+            }
+        }
+
+        // Remove the consumer loop
+        auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
+        auto* parent = scope_analysis.parent_scope(&second_loop_);
+        auto* parent_seq = dynamic_cast<structured_control_flow::Sequence*>(parent);
+        if (parent_seq != nullptr) {
+            int idx = parent_seq->index(second_loop_);
+            if (idx >= 0) {
+                builder.remove_child(*parent_seq, static_cast<size_t>(idx));
             }
         }
     }

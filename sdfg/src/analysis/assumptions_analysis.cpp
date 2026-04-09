@@ -16,7 +16,8 @@
 namespace sdfg {
 namespace analysis {
 
-symbolic::Expression AssumptionsAnalysis::cnf_to_upper_bound(const symbolic::CNF& cnf, const symbolic::Symbol indvar) {
+std::vector<symbolic::Expression> AssumptionsAnalysis::
+    cnf_to_upper_bounds(const symbolic::CNF& cnf, const symbolic::Symbol indvar) {
     std::vector<symbolic::Expression> candidates;
 
     for (const auto& clause : cnf) {
@@ -46,17 +47,7 @@ symbolic::Expression AssumptionsAnalysis::cnf_to_upper_bound(const symbolic::CNF
         }
     }
 
-    if (candidates.empty()) {
-        return SymEngine::null;
-    }
-
-    // Return the smallest upper bound across all candidate constraints
-    symbolic::Expression result = candidates[0];
-    for (size_t i = 1; i < candidates.size(); ++i) {
-        result = symbolic::min(result, candidates[i]);
-    }
-
-    return result;
+    return candidates;
 }
 
 AssumptionsAnalysis::AssumptionsAnalysis(StructuredSDFG& sdfg)
@@ -256,36 +247,49 @@ void AssumptionsAnalysis::traverse_structured_loop(
         this->traverse(body, this->assumptions_[&body], this->assumptions_with_trivial_[&body]);
         return;
     }
-    auto ub = cnf_to_upper_bound(cnf, indvar);
-    if (ub.is_null()) {
+    auto upper_bounds = cnf_to_upper_bounds(cnf, indvar);
+    if (upper_bounds.empty()) {
         this->propagate(body, body_assumptions, outer_assumptions, outer_assumptions_with_trivial);
         this->traverse(body, this->assumptions_[&body], this->assumptions_with_trivial_[&body]);
         return;
     }
-    // Assumption: upper bound ub is tight for indvar if
-    body_assumptions[indvar].add_upper_bound(ub);
-    body_assumptions[indvar].upper_bound_deprecated(ub);
+
+    // Store each upper bound candidate separately for tighter range analysis
+    for (auto& ub : upper_bounds) {
+        body_assumptions[indvar].add_upper_bound(ub);
+    }
+
+    // Compute combined min for deprecated API and tight upper bound
+    symbolic::Expression ub_min = upper_bounds[0];
+    for (size_t i = 1; i < upper_bounds.size(); ++i) {
+        ub_min = symbolic::min(ub_min, upper_bounds[i]);
+    }
+    body_assumptions[indvar].upper_bound_deprecated(ub_min);
     // TODO: handle non-contiguous tight upper bounds with modulo
     // Example: for (i = 0; i < n; i += 3) -> tight_upper_bound = (n - 1) - ((n - 1) % 3)
     if (loop->is_contiguous()) {
-        body_assumptions[indvar].tight_upper_bound(ub);
+        body_assumptions[indvar].tight_upper_bound(ub_min);
     }
 
     // Assumption: inverse index access upper bounds are upper bound for ub
-    if (SymEngine::is_a<SymEngine::Symbol>(*ub) && !ubs.empty()) {
-        auto sym = SymEngine::rcp_static_cast<const SymEngine::Symbol>(ub);
-        if (!body_assumptions.contains(sym)) {
-            body_assumptions.insert({sym, symbolic::Assumption(sym)});
-        }
-        for (auto ub : ubs) {
-            body_assumptions[sym].add_upper_bound(ub);
+    for (auto& ub : upper_bounds) {
+        if (SymEngine::is_a<SymEngine::Symbol>(*ub) && !ubs.empty()) {
+            auto sym = SymEngine::rcp_static_cast<const SymEngine::Symbol>(ub);
+            if (!body_assumptions.contains(sym)) {
+                body_assumptions.insert({sym, symbolic::Assumption(sym)});
+            }
+            for (auto& u : ubs) {
+                body_assumptions[sym].add_upper_bound(u);
+            }
         }
     }
 
     // Assumption: any ub symbol is at least init
-    for (auto& sym : symbolic::atoms(ub)) {
-        body_assumptions[sym].add_lower_bound(symbolic::add(init, symbolic::one()));
-        body_assumptions[sym].lower_bound_deprecated(symbolic::add(init, symbolic::one()));
+    for (auto& ub : upper_bounds) {
+        for (auto& sym : symbolic::atoms(ub)) {
+            body_assumptions[sym].add_lower_bound(symbolic::add(init, symbolic::one()));
+            body_assumptions[sym].lower_bound_deprecated(symbolic::add(init, symbolic::one()));
+        }
     }
 
     this->propagate(body, body_assumptions, outer_assumptions, outer_assumptions_with_trivial);

@@ -25,11 +25,11 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
         if (first && second && first->root().size() > 0 && second->root().size() > 0) {
             transformations::MapFusion transformation(*first, *second);
             if (transformation.can_be_applied(builder_, analysis_manager_)) {
+                auto first_name = first->indvar()->get_name();
+                auto second_name = second->indvar()->get_name();
                 transformation.apply(builder_, analysis_manager_);
+                DEBUG_PRINTLN("Applied MapFusion to maps " + first_name + " and " + second_name);
                 applied = true;
-                DEBUG_PRINTLN(
-                    "Applied MapFusion to maps " + first->indvar()->get_name() + " and " + second->indvar()->get_name()
-                );
             }
         }
 

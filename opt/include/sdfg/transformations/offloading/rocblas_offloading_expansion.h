@@ -13,9 +13,9 @@
 #include "sdfg/types/pointer.h"
 
 namespace sdfg {
-namespace cuda {
+namespace rocm {
 
-class CUBLASOffloadingExpansion : public transformations::Transformation {
+class ROCBLASOffloadingExpansion : public transformations::Transformation {
 private:
     math::blas::BLASNode& blas_node_;
 
@@ -78,7 +78,7 @@ private:
     );
 
 public:
-    CUBLASOffloadingExpansion(math::blas::BLASNode& blas_node);
+    ROCBLASOffloadingExpansion(math::blas::BLASNode& blas_node);
 
     virtual std::string name() const override;
 
@@ -89,8 +89,8 @@ public:
 
     virtual void to_json(nlohmann::json& json) const override;
 
-    static CUBLASOffloadingExpansion from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
+    static ROCBLASOffloadingExpansion from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 };
 
-} // namespace cuda
+} // namespace rocm
 } // namespace sdfg
