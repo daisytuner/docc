@@ -15,7 +15,7 @@
 namespace sdfg {
 namespace rocm {
 
-class ROCMMemsetOffloadingExpansion : public transformations::Transformation {
+class ROCMStdlibOffloadingExpansion : public transformations::Transformation {
 private:
     stdlib::MemsetNode& memset_node_;
 
@@ -50,7 +50,7 @@ private:
     );
 
 public:
-    ROCMMemsetOffloadingExpansion(stdlib::MemsetNode& memset_node);
+    ROCMStdlibOffloadingExpansion(stdlib::MemsetNode& memset_node);
 
     virtual std::string name() const override;
 

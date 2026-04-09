@@ -6,18 +6,18 @@
 namespace sdfg {
 namespace rocm {
 
-class RocblasBLASOffloadingExpansionVisitor : public visitor::NonStoppingStructuredSDFGVisitor {
+class RocmLibraryNodeTransferExtractionVisitor : public visitor::NonStoppingStructuredSDFGVisitor {
 public:
-    RocblasBLASOffloadingExpansionVisitor(
+    RocmLibraryNodeTransferExtractionVisitor(
         builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
     );
 
-    static std::string name() { return "RocblasBLASOffloadingExpansionPass"; }
+    static std::string name() { return "RocmLibraryNodeTransferExtractionPass"; }
     bool visit() override;
     bool accept(structured_control_flow::Block& block) override;
 };
 
-typedef passes::VisitorPass<RocblasBLASOffloadingExpansionVisitor> RocblasBLASOffloadingExpansionPass;
+typedef passes::VisitorPass<RocmLibraryNodeTransferExtractionVisitor> RocmLibraryNodeTransferExtractionPass;
 
 } // namespace rocm
 } // namespace sdfg

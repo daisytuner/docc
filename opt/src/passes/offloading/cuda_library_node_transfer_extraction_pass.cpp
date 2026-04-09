@@ -1,21 +1,21 @@
-#include "sdfg/passes/offloading/cublas_offloading_expansion_pass.h"
+#include "sdfg/passes/offloading/cuda_library_node_transfer_extraction_pass.h"
 
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/transformations/offloading/cublas_offloading_expansion.h"
-#include "sdfg/transformations/offloading/cuda_memset_offloading_expansion.h"
+#include "sdfg/transformations/offloading/cuda_stdlib_offloading_expansion.h"
 
 namespace sdfg {
 namespace cuda {
 
-CublasBLASOffloadingExpansionVisitor::CublasBLASOffloadingExpansionVisitor(
+CudaLibraryNodeTransferExtractionVisitor::CudaLibraryNodeTransferExtractionVisitor(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
 )
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
 
-bool CublasBLASOffloadingExpansionVisitor::visit() { return visitor::NonStoppingStructuredSDFGVisitor::visit(); }
+bool CudaLibraryNodeTransferExtractionVisitor::visit() { return visitor::NonStoppingStructuredSDFGVisitor::visit(); }
 
-bool CublasBLASOffloadingExpansionVisitor::accept(structured_control_flow::Block& block) {
+bool CudaLibraryNodeTransferExtractionVisitor::accept(structured_control_flow::Block& block) {
     auto& dataflow = block.dataflow();
     for (auto lib_node : dataflow.library_nodes()) {
         if (auto* blas_node = dynamic_cast<math::blas::BLASNode*>(lib_node)) {
@@ -26,7 +26,7 @@ bool CublasBLASOffloadingExpansionVisitor::accept(structured_control_flow::Block
             }
         }
         if (auto* memset_node = dynamic_cast<stdlib::MemsetNode*>(lib_node)) {
-            CUDAMemsetOffloadingExpansion expansion(*memset_node);
+            CUDAStdlibOffloadingExpansion expansion(*memset_node);
             if (expansion.can_be_applied(builder_, analysis_manager_)) {
                 expansion.apply(builder_, analysis_manager_);
                 return true;

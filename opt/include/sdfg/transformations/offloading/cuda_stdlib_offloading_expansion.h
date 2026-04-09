@@ -15,7 +15,7 @@
 namespace sdfg {
 namespace cuda {
 
-class CUDAMemsetOffloadingExpansion : public transformations::Transformation {
+class CUDAStdlibOffloadingExpansion : public transformations::Transformation {
 private:
     stdlib::MemsetNode& memset_node_;
 
@@ -50,7 +50,7 @@ private:
     );
 
 public:
-    CUDAMemsetOffloadingExpansion(stdlib::MemsetNode& memset_node);
+    CUDAStdlibOffloadingExpansion(stdlib::MemsetNode& memset_node);
 
     virtual std::string name() const override;
 

@@ -6,18 +6,18 @@
 namespace sdfg {
 namespace cuda {
 
-class CublasBLASOffloadingExpansionVisitor : public visitor::NonStoppingStructuredSDFGVisitor {
+class CudaLibraryNodeTransferExtractionVisitor : public visitor::NonStoppingStructuredSDFGVisitor {
 public:
-    CublasBLASOffloadingExpansionVisitor(
+    CudaLibraryNodeTransferExtractionVisitor(
         builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
     );
 
-    static std::string name() { return "CublasBLASOffloadingExpansionPass"; }
+    static std::string name() { return "CudaLibraryNodeTransferExtractionPass"; }
     bool visit() override;
     bool accept(structured_control_flow::Block& block) override;
 };
 
-typedef passes::VisitorPass<CublasBLASOffloadingExpansionVisitor> CublasBLASOffloadingExpansionPass;
+typedef passes::VisitorPass<CudaLibraryNodeTransferExtractionVisitor> CudaLibraryNodeTransferExtractionPass;
 
 } // namespace cuda
 } // namespace sdfg

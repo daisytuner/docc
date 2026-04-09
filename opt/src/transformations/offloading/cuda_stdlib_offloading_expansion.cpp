@@ -1,4 +1,4 @@
-#include "sdfg/transformations/offloading/rocm_memset_offloading_expansion.h"
+#include "sdfg/transformations/offloading/cuda_stdlib_offloading_expansion.h"
 
 #include <cassert>
 #include <string>
@@ -13,28 +13,28 @@
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
-#include "sdfg/targets/rocm/rocm.h"
-#include "sdfg/targets/rocm/rocm_data_offloading_node.h"
+#include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/types/type.h"
 #include "sdfg/types/utils.h"
 #include "symengine/symengine_rcp.h"
 
 namespace sdfg {
-namespace rocm {
+namespace cuda {
 
-std::string ROCMMemsetOffloadingExpansion::create_device_container(
+std::string CUDAStdlibOffloadingExpansion::create_device_container(
     builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
 ) {
     auto new_type = type.clone();
     new_type->storage_type(types::StorageType(
-        "AMD_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
+        "NV_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
     ));
-    auto device_container = builder.find_new_name(ROCM_DEVICE_PREFIX);
+    auto device_container = builder.find_new_name(CUDA_DEVICE_PREFIX);
     builder.add_container(device_container, *new_type);
     return device_container;
 }
 
-void ROCMMemsetOffloadingExpansion::create_allocate(
+void CUDAStdlibOffloadingExpansion::create_allocate(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -44,7 +44,7 @@ void ROCMMemsetOffloadingExpansion::create_allocate(
 ) {
     auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
     auto& d_cont = builder.add_access(alloc_block, device_container);
-    auto& alloc_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& alloc_node = builder.add_library_node<CUDADataOffloadingNode>(
         alloc_block,
         this->memset_node_.debug_info(),
         size,
@@ -55,7 +55,7 @@ void ROCMMemsetOffloadingExpansion::create_allocate(
     builder.add_computational_memlet(alloc_block, alloc_node, "_ret", d_cont, {}, type);
 }
 
-void ROCMMemsetOffloadingExpansion::create_deallocate(
+void CUDAStdlibOffloadingExpansion::create_deallocate(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -65,7 +65,7 @@ void ROCMMemsetOffloadingExpansion::create_deallocate(
     auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
     auto& d_cont_in = builder.add_access(dealloc_block, device_container);
     auto& d_cont_out = builder.add_access(dealloc_block, device_container);
-    auto& dealloc_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& dealloc_node = builder.add_library_node<CUDADataOffloadingNode>(
         dealloc_block,
         this->memset_node_.debug_info(),
         SymEngine::null,
@@ -77,7 +77,7 @@ void ROCMMemsetOffloadingExpansion::create_deallocate(
     builder.add_computational_memlet(dealloc_block, dealloc_node, "_ptr", d_cont_out, {}, type);
 }
 
-void ROCMMemsetOffloadingExpansion::create_copy_from_device_with_deallocation(
+void CUDAStdlibOffloadingExpansion::create_copy_from_device_with_deallocation(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -89,7 +89,7 @@ void ROCMMemsetOffloadingExpansion::create_copy_from_device_with_deallocation(
     auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
     auto& cont = builder.add_access(copy_block, host_container);
     auto& d_cont = builder.add_access(copy_block, device_container);
-    auto& copy_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& copy_node = builder.add_library_node<CUDADataOffloadingNode>(
         copy_block,
         this->memset_node_.debug_info(),
         size,
@@ -101,14 +101,14 @@ void ROCMMemsetOffloadingExpansion::create_copy_from_device_with_deallocation(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", cont, {}, type);
 }
 
-ROCMMemsetOffloadingExpansion::ROCMMemsetOffloadingExpansion(::sdfg::stdlib::MemsetNode& memset_node)
+CUDAStdlibOffloadingExpansion::CUDAStdlibOffloadingExpansion(::sdfg::stdlib::MemsetNode& memset_node)
     : memset_node_(memset_node) {}
 
-std::string ROCMMemsetOffloadingExpansion::name() const { return "ROCMMemsetOffloadingExpansion"; }
+std::string CUDAStdlibOffloadingExpansion::name() const { return "CUDAStdlibOffloadingExpansion"; }
 
-bool ROCMMemsetOffloadingExpansion::
+bool CUDAStdlibOffloadingExpansion::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    if (this->memset_node_.implementation_type().value() != rocm::ImplementationType_ROCMWithTransfers.value()) {
+    if (this->memset_node_.implementation_type().value() != cuda::ImplementationType_CUDAWithTransfers.value()) {
         return false;
     }
 
@@ -121,7 +121,7 @@ bool ROCMMemsetOffloadingExpansion::
     return true;
 }
 
-void ROCMMemsetOffloadingExpansion::
+void CUDAStdlibOffloadingExpansion::
     apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get data flow graph and block
     auto& dfg = this->memset_node_.get_parent();
@@ -159,14 +159,14 @@ void ROCMMemsetOffloadingExpansion::
     out_access.at("_ptr").data(dPtr);
 
     // Change the implementation type to without transfers
-    this->memset_node_.implementation_type() = rocm::ImplementationType_ROCMWithoutTransfers;
+    this->memset_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
 }
 
-void ROCMMemsetOffloadingExpansion::to_json(nlohmann::json& j) const {
+void CUDAStdlibOffloadingExpansion::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["subgraph"] = {{"0", {{"element_id", this->memset_node_.element_id()}, {"type", "unknown"}}}};
     j["memset_node_element_id"] = this->memset_node_.element_id();
 }
 
-} // namespace rocm
+} // namespace cuda
 } // namespace sdfg
