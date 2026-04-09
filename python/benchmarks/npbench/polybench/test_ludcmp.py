@@ -72,7 +72,7 @@ def test_ludcmp(target):
             verification={
                 "CUDA": 2,
                 "MAP": 2,
-                "CUDAOffloading": 8,
+                "CUDAOffloading": 12,
                 "FOR": 11,
                 "Memset": 2,
                 "Malloc": 2,
@@ -83,7 +83,7 @@ def test_ludcmp(target):
             verification={
                 "ROCM": 2,
                 "MAP": 2,
-                "ROCMOffloading": 8,
+                "ROCMOffloading": 12,
                 "FOR": 11,
                 "Memset": 2,
                 "Malloc": 2,
