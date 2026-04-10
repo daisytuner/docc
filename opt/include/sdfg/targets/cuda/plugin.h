@@ -3,6 +3,7 @@
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/data_flow/library_nodes/math/blas/dot_node.h>
 #include <sdfg/data_flow/library_nodes/math/blas/gemm_node.h>
+#include <sdfg/data_flow/library_nodes/stdlib/memset.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include "sdfg/codegen/language_extension.h"
@@ -13,6 +14,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/cuda/cuda_map_dispatcher.h"
+#include "sdfg/targets/cuda/stdlib/memset.h"
 
 namespace sdfg {
 namespace cuda {
@@ -51,7 +53,7 @@ inline void register_cuda_plugin() {
 
     // Dot - CUBLAS with data transfers
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + cuda::blas::ImplementationType_CUBLASWithTransfers.value(),
+        math::blas::LibraryNodeType_DOT.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -63,7 +65,7 @@ inline void register_cuda_plugin() {
     );
     // Dot - CUBLAS without data transfers
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + cuda::blas::ImplementationType_CUBLASWithoutTransfers.value(),
+        math::blas::LibraryNodeType_DOT.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -76,7 +78,7 @@ inline void register_cuda_plugin() {
 
     // GEMM - CUBLAS with data transfers
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() + "::" + cuda::blas::ImplementationType_CUBLASWithTransfers.value(),
+        math::blas::LibraryNodeType_GEMM.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -88,13 +90,39 @@ inline void register_cuda_plugin() {
     );
     // GEMM - CUBLAS without data transfers
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() + "::" + cuda::blas::ImplementationType_CUBLASWithoutTransfers.value(),
+        math::blas::LibraryNodeType_GEMM.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
             return std::make_unique<blas::GEMMNodeDispatcher_CUBLASWithoutTransfers>(
                 language_extension, function, data_flow_graph, dynamic_cast<const math::blas::GEMMNode&>(node)
+            );
+        }
+    );
+
+
+    // Memset - CUDA with data transfers
+    codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+        sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<cuda::stdlib::MemsetNodeDispatcher_CUDAWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemsetNode&>(node)
+            );
+        }
+    );
+    // Memset - CUDA without data transfers
+    codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+        sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<cuda::stdlib::MemsetNodeDispatcher_CUDAWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemsetNode&>(node)
             );
         }
     );

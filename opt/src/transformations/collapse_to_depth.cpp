@@ -1,6 +1,8 @@
 #include "sdfg/transformations/collapse_to_depth.h"
+#include <cstddef>
 
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/transformations/map_collapse.h"
 
 namespace sdfg {
@@ -13,6 +15,8 @@ namespace transformations {
 static size_t perfectly_nested_map_depth(structured_control_flow::Map& map) {
     size_t depth = 1;
     auto* current = &map;
+    symbolic::SymbolSet indvars;
+    indvars.insert(map.indvar());
     while (true) {
         auto& body = current->root();
         if (body.size() != 1) {
@@ -22,8 +26,19 @@ static size_t perfectly_nested_map_depth(structured_control_flow::Map& map) {
         if (!next) {
             break;
         }
+        for (const auto& atom : symbolic::atoms(next->init())) {
+            if (indvars.contains(atom)) {
+                return depth;
+            }
+        }
+        for (const auto& atom : symbolic::atoms(next->condition())) {
+            if (indvars.contains(atom)) {
+                return depth;
+            }
+        }
         ++depth;
         current = next;
+        indvars.insert(current->indvar());
     }
     return depth;
 }

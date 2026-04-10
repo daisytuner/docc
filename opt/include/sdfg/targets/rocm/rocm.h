@@ -13,19 +13,17 @@ namespace rocm {
 
 inline std::string ROCM_DEVICE_PREFIX = "__daisy_hip_";
 
-namespace blas {
 /**
- * @brief ROCMBLAS implementation with automatic memory transfers
- * Uses AMD ROCBLAS with automatic host-device data transfers
+ * @brief ROCM implementation with automatic memory transfers
+ * Used for ROCm BLAS, memset, and other ROCm-accelerated library nodes
  */
-inline data_flow::ImplementationType ImplementationType_ROCMBLASWithTransfers{"ROCMBLASWithTransfers"};
+inline data_flow::ImplementationType ImplementationType_ROCMWithTransfers{"ROCMWithTransfers"};
 
 /**
- * @brief ROCMBLAS implementation without memory transfers
- * Uses AMD ROCBLAS assuming data is already on GPU
+ * @brief ROCM implementation without memory transfers
+ * Used for ROCm BLAS, memset, and other ROCm-accelerated library nodes assuming data is already on GPU
  */
-inline data_flow::ImplementationType ImplementationType_ROCMBLASWithoutTransfers{"ROCMBLASWithoutTransfers"};
-} // namespace blas
+inline data_flow::ImplementationType ImplementationType_ROCMWithoutTransfers{"ROCMWithoutTransfers"};
 
 // Use shared GPU dimension type
 using ROCMDimension = gpu::GPUDimension;

@@ -23,8 +23,14 @@ set(TEST_FILES
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/gpu_tiling_test.cpp
     transformations/offloading/kernel_local_storage_test.cpp
-    transformations/offloading/cublas_offloading_expansion_test.cpp
-    transformations/offloading/rocblas_offloading_expansion_test.cpp
+    transformations/offloading/cublas_data_transfer_extraction_test.cpp
+    transformations/offloading/rocblas_data_transfer_extraction_test.cpp
+    transformations/offloading/cuda_stdlib_data_transfer_extraction_test.cpp
+    transformations/offloading/rocm_stdlib_data_transfer_extraction_test.cpp
+    passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
+    passes/offloading/rocm_library_node_transfer_extraction_pass_test.cpp
+    passes/offloading/cuda_library_node_rewriter_pass_test.cpp
+    passes/offloading/rocm_library_node_rewriter_pass_test.cpp
     passes/scheduler/cuda_scheduler_test.cpp
     passes/scheduler/highway_scheduler_test.cpp
     passes/scheduler/omp_scheduler_test.cpp

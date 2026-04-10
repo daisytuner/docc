@@ -6,13 +6,13 @@
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/sequence.h"
-#include "sdfg/targets/rocm/rocm.h"
-#include "sdfg/targets/rocm/rocm_data_offloading_node.h"
-#include "sdfg/transformations/offloading/rocblas_offloading_expansion.h"
+#include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/cuda/cuda_data_offloading_node.h"
+#include "sdfg/transformations/offloading/cublas_data_transfer_extraction.h"
 
 using namespace sdfg;
 
-TEST(ROCBLASOffloadingExpansionTest, DotCanBeApplied) {
+TEST(CUBLASDataTransferExtractionTest, DotCanBeApplied) {
     builder::StructuredSDFGBuilder builder("sdfg_dot", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -36,7 +36,7 @@ TEST(ROCBLASOffloadingExpansionTest, DotCanBeApplied) {
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::d,
         n,
         stride_a,
@@ -49,11 +49,11 @@ TEST(ROCBLASOffloadingExpansionTest, DotCanBeApplied) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCBLASOffloadingExpansion expansion(dot_node);
+    cuda::CUBLASDataTransferExtraction expansion(dot_node);
     EXPECT_TRUE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(ROCBLASOffloadingExpansionTest, DotApply) {
+TEST(CUBLASDataTransferExtractionTest, DotApply) {
     builder::StructuredSDFGBuilder builder("sdfg_dot", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -77,7 +77,7 @@ TEST(ROCBLASOffloadingExpansionTest, DotApply) {
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::d,
         n,
         stride_a,
@@ -90,23 +90,23 @@ TEST(ROCBLASOffloadingExpansionTest, DotApply) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCBLASOffloadingExpansion expansion(dot_node);
+    cuda::CUBLASDataTransferExtraction expansion(dot_node);
     ASSERT_TRUE(expansion.can_be_applied(builder, analysis_manager));
     expansion.apply(builder, analysis_manager);
 
     // After apply: implementation type should be WithoutTransfers
-    EXPECT_EQ(dot_node.implementation_type().value(), rocm::blas::ImplementationType_ROCMBLASWithoutTransfers.value());
+    EXPECT_EQ(dot_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());
 
     // The root sequence should now have 5 blocks:
     // copy_x_to_device, copy_y_to_device, blas_block, dealloc_x, dealloc_y
     EXPECT_EQ(sdfg.root().size(), 5);
 
     // The access nodes in the BLAS block should now reference device containers
-    EXPECT_NE(a_node.data().find(rocm::ROCM_DEVICE_PREFIX), std::string::npos);
-    EXPECT_NE(b_node.data().find(rocm::ROCM_DEVICE_PREFIX), std::string::npos);
+    EXPECT_NE(a_node.data().find(cuda::CUDA_DEVICE_PREFIX), std::string::npos);
+    EXPECT_NE(b_node.data().find(cuda::CUDA_DEVICE_PREFIX), std::string::npos);
 }
 
-TEST(ROCBLASOffloadingExpansionTest, DotWrongImplType) {
+TEST(CUBLASDataTransferExtractionTest, DotWrongImplType) {
     builder::StructuredSDFGBuilder builder("sdfg_dot", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -126,7 +126,7 @@ TEST(ROCBLASOffloadingExpansionTest, DotWrongImplType) {
     auto& c_node = builder.add_access(block, "c");
 
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
-        block, DebugInfo(), rocm::blas::ImplementationType_ROCMBLASWithoutTransfers, math::blas::BLAS_Precision::d, n
+        block, DebugInfo(), cuda::ImplementationType_CUDAWithoutTransfers, math::blas::BLAS_Precision::d, n
     ));
 
     builder.add_computational_memlet(block, a_node, dot_node, "__x", {symbolic::zero()}, array_desc);
@@ -135,11 +135,11 @@ TEST(ROCBLASOffloadingExpansionTest, DotWrongImplType) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCBLASOffloadingExpansion expansion(dot_node);
+    cuda::CUBLASDataTransferExtraction expansion(dot_node);
     EXPECT_FALSE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(ROCBLASOffloadingExpansionTest, GemmCanBeApplied) {
+TEST(CUBLASDataTransferExtractionTest, GemmCanBeApplied) {
     builder::StructuredSDFGBuilder builder("sdfg_gemm", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -168,7 +168,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmCanBeApplied) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -190,11 +190,11 @@ TEST(ROCBLASOffloadingExpansionTest, GemmCanBeApplied) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCBLASOffloadingExpansion expansion(gemm_node);
+    cuda::CUBLASDataTransferExtraction expansion(gemm_node);
     EXPECT_TRUE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(ROCBLASOffloadingExpansionTest, GemmApply) {
+TEST(CUBLASDataTransferExtractionTest, GemmApply) {
     builder::StructuredSDFGBuilder builder("sdfg_gemm", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -223,7 +223,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmApply) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -245,12 +245,12 @@ TEST(ROCBLASOffloadingExpansionTest, GemmApply) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCBLASOffloadingExpansion expansion(gemm_node);
+    cuda::CUBLASDataTransferExtraction expansion(gemm_node);
     ASSERT_TRUE(expansion.can_be_applied(builder, analysis_manager));
     expansion.apply(builder, analysis_manager);
 
     // After apply: implementation type should be WithoutTransfers
-    EXPECT_EQ(gemm_node.implementation_type().value(), rocm::blas::ImplementationType_ROCMBLASWithoutTransfers.value());
+    EXPECT_EQ(gemm_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());
 
     // The root sequence should now have 7 blocks:
     // copy_A_to_device, copy_B_to_device, copy_C_to_device, blas_block,
@@ -258,7 +258,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmApply) {
     EXPECT_EQ(sdfg.root().size(), 7);
 }
 
-TEST(ROCBLASOffloadingExpansionTest, GemmWrongImplType) {
+TEST(CUBLASDataTransferExtractionTest, GemmWrongImplType) {
     builder::StructuredSDFGBuilder builder("sdfg_gemm", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -287,7 +287,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmWrongImplType) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithoutTransfers,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -309,11 +309,11 @@ TEST(ROCBLASOffloadingExpansionTest, GemmWrongImplType) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    rocm::ROCBLASOffloadingExpansion expansion(gemm_node);
+    cuda::CUBLASDataTransferExtraction expansion(gemm_node);
     EXPECT_FALSE(expansion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(ROCBLASOffloadingExpansionTest, DotSerialization) {
+TEST(CUBLASDataTransferExtractionTest, DotSerialization) {
     builder::StructuredSDFGBuilder builder("sdfg_dot", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -333,27 +333,27 @@ TEST(ROCBLASOffloadingExpansionTest, DotSerialization) {
     auto& c_node = builder.add_access(block, "c");
 
     auto& dot_node = static_cast<math::blas::DotNode&>(builder.add_library_node<math::blas::DotNode>(
-        block, DebugInfo(), rocm::blas::ImplementationType_ROCMBLASWithTransfers, math::blas::BLAS_Precision::d, n
+        block, DebugInfo(), cuda::ImplementationType_CUDAWithTransfers, math::blas::BLAS_Precision::d, n
     ));
 
     builder.add_computational_memlet(block, a_node, dot_node, "__x", {symbolic::zero()}, array_desc);
     builder.add_computational_memlet(block, b_node, dot_node, "__y", {symbolic::zero()}, array_desc);
     builder.add_computational_memlet(block, dot_node, "__out", c_node, {}, desc);
 
-    rocm::ROCBLASOffloadingExpansion expansion(dot_node);
+    cuda::CUBLASDataTransferExtraction expansion(dot_node);
 
     nlohmann::json j;
     expansion.to_json(j);
 
-    EXPECT_EQ(j["transformation_type"], "ROCBLASOffloadingExpansion");
+    EXPECT_EQ(j["transformation_type"], "CUBLASDataTransferExtraction");
     EXPECT_TRUE(j.contains("subgraph"));
     EXPECT_EQ(j["subgraph"]["0"]["element_id"], dot_node.element_id());
 
-    auto deserialized = rocm::ROCBLASOffloadingExpansion::from_json(builder, j);
-    EXPECT_EQ(deserialized.name(), "ROCBLASOffloadingExpansion");
+    auto deserialized = cuda::CUBLASDataTransferExtraction::from_json(builder, j);
+    EXPECT_EQ(deserialized.name(), "CUBLASDataTransferExtraction");
 }
 
-TEST(ROCBLASOffloadingExpansionTest, GemmSerialization) {
+TEST(CUBLASDataTransferExtractionTest, GemmSerialization) {
     builder::StructuredSDFGBuilder builder("sdfg_gemm", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -378,7 +378,7 @@ TEST(ROCBLASOffloadingExpansionTest, GemmSerialization) {
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers,
+        cuda::ImplementationType_CUDAWithTransfers,
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
@@ -398,15 +398,15 @@ TEST(ROCBLASOffloadingExpansionTest, GemmSerialization) {
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
     builder.add_computational_memlet(block, gemm_node, "__C", c_out_node, {symbolic::zero()}, arr_c_type);
 
-    rocm::ROCBLASOffloadingExpansion expansion(gemm_node);
+    cuda::CUBLASDataTransferExtraction expansion(gemm_node);
 
     nlohmann::json j;
     expansion.to_json(j);
 
-    EXPECT_EQ(j["transformation_type"], "ROCBLASOffloadingExpansion");
+    EXPECT_EQ(j["transformation_type"], "CUBLASDataTransferExtraction");
     EXPECT_TRUE(j.contains("subgraph"));
     EXPECT_EQ(j["subgraph"]["0"]["element_id"], gemm_node.element_id());
 
-    auto deserialized = rocm::ROCBLASOffloadingExpansion::from_json(builder, j);
-    EXPECT_EQ(deserialized.name(), "ROCBLASOffloadingExpansion");
+    auto deserialized = cuda::CUBLASDataTransferExtraction::from_json(builder, j);
+    EXPECT_EQ(deserialized.name(), "CUBLASDataTransferExtraction");
 }

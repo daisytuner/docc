@@ -74,6 +74,7 @@ set(TEST_FILES
     passes/dataflow/trivial_reference_conversion_test.cpp
     passes/dataflow/reference_propagation_test.cpp
     passes/dataflow/tasklet_fusion_test.cpp
+    passes/dataflow/local_buffer_reuse_test.cpp
     passes/dataflow/memlet_linearization_test.cpp
     passes/dataflow/memlet_simplification_test.cpp
     passes/dataflow/tensor_to_pointer_conversion_test.cpp

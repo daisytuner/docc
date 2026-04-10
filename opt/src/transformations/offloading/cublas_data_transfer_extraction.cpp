@@ -1,4 +1,4 @@
-#include "sdfg/transformations/offloading/rocblas_offloading_expansion.h"
+#include "sdfg/transformations/offloading/cublas_data_transfer_extraction.h"
 
 #include <cassert>
 #include <cstddef>
@@ -18,29 +18,29 @@
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
-#include "sdfg/targets/rocm/rocm.h"
-#include "sdfg/targets/rocm/rocm_data_offloading_node.h"
+#include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/transformations/transformation.h"
 #include "sdfg/types/type.h"
 #include "sdfg/types/utils.h"
 #include "symengine/symengine_rcp.h"
 
 namespace sdfg {
-namespace rocm {
+namespace cuda {
 
-std::string ROCBLASOffloadingExpansion::create_device_container(
+std::string CUBLASDataTransferExtraction::create_device_container(
     builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
 ) {
     auto new_type = type.clone();
     new_type->storage_type(types::StorageType(
-        "AMD_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
+        "NV_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
     ));
-    auto device_container = builder.find_new_name(ROCM_DEVICE_PREFIX);
+    auto device_container = builder.find_new_name(CUDA_DEVICE_PREFIX);
     builder.add_container(device_container, *new_type);
     return device_container;
 }
 
-void ROCBLASOffloadingExpansion::create_allocate(
+void CUBLASDataTransferExtraction::create_allocate(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -50,7 +50,7 @@ void ROCBLASOffloadingExpansion::create_allocate(
 ) {
     auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
     auto& d_cont = builder.add_access(alloc_block, device_container);
-    auto& alloc_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& alloc_node = builder.add_library_node<CUDADataOffloadingNode>(
         alloc_block,
         this->blas_node_.debug_info(),
         size,
@@ -61,7 +61,7 @@ void ROCBLASOffloadingExpansion::create_allocate(
     builder.add_computational_memlet(alloc_block, alloc_node, "_ret", d_cont, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_deallocate(
+void CUBLASDataTransferExtraction::create_deallocate(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -71,7 +71,7 @@ void ROCBLASOffloadingExpansion::create_deallocate(
     auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
     auto& d_cont_in = builder.add_access(dealloc_block, device_container);
     auto& d_cont_out = builder.add_access(dealloc_block, device_container);
-    auto& dealloc_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& dealloc_node = builder.add_library_node<CUDADataOffloadingNode>(
         dealloc_block,
         this->blas_node_.debug_info(),
         SymEngine::null,
@@ -83,7 +83,7 @@ void ROCBLASOffloadingExpansion::create_deallocate(
     builder.add_computational_memlet(dealloc_block, dealloc_node, "_ptr", d_cont_out, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_copy_to_device(
+void CUBLASDataTransferExtraction::create_copy_to_device(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -95,7 +95,7 @@ void ROCBLASOffloadingExpansion::create_copy_to_device(
     auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
     auto& cont = builder.add_access(copy_block, host_container);
     auto& d_cont = builder.add_access(copy_block, device_container);
-    auto& copy_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& copy_node = builder.add_library_node<CUDADataOffloadingNode>(
         copy_block,
         this->blas_node_.debug_info(),
         size,
@@ -107,7 +107,7 @@ void ROCBLASOffloadingExpansion::create_copy_to_device(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", d_cont, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_copy_from_device(
+void CUBLASDataTransferExtraction::create_copy_from_device(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -119,7 +119,7 @@ void ROCBLASOffloadingExpansion::create_copy_from_device(
     auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
     auto& cont = builder.add_access(copy_block, host_container);
     auto& d_cont = builder.add_access(copy_block, device_container);
-    auto& copy_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& copy_node = builder.add_library_node<CUDADataOffloadingNode>(
         copy_block,
         this->blas_node_.debug_info(),
         size,
@@ -131,7 +131,7 @@ void ROCBLASOffloadingExpansion::create_copy_from_device(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", cont, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_copy_to_device_with_allocation(
+void CUBLASDataTransferExtraction::create_copy_to_device_with_allocation(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -143,7 +143,7 @@ void ROCBLASOffloadingExpansion::create_copy_to_device_with_allocation(
     auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
     auto& cont = builder.add_access(copy_block, host_container);
     auto& d_cont = builder.add_access(copy_block, device_container);
-    auto& copy_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& copy_node = builder.add_library_node<CUDADataOffloadingNode>(
         copy_block,
         this->blas_node_.debug_info(),
         size,
@@ -155,7 +155,7 @@ void ROCBLASOffloadingExpansion::create_copy_to_device_with_allocation(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", d_cont, {}, type);
 }
 
-void ROCBLASOffloadingExpansion::create_copy_from_device_with_deallocation(
+void CUBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& sequence,
     structured_control_flow::Block& block,
@@ -167,7 +167,7 @@ void ROCBLASOffloadingExpansion::create_copy_from_device_with_deallocation(
     auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
     auto& cont = builder.add_access(copy_block, host_container);
     auto& d_cont = builder.add_access(copy_block, device_container);
-    auto& copy_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& copy_node = builder.add_library_node<CUDADataOffloadingNode>(
         copy_block,
         this->blas_node_.debug_info(),
         size,
@@ -179,17 +179,17 @@ void ROCBLASOffloadingExpansion::create_copy_from_device_with_deallocation(
     builder.add_computational_memlet(copy_block, copy_node, "_dst", cont, {}, type);
 }
 
-ROCBLASOffloadingExpansion::ROCBLASOffloadingExpansion(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
+CUBLASDataTransferExtraction::CUBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
 
-std::string ROCBLASOffloadingExpansion::name() const { return "ROCBLASOffloadingExpansion"; }
+std::string CUBLASDataTransferExtraction::name() const { return "CUBLASDataTransferExtraction"; }
 
-bool ROCBLASOffloadingExpansion::
+bool CUBLASDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    // BLAS node must have implementation type ROCMBLAS with data transfers
-    if (this->blas_node_.implementation_type().value() !=
-        rocm::blas::ImplementationType_ROCMBLASWithTransfers.value()) {
+    // BLAS node must have implementation type CUBLAS without data transfers
+    if (this->blas_node_.implementation_type().value() != cuda::ImplementationType_CUDAWithTransfers.value()) {
         return false;
     }
+
 
     // Restrict to BLAS nodes in their own block
     auto& dfg = this->blas_node_.get_parent();
@@ -207,7 +207,7 @@ bool ROCBLASOffloadingExpansion::
     }
 }
 
-void ROCBLASOffloadingExpansion::
+void CUBLASDataTransferExtraction::
     apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get data flow graph and block
     auto& dfg = this->blas_node_.get_parent();
@@ -232,7 +232,7 @@ void ROCBLASOffloadingExpansion::
             precision = types::PrimitiveType::Double;
             break;
         default:
-            throw InvalidSDFGException("ROCBLASOffloadingExpansion: Unsupported precision");
+            throw InvalidSDFGException("CUBLASDataTransferExtraction: Unsupported precision");
     }
     types::Scalar base_type(precision);
     types::Pointer type(base_type);
@@ -301,14 +301,14 @@ void ROCBLASOffloadingExpansion::
         in_access.at("__C").data(dC);
         out_access.at("__C").data(dC);
     } else {
-        throw InvalidSDFGException("ROCBLASOffloadingExpansion: Unsupported BLAS type");
+        throw InvalidSDFGException("CUBLASDataTransferExtraction: Unsupported BLAS type");
     }
 
-    // Change the implementation type to ROCMBLAS without data transfers
-    this->blas_node_.implementation_type() = rocm::blas::ImplementationType_ROCMBLASWithoutTransfers;
+    // Change the implementation type to CUBLAS without data transfers
+    this->blas_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
 }
 
-void ROCBLASOffloadingExpansion::to_json(nlohmann::json& j) const {
+void CUBLASDataTransferExtraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
 
     // BLAS nodes are not loops; they appear as generic elements in GNN data.
@@ -319,7 +319,7 @@ void ROCBLASOffloadingExpansion::to_json(nlohmann::json& j) const {
     j["blas_node_element_id"] = this->blas_node_.element_id();
 }
 
-ROCBLASOffloadingExpansion ROCBLASOffloadingExpansion::
+CUBLASDataTransferExtraction CUBLASDataTransferExtraction::
     from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     size_t blas_node_id;
     if (j.contains("subgraph")) {
@@ -340,8 +340,8 @@ ROCBLASOffloadingExpansion ROCBLASOffloadingExpansion::
         );
     }
 
-    return ROCBLASOffloadingExpansion(*blas_node);
+    return CUBLASDataTransferExtraction(*blas_node);
 }
 
-} // namespace rocm
+} // namespace cuda
 } // namespace sdfg

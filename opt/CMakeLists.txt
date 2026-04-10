@@ -23,8 +23,8 @@ set(SOURCE_FILES
     src/passes/offloading/gpu_tiling_pass.cpp
     src/passes/offloading/remove_redundant_transfers_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
-    src/passes/offloading/cublas_offloading_expansion_pass.cpp
-    src/passes/offloading/rocblas_offloading_expansion_pass.cpp
+    src/passes/offloading/cuda_library_node_transfer_extraction_pass.cpp
+    src/passes/offloading/rocm_library_node_transfer_extraction_pass.cpp
     src/passes/offloading/sync_condition_propagation.cpp
     src/passes/collapse_pass.cpp
     src/passes/extended_data_transfer_minimization_pass.cpp
@@ -41,12 +41,14 @@ set(SOURCE_FILES
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp
+    src/targets/cuda/stdlib/memset.cpp
     src/targets/cuda/cuda.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/rocm/blas/dot.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/stdlib/memset.cpp
     src/targets/rocm/rocm.cpp
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
@@ -55,8 +57,10 @@ set(SOURCE_FILES
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
-    src/transformations/offloading/cublas_offloading_expansion.cpp
-    src/transformations/offloading/rocblas_offloading_expansion.cpp
+    src/transformations/offloading/cublas_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
+    src/transformations/offloading/rocblas_data_transfer_extraction.cpp
+    src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_transform.cpp
     src/transformations/offloading/gpu_condition_propagation.cpp

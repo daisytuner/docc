@@ -45,7 +45,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
             }
         } else if (i + 2 < node.size()) {
             auto* mid_block = dynamic_cast<structured_control_flow::Block*>(&node.at(i + 1).first);
-            if (mid_block && mid_block->is<stdlib::MallocNode>()) {
+            if (mid_block && mid_block->is_a_library_node<stdlib::MallocNode>()) {
                 if (auto* second = dynamic_cast<structured_control_flow::StructuredLoop*>(&node.at(i + 2).first)) {
                     if (second->root().size() == 0) {
                         i++;

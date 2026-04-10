@@ -189,7 +189,7 @@ public:
         const;
 
     template<typename T>
-    T* is() {
+    T* is_a_library_node() {
         if (this->library_nodes().size() != 1) {
             return nullptr;
         }

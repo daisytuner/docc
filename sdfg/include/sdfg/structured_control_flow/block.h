@@ -72,8 +72,8 @@ public:
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
     template<typename T>
-    T* is() {
-        return this->dataflow().is<T>();
+    T* is_a_library_node() {
+        return this->dataflow().is_a_library_node<T>();
     }
 };
 

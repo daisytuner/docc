@@ -15,7 +15,7 @@
 namespace sdfg {
 namespace cuda {
 
-class CUBLASOffloadingExpansion : public transformations::Transformation {
+class CUBLASDataTransferExtraction : public transformations::Transformation {
 private:
     math::blas::BLASNode& blas_node_;
 
@@ -78,7 +78,7 @@ private:
     );
 
 public:
-    CUBLASOffloadingExpansion(math::blas::BLASNode& blas_node);
+    CUBLASDataTransferExtraction(math::blas::BLASNode& blas_node);
 
     virtual std::string name() const override;
 
@@ -89,7 +89,7 @@ public:
 
     virtual void to_json(nlohmann::json& json) const override;
 
-    static CUBLASOffloadingExpansion from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
+    static CUBLASDataTransferExtraction from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 };
 
 } // namespace cuda

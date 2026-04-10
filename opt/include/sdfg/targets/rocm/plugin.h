@@ -3,6 +3,7 @@
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/data_flow/library_nodes/math/blas/dot_node.h>
 #include <sdfg/data_flow/library_nodes/math/blas/gemm_node.h>
+#include <sdfg/data_flow/library_nodes/stdlib/memset.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include "sdfg/codegen/language_extension.h"
@@ -13,6 +14,7 @@
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm_map_dispatcher.h"
+#include "sdfg/targets/rocm/stdlib/memset.h"
 
 namespace sdfg {
 namespace rocm {
@@ -51,7 +53,7 @@ inline void register_rocm_plugin() {
 
     // Dot - ROCMBLAS with data transfers
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + rocm::blas::ImplementationType_ROCMBLASWithTransfers.value(),
+        math::blas::LibraryNodeType_DOT.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -63,8 +65,7 @@ inline void register_rocm_plugin() {
     );
     // Dot - ROCMBLAS without data transfers
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() +
-            "::" + rocm::blas::ImplementationType_ROCMBLASWithoutTransfers.value(),
+        math::blas::LibraryNodeType_DOT.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -77,7 +78,7 @@ inline void register_rocm_plugin() {
 
     // GEMM - ROCMBLAS with data transfers
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() + "::" + rocm::blas::ImplementationType_ROCMBLASWithTransfers.value(),
+        math::blas::LibraryNodeType_GEMM.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -89,14 +90,39 @@ inline void register_rocm_plugin() {
     );
     // GEMM - ROCMBLAS without data transfers
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() +
-            "::" + rocm::blas::ImplementationType_ROCMBLASWithoutTransfers.value(),
+        math::blas::LibraryNodeType_GEMM.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
             return std::make_unique<blas::GEMMNodeDispatcher_ROCMBLASWithoutTransfers>(
                 language_extension, function, data_flow_graph, dynamic_cast<const math::blas::GEMMNode&>(node)
+            );
+        }
+    );
+
+
+    // Memset - ROCM with data transfers
+    codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+        sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<rocm::stdlib::MemsetNodeDispatcher_ROCMWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemsetNode&>(node)
+            );
+        }
+    );
+    // Memset - ROCM without data transfers
+    codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+        sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<rocm::stdlib::MemsetNodeDispatcher_ROCMWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemsetNode&>(node)
             );
         }
     );

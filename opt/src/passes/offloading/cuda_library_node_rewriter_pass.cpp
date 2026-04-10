@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "sdfg/data_flow/library_nodes/math/math.h"
+#include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 
@@ -16,7 +17,7 @@ std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::
             auto& gemm_node = static_cast<const math::blas::GEMMNode&>(lib_node);
             return try_cublas_gemm_node_implementation(gemm_node, data_type);
         } else if (lib_node.code() == math::blas::LibraryNodeType_DOT.value()) {
-            return cuda::blas::ImplementationType_CUBLASWithTransfers;
+            return cuda::ImplementationType_CUDAWithTransfers;
         } else {
             return std::nullopt;
         }
@@ -32,7 +33,12 @@ std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::
         symbolic::eq(gemm_node.k(), symbolic::one())) {
         return std::nullopt;
     }
-    return cuda::blas::ImplementationType_CUBLASWithTransfers;
+    return cuda::ImplementationType_CUDAWithTransfers;
+}
+
+std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::
+    try_memset_implementation(const ::sdfg::stdlib::MemsetNode& memset_node) {
+    return cuda::ImplementationType_CUDAWithTransfers;
 }
 
 CudaLibraryNodeRewriter::
@@ -47,6 +53,12 @@ bool CudaLibraryNodeRewriter::accept(structured_control_flow::Block& node) {
 
             if (implType) {
                 lib_node->implementation_type() = implType.value();
+            }
+        }
+        if (auto memset_node = dynamic_cast<::sdfg::stdlib::MemsetNode*>(&library_node)) {
+            auto implType = try_memset_implementation(*memset_node);
+            if (implType) {
+                memset_node->implementation_type() = implType.value();
             }
         }
     }
