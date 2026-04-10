@@ -7,25 +7,6 @@ namespace sdfg {
 namespace passes {
 namespace normalization {
 
-std::string is_malloc_block(const structured_control_flow::Block& block) {
-    auto& dataflow = block.dataflow();
-    if (dataflow.nodes().size() != 2 || dataflow.edges().size() != 1) {
-        return "";
-    }
-    auto lib_nodes = dataflow.library_nodes();
-    if (lib_nodes.size() != 1) {
-        return "";
-    }
-    auto* libnode = *lib_nodes.begin();
-    if (!dynamic_cast<const stdlib::MallocNode*>(libnode)) {
-        return "";
-    }
-
-    auto& oedge = *dataflow.out_edges(*libnode).begin();
-    auto& dst = dynamic_cast<const data_flow::AccessNode&>(oedge.dst());
-    return dst.data();
-}
-
 MapFusion::MapFusion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
 
@@ -64,7 +45,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
             }
         } else if (i + 2 < node.size()) {
             auto* mid_block = dynamic_cast<structured_control_flow::Block*>(&node.at(i + 1).first);
-            if (mid_block && !is_malloc_block(*mid_block).empty()) {
+            if (mid_block && mid_block->is<stdlib::MallocNode>()) {
                 if (auto* second = dynamic_cast<structured_control_flow::StructuredLoop*>(&node.at(i + 2).first)) {
                     if (second->root().size() == 0) {
                         i++;
