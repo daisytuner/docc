@@ -250,6 +250,165 @@ LogicalResult translateTensorExtractOp(SDFGTranslator& translator, tensor::Extra
     return success();
 }
 
+LogicalResult translateTensorInsertSliceOp(SDFGTranslator& translator, tensor::InsertSliceOp* insert_slice_op) {
+    Value source = insert_slice_op->getSource();
+    Value dest = insert_slice_op->getDest();
+    Value result = insert_slice_op->getResult();
+
+    auto source_tensor_type = llvm::dyn_cast<TensorType>(source.getType());
+    auto dest_tensor_type = llvm::dyn_cast<TensorType>(dest.getType());
+    auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
+
+    // Get offsets, sizes, and strides
+    SmallVector<OpFoldResult> mixed_offsets = insert_slice_op->getMixedOffsets();
+    SmallVector<OpFoldResult> mixed_sizes = insert_slice_op->getMixedSizes();
+    SmallVector<OpFoldResult> mixed_strides = insert_slice_op->getMixedStrides();
+
+    // Convert to symbolic expressions
+    std::vector<::sdfg::symbolic::Expression> offsets, sizes, strides;
+    offsets.reserve(mixed_offsets.size());
+    sizes.reserve(mixed_sizes.size());
+    strides.reserve(mixed_strides.size());
+
+    for (const auto& offset : mixed_offsets) {
+        if (offset.is<Attribute>()) {
+            auto attr = mlir::cast<IntegerAttr>(offset.get<Attribute>());
+            offsets.push_back(::sdfg::symbolic::integer(attr.getInt()));
+        } else {
+            Value offset_val = offset.get<Value>();
+            offsets.push_back(::sdfg::symbolic::symbol(translator.get_or_create_container(offset_val)));
+        }
+    }
+
+    for (const auto& size : mixed_sizes) {
+        if (size.is<Attribute>()) {
+            auto attr = mlir::cast<IntegerAttr>(size.get<Attribute>());
+            sizes.push_back(::sdfg::symbolic::integer(attr.getInt()));
+        } else {
+            Value size_val = size.get<Value>();
+            sizes.push_back(::sdfg::symbolic::symbol(translator.get_or_create_container(size_val)));
+        }
+    }
+
+    for (const auto& stride : mixed_strides) {
+        if (stride.is<Attribute>()) {
+            auto attr = mlir::cast<IntegerAttr>(stride.get<Attribute>());
+            strides.push_back(::sdfg::symbolic::integer(attr.getInt()));
+        } else {
+            Value stride_val = stride.get<Value>();
+            strides.push_back(::sdfg::symbolic::symbol(translator.get_or_create_container(stride_val)));
+        }
+    }
+
+    auto& builder = translator.builder();
+    auto source_container = translator.get_or_create_container(source);
+    auto dest_container = translator.get_or_create_container(dest);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto& source_tensor_info = translator.get_or_create_tensor_info(source_container, source_tensor_type);
+    auto& dest_tensor_info = translator.get_or_create_tensor_info(dest_container, dest_tensor_type);
+    auto& result_tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+
+    auto source_element_type = translator.convertType(source_tensor_type.getElementType());
+    auto source_sdfg_tensor =
+        source_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*source_element_type));
+    auto dest_element_type = translator.convertType(dest_tensor_type.getElementType());
+    auto dest_sdfg_tensor = dest_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*dest_element_type));
+    auto result_element_type = translator.convertType(result_tensor_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
+    // Allocate result tensor
+    uint64_t size = 1;
+    for (int64_t dim : result_tensor_info.shape()) {
+        size *= dim;
+    }
+    translator.handle_malloc(
+        result_container,
+        ::sdfg::symbolic::mul(::sdfg::symbolic::integer(size), ::sdfg::symbolic::size_of_type(*result_element_type))
+    );
+
+    // Step 1: Copy destination to result (full copy)
+    ::sdfg::structured_control_flow::Sequence* current_seq = &translator.insertion_point();
+    std::vector<std::string> dest_indvars;
+    ::sdfg::data_flow::Subset dest_subset;
+    for (size_t i = 0; i < dest_tensor_info.shape().size(); i++) {
+        int64_t dim = dest_tensor_info.shape().at(i);
+        auto indvar_container = builder.find_new_name("_i");
+        builder.add_container(indvar_container, ::sdfg::types::Scalar(sdfg_index_type));
+        dest_indvars.push_back(indvar_container);
+        auto indvar = ::sdfg::symbolic::symbol(indvar_container);
+        dest_subset.push_back(indvar);
+        auto bound = ::sdfg::symbolic::integer(dim);
+        auto condition = ::sdfg::symbolic::Lt(indvar, bound);
+        auto init = ::sdfg::symbolic::zero();
+        auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
+
+        auto& map = builder.add_map(
+            *current_seq,
+            indvar,
+            condition,
+            init,
+            update,
+            ::sdfg::structured_control_flow::ScheduleType_Sequential::create()
+        );
+        current_seq = &map.root();
+    }
+
+    auto& dest_block = builder.add_block(*current_seq);
+    auto& dest_access = builder.add_access(dest_block, dest_container);
+    auto& result_access_1 = builder.add_access(dest_block, result_container);
+    auto& dest_tasklet = builder.add_tasklet(dest_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(dest_block, dest_access, dest_tasklet, "_in", dest_subset, *dest_sdfg_tensor);
+    builder
+        .add_computational_memlet(dest_block, dest_tasklet, "_out", result_access_1, dest_subset, *result_sdfg_tensor);
+
+    // Step 2: Insert source at offset
+    current_seq = &translator.insertion_point();
+    std::vector<std::string> source_indvars;
+    ::sdfg::data_flow::Subset source_subset;
+    ::sdfg::data_flow::Subset result_offset_subset;
+    for (size_t i = 0; i < source_tensor_info.shape().size(); i++) {
+        int64_t dim = source_tensor_info.shape().at(i);
+        auto indvar_container = builder.find_new_name("_j");
+        builder.add_container(indvar_container, ::sdfg::types::Scalar(sdfg_index_type));
+        source_indvars.push_back(indvar_container);
+        auto indvar = ::sdfg::symbolic::symbol(indvar_container);
+        source_subset.push_back(indvar);
+
+        // Calculate offset index: result[indvar * stride + offset] = source[indvar]
+        auto offset_idx = ::sdfg::symbolic::add(::sdfg::symbolic::mul(indvar, strides[i]), offsets[i]);
+        result_offset_subset.push_back(offset_idx);
+
+        auto bound = ::sdfg::symbolic::integer(dim);
+        auto condition = ::sdfg::symbolic::Lt(indvar, bound);
+        auto init = ::sdfg::symbolic::zero();
+        auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
+
+        auto& map = builder.add_map(
+            *current_seq,
+            indvar,
+            condition,
+            init,
+            update,
+            ::sdfg::structured_control_flow::ScheduleType_Sequential::create()
+        );
+        current_seq = &map.root();
+    }
+
+    auto& source_block = builder.add_block(*current_seq);
+    auto& source_access = builder.add_access(source_block, source_container);
+    auto& result_access_2 = builder.add_access(source_block, result_container);
+    auto& source_tasklet = builder.add_tasklet(source_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(source_block, source_access, source_tasklet, "_in", source_subset, *source_sdfg_tensor);
+    builder.add_computational_memlet(
+        source_block, source_tasklet, "_out", result_access_2, result_offset_subset, *result_sdfg_tensor
+    );
+
+    return success();
+}
+
 LogicalResult translateTensorPadOp(SDFGTranslator& translator, tensor::PadOp* pad_op) {
     Value source = pad_op->getSource();
     Value result = pad_op->getResult();
@@ -438,6 +597,9 @@ LogicalResult translateTensorOp(SDFGTranslator& translator, Operation* op) {
         })
         .Case<tensor::ExtractOp>([&](tensor::ExtractOp extract_op) {
             return translateTensorExtractOp(translator, &extract_op);
+        })
+        .Case<tensor::InsertSliceOp>([&](tensor::InsertSliceOp insert_slice_op) {
+            return translateTensorInsertSliceOp(translator, &insert_slice_op);
         })
         .Case<tensor::PadOp>([&](tensor::PadOp pad_op) { return translateTensorPadOp(translator, &pad_op); })
         .Default([&](Operation* op) {

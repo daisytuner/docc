@@ -288,6 +288,16 @@ jobs:
           cd mlir/
           pytest -v integration/
 
+      - name: Model Zoo Tests (Nightly only)
+        if: (matrix.python-version == '3.11' || matrix.python-version == '3.12') && github.event_name == 'schedule'
+        run: |
+          # Install additional dependencies for model zoo tests
+          pip install transformers pillow requests matplotlib
+
+          # Run fasterrcnn test (will fail if assertions don't pass)
+          cd mlir/benchmarks/torch/model_zoo/
+          python fasterrcnn_resnet50.py
+
   finish:
     needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux]
     runs-on: ubuntu-latest

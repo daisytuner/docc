@@ -92,8 +92,6 @@ data_flow::LibraryNode& LoadConstNodeSerializer::deserialize(
         throw InvalidSDFGException("Invalid library node code");
     }
 
-    std::cout << "Loading const node" << std::endl;
-
     sdfg::serializer::JSONSerializer serializer;
     DebugInfo debug_info = serializer.json_to_debug_info(j.at("debug_info"));
     std::unique_ptr<types::IType> type = serializer.json_to_type(j.at("load_type"));

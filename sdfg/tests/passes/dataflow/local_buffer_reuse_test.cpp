@@ -235,6 +235,212 @@ public:
     }
 };
 
+// Specialization for 5-node chain: Conv -> BatchNorm -> ReLU -> Conv -> BatchNorm
+class ConvBatchNormReLUConvBatchNormSetup {
+public:
+    builder::StructuredSDFGBuilder builder;
+    types::Scalar element_desc;
+    types::Pointer ptr_desc;
+    symbolic::MultiExpression tensor_shape;
+    types::Tensor tensor_type;
+    types::Tensor norm_type;
+    types::Tensor weights_type;
+    symbolic::Expression malloc_size;
+    int conv_counter = 0;
+    int bn_counter = 0;
+
+    ConvBatchNormReLUConvBatchNormSetup()
+        : builder("sdfg_tensor_elim_5", FunctionType_CPU), element_desc(types::PrimitiveType::Float),
+          ptr_desc(element_desc),
+          tensor_shape({symbolic::integer(1), symbolic::integer(64), symbolic::integer(32), symbolic::integer(32)}),
+          tensor_type(element_desc, tensor_shape),
+          norm_type(element_desc, std::vector<symbolic::Expression>{symbolic::integer(64)}),
+          weights_type(
+              element_desc,
+              std::vector<symbolic::Expression>{
+                  symbolic::integer(64), symbolic::integer(64), symbolic::integer(3), symbolic::integer(3)
+              }
+          ),
+          malloc_size(symbolic::integer(1 * 64 * 32 * 32 * 4)) {}
+
+    void setup_containers() {
+        for (int i = 1; i <= 5; i++) {
+            builder.add_container("ptr" + std::to_string(i), ptr_desc);
+            builder.add_container("ref" + std::to_string(i), ptr_desc);
+        }
+    }
+
+    structured_control_flow::Block& add_malloc_block(const std::string& output_container, const symbolic::Expression& size) {
+        auto& root = builder.subject().root();
+        auto& block = builder.add_block(root);
+        auto& access = builder.add_access(block, output_container);
+        auto& malloc_node = builder.add_library_node<stdlib::MallocNode>(block, DebugInfo(), size);
+        builder.add_computational_memlet(block, malloc_node, "_ret", access, {}, ptr_desc, DebugInfo());
+        return block;
+    }
+
+    structured_control_flow::Block& add_reference_block(const std::string& src_container, const std::string& dst_container) {
+        auto& root = builder.subject().root();
+        auto& block = builder.add_block(root);
+        auto& src_access = builder.add_access(block, src_container);
+        auto& dst_access = builder.add_access(block, dst_container);
+        builder.add_reference_memlet(block, src_access, dst_access, {}, ptr_desc);
+        return block;
+    }
+
+    structured_control_flow::Block& add_free_block(const std::string& container) {
+        auto& root = builder.subject().root();
+        auto& block = builder.add_block(root);
+        auto& access_in = builder.add_access(block, container);
+        auto& access_out = builder.add_access(block, container);
+        auto& free_node = builder.add_library_node<stdlib::FreeNode>(block, DebugInfo());
+        builder.add_computational_memlet(block, access_in, free_node, "_ptr", {}, ptr_desc, DebugInfo());
+        builder.add_computational_memlet(block, free_node, "_ptr", access_out, {}, ptr_desc, DebugInfo());
+        return block;
+    }
+
+    structured_control_flow::Block& add_conv_block(const std::string& input_container, const std::string& output_container) {
+        auto& root = builder.subject().root();
+        auto& block = builder.add_block(root);
+        conv_counter++;
+
+        std::string weights_name = "conv_weights_" + std::to_string(conv_counter);
+        builder.add_container(weights_name, ptr_desc, true);
+
+        auto& input_access = builder.add_access(block, input_container);
+        auto& weights_access = builder.add_access(block, weights_name);
+        auto& output_access = builder.add_access(block, output_container);
+
+        std::vector<symbolic::Expression> kernel_shape = {symbolic::integer(3), symbolic::integer(3)};
+        std::vector<symbolic::Expression> strides = {symbolic::integer(1), symbolic::integer(1)};
+        std::vector<symbolic::Expression> pads = {
+            symbolic::integer(1), symbolic::integer(1), symbolic::integer(1), symbolic::integer(1)
+        };
+        std::vector<symbolic::Expression> dilations = {symbolic::integer(1), symbolic::integer(1)};
+        auto group = symbolic::integer(1);
+        auto output_channels = symbolic::integer(64);
+
+        auto& conv_node = builder.add_library_node<math::tensor::ConvNode>(
+            block,
+            DebugInfo(),
+            std::vector<symbolic::Expression>(tensor_shape.begin(), tensor_shape.end()),
+            kernel_shape,
+            strides,
+            pads,
+            dilations,
+            output_channels,
+            group
+        );
+
+        builder.add_computational_memlet(block, input_access, conv_node, "X", {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, weights_access, conv_node, "W", {}, weights_type, DebugInfo());
+        builder.add_computational_memlet(block, conv_node, "Y", output_access, {}, tensor_type, DebugInfo());
+
+        return block;
+    }
+
+    structured_control_flow::Block&
+    add_batchnorm_block(const std::string& input_container, const std::string& output_container) {
+        auto& root = builder.subject().root();
+        auto& block = builder.add_block(root);
+        bn_counter++;
+
+        std::string var_name = "bn_var_" + std::to_string(bn_counter);
+        std::string mean_name = "bn_mean_" + std::to_string(bn_counter);
+        std::string gamma_name = "bn_gamma_" + std::to_string(bn_counter);
+        std::string beta_name = "bn_beta_" + std::to_string(bn_counter);
+
+        builder.add_container(var_name, ptr_desc, true);
+        builder.add_container(mean_name, ptr_desc, true);
+        builder.add_container(gamma_name, ptr_desc, true);
+        builder.add_container(beta_name, ptr_desc, true);
+
+        auto& input_access = builder.add_access(block, input_container);
+        auto& var_access = builder.add_access(block, var_name);
+        auto& mean_access = builder.add_access(block, mean_name);
+        auto& gamma_access = builder.add_access(block, gamma_name);
+        auto& beta_access = builder.add_access(block, beta_name);
+        auto& output_access = builder.add_access(block, output_container);
+        auto& epsilon_node = builder.add_constant(block, "0.00001", element_desc);
+
+        auto& bn_node = builder.add_library_node<math::tensor::BatchNormNode>(
+            block,
+            DebugInfo(),
+            math::tensor::TensorLayout(std::vector<symbolic::Expression>(tensor_shape.begin(), tensor_shape.end())),
+            types::Float
+        );
+
+        builder.add_computational_memlet(block, input_access, bn_node, "Batch", {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, var_access, bn_node, "Var", {}, norm_type, DebugInfo());
+        builder.add_computational_memlet(block, mean_access, bn_node, "E", {}, norm_type, DebugInfo());
+        builder.add_computational_memlet(block, gamma_access, bn_node, "Gamma", {}, norm_type, DebugInfo());
+        builder.add_computational_memlet(block, beta_access, bn_node, "Beta", {}, norm_type, DebugInfo());
+        builder.add_computational_memlet(block, epsilon_node, bn_node, "epsilon", {}, element_desc, DebugInfo());
+        builder.add_computational_memlet(block, output_access, bn_node, "B_out", {}, tensor_type, DebugInfo());
+
+        return block;
+    }
+
+    structured_control_flow::Block& add_relu_block(const std::string& input_container, const std::string& output_container) {
+        auto& root = builder.subject().root();
+        auto& block = builder.add_block(root);
+
+        auto& input_access = builder.add_access(block, input_container);
+        auto& output_access = builder.add_access(block, output_container);
+
+        auto& relu_node = builder.add_library_node<math::tensor::ReLUNode>(
+            block, DebugInfo(), std::vector<symbolic::Expression>(tensor_shape.begin(), tensor_shape.end())
+        );
+
+        builder.add_computational_memlet(block, input_access, relu_node, "X", {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, relu_node, "Y", output_access, {}, tensor_type, DebugInfo());
+
+        return block;
+    }
+
+    // First conv block (has external input)
+    structured_control_flow::Block& add_first_conv_block(const std::string& output_container) {
+        auto& root = builder.subject().root();
+        auto& block = builder.add_block(root);
+        conv_counter++;
+
+        builder.add_container("conv_input", ptr_desc, true);
+        std::string weights_name = "conv_weights_" + std::to_string(conv_counter);
+        builder.add_container(weights_name, ptr_desc, true);
+
+        auto& input_access = builder.add_access(block, "conv_input");
+        auto& weights_access = builder.add_access(block, weights_name);
+        auto& output_access = builder.add_access(block, output_container);
+
+        std::vector<symbolic::Expression> kernel_shape = {symbolic::integer(3), symbolic::integer(3)};
+        std::vector<symbolic::Expression> strides = {symbolic::integer(1), symbolic::integer(1)};
+        std::vector<symbolic::Expression> pads = {
+            symbolic::integer(1), symbolic::integer(1), symbolic::integer(1), symbolic::integer(1)
+        };
+        std::vector<symbolic::Expression> dilations = {symbolic::integer(1), symbolic::integer(1)};
+        auto group = symbolic::integer(1);
+        auto output_channels = symbolic::integer(64);
+
+        auto& conv_node = builder.add_library_node<math::tensor::ConvNode>(
+            block,
+            DebugInfo(),
+            std::vector<symbolic::Expression>(tensor_shape.begin(), tensor_shape.end()),
+            kernel_shape,
+            strides,
+            pads,
+            dilations,
+            output_channels,
+            group
+        );
+
+        builder.add_computational_memlet(block, input_access, conv_node, "X", {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, weights_access, conv_node, "W", {}, weights_type, DebugInfo());
+        builder.add_computational_memlet(block, conv_node, "Y", output_access, {}, tensor_type, DebugInfo());
+
+        return block;
+    }
+};
+
 } // namespace
 
 //
@@ -665,4 +871,255 @@ TEST(LocalBufferReuseTest, Pipeline_AllPasses) {
 
     sdfg = builder_opt.move();
     EXPECT_LT(sdfg->root().size(), original_size);
+}
+
+//
+// ==================== 5-LIB-NODE TESTS ====================
+//
+
+TEST(LocalBufferReuseTest, FiveNodeChain_Elimination_Applied) {
+    ConvBatchNormReLUConvBatchNormSetup setup;
+    setup.setup_containers();
+
+    // Pattern: Conv -> BatchNorm -> ReLU -> Conv -> BatchNorm
+    // Block structure (5 * 3 = 15 blocks + 5 free blocks = 20 total):
+    // 1. malloc -> ptr1
+    // 2. ptr1 -> ref1
+    // 3. Conv: input -> ref1
+    // 4. malloc -> ptr2
+    // 5. ptr2 -> ref2
+    // 6. BatchNorm: ref1 -> ref2
+    // 7. malloc -> ptr3
+    // 8. ptr3 -> ref3
+    // 9. ReLU: ref2 -> ref3
+    // 10. malloc -> ptr4
+    // 11. ptr4 -> ref4
+    // 12. Conv: ref3 -> ref4
+    // 13. malloc -> ptr5
+    // 14. ptr5 -> ref5
+    // 15. BatchNorm: ref4 -> ref5
+    // 16-20. free blocks
+
+    setup.add_malloc_block("ptr1", setup.malloc_size);
+    setup.add_reference_block("ptr1", "ref1");
+    setup.add_first_conv_block("ref1");
+
+    setup.add_malloc_block("ptr2", setup.malloc_size);
+    setup.add_reference_block("ptr2", "ref2");
+    setup.add_batchnorm_block("ref1", "ref2");
+
+    setup.add_malloc_block("ptr3", setup.malloc_size);
+    setup.add_reference_block("ptr3", "ref3");
+    setup.add_relu_block("ref2", "ref3");
+
+    setup.add_malloc_block("ptr4", setup.malloc_size);
+    setup.add_reference_block("ptr4", "ref4");
+    setup.add_conv_block("ref3", "ref4");
+
+    setup.add_malloc_block("ptr5", setup.malloc_size);
+    setup.add_reference_block("ptr5", "ref5");
+    setup.add_batchnorm_block("ref4", "ref5");
+
+    setup.add_free_block("ptr1");
+    setup.add_free_block("ptr2");
+    setup.add_free_block("ptr3");
+    setup.add_free_block("ptr4");
+    setup.add_free_block("ptr5");
+
+    auto sdfg = setup.builder.move();
+    size_t original_size = sdfg->root().size();
+    EXPECT_EQ(original_size, 20); // 15 pattern blocks + 5 free blocks
+
+    // Apply 5-node pass
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    passes::ConvBatchNormReLUConvBatchNormEliminationPass pass;
+    bool applied = pass.run(builder_opt, analysis_manager);
+
+    EXPECT_TRUE(applied);
+
+    sdfg = builder_opt.move();
+    // 4 malloc blocks and 4 free blocks should be removed (keeping first malloc/ref/free)
+    // Expected: 20 - 4 (malloc blocks 2-5) - 4 (free blocks 2-5) = 12
+    EXPECT_EQ(sdfg->root().size(), 12);
+}
+
+TEST(LocalBufferReuseTest, FiveNodeChain_DifferentSizes_NotApplied) {
+    ConvBatchNormReLUConvBatchNormSetup setup;
+    setup.setup_containers();
+
+    // Same pattern but with different malloc sizes - should NOT be applied
+    setup.add_malloc_block("ptr1", setup.malloc_size);
+    setup.add_reference_block("ptr1", "ref1");
+    setup.add_first_conv_block("ref1");
+
+    setup.add_malloc_block("ptr2", setup.malloc_size);
+    setup.add_reference_block("ptr2", "ref2");
+    setup.add_batchnorm_block("ref1", "ref2");
+
+    // Different malloc size for ptr3
+    setup.add_malloc_block("ptr3", symbolic::integer(999));
+    setup.add_reference_block("ptr3", "ref3");
+    setup.add_relu_block("ref2", "ref3");
+
+    setup.add_malloc_block("ptr4", setup.malloc_size);
+    setup.add_reference_block("ptr4", "ref4");
+    setup.add_conv_block("ref3", "ref4");
+
+    setup.add_malloc_block("ptr5", setup.malloc_size);
+    setup.add_reference_block("ptr5", "ref5");
+    setup.add_batchnorm_block("ref4", "ref5");
+
+    setup.add_free_block("ptr1");
+    setup.add_free_block("ptr2");
+    setup.add_free_block("ptr3");
+    setup.add_free_block("ptr4");
+    setup.add_free_block("ptr5");
+
+    auto sdfg = setup.builder.move();
+    size_t original_size = sdfg->root().size();
+
+    // Apply 5-node pass - should NOT be applied
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    passes::ConvBatchNormReLUConvBatchNormEliminationPass pass;
+    bool applied = pass.run(builder_opt, analysis_manager);
+
+    EXPECT_FALSE(applied);
+
+    sdfg = builder_opt.move();
+    EXPECT_EQ(sdfg->root().size(), original_size);
+}
+
+TEST(LocalBufferReuseTest, FiveNodeChain_Pipeline_LongestFirst) {
+    ConvBatchNormReLUConvBatchNormSetup setup;
+    setup.setup_containers();
+
+    // Create a 5-node pattern - pipeline should match this with 5-node pass first
+    setup.add_malloc_block("ptr1", setup.malloc_size);
+    setup.add_reference_block("ptr1", "ref1");
+    setup.add_first_conv_block("ref1");
+
+    setup.add_malloc_block("ptr2", setup.malloc_size);
+    setup.add_reference_block("ptr2", "ref2");
+    setup.add_batchnorm_block("ref1", "ref2");
+
+    setup.add_malloc_block("ptr3", setup.malloc_size);
+    setup.add_reference_block("ptr3", "ref3");
+    setup.add_relu_block("ref2", "ref3");
+
+    setup.add_malloc_block("ptr4", setup.malloc_size);
+    setup.add_reference_block("ptr4", "ref4");
+    setup.add_conv_block("ref3", "ref4");
+
+    setup.add_malloc_block("ptr5", setup.malloc_size);
+    setup.add_reference_block("ptr5", "ref5");
+    setup.add_batchnorm_block("ref4", "ref5");
+
+    setup.add_free_block("ptr1");
+    setup.add_free_block("ptr2");
+    setup.add_free_block("ptr3");
+    setup.add_free_block("ptr4");
+    setup.add_free_block("ptr5");
+
+    auto sdfg = setup.builder.move();
+    size_t original_size = sdfg->root().size();
+    EXPECT_EQ(original_size, 20);
+
+    // Apply full pipeline - should use 5-node pass
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    auto pipeline = passes::local_buffer_reuse_pipeline();
+    pipeline.run(builder_opt, analysis_manager);
+
+    sdfg = builder_opt.move();
+    // Should eliminate 4 mallocs and 4 frees = 8 blocks
+    EXPECT_EQ(sdfg->root().size(), 12);
+}
+
+TEST(LocalBufferReuseTest, FiveNodeChain_MissingFreeBlock_NotApplied) {
+    ConvBatchNormReLUConvBatchNormSetup setup;
+    setup.setup_containers();
+
+    setup.add_malloc_block("ptr1", setup.malloc_size);
+    setup.add_reference_block("ptr1", "ref1");
+    setup.add_first_conv_block("ref1");
+
+    setup.add_malloc_block("ptr2", setup.malloc_size);
+    setup.add_reference_block("ptr2", "ref2");
+    setup.add_batchnorm_block("ref1", "ref2");
+
+    setup.add_malloc_block("ptr3", setup.malloc_size);
+    setup.add_reference_block("ptr3", "ref3");
+    setup.add_relu_block("ref2", "ref3");
+
+    setup.add_malloc_block("ptr4", setup.malloc_size);
+    setup.add_reference_block("ptr4", "ref4");
+    setup.add_conv_block("ref3", "ref4");
+
+    setup.add_malloc_block("ptr5", setup.malloc_size);
+    setup.add_reference_block("ptr5", "ref5");
+    setup.add_batchnorm_block("ref4", "ref5");
+
+    setup.add_free_block("ptr1");
+    setup.add_free_block("ptr2");
+    // Missing: free block for ptr3
+    setup.add_free_block("ptr4");
+    setup.add_free_block("ptr5");
+
+    auto sdfg = setup.builder.move();
+    size_t original_size = sdfg->root().size();
+
+    // Apply 5-node pass - should NOT be applied due to missing free block
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    passes::ConvBatchNormReLUConvBatchNormEliminationPass pass;
+    bool applied = pass.run(builder_opt, analysis_manager);
+
+    EXPECT_FALSE(applied);
+
+    sdfg = builder_opt.move();
+    EXPECT_EQ(sdfg->root().size(), original_size);
+}
+
+TEST(LocalBufferReuseTest, FiveNodeChain_TooFewBlocks_NotApplied) {
+    ConvBatchNormReLUConvBatchNormSetup setup;
+    setup.setup_containers();
+
+    // Only create 4 triples instead of 5 - should NOT match 5-node pattern
+    setup.add_malloc_block("ptr1", setup.malloc_size);
+    setup.add_reference_block("ptr1", "ref1");
+    setup.add_first_conv_block("ref1");
+
+    setup.add_malloc_block("ptr2", setup.malloc_size);
+    setup.add_reference_block("ptr2", "ref2");
+    setup.add_batchnorm_block("ref1", "ref2");
+
+    setup.add_malloc_block("ptr3", setup.malloc_size);
+    setup.add_reference_block("ptr3", "ref3");
+    setup.add_relu_block("ref2", "ref3");
+
+    setup.add_malloc_block("ptr4", setup.malloc_size);
+    setup.add_reference_block("ptr4", "ref4");
+    setup.add_conv_block("ref3", "ref4");
+    // Missing: 5th triple
+
+    setup.add_free_block("ptr1");
+    setup.add_free_block("ptr2");
+    setup.add_free_block("ptr3");
+    setup.add_free_block("ptr4");
+
+    auto sdfg = setup.builder.move();
+    size_t original_size = sdfg->root().size();
+
+    // Apply 5-node pass - should NOT be applied (not enough blocks)
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    passes::ConvBatchNormReLUConvBatchNormEliminationPass pass;
+    bool applied = pass.run(builder_opt, analysis_manager);
+
+    EXPECT_FALSE(applied);
+
+    sdfg = builder_opt.move();
+    EXPECT_EQ(sdfg->root().size(), original_size);
 }
