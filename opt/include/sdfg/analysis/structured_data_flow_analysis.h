@@ -16,6 +16,11 @@
 namespace sdfg {
 namespace analysis {
 
+enum class MergeMode {
+    CUMULATIVE,
+    BRANCHES,
+};
+
 template<typename T>
 struct DataFlowState {
     using ExposedType = T;
@@ -29,13 +34,16 @@ struct DataFlowState {
     virtual bool update_forward_exposed(const T& forward_exposed) = 0;
 };
 
-template<typename T>
-struct SetDataFlowState : public DataFlowState<std::unordered_set<T>> {
-    using ExposedType = std::unordered_set<T>;
+typedef size_t ElementId;
+
+template<typename T, typename I>
+struct ElementIdMapDataFlowState : public DataFlowState<std::unordered_map<ElementId, T>> {
+    using ExposedType = DataFlowState<std::unordered_map<ElementId, T>>::ExposedType;
+    using InternalType = std::unordered_map<ElementId, std::unique_ptr<I>>;
 
 protected:
     ExposedType incoming_;
-    ExposedType generated_;
+    InternalType generated_;
     ExposedType forward_exposed_;
     bool ran_ = false;
 
@@ -43,20 +51,22 @@ public:
     bool ran_at_least_once() const override { return ran_; }
 
     bool update(const ExposedType& incoming) override {
-        bool incoming_changed = update_incoming(incoming);
+        bool needs_update = update_incoming(incoming);
 
-        if (!incoming_changed) {
+        if (!needs_update) {
             return false;
         }
 
         ExposedType exposed = incoming_;
-        apply_kills(exposed);
-        for (auto& gen : generated_) {
-            exposed.insert(gen);
+        apply_kills_and_changes(exposed);
+        for (auto& [id, gen] : generated_) {
+            exposed.insert({id, expose(*gen)});
         }
 
         return update_forward_exposed(exposed);
     }
+
+    virtual T expose(I& internal) = 0;
 
     bool update_incoming(const ExposedType& incoming) override {
         bool any_changes = false;
@@ -85,11 +95,22 @@ public:
 
     static ExposedType empty_in() { return ExposedType(); }
 
-    static void merge(ExposedType& merge_into, const ExposedType& other) {
-        merge_into.insert(other.begin(), other.end());
+    static void merge(ExposedType& merge_into, const ExposedType& other, MergeMode mode = MergeMode::CUMULATIVE) {
+        if (mode == MergeMode::BRANCHES) {
+            for (auto it = merge_into.begin(); it != merge_into.end();) {
+                auto key = it->first;
+                if (!other.contains(key)) {
+                    it = merge_into.erase(it);
+                    continue;
+                }
+                ++it;
+            }
+        } else {
+            merge_into.insert(other.begin(), other.end());
+        }
     }
 
-    virtual void apply_kills(ExposedType& exposed) const = 0;
+    virtual void apply_kills_and_changes(ExposedType& exposed) const = 0;
 };
 
 /**
@@ -225,17 +246,14 @@ private:
 
     std::pair<bool, const ExposedType&> solve(structured_control_flow::Sequence& seq, const ExposedType& in) {
         auto& seq_state = get_or_create_state(seq);
-        bool must_run = !seq_state.ran_at_least_once();
-        if (!seq_state.update_incoming(in) && !must_run) {
-            return {false, seq_state.forward_exposed()};
-        }
+        seq_state.update_incoming(in);
 
         const ExposedType* current = &in;
         bool updating = true;
         for (size_t i = 0; i < seq.size() && updating; ++i) {
             auto [child, transition] = seq.at(i);
             auto [changed, output] = solve(child, *current);
-            updating = changed || must_run;
+            updating = changed;
             current = &output;
         }
 
@@ -251,23 +269,23 @@ private:
 
     std::pair<bool, const ExposedType&> solve(structured_control_flow::IfElse& if_else, const ExposedType& in) {
         auto& state = get_or_create_state(if_else);
-        if (!state.update_incoming(in) && state.ran_at_least_once()) {
-            return {false, state.forward_exposed()};
-        }
+        state.update_incoming(in);
 
         ExposedType merged = State::empty_in();
+        bool first = true;
         bool changed = true;
         for (size_t i = 0; i < if_else.size(); ++i) {
             auto [branch_seq, cond] = if_else.at(i);
             auto [branch_changed, branch_out] = solve(branch_seq, in);
             changed |= branch_changed;
-            State::merge(merged, branch_out);
+            State::merge(merged, branch_out, first ? MergeMode::CUMULATIVE : MergeMode::BRANCHES);
+            first = false;
         }
 
         // If the IfElse is not complete (no else-branch covering all cases)
         // the input can also flow through unchanged.
         if (!if_else.is_complete()) {
-            State::merge(merged, in);
+            State::merge(merged, in, MergeMode::BRANCHES);
         }
 
         if (changed) {
@@ -292,9 +310,7 @@ private:
         const ExposedType& in,
         std::function<void(ExposedType&)> apply_after_body
     ) {
-        if (!state.update_incoming(in) && state.ran_at_least_once()) {
-            return {false, state.forward_exposed()};
-        }
+        state.update_incoming(in);
 
         ExposedType current = in;
         bool changing = false;
@@ -305,7 +321,7 @@ private:
             changed |= body_changed;
 
             if (body_changed) {
-                State::merge(current, body_out);
+                State::merge(current, body_out, MergeMode::BRANCHES);
             }
 
             if (apply_after_body) {

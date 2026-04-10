@@ -55,6 +55,7 @@
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
+#include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
@@ -392,7 +393,11 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
         std::cerr << "[WARNING] Target '" << target << "' is not supported, ignoring!" << std::endl;
     }
     sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, nullptr);
-    loop_scheduling_pass.run(builder, analysis_manager);
+    bool loop_scheduling_changes = loop_scheduling_pass.run(builder, analysis_manager);
+    if (loop_scheduling_changes) {
+        sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
+        data_transfer_minimization_pass.run(builder, analysis_manager);
+    }
 }
 
 struct SnippetMetadata {

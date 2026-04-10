@@ -18,7 +18,7 @@
 namespace sdfg {
 namespace passes {
 
-class ExtendedDataTransferMinimization : public DataTransferMinimization {
+class ExtendedDataTransferMinimization : public DataTransferMinimizationLegacy {
 private:
     virtual std::pair<data_flow::AccessNode*, data_flow::AccessNode*>
     get_src_and_dst(data_flow::DataFlowGraph& dfg, offloading::DataOffloadingNode* offloading_node);

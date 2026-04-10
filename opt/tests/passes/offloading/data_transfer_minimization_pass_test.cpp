@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include "../../../../sdfg/tests/sdfg_debug_dump.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/element.h"
@@ -99,8 +100,12 @@ TEST(DataTransferMinimizationPassTest, MultiMapTest) {
     auto& out_type2 = builder.subject().type("A");
     builder.add_computational_memlet(block2, memcpy_node2, "_dst", access_node_out2, {}, out_type2);
 
+    dump_sdfg(builder.subject(), "0-before");
+
     passes::DataTransferMinimizationPass pass;
     EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1-after");
 
     EXPECT_EQ(block.dataflow().nodes().size(), 0);
     EXPECT_EQ(block2.dataflow().nodes().size(), 0);
@@ -166,8 +171,12 @@ TEST(DataTransferMinimizationPassTest, MultiMapWithLatterUseTest) {
     builder.add_computational_memlet(block3, C3, tasklet3, "_in", {symbolic::zero()});
     builder.add_computational_memlet(block3, tasklet3, "_out", B, {symbolic::zero()});
 
+    dump_sdfg(builder.subject(), "0-before");
+
     passes::DataTransferMinimizationPass pass;
     EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1-after");
 
     // Check that there is exactly two H2D and one D2H transfer for C
     int h2d_count = 0;

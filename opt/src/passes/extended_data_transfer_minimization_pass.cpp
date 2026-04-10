@@ -25,7 +25,7 @@ namespace passes {
 ExtendedDataTransferMinimization::ExtendedDataTransferMinimization(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
 )
-    : sdfg::passes::DataTransferMinimization(builder, analysis_manager) {}
+    : sdfg::passes::DataTransferMinimizationLegacy(builder, analysis_manager) {}
 
 std::pair<data_flow::AccessNode*, data_flow::AccessNode*> ExtendedDataTransferMinimization::
     get_src_and_dst(data_flow::DataFlowGraph& dfg, offloading::DataOffloadingNode* offloading_node) {
