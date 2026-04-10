@@ -341,21 +341,6 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             );
         }
 
-        // Memset patches to zero (per tile)
-        auto& patches_memset_block = builder.add_block(loop_t.root(), {}, block->debug_info());
-        {
-            auto& patches_access = builder.add_access(patches_memset_block, patches_container, this->debug_info());
-            auto& libnode = builder.add_library_node<stdlib::MemsetNode>(
-                patches_memset_block,
-                this->debug_info(),
-                symbolic::zero(),
-                symbolic::mul(patches_size, symbolic::size_of_type(base_type))
-            );
-            builder.add_computational_memlet(
-                patches_memset_block, libnode, "_ptr", patches_access, {}, patches_type, this->debug_info()
-            );
-        }
-
         // Im2col: c, k[0..dims-1], o0_inner ∈ [0,h_tile), o[1..dims-1]
         // Patches layout: [C_in, kernel..., h_tile, out_shape[1:]...] — row-major [K, tile_n]
         structured_control_flow::Sequence* current_seq = &loop_t.root();
