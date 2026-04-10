@@ -11,6 +11,7 @@
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 
 // Tensor
+#include "sdfg/data_flow/library_nodes/math/tensor/batchnorm_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.h"

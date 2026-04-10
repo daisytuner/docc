@@ -187,6 +187,18 @@ public:
 
     const std::pair<size_t, const std::unordered_map<const data_flow::DataFlowNode*, size_t>> weakly_connected_components()
         const;
+
+    template<typename T>
+    T* is() {
+        if (this->library_nodes().size() != 1) {
+            return nullptr;
+        }
+        if (!this->tasklets().empty()) {
+            return nullptr;
+        }
+        data_flow::LibraryNode* lib_node = *this->library_nodes().begin();
+        return dynamic_cast<T*>(lib_node);
+    };
 };
 
 } // namespace data_flow
