@@ -1,3 +1,5 @@
 set(LLVM_TARGET_DEFINITIONS LinalgCustomOps.td)
+mlir_tablegen(LinalgCustomOpsEnums.h.inc -gen-enum-decls)
+mlir_tablegen(LinalgCustomOpsEnums.cpp.inc -gen-enum-defs)
 add_mlir_dialect(LinalgCustomOps linalg_custom)
 add_mlir_doc(LinalgCustomOps LinalgCustomDialect Dialects/ -gen-dialect-doc)

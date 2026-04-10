@@ -9,7 +9,7 @@ void populateLinalgCustomSpecializeGenericOpsPass(RewritePatternSet& patterns);
 
 void populateLinalgCustomRemoveRedundantOpsPass(RewritePatternSet& patterns);
 
-void populateLinalgCustomFuseConvPaddingPass(RewritePatternSet& patterns);
+void populateLinalgCustomFusePaddingPass(RewritePatternSet& patterns);
 
 } // namespace linalg
 } // namespace mlir

@@ -7,6 +7,8 @@
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/Linalg/IR/LinalgCustomOpsTypes.cpp.inc"
 
+#include "mlir/Dialect/Linalg/IR/LinalgCustomOpsEnums.cpp.inc"
+
 #define GET_OP_CLASSES
 #include "mlir/Dialect/Linalg/IR/LinalgCustomOps.cpp.inc"
 
@@ -129,6 +131,52 @@ LogicalResult Conv2DNchwFchwOp::verify() {
                  1;
     int64_t Wo = (inputType.getDimSize(3) + this->getPaddings()[1] + this->getPaddings()[3] -
                   this->getDilations()[1] * (weightsType.getDimSize(3) - 1) - 1) /
+                     this->getStrides()[1] +
+                 1;
+    if (Ho != outputType.getDimSize(2)) {
+        return this->emitOpError("output height should be ") << Ho;
+    }
+    if (Wo != outputType.getDimSize(3)) {
+        return this->emitOpError("output width should be ") << Wo;
+    }
+
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// PoolingNchwOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult PoolingNchwOp::verify() {
+    RankedTensorType inputType = this->getInput().getType();
+    RankedTensorType outputType = this->getOutput().getType();
+
+    if (inputType.getDimSize(0) != outputType.getDimSize(0)) {
+        return this->emitOpError("incompatible N shape");
+    }
+    if (inputType.getDimSize(1) != outputType.getDimSize(1)) {
+        return this->emitOpError("incompatible C shape");
+    }
+
+    if (this->getKernel().size() != 2) {
+        return this->emitOpError("must have exactly two kernel shape values");
+    }
+    if (this->getStrides().size() != 2) {
+        return this->emitOpError("must have exactly two stride values");
+    }
+    if (this->getDilations().size() != 2) {
+        return this->emitOpError("must have exactly two dialtion values");
+    }
+    if (this->getPaddings().size() != 4) {
+        return this->emitOpError("must have exactly four padding values");
+    }
+
+    int64_t Ho = (inputType.getDimSize(2) + this->getPaddings()[0] + this->getPaddings()[2] -
+                  this->getDilations()[0] * (this->getKernel()[0] - 1) - 1) /
+                     this->getStrides()[0] +
+                 1;
+    int64_t Wo = (inputType.getDimSize(3) + this->getPaddings()[1] + this->getPaddings()[3] -
+                  this->getDilations()[1] * (this->getKernel()[1] - 1) - 1) /
                      this->getStrides()[1] +
                  1;
     if (Ho != outputType.getDimSize(2)) {

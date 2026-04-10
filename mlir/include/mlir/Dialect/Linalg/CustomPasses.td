@@ -21,8 +21,8 @@ def LinalgCustomRemoveRedundantOpsPass : Pass<"linalg-custom-remove-redundant-op
     ];
 }
 
-def LinalgCustomFuseConvPaddingPass : Pass<"linalg-custom-fuse-conv-padding"> {
-    let summary = "Fuse tensor.pad operations into convolutions (custom DOCC MLIR pass)";
+def LinalgCustomFusePaddingPass : Pass<"linalg-custom-fuse-padding"> {
+    let summary = "Fuse tensor.pad operations into convolutions/poolings (custom DOCC MLIR pass)";
     let dependentDialects = [
         "arith::ArithDialect",
         "linalg::LinalgDialect",

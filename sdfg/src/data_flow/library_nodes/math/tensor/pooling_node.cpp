@@ -5,6 +5,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg {
@@ -275,6 +276,28 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         auto input_idx = symbolic::
             add(symbolic::sub(symbolic::mul(output_spatial_vars[i], strides_vec[i]), pads_begin_vec[i]), k_dilated);
         input_spatial_indices.push_back(input_idx);
+    }
+
+    // Add branching if padding is non-zero
+    bool has_padding = false;
+    for (auto padding : this->pads_) {
+        if (!symbolic::eq(padding, symbolic::zero())) {
+            has_padding = true;
+            break;
+        }
+    }
+    if (has_padding) {
+        symbolic::Condition comp_condition = symbolic::__true__();
+        for (size_t i = 0; i < spatial_dims; ++i) {
+            comp_condition = symbolic::
+                And(comp_condition,
+                    symbolic::
+                        And(symbolic::Lt(input_spatial_indices[i], input_spatial_dims[i]),
+                            symbolic::Ge(input_spatial_indices[i], symbolic::zero())));
+        }
+        auto& branch = builder.add_if_else(*loop_scope, {}, block.debug_info());
+        auto& comp_case = builder.add_case(branch, comp_condition, block.debug_info());
+        loop_scope = &comp_case;
     }
 
     // Build X indices: [n, c, input_spatial...]

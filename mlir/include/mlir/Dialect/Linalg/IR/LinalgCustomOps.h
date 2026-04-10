@@ -12,6 +12,12 @@
 #include "mlir/Dialect/Linalg/IR/LinalgCustomOpsDialect.h.inc"
 
 //===----------------------------------------------------------------------===//
+// Linalg Custom Dialect Enum Attributes
+//===----------------------------------------------------------------------===//
+
+#include "mlir/Dialect/Linalg/IR/LinalgCustomOpsEnums.h.inc"
+
+//===----------------------------------------------------------------------===//
 // Linalg Custom Dialect Operations
 //===----------------------------------------------------------------------===//
 

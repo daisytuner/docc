@@ -1,5 +1,5 @@
 add_mlir_dialect_library(MLIRLinalgCustomTransforms
-    CustomFuseConvPadding.cpp
+    CustomFusePadding.cpp
     CustomRemoveRedundant.cpp
     CustomSpecialize.cpp
     CustomSpecializeBatchNorm.cpp

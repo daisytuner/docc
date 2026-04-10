@@ -639,6 +639,70 @@ LogicalResult translateLinalgCustomConv2DNchwFchwOp(SDFGTranslator& translator, 
     return success();
 }
 
+LogicalResult translateLinalgCustomPoolingNchwOp(SDFGTranslator& translator, linalg::custom::PoolingNchwOp* pooling_op) {
+    auto input = pooling_op->getInput();
+    auto output = pooling_op->getOutput();
+    auto result = pooling_op->getResult();
+    auto deb_info = translator.get_debug_info(pooling_op->getOperationName(), pooling_op->getLoc());
+
+    auto& builder = translator.builder();
+    auto input_container = translator.get_or_create_container(input);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input.getType());
+    auto input_element_type = translator.convertType(input.getType().getElementType());
+    auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input_element_type)
+    );
+
+    auto result_tensor_info = translator.get_or_create_tensor_info(result_container, result.getType());
+    auto result_element_type = translator.convertType(result.getType().getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
+    translator.add_reference(output_container, result_container, deb_info);
+
+    ::sdfg::math::tensor::PoolingMode mode;
+    switch (pooling_op->getMethod()) {
+        case linalg::custom::PoolingMethod::max:
+            mode = ::sdfg::math::tensor::PoolingMode::Max;
+            break;
+        case linalg::custom::PoolingMethod::sum:
+            mode = ::sdfg::math::tensor::PoolingMode::Sum;
+            break;
+    }
+    ::sdfg::symbolic::MultiExpression shape;
+    for (int64_t dim : input.getType().getShape()) {
+        shape.push_back(::sdfg::symbolic::integer(dim));
+    }
+    ::sdfg::symbolic::MultiExpression kernel_shape;
+    for (int64_t dim : pooling_op->getKernel()) {
+        kernel_shape.push_back(::sdfg::symbolic::integer(dim));
+    }
+    ::sdfg::symbolic::MultiExpression strides;
+    for (int64_t stride : pooling_op->getStrides()) {
+        strides.push_back(::sdfg::symbolic::integer(stride));
+    }
+    ::sdfg::symbolic::MultiExpression pads;
+    for (int64_t padding : pooling_op->getPaddings()) {
+        pads.push_back(::sdfg::symbolic::integer(padding));
+    }
+    ::sdfg::symbolic::MultiExpression dilations;
+    for (int64_t dilation : pooling_op->getDilations()) {
+        dilations.push_back(::sdfg::symbolic::integer(dilation));
+    }
+
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& input_access = builder.add_access(block, input_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
+    auto& libnode = builder.add_library_node<
+        ::sdfg::math::tensor::PoolingNode>(block, deb_info, mode, shape, kernel_shape, strides, pads, dilations);
+    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor, deb_info);
+
+    return success();
+}
+
 template<typename PoolOp>
 LogicalResult translateLinalgPoolingNchwOp(SDFGTranslator& translator, PoolOp* op, ::sdfg::math::tensor::PoolingMode mode);
 
@@ -767,6 +831,9 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
         })
         .Case<linalg::custom::Conv2DNchwFchwOp>([&](linalg::custom::Conv2DNchwFchwOp conv_op) {
             return translateLinalgCustomConv2DNchwFchwOp(translator, &conv_op);
+        })
+        .Case<linalg::custom::PoolingNchwOp>([&](linalg::custom::PoolingNchwOp pooling_op) {
+            return translateLinalgCustomPoolingNchwOp(translator, &pooling_op);
         })
         .Default([&](Operation* op) {
             return op->emitError("Unknown operation from linalg dialect encountered: ") << op->getName();
