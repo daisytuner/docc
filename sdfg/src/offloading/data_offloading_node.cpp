@@ -14,6 +14,8 @@
 namespace sdfg {
 namespace offloading {
 
+constexpr bool dump_offload_node_ids = false;
+
 DataOffloadingNode::DataOffloadingNode(
     size_t element_id,
     const DebugInfo& debug_info,
@@ -77,7 +79,12 @@ std::string DataOffloadingNode::toStr() const {
             lifecycle = " NO_CHANGE";
             break;
     }
-    return std::string(this->code_.value()) + direction + lifecycle;
+    std::string res = std::string(this->code_.value());
+    if (dump_offload_node_ids) {
+        res += " #" + std::to_string(element_id_);
+    }
+    res += direction + lifecycle;
+    return res;
 }
 
 symbolic::Expression DataOffloadingNode::flop() const { return symbolic::zero(); }

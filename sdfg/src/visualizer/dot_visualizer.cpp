@@ -26,7 +26,11 @@ void DotVisualizer::visualizeBlock(const StructuredSDFG& sdfg, const structured_
     auto id = escapeDotId(block.element_id(), "block_");
     this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
     this->stream_.setIndent(this->stream_.indent() + 4);
-    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl;
+    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"";
+    if (show_block_ids) {
+        this->stream_ << "#" << block.element_id() << " ";
+    }
+    this->stream_ << "\";" << std::endl;
     this->last_comp_name_cluster_ = "cluster_" + id;
     if (block.dataflow().nodes().empty()) {
         this->stream_ << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
@@ -187,8 +191,11 @@ void DotVisualizer::visualizeIfElse(const StructuredSDFG& sdfg, const structured
     auto id = escapeDotId(if_else.element_id(), "if_");
     this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
     this->stream_.setIndent(this->stream_.indent() + 4);
-    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"if:\";" << std::endl
-                  << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"";
+    if (show_block_ids) {
+        this->stream_ << "#" << if_else.element_id() << " ";
+    }
+    this->stream_ << "if:\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
     for (size_t i = 0; i < if_else.size(); ++i) {
         this->stream_ << "subgraph cluster_" << id << "_" << std::to_string(i) << " {" << std::endl;
         this->stream_.setIndent(this->stream_.indent() + 4);
@@ -208,8 +215,11 @@ void DotVisualizer::visualizeWhile(const StructuredSDFG& sdfg, const structured_
     auto id = escapeDotId(while_loop.element_id(), "while_");
     this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
     this->stream_.setIndent(this->stream_.indent() + 4);
-    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"while:\";" << std::endl
-                  << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"";
+    if (show_block_ids) {
+        this->stream_ << "#" << while_loop.element_id() << " ";
+    }
+    this->stream_ << "while:\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
     this->visualizeSequence(sdfg, while_loop.root());
     this->stream_.setIndent(this->stream_.indent() - 4);
     this->stream_ << "}" << std::endl;
@@ -221,7 +231,11 @@ void DotVisualizer::visualizeFor(const StructuredSDFG& sdfg, const structured_co
     auto id = escapeDotId(loop.element_id(), "for_");
     this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
     this->stream_.setIndent(this->stream_.indent() + 4);
-    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"for: ";
+    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"";
+    if (show_block_ids) {
+        this->stream_ << "#" << loop.element_id() << " ";
+    }
+    this->stream_ << "for: ";
     this->visualizeForBounds(loop.indvar(), loop.init(), loop.condition(), loop.update());
     this->stream_ << "\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
     this->visualizeSequence(sdfg, loop.root());
@@ -255,8 +269,13 @@ void DotVisualizer::visualizeMap(const StructuredSDFG& sdfg, const structured_co
     auto id = escapeDotId(map_node.element_id(), "map_");
     this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
     this->stream_.setIndent(this->stream_.indent() + 4);
-    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"map: ";
+    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"";
+    if (show_block_ids) {
+        this->stream_ << "#" << map_node.element_id() << " ";
+    }
+    this->stream_ << "map: ";
     this->visualizeForBounds(map_node.indvar(), map_node.init(), map_node.condition(), map_node.update());
+
     this->stream_ << "\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
     this->visualizeSequence(sdfg, map_node.root());
     this->stream_.setIndent(this->stream_.indent() - 4);
