@@ -21,6 +21,7 @@
 #include <sdfg/einsum/einsum.h>
 #include <sdfg/passes/dataflow/constant_propagation.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
+#include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dot_expansion_pass.h>
 #include <sdfg/passes/einsum.h>
@@ -133,6 +134,9 @@ void PyStructuredSDFG::validate() { sdfg_->validate(); }
 void PyStructuredSDFG::expand() {
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
+
+    auto local_buffer_reuse_pipeline = sdfg::passes::local_buffer_reuse_pipeline();
+    local_buffer_reuse_pipeline.run(builder_opt, analysis_manager);
 
     // Preparation: Lift Einsum nodes to detect more library nodes (offloading)
     // BUT: Place after simplify (e.g., schedule())
