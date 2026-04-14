@@ -52,7 +52,7 @@ def test_floyd_warshall(target):
                 "MAP": 4,
                 "CUDAOffloading": 6,
                 "FOR": 5,
-                "Malloc": 1,
+                "Malloc": 0,
             }
         )
     else:  # rocm

@@ -97,6 +97,13 @@ public:
     void remove_free();
 
     void remove_h2d();
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+
+    data_flow::EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet)
+        const override;
+
+    bool update_edge_removed(const std::string& out_conn) override;
 };
 
 } // namespace offloading

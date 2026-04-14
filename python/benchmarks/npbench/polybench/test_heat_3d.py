@@ -73,7 +73,7 @@ def test_heat_3d(target):
                 "MAP": 62,
                 "SEQUENTIAL": 42,
                 "FOR": 67,
-                "Malloc": 30,
+                "Malloc": 22,
             }
         )
     else:  # rocm
@@ -84,7 +84,7 @@ def test_heat_3d(target):
                 "MAP": 62,
                 "SEQUENTIAL": 42,
                 "FOR": 67,
-                "Malloc": 30,
+                "Malloc": 22,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

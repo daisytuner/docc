@@ -34,9 +34,15 @@ std::string LibraryNode::toStr() const { return std::string(this->code_.value())
 
 symbolic::Expression LibraryNode::flop() const { return SymEngine::null; }
 
-bool LibraryNode::require_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const {
-    return graph.out_edges_for_connector(*this, memlet->src_conn()).size() <= 1; // cannot remove the last edge per
-                                                                                 // connector in general
+EdgeRemoveOption LibraryNode::can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const {
+    if (graph.out_edges_for_connector(*this, memlet->src_conn()).size() > 1) {
+        return EdgeRemoveOption::Trivially;
+    } else if (!side_effect_ && outputs_.size() == 1) {
+        return EdgeRemoveOption::RemoveNodeAfter;
+    } else {
+        // cannot remove the last edge per connector in general
+        return EdgeRemoveOption::NotRemovable;
+    }
 }
 
 } // namespace data_flow

@@ -5,15 +5,16 @@
 #include "sdfg/analysis/pointer_analyzers.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/targets/offloading/data_offloading_node.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
 #include "sdfg/visualizer/dot_visualizer.h"
 
 namespace sdfg {
 namespace passes {
 
-DeadDataElimination::DeadDataElimination() : Pass(), permissive_(false) {};
+DeadDataElimination::DeadDataElimination() : Pass(), legacy_removals_(true) {};
 
-DeadDataElimination::DeadDataElimination(bool permissive) : Pass(), permissive_(permissive) {};
+DeadDataElimination::DeadDataElimination(bool legacy_removals) : Pass(), legacy_removals_(legacy_removals) {};
 
 std::string DeadDataElimination::name() { return "DeadDataElimination"; };
 
@@ -164,10 +165,24 @@ bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedA
 }
 
 bool MemoryOwnershipAnalysis::excusedOverwrite(const Element* element, const OwnedArea& area) {
+    auto* memlet = dynamic_cast<const data_flow::Memlet*>(element);
+
+    if (!memlet) {
+        return false;
+    }
+
     // The producer (malloc output edge) is an excused overwrite — it's the initial assignment.
     if (element == area.producer) {
         return true;
     }
+    // DataOffloadNodes currently have a fake-output edge instead of a pointer input.
+    // But they can only write to memory, never generate/overwrite the pointer
+    if (auto* offload = dynamic_cast<const offloading::DataOffloadingNode*>(&memlet->src())) {
+        if (offload->transfer_direction() != offloading::DataTransferDirection::NONE) {
+            return true;
+        }
+    }
+
     // The output edge of a free cluster is an excused overwrite — free sets the pointer
     // to NULL (a fake overwrite that doesn't represent a meaningful reassignment).
     for (const auto& cluster : area.free_clusters) {
@@ -327,6 +342,20 @@ void IndirectMemoryAccessFinder::use_as_src_node(
         if (edge.is_src_pointed_to_read()) {
             indirect_reads_[container].insert(&edge);
         }
+        // Library nodes may get a pointer as input. But some of them we know enough about,
+        // to know they are only borrowing the pointer for read access during their execution, not representing an
+        // actual leak these we can instead cound as indirect readse
+        if (edge.is_src_read()) {
+            if (auto* libNode = dynamic_cast<const data_flow::LibraryNode*>(&edge.dst())) {
+                auto conns = libNode->inputs();
+                auto idx = std::find(conns.begin(), conns.end(), edge.dst_conn()) - conns.begin();
+                auto access_type = libNode->pointer_access_type(idx);
+                auto maybe_rd_only = std::get_if<data_flow::PointerReadOnly>(&access_type);
+                if (maybe_rd_only && maybe_rd_only->no_ptr_escape()) {
+                    indirect_reads_[container].insert(&edge);
+                }
+            }
+        }
     }
 }
 
@@ -336,6 +365,17 @@ void IndirectMemoryAccessFinder::use_as_dst_node(
     if (target_containers_.contains(container)) {
         if (edge.is_dst_pointed_to_write()) {
             writes_to_remove_[container][&edge] = &block;
+        }
+        // hack to classify Offload nodes with D2H correctly. For historic reasons they use a direct output edge
+        // to the host ptr, even though they will never write the pointer, but only write the memory the pointer points
+        // to as that edge is destructive to many optimizations and scheduled to be removed, cuhere custom handleing per
+        // node
+        if (edge.is_dst_write()) {
+            if (auto* offload = dynamic_cast<const offloading::DataOffloadingNode*>(&edge.src())) {
+                if (offload->transfer_direction() != offloading::DataTransferDirection::NONE) {
+                    writes_to_remove_[container][&edge] = &block;
+                }
+            }
         }
     }
 }
@@ -388,75 +428,80 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
                     auto& area = ownership_analysis.owned_area(owned_area_id);
                     area.remove_from(builder);
                     applied = true;
+                    dead_containers.insert(owned_area_id);
                 }
             }
         }
     }
-    if (applied) { // if changes were made, any cached analysis will be out of date.
-        analysis_manager.invalidate_all();
-    }
 
-    // slightly expensive, because for fully_owned_areas we already looked for uses. But classified differently and did
-    // not look at, whether the entire container can be removed
-    auto& users = analysis_manager.get<analysis::Users>();
-    auto& data_dependency_analysis = analysis_manager.get<analysis::DataDependencyAnalysis>();
-
-    for (auto& name : sdfg.containers()) {
-        if (!sdfg.is_transient(name)) {
-            continue;
-        }
-        if (users.num_views(name) > 0 || users.num_moves(name) > 0) {
-            continue;
-        }
-        auto num_reads = users.num_reads(name);
-        if (!num_reads && users.num_writes(name) == 0) { // no reference of [name] anywhere
-            dead_containers.insert(name);
-            applied = true;
-            continue;
+    if (legacy_removals_) {
+        if (applied) { // if changes were made, any cached analysis will be out of date.
+            analysis_manager.invalidate_all();
         }
 
-        if (sdfg.type(name).type_id() == types::TypeID::Pointer) {
-            continue;
-            // use analysis does not return actual reads and writes for pointers. So if [name] is a pointer,
-            // num reads/writes, does not actually mean no reads exist and any removal is problematic
-            // more complex cases have been removed above already
-        }
+        // slightly expensive, because for fully_owned_areas we already looked for uses. But classified differently and
+        // did not look at, whether the entire container can be removed
+        auto& users = analysis_manager.get<analysis::Users>();
+        auto& data_dependency_analysis = analysis_manager.get<analysis::DataDependencyAnalysis>();
 
-        bool completely_unused = !num_reads; // if there are reads left, we can never remove the container, but maybe
-                                             // some writes
-        auto raws = data_dependency_analysis.definitions(name);
-        for (auto set : raws) {
-            bool no_reads = false;
-            if (set.second.size() == 0) {
-                no_reads = true;
+        for (auto& name : sdfg.containers()) {
+            if (!sdfg.is_transient(name)) {
+                continue;
             }
-            if (data_dependency_analysis.is_undefined_user(*set.first)) {
+            if (users.num_views(name) > 0 || users.num_moves(name) > 0) {
+                continue;
+            }
+            auto num_reads = users.num_reads(name);
+            if (!num_reads && users.num_writes(name) == 0) { // no reference of [name] anywhere
+                dead_containers.insert(name);
+                applied = true;
                 continue;
             }
 
-            if (no_reads) {
-                bool could_eliminate_write = false;
-                auto write = set.first;
-                if (auto transition = dynamic_cast<structured_control_flow::Transition*>(write->element())) {
-                    transition->assignments().erase(symbolic::symbol(name));
-                    applied = true;
-                    could_eliminate_write = true;
-                } else if (auto access_node = dynamic_cast<data_flow::AccessNode*>(write->element())) {
-                    auto& graph = access_node->get_parent();
-                    auto& block = dynamic_cast<structured_control_flow::Block&>(*graph.get_parent());
+            if (sdfg.type(name).type_id() == types::TypeID::Pointer) {
+                continue;
+                // use analysis does not return actual reads and writes for pointers. So if [name] is a pointer,
+                // num reads/writes, does not actually mean no reads exist and any removal is problematic
+                // more complex cases have been removed above already
+            }
 
-                    if (builder.clear_node(block, *access_node)) {
-                        applied = true;
-                        could_eliminate_write = true;
-                    }
+            bool completely_unused = !num_reads; // if there are reads left, we can never remove the container, but
+                                                 // maybe
+            // some writes
+            auto raws = data_dependency_analysis.definitions(name);
+            for (auto set : raws) {
+                bool no_reads = false;
+                if (set.second.size() == 0) {
+                    no_reads = true;
+                }
+                if (data_dependency_analysis.is_undefined_user(*set.first)) {
+                    continue;
                 }
 
-                completely_unused &= could_eliminate_write;
-            }
-        }
+                if (no_reads) {
+                    bool could_eliminate_write = false;
+                    auto write = set.first;
+                    if (auto transition = dynamic_cast<structured_control_flow::Transition*>(write->element())) {
+                        transition->assignments().erase(symbolic::symbol(name));
+                        applied = true;
+                        could_eliminate_write = true;
+                    } else if (auto access_node = dynamic_cast<data_flow::AccessNode*>(write->element())) {
+                        auto& graph = access_node->get_parent();
+                        auto& block = dynamic_cast<structured_control_flow::Block&>(*graph.get_parent());
 
-        if (completely_unused) { // no reads, and all remaining writes could be removed
-            dead_containers.insert(name);
+                        if (builder.clear_node(block, *access_node)) {
+                            applied = true;
+                            could_eliminate_write = true;
+                        }
+                    }
+
+                    completely_unused &= could_eliminate_write;
+                }
+            }
+
+            if (completely_unused) { // no reads, and all remaining writes could be removed
+                dead_containers.insert(name);
+            }
         }
     }
 

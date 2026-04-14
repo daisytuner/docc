@@ -60,7 +60,7 @@ def test_gemver(target):
                 "FOR": 3,
                 "MAP": 3,
                 "CUDAOffloading": 14,
-                "Malloc": 3,
+                "Malloc": 2,
                 "GEMM": 4,
             }
         )
@@ -71,7 +71,7 @@ def test_gemver(target):
                 "FOR": 3,
                 "MAP": 3,
                 "ROCMOffloading": 14,
-                "Malloc": 3,
+                "Malloc": 2,
                 "GEMM": 4,
             }
         )

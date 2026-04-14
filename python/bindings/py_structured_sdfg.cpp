@@ -401,6 +401,10 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     if (loop_scheduling_changes) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
         data_transfer_minimization_pass.run(builder, analysis_manager);
+        sdfg::passes::DeadDataElimination dde(false);
+        dde.run(builder, analysis_manager);
+        sdfg::passes::DeadCFGElimination dead_cfg_elimination;
+        dead_cfg_elimination.run(builder, analysis_manager);
     }
 }
 
@@ -599,7 +603,7 @@ std::string PyStructuredSDFG::compile(
 #endif
         }
         cmd << " " << source_path.string();
-        cmd << " -o " << (build_path / (sdfg_->name() + ".o")).string();
+        cmd << " -g -o " << (build_path / (sdfg_->name() + ".o")).string();
         DEBUG_PRINTLN("Compile: " << cmd.str());
         int ret = std::system(cmd.str().c_str());
         if (ret != 0) {
@@ -644,7 +648,7 @@ std::string PyStructuredSDFG::compile(
 #else
     cmd << " -lblas";
 #endif
-    cmd << " -lm";
+    cmd << " -lm -g";
     cmd << " -lstdc++";
     if (target == "cuda") {
         cmd << " /usr/local/cuda/lib64/libcudart.so";

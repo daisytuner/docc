@@ -284,7 +284,15 @@ std::unique_ptr<DataFlowNode> Tasklet::clone(size_t element_id, const graph::Ver
 
 void Tasklet::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
 
-bool Tasklet::require_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const { return false; }
+EdgeRemoveOption Tasklet::can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const {
+    if (graph.out_edges_for_connector(*this, memlet->src_conn()).size() > 1) {
+        return EdgeRemoveOption::Trivially;
+    } else {
+        // trick to allow removal of Tasklets, without having general mark-and-sweep logic to checkl tha that all
+        // outputs are
+        return EdgeRemoveOption::RemoveNodeAfter;
+    }
+}
 
 } // namespace data_flow
 } // namespace sdfg
