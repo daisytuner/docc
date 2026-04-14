@@ -13,6 +13,7 @@ class OffloadTransform : public transformations::Transformation {
 protected:
     structured_control_flow::Map& map_;
     bool allow_dynamic_sizes_ = false;
+    bool skip_unneeded_d2h_ = true;
 
 public:
     explicit OffloadTransform(structured_control_flow::Map& map, bool allow_dynamic_sizes = false);

@@ -160,7 +160,7 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
         auto argument_device = container_prefix + argument;
         auto& new_block = builder.add_block_after(*parent_scope, this->map_, {}, this->map_.debug_info());
         auto& size = argument_sizes.at(argument);
-        if (meta.is_output) {
+        if (!skip_unneeded_d2h_ || meta.is_output) {
             copy_from_device_with_free(builder, new_block, argument, argument_device, size, SymEngine::null);
         } else {
             deallocate_device_arg(builder, new_block, argument_device, size, SymEngine::null);
