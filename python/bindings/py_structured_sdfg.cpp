@@ -56,6 +56,7 @@
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
+#include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
@@ -158,6 +159,16 @@ void PyStructuredSDFG::expand() {
     sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;
     tensor_to_pointer_conversion_pass.run(builder_opt, analysis_manager);
 }
+
+void PyStructuredSDFG::expand_cuda() {
+    sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
+    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
+    sdfg::passes::CudaExpansionPass cuda_expansion_pass;
+    cuda_expansion_pass.run(builder_opt, analysis_manager);
+
+    expand();
+}
+
 
 void PyStructuredSDFG::simplify() {
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);

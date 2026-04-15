@@ -53,6 +53,8 @@ public:
 
     void expand();
 
+    void expand_cuda();
+
     void simplify();
 
     void dump(

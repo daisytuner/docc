@@ -15,6 +15,7 @@ set(SOURCE_FILES
     src/passes/normalization/map_fusion.cpp
     src/passes/targets/target_mapping_pass.cpp
     src/passes/offloading/cuda_library_node_rewriter_pass.cpp
+    src/passes/offloading/cuda_library_node_expansion_pass.cpp
     src/passes/offloading/code_motion/block_hoisting.cpp
     src/passes/offloading/code_motion/block_sorting.cpp
     src/passes/offloading/data_transfer_minimization_pass.cpp
@@ -43,6 +44,8 @@ set(SOURCE_FILES
     src/targets/cuda/blas/utils.cpp
     src/targets/cuda/stdlib/memset.cpp
     src/targets/cuda/cuda.cpp
+    src/targets/cuda/math/tensor/batchnorm_expander.cpp
+    src/targets/cuda/math/tensor/conv_expander.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/rocm/blas/dot.cpp
