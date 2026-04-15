@@ -15,7 +15,7 @@ private:
 
 public:
     CudaBatchNormExpander(math::tensor::BatchNormNode& library_node)
-        : TargetLibNodeExpander(library_node), node_(library_node){};
+        : TargetLibNodeExpander(library_node), node_(library_node) {};
     bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 };
 } // namespace offloading

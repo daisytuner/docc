@@ -9,7 +9,7 @@ namespace offloading {
 
 class TargetLibNodeExpander {
 public:
-    TargetLibNodeExpander(sdfg::data_flow::LibraryNode& library_node){};
+    TargetLibNodeExpander(sdfg::data_flow::LibraryNode& library_node) {};
     bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 };
 } // namespace offloading

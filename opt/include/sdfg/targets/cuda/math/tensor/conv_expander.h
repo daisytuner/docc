@@ -14,7 +14,8 @@ private:
     math::tensor::ConvNode& node_;
 
 public:
-    CudaConvExpander(math::tensor::ConvNode& library_node) : TargetLibNodeExpander(library_node), node_(library_node){};
+    CudaConvExpander(math::tensor::ConvNode& library_node)
+        : TargetLibNodeExpander(library_node), node_(library_node) {};
     bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 };
 } // namespace offloading

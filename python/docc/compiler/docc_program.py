@@ -16,9 +16,11 @@ from docc.compiler.target_registry import (
     get_target_expand_fn,
 )
 
+
 def _cuda_expand_fn(sdfg, category: str, kwargs: Dict[str, Any]) -> None:
     sdfg.expand_cuda()
     sdfg.expand()
+
 
 def _is_debug_dump() -> bool:
     return bool(os.environ.get("DOCC_DEBUG"))
