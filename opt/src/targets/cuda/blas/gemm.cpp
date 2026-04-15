@@ -37,8 +37,8 @@ void GEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code(
 ) {
     auto& gemm_node = static_cast<const math::blas::GEMMNode&>(this->node_);
 
-    globals_stream << "#include <cuda.h>" << std::endl;
-    globals_stream << "#include <cublas_v2.h>" << std::endl;
+    library_snippet_factory.add_global("#include <cuda.h>");
+    library_snippet_factory.add_global("#include <cublas_v2.h>");
 
     std::string type, type2;
     switch (gemm_node.precision()) {
@@ -81,7 +81,7 @@ void GEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code(
     stream << "err_cuda = cudaMemcpy(dC, __C, " << size_C << ", cudaMemcpyHostToDevice);" << std::endl;
     cuda_error_checking(stream, this->language_extension_, "err_cuda");
 
-    create_blas_handle(stream, this->language_extension_);
+    setup_blas_handle(library_snippet_factory, this->language_extension_);
 
     generate_kernel_gemm(stream, this->language_extension_, gemm_node);
 
@@ -94,8 +94,6 @@ void GEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code(
     cuda_error_checking(stream, this->language_extension_, "err_cuda");
     stream << "err_cuda = cudaFree(dC);" << std::endl;
     cuda_error_checking(stream, this->language_extension_, "err_cuda");
-
-    destroy_blas_handle(stream, this->language_extension_);
 
     remove_guard_clause(stream);
 }
@@ -115,16 +113,15 @@ void GEMMNodeDispatcher_CUBLASWithoutTransfers::dispatch_code(
 ) {
     auto& gemm_node = static_cast<const math::blas::GEMMNode&>(this->node_);
 
-    globals_stream << "#include <cuda.h>" << std::endl;
-    globals_stream << "#include <cublas_v2.h>" << std::endl;
+    library_snippet_factory.add_global("#include <cuda.h>");
+    library_snippet_factory.add_global("#include <cublas_v2.h>");
 
     add_guard_clause(stream, this->language_extension_, gemm_node);
 
-    create_blas_handle(stream, this->language_extension_);
+    setup_blas_handle(library_snippet_factory, this->language_extension_);
 
     generate_kernel_gemm(stream, this->language_extension_, gemm_node);
 
-    destroy_blas_handle(stream, this->language_extension_);
     remove_guard_clause(stream);
 }
 

@@ -56,6 +56,7 @@
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
+#include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
@@ -407,7 +408,15 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
         std::cerr << "[WARNING] Target '" << target << "' is not supported, ignoring!" << std::endl;
     }
     sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, nullptr);
-    loop_scheduling_pass.run(builder, analysis_manager);
+    bool loop_scheduling_changes = loop_scheduling_pass.run(builder, analysis_manager);
+    if (loop_scheduling_changes) {
+        sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
+        data_transfer_minimization_pass.run(builder, analysis_manager);
+        sdfg::passes::DeadDataElimination dde(false);
+        dde.run(builder, analysis_manager);
+        sdfg::passes::DeadCFGElimination dead_cfg_elimination;
+        dead_cfg_elimination.run(builder, analysis_manager);
+    }
 }
 
 struct SnippetMetadata {
@@ -605,7 +614,7 @@ std::string PyStructuredSDFG::compile(
 #endif
         }
         cmd << " " << source_path.string();
-        cmd << " -o " << (build_path / (sdfg_->name() + ".o")).string();
+        cmd << " -g -o " << (build_path / (sdfg_->name() + ".o")).string();
         DEBUG_PRINTLN("Compile: " << cmd.str());
         int ret = std::system(cmd.str().c_str());
         if (ret != 0) {
@@ -650,7 +659,7 @@ std::string PyStructuredSDFG::compile(
 #else
     cmd << " -lblas";
 #endif
-    cmd << " -lm";
+    cmd << " -lm -g";
     cmd << " -lstdc++";
     if (target == "cuda") {
         cmd << " /usr/local/cuda/lib64/libcudart.so";

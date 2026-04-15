@@ -1585,6 +1585,7 @@ int StructuredSDFGBuilder::clear_node(
     std::list<const data_flow::Memlet*> tmp;
     std::list<const data_flow::DataFlowNode*> queue = {&node};
     std::unordered_set<const data_flow::DataFlowNode*> remove_once_set;
+    std::unordered_set<const data_flow::DataFlowNode*> force_remove_set;
     int removed_nodes = 0;
 
     do {
@@ -1597,9 +1598,11 @@ int StructuredSDFGBuilder::clear_node(
             auto* access_node = dynamic_cast<const data_flow::AccessNode*>(current);
 
             bool ignore_side_effects_on_current = ignore_side_effects.contains(current);
-            // we can remove nodes without out-edges & side effects
+            bool force_remove = force_remove_set.contains(current);
+
+            // we can remove nodes without out-edges & side effects.
             if ((no_more_consumers && !current->side_effect()) ||
-                (ignore_side_effects_on_current && (no_more_consumers || access_node))) {
+                ((ignore_side_effects_on_current || force_remove) && (no_more_consumers || access_node))) {
                 // Or for access-nodes on the ignore list, we can remove the write side (will not remove the node, only
                 // inputs) For any other node on the ignore list, we can ignore if it has side effects or not
                 tmp.clear();
@@ -1610,11 +1613,18 @@ int StructuredSDFGBuilder::clear_node(
                 for (auto iedge : tmp) {
                     auto& src = iedge->src();
 
-                    if (!src.require_out_edge(graph, iedge)) {
+                    auto edge_rem = src.can_remove_out_edge(graph, iedge);
+                    if (edge_rem != data_flow::EdgeRemoveOption::NotRemovable) {
+                        auto src_conn = iedge->src_conn();
                         queue.push_back(&src);
                         auto edge = iedge->edge();
                         graph.edges_.erase(edge);
                         boost::remove_edge(edge, graph.graph_);
+                        if (edge_rem == data_flow::EdgeRemoveOption::RequiresUpdate) {
+                            const_cast<data_flow::DataFlowNode&>(src).update_edge_removed(src_conn);
+                        } else if (edge_rem == data_flow::EdgeRemoveOption::RemoveNodeAfter) {
+                            force_remove_set.insert(&src);
+                        }
                     } else {
                         no_in_edges = false;
                     }
@@ -1626,6 +1636,11 @@ int StructuredSDFGBuilder::clear_node(
                     graph.nodes_.erase(vertex);
                     boost::remove_vertex(vertex, graph.graph_);
                     ++removed_nodes;
+                } else if (!no_more_consumers && force_remove) {
+                    throw std::runtime_error(
+                        "Not yet supported: RemoveNodeAfter with more than 1 edge: #" +
+                        std::to_string(current->element_id())
+                    );
                 }
             }
         }

@@ -161,9 +161,9 @@ void AssertNodeDispatcher::dispatch_code(
 #endif
     // Should be in include stream. Change when include handling is reworked!
     if (this->language_extension_.language() == "C") {
-        globals_stream << "#include <assert.h>" << std::endl;
+        library_snippet_factory.add_global("#include <assert.h>");
     } else {
-        globals_stream << "#include <cassert>" << std::endl;
+        library_snippet_factory.add_global("#include <cassert>");
 #ifndef __APPLE__
         bool_cast = "static_cast<bool>";
 #endif

@@ -68,6 +68,24 @@ class StructuredSDFGBuilder;
 
 namespace data_flow {
 
+enum class EdgeRemoveOption {
+    /** You must not remove this edge unless you can guarantee the entire node will be removed **/
+    NotRemovable,
+    /**
+     * You may remove the edge without further action
+     **/
+    Trivially,
+    /**
+     * It can be removed, but the node requires a call to update itself to match the removed edge
+     **/
+    RequiresUpdate,
+    /**
+     * This is the only relevant edge of this node. If it will be removed, the entire node must be removed as well,
+     * ignoring any potential side-effect flags of the node
+     **/
+    RemoveNodeAfter
+};
+
 class DataFlowGraph;
 class Memlet;
 
@@ -153,9 +171,21 @@ public:
     /**
      * Is the edge in question removable, or will this make the node its an output on invalid?
      * Currently, some nodes may require every out connector to have at least 1 connection attached
-     * @return true, if required
+     * @return NotRemovable, NoDependencies, CustomRemove
+     *
+     * [NotRemovable] means only if the entire node can be removed, can the edge be removed
+     * [NoDependencies] means, the edge can be removed trivially, the node will work without for the remaining functions
+     * [CustomRemove] means, a call to [remove_out_edge] can have the node remove the edge itself and make necessary
      */
-    virtual bool require_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const = 0;
+    virtual EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const = 0;
+
+    /**
+     *
+     * @param out_conn a output connector, whose edge was just removed after approval via [can_remove_out_edge] ==
+     * EdgeRemoveOption::RequiresUpdate
+     * @return edge removal is completed, node is valid without edge
+     */
+    virtual bool update_edge_removed(const std::string& out_conn) { return false; }
 };
 } // namespace data_flow
 } // namespace sdfg

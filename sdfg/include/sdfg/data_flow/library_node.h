@@ -48,6 +48,7 @@
 #include <vector>
 
 #include "sdfg/data_flow/code_node.h"
+#include "sdfg/data_flow/pointer_metadata.h"
 #include "sdfg/graph/graph.h"
 #include "sdfg/symbolic/symbolic.h"
 
@@ -177,7 +178,14 @@ public:
      */
     virtual symbolic::Expression flop() const;
 
-    bool require_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const override;
+    /**
+     * Describes what a pointer is used for
+     * @param input_idx index of input that is a pointer.
+     * @return Invalid if not asked about a pointer input
+     */
+    virtual PointerAccessType pointer_access_type(int input_idx) const { return PointerUnknownAccess(); }
+
+    EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const override;
 };
 
 } // namespace data_flow

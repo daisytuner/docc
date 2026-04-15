@@ -2,8 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include "../../../../sdfg/tests/sdfg_debug_dump.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/codegen/code_generator.h"
+#include "sdfg/codegen/code_generators/cpp_code_generator.h"
 #include "sdfg/element.h"
 #include "sdfg/function.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -99,8 +102,12 @@ TEST(DataTransferMinimizationPassTest, MultiMapTest) {
     auto& out_type2 = builder.subject().type("A");
     builder.add_computational_memlet(block2, memcpy_node2, "_dst", access_node_out2, {}, out_type2);
 
+    dump_sdfg(builder.subject(), "0-before");
+
     passes::DataTransferMinimizationPass pass;
     EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1-after");
 
     EXPECT_EQ(block.dataflow().nodes().size(), 0);
     EXPECT_EQ(block2.dataflow().nodes().size(), 0);
@@ -166,8 +173,12 @@ TEST(DataTransferMinimizationPassTest, MultiMapWithLatterUseTest) {
     builder.add_computational_memlet(block3, C3, tasklet3, "_in", {symbolic::zero()});
     builder.add_computational_memlet(block3, tasklet3, "_out", B, {symbolic::zero()});
 
+    dump_sdfg(builder.subject(), "0-before");
+
     passes::DataTransferMinimizationPass pass;
     EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1-after");
 
     // Check that there is exactly two H2D and one D2H transfer for C
     int h2d_count = 0;
@@ -188,4 +199,81 @@ TEST(DataTransferMinimizationPassTest, MultiMapWithLatterUseTest) {
     }
     EXPECT_EQ(h2d_count, 0);
     EXPECT_EQ(d2h_count, 1);
+};
+
+TEST(DataTransferMinimizationPassTest, UselessMallocTest) {
+    sdfg::builder::StructuredSDFGBuilder builder("dot", sdfg::FunctionType_CPU);
+    sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
+
+    auto& root = builder.subject().root();
+
+    // Add containers
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("A", desc, true);
+    builder.add_container("__daisy_offload_A", desc);
+
+    auto& block_malloc = builder.add_block(root);
+    auto& access_node_malloc = builder.add_access(block_malloc, "A");
+
+    auto& malloc_node = builder.add_library_node<stdlib::MallocNode>(block_malloc, DebugInfo(), symbolic::integer(400));
+
+    builder.add_computational_memlet(block_malloc, malloc_node, "_ret", access_node_malloc, {}, desc);
+
+
+    auto& block_h2d = builder.add_block(root);
+
+    auto& access_node_in2 = builder.add_access(block_h2d, "A");
+    auto& access_node_out2 = builder.add_access(block_h2d, "__daisy_offload_A");
+
+    auto& memcpy_node_h2d = builder.add_library_node<cuda::CUDADataOffloadingNode>(
+        block_h2d,
+        DebugInfo(),
+        symbolic::integer(400),
+        symbolic::integer(0),
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::ALLOC
+    );
+
+    auto& in_type2 = builder.subject().type("A");
+    builder.add_computational_memlet(block_h2d, access_node_in2, memcpy_node_h2d, "_src", {}, in_type2);
+
+    auto& out_type2 = builder.subject().type("A");
+    builder.add_computational_memlet(block_h2d, memcpy_node_h2d, "_dst", access_node_out2, {}, out_type2);
+
+    auto& block_d2h = builder.add_block(root);
+    auto& access_node_in = builder.add_access(block_d2h, "__daisy_offload_A");
+    auto& access_node_out = builder.add_access(block_d2h, "A");
+
+    auto& memcpy_node_d2h = builder.add_library_node<cuda::CUDADataOffloadingNode>(
+        block_d2h,
+        DebugInfo(),
+        symbolic::integer(400),
+        symbolic::integer(0),
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::FREE
+    );
+
+    auto& in_type = builder.subject().type("A");
+    builder.add_computational_memlet(block_d2h, access_node_in, memcpy_node_d2h, "_src", {}, in_type);
+
+    auto& out_type = builder.subject().type("A");
+    builder.add_computational_memlet(block_d2h, memcpy_node_d2h, "_dst", access_node_out, {}, out_type);
+
+    dump_sdfg(builder.subject(), "0-before");
+
+    passes::DataTransferMinimizationPass pass;
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1-after");
+
+    EXPECT_EQ(block_malloc.dataflow().nodes().size(), 2);
+    EXPECT_EQ(block_h2d.dataflow().nodes().size(), 2);
+    EXPECT_EQ(block_d2h.dataflow().nodes().size(), 3);
+
+    auto instrumentation_plan = codegen::InstrumentationPlan::none(builder.subject());
+    auto arg_capture_plan = codegen::ArgCapturePlan::none(builder.subject());
+    codegen::CPPCodeGenerator
+        code_generator(builder.subject(), analysis_manager, *instrumentation_plan, *arg_capture_plan);
+    code_generator.generate();
 };

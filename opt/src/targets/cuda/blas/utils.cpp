@@ -1,5 +1,6 @@
 #include "sdfg/targets/cuda/blas/utils.h"
 
+#include "sdfg/codegen/code_snippet_factory.h"
 #include "sdfg/codegen/language_extension.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/targets/cuda/cuda.h"
@@ -9,13 +10,34 @@ namespace blas {
 
 void create_blas_handle(codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension) {
     stream << "cublasHandle_t handle;" << std::endl;
+    stream << "{" << std::endl;
+    stream.setIndent(stream.indent() + 4);
     stream << "cublasStatus_t status_create = cublasCreate(&handle);" << std::endl;
     cublas_error_checking(stream, language_extension, "status_create");
+    stream.setIndent(stream.indent() - 4);
+    stream << "}" << std::endl;
 }
 
 void destroy_blas_handle(codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension) {
+    stream << "{" << std::endl;
+    stream.setIndent(stream.indent() + 4);
     stream << "cublasStatus_t status_destroy = cublasDestroy(handle);" << std::endl;
     cublas_error_checking(stream, language_extension, "status_destroy");
+    stream.setIndent(stream.indent() - 4);
+    stream << "}" << std::endl;
+}
+
+void setup_blas_handle(codegen::CodeSnippetFactory& factory, const codegen::LanguageExtension& language_extension) {
+    {
+        codegen::PrettyPrinter setup_stream;
+        create_blas_handle(setup_stream, language_extension);
+        factory.add_setup(setup_stream.str());
+    }
+    {
+        codegen::PrettyPrinter teardown_stream;
+        destroy_blas_handle(teardown_stream, language_extension);
+        factory.add_teardown(teardown_stream.str());
+    }
 }
 
 void cublas_error_checking(

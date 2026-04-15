@@ -51,6 +51,9 @@ bool CStyleBaseCodeGenerator::as_source(const std::filesystem::path& header_path
     ofs_header.close();
 
     ofs_source << "#include \"" << header_path.filename().string() << "\"" << std::endl;
+    for (auto& snippet : library_snippet_factory_->globals_snippets()) {
+        ofs_source << snippet << std::endl;
+    }
     ofs_source << this->globals_stream_.str() << std::endl;
 
     append_function_source(ofs_source);
@@ -74,7 +77,15 @@ void CStyleBaseCodeGenerator::append_function_source(std::ofstream& ofs_source) 
         ofs_source << init_once->second.stream().str() << std::endl;
     }
 
+    for (auto& snippet : library_snippet_factory_->setup_snippets()) {
+        ofs_source << snippet << std::endl;
+    }
+
     ofs_source << this->main_stream_.str() << std::endl;
+
+    for (auto& snippet : library_snippet_factory_->teardown_snippets()) {
+        ofs_source << snippet << std::endl;
+    }
 
     auto deinit_once = library_snippet_factory_->find(CODE_SNIPPET_DEINIT_ONCE);
     if (deinit_once != library_snippet_factory_->snippets().end()) {

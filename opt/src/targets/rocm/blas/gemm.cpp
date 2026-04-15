@@ -37,8 +37,8 @@ void GEMMNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
 ) {
     auto& gemm_node = static_cast<const math::blas::GEMMNode&>(this->node_);
 
-    globals_stream << "#include <hip/hip_runtime.h>" << std::endl;
-    globals_stream << "#include <hipblas/hipblas.h>" << std::endl;
+    library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
+    library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
 
     std::string type, type2;
     switch (gemm_node.precision()) {
@@ -81,7 +81,7 @@ void GEMMNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
     stream << "err_hip = hipMemcpy(dC, __C, " << size_C << ", hipMemcpyHostToDevice);" << std::endl;
     rocm_error_checking(stream, this->language_extension_, "err_hip");
 
-    create_blas_handle(stream, this->language_extension_);
+    setup_blas_handle(library_snippet_factory, this->language_extension_);
 
     generate_kernel_gemm(stream, this->language_extension_, gemm_node);
 
@@ -94,8 +94,6 @@ void GEMMNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
     rocm_error_checking(stream, this->language_extension_, "err_hip");
     stream << "err_hip = hipFree(dC);" << std::endl;
     rocm_error_checking(stream, this->language_extension_, "err_hip");
-
-    destroy_blas_handle(stream, this->language_extension_);
 
     remove_guard_clause(stream);
 }
@@ -115,16 +113,15 @@ void GEMMNodeDispatcher_ROCMBLASWithoutTransfers::dispatch_code(
 ) {
     auto& gemm_node = static_cast<const math::blas::GEMMNode&>(this->node_);
 
-    globals_stream << "#include <hip/hip_runtime.h>" << std::endl;
-    globals_stream << "#include <hipblas/hipblas.h>" << std::endl;
+    library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
+    library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
 
     add_guard_clause(stream, this->language_extension_, gemm_node);
 
-    create_blas_handle(stream, this->language_extension_);
+    setup_blas_handle(library_snippet_factory, this->language_extension_);
 
     generate_kernel_gemm(stream, this->language_extension_, gemm_node);
 
-    destroy_blas_handle(stream, this->language_extension_);
     remove_guard_clause(stream);
 }
 

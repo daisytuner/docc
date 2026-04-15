@@ -7,12 +7,12 @@ namespace passes {
 
 class DeadDataElimination : public Pass {
 private:
-    bool permissive_;
+    bool legacy_removals_;
 
 public:
     DeadDataElimination();
 
-    DeadDataElimination(bool permissive);
+    DeadDataElimination(bool legacy_removals);
 
     virtual std::string name() override;
 

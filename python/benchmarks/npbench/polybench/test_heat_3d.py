@@ -69,22 +69,22 @@ def test_heat_3d(target):
         verifier = SDFGVerification(
             verification={
                 "CUDA": 20,
-                "CUDAOffloading": 40,
+                "CUDAOffloading": 32,
                 "MAP": 62,
                 "SEQUENTIAL": 42,
                 "FOR": 67,
-                "Malloc": 30,
+                "Malloc": 22,
             }
         )
     else:  # rocm
         verifier = SDFGVerification(
             verification={
                 "ROCM": 20,
-                "ROCMOffloading": 40,
+                "ROCMOffloading": 32,
                 "MAP": 62,
                 "SEQUENTIAL": 42,
                 "FOR": 67,
-                "Malloc": 30,
+                "Malloc": 22,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

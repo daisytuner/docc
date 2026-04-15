@@ -60,9 +60,9 @@ def test_jacobi_2d(target):
             verification={
                 "CUDA": 24,
                 "MAP": 24,
-                "CUDAOffloading": 50,
+                "CUDAOffloading": 40,
                 "FOR": 25,
-                "Malloc": 10,
+                "Malloc": 0,
             }
         )
     else:  # rocm
@@ -70,9 +70,9 @@ def test_jacobi_2d(target):
             verification={
                 "ROCM": 24,
                 "MAP": 24,
-                "ROCMOffloading": 50,
+                "ROCMOffloading": 40,
                 "FOR": 25,
-                "Malloc": 10,
+                "Malloc": 0,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

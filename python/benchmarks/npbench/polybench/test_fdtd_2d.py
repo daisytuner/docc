@@ -59,9 +59,9 @@ def test_fdtd_2d(target):
             verification={
                 "CUDA": 25,
                 "MAP": 25,
-                "CUDAOffloading": 51,
+                "CUDAOffloading": 42,
                 "FOR": 26,
-                "Malloc": 9,
+                "Malloc": 0,
             }
         )
     else:  # rocm
@@ -69,9 +69,9 @@ def test_fdtd_2d(target):
             verification={
                 "ROCM": 25,
                 "MAP": 25,
-                "ROCMOffloading": 51,
+                "ROCMOffloading": 42,
                 "FOR": 26,
-                "Malloc": 9,
+                "Malloc": 0,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

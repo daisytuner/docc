@@ -8,6 +8,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(ISL REQUIRED IMPORTED_TARGET isl)
 
 set(SOURCE_FILES
+    src/analysis/data_transfer_elimination_analysis.cpp
     src/passes/einsum.cpp
     src/passes/normalization/loop_normal_form.cpp
     src/passes/normalization/perfect_loop_distribution.cpp

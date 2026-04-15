@@ -317,9 +317,15 @@ std::string CMathNode::toStr() const {
     return LibraryNode::toStr() + "(" + get_cmath_intrinsic_name(this->function_, this->primitive_type_) + ")";
 }
 
-bool CMathNode::require_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {
-    // CMathNode always requires its output memlet to be present, as it represents a computation that produces a result.
-    return false;
+data_flow::EdgeRemoveOption CMathNode::
+    can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {
+    if (graph.out_edges_for_connector(*this, memlet->src_conn()).size() > 1) {
+        return data_flow::EdgeRemoveOption::Trivially;
+    } else {
+        // trick to allow removal of Tasklets, without having general mark-and-sweep logic to checkl tha that all
+        // outputs are
+        return data_flow::EdgeRemoveOption::RemoveNodeAfter;
+    }
 }
 
 nlohmann::json CMathNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {

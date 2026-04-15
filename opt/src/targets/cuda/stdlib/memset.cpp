@@ -18,7 +18,7 @@ void MemsetNodeDispatcher_CUDAWithTransfers::dispatch_code(
 ) {
     auto& node = static_cast<const sdfg::stdlib::MemsetNode&>(node_);
 
-    globals_stream << "#include <cuda.h>" << std::endl;
+    library_snippet_factory.add_global("#include <cuda.h>");
 
     stream << "cudaError_t err_cuda;" << std::endl;
 
@@ -55,7 +55,7 @@ void MemsetNodeDispatcher_CUDAWithoutTransfers::dispatch_code(
 ) {
     auto& node = static_cast<const sdfg::stdlib::MemsetNode&>(node_);
 
-    globals_stream << "#include <cuda.h>" << std::endl;
+    library_snippet_factory.add_global("#include <cuda.h>");
 
     stream << "cudaError_t err_cuda;" << std::endl;
     stream << "err_cuda = cudaMemset(" << node.outputs().at(0) << ", " << language_extension_.expression(node.value())
