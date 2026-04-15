@@ -3,6 +3,7 @@
 #include "sdfg/data_flow/data_flow_node.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/types/scalar.h"
 
 namespace sdfg::math::tensor {
 
@@ -42,11 +43,13 @@ std::vector<MapDimension> create_maps(
     std::vector<MapDimension> result;
     result.reserve(shape.size());
 
+    types::Scalar indvar_type(types::PrimitiveType::Int64);
     structured_control_flow::Sequence* current_seq = &parent_seq;
 
     for (size_t i = 0; i < shape.size(); ++i) {
         // Create induction variable for this dimension
-        std::string loop_var_name = "i" + std::to_string(i);
+        std::string loop_var_name = builder.find_new_name("i" + std::to_string(i));
+        builder.add_container(loop_var_name, indvar_type);
         auto loop_var = symbolic::symbol(loop_var_name);
 
         // Create the map: for (i = 0; i < dim_size; i++)
