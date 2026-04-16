@@ -323,6 +323,9 @@ def run_benchmark(setup_func, name):
     parser.add_argument("--target", type=str, default="none")
     parser.add_argument("--n_runs", type=int, default=31)
     parser.add_argument("--energy", action="store_true", help="Measure CPU+GPU energy")
+    parser.add_argument(
+        "--single", action="store_true", help="Single run with per-batch timing"
+    )
     bm_args = parser.parse_args()
 
     torch.backends.fp32_precision = "ieee"
@@ -385,21 +388,57 @@ def run_benchmark(setup_func, name):
                 f"Energy median: CPU pkg={cpu_median:.2f}J  GPU={gpu_median:.2f}J  total={cpu_median+gpu_median:.2f}J"
             )
 
+    def _run_single(mode_name, compile_fn, device=None):
+        gpu_be = _gpu_backend_for_mode(mode_name) if bm_args.energy else None
+        ctx = (
+            EnergyMeasurement(gpu_backend=gpu_be)
+            if bm_args.energy
+            else contextlib.nullcontext()
+        )
+        with ctx as em:
+            with torch.no_grad():
+                program = compile_fn()
+                program(
+                    batches[0][0].to(device) if device is not None else batches[0][0]
+                )  # warmup
+                batch_times = []
+                i = 0
+                for images, _ in batches:
+                    t0 = time.time()
+                    if device is not None:
+                        images = images.to(device)
+                    program(images)
+                    t1 = time.time()
+                    batch_times.append(t1 - t0)
+                    i += 1
+                    print(f"{i/len(batches)*100:.2f}%")
+        total = sum(batch_times)
+        avg_batch = total / len(batch_times)
+        print(
+            f"{name} {mode_name} total: {total:.6f}s  avg/batch: {avg_batch*1000:.3f}ms ({len(batch_times)} batches)",
+            end="",
+        )
+        if bm_args.energy and em is not None:
+            print(f"  | {em.report()}", end="")
+        print()
+
+    run = _run_single if bm_args.single else _run_mode
+
     if bm_args.torch:
-        _run_mode("torch", lambda: torch.compile(model))
+        run("torch", lambda: torch.compile(model))
 
     if bm_args.torch_gpu:
         device = torch.device("cuda")
-        _run_mode("torch-gpu", lambda: torch.compile(model.to(device)), device=device)
+        run("torch-gpu", lambda: torch.compile(model.to(device)), device=device)
 
     if bm_args.torch_rocm:
         device = torch.device("cuda")  # ROCm uses 'cuda' device via HIP
-        _run_mode("torch-rocm", lambda: torch.compile(model.to(device)), device=device)
+        run("torch-rocm", lambda: torch.compile(model.to(device)), device=device)
 
     if bm_args.docc:
         print(f"Running DOCC benchmark with target={bm_args.target}...")
         docc.torch.set_backend_options(target=bm_args.target, category="server")
-        _run_mode("docc", lambda: torch.compile(model, backend="docc"))
+        run("docc", lambda: torch.compile(model, backend="docc"))
 
 
 if __name__ == "__main__":
