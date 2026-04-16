@@ -11,6 +11,7 @@
 #include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/targets/rocm/blas/dot.h"
 #include "sdfg/targets/rocm/blas/gemm.h"
+#include "sdfg/targets/rocm/blas/gemm_handtuned.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm_map_dispatcher.h"
@@ -89,18 +90,31 @@ inline void register_rocm_plugin() {
         }
     );
     // GEMM - ROCMBLAS without data transfers
+    // codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+    //     math::blas::LibraryNodeType_GEMM.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
+    //     [](codegen::LanguageExtension& language_extension,
+    //        const Function& function,
+    //        const data_flow::DataFlowGraph& data_flow_graph,
+    //        const data_flow::LibraryNode& node) {
+    //         return std::make_unique<blas::GEMMNodeDispatcher_ROCMBLASWithoutTransfers>(
+    //             language_extension, function, data_flow_graph, dynamic_cast<const math::blas::GEMMNode&>(node)
+    //         );
+    //     }
+    // );
+
+
+    // GEMM - ROCM hand-tuned kernel (data already on GPU)
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
         math::blas::LibraryNodeType_GEMM.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<blas::GEMMNodeDispatcher_ROCMBLASWithoutTransfers>(
+            return std::make_unique<blas::GEMMNodeDispatcher_ROCMHandTuned>(
                 language_extension, function, data_flow_graph, dynamic_cast<const math::blas::GEMMNode&>(node)
             );
         }
     );
-
 
     // Memset - ROCM with data transfers
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(

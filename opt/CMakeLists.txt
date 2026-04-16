@@ -48,6 +48,7 @@ set(SOURCE_FILES
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/rocm/blas/dot.cpp
     src/targets/rocm/blas/gemm.cpp
+    src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/utils.cpp
     src/targets/rocm/stdlib/memset.cpp
     src/targets/rocm/rocm.cpp

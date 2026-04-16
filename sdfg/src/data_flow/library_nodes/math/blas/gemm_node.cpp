@@ -102,7 +102,7 @@ bool GEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     int index = parent.index(block);
     auto& transition = parent.at(index).second;
 
-    if (trans_a_ != BLAS_Transpose::No || trans_b_ != BLAS_Transpose::No) {
+    if (trans_a_ == BLAS_Transpose::ConjTrans || trans_b_ == BLAS_Transpose::ConjTrans) {
         return false;
     }
 
@@ -240,11 +240,20 @@ bool GEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     auto& sum_out = builder.add_access(code_block, sum_var, block.debug_info());
     builder.add_computational_memlet(code_block, sum_in, core_fma, "_in3", {}, block.debug_info());
 
-    symbolic::Expression a_idx = symbolic::add(symbolic::mul(lda(), new_subset[0]), new_subset[2]);
+    // Row-major indexing: address = ld * row + col
+    // No transpose: A is m×k, access A[i, k] => lda*i + k
+    // Transpose:    A is k×m stored, access A[k, i] => lda*k + i
+    symbolic::Expression a_idx = (trans_a_ == BLAS_Transpose::Trans)
+                                     ? symbolic::add(symbolic::mul(lda(), new_subset[2]), new_subset[0])
+                                     : symbolic::add(symbolic::mul(lda(), new_subset[0]), new_subset[2]);
     builder.add_computational_memlet(
         code_block, input_node_a_new, core_fma, "_in1", {a_idx}, iedge_a->base_type(), iedge_a->debug_info()
     );
-    symbolic::Expression b_idx = symbolic::add(symbolic::mul(ldb(), new_subset[2]), new_subset[1]);
+    // No transpose: B is k×n, access B[k, j] => ldb*k + j
+    // Transpose:    B is n×k stored, access B[j, k] => ldb*j + k
+    symbolic::Expression b_idx = (trans_b_ == BLAS_Transpose::Trans)
+                                     ? symbolic::add(symbolic::mul(ldb(), new_subset[1]), new_subset[2])
+                                     : symbolic::add(symbolic::mul(ldb(), new_subset[2]), new_subset[1]);
     builder.add_computational_memlet(
         code_block, input_node_b_new, core_fma, "_in2", {b_idx}, iedge_b->base_type(), iedge_b->debug_info()
     );
