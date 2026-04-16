@@ -403,6 +403,7 @@ def run_benchmark(setup_func, name):
                 )  # warmup
                 batch_times = []
                 i = 0
+                print("### Start running batches...")
                 for images, _ in batches:
                     t0 = time.time()
                     if device is not None:
