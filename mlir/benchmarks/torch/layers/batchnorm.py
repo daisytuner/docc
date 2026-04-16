@@ -17,7 +17,7 @@ class BatchNorm2dNet(nn.Module):
 def setup():
     model = BatchNorm2dNet(256)
     model.eval()
-    x = torch.randn(64, 256, 56, 56)
+    x = torch.randn(32, 256, 56, 56)
     return model, x
 
 

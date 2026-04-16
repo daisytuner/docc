@@ -18,7 +18,7 @@ class Conv2dNet(nn.Module):
 # batch=32, in_channels=64, out_channels=128, kernel=3, height=56, width=56
 def setup():
     model = Conv2dNet(64, 128, kernel_size=3)
-    x = torch.randn(32, 64, 56, 56)
+    x = torch.randn(32, 64, 58, 58)
     return model, x
 
 
