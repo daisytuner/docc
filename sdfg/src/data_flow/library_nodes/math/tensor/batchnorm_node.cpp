@@ -144,7 +144,7 @@ create_temp_var(builder::StructuredSDFGBuilder& builder, const std::string& pref
 
 bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // CPU implementation of batchnorm:
-    if (false) {
+    if (true) {
         auto& dataflow = this->get_parent();
         auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
 
