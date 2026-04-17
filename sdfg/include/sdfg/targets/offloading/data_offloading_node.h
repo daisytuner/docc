@@ -108,6 +108,7 @@ public:
     void remove_free();
 
     void remove_h2d();
+    void remove_d2h();
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 

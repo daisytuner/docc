@@ -46,10 +46,42 @@ bool DataTransferMinimizationPass::eliminate_malloc_first_transfer(
     auto* h2d_block = dynamic_cast<structured_control_flow::Block*>(copy_in.offload_node->get_parent().get_parent());
     builder.remove_memlet(*h2d_block, *copy_in.host_access);
     builder.remove_node(*h2d_block, *copy_in.host_data);
-    copy_in.remove_host_side();
+    copy_in.remove_h2d_parts();
     copy_in.offload_node->remove_h2d();
 
     return true;
+}
+
+bool DataTransferMinimizationPass::eliminate_redundant_d2h(
+    builder::StructuredSDFGBuilder& builder, analysis::OffloadHolder& h2d, analysis::OffloadHolder& d2h
+) {
+    // Get all relevant information
+    std::string copy_out_device_container = d2h.dev_data->data();
+    DebugInfo copy_out_dst_debinfo = d2h.dev_data->debug_info();
+
+    // leave the malloc itself, because we have not proven yet that there is no more d2H transfer that needs it
+    // DDE needs to be able to find it
+
+    auto* d2h_block = dynamic_cast<structured_control_flow::Block*>(d2h.offload_node->get_parent().get_parent());
+    if (d2h.offload_node->is_d2h()) {
+        if (d2h.offload_node->is_free()) {
+            std::string out_conn = d2h.host_access->src_conn();
+            auto access_type = d2h.host_access->base_type().clone();
+            builder.remove_memlet(*d2h_block, *d2h.host_access);
+            builder.remove_node(*d2h_block, *d2h.host_data);
+            d2h.offload_node->remove_d2h();
+            auto& free_write = builder.add_access(*d2h_block, copy_out_device_container, copy_out_dst_debinfo);
+            builder.add_computational_memlet(
+                *d2h_block, *d2h.offload_node, out_conn, free_write, {}, *access_type, copy_out_dst_debinfo
+            );
+        } else { // remove it entirely
+            builder.clear_code_node_legacy(*d2h_block, *d2h.offload_node);
+        }
+        d2h.remove_d2h_parts();
+        return true;
+    } else {
+        return false;
+    }
 }
 
 bool DataTransferMinimizationPass::eliminate_transfer_pair(
@@ -111,8 +143,7 @@ bool DataTransferMinimizationPass::
 
     int removed = 0;
 
-    auto& useless_mallocs = transfer_analysis.empty_malloc_candidates();
-    for (auto& [malloc_cand, first_h2d] : useless_mallocs) {
+    for (auto& [malloc_cand, first_h2d] : transfer_analysis.empty_malloc_candidates()) {
         auto& malloc_holder = *malloc_cand.offload;
 
         DEBUG_PRINTLN(
@@ -130,43 +161,39 @@ bool DataTransferMinimizationPass::
         }
     }
 
-    auto& transfer_reuse_candidates = transfer_analysis.transfer_reuse_candidates();
-    auto& users = analysis_manager.get<analysis::Users>();
+    for (auto& [h2d_cand, redundant_d2h] : transfer_analysis.redundant_d2h_candidates()) {
+        auto& h2d_holder = *h2d_cand.offload;
 
-    for (auto& candidate : transfer_reuse_candidates) {
+        if (h2d_holder.updates_on_dev) {
+            DEBUG_PRINTLN(
+                "  Elim h2d: " << "#" << h2d_holder.offload_node->element_id() << " -> " << h2d_holder.host_data->data()
+                               << " -> " << h2d_holder.dev_data->data() << " / "
+                               << "clean d2h: #" << redundant_d2h.offload_node->element_id() << " "
+                               << redundant_d2h.dev_data->data() << " -> " << redundant_d2h.host_data->data()
+            );
+            bool success = eliminate_redundant_d2h(builder, h2d_holder, redundant_d2h);
+
+            if (success) {
+                ++removed;
+            }
+        }
+    }
+
+    for (auto& candidate : transfer_analysis.transfer_reuse_candidates()) {
         auto reads = candidate.first.read_count;
         auto& copy_out = *candidate.first.offload;
         auto& copy_in = candidate.second;
         auto& copy_in_container = copy_in.host_data->data();
 
-        // copy from legacy version as hack: checking for users after the copy_in container (because current analysis
-        // stops looking at that point)
-        // TODO unsafe: this does not cover all ways that still need the data on host. Safe is: only manage device-side
-        // things here and let dead-data find the unused host stuff
-        auto* read = users.get_user(
-            copy_in.host_data->data(), const_cast<data_flow::AccessNode*>(copy_in.host_data), analysis::Use::READ
+        DEBUG_PRINTLN(
+            "  Elim hd2: #" << copy_out.offload_node->element_id() << " " << copy_out.dev_data->data() << " -> "
+                            << (copy_out.host_data ? copy_out.host_data->data() : "-") << " / "
+                            << "d2h: #" << copy_in.offload_node->element_id() << " "
+                            << (copy_in.host_data ? copy_in.host_data->data() : "-") << " -> "
+                            << copy_in.dev_data->data()
         );
 
-        for (auto* after_use : users.all_uses_after(*read)) {
-            if (after_use->container() == copy_in_container && after_use->use() == analysis::Use::READ &&
-                after_use != read) {
-                ++reads;
-            }
-        }
-
-#ifndef NDEBUG
-        std::cerr << "  Elim transfer "
-                  << "copy-out: #" << copy_out.offload_node->element_id() << " " << copy_out.dev_data->data() << " -> "
-                  << (copy_out.host_data ? copy_out.host_data->data() : "-") << " / ";
-        if (reads) {
-            std::cerr << reads << " reads / ";
-        }
-        std::cerr << "copy-in: #" << copy_in.offload_node->element_id() << " "
-                  << (copy_in.host_data ? copy_in.host_data->data() : "-") << " -> " << copy_in.dev_data->data()
-                  << std::endl;
-#endif
-
-        bool success = eliminate_transfer_pair(builder, copy_out, copy_in, reads == 0);
+        bool success = eliminate_transfer_pair(builder, copy_out, copy_in, false);
 
         if (success) {
             ++removed;

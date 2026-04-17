@@ -67,12 +67,12 @@ TEST(DataTransferMinimizationPassTest, MultiMapTest) {
     builder.add_container("A", desc, true);
     builder.add_container("__daisy_offload_A", desc);
 
-    auto& block = builder.add_block(root);
-    auto& access_node_in = builder.add_access(block, "__daisy_offload_A");
-    auto& access_node_out = builder.add_access(block, "A");
+    auto& block_d2h = builder.add_block(root);
+    auto& access_node_in = builder.add_access(block_d2h, "__daisy_offload_A");
+    auto& access_node_out = builder.add_access(block_d2h, "A");
 
-    auto& memcpy_node = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-        block,
+    auto& memcpy_d2h = builder.add_library_node<cuda::CUDADataOffloadingNode>(
+        block_d2h,
         DebugInfo(),
         symbolic::integer(400),
         symbolic::integer(0),
@@ -81,18 +81,18 @@ TEST(DataTransferMinimizationPassTest, MultiMapTest) {
     );
 
     auto& in_type = builder.subject().type("A");
-    builder.add_computational_memlet(block, access_node_in, memcpy_node, "_src", {}, in_type);
+    builder.add_computational_memlet(block_d2h, access_node_in, memcpy_d2h, "_src", {}, in_type);
 
     auto& out_type = builder.subject().type("A");
-    builder.add_computational_memlet(block, memcpy_node, "_dst", access_node_out, {}, out_type);
+    builder.add_computational_memlet(block_d2h, memcpy_d2h, "_dst", access_node_out, {}, out_type);
 
-    auto& block2 = builder.add_block(root);
+    auto& block_h2d = builder.add_block(root);
 
-    auto& access_node_in2 = builder.add_access(block2, "A");
-    auto& access_node_out2 = builder.add_access(block2, "__daisy_offload_A");
+    auto& access_node_in2 = builder.add_access(block_h2d, "A");
+    auto& access_node_out2 = builder.add_access(block_h2d, "__daisy_offload_A");
 
-    auto& memcpy_node2 = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-        block2,
+    auto& memcpy_h2d = builder.add_library_node<cuda::CUDADataOffloadingNode>(
+        block_h2d,
         DebugInfo(),
         symbolic::integer(400),
         symbolic::integer(0),
@@ -101,10 +101,10 @@ TEST(DataTransferMinimizationPassTest, MultiMapTest) {
     );
 
     auto& in_type2 = builder.subject().type("A");
-    builder.add_computational_memlet(block2, access_node_in2, memcpy_node2, "_src", {}, in_type2);
+    builder.add_computational_memlet(block_h2d, access_node_in2, memcpy_h2d, "_src", {}, in_type2);
 
     auto& out_type2 = builder.subject().type("A");
-    builder.add_computational_memlet(block2, memcpy_node2, "_dst", access_node_out2, {}, out_type2);
+    builder.add_computational_memlet(block_h2d, memcpy_h2d, "_dst", access_node_out2, {}, out_type2);
 
     dump_sdfg(builder.subject(), "0-before");
 
@@ -113,8 +113,16 @@ TEST(DataTransferMinimizationPassTest, MultiMapTest) {
 
     dump_sdfg(builder.subject(), "1-after");
 
-    EXPECT_EQ(block.dataflow().nodes().size(), 0);
-    EXPECT_EQ(block2.dataflow().nodes().size(), 0);
+    EXPECT_EQ(block_d2h.dataflow().nodes().size(), 3);
+    EXPECT_EQ(
+        dynamic_cast<const cuda::CUDADataOffloadingNode&>(memcpy_d2h).transfer_direction(),
+        offloading::DataTransferDirection::D2H
+    );
+    EXPECT_EQ(
+        dynamic_cast<const cuda::CUDADataOffloadingNode&>(memcpy_d2h).buffer_lifecycle(),
+        offloading::BufferLifecycle::NO_CHANGE
+    );
+    EXPECT_EQ(block_h2d.dataflow().nodes().size(), 0);
 };
 
 TEST(DataTransferMinimizationPassTest, MultiMapWithLatterUseTest) {
@@ -466,22 +474,14 @@ TEST(DataTransferMinimizationPassTest, ReadOnlyDataReuseTest) {
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_h2d).buffer_lifecycle(),
         offloading::BufferLifecycle::ALLOC
     );
-    EXPECT_EQ(block_d2h.dataflow().nodes().size(), 3);
-    EXPECT_EQ(
-        dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_d2h).transfer_direction(),
-        offloading::DataTransferDirection::D2H
-    );
-    EXPECT_EQ(
-        dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_d2h).buffer_lifecycle(),
-        offloading::BufferLifecycle::NO_CHANGE
-    );
+    EXPECT_EQ(block_d2h.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_h2d_reuse.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_d2h_reuse.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_h2d_reuse2.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_d2h_reuse2.dataflow().nodes().size(), 3);
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse2_d2h).transfer_direction(),
-        offloading::DataTransferDirection::D2H
+        offloading::DataTransferDirection::NONE
     );
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse2_d2h).buffer_lifecycle(),
@@ -502,22 +502,14 @@ TEST(DataTransferMinimizationPassTest, ReadOnlyDataReuseTest) {
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_h2d).buffer_lifecycle(),
         offloading::BufferLifecycle::ALLOC
     );
-    EXPECT_EQ(block_d2h.dataflow().nodes().size(), 3);
-    EXPECT_EQ(
-        dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_d2h).transfer_direction(),
-        offloading::DataTransferDirection::D2H
-    );
-    EXPECT_EQ(
-        dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_d2h).buffer_lifecycle(),
-        offloading::BufferLifecycle::NO_CHANGE
-    );
+    EXPECT_EQ(block_d2h.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_h2d_reuse.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_d2h_reuse.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_h2d_reuse2.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_d2h_reuse2.dataflow().nodes().size(), 3);
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse2_d2h).transfer_direction(),
-        offloading::DataTransferDirection::D2H
+        offloading::DataTransferDirection::NONE
     );
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse2_d2h).buffer_lifecycle(),
@@ -706,7 +698,7 @@ TEST(DataTransferMinimizationPassTest, ReadOnlyDataPureDeviceTest) {
     EXPECT_EQ(block_d2h_reuse2.dataflow().nodes().size(), 3);
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse2_d2h).transfer_direction(),
-        offloading::DataTransferDirection::D2H
+        offloading::DataTransferDirection::NONE
     );
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse2_d2h).buffer_lifecycle(),
@@ -731,7 +723,7 @@ TEST(DataTransferMinimizationPassTest, ReadOnlyDataPureDeviceTest) {
     EXPECT_EQ(block_h2d_reuse.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_d2h_reuse.dataflow().nodes().size(), 0);
     EXPECT_EQ(block_h2d_reuse2.dataflow().nodes().size(), 0);
-    EXPECT_EQ(block_d2h_reuse2.dataflow().nodes().size(), 2);
+    EXPECT_EQ(block_d2h_reuse2.dataflow().nodes().size(), 3);
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse2_d2h).transfer_direction(),
         offloading::DataTransferDirection::NONE
@@ -919,11 +911,149 @@ TEST(DataTransferMinimizationPassTest, NotReadOnlyDataReuseTest) {
     EXPECT_EQ(block_d2h_reuse.dataflow().nodes().size(), 3);
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse_d2h).transfer_direction(),
-        offloading::DataTransferDirection::D2H
+        offloading::DataTransferDirection::NONE
     );
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse_d2h).buffer_lifecycle(),
         offloading::BufferLifecycle::FREE
     );
     EXPECT_EQ(block_free.dataflow().nodes().size(), 3);
+};
+
+TEST(DataTransferMinimizationPassTest, RemoveRedundantD2HTest) {
+    sdfg::builder::StructuredSDFGBuilder builder("dot", sdfg::FunctionType_CPU);
+    sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
+
+    auto& root = builder.subject().root();
+
+    // Add containers
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("A", desc, true);
+    builder.add_container("__daisy_offload_A", desc);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
+    auto indvar = symbolic::symbol("i");
+
+    auto device_id = symbolic::integer(0);
+    auto arr_size = symbolic::integer(400);
+
+    // --- H2D initial
+
+    auto& block_h2d = builder.add_block(root);
+
+    auto& access_in_h2d = builder.add_access(block_h2d, "A");
+    auto& access_out_h2d = builder.add_access(block_h2d, "__daisy_offload_A");
+
+    auto& memcpy_h2d = builder.add_library_node<cuda::CUDADataOffloadingNode>(
+        block_h2d,
+        DebugInfo(),
+        arr_size,
+        device_id,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::ALLOC
+    );
+
+    builder.add_computational_memlet(block_h2d, access_in_h2d, memcpy_h2d, "_src", {}, desc);
+    builder.add_computational_memlet(block_h2d, memcpy_h2d, "_dst", access_out_h2d, {}, desc);
+
+    // --- D2H initial
+
+    auto& block_d2h = builder.add_block(root);
+    auto& access_in_d2h = builder.add_access(block_d2h, "__daisy_offload_A");
+    auto& access_out_d2h = builder.add_access(block_d2h, "A");
+
+    auto& memcpy_d2h = builder.add_library_node<cuda::CUDADataOffloadingNode>(
+        block_d2h,
+        DebugInfo(),
+        arr_size,
+        device_id,
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::FREE
+    );
+
+    builder.add_computational_memlet(block_d2h, access_in_d2h, memcpy_d2h, "_src", {}, desc);
+    builder.add_computational_memlet(block_d2h, memcpy_d2h, "_dst", access_out_d2h, {}, desc);
+
+    // --- H2D reuse
+
+    auto& block_h2d_reuse = builder.add_block(root);
+
+    auto& access_in_h2d_reuse = builder.add_access(block_h2d_reuse, "A");
+    auto& access_out_h2d_reuse = builder.add_access(block_h2d_reuse, "__daisy_offload_A");
+
+    auto& memcpy_h2d_reuse = builder.add_library_node<cuda::CUDADataOffloadingNode>(
+        block_h2d_reuse,
+        DebugInfo(),
+        arr_size,
+        device_id,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::ALLOC
+    );
+
+    builder.add_computational_memlet(block_h2d_reuse, access_in_h2d_reuse, memcpy_h2d_reuse, "_src", {}, desc);
+    builder.add_computational_memlet(block_h2d_reuse, memcpy_h2d_reuse, "_dst", access_out_h2d_reuse, {}, desc);
+
+    // --- modify on device loop
+    auto& map_modify = builder.add_map(
+        root,
+        indvar,
+        symbolic::Lt(indvar, arr_size),
+        symbolic::zero(),
+        symbolic::add(indvar, symbolic::one()),
+        cuda::ScheduleType_CUDA::create()
+    );
+    auto& block_modify = builder.add_block(map_modify.root());
+
+    auto& access_modify_in = builder.add_access(block_modify, "__daisy_offload_A");
+    auto& const_1 = builder.add_constant(block_modify, "1.0", base_desc);
+    auto& access_modify_out = builder.add_access(block_modify, "__daisy_offload_A");
+    auto& modify_add = builder.add_tasklet(block_modify, data_flow::fp_add, "out", {"a", "b"}, {});
+    builder.add_computational_memlet(block_modify, access_modify_in, modify_add, "a", {indvar}, desc);
+    builder.add_computational_memlet(block_modify, const_1, modify_add, "b", {}, base_desc);
+    builder.add_computational_memlet(block_modify, modify_add, "out", access_modify_out, {indvar}, desc);
+
+    // --- D2H reuse
+
+    auto& block_d2h_reuse = builder.add_block(root);
+    auto& access_in_d2h_reuse = builder.add_access(block_d2h_reuse, "__daisy_offload_A");
+    auto& access_out_d2h_reuse = builder.add_access(block_d2h_reuse, "A");
+
+    auto& memcpy_d2h_reuse = builder.add_library_node<cuda::CUDADataOffloadingNode>(
+        block_d2h_reuse,
+        DebugInfo(),
+        arr_size,
+        device_id,
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::FREE
+    );
+
+    builder.add_computational_memlet(block_d2h_reuse, access_in_d2h_reuse, memcpy_d2h_reuse, "_src", {}, desc);
+    builder.add_computational_memlet(block_d2h_reuse, memcpy_d2h_reuse, "_dst", access_out_d2h_reuse, {}, desc);
+
+    dump_sdfg(builder.subject(), "0-before");
+
+    passes::DataTransferMinimizationPass pass;
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1-after");
+
+    EXPECT_EQ(block_h2d.dataflow().nodes().size(), 3);
+    EXPECT_EQ(
+        dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_h2d).transfer_direction(),
+        offloading::DataTransferDirection::H2D
+    );
+    EXPECT_EQ(
+        dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_h2d).buffer_lifecycle(), offloading::BufferLifecycle::ALLOC
+    );
+    EXPECT_EQ(block_d2h.dataflow().nodes().size(), 0);
+    EXPECT_EQ(block_h2d_reuse.dataflow().nodes().size(), 0);
+    EXPECT_EQ(block_d2h_reuse.dataflow().nodes().size(), 3);
+    EXPECT_EQ(
+        dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_d2h_reuse).transfer_direction(),
+        offloading::DataTransferDirection::D2H
+    );
+    EXPECT_EQ(
+        dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_d2h_reuse).buffer_lifecycle(),
+        offloading::BufferLifecycle::FREE
+    );
 };

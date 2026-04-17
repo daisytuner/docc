@@ -6,9 +6,16 @@
 
 namespace sdfg::analysis {
 
-void OffloadHolder::remove_host_side() {
+void OffloadHolder::remove_h2d_parts() {
     host_data = nullptr;
     host_access = nullptr;
+    updates_on_dev = false;
+}
+
+void OffloadHolder::remove_d2h_parts() {
+    host_data = nullptr;
+    host_access = nullptr;
+    updates_on_host = false;
 }
 
 OffloadState::OffloadState(DataTransferEliminationCandidateCollector& collector) : collector_(collector) {}
@@ -78,9 +85,17 @@ std::pair<OffloadState::KillingType, OffloadHolder*> OffloadState::find_killing_
 
             if (dev_ptr_matches) {
                 // D_ALLOC -> D_FREE is the expected case, but kill for any match
-                bool is_elim_candidate = holder.offload_node->is_compatible_with(*entry_holder.offload_node) &&
-                                         entry_holder.ends_dev_lifetime && !entry_holder.updates_on_host;
-                return {is_elim_candidate ? KillingType::DeviceFree : KillingType::Basic, &entry_holder};
+                KillingType killType = KillingType::Basic;
+                if (holder.offload_node->is_compatible_with(*entry_holder.offload_node) &&
+                    entry_holder.ends_dev_lifetime) {
+                    if (entry_holder.updates_on_host) {
+                        killType = KillingType::RedundantD2H;
+                    } else {
+                        killType = KillingType::DeviceCleanFree;
+                    }
+                }
+
+                return {killType, &entry_holder};
             }
         }
     }
@@ -247,7 +262,7 @@ void OffloadState::apply_kills_and_changes(ExposedType& exposed) const {
                 collector_.found_transfer_reuse_pair(exposedOffload, *killing_entry);
             } else if (kill_type == KillingType::EmptyHostMalloc) {
                 collector_.found_empty_host_malloc(exposedOffload, *killing_entry);
-            } else if (kill_type == KillingType::DeviceFree) {
+            } else if (kill_type == KillingType::DeviceCleanFree) {
                 // we have a on-device-alloc that survived without kills to the on-device-free
                 // -> promote this to a host-relevant D2H point, that might be reused
 
@@ -259,6 +274,8 @@ void OffloadState::apply_kills_and_changes(ExposedType& exposed) const {
                     it = exposed.erase(it);
                     continue;
                 }
+            } else if (kill_type == KillingType::RedundantD2H) {
+                collector_.found_redundant_d2h_pair(exposedOffload, *killing_entry);
             }
             it = exposed.erase(it);
             continue;

@@ -50,7 +50,8 @@ struct OffloadHolder {
           dev_data(nullptr), starts_dev_lifetime(false), ends_dev_lifetime(false), updates_on_dev(false),
           updates_on_host(false) {}
 
-    void remove_host_side();
+    void remove_h2d_parts();
+    void remove_d2h_parts();
 };
 
 struct ExposedOffload {
@@ -63,14 +64,19 @@ class DataTransferEliminationCandidateCollector {
 protected:
     std::vector<std::pair<ExposedOffload, OffloadHolder&>> transfer_reuse_candidates_;
     std::vector<std::pair<ExposedOffload, OffloadHolder&>> empty_malloc_candidates_;
+    std::vector<std::pair<ExposedOffload, OffloadHolder&>> redundant_d2h_candidates_;
 
 public:
     void found_transfer_reuse_pair(const ExposedOffload& src, OffloadHolder& dst) {
         transfer_reuse_candidates_.emplace_back(src, dst);
     }
 
-    void found_empty_host_malloc(const ExposedOffload malloc, OffloadHolder& h2d_transfer) {
+    void found_empty_host_malloc(const ExposedOffload& malloc, OffloadHolder& h2d_transfer) {
         empty_malloc_candidates_.emplace_back(malloc, h2d_transfer);
+    }
+
+    void found_redundant_d2h_pair(const ExposedOffload& h2d, OffloadHolder& d2h) {
+        redundant_d2h_candidates_.emplace_back(h2d, d2h);
     }
 
     const std::vector<std::pair<ExposedOffload, OffloadHolder&>>& transfer_reuse_candidates() const {
@@ -78,6 +84,9 @@ public:
     }
     const std::vector<std::pair<ExposedOffload, OffloadHolder&>>& empty_malloc_candidates() const {
         return empty_malloc_candidates_;
+    }
+    const std::vector<std::pair<ExposedOffload, OffloadHolder&>>& redundant_d2h_candidates() const {
+        return redundant_d2h_candidates_;
     }
 };
 
@@ -109,7 +118,10 @@ protected:
         // the killing node is a H2D with alloc that is the first use of host malloc. Can elide H2D
         EmptyHostMalloc,
         // the killing node is a device free of a device alloc of clean data -> can treat it similar to D2H
-        DeviceFree
+        DeviceCleanFree,
+        // the killing node is a D2H matching a H2D, but the on-device data has not changed in between: the host data is
+        // already up-to-date
+        RedundantD2H
     };
 
 public:

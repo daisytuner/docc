@@ -165,6 +165,15 @@ void DataOffloadingNode::remove_free() {
     }
 }
 
+void DataOffloadingNode::remove_d2h() {
+    if (this->is_d2h()) {
+        if (!this->is_free()) {
+            throw InvalidSDFGException("DataOffloadingNode: Tried removing d2h but node has no other purpose");
+        }
+        this->transfer_direction_ = DataTransferDirection::NONE;
+    }
+}
+
 data_flow::EdgeRemoveOption DataOffloadingNode::
     can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {
     if (graph.out_edges_for_connector(*this, memlet->src_conn()).size() > 1) {
