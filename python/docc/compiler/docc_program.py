@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import sys
 from typing import Any, Optional
 import os
+import re
 
 from docc.sdfg import StructuredSDFG
 from docc.sdfg._sdfg import (
@@ -21,7 +22,7 @@ def _parse_docc_debug() -> dict[str, str]:
     debug_env = os.environ.get("DOCC_DEBUG", "")
     debug_dict = {}
     if debug_env:
-        for entry in debug_env.split(";"):
+        for entry in re.split(r"[;:]", debug_env):
             if not entry:
                 continue
             parts = entry.split("=", 1)
@@ -37,6 +38,10 @@ def _is_debug_dump(flags: dict[str, str]) -> bool:
 
 def _is_debug_compile(flags: dict[str, str]) -> bool:
     return "build" in flags
+
+
+def _get_build_thread_count(flags: dict[str, str]) -> int:
+    return int(flags.get("build_threads", "0"))
 
 
 class DoccProgram(ABC):
@@ -59,6 +64,7 @@ class DoccProgram(ABC):
         debug_flags = _parse_docc_debug()
         self.debug_dump: bool = _is_debug_dump(debug_flags)
         self.debug_build: bool = _is_debug_compile(debug_flags)
+        self.build_thread_count: int = _get_build_thread_count(debug_flags)
 
         # Check environment variable DOCC_CI
         docc_ci = os.environ.get("DOCC_CI", "")
@@ -155,7 +161,7 @@ class DoccProgram(ABC):
                 output_folder,
                 instrumentation_mode,
                 capture_args,
-                {"debug_build": self.debug_build},
+                {"debug_build": self.debug_build, "threads": self.build_thread_count},
             )
         else:
             lib_path = sdfg._compile(
@@ -164,6 +170,7 @@ class DoccProgram(ABC):
                 instrumentation_mode=instrumentation_mode,
                 capture_args=capture_args,
                 debug_build=self.debug_build,
+                threads=self.build_thread_count,
             )
 
         # Dump statistics after compile

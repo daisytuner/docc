@@ -139,8 +139,14 @@ std::shared_ptr<sdfg::codegen::CodeSnippetFactory> SrcFileCompiler::create_snipp
  * generation completed, so we do not need to do any of that.
  */
 void SrcFileCompiler::for_each_file_snippet(
-    sdfg::codegen::CodeGenerator& generator, std::function<void(const sdfg::codegen::CodeSnippet&)> callback
+    sdfg::codegen::CodeGenerator& generator,
+    CompileExecutor& executor,
+    std::function<void(const sdfg::codegen::CodeSnippet&)> callback
 ) {
+    // for now, the snippets do not arrive asynchronously, so we need to await the main-dispatch here, before the
+    // snippets will exist
+    executor.await_compiles_finished();
+
     for (auto& [id, snippet] : generator.library_snippets()) {
         if (snippet.is_as_file()) {
             callback(snippet);
@@ -159,13 +165,22 @@ std::filesystem::path SrcFileCompiler::
 
     executor.add_compile_state(std::move(mainCompile));
 
-    for_each_file_snippet(generator, [&](const sdfg::codegen::CodeSnippet& snippet) {
+    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+    for_each_file_snippet(generator, executor, [&](const sdfg::codegen::CodeSnippet& snippet) {
         auto compile_state = create_compile(sdfg, &snippet, [&](std::ostream& out) { out << snippet.stream().str(); });
 
         executor.add_compile_state(std::move(compile_state));
     });
 
     executor.await_compiles_finished();
+    std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+    if (stats_) {
+        std::string name = "snippet_build_total";
+        if (executor.is_parallel()) {
+            name += "@parallel";
+        }
+        stats_->add_codegen(name, std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+    }
 
     std::filesystem::path bin_file = output_dir_ / (output_file_name + "." + bin_ext_);
 

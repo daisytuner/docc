@@ -423,7 +423,8 @@ std::string PyStructuredSDFG::compile(
     const std::string& target,
     const std::string& instrumentation_mode,
     bool capture_args,
-    bool debug_build
+    bool debug_build,
+    int threads
 ) const {
     fs::path build_path(output_folder);
     if (!fs::exists(build_path)) {
@@ -503,7 +504,7 @@ std::string PyStructuredSDFG::compile(
     docc::target::add_highway_build_support(compile_builder);
 
     auto fcomp_handler = compile_builder.build();
-    docc::compile::CodegenBuildPool pool(1);
+    docc::compile::CodegenBuildPool pool((threads > 0) ? threads : std::thread::hardware_concurrency());
 
     std::shared_ptr<sdfg::codegen::CodeSnippetFactory> snippet_factory = fcomp_handler->create_snippet_factory(*sdfg_);
     sdfg::codegen::CPPCodeGenerator

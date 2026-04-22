@@ -72,12 +72,23 @@ public:
 
     void schedule(const std::string& target, const std::string& category, bool remote_tuning = false);
 
+    /**
+     * Build the shared library containing the SDFG
+     * @param output_folder will contain src and binary files
+     * @param target
+     * @param instrumentation_mode
+     * @param capture_args
+     * @param debug_build build with debug info
+     * @param threads number of threads to use for the compile. 0 or negative means auto (max. hardware threads)
+     * @return
+     */
     std::string compile(
         const std::string& output_folder,
         const std::string& target,
         const std::string& instrumentation_mode = "",
         bool capture_args = false,
-        bool debug_build = false
+        bool debug_build = false,
+        int threads = 0
     ) const;
 
     std::string metadata(const std::string& key) const;

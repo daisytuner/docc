@@ -58,7 +58,7 @@ class SrcFileCompiler : public CodegenCompiler {
     std::string main_header_ext_;
     std::string bin_ext_;
     bool link_immediately_;
-    sdfg::passes::CodegenStatistics* stats_;
+    sdfg::passes::CodegenStatistics* stats_ = nullptr;
 
     inline static constexpr auto COMPILE_ONLY_FLAG = "-c";
     inline static constexpr auto OUTPUT_FILE_ARG = "-o";
@@ -104,7 +104,9 @@ protected:
     bool run_compile_and_link_single(const std::filesystem::path& src, const std::filesystem::path& bin) const;
     std::filesystem::path emit_header(const sdfg::StructuredSDFG& sdfg, sdfg::codegen::CodeGenerator& generator);
     void for_each_file_snippet(
-        sdfg::codegen::CodeGenerator& generator, std::function<void(const sdfg::codegen::CodeSnippet&)> callback
+        sdfg::codegen::CodeGenerator& generator,
+        CompileExecutor& executor,
+        std::function<void(const sdfg::codegen::CodeSnippet&)> callback
     );
 };
 
