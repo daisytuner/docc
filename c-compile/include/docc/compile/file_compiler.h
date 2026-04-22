@@ -9,6 +9,7 @@ class SrcFileCompiler;
 class FileCompileState : public CompileState {
     friend class SrcFileCompiler;
     SrcFileCompiler& compiler_;
+    const sdfg::codegen::CodeSnippet* snippet_;
     std::filesystem::path src_path_;
     std::filesystem::path out_path_;
     bool link_immediately_;
@@ -17,9 +18,13 @@ class FileCompileState : public CompileState {
     bool src_done_ = false;
     bool obj_done_ = false;
 
+    std::chrono::duration<std::chrono::milliseconds::rep, std::chrono::milliseconds::period> gen_time_;
+    std::chrono::duration<std::chrono::milliseconds::rep, std::chrono::milliseconds::period> build_time_;
+
 public:
     FileCompileState(
         SrcFileCompiler& compiler,
+        const sdfg::codegen::CodeSnippet* snippet,
         const std::filesystem::path& src_path,
         const std::filesystem::path& obj_path,
         bool link_immediately,
@@ -34,6 +39,8 @@ public:
     const std::filesystem::path& out_path() const;
 
     bool has_obj_to_link() const;
+
+    void record_stats(const sdfg::StructuredSDFG& sdfg, sdfg::passes::CodegenStatistics& stats);
 };
 
 class SrcFileCompiler : public CodegenCompiler {
@@ -51,6 +58,7 @@ class SrcFileCompiler : public CodegenCompiler {
     std::string main_header_ext_;
     std::string bin_ext_;
     bool link_immediately_;
+    sdfg::passes::CodegenStatistics* stats_;
 
     inline static constexpr auto COMPILE_ONLY_FLAG = "-c";
     inline static constexpr auto OUTPUT_FILE_ARG = "-o";

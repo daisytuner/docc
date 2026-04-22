@@ -6,34 +6,41 @@ namespace docc::compile {
 
 FileCompileState::FileCompileState(
     SrcFileCompiler& compiler,
+    const sdfg::codegen::CodeSnippet* snippet,
     const std::filesystem::path& src_path,
     const std::filesystem::path& out_path,
     bool link_immediately,
     std::function<void(std::ostream&)>& generator
 )
-    : CompileState(), compiler_(compiler), src_path_(src_path), out_path_(out_path),
+    : CompileState(), compiler_(compiler), snippet_(snippet), src_path_(src_path), out_path_(out_path),
       link_immediately_(link_immediately), generator_(generator), src_done_(generator == nullptr) {}
 
 CodegenCompiler& FileCompileState::creator() const { return compiler_; }
 
 bool FileCompileState::codegen() {
     if (generator_) {
+        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
         std::ofstream outfile(src_path_, std::ofstream::out | std::ofstream::trunc);
 
         generator_(outfile);
 
         outfile.close();
+        std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
         src_done_ = true;
+        gen_time_ = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     }
     return true;
 }
 
 bool FileCompileState::compile() {
+    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
     auto success = link_immediately_ ? compiler_.run_compile_and_link_single(src_path_, out_path_)
                                      : compiler_.run_compiler(src_path_, out_path_);
+    std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
     if (success) {
         obj_done_ = true;
     }
+    build_time_ = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
     return success;
 }
@@ -41,6 +48,14 @@ bool FileCompileState::compile() {
 const std::filesystem::path& FileCompileState::out_path() const { return out_path_; }
 
 bool FileCompileState::has_obj_to_link() const { return !link_immediately_; }
+
+void FileCompileState::record_stats(const sdfg::StructuredSDFG& sdfg, sdfg::passes::CodegenStatistics& stats) {
+    auto name = snippet_ ? sdfg.name() + ":" + snippet_->name() + "." + snippet_->extension() : sdfg.name();
+    stats.add_codegen(name + "@gen", gen_time_.count());
+
+    auto build_name = name + (link_immediately_ ? "@build" : "@compile");
+    stats.add_codegen(name, build_time_.count());
+}
 
 SrcFileCompiler::SrcFileCompiler(
     const std::filesystem::path& output_dir,
@@ -59,7 +74,12 @@ SrcFileCompiler::SrcFileCompiler(
     : CodegenCompiler(std::move(redirects)), output_dir_(output_dir), main_src_ext_(main_src_ext),
       main_header_ext_(main_header_ext), bin_ext_(bin_ext), compiler_(compiler), linker_(linker),
       common_args_(common_args), compile_args_(compile_args), library_paths_(library_paths),
-      link_options_(link_options), link_immediately_(link_immediately) {}
+      link_options_(link_options), link_immediately_(link_immediately) {
+    auto& codegen_statistics = sdfg::passes::CodegenStatistics::instance();
+    if (codegen_statistics.enabled()) {
+        stats_ = &codegen_statistics;
+    }
+}
 
 std::filesystem::path SrcFileCompiler::
     emit_header(const sdfg::StructuredSDFG& sdfg, sdfg::codegen::CodeGenerator& generator) {
@@ -90,7 +110,12 @@ std::unique_ptr<CompileState> SrcFileCompiler::do_create_compile(
     const std::string& out_ext = (link_immediately_ ? bin_ext_ : "o");
 
     auto state = std::make_unique<FileCompileState>(
-        *this, output_dir_ / (*name + "." + *ext), output_dir_ / (*name + "." + out_ext), link_immediately_, generator
+        *this,
+        snippet,
+        output_dir_ / (*name + "." + *ext),
+        output_dir_ / (*name + "." + out_ext),
+        link_immediately_,
+        generator
     );
 
     return std::move(state);
@@ -200,6 +225,9 @@ bool SrcFileCompiler::
     executor.for_each_src([&](CompileState& state) {
         auto& file_state = dynamic_cast<FileCompileState&>(state);
         if (file_state.has_obj_to_link()) {
+            if (stats_) {
+                file_state.record_stats(sdfg, *stats_);
+            }
             assert(file_state.obj_done_);
             cmd << file_state.out_path_ << " ";
         }
@@ -210,9 +238,16 @@ bool SrcFileCompiler::
     cmd << "-o " << bin_file;
 
     DEBUG_PRINTLN("Link: " << cmd.str());
+    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
     int ret = std::system(cmd.str().c_str());
+    std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
     if (ret != 0) {
         throw std::runtime_error("Link failed: " + cmd.str());
+    }
+    if (stats_) {
+        stats_->add_codegen(
+            sdfg.name() + "@link", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+        );
     }
 
     return true;
