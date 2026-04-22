@@ -29,7 +29,7 @@ inline PyStructuredSDFG cutout(
     sdfg::structured_control_flow::ControlFlowNode& node
 ) {
     auto result = sdfg::util::cutout(builder.builder(), analysis_manager.manager(), node);
-    return PyStructuredSDFG::from_sdfg(std::move(result));
+    return PyStructuredSDFG::from_sdfg(builder.docc_context(), std::move(result));
 }
 
 /**

@@ -42,15 +42,17 @@ set(SOURCE_FILES
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp
-    src/targets/cuda/stdlib/memset.cpp
     src/targets/cuda/cuda.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
+    src/targets/cuda/plugin.cpp
+    src/targets/cuda/stdlib/memset.cpp
     src/targets/rocm/blas/dot.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/utils.cpp
     src/targets/rocm/stdlib/memset.cpp
+    src/targets/rocm/plugin.cpp
     src/targets/rocm/rocm.cpp
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp

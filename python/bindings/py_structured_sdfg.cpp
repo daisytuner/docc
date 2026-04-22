@@ -52,7 +52,9 @@
 #include <sdfg/visualizer/dot_visualizer.h>
 
 #include <chrono>
+#include <docc/target/docc_target.h>
 
+#include "docc/compile/file_compiler.h"
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
@@ -80,17 +82,18 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-PyStructuredSDFG::PyStructuredSDFG(std::unique_ptr<sdfg::StructuredSDFG>& sdfg) : sdfg_(std::move(sdfg)) {}
+PyStructuredSDFG::PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg)
+    : docc_context_(ctx), sdfg_(std::move(sdfg)) {}
 
-PyStructuredSDFG PyStructuredSDFG::parse(const std::string& sdfg_text) {
+PyStructuredSDFG PyStructuredSDFG::parse(sdfg::plugins::Context& ctx, const std::string& sdfg_text) {
     json j = json::parse(sdfg_text);
     sdfg::serializer::JSONSerializer serializer;
     auto sdfg = serializer.deserialize(j);
 
-    return PyStructuredSDFG(sdfg);
+    return PyStructuredSDFG(ctx, sdfg);
 }
 
-PyStructuredSDFG PyStructuredSDFG::from_file(const std::string& file_path) {
+PyStructuredSDFG PyStructuredSDFG::from_file(sdfg::plugins::Context& ctx, const std::string& file_path) {
     std::ifstream sdfg_file(file_path);
     if (!sdfg_file.is_open()) {
         throw std::runtime_error("Failed to open SDFG file: " + file_path);
@@ -101,14 +104,16 @@ PyStructuredSDFG PyStructuredSDFG::from_file(const std::string& file_path) {
     sdfg::serializer::JSONSerializer serializer;
     auto sdfg = serializer.deserialize(j);
 
-    return PyStructuredSDFG(sdfg);
+    return PyStructuredSDFG(ctx, sdfg);
 }
 
-PyStructuredSDFG PyStructuredSDFG::from_sdfg(std::unique_ptr<sdfg::StructuredSDFG> sdfg) {
-    return PyStructuredSDFG(sdfg);
+PyStructuredSDFG PyStructuredSDFG::from_sdfg(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG> sdfg) {
+    return PyStructuredSDFG(ctx, sdfg);
 }
 
 std::string PyStructuredSDFG::name() const { return sdfg_->name(); }
+
+sdfg::plugins::Context& PyStructuredSDFG::docc_context() const { return docc_context_; }
 
 const sdfg::types::IType& PyStructuredSDFG::return_type() const { return sdfg_->return_type(); }
 
@@ -417,7 +422,8 @@ std::string PyStructuredSDFG::compile(
     const std::string& output_folder,
     const std::string& target,
     const std::string& instrumentation_mode,
-    bool capture_args
+    bool capture_args,
+    bool debug_build
 ) const {
     fs::path build_path(output_folder);
     if (!fs::exists(build_path)) {
@@ -452,236 +458,58 @@ std::string PyStructuredSDFG::compile(
         arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(*sdfg_);
     }
 
-    std::pair<std::filesystem::path, std::filesystem::path> lib_config = std::make_pair(build_path, header_path);
-    std::shared_ptr<sdfg::codegen::CodeSnippetFactory> snippet_factory =
-        std::make_shared<sdfg::codegen::CodeSnippetFactory>(&lib_config);
+    // Find libraries relative to the module location
+    std::shared_ptr<docc::util::DefaultDoccPaths> paths =
+        docc::util::DefaultDoccPaths::from_lib_location(docc::util::find_lib_location());
 
-    // Code generation
-    std::chrono::high_resolution_clock::time_point codegen_start;
-    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-        codegen_start = std::chrono::high_resolution_clock::now();
+    docc::compile::SrcFileCompilerBuilder compile_builder;
+    compile_builder.set_compiler(DOCC_CXX_COMPILER)
+        .set_from_paths(paths)
+        .set_src_extension("cpp")
+        .set_bin_extension("so")
+        .set_output_dir(build_path)
+        .add_common_option("-fPIC")
+        .add_common_option("-O3")
+        .add_common_option("-fopenmp")
+        .add_common_option("-march=native")
+        .add_common_option("-mtune=native")
+        .add_compile_option("-funroll-loops")
+        .add_link_option("-shared")
+        .add_link_option("-ldaisy_rtl")
+        .add_link_option("-larg_capture_io")
+        .add_link_option("-lm")
+        .add_link_option("-lstdc++");
+
+    if (debug_build) {
+        compile_builder.add_common_option("-g");
     }
 
+#if defined(__APPLE__)
+    compile_builder.add_common_option("-Xpreprocessor");
+    compile_builder.add_include_path("/opt/homebrew/include");
+    compile_builder.add_library_path("/opt/homebrew/opt/libomp/lib")
+        .add_library_path("/opt/homebrew/opt/libomp/include")
+        .add_library_path("/opt/homebrew/lib");
+    compile_builder.add_link_option("-lomp");
+    compile_builder.add_link_option("-framework Accelerate");
+#else
+    compile_builder.add_link_option("-lblas");
+#endif
+
+    auto* target_handler = docc_context_.get_target_handler(target);
+    if (target_handler) {
+        target_handler->apply_additional_compile_options(compile_builder);
+    }
+    docc::target::add_highway_build_support(compile_builder);
+
+    auto fcomp_handler = compile_builder.build();
+    docc::compile::CodegenBuildPool pool(1);
+
+    std::shared_ptr<sdfg::codegen::CodeSnippetFactory> snippet_factory = fcomp_handler->create_snippet_factory(*sdfg_);
     sdfg::codegen::CPPCodeGenerator
         generator(*sdfg_, analysis_manager, *instrumentation_plan, *arg_capture_plan, snippet_factory);
-    generator.generate();
 
-    generator.as_source(header_path, source_path);
-
-    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-        auto codegen_end = std::chrono::high_resolution_clock::now();
-        auto codegen_duration =
-            std::chrono::duration_cast<std::chrono::milliseconds>(codegen_end - codegen_start).count();
-        sdfg::passes::CodegenStatistics::instance().add_codegen("code_generation", codegen_duration);
-    }
-
-    // Write library snippets
-    std::unordered_map<std::string, SnippetMetadata> lib_files;
-    for (auto& [name, snippet] : snippet_factory->snippets()) {
-        std::chrono::high_resolution_clock::time_point snipped_gen_start;
-        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-            snipped_gen_start = std::chrono::high_resolution_clock::now();
-        }
-        if (snippet.is_as_file()) {
-            auto p = build_path / (name + "." + snippet.extension());
-            std::ofstream outfile_lib;
-            if (!lib_files.contains(p.string())) {
-                outfile_lib.open(p, std::ios_base::out);
-                lib_files[p.string()] = {.name = name, .extension = snippet.extension()};
-            } else {
-                outfile_lib.open(p, std::ios_base::app);
-            }
-            if (!outfile_lib.is_open()) {
-                throw std::runtime_error("Failed to open library file: " + p.string());
-            }
-            outfile_lib << snippet.stream().str() << std::endl;
-            outfile_lib.close();
-        }
-
-        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-            auto snippet_gen_end = std::chrono::high_resolution_clock::now();
-            auto snippet_gen_duration =
-                std::chrono::duration_cast<std::chrono::milliseconds>(snippet_gen_end - snipped_gen_start).count();
-            sdfg::passes::CodegenStatistics::instance().add_codegen("snippet_generation", snippet_gen_duration);
-        }
-    }
-
-    // Find libraries relative to the module location
-    auto paths = docc::util::DefaultDoccPaths::from_lib_location(docc::util::find_lib_location());
-
-    bool has_highway = false;
-    std::unordered_set<std::string> object_files;
-    for (const auto& [lib_file, meta] : lib_files) {
-        std::chrono::high_resolution_clock::time_point snippet_compile_start;
-        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-            snippet_compile_start = std::chrono::high_resolution_clock::now();
-        }
-
-        std::filesystem::path lib_path(lib_file);
-        auto& [snippet_name, extension] = meta;
-        if (extension == "json") {
-            continue;
-        }
-
-#ifdef DOCC_HAS_TARGET_ET
-        if (extension == docc::target::et::ETSOC_KERNEL_FILE_EXT) {
-            docc::target::et::EtBuildArgs args{.build_dir = build_path, .plugin_rt_dir = paths->bin_root()};
-            auto et_k_file = docc::target::et::et_build_kernel(*sdfg_, *snippet_factory, lib_file, args);
-            DEBUG_PRINTLN("Generated ET Kernel to: " << et_k_file);
-            continue;
-        }
-#endif
-        std::string name = lib_path.stem().string();
-        std::string object_file = build_path.string() + "/" + name + ".o";
-        std::stringstream cmd;
-#if defined(__APPLE__)
-        cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3 -Xpreprocessor -fopenmp -march=native -mtune=native -funroll-loops";
-#else
-        cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3 -fopenmp -march=native -mtune=native -funroll-loops";
-#endif
-        for (auto& inc_path : paths->get_default_include_paths()) {
-            cmd << " -I" << inc_path;
-        }
-        for (auto& ld_path : paths->get_default_library_paths()) {
-            cmd << " -L" << ld_path;
-        }
-
-#if defined(__APPLE__)
-        cmd << " -I/opt/homebrew/include";
-#endif
-        if (target == "cuda") { // should use .cu to detect
-            cmd << " -x cuda --cuda-gpu-arch=sm_70 --cuda-path=/usr/local/cuda";
-        } else if (target == "rocm" && extension == "rocm.cpp") {
-            cmd << " -x hip --offload-arch=gfx1201 --rocm-path=/opt/rocm -I/opt/rocm/include";
-        }
-
-        cmd << " " << lib_file;
-        cmd << " -o " << object_file;
-        if (name.starts_with("highway_")) {
-            cmd << " -lhwy";
-            has_highway = true;
-        }
-        cmd << " -lm";
-        int ret = std::system(cmd.str().c_str());
-        if (ret != 0) {
-            throw std::runtime_error("Compilation failed: " + cmd.str());
-        }
-        object_files.insert(object_file);
-
-        if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-            auto snippet_compile_end = std::chrono::high_resolution_clock::now();
-            auto snippet_compile_duration =
-                std::chrono::duration_cast<std::chrono::milliseconds>(snippet_compile_end - snippet_compile_start)
-                    .count();
-            sdfg::passes::CodegenStatistics::instance().add_codegen("snippet_compilation", snippet_compile_duration);
-        }
-    }
-
-    std::chrono::high_resolution_clock::time_point compile_start;
-    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-        compile_start = std::chrono::high_resolution_clock::now();
-    }
-
-    // Compile
-    {
-        std::stringstream cmd;
-#if defined(__APPLE__)
-        cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3 -Xpreprocessor -fopenmp -march=native -mtune=native -funroll-loops";
-#else
-        cmd << DOCC_CXX_COMPILER << " -c -fPIC -O3 -fopenmp -march=native -mtune=native -funroll-loops";
-#endif
-        for (auto& inc_path : paths->get_default_include_paths()) {
-            cmd << " -I" << inc_path;
-        }
-        if (target == "cuda") {
-            cmd << " -x cuda -lcuda";
-        } else if (target == "rocm") {
-            cmd << " -x hip --offload-arch=gfx1201 --offload-host-only --rocm-path=/opt/rocm -I/opt/rocm/include";
-        } else if (target == "etsoc") {
-#ifdef DOCC_HAS_TARGET_ET
-            cmd << " " << docc::target::et::et_get_host_additional_compile_args(*sdfg_, *snippet_factory);
-#endif
-        }
-        cmd << " " << source_path.string();
-        cmd << " -g -o " << (build_path / (sdfg_->name() + ".o")).string();
-        DEBUG_PRINTLN("Compile: " << cmd.str());
-        int ret = std::system(cmd.str().c_str());
-        if (ret != 0) {
-            throw std::runtime_error("Compilation failed: " + cmd.str());
-        }
-        object_files.insert((build_path / (sdfg_->name() + ".o")).string());
-    }
-
-    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-        auto compile_end = std::chrono::high_resolution_clock::now();
-        auto compile_duration =
-            std::chrono::duration_cast<std::chrono::milliseconds>(compile_end - compile_start).count();
-        sdfg::passes::CodegenStatistics::instance().add_codegen("compilation", compile_duration);
-    }
-
-    // Link into shared library
-    fs::path lib_path = build_path / ("lib" + sdfg_->name() + ".so");
-
-    std::stringstream cmd;
-#if defined(__APPLE__)
-    cmd << DOCC_CXX_COMPILER << " -shared -Xpreprocessor -fopenmp -fPIC -O3";
-    cmd << " -L/opt/homebrew/opt/libomp/lib -I/opt/homebrew/opt/libomp/include";
-    cmd << " -L/opt/homebrew/lib";
-#else
-    cmd << DOCC_CXX_COMPILER << " -shared -fopenmp -fPIC -O3";
-#endif
-    for (auto& ld_path : paths->get_default_library_paths()) {
-        cmd << " -L" << ld_path;
-    }
-    // cmd << " " << source_path.string();
-    for (const auto& object_file : object_files) {
-        cmd << " " << object_file;
-    }
-    if (has_highway) {
-        cmd << " -lhwy";
-    }
-    cmd << " -ldaisy_rtl";
-    cmd << " -larg_capture_io";
-#if defined(__APPLE__)
-    cmd << " -lomp";
-    cmd << " -framework Accelerate";
-#else
-    cmd << " -lblas";
-#endif
-    cmd << " -lm -g";
-    cmd << " -lstdc++";
-    if (target == "cuda") {
-        cmd << " /usr/local/cuda/lib64/libcudart.so";
-        cmd << " /usr/local/cuda/lib64/libcublas.so";
-    } else if (target == "rocm") {
-        cmd << " /opt/rocm/lib/libamdhip64.so";
-        cmd << " /opt/rocm/lib/libhiprtc.so";
-        cmd << " /opt/rocm/lib/libhipblas.so";
-    } else if (target == "etsoc") {
-#ifdef DOCC_HAS_TARGET_ET
-        cmd << " " << docc::target::et::et_get_host_additional_link_args(*sdfg_, *snippet_factory);
-#endif
-    }
-    cmd << " -o " << lib_path.string();
-
-    std::chrono::high_resolution_clock::time_point link_start;
-    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-        link_start = std::chrono::high_resolution_clock::now();
-    }
-
-    DEBUG_PRINTLN("Link: " << cmd.str());
-    int ret = std::system(cmd.str().c_str());
-    if (ret != 0) {
-        throw std::runtime_error("Compilation failed: " + cmd.str());
-    }
-
-    if (sdfg::passes::CodegenStatistics::instance().enabled()) {
-        auto link_end = std::chrono::high_resolution_clock::now();
-        auto link_duration = std::chrono::duration_cast<std::chrono::milliseconds>(link_end - link_start).count();
-        sdfg::passes::CodegenStatistics::instance().add_codegen("linking", link_duration);
-    }
-
-    return lib_path.string();
+    return fcomp_handler->process(generator, pool, "lib" + sdfg_->name());
 }
 
 std::string PyStructuredSDFG::metadata(const std::string& key) const {

@@ -14,6 +14,12 @@ target_include_directories(docc-target-et
         $<INSTALL_INTERFACE:${PARENT_PROJECT_INSTALL_PREFIX}include>
 )
 
+target_include_directories(docc-target-et
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../c-compile/include
+) # very hacky to get access to the SrcFileCompilerBuilder interface. Needs better lib structure
+
+
 target_compile_definitions(docc-target-et PUBLIC
     DOCC_HAS_TARGET_ET
 )

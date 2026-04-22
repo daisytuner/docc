@@ -45,6 +45,8 @@
 #include <sdfg/targets/rocm/plugin.h>
 
 #include <sdfg/passes/statistics.h>
+
+#include "docc/target/docc_target.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
@@ -63,8 +65,9 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::serializer::register_default_serializers();
     sdfg::omp::register_omp_plugin();
     sdfg::highway::register_highway_plugin();
-    sdfg::cuda::register_cuda_plugin();
-    sdfg::rocm::register_rocm_plugin();
+    sdfg::cuda::register_cuda_plugin(docc_context);
+    sdfg::rocm::register_rocm_plugin(docc_context);
+    docc::target::register_builtin_targets(docc_context);
 #ifdef DOCC_HAS_TARGET_ET
     docc::target::et::register_plugin(docc_context);
 #endif
@@ -151,8 +154,18 @@ PYBIND11_MODULE(_sdfg, m) {
 
     // Register SDFG class
     py::class_<PyStructuredSDFG>(m, "StructuredSDFG")
-        .def_static("from_file", &PyStructuredSDFG::from_file, py::arg("file_path"), "Load a StructuredSDFG from file")
-        .def_static("parse", &PyStructuredSDFG::parse, py::arg("sdfg_text"), "Parse a StructuredSDFG from text")
+        .def_static(
+            "from_file",
+            [&](const std::string& file_path) { return PyStructuredSDFG::from_file(docc_context, file_path); },
+            py::arg("file_path"),
+            "Load a StructuredSDFG from file"
+        )
+        .def_static(
+            "parse",
+            [&](const std::string& sdfg_text) { return PyStructuredSDFG::parse(docc_context, sdfg_text); },
+            py::arg("sdfg_text"),
+            "Parse a StructuredSDFG from text"
+        )
         .def_property_readonly("name", &PyStructuredSDFG::name)
         .def_property_readonly(
             "_ptr",
@@ -199,7 +212,8 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("output_folder"),
             py::arg("target"),
             py::arg("instrumentation_mode") = "",
-            py::arg("capture_args") = false
+            py::arg("capture_args") = false,
+            py::arg("debug_build") = false
         )
         .def("metadata", &PyStructuredSDFG::metadata, py::arg("key"), "Get metadata value")
         .def("loop_report", &PyStructuredSDFG::loop_report, "Get loop statistics from the SDFG")
@@ -209,9 +223,17 @@ PYBIND11_MODULE(_sdfg, m) {
 
     // Register StructuredSDFGBuilder class
     py::class_<PyStructuredSDFGBuilder>(m, "StructuredSDFGBuilder")
-        .def(py::init<const std::string&>(), py::arg("name"), "Create a StructuredSDFGBuilder with the given name")
         .def(
-            py::init<const std::string&, const IType&>(),
+            py::init([](const std::string& name) {
+                return std::make_unique<PyStructuredSDFGBuilder>(docc_context, name);
+            }),
+            py::arg("name"),
+            "Create a StructuredSDFGBuilder with the given name"
+        )
+        .def(
+            py::init([](const std::string& name, const IType& return_type) {
+                return std::make_unique<PyStructuredSDFGBuilder>(docc_context, name, return_type);
+            }),
             py::arg("name"),
             py::arg("return_type"),
             "Create a StructuredSDFGBuilder with the given name and return type"

@@ -363,7 +363,7 @@ void IndirectMemoryAccessFinder::use_as_src_node(
         }
         // Library nodes may get a pointer as input. But some of them we know enough about,
         // to know they are only borrowing the pointer for read access during their execution, not representing an
-        // actual leak these we can instead cound as indirect readse
+        // actual leak. These we can instead count as indirect reads
         if (edge.is_src_read()) {
             if (auto* libNode = dynamic_cast<const data_flow::LibraryNode*>(&edge.dst())) {
                 auto conns = libNode->inputs();
@@ -387,8 +387,8 @@ void IndirectMemoryAccessFinder::use_as_dst_node(
         }
         // hack to classify Offload nodes with D2H correctly. For historic reasons they use a direct output edge
         // to the host ptr, even though they will never write the pointer, but only write the memory the pointer points
-        // to as that edge is destructive to many optimizations and scheduled to be removed, cuhere custom handleing per
-        // node
+        // to. As that edge is destructive to many optimizations and scheduled to be removed, use custom handling here
+        // to classify it correctly
         if (edge.is_dst_write()) {
             if (auto* offload = dynamic_cast<const offloading::DataOffloadingNode*>(&edge.src())) {
                 if (offload->transfer_direction() != offloading::DataTransferDirection::NONE) {

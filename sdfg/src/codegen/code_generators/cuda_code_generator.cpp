@@ -44,6 +44,25 @@ std::string CUDACodeGenerator::function_definition() {
     return "extern \"C\" __global__ void " + sdfg_.name() + "(" + arglist.str() + ")";
 };
 
+bool CUDACodeGenerator::emit_header(PrettyPrinter& out) {
+    out << "#pragma once" << std::endl;
+    dispatch_header_includes(out);
+    dispatch_header_structures(out);
+    return true;
+}
+
+bool CUDACodeGenerator::emit_main_source(std::ostream& out, const std::filesystem::path& header_path) {
+    out << "#include \"" << header_path.filename().string() << "\"" << std::endl;
+    dispatch_globals();
+    dispatch_schedule();
+
+    out << this->globals_stream_.str() << std::endl;
+
+    append_function_source(out);
+
+    return true;
+}
+
 bool CUDACodeGenerator::as_source(const std::filesystem::path& header_path, const std::filesystem::path& source_path) {
     std::ofstream ofs_header(header_path, std::ofstream::out);
     if (!ofs_header.is_open()) {
@@ -71,24 +90,28 @@ bool CUDACodeGenerator::as_source(const std::filesystem::path& header_path, cons
     return true;
 };
 
-void CUDACodeGenerator::append_function_source(std::ofstream& ofs_source) {
+void CUDACodeGenerator::append_function_source(std::ostream& ofs_source) {
     ofs_source << this->function_definition() << std::endl;
     ofs_source << "{" << std::endl;
     ofs_source << this->main_stream_.str() << std::endl;
     ofs_source << "}" << std::endl;
 }
 
-void CUDACodeGenerator::dispatch_includes() {
-    this->includes_stream_ << "#define "
-                           << "__DAISY_NVVM__" << std::endl;
-    this->includes_stream_ << "#include <cstdint>" << std::endl;
-    this->includes_stream_ << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
+void CUDACodeGenerator::dispatch_includes() { this->dispatch_header_includes(this->includes_stream_); }
+
+void CUDACodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
+    out << "#define "
+        << "__DAISY_NVVM__" << std::endl;
+    out << "#include <cstdint>" << std::endl;
+    out << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
 };
 
-void CUDACodeGenerator::dispatch_structures() {
+void CUDACodeGenerator::dispatch_structures() { this->dispatch_header_structures(this->classes_stream_); }
+
+void CUDACodeGenerator::dispatch_header_structures(PrettyPrinter& out) {
     // Forward declarations
     for (auto& structure : sdfg_.structures()) {
-        this->classes_stream_ << "struct " << structure << ";" << std::endl;
+        out << "struct " << structure << ";" << std::endl;
     }
 
     // Generate topology-sorted structure definitions
@@ -129,24 +152,23 @@ void CUDACodeGenerator::dispatch_structures() {
     for (auto& structure_index : order) {
         std::string structure = names.at(structure_index);
         auto& definition = sdfg_.structure(structure);
-        this->classes_stream_ << "struct ";
+        out << "struct ";
         if (definition.is_packed()) {
-            this->classes_stream_ << "__attribute__((packed)) ";
+            out << "__attribute__((packed)) ";
         }
-        this->classes_stream_ << structure << std::endl;
-        this->classes_stream_ << "{\n";
+        out << structure << std::endl;
+        out << "{\n";
 
         for (size_t i = 0; i < definition.num_members(); i++) {
             auto& member_type = definition.member_type(symbolic::integer(i));
             if (dynamic_cast<const sdfg::types::Structure*>(&member_type)) {
-                this->classes_stream_ << "struct ";
+                out << "struct ";
             }
-            this->classes_stream_
-                << language_extension_.declaration("member_" + std::to_string(i), member_type, false, true);
-            this->classes_stream_ << ";" << std::endl;
+            out << language_extension_.declaration("member_" + std::to_string(i), member_type, false, true);
+            out << ";" << std::endl;
         }
 
-        this->classes_stream_ << "};" << std::endl;
+        out << "};" << std::endl;
     }
 };
 

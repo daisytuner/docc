@@ -12,9 +12,10 @@ static std::optional<std::filesystem::path> test_output_dir;
 
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
+    auto context = sdfg::plugins::Context::global_context();
     sdfg::codegen::register_default_dispatchers();
-    sdfg::cuda::register_cuda_plugin();
-    sdfg::rocm::register_rocm_plugin();
+    sdfg::cuda::register_cuda_plugin(context);
+    sdfg::rocm::register_rocm_plugin(context);
     sdfg::serializer::register_default_serializers();
     sdfg::highway::register_highway_plugin();
     sdfg::omp::register_omp_plugin();

@@ -17,8 +17,26 @@ from docc.compiler.target_registry import (
 )
 
 
-def _is_debug_dump() -> bool:
-    return bool(os.environ.get("DOCC_DEBUG"))
+def _parse_docc_debug() -> dict[str, str]:
+    debug_env = os.environ.get("DOCC_DEBUG", "")
+    debug_dict = {}
+    if debug_env:
+        for entry in debug_env.split(";"):
+            if not entry:
+                continue
+            parts = entry.split("=", 1)
+            key = parts[0].strip()
+            value = parts[1].strip() if len(parts) > 1 else ""
+            debug_dict[key] = value
+    return debug_dict
+
+
+def _is_debug_dump(flags: dict[str, str]) -> bool:
+    return "dump" in flags
+
+
+def _is_debug_compile(flags: dict[str, str]) -> bool:
+    return "build" in flags
 
 
 class DoccProgram(ABC):
@@ -38,7 +56,9 @@ class DoccProgram(ABC):
         self.remote_tuning = remote_tuning
         self.last_sdfg: Optional[StructuredSDFG] = None
         self.cache: dict = {}
-        self.debug_dump: bool = _is_debug_dump()
+        debug_flags = _parse_docc_debug()
+        self.debug_dump: bool = _is_debug_dump(debug_flags)
+        self.debug_build: bool = _is_debug_compile(debug_flags)
 
         # Check environment variable DOCC_CI
         docc_ci = os.environ.get("DOCC_CI", "")
@@ -131,7 +151,11 @@ class DoccProgram(ABC):
         custom_compile_fn = get_target_compile_fn(self.target)
         if custom_compile_fn is not None:
             lib_path = custom_compile_fn(
-                sdfg, output_folder, instrumentation_mode, capture_args, {}
+                sdfg,
+                output_folder,
+                instrumentation_mode,
+                capture_args,
+                {"debug_build": self.debug_build},
             )
         else:
             lib_path = sdfg._compile(
@@ -139,6 +163,7 @@ class DoccProgram(ABC):
                 target=self.target,
                 instrumentation_mode=instrumentation_mode,
                 capture_args=capture_args,
+                debug_build=self.debug_build,
             )
 
         # Dump statistics after compile

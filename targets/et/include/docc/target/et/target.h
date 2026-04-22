@@ -4,8 +4,11 @@
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/plugins/plugins.h>
+#include <sdfg/plugins/targets.h>
 
 namespace docc::target::et {
+
+extern DoccTarget et_target;
 
 inline sdfg::data_flow::ImplementationType ImplementationType_ETSOC_WithTransfers{"ETSOC_WithTransfers"};
 inline sdfg::data_flow::ImplementationType ImplementationType_ETSOC_WithoutTransfers{"ETSOC_WithoutTransfers"};

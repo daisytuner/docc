@@ -32,7 +32,38 @@ bool CStyleBaseCodeGenerator::generate() {
     this->dispatch_globals();
     this->dispatch_schedule();
     return true;
-};
+}
+
+bool CStyleBaseCodeGenerator::emit_header(PrettyPrinter& out) {
+    out << "#pragma once" << std::endl;
+
+    dispatch_header(out);
+    return true;
+}
+
+void CStyleBaseCodeGenerator::dispatch_header(PrettyPrinter& out) {
+    dispatch_header_includes(out);
+    dispatch_header_structures(out);
+}
+
+void CStyleBaseCodeGenerator::dispatch_includes() { dispatch_header_includes(this->includes_stream_); }
+
+void CStyleBaseCodeGenerator::dispatch_structures() { dispatch_header_structures(this->classes_stream_); }
+
+bool CStyleBaseCodeGenerator::emit_main_source(std::ostream& out, const std::filesystem::path& header_path) {
+    out << "#include \"" << header_path.filename().string() << "\"" << std::endl;
+    dispatch_globals();
+    dispatch_schedule();
+
+    for (auto& snippet : library_snippet_factory_->globals_snippets()) {
+        out << snippet << std::endl;
+    }
+
+    out << this->globals_stream_.str() << std::endl;
+
+    append_function_source(out);
+    return true;
+}
 
 bool CStyleBaseCodeGenerator::as_source(const std::filesystem::path& header_path, const std::filesystem::path& source_path) {
     std::ofstream ofs_header(header_path, std::ofstream::out | std::ofstream::trunc);
@@ -63,7 +94,7 @@ bool CStyleBaseCodeGenerator::as_source(const std::filesystem::path& header_path
     return true;
 }
 
-void CStyleBaseCodeGenerator::append_function_source(std::ofstream& ofs_source) {
+void CStyleBaseCodeGenerator::append_function_source(std::ostream& ofs_source) {
     std::unique_ptr<std::vector<CaptureVarPlan>> capturePlan;
     if (!arg_capture_plan_.is_empty()) {
         this->emit_capture_context_init(ofs_source);
