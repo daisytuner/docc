@@ -1,7 +1,8 @@
 #include "docc/target/docc_target.h"
 #include <filesystem>
+#include <sdfg/targets/highway/codegen/highway_map_dispatcher.h>
 
-#include "docc/compile/file_compiler.h"
+#include "docc/compile/src_file_compiler_builder.h"
 
 namespace docc::target {
 
@@ -18,7 +19,7 @@ static DoccTarget cuda_target = {
         b.add_compile_option("--cuda-gpu-arch=sm_70");
         b.add_compile_option("--cuda-path=/usr/local/cuda");
         b.set_bin_extension("cu");
-        builder.redirect_snippet("cu", b.build());
+        builder.redirect_snippet("cu", std::move(b));
         return true;
     }
 };
@@ -43,7 +44,7 @@ static DoccTarget rocm_target = {
         b.inherit(builder, true);
         b.remove_compile_option("--offload-host-only");
 
-        builder.redirect_snippet("rocm.cpp", b.build());
+        builder.redirect_snippet("rocm.cpp", std::move(b));
 
         return true;
     }
@@ -54,7 +55,7 @@ bool add_highway_build_support(compile::SrcFileCompilerBuilder& builder) {
     highway_builder.inherit(builder, true);
     highway_builder.contribute_parent_link_options({"-lhwy"});
 
-    builder.redirect_snippet("highway.cpp", highway_builder.build());
+    builder.redirect_snippet(sdfg::highway::HIGHWAY_SNIPPET_EXT, std::move(highway_builder));
     return true;
 }
 

@@ -8,7 +8,7 @@
 
 #include "docc/target/et/target.h"
 
-#include "docc/compile/file_compiler.h"
+#include "docc/compile/src_file_compiler_builder.h"
 #include "docc/target/et/blas/gemm.h"
 
 namespace docc::target::et {
@@ -92,7 +92,7 @@ DoccTarget et_target = {
         etBuilder.add_link_option("-lgcc");
         etBuilder.add_link_option(ET_INSTALL_PATH / "cm-umode/lib/libcm-umode.a");
 
-        builder.redirect_snippet(ETSOC_KERNEL_FILE_EXT, etBuilder.build());
+        builder.redirect_snippet(ETSOC_KERNEL_FILE_EXT, std::move(etBuilder));
         return true;
     }
 };

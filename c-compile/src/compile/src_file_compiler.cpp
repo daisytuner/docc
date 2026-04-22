@@ -1,4 +1,4 @@
-#include "docc/compile/file_compiler.h"
+#include "docc/compile/src_file_compiler.h"
 
 #include "docc/util/docc_paths.h"
 
@@ -69,12 +69,13 @@ SrcFileCompiler::SrcFileCompiler(
     const std::vector<std::filesystem::path>& library_paths,
     const std::vector<std::string>& link_options,
     bool link_immediately,
-    std::unordered_map<std::string, std::unique_ptr<CodegenCompiler>>&& redirects
+    std::unordered_map<std::string, std::unique_ptr<SrcFileCompiler>>&& redirects,
+    const std::vector<std::string>& parent_link_options
 )
-    : CodegenCompiler(std::move(redirects)), output_dir_(output_dir), main_src_ext_(main_src_ext),
-      main_header_ext_(main_header_ext), bin_ext_(bin_ext), compiler_(compiler), linker_(linker),
-      common_args_(common_args), compile_args_(compile_args), library_paths_(library_paths),
-      link_options_(link_options), link_immediately_(link_immediately) {
+    : output_dir_(output_dir), main_src_ext_(main_src_ext), main_header_ext_(main_header_ext), bin_ext_(bin_ext),
+      compiler_(compiler), linker_(linker), common_args_(common_args), compile_args_(compile_args),
+      library_paths_(library_paths), link_options_(link_options), link_immediately_(link_immediately),
+      redirects_(std::move(redirects)), parent_link_opts_(parent_link_options) {
     auto& codegen_statistics = sdfg::passes::CodegenStatistics::instance();
     if (codegen_statistics.enabled()) {
         stats_ = &codegen_statistics;
@@ -91,6 +92,22 @@ std::filesystem::path SrcFileCompiler::
     header_file.close();
 
     return p;
+}
+
+std::unique_ptr<CompileState> SrcFileCompiler::create_compile(
+    const sdfg::StructuredSDFG& sdfg,
+    const sdfg::codegen::CodeSnippet* snippet,
+    std::function<void(std::ostream&)> generator
+) {
+    if (snippet) {
+        auto& ext = snippet->extension();
+        auto it = redirects_.find(ext);
+        if (it != redirects_.end()) {
+            return it->second->do_create_compile(sdfg, snippet, generator);
+        }
+    }
+
+    return do_create_compile(sdfg, snippet, generator);
 }
 
 std::unique_ptr<CompileState> SrcFileCompiler::do_create_compile(
@@ -237,6 +254,9 @@ bool SrcFileCompiler::
 
     cmd << common_args_ << " ";
 
+    std::unordered_map<LinkOptContributor*, int> sub_counts;
+    std::vector<std::string> sub_opts;
+
     executor.for_each_src([&](CompileState& state) {
         auto& file_state = dynamic_cast<FileCompileState&>(state);
         if (file_state.has_obj_to_link()) {
@@ -245,10 +265,25 @@ bool SrcFileCompiler::
             }
             assert(file_state.obj_done_);
             cmd << file_state.out_path_ << " ";
+
+            auto* possible_contrib = dynamic_cast<LinkOptContributor*>(&file_state.creator());
+            if (possible_contrib) {
+                auto& count = sub_counts[possible_contrib];
+                if (count == 0) {
+                    auto* contrib_opts = possible_contrib->get_contributed_link_options();
+                    if (contrib_opts) {
+                        sub_opts.insert(sub_opts.end(), contrib_opts->cbegin(), contrib_opts->cend());
+                    }
+                }
+                ++count;
+            }
         }
     });
 
     add_link_args(cmd);
+    for (auto& opt : sub_opts) {
+        cmd << opt << " ";
+    }
 
     cmd << "-o " << bin_file;
 
@@ -268,131 +303,12 @@ bool SrcFileCompiler::
     return true;
 }
 
-SrcFileCompilerBuilder::SrcFileCompilerBuilder() {}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_src_extension(const std::string& ext) {
-    main_src_ext_ = ext;
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_output_dir(const std::filesystem::path& out) {
-    output_dir_ = out;
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::add_compile_option(const std::string& opt) {
-    compile_options_.push_back(opt);
-    return *this;
-}
-
-bool SrcFileCompilerBuilder::remove_compile_option(const std::string& opt) {
-    auto it = std::find(compile_options_.begin(), compile_options_.end(), opt);
-    if (it != compile_options_.end()) {
-        compile_options_.erase(it);
-        return true;
+const std::vector<std::string>* SrcFileCompiler::get_contributed_link_options() const {
+    if (parent_link_opts_.empty()) {
+        return nullptr;
+    } else {
+        return &parent_link_opts_;
     }
-    return false;
 }
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_link_immediately(bool link_imm) {
-    link_immediately_ = link_imm;
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::add_link_option(const std::string& opt) {
-    link_options_.push_back(opt);
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::add_common_option(const std::string& opt) {
-    common_options_.push_back(opt);
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::add_include_path(const std::filesystem::path& path) {
-    include_paths_.push_back(path);
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::add_library_path(const std::filesystem::path& path) {
-    library_paths_.push_back(path);
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_compiler(const std::filesystem::path& compiler) {
-    compiler_ = compiler;
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_linker(const std::filesystem::path& linker) {
-    linker_ = linker;
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_from_paths(std::shared_ptr<util::DefaultDoccPaths> paths) {
-    auto incs = paths->get_default_include_paths();
-    include_paths_.insert(include_paths_.end(), incs.cbegin(), incs.cend());
-    auto libs = paths->get_default_library_paths();
-    library_paths_.insert(library_paths_.end(), libs.cbegin(), libs.cend());
-    return CodegenCompilerBuilderBase::set_from_paths(paths);
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::inherit(const SrcFileCompilerBuilder& builder, bool compile_options) {
-    output_dir_ = builder.output_dir_;
-    compiler_ = builder.compiler_;
-    docc_paths_ = builder.docc_paths_;
-
-    if (compile_options) {
-        main_src_ext_ = builder.main_src_ext_;
-        include_paths_.insert(include_paths_.end(), builder.include_paths_.cbegin(), builder.include_paths_.cend());
-        common_options_.insert(common_options_.end(), builder.common_options_.cbegin(), builder.common_options_.cend());
-        compile_options_
-            .insert(compile_options_.end(), builder.compile_options_.cbegin(), builder.compile_options_.cend());
-    }
-
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_bin_extension(const std::string& ext) {
-    bin_ext_ = ext;
-    return *this;
-}
-
-SrcFileCompilerBuilder& SrcFileCompilerBuilder::contribute_parent_link_options(const std::vector<std::string>& opts) {
-    parent_link_options_.insert(parent_link_options_.end(), opts.cbegin(), opts.cend());
-    return *this;
-}
-
-std::unique_ptr<SrcFileCompiler> SrcFileCompilerBuilder::build() {
-    std::string compiler = this->compiler_.value();
-    std::stringstream compiler_args;
-    std::stringstream common_args;
-
-    for (auto& inc : this->include_paths_) {
-        compiler_args << "-I " << inc << " ";
-    }
-    for (auto& option : this->compile_options_) {
-        compiler_args << option << " ";
-    }
-    for (auto& option : this->common_options_) {
-        common_args << option << " ";
-    }
-
-    return std::make_unique<SrcFileCompiler>(
-        output_dir_.value(),
-        main_src_ext_.value(),
-        "h",
-        bin_ext_,
-        compiler,
-        this->linker_,
-        common_args.str(),
-        compiler_args.str(),
-        library_paths_,
-        link_options_,
-        link_immediately_,
-        std::move(this->redirects_)
-    );
-}
-
 
 } // namespace docc::compile

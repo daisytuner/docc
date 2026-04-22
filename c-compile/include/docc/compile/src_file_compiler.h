@@ -1,4 +1,6 @@
 #pragma once
+#include <docc/compile/codegen_compiler.h>
+
 #include "docc/compile/codegen_build_pool.h"
 #include "docc/util/docc_paths.h"
 
@@ -43,7 +45,12 @@ public:
     void record_stats(const sdfg::StructuredSDFG& sdfg, sdfg::passes::CodegenStatistics& stats);
 };
 
-class SrcFileCompiler : public CodegenCompiler {
+class LinkOptContributor {
+public:
+    virtual const std::vector<std::string>* get_contributed_link_options() const = 0;
+};
+
+class SrcFileCompiler : public CodegenCompiler, public LinkOptContributor {
     friend class FileCompileState;
 
     std::mutex mutex_;
@@ -58,6 +65,8 @@ class SrcFileCompiler : public CodegenCompiler {
     std::string main_header_ext_;
     std::string bin_ext_;
     bool link_immediately_;
+    std::unordered_map<std::string, std::unique_ptr<SrcFileCompiler>> redirects_;
+    std::vector<std::string> parent_link_opts_;
     sdfg::passes::CodegenStatistics* stats_ = nullptr;
 
     inline static constexpr auto COMPILE_ONLY_FLAG = "-c";
@@ -76,14 +85,21 @@ public:
         const std::vector<std::filesystem::path>& library_paths,
         const std::vector<std::string>& link_options,
         bool link_immediately,
-        std::unordered_map<std::string, std::unique_ptr<CodegenCompiler>>&& redirects
+        std::unordered_map<std::string, std::unique_ptr<SrcFileCompiler>>&& redirects,
+        const std::vector<std::string>& parent_link_options
     );
+
+    std::unique_ptr<CompileState> create_compile(
+        const sdfg::StructuredSDFG& sdfg,
+        const sdfg::codegen::CodeSnippet* snippet,
+        std::function<void(std::ostream&)> generator
+    ) override;
 
     std::unique_ptr<CompileState> do_create_compile(
         const sdfg::StructuredSDFG& sdfg,
         const sdfg::codegen::CodeSnippet* snippet,
         std::function<void(std::ostream&)> generator
-    ) override;
+    );
 
     std::filesystem::path
     process(sdfg::codegen::CodeGenerator& generator, CompileExecutor& executor, const std::string& output_file_name);
@@ -92,6 +108,8 @@ public:
     }
 
     std::shared_ptr<sdfg::codegen::CodeSnippetFactory> create_snippet_factory(const sdfg::StructuredSDFG& sdfg) const;
+
+    const std::vector<std::string>* get_contributed_link_options() const override;
 
 protected:
     std::filesystem::path generate_header_path(const sdfg::StructuredSDFG& sdfg) const;
@@ -108,48 +126,6 @@ protected:
         CompileExecutor& executor,
         std::function<void(const sdfg::codegen::CodeSnippet&)> callback
     );
-};
-
-class SrcFileCompilerBuilder : public CodegenCompilerBuilderBase<SrcFileCompilerBuilder> {
-    std::optional<std::filesystem::path> output_dir_;
-    std::optional<std::filesystem::path> compiler_;
-    std::optional<std::filesystem::path> linker_;
-    std::optional<std::string> main_src_ext_;
-    std::string bin_ext_ = "elf";
-    std::vector<std::string> common_options_;
-    std::vector<std::string> compile_options_;
-    std::vector<std::string> link_options_;
-    std::vector<std::filesystem::path> include_paths_;
-    std::vector<std::filesystem::path> library_paths_;
-    bool link_immediately_ = false;
-    std::vector<std::string> parent_link_options_;
-
-public:
-    SrcFileCompilerBuilder();
-
-    SrcFileCompilerBuilder& set_src_extension(const std::string& ext);
-    SrcFileCompilerBuilder& set_output_dir(const std::filesystem::path& output_dir);
-    SrcFileCompilerBuilder& add_compile_option(const std::string& opt);
-    SrcFileCompilerBuilder& add_link_option(const std::string& opt);
-    SrcFileCompilerBuilder& add_common_option(const std::string& opt);
-    SrcFileCompilerBuilder& add_include_path(const std::filesystem::path& path);
-    SrcFileCompilerBuilder& add_library_path(const std::filesystem::path& path);
-    SrcFileCompilerBuilder& set_compiler(const std::filesystem::path& compiler);
-    SrcFileCompilerBuilder& set_linker(const std::filesystem::path& linker);
-    SrcFileCompilerBuilder& set_from_paths(std::shared_ptr<util::DefaultDoccPaths> paths) override;
-    SrcFileCompilerBuilder& set_bin_extension(const std::string& ext);
-    SrcFileCompilerBuilder& inherit(const SrcFileCompilerBuilder& builder, bool compile_options = false);
-    /**
-     * There is only 1 source and no need to compile an object file and then link all object files.
-     * Fuse compile and link options. Expects the [compiler-executable] to be a gcc-like driver that can also handle
-     * linking
-     */
-    SrcFileCompilerBuilder& set_link_immediately(bool link_imm);
-    SrcFileCompilerBuilder& contribute_parent_link_options(const std::vector<std::string>& opts);
-
-    std::unique_ptr<SrcFileCompiler> build();
-
-    bool remove_compile_option(const std::string& opt);
 };
 
 } // namespace docc::compile

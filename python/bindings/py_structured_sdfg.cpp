@@ -54,7 +54,8 @@
 #include <chrono>
 #include <docc/target/docc_target.h>
 
-#include "docc/compile/file_compiler.h"
+#include "docc/compile/src_file_compiler.h"
+#include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"

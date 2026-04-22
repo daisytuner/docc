@@ -11,6 +11,8 @@
 namespace sdfg {
 namespace highway {
 
+constexpr std::string HIGHWAY_SNIPPET_EXT = "highway.cpp";
+
 class HighwayMapDispatcher : public codegen::NodeDispatcher {
 private:
     structured_control_flow::Map& node_;

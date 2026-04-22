@@ -2,33 +2,6 @@
 
 namespace docc::compile {
 
-CodegenCompiler::CodegenCompiler(std::unordered_map<std::string, std::unique_ptr<CodegenCompiler>>&& redirects)
-    : redirects_(std::move(redirects)) {}
-
-std::unique_ptr<CompileState> CodegenCompiler::create_compile(
-    const sdfg::StructuredSDFG& sdfg,
-    const sdfg::codegen::CodeSnippet* snippet,
-    std::function<void(std::ostream&)> generator
-) {
-    if (snippet) {
-        auto& ext = snippet->extension();
-        auto it = redirects_.find(ext);
-        if (it != redirects_.end()) {
-            return it->second->do_create_compile(sdfg, snippet, generator);
-        }
-    }
-
-    return do_create_compile(sdfg, snippet, generator);
-}
-
-std::unique_ptr<CompileState> NoopCompiler::do_create_compile(
-    const sdfg::StructuredSDFG& sdfg,
-    const sdfg::codegen::CodeSnippet* snippet,
-    std::function<void(std::ostream&)> generator
-) {
-    return nullptr;
-}
-
 CodegenBuildPool::CodegenBuildPool(int num_threads) {
     if (num_threads > 1) {
         workers_.reserve(num_threads);

@@ -216,7 +216,7 @@ void HighwayMapDispatcher::dispatch_node(
     codegen::PrettyPrinter& globals_stream,
     codegen::CodeSnippetFactory& library_snippet_factory
 ) {
-    std::string kernel_name = "highway_kernel_" + std::to_string(node_.element_id());
+    std::string kernel_name = "kernel_" + std::to_string(node_.element_id());
 
     // Kernel call and declaration in current file
     this->dispatch_kernel_call(main_stream, kernel_name);
@@ -225,7 +225,7 @@ void HighwayMapDispatcher::dispatch_node(
 
     // Kernel definition in separate file
 
-    auto& library_stream = library_snippet_factory.require(kernel_name, "cpp", true).stream();
+    auto& library_stream = library_snippet_factory.require(kernel_name, HIGHWAY_SNIPPET_EXT, true).stream();
 
     library_stream << "#include " << library_snippet_factory.header_path().filename() << std::endl;
     library_stream << "#include <hwy/highway.h>" << std::endl;
