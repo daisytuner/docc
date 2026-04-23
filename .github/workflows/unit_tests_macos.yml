@@ -10,10 +10,13 @@ on:
     - cron: "0 4 * * *"
 
 jobs:
-  cpp-tests-macos:
+  primary-tests-macos:
     runs-on:
       group: dahlia
       labels: macOS
+
+    env:
+      python_version: "3.14"
 
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +28,19 @@ jobs:
           brew install ninja cmake
           brew install gmp isl nlohmann-json boost
           brew install highway libomp
+          brew install uv
+
+      - name: Set up Python ${{ env.python_version }}
+        run: |
+          uv python install ${{ env.python_version }}
+          uv venv --python ${{ env.python_version }} .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "PYTHONPATH=$PWD/python" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        run: |
+          uv pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          uv pip install numpy scipy ml_dtypes
 
       - name: Build
         run: |
@@ -33,9 +49,11 @@ jobs:
           cmake \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DPYTHON_BUILD_FRONTEND=ON \
+            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ env.python_version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
-            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
             ..
           ninja
 
@@ -51,6 +69,18 @@ jobs:
           cd build
           ./arg-capture-io/tests/capture_io_test
 
+      - name: Python Unit Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+        run: |
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          pytest -v python/tests
+
+      - name: Python Integration Tests
+        run: |
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          pytest -v python/benchmarks/
+
       # - name: Test RTL
       #   run: |
       #     export CPATH=/usr/local/include:$CPATH
@@ -63,51 +93,3 @@ jobs:
 
       #     cd rtl/tests
       #     pytest -v -s rtl_tests.py
-
-  python-tests-macos:
-    runs-on:
-      group: dahlia
-      labels: macOS
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.14"]
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install dependencies
-        run: |
-          brew install ninja cmake
-          brew install gmp isl nlohmann-json boost
-          brew install highway libomp
-          brew install uv
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: |
-          uv python install ${{ matrix.python-version }}
-          uv venv --python ${{ matrix.python-version }} .venv
-          echo "$PWD/.venv/bin" >> $GITHUB_PATH
-
-      - name: Install Python dependencies
-        run: |
-          uv pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          uv pip install numpy scipy ml_dtypes
-
-      - name: Build
-        run: |
-          uv pip install --no-build-isolation -v -e python/
-
-      - name: Unit Tests
-        env:
-          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
-        run: |
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-          pytest -v python/tests
-
-      - name: Integration Tests
-        run: |
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-          pytest -v python/benchmarks/
