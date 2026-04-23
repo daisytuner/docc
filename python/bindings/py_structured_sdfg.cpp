@@ -472,7 +472,6 @@ std::string PyStructuredSDFG::compile(
         .set_output_dir(build_path)
         .add_common_option("-fPIC")
         .add_common_option("-O3")
-        .add_common_option("-fopenmp")
         .add_common_option("-march=native")
         .add_common_option("-mtune=native")
         .add_compile_option("-funroll-loops")
@@ -487,7 +486,7 @@ std::string PyStructuredSDFG::compile(
     }
 
 #if defined(__APPLE__)
-    compile_builder.add_common_option("-Xpreprocessor");
+    compile_builder.add_common_option("-Xpreprocessor -fopenmp");
     compile_builder.add_include_path("/opt/homebrew/include");
     compile_builder.add_library_path("/opt/homebrew/opt/libomp/lib")
         .add_library_path("/opt/homebrew/opt/libomp/include")
@@ -495,6 +494,7 @@ std::string PyStructuredSDFG::compile(
     compile_builder.add_link_option("-lomp");
     compile_builder.add_link_option("-framework Accelerate");
 #else
+    compile_builder.add_common_option("-fopenmp");
     compile_builder.add_link_option("-lblas");
 #endif
 
