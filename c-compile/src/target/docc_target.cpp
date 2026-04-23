@@ -60,10 +60,9 @@ bool add_highway_build_support(compile::SrcFileCompilerBuilder& builder) {
 }
 
 /**
- * This exists as a workaround for current dependency hell. The builder is only defined in c-compile.
- * But the plugins require at least the builder interface to operate on it.
- * The c-compile library currently depends on the sdfgopt that contains these to plugins. We would need to place the
- * compiler builder code into sdfglib to make this work
+ * Temporary workaround. Ideally, these should live with the plugins themselves.
+ * But the plugins currently live in sdfgopt. We either need to split out the builder API
+ * so that sdfgopt can depend on it, or the plugins must be moved to a new library
  */
 void register_builtin_targets(sdfg::plugins::Context& context) {
     context.add_target(&cuda_target);
