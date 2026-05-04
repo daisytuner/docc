@@ -18,7 +18,7 @@ void MemsetNodeDispatcher_ROCMWithTransfers::dispatch_code(
 ) {
     auto& node = static_cast<const sdfg::stdlib::MemsetNode&>(node_);
 
-    globals_stream << "#include <hip/hip_runtime.h>" << std::endl;
+    library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
 
     stream << "hipError_t err_hip;" << std::endl;
 
@@ -55,7 +55,7 @@ void MemsetNodeDispatcher_ROCMWithoutTransfers::dispatch_code(
 ) {
     auto& node = static_cast<const sdfg::stdlib::MemsetNode&>(node_);
 
-    globals_stream << "#include <hip/hip_runtime.h>" << std::endl;
+    library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
 
     stream << "hipError_t err_hip;" << std::endl;
     stream << "err_hip = hipMemset(" << node.outputs().at(0) << ", " << language_extension_.expression(node.value())

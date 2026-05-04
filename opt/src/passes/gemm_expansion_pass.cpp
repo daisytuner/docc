@@ -5,6 +5,7 @@
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
+#include "sdfg/helpers/helpers.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -31,9 +32,9 @@ bool GemmExpansion::accept(structured_control_flow::Block& block) {
             auto gemm_node = static_cast<math::blas::GEMMNode*>(lib_node);
             if (symbolic::eq(gemm_node->m(), symbolic::one()) || symbolic::eq(gemm_node->n(), symbolic::one()) ||
                 symbolic::eq(gemm_node->k(), symbolic::one())) {
-                std::cerr << "found applicable GEMM" << std::endl;
+                DEBUG_PRINTLN("found applicable GEMM");
                 if (gemm_node->expand(builder_, analysis_manager_)) {
-                    std::cerr << "expanded" << std::endl;
+                    DEBUG_PRINTLN("expanded");
                     return true;
                 }
             }

@@ -4,10 +4,7 @@
 
 namespace sdfg::analysis {
 
-/**
- * Finds uses of containers
- */
-class BaseUserVisitor : public visitor::ActualStructuredSDFGVisitor {
+class BaseUserAnalyzer {
 public:
     constexpr static int LOC_LOOP_READ_INIT = 0;
     constexpr static int LOC_LOOP_READ_CONDITION = 1;
@@ -27,14 +24,19 @@ public:
                    // call!
     };
 
+    virtual ~BaseUserAnalyzer() = default;
+
     virtual void use_as_symbol_read(
         const std::string& container,
+        const ControlFlowNode* node,
         const Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
     ) = 0;
-    virtual void use_as_symbol_write(const symbolic::Symbol& container, const Element* user, SymbolWriteLocation loc) = 0;
+    virtual void use_as_symbol_write(
+        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+    ) = 0;
     virtual void use_as_src_node(
         const std::string& container,
         const data_flow::AccessNode& node,
@@ -48,6 +50,17 @@ public:
         const Block& block
     ) = 0;
     virtual void use_as_return_src(const std::string& container, const Return& ret) = 0;
+};
+
+/**
+ * Finds uses of containers
+ */
+class BaseUserVisitor : public visitor::ActualStructuredSDFGVisitor, public virtual BaseUserAnalyzer {
+public:
+    virtual void handle_lib_node(Block&, data_flow::LibraryNode& libnode);
+
+    virtual void handle_structured_loop_before_body(StructuredLoop& loop);
+    virtual void handle_structured_loop_after_body(StructuredLoop& loop);
 
     bool visit(sdfg::structured_control_flow::Block& node) override;
     bool visit(sdfg::structured_control_flow::Sequence& node) override;

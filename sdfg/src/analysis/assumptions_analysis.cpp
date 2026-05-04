@@ -10,45 +10,12 @@
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/assumptions.h"
+#include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg {
 namespace analysis {
-
-std::vector<symbolic::Expression> AssumptionsAnalysis::
-    cnf_to_upper_bounds(const symbolic::CNF& cnf, const symbolic::Symbol indvar) {
-    std::vector<symbolic::Expression> candidates;
-
-    for (const auto& clause : cnf) {
-        for (const auto& literal : clause) {
-            // Comparison: indvar < expr
-            if (SymEngine::is_a<SymEngine::StrictLessThan>(*literal)) {
-                auto lt = SymEngine::rcp_static_cast<const SymEngine::StrictLessThan>(literal);
-                if (symbolic::eq(lt->get_arg1(), indvar) && !symbolic::uses(lt->get_arg2(), indvar)) {
-                    auto ub = symbolic::sub(lt->get_arg2(), symbolic::one());
-                    candidates.push_back(ub);
-                }
-            }
-            // Comparison: indvar <= expr
-            else if (SymEngine::is_a<SymEngine::LessThan>(*literal)) {
-                auto le = SymEngine::rcp_static_cast<const SymEngine::LessThan>(literal);
-                if (symbolic::eq(le->get_arg1(), indvar) && !symbolic::uses(le->get_arg2(), indvar)) {
-                    candidates.push_back(le->get_arg2());
-                }
-            }
-            // Comparison: indvar == expr
-            else if (SymEngine::is_a<SymEngine::Equality>(*literal)) {
-                auto eq = SymEngine::rcp_static_cast<const SymEngine::Equality>(literal);
-                if (symbolic::eq(eq->get_arg1(), indvar) && !symbolic::uses(eq->get_arg2(), indvar)) {
-                    candidates.push_back(eq->get_arg2());
-                }
-            }
-        }
-    }
-
-    return candidates;
-}
 
 AssumptionsAnalysis::AssumptionsAnalysis(StructuredSDFG& sdfg)
     : Analysis(sdfg) {
@@ -135,160 +102,101 @@ void AssumptionsAnalysis::traverse_structured_loop(
         body_assumptions[sym].constant(true);
     }
 
-    // Collect other constant symbols based on uses
-    UsersView users_view(*this->users_analysis_, body);
-    std::unordered_set<std::string> visited;
-    for (auto& read : users_view.reads()) {
-        if (!sdfg_.exists(read->container())) {
-            continue;
-        }
-        if (visited.find(read->container()) != visited.end()) {
-            continue;
-        }
-        visited.insert(read->container());
-
-        auto& type = this->sdfg_.type(read->container());
-        if (!type.is_symbol() || type.type_id() != types::TypeID::Scalar) {
-            continue;
-        }
-
-        if (users_view.reads(read->container()) != users_view.uses(read->container())) {
-            continue;
-        }
-
-        if (body_assumptions.find(symbolic::symbol(read->container())) == body_assumptions.end()) {
-            symbolic::Symbol sym = symbolic::symbol(read->container());
-            body_assumptions.insert({sym, symbolic::Assumption(sym)});
-            body_assumptions[sym].constant(true);
-        }
-    }
-
     // Define map of indvar
     body_assumptions[indvar].map(update);
     body_assumptions[indvar].constant(true);
 
-    // Determine non-tight lower and upper bounds from inverse index access
-    std::vector<symbolic::Expression> lbs, ubs;
-    for (auto user : this->users_analysis_->reads(indvar->get_name())) {
-        if (auto* memlet = dynamic_cast<data_flow::Memlet*>(user->element())) {
-            const types::IType* memlet_type = &memlet->base_type();
-            for (long long i = memlet->subset().size() - 1; i >= 0; i--) {
-                symbolic::Expression num_elements = SymEngine::null;
-                if (auto* pointer_type = dynamic_cast<const types::Pointer*>(memlet_type)) {
-                    memlet_type = &pointer_type->pointee_type();
-                } else if (auto* array_type = dynamic_cast<const types::Array*>(memlet_type)) {
-                    memlet_type = &array_type->element_type();
-                    num_elements = array_type->num_elements();
-                } else {
+    // Monotonic -> infer bounds on indvar
+    symbolic::Integer stride = loop->stride();
+    if (!stride.is_null() && loop->is_monotonic()) {
+        body_assumptions[indvar].add_lower_bound(init);
+        body_assumptions[indvar].tight_lower_bound(init);
+
+        auto ub = loop->canonical_bound_upper();
+        if (!ub.is_null()) {
+            // Convert into inclusive bound
+            symbolic::Expression ub_inclusive;
+            if (SymEngine::is_a<SymEngine::Min>(*ub)) {
+                auto min = SymEngine::rcp_static_cast<const SymEngine::Min>(ub);
+                std::vector<symbolic::Expression> inclusive_args;
+                for (size_t i = 0; i < min->get_args().size(); i++) {
+                    auto arg = min->get_args()[i];
+                    inclusive_args.push_back(symbolic::sub(arg, symbolic::one()));
+                }
+                ub_inclusive = inclusive_args.at(0);
+                for (size_t i = 1; i < inclusive_args.size(); i++) {
+                    ub_inclusive = symbolic::min(ub_inclusive, inclusive_args.at(i));
+                }
+            } else {
+                ub_inclusive = symbolic::sub(ub, symbolic::one());
+            }
+
+            // ub is a general upper bound
+            // Compute tight upper bound based on stride
+            if (symbolic::eq(stride, symbolic::one())) {
+                // Stride == 1: tight upper bound is simply ub - 1
+                body_assumptions[indvar].tight_upper_bound(ub_inclusive);
+            } else if (!stride.is_null()) {
+                // Non-unit stride: tight upper bound = init + idiv(ub_inclusive - init, stride) * stride
+                // This is the largest value of init + k*stride that is <= ub_inclusive
+                auto range = symbolic::sub(ub_inclusive, init);
+                auto num_steps = symbolic::div(range, stride);
+                auto tight_ub = symbolic::add(init, symbolic::mul(num_steps, stride));
+                body_assumptions[indvar].tight_upper_bound(tight_ub);
+            }
+
+            // If combined bound, each arg is also an upper bound
+            if (SymEngine::is_a<SymEngine::Min>(*ub)) {
+                auto min = SymEngine::rcp_static_cast<const SymEngine::Min>(ub);
+                for (size_t i = 0; i < min->get_args().size(); i++) {
+                    auto arg = min->get_args()[i];
+                    auto arg_inclusive = symbolic::sub(arg, symbolic::one());
+                    body_assumptions[indvar].add_upper_bound(arg_inclusive);
+                }
+            } else {
+                body_assumptions[indvar].add_upper_bound(ub_inclusive);
+            }
+
+            // Furthermore, we can infer lower bounds for each upper bound's symbol
+            // For a loop to execute, we need ub > init, so ub >= init + 1
+            auto min_ub_value = symbolic::add(init, symbolic::one());
+
+            // Helper to infer lower bound for symbols in an expression
+            // If expr = coeff * sym + offset and we need expr >= min_ub_value,
+            // then sym >= (min_ub_value - offset) / coeff
+            //
+            // Only infer bounds when min_ub_value is purely constant (no non-parameter
+            // symbols). When init is symbolic (e.g., a tile indvar), the derived bounds
+            // reference that symbol (e.g., j_tile0 >= j_tile1-255) and create
+            // unresolvable chains in BoundAnalysis that prevent delinearization.
+            bool min_ub_value_is_clean = true;
+            for (auto& atom : symbolic::atoms(min_ub_value)) {
+                if (!this->parameters_.contains(atom)) {
+                    min_ub_value_is_clean = false;
                     break;
                 }
-                if (!symbolic::uses(memlet->subset().at(i), indvar)) {
-                    continue;
-                }
-                symbolic::Expression inverse = symbolic::inverse(memlet->subset().at(i), indvar);
-                if (inverse.is_null()) {
-                    continue;
-                }
-                lbs.push_back(symbolic::subs(inverse, indvar, symbolic::zero()));
-                if (num_elements.is_null()) {
-                    std::string container;
-                    if (memlet->src_conn() == "void") {
-                        container = dynamic_cast<data_flow::AccessNode&>(memlet->src()).data();
-                    } else {
-                        container = dynamic_cast<data_flow::AccessNode&>(memlet->dst()).data();
+            }
+
+            auto infer_symbol_lower_bound = [&](const symbolic::Expression& expr) {
+                if (!min_ub_value_is_clean) return;
+                auto atoms = symbolic::atoms(expr);
+                for (const auto& sym : atoms) {
+                    auto bound = symbolic::solve_affine_bound(expr, sym, min_ub_value, true);
+                    if (!bound.is_null()) {
+                        body_assumptions[sym].add_lower_bound(bound);
                     }
-                    if (this->is_parameter(container)) {
-                        ubs.push_back(symbolic::sub(
-                            symbolic::subs(inverse, indvar, symbolic::dynamic_sizeof(symbolic::symbol(container))),
-                            symbolic::one()
-                        ));
-                    }
-                } else {
-                    ubs.push_back(symbolic::sub(symbolic::subs(inverse, indvar, num_elements), symbolic::one()));
                 }
+            };
+
+            if (SymEngine::is_a<SymEngine::Min>(*ub)) {
+                auto min = SymEngine::rcp_static_cast<const SymEngine::Min>(ub);
+                for (size_t i = 0; i < min->get_args().size(); i++) {
+                    auto arg = min->get_args()[i];
+                    infer_symbol_lower_bound(arg);
+                }
+            } else {
+                infer_symbol_lower_bound(ub);
             }
-        }
-    }
-    for (auto lb : lbs) {
-        body_assumptions[indvar].add_lower_bound(lb);
-    }
-    for (auto ub : ubs) {
-        body_assumptions[indvar].add_upper_bound(ub);
-    }
-
-    // Prove that update is monotonic -> assume bounds
-    if (!loop->is_monotonic()) {
-        this->propagate(body, body_assumptions, outer_assumptions, outer_assumptions_with_trivial);
-        this->traverse(body, this->assumptions_[&body], this->assumptions_with_trivial_[&body]);
-        return;
-    }
-
-    // Assumption: init is tight lower bound for indvar
-    body_assumptions[indvar].add_lower_bound(init);
-    body_assumptions[indvar].tight_lower_bound(init);
-    body_assumptions[indvar].lower_bound_deprecated(init);
-
-    // Assumption: inverse index access lower bounds are lower bound for init
-    if (SymEngine::is_a<SymEngine::Symbol>(*init) && !lbs.empty()) {
-        auto sym = SymEngine::rcp_static_cast<const SymEngine::Symbol>(init);
-        if (!body_assumptions.contains(sym)) {
-            body_assumptions.insert({sym, symbolic::Assumption(sym)});
-        }
-        for (auto lb : lbs) {
-            body_assumptions[sym].add_lower_bound(lb);
-        }
-    }
-
-    symbolic::CNF cnf;
-    try {
-        cnf = symbolic::conjunctive_normal_form(loop->condition());
-    } catch (const symbolic::CNFException& e) {
-        this->propagate(body, body_assumptions, outer_assumptions, outer_assumptions_with_trivial);
-        this->traverse(body, this->assumptions_[&body], this->assumptions_with_trivial_[&body]);
-        return;
-    }
-    auto upper_bounds = cnf_to_upper_bounds(cnf, indvar);
-    if (upper_bounds.empty()) {
-        this->propagate(body, body_assumptions, outer_assumptions, outer_assumptions_with_trivial);
-        this->traverse(body, this->assumptions_[&body], this->assumptions_with_trivial_[&body]);
-        return;
-    }
-
-    // Store each upper bound candidate separately for tighter range analysis
-    for (auto& ub : upper_bounds) {
-        body_assumptions[indvar].add_upper_bound(ub);
-    }
-
-    // Compute combined min for deprecated API and tight upper bound
-    symbolic::Expression ub_min = upper_bounds[0];
-    for (size_t i = 1; i < upper_bounds.size(); ++i) {
-        ub_min = symbolic::min(ub_min, upper_bounds[i]);
-    }
-    body_assumptions[indvar].upper_bound_deprecated(ub_min);
-    // TODO: handle non-contiguous tight upper bounds with modulo
-    // Example: for (i = 0; i < n; i += 3) -> tight_upper_bound = (n - 1) - ((n - 1) % 3)
-    if (loop->is_contiguous()) {
-        body_assumptions[indvar].tight_upper_bound(ub_min);
-    }
-
-    // Assumption: inverse index access upper bounds are upper bound for ub
-    for (auto& ub : upper_bounds) {
-        if (SymEngine::is_a<SymEngine::Symbol>(*ub) && !ubs.empty()) {
-            auto sym = SymEngine::rcp_static_cast<const SymEngine::Symbol>(ub);
-            if (!body_assumptions.contains(sym)) {
-                body_assumptions.insert({sym, symbolic::Assumption(sym)});
-            }
-            for (auto& u : ubs) {
-                body_assumptions[sym].add_upper_bound(u);
-            }
-        }
-    }
-
-    // Assumption: any ub symbol is at least init
-    for (auto& ub : upper_bounds) {
-        for (auto& sym : symbolic::atoms(ub)) {
-            body_assumptions[sym].add_lower_bound(symbolic::add(init, symbolic::one()));
-            body_assumptions[sym].lower_bound_deprecated(symbolic::add(init, symbolic::one()));
         }
     }
 
@@ -314,14 +222,6 @@ void AssumptionsAnalysis::propagate(
 
         // Merge assumptions from lower scopes
         auto& lower_assum = propagated_assumptions[entry.first];
-
-        // Deprecated: combine with min
-        auto lower_ub_deprecated = lower_assum.upper_bound_deprecated();
-        auto lower_lb_deprecated = lower_assum.lower_bound_deprecated();
-        auto new_ub_deprecated = symbolic::min(entry.second.upper_bound_deprecated(), lower_ub_deprecated);
-        auto new_lb_deprecated = symbolic::max(entry.second.lower_bound_deprecated(), lower_lb_deprecated);
-        lower_assum.upper_bound_deprecated(new_ub_deprecated);
-        lower_assum.lower_bound_deprecated(new_lb_deprecated);
 
         // Add to set of bounds
         for (auto ub : entry.second.upper_bounds()) {
@@ -360,14 +260,6 @@ void AssumptionsAnalysis::propagate(
         }
         // Merge assumptions from lower scopes
         auto& lower_assum = assumptions_with_trivial[entry.first];
-
-        // Deprecated: combine with min
-        auto lower_ub_deprecated = lower_assum.upper_bound_deprecated();
-        auto lower_lb_deprecated = lower_assum.lower_bound_deprecated();
-        auto new_ub_deprecated = symbolic::min(entry.second.upper_bound_deprecated(), lower_ub_deprecated);
-        auto new_lb_deprecated = symbolic::max(entry.second.lower_bound_deprecated(), lower_lb_deprecated);
-        lower_assum.upper_bound_deprecated(new_ub_deprecated);
-        lower_assum.lower_bound_deprecated(new_lb_deprecated);
 
         // Add to set of bounds
         for (auto ub : entry.second.upper_bounds()) {

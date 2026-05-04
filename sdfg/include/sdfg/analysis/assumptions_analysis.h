@@ -8,7 +8,6 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/assumptions.h"
-#include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
@@ -72,8 +71,6 @@ public:
     bool is_parameter(const symbolic::Symbol& container);
 
     bool is_parameter(const std::string& container);
-
-    static std::vector<symbolic::Expression> cnf_to_upper_bounds(const symbolic::CNF& cnf, const symbolic::Symbol indvar);
 };
 
 } // namespace analysis

@@ -5,6 +5,7 @@
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/access_node.h"
 #include "sdfg/passes/offloading/sync_condition_propagation.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -46,24 +47,32 @@ bool GPUTiling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 
     analysis::UsersView users_view(users, inner_loop->root());
 
-    std::set<std::string> read_containers;
+    std::set<data_flow::AccessNode*> read_accesses;
+    std::set<std::string> read_container_names;
+
     for (auto read : users_view.reads()) {
-        read_containers.insert(read->container());
+        if (!dynamic_cast<data_flow::AccessNode*>(read->element())) {
+            continue;
+        }
+        if (read_container_names.find(read->container()) != read_container_names.end()) {
+            continue;
+        }
+        auto access_node = dynamic_cast<data_flow::AccessNode*>(read->element());
+        read_container_names.insert(read->container());
+        read_accesses.insert(std::move(access_node));
     }
 
-    if (read_containers.empty()) {
+    if (read_accesses.empty()) {
         return false;
     }
 
-    std::set<std::string> target_containers;
-    int i = 0;
-    for (const auto& container : read_containers) {
-        KernelLocalStorage kls(*inner_loop, outer_loop->indvar(), container);
+    for (auto& access : read_accesses) {
+        KernelLocalStorage kls(*inner_loop, outer_loop->indvar(), *access);
         if (kls.can_be_applied(builder_local, analysis_manager_local)) {
-            target_containers.insert(container);
+            target_containers_.insert(access->data());
         }
     }
-    if (target_containers.empty()) {
+    if (target_containers_.empty()) {
         return false;
     }
 
@@ -78,13 +87,17 @@ void GPUTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
 
     analysis::UsersView users_view(analysis_manager.get<analysis::Users>(), inner_loop->root());
 
-    std::set<std::string> read_containers;
-    for (auto read : users_view.reads()) {
-        read_containers.insert(read->container());
-    }
+    for (const auto& container_name : target_containers_) {
+        auto& users = analysis_manager.get<analysis::Users>();
+        analysis::UsersView users_view(users, inner_loop->root());
 
-    for (const auto& container : read_containers) {
-        KernelLocalStorage kls(*inner_loop, outer_loop->indvar(), container);
+        auto reads = users_view.reads(container_name);
+        if (reads.empty()) continue;
+
+        auto* access = dynamic_cast<data_flow::AccessNode*>(reads.front()->element());
+        if (!access) continue;
+
+        KernelLocalStorage kls(*inner_loop, outer_loop->indvar(), *access);
         if (kls.can_be_applied(builder, analysis_manager)) {
             kls.apply(builder, analysis_manager);
         }
@@ -100,18 +113,17 @@ void GPUTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView users_view_inner_loop(users, inner_loop->root());
 
-    std::set<std::string> target_containers;
-    for (auto& write : users_view_inner_loop.writes()) {
-        target_containers.insert(write->container());
-    }
-
     analysis::TypeAnalysis type_analysis(builder.subject(), inner_loop, analysis_manager);
-    for (const auto& container : target_containers) {
-        if (type_analysis.get_outer_type(container)->type_id() == types::TypeID::Scalar ||
-            type_analysis.get_outer_type(container)->type_id() == types::TypeID::Structure) {
+    for (const auto& write : users_view_inner_loop.writes()) {
+        if (!dynamic_cast<data_flow::AccessNode*>(write->element())) {
             continue;
         }
-        OutLocalStorage ols(*inner_loop, container);
+        if (type_analysis.get_outer_type(write->container())->type_id() == types::TypeID::Scalar ||
+            type_analysis.get_outer_type(write->container())->type_id() == types::TypeID::Structure) {
+            continue;
+        }
+        auto access_node = dynamic_cast<data_flow::AccessNode*>(write->element());
+        OutLocalStorage ols(*inner_loop, *access_node);
         if (ols.can_be_applied(builder, analysis_manager)) {
             ols.apply(builder, analysis_manager);
         }

@@ -92,6 +92,11 @@ ReturnDispatcher::ReturnDispatcher(
 void ReturnDispatcher::dispatch_node(
     PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
 ) {
+    // Emit teardown snippets before return
+    for (auto& snippet : library_snippet_factory.teardown_snippets()) {
+        main_stream << snippet;
+    }
+
     // Free heap allocations
     for (auto& container : sdfg_.containers()) {
         if (sdfg_.is_external(container)) {

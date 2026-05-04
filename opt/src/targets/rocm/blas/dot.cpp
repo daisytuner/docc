@@ -22,8 +22,8 @@ void DotNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
 ) {
     auto& dot_node = static_cast<const math::blas::DotNode&>(this->node_);
 
-    globals_stream << "#include <hip/hip_runtime.h>" << std::endl;
-    globals_stream << "#include <hipblas/hipblas.h>" << std::endl;
+    library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
+    library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
 
     std::string type, type2;
     switch (dot_node.precision()) {
@@ -62,7 +62,7 @@ void DotNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
     stream << "err_hip = hipMemcpy(dy, __y, " << y_size << ", hipMemcpyHostToDevice);" << std::endl;
     rocm_error_checking(stream, this->language_extension_, "err_hip");
 
-    create_blas_handle(stream, this->language_extension_);
+    setup_blas_handle(library_snippet_factory, this->language_extension_);
     stream << "hipblasStatus_t err;" << std::endl;
 
     stream << "err = hipblas" << type2 << "dot(handle, " << this->language_extension_.expression(dot_node.n())
@@ -70,8 +70,6 @@ void DotNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
            << this->language_extension_.expression(dot_node.incy()) << ", &__out);" << std::endl;
     rocmblas_error_checking(stream, this->language_extension_, "err");
     check_rocm_kernel_launch_errors(stream, this->language_extension_);
-
-    destroy_blas_handle(stream, this->language_extension_);
 
     stream << "err_hip = hipFree(dx);" << std::endl;
     rocm_error_checking(stream, this->language_extension_, "err_hip");
@@ -93,13 +91,13 @@ void DotNodeDispatcher_ROCMBLASWithoutTransfers::dispatch_code(
     codegen::CodeSnippetFactory& library_snippet_factory
 ) {
     auto& dot_node = static_cast<const math::blas::DotNode&>(this->node_);
-    globals_stream << "#include <hip/hip_runtime.h>" << std::endl;
-    globals_stream << "#include <hipblas/hipblas.h>" << std::endl;
+    library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
+    library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
+
+    setup_blas_handle(library_snippet_factory, this->language_extension_);
 
     stream << "hipError_t err_hip;" << std::endl;
     stream << "hipblasStatus_t err;" << std::endl;
-
-    create_blas_handle(stream, this->language_extension_);
 
     stream << "err = hipblas";
     switch (dot_node.precision()) {
@@ -118,8 +116,6 @@ void DotNodeDispatcher_ROCMBLASWithoutTransfers::dispatch_code(
 
     rocmblas_error_checking(stream, this->language_extension_, "err");
     check_rocm_kernel_launch_errors(stream, this->language_extension_);
-
-    destroy_blas_handle(stream, this->language_extension_);
 }
 
 } // namespace sdfg::rocm::blas

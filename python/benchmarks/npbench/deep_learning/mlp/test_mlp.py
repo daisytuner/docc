@@ -79,8 +79,8 @@ def test_mlp(target):
             verification={
                 "Free": 11,
                 "CMath": 4,
-                "HIGHWAY": 6,
-                "SEQUENTIAL": 12,
+                "VECTORIZE": 9,
+                "SEQUENTIAL": 9,
                 "FOR": 20,
                 "MAP": 18,
                 "GEMM": 3,
@@ -102,7 +102,7 @@ def test_mlp(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 8,
+                "VECTORIZE": 8,
                 "CMath": 4,
                 "CPU_PARALLEL": 13,
                 "SEQUENTIAL": 3,
@@ -115,7 +115,7 @@ def test_mlp(target):
     else:  # rocm
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 8,
+                "VECTORIZE": 8,
                 "CMath": 4,
                 "CPU_PARALLEL": 13,
                 "SEQUENTIAL": 3,

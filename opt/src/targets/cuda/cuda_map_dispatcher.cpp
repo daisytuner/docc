@@ -144,7 +144,7 @@ void CUDAMapDispatcher::dispatch_node(
             arguments_device
         );
 
-        globals_stream << "#include <cstdio>" << std::endl;
+        library_snippet_factory.add_global("#include <cstdio>");
         // Kernel Declaration
         this->dispatch_header(globals_stream, kernel_name, arguments_declaration);
         globals_stream << ";" << std::endl;

@@ -1,6 +1,11 @@
 
 
 set(SOURCE_FILES
+    src/compile/codegen_build_pool.cpp
+    src/compile/codegen_compiler.cpp
+    src/compile/src_file_compiler.cpp
+    src/compile/src_file_compiler_builder.cpp
+    src/target/docc_target.cpp
     src/util/docc_paths.cpp
     src/util/offloading_instrumentation_plan.cpp
     src/util/offloading_type_collector.cpp

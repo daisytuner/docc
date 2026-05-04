@@ -33,13 +33,13 @@ def test_syrk(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"HIGHWAY": 1, "SEQUENTIAL": 2, "FOR": 5, "MAP": 3},
+            verification={"VECTORIZE": 1, "SEQUENTIAL": 2, "FOR": 5, "MAP": 3},
             non_critical=True,
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 1,
+                "VECTORIZE": 1,
                 "CPU_PARALLEL": 1,
                 "SEQUENTIAL": 1,
                 "FOR": 5,

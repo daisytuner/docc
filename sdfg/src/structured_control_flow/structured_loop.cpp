@@ -138,6 +138,26 @@ symbolic::Expression StructuredLoop::canonical_bound_upper() {
     }
 
     symbolic::Expression min_bound = SymEngine::null;
+
+    // Helper to extract upper bound from lhs < rhs_value (or lhs <= rhs_value)
+    // For lhs = coeff * indvar + offset, returns (rhs_value - offset) / coeff
+    auto extract_upper_bound = [&](const symbolic::Expression& lhs,
+                                   const symbolic::Expression& rhs_value) -> symbolic::Expression {
+        auto decomp = symbolic::affine_decomposition(lhs, indvar_);
+        if (!decomp.success) {
+            return SymEngine::null;
+        }
+        auto coeff_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(decomp.coeff)->as_int();
+        if (coeff_int <= 0) {
+            return SymEngine::null;
+        }
+        symbolic::Expression result = symbolic::expand(symbolic::sub(rhs_value, decomp.offset));
+        if (coeff_int != 1) {
+            result = symbolic::expand(symbolic::div(result, decomp.coeff));
+        }
+        return result;
+    };
+
     for (const auto& clause : cnf) {
         // For upper bound extraction, we require unit clauses (single literal per clause)
         // Multi-clause disjunctions like (i < N || i < M) are not supported
@@ -169,35 +189,9 @@ symbolic::Expression StructuredLoop::canonical_bound_upper() {
             }
 
             // Extract: coeff * indvar + offset < rhs  =>  indvar < (rhs - offset) / coeff
-            symbolic::SymbolVec syms = {indvar_};
-            auto poly = symbolic::polynomial(lhs, syms);
-            if (poly.is_null()) {
+            bound = extract_upper_bound(lhs, rhs);
+            if (bound.is_null()) {
                 return SymEngine::null;
-            }
-            auto coeffs = symbolic::affine_coefficients(poly, syms);
-            if (coeffs.empty() || coeffs.find(indvar_) == coeffs.end()) {
-                return SymEngine::null;
-            }
-
-            auto coeff = coeffs.at(indvar_);
-            symbolic::Expression offset = symbolic::zero();
-            if (coeffs.count(symbolic::symbol("__daisy_constant__"))) {
-                offset = coeffs.at(symbolic::symbol("__daisy_constant__"));
-            }
-
-            // Coefficient must be a positive integer for upper bound
-            if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) {
-                return SymEngine::null;
-            }
-            auto coeff_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(coeff)->as_int();
-            if (coeff_int <= 0) {
-                return SymEngine::null;
-            }
-
-            // bound = (rhs - offset) / coeff
-            bound = symbolic::expand(symbolic::sub(rhs, offset));
-            if (coeff_int != 1) {
-                bound = symbolic::expand(symbolic::div(bound, coeff));
             }
 
         } else if (SymEngine::is_a<SymEngine::LessThan>(*literal)) {
@@ -214,34 +208,10 @@ symbolic::Expression StructuredLoop::canonical_bound_upper() {
                 return SymEngine::null;
             }
 
-            symbolic::SymbolVec syms = {indvar_};
-            auto poly = symbolic::polynomial(lhs, syms);
-            if (poly.is_null()) {
+            // Extract: coeff * indvar + offset <= rhs  =>  indvar < (rhs + 1 - offset) / coeff
+            bound = extract_upper_bound(lhs, symbolic::add(rhs, symbolic::one()));
+            if (bound.is_null()) {
                 return SymEngine::null;
-            }
-            auto coeffs = symbolic::affine_coefficients(poly, syms);
-            if (coeffs.empty() || coeffs.find(indvar_) == coeffs.end()) {
-                return SymEngine::null;
-            }
-
-            auto coeff = coeffs.at(indvar_);
-            symbolic::Expression offset = symbolic::zero();
-            if (coeffs.count(symbolic::symbol("__daisy_constant__"))) {
-                offset = coeffs.at(symbolic::symbol("__daisy_constant__"));
-            }
-
-            if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) {
-                return SymEngine::null;
-            }
-            auto coeff_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(coeff)->as_int();
-            if (coeff_int <= 0) {
-                return SymEngine::null;
-            }
-
-            // bound = (rhs + 1 - offset) / coeff
-            bound = symbolic::expand(symbolic::sub(symbolic::add(rhs, symbolic::one()), offset));
-            if (coeff_int != 1) {
-                bound = symbolic::expand(symbolic::div(bound, coeff));
             }
 
         } else {
@@ -269,6 +239,26 @@ symbolic::Expression StructuredLoop::canonical_bound_lower() {
     }
 
     symbolic::Expression max_bound = SymEngine::null;
+
+    // Helper to extract lower bound from lhs_value < rhs (or lhs_value <= rhs)
+    // For rhs = coeff * indvar + offset, returns (lhs_value - offset) / coeff
+    auto extract_lower_bound = [&](const symbolic::Expression& rhs,
+                                   const symbolic::Expression& lhs_value) -> symbolic::Expression {
+        auto decomp = symbolic::affine_decomposition(rhs, indvar_);
+        if (!decomp.success) {
+            return SymEngine::null;
+        }
+        auto coeff_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(decomp.coeff)->as_int();
+        if (coeff_int <= 0) {
+            return SymEngine::null;
+        }
+        symbolic::Expression result = symbolic::expand(symbolic::sub(lhs_value, decomp.offset));
+        if (coeff_int != 1) {
+            result = symbolic::expand(symbolic::div(result, decomp.coeff));
+        }
+        return result;
+    };
+
     for (const auto& clause : cnf) {
         // For lower bound extraction, we require unit clauses
         if (clause.size() != 1) {
@@ -298,34 +288,9 @@ symbolic::Expression StructuredLoop::canonical_bound_lower() {
             }
 
             // Extract: lhs < coeff * indvar + offset  =>  indvar > (lhs - offset) / coeff
-            symbolic::SymbolVec syms = {indvar_};
-            auto poly = symbolic::polynomial(rhs, syms);
-            if (poly.is_null()) {
+            bound = extract_lower_bound(rhs, lhs);
+            if (bound.is_null()) {
                 return SymEngine::null;
-            }
-            auto coeffs = symbolic::affine_coefficients(poly, syms);
-            if (coeffs.empty() || coeffs.find(indvar_) == coeffs.end()) {
-                return SymEngine::null;
-            }
-
-            auto coeff = coeffs.at(indvar_);
-            symbolic::Expression offset = symbolic::zero();
-            if (coeffs.count(symbolic::symbol("__daisy_constant__"))) {
-                offset = coeffs.at(symbolic::symbol("__daisy_constant__"));
-            }
-
-            if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) {
-                return SymEngine::null;
-            }
-            auto coeff_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(coeff)->as_int();
-            if (coeff_int <= 0) {
-                return SymEngine::null;
-            }
-
-            // bound = (lhs - offset) / coeff
-            bound = symbolic::expand(symbolic::sub(lhs, offset));
-            if (coeff_int != 1) {
-                bound = symbolic::expand(symbolic::div(bound, coeff));
             }
 
         } else if (SymEngine::is_a<SymEngine::LessThan>(*literal)) {
@@ -342,34 +307,10 @@ symbolic::Expression StructuredLoop::canonical_bound_lower() {
                 return SymEngine::null;
             }
 
-            symbolic::SymbolVec syms = {indvar_};
-            auto poly = symbolic::polynomial(rhs, syms);
-            if (poly.is_null()) {
+            // Extract: lhs <= coeff * indvar + offset  =>  indvar > (lhs - 1 - offset) / coeff
+            bound = extract_lower_bound(rhs, symbolic::sub(lhs, symbolic::one()));
+            if (bound.is_null()) {
                 return SymEngine::null;
-            }
-            auto coeffs = symbolic::affine_coefficients(poly, syms);
-            if (coeffs.empty() || coeffs.find(indvar_) == coeffs.end()) {
-                return SymEngine::null;
-            }
-
-            auto coeff = coeffs.at(indvar_);
-            symbolic::Expression offset = symbolic::zero();
-            if (coeffs.count(symbolic::symbol("__daisy_constant__"))) {
-                offset = coeffs.at(symbolic::symbol("__daisy_constant__"));
-            }
-
-            if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) {
-                return SymEngine::null;
-            }
-            auto coeff_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(coeff)->as_int();
-            if (coeff_int <= 0) {
-                return SymEngine::null;
-            }
-
-            // bound = (lhs - 1 - offset) / coeff
-            bound = symbolic::expand(symbolic::sub(symbolic::sub(lhs, symbolic::one()), offset));
-            if (coeff_int != 1) {
-                bound = symbolic::expand(symbolic::div(bound, coeff));
             }
 
         } else {

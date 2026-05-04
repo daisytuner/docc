@@ -12,9 +12,13 @@ class CStyleBaseCodeGenerator : public CodeGenerator {
 protected:
     virtual LanguageExtension& language_extension() = 0;
 
-    virtual void dispatch_includes() = 0;
+    void dispatch_header(PrettyPrinter& out);
 
-    virtual void dispatch_structures() = 0;
+    void dispatch_includes();
+    virtual void dispatch_header_includes(PrettyPrinter& out) = 0;
+
+    void dispatch_structures();
+    virtual void dispatch_header_structures(PrettyPrinter& out) = 0;
 
     virtual void dispatch_globals() = 0;
 
@@ -32,9 +36,13 @@ public:
 
     bool generate() override;
 
+    bool emit_header(PrettyPrinter& out) override;
+
+    bool emit_main_source(std::ostream& out, const std::filesystem::path& header_path) override;
+
     bool as_source(const std::filesystem::path& header_path, const std::filesystem::path& source_path) override;
 
-    void append_function_source(std::ofstream& ofs_source) override;
+    void append_function_source(std::ostream& ofs_source) override;
 
     virtual void emit_capture_context_init(std::ostream& ofs_source) const = 0;
 };

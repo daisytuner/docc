@@ -40,7 +40,10 @@ TEST(SequentialMapDispatcherTest, DispatchNode) {
 
     EXPECT_EQ(globals_stream.str(), "");
     EXPECT_TRUE(library_factory.snippets().empty());
-    EXPECT_EQ(main_stream.str(), "// Map\nfor(i = 0;i < 10;i = 1 + i)\n{\n}\n");
+    EXPECT_EQ(
+        main_stream.str(),
+        "// Map\n#pragma clang loop vectorize(disable) interleave(disable)\nfor(i = 0;i < 10;i = 1 + i)\n{\n}\n"
+    );
 }
 
 TEST(MapDispatcherTest, RedirectDispatch) {

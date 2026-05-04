@@ -14,6 +14,8 @@
 namespace sdfg {
 namespace offloading {
 
+constexpr bool dump_offload_node_ids = false;
+
 DataOffloadingNode::DataOffloadingNode(
     size_t element_id,
     const DebugInfo& debug_info,
@@ -77,13 +79,28 @@ std::string DataOffloadingNode::toStr() const {
             lifecycle = " NO_CHANGE";
             break;
     }
-    return std::string(this->code_.value()) + direction + lifecycle;
+    std::string res = std::string(this->code_.value());
+    if (dump_offload_node_ids) {
+        res += " #" + std::to_string(element_id_);
+    }
+    res += direction + lifecycle;
+    return res;
 }
 
 symbolic::Expression DataOffloadingNode::flop() const { return symbolic::zero(); }
 
-bool DataOffloadingNode::redundant_with(const DataOffloadingNode& other) const {
+bool DataOffloadingNode::is_compatible_with(const DataOffloadingNode& other) const {
     if (code() != other.code()) {
+        return false;
+    }
+    if (!symbolic::null_safe_eq(size(), other.size())) {
+        return false;
+    }
+    return true;
+}
+
+bool DataOffloadingNode::redundant_with(const DataOffloadingNode& other) const {
+    if (!is_compatible_with(other)) {
         return false;
     }
     if ((static_cast<int8_t>(transfer_direction()) + static_cast<int8_t>(other.transfer_direction())) != 0) {
@@ -93,25 +110,17 @@ bool DataOffloadingNode::redundant_with(const DataOffloadingNode& other) const {
         return false;
     }
 
-    if (!symbolic::null_safe_eq(size(), other.size())) {
-        return false;
-    }
-
     return true; // add more checks in sub-classes
 }
 
 bool DataOffloadingNode::equal_with(const DataOffloadingNode& other) const {
-    if (code() != other.code()) {
+    if (!is_compatible_with(other)) {
         return false;
     }
     if (this->transfer_direction() != other.transfer_direction()) {
         return false;
     }
     if (this->buffer_lifecycle() != other.buffer_lifecycle()) {
-        return false;
-    }
-
-    if (!symbolic::null_safe_eq(size(), other.size())) {
         return false;
     }
 
@@ -128,6 +137,24 @@ bool DataOffloadingNode::is_free() const { return is_FREE(this->buffer_lifecycle
 
 bool DataOffloadingNode::is_alloc() const { return is_ALLOC(this->buffer_lifecycle()); }
 
+void DataOffloadingNode::remove_h2d() {
+    if (this->is_h2d()) {
+        if (!this->is_alloc()) {
+            throw InvalidSDFGException("DataOffloadingNode: Tried removing h2d but node has no other purpose");
+        }
+        this->transfer_direction_ = DataTransferDirection::NONE;
+        this->inputs_.erase(this->inputs_.begin()); // Standard nodes only have one, others need to override
+    }
+}
+
+data_flow::PointerAccessType DataOffloadingNode::pointer_access_type(int input_idx) const {
+    if (is_h2d() && input_idx == 0) {
+        return data_flow::PointerReadOnly(size_, true);
+    } else {
+        return LibraryNode::pointer_access_type(input_idx);
+    }
+}
+
 void DataOffloadingNode::remove_free() {
     if (this->is_free()) {
         if (!this->has_transfer()) {
@@ -135,6 +162,44 @@ void DataOffloadingNode::remove_free() {
             );
         }
         this->buffer_lifecycle_ = BufferLifecycle::NO_CHANGE;
+    }
+}
+
+void DataOffloadingNode::remove_d2h() {
+    if (this->is_d2h()) {
+        if (!this->is_free()) {
+            throw InvalidSDFGException("DataOffloadingNode: Tried removing d2h but node has no other purpose");
+        }
+        this->transfer_direction_ = DataTransferDirection::NONE;
+    }
+}
+
+data_flow::EdgeRemoveOption DataOffloadingNode::
+    can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {
+    if (graph.out_edges_for_connector(*this, memlet->src_conn()).size() > 1) {
+        return data_flow::EdgeRemoveOption::Trivially;
+    } else if (transfer_direction_ != DataTransferDirection::NONE && outputs_.size() == 1 &&
+               memlet->src_conn() == outputs_.at(0)) {
+        // the node represents a transfer, whose output is dead.
+        if (buffer_lifecycle_ != BufferLifecycle::NO_CHANGE) {
+            // the node still has remaining purpose without the transfer
+            return data_flow::EdgeRemoveOption::RequiresUpdate;
+        } else {
+            // the node in its entirety is dead if it the transfer is not needed
+            return data_flow::EdgeRemoveOption::RemoveNodeAfter;
+        }
+    } else {
+        return data_flow::EdgeRemoveOption::NotRemovable;
+    }
+}
+
+bool DataOffloadingNode::update_edge_removed(const std::string& out_conn) {
+    if (transfer_direction_ != DataTransferDirection::NONE && outputs_.size() == 1 && out_conn == outputs_.at(0)) {
+        transfer_direction_ = DataTransferDirection::NONE;
+        outputs_.erase(outputs_.begin());
+        return true;
+    } else {
+        return false;
     }
 }
 

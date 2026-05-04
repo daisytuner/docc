@@ -143,132 +143,263 @@ create_temp_var(builder::StructuredSDFGBuilder& builder, const std::string& pref
 }
 
 bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto& dataflow = this->get_parent();
-    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
+    // CPU implementation of batchnorm:
+    if (false) {
+        auto& dataflow = this->get_parent();
+        auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
-    int index = parent.index(block);
-    auto& transition = parent.at(index).second;
+        auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
+        auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
+        int index = parent.index(block);
+        auto& transition = parent.at(index).second;
 
-    auto batch_in = find_usable_input_access_node(dataflow, *this, "Batch");
-    auto& data_type = batch_in.memlet->base_type();
-    types::Scalar scalar_type(data_type.primitive_type());
-    types::Tensor tensor_1d(scalar_type, {num_features()}, {symbolic::one()}); // TODO verify / get from inputs
-    std::string temp_var_prefix = "_batchn_tmp";
-    int tmp_idx = 0;
-    auto var_in = find_usable_input_access_node(dataflow, *this, "Var");
-    auto e_in = find_usable_input_access_node(dataflow, *this, "E");
-    auto gamma_in = find_usable_input_access_node(dataflow, *this, "Gamma");
-    auto beta_in = find_usable_input_access_node(dataflow, *this, "Beta");
-    auto result_ptr_in = find_usable_input_access_node(dataflow, *this, "B_out");
-    auto eps_in = find_usable_input_access_node(dataflow, *this, "epsilon");
+        auto batch_in = find_usable_input_access_node(dataflow, *this, "Batch");
+        auto& data_type = batch_in.memlet->base_type();
+        types::Scalar scalar_type(data_type.primitive_type());
+        types::Tensor tensor_1d(scalar_type, {num_features()}, {symbolic::one()}); // TODO verify / get from inputs
+        std::string temp_var_prefix = "_batchn_tmp";
+        int tmp_idx = 0;
+        auto var_in = find_usable_input_access_node(dataflow, *this, "Var");
+        auto e_in = find_usable_input_access_node(dataflow, *this, "E");
+        auto gamma_in = find_usable_input_access_node(dataflow, *this, "Gamma");
+        auto beta_in = find_usable_input_access_node(dataflow, *this, "Beta");
+        auto result_ptr_in = find_usable_input_access_node(dataflow, *this, "B_out");
+        auto eps_in = find_usable_input_access_node(dataflow, *this, "epsilon");
 
-    auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), debug_info());
+        auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), debug_info());
 
-    auto loop_dims = create_maps(builder, layout_.shape(), new_sequence);
+        auto loop_dims = create_maps(builder, layout_.shape(), new_sequence);
 
-    auto& c_dim = loop_dims.at(1);
-    std::vector<symbolic::Expression> c_subset{c_dim.indvar};
-    auto interm_name = builder.find_new_name("_b_sqrt_div");
-    builder.add_container(interm_name, scalar_type);
-    auto& inter_block = builder.add_block_before(
-        c_dim.seq, static_cast<structured_control_flow::ControlFlowNode&>(loop_dims.at(2).loop), {}, DebugInfo()
-    );
+        auto& c_dim = loop_dims.at(1);
+        std::vector<symbolic::Expression> c_subset{c_dim.indvar};
+        auto interm_name = builder.find_new_name("_b_sqrt_div");
+        builder.add_container(interm_name, scalar_type);
+        auto& inter_block = builder.add_block_before(
+            c_dim.seq, static_cast<structured_control_flow::ControlFlowNode&>(loop_dims.at(2).loop), {}, DebugInfo()
+        );
 
-    auto& var_elem_in = builder.add_access(inter_block, var_in.name);
-    data_flow::AccessNode& epsilon_const = eps_in.is_const ? builder.add_constant(inter_block, eps_in.name, scalar_type)
-                                                           : builder.add_access(inter_block, eps_in.name);
+        auto& var_elem_in = builder.add_access(inter_block, var_in.name);
+        data_flow::AccessNode& epsilon_const = eps_in.is_const
+                                                   ? builder.add_constant(inter_block, eps_in.name, scalar_type)
+                                                   : builder.add_access(inter_block, eps_in.name);
 
-    auto& add_eps_op = builder.add_tasklet(inter_block, data_flow::fp_add, "_out", {"var", "eps"}, debug_info());
+        auto& add_eps_op = builder.add_tasklet(inter_block, data_flow::fp_add, "_out", {"var", "eps"}, debug_info());
 
-    builder.add_computational_memlet(inter_block, var_elem_in, add_eps_op, "var", c_subset, tensor_1d);
-    builder.add_computational_memlet(inter_block, epsilon_const, add_eps_op, "eps", {}, scalar_type);
+        builder.add_computational_memlet(inter_block, var_elem_in, add_eps_op, "var", c_subset, tensor_1d);
+        builder.add_computational_memlet(inter_block, epsilon_const, add_eps_op, "eps", {}, scalar_type);
 
-    auto tmp_eps_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
-    auto& tmp_eps = builder.add_access(inter_block, tmp_eps_name);
+        auto tmp_eps_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_eps = builder.add_access(inter_block, tmp_eps_name);
 
-    builder.add_computational_memlet(inter_block, add_eps_op, "_out", tmp_eps, {}, scalar_type);
+        builder.add_computational_memlet(inter_block, add_eps_op, "_out", tmp_eps, {}, scalar_type);
 
-    auto tmp_sqrt_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
-    auto& tmp_sqrt = builder.add_access(inter_block, tmp_sqrt_name);
+        auto tmp_sqrt_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_sqrt = builder.add_access(inter_block, tmp_sqrt_name);
 
-    auto& sqrt_op = builder.add_library_node<
-        cmath::CMathNode>(inter_block, debug_info(), cmath::CMathFunction::sqrt, data_type.primitive_type());
+        auto& sqrt_op = builder.add_library_node<
+            cmath::CMathNode>(inter_block, debug_info(), cmath::CMathFunction::sqrt, data_type.primitive_type());
 
-    builder.add_computational_memlet(inter_block, tmp_eps, sqrt_op, "_in1", {}, scalar_type);
+        builder.add_computational_memlet(inter_block, tmp_eps, sqrt_op, "_in1", {}, scalar_type);
 
-    builder.add_computational_memlet(inter_block, sqrt_op, "_out", tmp_sqrt, {}, scalar_type);
+        builder.add_computational_memlet(inter_block, sqrt_op, "_out", tmp_sqrt, {}, scalar_type);
 
-    auto& one_const = builder.add_constant(inter_block, "1.0", scalar_type);
-    auto& div_op = builder.add_tasklet(inter_block, data_flow::fp_div, "_out", {"one", "sqrt"});
-    builder.add_computational_memlet(inter_block, one_const, div_op, "one", {}, scalar_type);
-    builder.add_computational_memlet(inter_block, tmp_sqrt, div_op, "sqrt", {}, scalar_type);
+        auto& one_const = builder.add_constant(inter_block, "1.0", scalar_type);
+        auto& div_op = builder.add_tasklet(inter_block, data_flow::fp_div, "_out", {"one", "sqrt"});
+        builder.add_computational_memlet(inter_block, one_const, div_op, "one", {}, scalar_type);
+        builder.add_computational_memlet(inter_block, tmp_sqrt, div_op, "sqrt", {}, scalar_type);
 
-    auto& interm_store = builder.add_access(inter_block, interm_name);
-    builder.add_computational_memlet(inter_block, div_op, "_out", interm_store, {}, scalar_type);
+        auto& interm_store = builder.add_access(inter_block, interm_name);
+        builder.add_computational_memlet(inter_block, div_op, "_out", interm_store, {}, scalar_type);
 
-    auto& innermost_dim = loop_dims.at(layout_.dims() - 1);
+        auto& innermost_dim = loop_dims.at(layout_.dims() - 1);
 
-    std::vector<symbolic::Expression> innermost_subset;
-    for (auto& builder_map_dim : loop_dims) {
-        innermost_subset.push_back(builder_map_dim.indvar);
+        std::vector<symbolic::Expression> innermost_subset;
+        for (auto& builder_map_dim : loop_dims) {
+            innermost_subset.push_back(builder_map_dim.indvar);
+        }
+
+        auto& innermost_block = builder.add_block(innermost_dim.seq);
+        auto& x_in = builder.add_access(innermost_block, batch_in.name);
+        auto& interm_in = builder.add_access(innermost_block, interm_name);
+        auto& e_elem_in = builder.add_access(innermost_block, e_in.name);
+        auto& gamma_elem_in = builder.add_access(innermost_block, gamma_in.name);
+        auto& beta_elem_in = builder.add_access(innermost_block, beta_in.name);
+
+        auto& result_ptr_out_elem = builder.add_access(innermost_block, result_ptr_in.name);
+
+        auto& sub_op = builder.add_tasklet(innermost_block, data_flow::fp_sub, "_out", {"x", "e"}, debug_info());
+
+        builder.add_computational_memlet(innermost_block, x_in, sub_op, "x", innermost_subset, data_type);
+        builder.add_computational_memlet(innermost_block, e_elem_in, sub_op, "e", c_subset, tensor_1d);
+        auto tmp_sub_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_sub = builder.add_access(innermost_block, tmp_sub_name);
+        builder.add_computational_memlet(innermost_block, sub_op, "_out", tmp_sub, {}, scalar_type);
+
+        auto& mul_interm_op =
+            builder.add_tasklet(innermost_block, data_flow::fp_mul, "_out", {"num", "den"}, debug_info());
+
+        builder.add_computational_memlet(innermost_block, tmp_sub, mul_interm_op, "num", {}, scalar_type);
+        builder.add_computational_memlet(innermost_block, interm_in, mul_interm_op, "den", {}, scalar_type);
+        auto tmp_interm = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_mul_interm = builder.add_access(innermost_block, tmp_interm);
+        builder.add_computational_memlet(innermost_block, mul_interm_op, "_out", tmp_mul_interm, {}, scalar_type);
+
+        auto& mul_gamma_op =
+            builder.add_tasklet(innermost_block, data_flow::fp_mul, "_out", {"frac", "g"}, debug_info());
+
+        builder.add_computational_memlet(innermost_block, tmp_mul_interm, mul_gamma_op, "frac", {}, scalar_type);
+        builder.add_computational_memlet(innermost_block, gamma_elem_in, mul_gamma_op, "g", c_subset, tensor_1d);
+
+        auto tmp_gamma = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_mul_gamma = builder.add_access(innermost_block, tmp_gamma);
+        builder.add_computational_memlet(innermost_block, mul_gamma_op, "_out", tmp_mul_gamma, {}, scalar_type);
+
+        auto& add_beta_op = builder.add_tasklet(innermost_block, data_flow::fp_add, "_out", {"_in", "b"}, debug_info());
+
+        builder.add_computational_memlet(innermost_block, tmp_mul_gamma, add_beta_op, "_in", {}, scalar_type);
+        builder.add_computational_memlet(innermost_block, beta_elem_in, add_beta_op, "b", c_subset, tensor_1d);
+        builder.add_computational_memlet(
+            innermost_block, add_beta_op, "_out", result_ptr_out_elem, innermost_subset, data_type
+        );
+
+        batch_in.remove_old(builder, block);
+        var_in.remove_old(builder, block);
+        e_in.remove_old(builder, block);
+        eps_in.remove_old(builder, block);
+        gamma_in.remove_old(builder, block);
+        beta_in.remove_old(builder, block);
+        result_ptr_in.remove_old(builder, block);
+
+        builder.remove_node(block, *this);
+        assert(dataflow.nodes().size() == 0 && "At expand time, no other nodes may be in the same graph");
+        builder.remove_child(parent, index + 1);
+
+        return true;
+    } else {
+        // GPU implementation of batchnorm:
+        // Move sqrt and division into the innermost loop to enable more parallelism.
+        auto& dataflow = this->get_parent();
+        auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
+
+        auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
+        auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
+        int index = parent.index(block);
+        auto& transition = parent.at(index).second;
+
+        auto batch_in = find_usable_input_access_node(dataflow, *this, "Batch");
+        auto& data_type = batch_in.memlet->base_type();
+        types::Scalar scalar_type(data_type.primitive_type());
+        types::Tensor tensor_1d(scalar_type, {num_features()}, {symbolic::one()});
+        std::string temp_var_prefix = "_batchn_tmp";
+        int tmp_idx = 0;
+        auto var_in = find_usable_input_access_node(dataflow, *this, "Var");
+        auto e_in = find_usable_input_access_node(dataflow, *this, "E");
+        auto gamma_in = find_usable_input_access_node(dataflow, *this, "Gamma");
+        auto beta_in = find_usable_input_access_node(dataflow, *this, "Beta");
+        auto result_ptr_in = find_usable_input_access_node(dataflow, *this, "B_out");
+        auto eps_in = find_usable_input_access_node(dataflow, *this, "epsilon");
+
+        auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), debug_info());
+
+        auto loop_dims = create_maps(builder, layout_.shape(), new_sequence);
+
+        auto& c_dim = loop_dims.at(1);
+        std::vector<symbolic::Expression> c_subset{c_dim.indvar};
+
+        auto& innermost_dim = loop_dims.at(layout_.dims() - 1);
+
+        std::vector<symbolic::Expression> innermost_subset;
+        for (auto& builder_map_dim : loop_dims) {
+            innermost_subset.push_back(builder_map_dim.indvar);
+        }
+
+        auto& innermost_block = builder.add_block(innermost_dim.seq);
+
+        // Access nodes
+        auto& x_in = builder.add_access(innermost_block, batch_in.name);
+        auto& var_elem_in = builder.add_access(innermost_block, var_in.name);
+        data_flow::AccessNode& epsilon_const = eps_in.is_const
+                                                   ? builder.add_constant(innermost_block, eps_in.name, scalar_type)
+                                                   : builder.add_access(innermost_block, eps_in.name);
+        auto& e_elem_in = builder.add_access(innermost_block, e_in.name);
+        auto& gamma_elem_in = builder.add_access(innermost_block, gamma_in.name);
+        auto& beta_elem_in = builder.add_access(innermost_block, beta_in.name);
+        auto& result_ptr_out_elem = builder.add_access(innermost_block, result_ptr_in.name);
+
+        // var[c] + eps
+        auto& add_eps_op =
+            builder.add_tasklet(innermost_block, data_flow::fp_add, "_out", {"var", "eps"}, debug_info());
+        builder.add_computational_memlet(innermost_block, var_elem_in, add_eps_op, "var", c_subset, tensor_1d);
+        builder.add_computational_memlet(innermost_block, epsilon_const, add_eps_op, "eps", {}, scalar_type);
+        auto tmp_eps_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_eps = builder.add_access(innermost_block, tmp_eps_name);
+        builder.add_computational_memlet(innermost_block, add_eps_op, "_out", tmp_eps, {}, scalar_type);
+
+        // sqrt(var[c] + eps)
+        auto tmp_sqrt_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_sqrt = builder.add_access(innermost_block, tmp_sqrt_name);
+        auto& sqrt_op = builder.add_library_node<
+            cmath::CMathNode>(innermost_block, debug_info(), cmath::CMathFunction::sqrt, data_type.primitive_type());
+        builder.add_computational_memlet(innermost_block, tmp_eps, sqrt_op, "_in1", {}, scalar_type);
+        builder.add_computational_memlet(innermost_block, sqrt_op, "_out", tmp_sqrt, {}, scalar_type);
+
+        // 1.0 / sqrt(var[c] + eps)
+        auto& one_const = builder.add_constant(innermost_block, "1.0", scalar_type);
+        auto& div_op = builder.add_tasklet(innermost_block, data_flow::fp_div, "_out", {"one", "sqrt"});
+        builder.add_computational_memlet(innermost_block, one_const, div_op, "one", {}, scalar_type);
+        builder.add_computational_memlet(innermost_block, tmp_sqrt, div_op, "sqrt", {}, scalar_type);
+        auto interm_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& interm_store = builder.add_access(innermost_block, interm_name);
+        builder.add_computational_memlet(innermost_block, div_op, "_out", interm_store, {}, scalar_type);
+
+        // x - e[c]
+        auto& sub_op = builder.add_tasklet(innermost_block, data_flow::fp_sub, "_out", {"x", "e"}, debug_info());
+        builder.add_computational_memlet(innermost_block, x_in, sub_op, "x", innermost_subset, data_type);
+        builder.add_computational_memlet(innermost_block, e_elem_in, sub_op, "e", c_subset, tensor_1d);
+        auto tmp_sub_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_sub = builder.add_access(innermost_block, tmp_sub_name);
+        builder.add_computational_memlet(innermost_block, sub_op, "_out", tmp_sub, {}, scalar_type);
+
+        // (x - e[c]) * (1/sqrt(var[c]+eps))
+        auto& mul_interm_op =
+            builder.add_tasklet(innermost_block, data_flow::fp_mul, "_out", {"num", "den"}, debug_info());
+        builder.add_computational_memlet(innermost_block, tmp_sub, mul_interm_op, "num", {}, scalar_type);
+        builder.add_computational_memlet(innermost_block, interm_store, mul_interm_op, "den", {}, scalar_type);
+        auto tmp_interm = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_mul_interm = builder.add_access(innermost_block, tmp_interm);
+        builder.add_computational_memlet(innermost_block, mul_interm_op, "_out", tmp_mul_interm, {}, scalar_type);
+
+        // * gamma[c]
+        auto& mul_gamma_op =
+            builder.add_tasklet(innermost_block, data_flow::fp_mul, "_out", {"frac", "g"}, debug_info());
+        builder.add_computational_memlet(innermost_block, tmp_mul_interm, mul_gamma_op, "frac", {}, scalar_type);
+        builder.add_computational_memlet(innermost_block, gamma_elem_in, mul_gamma_op, "g", c_subset, tensor_1d);
+        auto tmp_gamma = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
+        auto& tmp_mul_gamma = builder.add_access(innermost_block, tmp_gamma);
+        builder.add_computational_memlet(innermost_block, mul_gamma_op, "_out", tmp_mul_gamma, {}, scalar_type);
+
+        // + beta[c]
+        auto& add_beta_op = builder.add_tasklet(innermost_block, data_flow::fp_add, "_out", {"_in", "b"}, debug_info());
+        builder.add_computational_memlet(innermost_block, tmp_mul_gamma, add_beta_op, "_in", {}, scalar_type);
+        builder.add_computational_memlet(innermost_block, beta_elem_in, add_beta_op, "b", c_subset, tensor_1d);
+        builder.add_computational_memlet(
+            innermost_block, add_beta_op, "_out", result_ptr_out_elem, innermost_subset, data_type
+        );
+
+        batch_in.remove_old(builder, block);
+        var_in.remove_old(builder, block);
+        e_in.remove_old(builder, block);
+        eps_in.remove_old(builder, block);
+        gamma_in.remove_old(builder, block);
+        beta_in.remove_old(builder, block);
+        result_ptr_in.remove_old(builder, block);
+
+        builder.remove_node(block, *this);
+        assert(dataflow.nodes().size() == 0 && "At expand time, no other nodes may be in the same graph");
+        builder.remove_child(parent, index + 1);
+
+        return true;
     }
-
-    auto& innermost_block = builder.add_block(innermost_dim.seq);
-    auto& x_in = builder.add_access(innermost_block, batch_in.name);
-    auto& interm_in = builder.add_access(innermost_block, interm_name);
-    auto& e_elem_in = builder.add_access(innermost_block, e_in.name);
-    auto& gamma_elem_in = builder.add_access(innermost_block, gamma_in.name);
-    auto& beta_elem_in = builder.add_access(innermost_block, beta_in.name);
-
-    auto& result_ptr_out_elem = builder.add_access(innermost_block, result_ptr_in.name);
-
-    auto& sub_op = builder.add_tasklet(innermost_block, data_flow::fp_sub, "_out", {"x", "e"}, debug_info());
-
-    builder.add_computational_memlet(innermost_block, x_in, sub_op, "x", innermost_subset, data_type);
-    builder.add_computational_memlet(innermost_block, e_elem_in, sub_op, "e", c_subset, tensor_1d);
-    auto tmp_sub_name = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
-    auto& tmp_sub = builder.add_access(innermost_block, tmp_sub_name);
-    builder.add_computational_memlet(innermost_block, sub_op, "_out", tmp_sub, {}, scalar_type);
-
-    auto& mul_interm_op = builder.add_tasklet(innermost_block, data_flow::fp_mul, "_out", {"num", "den"}, debug_info());
-
-    builder.add_computational_memlet(innermost_block, tmp_sub, mul_interm_op, "num", {}, scalar_type);
-    builder.add_computational_memlet(innermost_block, interm_in, mul_interm_op, "den", {}, scalar_type);
-    auto tmp_interm = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
-    auto& tmp_mul_interm = builder.add_access(innermost_block, tmp_interm);
-    builder.add_computational_memlet(innermost_block, mul_interm_op, "_out", tmp_mul_interm, {}, scalar_type);
-
-    auto& mul_gamma_op = builder.add_tasklet(innermost_block, data_flow::fp_mul, "_out", {"frac", "g"}, debug_info());
-
-    builder.add_computational_memlet(innermost_block, tmp_mul_interm, mul_gamma_op, "frac", {}, scalar_type);
-    builder.add_computational_memlet(innermost_block, gamma_elem_in, mul_gamma_op, "g", c_subset, tensor_1d);
-
-    auto tmp_gamma = create_temp_var(builder, temp_var_prefix, tmp_idx++, scalar_type);
-    auto& tmp_mul_gamma = builder.add_access(innermost_block, tmp_gamma);
-    builder.add_computational_memlet(innermost_block, mul_gamma_op, "_out", tmp_mul_gamma, {}, scalar_type);
-
-    auto& add_beta_op = builder.add_tasklet(innermost_block, data_flow::fp_add, "_out", {"_in", "b"}, debug_info());
-
-    builder.add_computational_memlet(innermost_block, tmp_mul_gamma, add_beta_op, "_in", {}, scalar_type);
-    builder.add_computational_memlet(innermost_block, beta_elem_in, add_beta_op, "b", c_subset, tensor_1d);
-    builder
-        .add_computational_memlet(innermost_block, add_beta_op, "_out", result_ptr_out_elem, innermost_subset, data_type);
-
-    batch_in.remove_old(builder, block);
-    var_in.remove_old(builder, block);
-    e_in.remove_old(builder, block);
-    eps_in.remove_old(builder, block);
-    gamma_in.remove_old(builder, block);
-    beta_in.remove_old(builder, block);
-    result_ptr_in.remove_old(builder, block);
-
-    builder.remove_node(block, *this);
-    assert(dataflow.nodes().size() == 0 && "At expand time, no other nodes may be in the same graph");
-    builder.remove_child(parent, index + 1);
-
-    return true;
 }
 
 symbolic::Expression BatchNormNode::flop() const {

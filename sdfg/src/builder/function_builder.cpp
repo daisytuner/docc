@@ -156,8 +156,6 @@ void FunctionBuilder::rename_container(const std::string& old_name, const std::s
         auto assumption = function.assumption(symbolic::symbol(old_name));
 
         symbolic::Assumption new_assumption(symbolic::symbol(new_name));
-        new_assumption.lower_bound_deprecated(assumption.lower_bound_deprecated());
-        new_assumption.upper_bound_deprecated(assumption.upper_bound_deprecated());
         new_assumption.tight_lower_bound(assumption.tight_lower_bound());
         new_assumption.tight_upper_bound(assumption.tight_upper_bound());
         for (auto& lb : assumption.lower_bounds()) {

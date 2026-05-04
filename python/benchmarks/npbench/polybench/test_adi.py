@@ -87,9 +87,9 @@ def test_adi(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "HIGHWAY": 5,
+                "VECTORIZE": 23,
                 "MAP": 24,
-                "SEQUENTIAL": 19,
+                "SEQUENTIAL": 1,
                 "FOR": 29,
                 "Malloc": 11,
             }
@@ -99,9 +99,8 @@ def test_adi(target):
             verification={
                 "Free": 3,
                 "CPU_PARALLEL": 1,
-                "HIGHWAY": 4,
+                "VECTORIZE": 22,
                 "MAP": 23,
-                "SEQUENTIAL": 18,
                 "FOR": 28,
                 "Malloc": 11,
             }

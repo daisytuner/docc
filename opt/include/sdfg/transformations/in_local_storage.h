@@ -1,8 +1,13 @@
 #pragma once
 
+#include <unordered_set>
+
 #include "sdfg/data_flow/memlet.h"
+#include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/transformations/transformation.h"
+#include "sdfg/types/type.h"
 
 namespace sdfg {
 namespace transformations {
@@ -15,72 +20,53 @@ namespace transformations {
  * the loop, then redirects all reads to the local buffer.
  *
  * This is the read-only counterpart to OutLocalStorage. While OutLocalStorage
- * handles accumulators (read-modify-write), InLocalStorage handles pure inputs.
+ * handles write/read-write containers, InLocalStorage handles pure inputs.
  *
- * Before:
- *   for ic = 0 to M step MC:
- *       for k = 0 to K:
- *           ... A[ic + ir][k] ...   // strided access
- *
- * After InLocalStorage(ic_loop, "A"):
- *   for ic = 0 to M step MC:
- *       // Copy tile of A into local buffer
- *       for ir = 0 to MC:
- *           for k = 0 to K:
- *               A_local[ir][k] = A[ic + ir][k]
- *
- *       for k = 0 to K:
- *           ... A_local[ir][k] ...   // contiguous access
- *
- * The transformation analyzes the convex hull of all read accesses to determine
- * the buffer dimensions and index transformations.
- *
- * Composable with other transformations:
- *   1. LoopTiling creates tile loops (strip-mining)
- *   2. InLocalStorage copies tile into contiguous buffer
- *   3. LoopInterchange can reorder copy loops for micro-panel layout
+ * Uses MemoryLayoutAnalysis tile API to compute bounding-box extents for the
+ * accessed region, supporting:
+ * - Constant index access (e.g. A[5]) → tile extent {1}
+ * - Loop-dependent access (e.g. A[i]) → tile extent from loop bounds
+ * - Delinearized Pointer access (e.g. A[i*K+j]) → multi-dim tile extents
+ * - Non-identical subsets across uses (bounding box union)
  *
  * @note The container must be read-only within the loop scope (no writes)
- * @note Access pattern must be affine in loop indices
- * @note Accessed ranges must be computable for buffer allocation
+ * @note All tile extents must resolve to integer constants
  */
 class InLocalStorage : public Transformation {
 public:
-    /// Analyzed access information for buffer allocation
-    struct AccessInfo {
-        /// Symbolic expressions for buffer dimensions
+    /// Tile information populated by can_be_applied
+    struct TileInfo {
+        /// Overapproximated integer extents per delinearized dimension
         std::vector<symbolic::Expression> dimensions;
-        /// Index transformation: original_index[d] = base[d] + local_index[d]
+        /// Tile min indices per dimension (bases for index subtraction)
         std::vector<symbolic::Expression> bases;
-        /// The representative access subset (first encountered)
-        data_flow::Subset representative_subset;
-        /// Determines copy loop placement based on which loops contribute to buffer dimensions:
-        ///
-        /// - false (simple case): Target loop's indvar contributes to access indices.
-        ///   Copy happens ONCE before target loop.
-        ///   Example: for i: A[i] → copy A[0..N] before loop, then A_local[i]
-        ///
-        /// - true (tiled case): Only descendant loops contribute, not the target.
-        ///   Copy happens PER ITERATION inside target loop.
-        ///   Example: for i_tile: for i: A[i] → copy A[i_tile..i_tile+TILE] each iteration
-        ///
-        /// Logic: copy_inside_loop = descendant_loops_contribute && !target_loop_contributes
-        bool copy_inside_loop = false;
+        /// Layout strides from MemoryLayoutAnalysis (for Pointer re-linearization)
+        std::vector<symbolic::Expression> strides;
+        /// Layout offset from MemoryLayoutAnalysis
+        symbolic::Expression offset = symbolic::integer(0);
     };
 
 private:
     structured_control_flow::StructuredLoop& loop_;
+    const data_flow::AccessNode& access_node_;
     std::string container_;
     std::string local_name_; ///< Name of the created local buffer
-    AccessInfo access_info_; ///< Populated by can_be_applied
+    TileInfo tile_info_; ///< Populated by can_be_applied
+    types::StorageType storage_type_; ///< Storage type for the local buffer
+    std::unordered_set<const data_flow::Memlet*> group_memlets_; ///< Memlets in the selected tile group
 
 public:
     /**
      * @brief Construct an in-local storage transformation
      * @param loop The loop defining the scope for localization
-     * @param container Name of the container to localize
+     * @param access_node The access node referencing the container to localize
+     * @param storage_type Storage type for the local buffer (default: CPU_Stack)
      */
-    InLocalStorage(structured_control_flow::StructuredLoop& loop, std::string container);
+    InLocalStorage(
+        structured_control_flow::StructuredLoop& loop,
+        const data_flow::AccessNode& access_node,
+        const types::StorageType& storage_type = types::StorageType::CPU_Stack()
+    );
 
     /**
      * @brief Get the name of this transformation
@@ -92,11 +78,9 @@ public:
      * @brief Check if this transformation can be applied
      *
      * Criteria:
-     * - Container exists and is an array type
+     * - Container exists and is an array/pointer type
      * - Container is read-only within the loop (no writes)
-     * - All accesses have identical dimensionality
-     * - Access indices are affine in loop variables
-     * - Accessed ranges can be computed symbolically
+     * - MemoryLayoutAnalysis provides a tile with integer extents
      *
      * @param builder The SDFG builder
      * @param analysis_manager The analysis manager
@@ -133,10 +117,10 @@ public:
     const std::string& local_container() const { return local_name_; }
 
     /**
-     * @brief Get the analyzed access information
-     * @return The access info (valid after can_be_applied() returns true)
+     * @brief Get the tile information
+     * @return The tile info (valid after can_be_applied() returns true)
      */
-    const AccessInfo& access_info() const { return access_info_; }
+    const TileInfo& tile_info() const { return tile_info_; }
 };
 
 } // namespace transformations

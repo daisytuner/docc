@@ -38,7 +38,7 @@ def test_go_fast(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 1,
+                "VECTORIZE": 1,
                 "MAP": 2,
                 "Malloc": 0,
                 "CMath": 1,

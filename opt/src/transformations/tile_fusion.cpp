@@ -1,5 +1,6 @@
 #include "sdfg/transformations/tile_fusion.h"
 
+#include <climits>
 #include <cmath>
 #include <stdexcept>
 
@@ -8,16 +9,23 @@
 #include "sdfg/analysis/arguments_analysis.h"
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
+#include "sdfg/analysis/memory_layout_analysis.h"
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
+#include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/delinearization.h"
+#include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/symbolic/utils.h"
+#include "sdfg/types/array.h"
+#include "sdfg/types/pointer.h"
+#include "sdfg/types/scalar.h"
 
 namespace sdfg {
 namespace transformations {
@@ -279,18 +287,24 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     // ==========================================================================
     // Criterion 5: Shared intermediate container exists
     // First writes C, second reads C, second does NOT write C
+    // Also detect cyclic containers: second writes D, first reads D
     // ==========================================================================
     auto first_args = arguments_analysis.arguments(analysis_manager, first_map_);
     auto second_args = arguments_analysis.arguments(analysis_manager, second_map_);
 
     std::unordered_set<std::string> first_outputs;
+    std::unordered_set<std::string> first_inputs;
     for (const auto& [name, arg] : first_args) {
         if (arg.is_output) {
             first_outputs.insert(name);
         }
+        if (arg.is_input) {
+            first_inputs.insert(name);
+        }
     }
 
     std::unordered_set<std::string> shared_containers;
+    std::unordered_set<std::string> cyclic_container_names;
     for (const auto& [name, arg] : second_args) {
         if (first_outputs.contains(name)) {
             if (arg.is_output) {
@@ -299,6 +313,10 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
             if (arg.is_input) {
                 shared_containers.insert(name);
             }
+        }
+        // Detect cyclic: K2 writes container that K1 reads
+        if (arg.is_output && first_inputs.contains(name) && !first_outputs.contains(name)) {
+            cyclic_container_names.insert(name);
         }
     }
     if (shared_containers.empty()) {
@@ -436,6 +454,137 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     }
 
     radius_ = overall_radius;
+
+    // ==========================================================================
+    // Criterion 8: Analyze cyclic containers for double buffering
+    // Use MemoryLayoutAnalysis to delinearize accesses and reason about
+    // multi-dimensional stencil patterns (e.g., A[i*N+j] → A[i][j]).
+    // For each cyclic container, identify the tiled dimension, extract
+    // stencil offsets in that dimension, and compute buffer geometry.
+    // Only needed when radius > 0 (tiles overlap).
+    // ==========================================================================
+    cyclic_containers_.clear();
+
+    if (overall_radius > 0) {
+        auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+        for (const auto& container : cyclic_container_names) {
+            // Collect all K1 read memlets for this container
+            struct ReadMemletInfo {
+                const data_flow::Memlet* memlet;
+            };
+            std::vector<ReadMemletInfo> read_memlets;
+            for (auto* block : producer_blocks) {
+                auto& dataflow = block->dataflow();
+                for (auto& node : dataflow.nodes()) {
+                    auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+                    if (access == nullptr || access->data() != container) continue;
+                    if (dataflow.out_degree(*access) > 0) {
+                        for (auto& memlet : dataflow.out_edges(*access)) {
+                            if (memlet.type() != data_flow::MemletType::Computational) continue;
+                            read_memlets.push_back({&memlet});
+                        }
+                    }
+                }
+            }
+            if (read_memlets.empty()) {
+                return false;
+            }
+
+            auto inner_indvar = first_inner_map->indvar();
+
+            int min_offset = std::numeric_limits<int>::max();
+            int max_offset = std::numeric_limits<int>::min();
+            int tiled_dim = -1;
+            std::vector<symbolic::Expression> layout_dimensions;
+            std::vector<symbolic::Expression> layout_strides;
+            symbolic::Expression layout_offset = symbolic::integer(0);
+
+            for (auto& info : read_memlets) {
+                // Use MemoryLayoutAnalysis to get delinearized access
+                auto* mem_access = mla.access(*info.memlet);
+                if (mem_access == nullptr) {
+                    return false; // Delinearization failed
+                }
+
+                auto& delin_subset = mem_access->subset;
+
+                // Find which dimension contains the inner (tiled) indvar
+                for (size_t d = 0; d < delin_subset.size(); d++) {
+                    if (symbolic::uses(delin_subset[d], inner_indvar->get_name())) {
+                        if (tiled_dim == -1) {
+                            tiled_dim = static_cast<int>(d);
+                        } else if (tiled_dim != static_cast<int>(d)) {
+                            return false; // Indvar appears in multiple dimensions
+                        }
+
+                        // Decompose this dimension: should be coeff*indvar + offset
+                        auto decomp = symbolic::affine_decomposition(delin_subset[d], inner_indvar);
+                        if (!decomp.success) {
+                            return false;
+                        }
+                        auto coeff_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(decomp.coeff)->as_int();
+                        if (coeff_int != 1) {
+                            return false; // Non-unit stride in tiled dimension
+                        }
+                        auto offset_expr = decomp.offset;
+                        if (!SymEngine::is_a<SymEngine::Integer>(*offset_expr)) {
+                            return false; // Non-constant offset
+                        }
+                        int offset =
+                            static_cast<int>(SymEngine::down_cast<const SymEngine::Integer&>(*offset_expr).as_int());
+                        min_offset = std::min(min_offset, offset);
+                        max_offset = std::max(max_offset, offset);
+                    }
+                }
+
+                // Capture layout info from first access (all accesses to same container share layout)
+                if (layout_dimensions.empty()) {
+                    auto& layout = mem_access->layout;
+                    for (size_t d = 0; d < layout.dims(); d++) {
+                        layout_dimensions.push_back(layout.shape().at(d));
+                        layout_strides.push_back(layout.strides().at(d));
+                    }
+                    layout_offset = layout.offset();
+                }
+            }
+
+            if (tiled_dim == -1) {
+                return false; // No dimension depends on inner indvar
+            }
+
+            int tiled_dim_buf_size = tile_size + 2 * overall_radius + max_offset - min_offset;
+
+            // Compute total buffer size: tiled_dim_buf_size * product(other dimensions)
+            symbolic::Expression total_buf_size = symbolic::integer(tiled_dim_buf_size);
+            for (size_t d = 0; d < layout_dimensions.size(); d++) {
+                if (static_cast<int>(d) != tiled_dim) {
+                    total_buf_size = symbolic::mul(total_buf_size, layout_dimensions[d]);
+                }
+            }
+
+            // Total buffer size must be a constant integer for now
+            // (non-tiled dimensions may be symbolic like N — that's fine, buffer is symbolic-sized)
+            CyclicContainerInfo cyc_info;
+            cyc_info.container = container;
+            cyc_info.min_offset = min_offset;
+            cyc_info.max_offset = max_offset;
+            cyc_info.tiled_dim = tiled_dim;
+            cyc_info.tiled_dim_buf_size = tiled_dim_buf_size;
+            cyc_info.dimensions = layout_dimensions;
+            cyc_info.strides = layout_strides;
+            cyc_info.layout_offset = layout_offset;
+            // buffer_size is now used as a symbolic expression in apply, but store int for 1D compat
+            if (SymEngine::is_a<SymEngine::Integer>(*total_buf_size)) {
+                cyc_info.buffer_size =
+                    static_cast<int>(SymEngine::down_cast<const SymEngine::Integer&>(*total_buf_size).as_int());
+            } else {
+                cyc_info.buffer_size = -1; // Symbolic — will use expression in apply
+            }
+            cyclic_containers_.push_back(cyc_info);
+        }
+    } // if (overall_radius > 0)
+
     return true;
 }
 
@@ -523,11 +672,40 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
         auto extended_tile_bound =
             symbolic::Lt(first_inner_indvar, symbolic::add(new_tile_indvar, symbolic::add(tile_size_expr, radius_expr)));
 
-        // Get the original non-tile bound from the canonical bound of the original inner map
-        auto canonical = first_inner_map->canonical_bound();
-        if (!canonical.is_null()) {
-            auto original_bound = symbolic::Lt(first_inner_indvar, canonical);
-            new_first_inner_condition = symbolic::And(extended_tile_bound, original_bound);
+        // Extract non-tile upper bounds from the original inner map condition.
+        // canonical_bound() returns min of ALL bounds including the tile bound,
+        // but we only want bounds independent of the tile indvar (e.g., array size).
+        auto original_condition = first_inner_map->condition();
+        symbolic::CNF cnf;
+        try {
+            cnf = symbolic::conjunctive_normal_form(original_condition);
+        } catch (...) {
+            cnf.clear();
+        }
+
+        // Collect non-tile upper bounds on the inner indvar
+        std::vector<symbolic::Expression> non_tile_bounds;
+        for (auto& clause : cnf) {
+            for (auto& literal : clause) {
+                // Check for i < bound forms
+                if (SymEngine::is_a<SymEngine::StrictLessThan>(*literal)) {
+                    auto lt = SymEngine::rcp_static_cast<const SymEngine::StrictLessThan>(literal);
+                    auto lhs = lt->get_arg1();
+                    auto rhs = lt->get_arg2();
+                    if (symbolic::eq(lhs, first_inner_indvar) && !symbolic::uses(rhs, first_tile_indvar->get_name())) {
+                        non_tile_bounds.push_back(rhs);
+                    }
+                }
+            }
+        }
+
+        if (!non_tile_bounds.empty()) {
+            // Build condition: extended_tile_bound AND all non-tile bounds
+            auto result_condition = extended_tile_bound;
+            for (auto& bound : non_tile_bounds) {
+                result_condition = symbolic::And(result_condition, symbolic::Lt(first_inner_indvar, bound));
+            }
+            new_first_inner_condition = result_condition;
         } else {
             new_first_inner_condition = extended_tile_bound;
         }
@@ -560,6 +738,275 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
     // Move the consumer body into the new inner map
     builder.move_children(second_inner_map->root(), new_second_inner.root());
+
+    // ==========================================================================
+    // Step 3.5: Double-buffer pre-fetch for cyclic containers
+    //
+    // Uses layout info from MemoryLayoutAnalysis (computed in can_be_applied)
+    // to handle multi-dimensional stencils. For each cyclic container,
+    // generates nested copy loops and rewrites K1's reads to use the buffer.
+    // ==========================================================================
+
+    for (const auto& cyc : cyclic_containers_) {
+        auto& container_type = sdfg.type(cyc.container);
+        // Get scalar element type from container (Pointer or Array)
+        const types::IType* scalar_type_ptr = nullptr;
+        if (auto* ptr_type = dynamic_cast<const types::Pointer*>(&container_type)) {
+            scalar_type_ptr = &ptr_type->pointee_type();
+        } else if (auto* arr_type = dynamic_cast<const types::Array*>(&container_type)) {
+            scalar_type_ptr = &arr_type->element_type();
+        } else {
+            throw std::runtime_error("TileFusion: cyclic container '" + cyc.container + "' has unsupported type");
+        }
+        auto& scalar_type = *scalar_type_ptr;
+        bool is_pointer = dynamic_cast<const types::Pointer*>(&container_type) != nullptr;
+
+        auto radius_expr = symbolic::integer(radius_);
+        auto min_offset_expr = symbolic::integer(cyc.min_offset);
+        types::Scalar idx_type(types::PrimitiveType::UInt64);
+
+        // Build buffer dimensions: same as layout but with tiled dim replaced by tiled_dim_buf_size
+        std::vector<symbolic::Expression> buf_dimensions;
+        for (size_t d = 0; d < cyc.dimensions.size(); d++) {
+            if (static_cast<int>(d) == cyc.tiled_dim) {
+                buf_dimensions.push_back(symbolic::integer(cyc.tiled_dim_buf_size));
+            } else {
+                buf_dimensions.push_back(cyc.dimensions[d]);
+            }
+        }
+
+        // Compute total buffer size
+        symbolic::Expression total_buf_size = symbolic::integer(1);
+        for (auto& dim : buf_dimensions) {
+            total_buf_size = symbolic::mul(total_buf_size, dim);
+        }
+
+        // Create two buffer containers (flat 1D arrays of total_buf_size)
+        auto buf_cur_name = "__tf_buf_cur_" + cyc.container;
+        auto buf_pf_name = "__tf_buf_pf_" + cyc.container;
+        types::Array buf_type(scalar_type, total_buf_size);
+        builder.add_container(buf_cur_name, buf_type);
+        builder.add_container(buf_pf_name, buf_type);
+
+        // Helper: linearize multi-dim indices into flat buffer index (row-major)
+        auto linearize_buf = [&](const std::vector<symbolic::Expression>& indices) -> symbolic::Expression {
+            symbolic::Expression linear_idx = symbolic::integer(0);
+            symbolic::Expression stride = symbolic::integer(1);
+            for (int i = static_cast<int>(indices.size()) - 1; i >= 0; i--) {
+                linear_idx = symbolic::add(linear_idx, symbolic::mul(indices[i], stride));
+                stride = symbolic::mul(stride, buf_dimensions[i]);
+            }
+            return linear_idx;
+        };
+
+        // Helper: build original source subset from multi-dim copy indices
+        // For the tiled dim, the source index is: base + copy_indvar
+        // For non-tiled dims, the source index is just: copy_indvar
+        // If the container is a Pointer, re-linearize using layout strides
+        auto build_src_subset = [&](const std::vector<symbolic::Expression>& copy_indices,
+                                    const symbolic::Expression& tiled_base) -> data_flow::Subset {
+            std::vector<symbolic::Expression> full_indices;
+            for (size_t d = 0; d < cyc.dimensions.size(); d++) {
+                if (static_cast<int>(d) == cyc.tiled_dim) {
+                    full_indices.push_back(symbolic::add(tiled_base, copy_indices[d]));
+                } else {
+                    full_indices.push_back(copy_indices[d]);
+                }
+            }
+            if (is_pointer) {
+                // Re-linearize using layout strides: offset + sum(stride[d] * index[d])
+                symbolic::Expression linear = cyc.layout_offset;
+                for (size_t d = 0; d < full_indices.size(); d++) {
+                    linear = symbolic::add(linear, symbolic::mul(cyc.strides[d], full_indices[d]));
+                }
+                return {linear};
+            } else {
+                return data_flow::Subset(full_indices.begin(), full_indices.end());
+            }
+        };
+
+        // Helper: generate nested copy loops and a copy block
+        // copy_kind: 0 = src→buf_cur, 1 = src→buf_pf, 2 = buf_pf→buf_cur
+        auto generate_copy_loops = [&](structured_control_flow::Sequence& parent_scope,
+                                       structured_control_flow::ControlFlowNode* insert_before,
+                                       const symbolic::Expression& tiled_base,
+                                       int copy_kind) {
+            // Create indvars for each dimension
+            std::vector<symbolic::Symbol> copy_indvars;
+            structured_control_flow::Sequence* scope = &parent_scope;
+            bool first_loop = true;
+
+            for (size_t d = 0; d < buf_dimensions.size(); d++) {
+                std::string suffix = (copy_kind == 0) ? "init" : (copy_kind == 1) ? "pf" : "sw";
+                auto indvar_name = builder.find_new_name("__tf_" + suffix + "_d" + std::to_string(d));
+                builder.add_container(indvar_name, idx_type);
+                auto indvar = symbolic::symbol(indvar_name);
+                copy_indvars.push_back(indvar);
+
+                auto init = symbolic::integer(0);
+                auto condition = symbolic::Lt(indvar, buf_dimensions[d]);
+                auto update = symbolic::add(indvar, symbolic::integer(1));
+
+                if (first_loop && insert_before != nullptr) {
+                    auto& loop = builder.add_map_before(
+                        *scope,
+                        *insert_before,
+                        indvar,
+                        condition,
+                        init,
+                        update,
+                        structured_control_flow::ScheduleType_Sequential::create()
+                    );
+                    scope = &loop.root();
+                    first_loop = false;
+                } else if (first_loop) {
+                    auto& loop = builder.add_map(
+                        *scope,
+                        indvar,
+                        condition,
+                        init,
+                        update,
+                        structured_control_flow::ScheduleType_Sequential::create()
+                    );
+                    scope = &loop.root();
+                    first_loop = false;
+                } else {
+                    auto& loop = builder.add_map(
+                        *scope,
+                        indvar,
+                        condition,
+                        init,
+                        update,
+                        structured_control_flow::ScheduleType_Sequential::create()
+                    );
+                    scope = &loop.root();
+                }
+            }
+
+            // Create copy block
+            auto& blk = builder.add_block(*scope);
+            std::vector<symbolic::Expression> copy_exprs(copy_indvars.begin(), copy_indvars.end());
+            auto buf_subset = data_flow::Subset{linearize_buf(copy_exprs)};
+
+            if (copy_kind == 0 || copy_kind == 1) {
+                // src container → buffer
+                auto src_subset = build_src_subset(copy_exprs, tiled_base);
+                auto& src = builder.add_access(blk, cyc.container);
+                auto& dst = builder.add_access(blk, (copy_kind == 0) ? buf_cur_name : buf_pf_name);
+                auto& tasklet = builder.add_tasklet(blk, data_flow::TaskletCode::assign, "_out", {"_in"});
+                builder.add_computational_memlet(blk, src, tasklet, "_in", src_subset, container_type);
+                builder.add_computational_memlet(blk, tasklet, "_out", dst, buf_subset, buf_type);
+            } else {
+                // buf_pf → buf_cur
+                auto& src = builder.add_access(blk, buf_pf_name);
+                auto& dst = builder.add_access(blk, buf_cur_name);
+                auto& tasklet = builder.add_tasklet(blk, data_flow::TaskletCode::assign, "_out", {"_in"});
+                builder.add_computational_memlet(blk, src, tasklet, "_in", buf_subset, buf_type);
+                builder.add_computational_memlet(blk, tasklet, "_out", dst, buf_subset, buf_type);
+            }
+        };
+
+        // ==================================================================
+        // 3.5a: Initial copy INSIDE the fused For, guarded by if (tile == init)
+        // On the first iteration, we load from the original array.
+        // On subsequent iterations, buf_cur already has the right data from swap.
+        // Base for tiled dim: tile_init - radius + min_offset
+        // ==================================================================
+        auto init_tiled_base = symbolic::sub(symbolic::add(tile_init, min_offset_expr), radius_expr);
+
+        // Get a reference to the pre-fetch map (first child of fused_for) to insert before it
+        auto& first_child_in_fused = fused_for.root().at(0).first;
+
+        auto& init_if_else =
+            builder.add_if_else_before(fused_for.root(), first_child_in_fused, sdfg::control_flow::Assignments{});
+        auto init_cond = symbolic::Eq(new_tile_indvar, tile_init);
+        auto& init_then = builder.add_case(init_if_else, init_cond);
+        // Empty else branch (on subsequent iters, buf_cur has data from swap)
+        builder.add_case(init_if_else, symbolic::Not(init_cond));
+
+        generate_copy_loops(init_then, nullptr, init_tiled_base, 0);
+
+        // ==================================================================
+        // 3.5b: Pre-fetch INSIDE the fused For, BEFORE K1
+        // Base for tiled dim: tile + S - radius + min_offset
+        // ==================================================================
+        auto pf_tiled_base =
+            symbolic::sub(symbolic::add(new_tile_indvar, symbolic::add(tile_size_expr, min_offset_expr)), radius_expr);
+        generate_copy_loops(fused_for.root(), &new_first_inner, pf_tiled_base, 1);
+
+        // ==================================================================
+        // 3.5c: Redirect K1's reads of container to buf_cur
+        // Use MemoryLayoutAnalysis to get delinearized indices, rebase
+        // the tiled dimension, then re-linearize into the flat buffer.
+        // ==================================================================
+        auto buf_cur_base_tiled = symbolic::sub(symbolic::add(new_tile_indvar, min_offset_expr), radius_expr);
+
+        // Helper: rebase a raw subset for the buffer.
+        // For Pointer (linearized) access A[expr]:
+        //   buf_index = expr - stride[tiled_dim] * buf_cur_base_tiled
+        // For Array (multi-dim) access A[idx0, idx1, ...]:
+        //   rebase tiled_dim, linearize into flat buffer index
+        auto rebase_to_buffer = [&](const data_flow::Subset& subset) -> data_flow::Subset {
+            if (subset.size() == 1 && cyc.dimensions.size() > 1 && is_pointer) {
+                // Pointer type: subtract the tiled dimension's contribution to the linear base
+                auto linear_base = symbolic::mul(cyc.strides[cyc.tiled_dim], buf_cur_base_tiled);
+                return {symbolic::sub(subset.at(0), linear_base)};
+            }
+            if (subset.size() == cyc.dimensions.size()) {
+                // Multi-dim: rebase tiled dimension, linearize into buffer
+                std::vector<symbolic::Expression> buf_indices;
+                for (size_t d = 0; d < cyc.dimensions.size(); d++) {
+                    if (static_cast<int>(d) == cyc.tiled_dim) {
+                        buf_indices.push_back(symbolic::sub(subset[d], buf_cur_base_tiled));
+                    } else {
+                        buf_indices.push_back(subset[d]);
+                    }
+                }
+                return {linearize_buf(buf_indices)};
+            }
+            // 1D Array: rebase directly
+            if (subset.size() == 1) {
+                return {symbolic::sub(subset.at(0), buf_cur_base_tiled)};
+            }
+            return subset; // Fallback: no rebase
+        };
+
+        std::function<void(structured_control_flow::ControlFlowNode&)> rewrite_accesses;
+        rewrite_accesses = [&](structured_control_flow::ControlFlowNode& node) {
+            if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+                auto& dfg = block->dataflow();
+                for (auto* access : dfg.data_nodes()) {
+                    if (access->data() != cyc.container) continue;
+                    bool has_writes = dfg.in_degree(*access) > 0;
+                    for (auto& memlet : dfg.out_edges(*access)) {
+                        if (memlet.type() != data_flow::MemletType::Computational) continue;
+                        memlet.set_subset(rebase_to_buffer(memlet.subset()));
+                        memlet.set_base_type(buf_type);
+                    }
+                    if (!has_writes) {
+                        access->data(buf_cur_name);
+                    }
+                }
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                for (size_t i = 0; i < seq->size(); i++) {
+                    rewrite_accesses(seq->at(i).first);
+                }
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                rewrite_accesses(loop->root());
+            } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+                for (size_t i = 0; i < if_else->size(); i++) {
+                    rewrite_accesses(if_else->at(i).first);
+                }
+            }
+        };
+        rewrite_accesses(new_first_inner.root());
+
+        // ==================================================================
+        // 3.5d: Swap INSIDE the fused For, AFTER K2
+        // buf_cur = buf_pf
+        // ==================================================================
+        generate_copy_loops(fused_for.root(), nullptr, symbolic::integer(0), 2);
+    }
 
     // Step 4: Remove the original two tile Map nests
     // After we've moved the children out, remove the old maps from the parent

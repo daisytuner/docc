@@ -154,3 +154,183 @@ TEST(BlasTest, GemmNode) {
         }
     }
 }
+
+TEST(BlasTest, GemmNode_TN) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    // trans_a=Trans, trans_b=No
+    // A stored as k×m, lda=m; B stored as k×n, ldb=n
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Array arr_a_type(desc, symbolic::mul(symbolic::integer(dim_k), symbolic::integer(dim_i)));
+    types::Array arr_b_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_k)));
+    types::Array arr_res_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_i)));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("output", arr_res_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& input_a_node = builder.add_access(block, "arr_a");
+    auto& input_b_node = builder.add_access(block, "arr_b");
+    auto c_var_name = "output";
+    auto& dummy_input_node = builder.add_access(block, c_var_name);
+    auto& output_node = builder.add_access(block, c_var_name);
+    auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::Trans,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(dim_i),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_i), // lda = m (A stored as k×m)
+        symbolic::integer(dim_j), // ldb = n (B stored as k×n)
+        symbolic::integer(dim_j) // ldc = n
+    ));
+
+    auto& alpha_node = builder.add_constant(block, "1.0", desc);
+    auto& beta_node = builder.add_constant(block, "0.0", desc);
+
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
+    builder.add_computational_memlet(block, gemm_node, "__C", output_node, {symbolic::integer(0)}, arr_res_type);
+
+    builder.subject().validate();
+    analysis::AnalysisManager analysis_manager(sdfg);
+    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    builder.subject().validate();
+}
+
+TEST(BlasTest, GemmNode_NT) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    // trans_a=No, trans_b=Trans
+    // A stored as m×k, lda=k; B stored as n×k, ldb=k
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Array arr_a_type(desc, symbolic::mul(symbolic::integer(dim_k), symbolic::integer(dim_i)));
+    types::Array arr_b_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_k)));
+    types::Array arr_res_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_i)));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("output", arr_res_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& input_a_node = builder.add_access(block, "arr_a");
+    auto& input_b_node = builder.add_access(block, "arr_b");
+    auto c_var_name = "output";
+    auto& dummy_input_node = builder.add_access(block, c_var_name);
+    auto& output_node = builder.add_access(block, c_var_name);
+    auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::Trans,
+        symbolic::integer(dim_i),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_k), // lda = k (A stored as m×k)
+        symbolic::integer(dim_k), // ldb = k (B stored as n×k)
+        symbolic::integer(dim_j) // ldc = n
+    ));
+
+    auto& alpha_node = builder.add_constant(block, "1.0", desc);
+    auto& beta_node = builder.add_constant(block, "0.0", desc);
+
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
+    builder.add_computational_memlet(block, gemm_node, "__C", output_node, {symbolic::integer(0)}, arr_res_type);
+
+    builder.subject().validate();
+    analysis::AnalysisManager analysis_manager(sdfg);
+    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    builder.subject().validate();
+}
+
+TEST(BlasTest, GemmNode_TT) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    // trans_a=Trans, trans_b=Trans
+    // A stored as k×m, lda=m; B stored as n×k, ldb=k
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Array arr_a_type(desc, symbolic::mul(symbolic::integer(dim_k), symbolic::integer(dim_i)));
+    types::Array arr_b_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_k)));
+    types::Array arr_res_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_i)));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("output", arr_res_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& input_a_node = builder.add_access(block, "arr_a");
+    auto& input_b_node = builder.add_access(block, "arr_b");
+    auto c_var_name = "output";
+    auto& dummy_input_node = builder.add_access(block, c_var_name);
+    auto& output_node = builder.add_access(block, c_var_name);
+    auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::Trans,
+        math::blas::BLAS_Transpose::Trans,
+        symbolic::integer(dim_i),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_i), // lda = m (A stored as k×m)
+        symbolic::integer(dim_k), // ldb = k (B stored as n×k)
+        symbolic::integer(dim_j) // ldc = n
+    ));
+
+    auto& alpha_node = builder.add_constant(block, "1.0", desc);
+    auto& beta_node = builder.add_constant(block, "0.0", desc);
+
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
+    builder.add_computational_memlet(block, gemm_node, "__C", output_node, {symbolic::integer(0)}, arr_res_type);
+
+    builder.subject().validate();
+    analysis::AnalysisManager analysis_manager(sdfg);
+    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    builder.subject().validate();
+}

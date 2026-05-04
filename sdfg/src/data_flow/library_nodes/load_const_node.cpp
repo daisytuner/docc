@@ -163,8 +163,7 @@ void LoadConstNodeDispatcher::
 
     if (code_snippet_factory.find(marker) == code_snippet_factory.snippets().end()) {
         code_snippet_factory.require(marker, "", false);
-        // hacky way to only emit to global once
-        globals_stream << "#include <daisy_rtl/arg_capture_io.h>" << std::endl;
+        code_snippet_factory.add_global("#include <daisy_rtl/arg_capture_io.h>");
 
         globals_stream << std::endl;
     }

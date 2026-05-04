@@ -42,7 +42,7 @@ def test_gesummv(target):
             verification={
                 "Free": 4,
                 "GEMM": 2,
-                "HIGHWAY": 3,
+                "VECTORIZE": 3,
                 "SEQUENTIAL": 2,
                 "FOR": 5,
                 "MAP": 5,

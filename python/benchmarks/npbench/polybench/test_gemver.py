@@ -41,7 +41,7 @@ def test_gemver(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"HIGHWAY": 3, "FOR": 3, "MAP": 3, "Malloc": 3, "GEMM": 4}
+            verification={"VECTORIZE": 3, "FOR": 3, "MAP": 3, "Malloc": 3, "GEMM": 4}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
@@ -59,8 +59,8 @@ def test_gemver(target):
                 "CUDA": 3,
                 "FOR": 3,
                 "MAP": 3,
-                "CUDAOffloading": 14,
-                "Malloc": 3,
+                "CUDAOffloading": 12,
+                "Malloc": 2,
                 "GEMM": 4,
             }
         )
@@ -70,8 +70,8 @@ def test_gemver(target):
                 "ROCM": 3,
                 "FOR": 3,
                 "MAP": 3,
-                "ROCMOffloading": 14,
-                "Malloc": 3,
+                "ROCMOffloading": 12,
+                "Malloc": 2,
                 "GEMM": 4,
             }
         )

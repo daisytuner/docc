@@ -68,7 +68,9 @@ void AccessNode::replace(const symbolic::Expression old_expression, const symbol
 /**
  * Every read can be removed
  */
-bool AccessNode::require_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const { return false; };
+EdgeRemoveOption AccessNode::can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const {
+    return EdgeRemoveOption::Trivially;
+}
 
 namespace {
 bool is_special_constant(const std::string& data) {

@@ -75,7 +75,7 @@ std::unique_ptr<DefaultDoccPaths> DefaultDoccPaths::from_lib_location(std::optio
     return std::make_unique<DefaultDoccPaths>("", "", DoccRootMode::None);
 }
 
-std::vector<std::filesystem::path> DefaultDoccPaths::get_default_include_paths() {
+std::vector<std::filesystem::path> DefaultDoccPaths::get_default_include_paths() const {
     switch (root_mode_) {
         case DoccRootMode::Pip:
             return {bin_root_ / "include"};
@@ -88,12 +88,64 @@ std::vector<std::filesystem::path> DefaultDoccPaths::get_default_include_paths()
     }
 }
 
-std::vector<std::filesystem::path> DefaultDoccPaths::get_default_library_paths() {
+std::vector<std::filesystem::path> DefaultDoccPaths::get_default_library_paths() const {
     switch (root_mode_) {
         case DoccRootMode::Pip:
             return {bin_root_ / "lib"};
         case DoccRootMode::CMake: // bin root must point to the cmake build dir of docc
             return {bin_root_ / "rtl", bin_root_ / "arg-capture-io"};
+        case DoccRootMode::None:
+        case DoccRootMode::GlobalDist:
+        default:
+            return {};
+    }
+}
+
+std::optional<std::filesystem::path> DefaultDoccPaths::get_builtin_target_plugin_src_path(const std::string& plugin
+) const {
+    switch (root_mode_) {
+        case DoccRootMode::CMake: // src root must point to the root of docc.git
+            return src_root_ / "targets" / plugin;
+        default:
+            return {};
+    }
+}
+
+std::optional<std::filesystem::path> DefaultDoccPaths::get_builtin_target_plugin_rt_lib_path(const std::string& plugin
+) const {
+    switch (root_mode_) {
+        case DoccRootMode::Pip:
+            return bin_root_ / "lib";
+        case DoccRootMode::CMake:
+            return bin_root_ / "targets" / plugin / "rt";
+        case DoccRootMode::None:
+        case DoccRootMode::GlobalDist:
+        default:
+            return {};
+    }
+}
+
+std::optional<std::filesystem::path> DefaultDoccPaths::get_builtin_target_plugin_rt_include_path(const std::string&
+                                                                                                     plugin) const {
+    switch (root_mode_) {
+        case DoccRootMode::Pip:
+            return bin_root_ / "lib";
+        case DoccRootMode::CMake:
+            return src_root_ / "targets" / plugin / "rt" / "include";
+        case DoccRootMode::None:
+        case DoccRootMode::GlobalDist:
+        default:
+            return {};
+    }
+}
+
+std::optional<std::filesystem::path> DefaultDoccPaths::
+    get_builtin_target_plugin_rt_libexec_src_path(const std::string& plugin, const std::string& rt_name) const {
+    switch (root_mode_) {
+        case DoccRootMode::Pip:
+            return bin_root_ / "libexec" / "docc" / plugin / rt_name;
+        case DoccRootMode::CMake:
+            return src_root_ / "targets" / plugin / "rt" / "libexec" / "docc" / plugin / rt_name;
         case DoccRootMode::None:
         case DoccRootMode::GlobalDist:
         default:

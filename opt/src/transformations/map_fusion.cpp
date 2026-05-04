@@ -565,9 +565,10 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     }
 
     // Get assumptions for the resolved write/read locations
+    // Include trivial bounds from types to help delinearization with symbolic strides
     auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    auto& producer_assumptions = assumptions_analysis.get(*producer_block_);
-    auto& consumer_assumptions = assumptions_analysis.get(consumer_body_->at(0).first);
+    auto& producer_assumptions = assumptions_analysis.get(*producer_block_, true);
+    auto& consumer_assumptions = assumptions_analysis.get(consumer_body_->at(0).first, true);
 
     // Check if producer actually reads a fusion container in the dataflow.
     // If so, ProducerIntoConsumer is unsafe (original producer loop mutates the array

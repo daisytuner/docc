@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import sys
 from typing import Any, Optional
 import os
+import re
 
 from docc.sdfg import StructuredSDFG
 from docc.sdfg._sdfg import (
@@ -17,8 +18,30 @@ from docc.compiler.target_registry import (
 )
 
 
-def _is_debug_dump() -> bool:
-    return bool(os.environ.get("DOCC_DEBUG"))
+def _parse_docc_debug() -> dict[str, str]:
+    debug_env = os.environ.get("DOCC_DEBUG", "")
+    debug_dict = {}
+    if debug_env:
+        for entry in re.split(r"[;:]", debug_env):
+            if not entry:
+                continue
+            parts = entry.split("=", 1)
+            key = parts[0].strip()
+            value = parts[1].strip() if len(parts) > 1 else ""
+            debug_dict[key] = value
+    return debug_dict
+
+
+def _is_debug_dump(flags: dict[str, str]) -> bool:
+    return "dump" in flags
+
+
+def _is_debug_compile(flags: dict[str, str]) -> bool:
+    return "build" in flags
+
+
+def _get_build_thread_count(flags: dict[str, str]) -> int:
+    return int(flags.get("build_threads", "0"))
 
 
 class DoccProgram(ABC):
@@ -38,7 +61,10 @@ class DoccProgram(ABC):
         self.remote_tuning = remote_tuning
         self.last_sdfg: Optional[StructuredSDFG] = None
         self.cache: dict = {}
-        self.debug_dump: bool = _is_debug_dump()
+        debug_flags = _parse_docc_debug()
+        self.debug_dump: bool = _is_debug_dump(debug_flags)
+        self.debug_build: bool = _is_debug_compile(debug_flags)
+        self.build_thread_count: int = _get_build_thread_count(debug_flags)
 
         # Check environment variable DOCC_CI
         docc_ci = os.environ.get("DOCC_CI", "")
@@ -131,7 +157,11 @@ class DoccProgram(ABC):
         custom_compile_fn = get_target_compile_fn(self.target)
         if custom_compile_fn is not None:
             lib_path = custom_compile_fn(
-                sdfg, output_folder, instrumentation_mode, capture_args, {}
+                sdfg,
+                output_folder,
+                instrumentation_mode,
+                capture_args,
+                {"debug_build": self.debug_build, "threads": self.build_thread_count},
             )
         else:
             lib_path = sdfg._compile(
@@ -139,6 +169,8 @@ class DoccProgram(ABC):
                 target=self.target,
                 instrumentation_mode=instrumentation_mode,
                 capture_args=capture_args,
+                debug_build=self.debug_build,
+                threads=self.build_thread_count,
             )
 
         # Dump statistics after compile

@@ -63,23 +63,29 @@ def kernel(in_field, out_field, coeff):
     "target",
     [
         "none",
-        # "sequential",
-        # "openmp",
+        "sequential",
+        "openmp",
         # "cuda"
     ],
 )
 def test_hdiff(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 24, "FOR": 30, "MAP": 24, "Malloc": 9}
+            verification={"SEQUENTIAL": 24, "FOR": 24, "MAP": 24, "Malloc": 7}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"MAP": 53, "SEQUENTIAL": 53, "FOR": 87, "Malloc": 28}
+            verification={
+                "VECTORIZE": 8,
+                "SEQUENTIAL": 16,
+                "FOR": 24,
+                "MAP": 24,
+                "Malloc": 7,
+            }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"MAP": 53, "SEQUENTIAL": 53, "FOR": 87, "Malloc": 28}
+            verification={"CPU_PARALLEL": 8, "FOR": 8, "MAP": 8, "Malloc": 7}
         )
     elif target == "cuda":
         verifier = SDFGVerification(

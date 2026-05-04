@@ -230,8 +230,8 @@ void MemAccessRangesBuilder::process_direct_users(WorkItem* item, bool is_write,
             }
             int dimIdx = 0;
             for (auto& dim : subset) {
-                auto lb = symbolic::minimum_new(dim, params, assums, true);
-                auto ub = symbolic::maximum_new(dim, params, assums, true);
+                auto lb = symbolic::minimum(dim, params, assums, true);
+                auto ub = symbolic::maximum(dim, params, assums, true);
 
                 if (lb.is_null() || symbolic::has<SymEngine::Infty>(lb)) {
                     std::get<1>(item->dims[dimIdx]) = true;

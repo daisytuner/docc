@@ -261,9 +261,9 @@ void GEMMNodeDispatcher_ETSOC_WithTransfers::dispatch(
     codegen::PrettyPrinter& globals_stream,
     codegen::CodeSnippetFactory& library_snippet_factory
 ) {
-    globals_stream << "#include <docc/rt/et/et.h>" << std::endl;
-    globals_stream << "#include <filesystem>" << std::endl;
-    globals_stream << "#include <iostream>" << std::endl;
+    library_snippet_factory.add_global("#include <docc/rt/et/et.h>");
+    library_snippet_factory.add_global("#include <filesystem>");
+    library_snippet_factory.add_global("#include <iostream>");
 
     stream << kernel_stream_setup << std::endl;
 

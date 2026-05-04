@@ -34,7 +34,7 @@ set(SOURCE_FILES
     src/analysis/dominance_analysis.cpp
     src/analysis/loop_analysis.cpp
     src/analysis/mem_access_range_analysis.cpp
-    src/analysis/memlet_delinearization_analysis.cpp
+    src/analysis/memory_layout_analysis.cpp
     src/analysis/reference_analysis.cpp
     src/analysis/scope_analysis.cpp
     src/analysis/type_analysis.cpp

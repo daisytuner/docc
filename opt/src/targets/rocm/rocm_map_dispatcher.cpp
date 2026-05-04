@@ -143,8 +143,8 @@ void ROCMMapDispatcher::dispatch_node(
             arguments_device
         );
 
-        globals_stream << "#include <cstdio>" << std::endl;
-        globals_stream << "#include <hip/hip_runtime.h>" << std::endl;
+        library_snippet_factory.add_global("#include <cstdio>");
+        library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
         // Kernel Declaration
         this->dispatch_header(globals_stream, kernel_name, arguments_declaration);
         globals_stream << ";" << std::endl;

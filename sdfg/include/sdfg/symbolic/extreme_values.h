@@ -2,8 +2,9 @@
  * @file extreme_values.h
  * @brief Computing bounds of symbolic expressions using assumptions
  *
- * This file provides functions for computing the minimum and maximum values that
- * symbolic expressions can take, given a set of assumptions about symbol bounds.
+ * This file provides the BoundAnalysis class and convenience functions for computing
+ * the minimum and maximum values that symbolic expressions can take, given a set of
+ * assumptions about symbol bounds.
  *
  * ## Bound Computation
  *
@@ -11,27 +12,16 @@
  * the extreme values (minimum and maximum) that an expression can reach. The computation
  * considers:
  * - Symbol bounds from assumptions
- * - Parameter symbols (treated as unknowns with their bounds)
+ * - Parameter symbols (treated as unknowns preserved in the result)
  * - Tight vs. loose bounds (exact vs. conservative estimates)
  *
- * ## Example Usage
+ * ## Mathematical Foundation
  *
- * @code
- * // Compute bounds for expression 2*i + j where 0 <= i < 10 and 0 <= j < 5
- * auto i = symbolic::symbol("i");
- * auto j = symbolic::symbol("j");
- * auto expr = symbolic::add(symbolic::mul(symbolic::integer(2), i), j);
- *
- * Assumptions assums;
- * assums[i].add_lower_bound(symbolic::zero());
- * assums[i].add_upper_bound(symbolic::integer(10));
- * assums[j].add_lower_bound(symbolic::zero());
- * assums[j].add_upper_bound(symbolic::integer(5));
- *
- * SymbolSet params;  // Empty - treat both as iteration variables
- * auto min_val = minimum(expr, params, assums);  // Result: 0
- * auto max_val = maximum(expr, params, assums);  // Result: 24 (2*9 + 4)
- * @endcode
+ * For an expression e(x, p) where x_i in [l_i, u_i] and p are free parameters:
+ * - Polynomial normalization groups correlated addends (e.g. -2x + Tx -> (T-2)x)
+ * - Sign-aware affine analysis uses monotonicity: if coeff > 0, min(c*x) = c*min(x)
+ * - For multilinear products, extrema occur at vertices of the bounding box
+ * - min(max(a,b)) = max(min(a), min(b)); max(min(a,b)) = min(max(a), max(b))
  *
  * @see assumptions.h for information about symbol assumptions
  * @see symbolic.h for building symbolic expressions
@@ -40,74 +30,106 @@
 #pragma once
 
 #include "sdfg/symbolic/assumptions.h"
+#include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
 namespace symbolic {
 
 /**
- * @brief Compute the minimum of an expression
+ * @brief Result of bounding an expression: an interval [lower, upper]
  *
- * @param expr The expression to compute the minimum of
- * @param parameters A set of symbols to treat as parameters (with unknown but bounded values)
- * @param assumptions A set of assumptions about bounds of symbols
- * @return The minimum of the expression, or null if the expression is not bounded
- *
- * Computes the minimum value that the expression can take given the assumptions.
- * Symbols in the parameters set are treated as unknowns whose specific values affect
- * the result, while other symbols are treated as iteration variables that can be
- * optimized over to find the minimum.
- *
- * @note This is the legacy version. Consider using minimum_new() for improved analysis.
+ * Both endpoints are expressions in terms of parameters. A null endpoint
+ * indicates that the bound could not be computed for that direction.
  */
-Expression minimum(const Expression expr, const SymbolSet& parameters, const Assumptions& assumptions);
+struct Interval {
+    Expression lower;
+    Expression upper;
+
+    /** @brief Returns true if both bounds failed */
+    bool failed() const { return lower.is_null() && upper.is_null(); }
+
+    /** @brief Returns true if the lower bound was computed */
+    bool has_lower() const { return !lower.is_null(); }
+
+    /** @brief Returns true if the upper bound was computed */
+    bool has_upper() const { return !upper.is_null(); }
+
+    /** @brief Creates an exact interval [expr, expr] for a constant or parameter */
+    static Interval exact(const Expression& expr) { return {expr, expr}; }
+
+    /** @brief Creates a failure result */
+    static Interval failure() { return {SymEngine::null, SymEngine::null}; }
+};
+
+/**
+ * @brief Computes bounds of symbolic expressions using assumptions
+ *
+ * BoundAnalysis walks the expression tree and computes both lower and upper bounds
+ * simultaneously, using polynomial normalization and monotonicity analysis for
+ * tight results.
+ */
+class BoundAnalysis {
+public:
+    BoundAnalysis(const SymbolSet& parameters, const Assumptions& assumptions, bool use_tight_assumptions);
+
+    /** @brief Compute both lower and upper bounds of an expression */
+    Interval bound(const Expression& expr);
+
+    /** @brief Convenience: compute only the lower bound */
+    Expression lower_bound(const Expression& expr);
+
+    /** @brief Convenience: compute only the upper bound */
+    Expression upper_bound(const Expression& expr);
+
+private:
+    static constexpr size_t MAX_DEPTH = 100;
+    static constexpr size_t MAX_GENERATORS = 16;
+
+    const SymbolSet& parameters_;
+    const Assumptions& assumptions_;
+    bool use_tight_;
+
+    // Cycle detection: symbols currently being bounded
+    SymbolSet visiting_;
+
+    Interval visit(const Expression& expr, size_t depth);
+
+    Interval visit_symbol(const SymEngine::RCP<const SymEngine::Symbol>& sym, size_t depth);
+    Interval visit_function(const SymEngine::RCP<const SymEngine::FunctionSymbol>& func, size_t depth);
+    Interval visit_pow(const SymEngine::RCP<const SymEngine::Pow>& pow_expr, size_t depth);
+    Interval visit_mul(const SymEngine::RCP<const SymEngine::Mul>& mul_expr, size_t depth);
+    Interval visit_add(const SymEngine::RCP<const SymEngine::Add>& add_expr, size_t depth);
+    Interval visit_max(const Expression& expr, size_t depth);
+    Interval visit_min(const Expression& expr, size_t depth);
+
+    // Add sub-strategies
+    Interval visit_add_affine(const AffineCoeffs& coeffs, const SymbolVec& gens, size_t depth);
+    Interval visit_add_polynomial(const Polynomial& poly, const SymbolVec& gens, size_t depth);
+    Interval visit_add_argwise(const SymEngine::vec_basic& args, size_t depth);
+};
+
+// ---- Backward-compatible free functions ----
+
+/**
+ * @brief Compute the minimum of an expression
+ * @param expr The expression to compute the minimum of
+ * @param parameters Symbols treated as free parameters in the result
+ * @param assumptions Bounds information for symbols
+ * @param tight If true, use tight (exact) bounds; if false, use loose (conservative) bounds
+ * @return The minimum of the expression, or null if unbounded
+ */
+Expression minimum(const Expression expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight);
 
 /**
  * @brief Compute the maximum of an expression
- *
  * @param expr The expression to compute the maximum of
- * @param parameters A set of symbols to treat as parameters (with unknown but bounded values)
- * @param assumptions A set of assumptions about bounds of symbols
- * @return The maximum of the expression, or null if the expression is not bounded
- *
- * Computes the maximum value that the expression can take given the assumptions.
- * Symbols in the parameters set are treated as unknowns whose specific values affect
- * the result, while other symbols are treated as iteration variables that can be
- * optimized over to find the maximum.
- *
- * @note This is the legacy version. Consider using maximum_new() for improved analysis.
+ * @param parameters Symbols treated as free parameters in the result
+ * @param assumptions Bounds information for symbols
+ * @param tight If true, use tight (exact) bounds; if false, use loose (conservative) bounds
+ * @return The maximum of the expression, or null if unbounded
  */
-Expression maximum(const Expression expr, const SymbolSet& parameters, const Assumptions& assumptions);
-
-/**
- * @brief Compute the minimum of an expression with tight/loose bound selection
- *
- * @param expr The expression to compute the minimum of
- * @param parameters A set of symbols to treat as parameters
- * @param assumptions A set of assumptions about bounds of symbols
- * @param tight If true, compute tight (exact) bounds; if false, compute loose (conservative) bounds
- * @return The minimum of the expression, or null if the expression is not bounded
- *
- * This is an improved version of minimum() that supports computing either tight (exact)
- * or loose (conservative) bounds. Tight bounds provide exact minimum values but may be
- * more computationally expensive, while loose bounds provide safe under-approximations.
- */
-Expression minimum_new(const Expression expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight);
-
-/**
- * @brief Compute the maximum of an expression with tight/loose bound selection
- *
- * @param expr The expression to compute the maximum of
- * @param parameters A set of symbols to treat as parameters
- * @param assumptions A set of assumptions about bounds of symbols
- * @param tight If true, compute tight (exact) bounds; if false, compute loose (conservative) bounds
- * @return The maximum of the expression, or null if the expression is not bounded
- *
- * This is an improved version of maximum() that supports computing either tight (exact)
- * or loose (conservative) bounds. Tight bounds provide exact maximum values but may be
- * more computationally expensive, while loose bounds provide safe over-approximations.
- */
-Expression maximum_new(const Expression expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight);
+Expression maximum(const Expression expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight);
 
 } // namespace symbolic
 } // namespace sdfg

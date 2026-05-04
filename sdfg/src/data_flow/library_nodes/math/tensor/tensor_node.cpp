@@ -42,8 +42,7 @@ types::PrimitiveType TensorNode::primitive_type(const data_flow::DataFlowGraph& 
     // Check all input edges
     for (auto& iedge : graph.in_edges(*this)) {
         types::PrimitiveType edge_type;
-        auto& tensor_type = static_cast<const types::Tensor&>(iedge.base_type());
-        edge_type = tensor_type.primitive_type();
+        edge_type = iedge.base_type().primitive_type();
 
         if (first) {
             result_type = edge_type;
@@ -60,8 +59,7 @@ types::PrimitiveType TensorNode::primitive_type(const data_flow::DataFlowGraph& 
     // Check all output edges
     for (auto& oedge : graph.out_edges(*this)) {
         types::PrimitiveType edge_type;
-        auto& tensor_type = static_cast<const types::Tensor&>(oedge.base_type());
-        edge_type = tensor_type.primitive_type();
+        edge_type = oedge.base_type().primitive_type();
 
         if (first) {
             result_type = edge_type;

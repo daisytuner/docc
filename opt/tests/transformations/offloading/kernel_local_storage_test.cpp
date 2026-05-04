@@ -80,8 +80,7 @@ TEST(KernelLocalStorageTest, json_serialization) {
     builder.add_computational_memlet(block, tasklet, "out_", access_out, {symbolic::symbol("i"), symbolic::symbol("j")});
 
     // Transformation
-    std::string container = "A";
-    transformations::KernelLocalStorage kernel_local_storage(loop, symbolic::zero(), container);
+    transformations::KernelLocalStorage kernel_local_storage(loop, symbolic::zero(), access_in);
 
     nlohmann::json j;
     kernel_local_storage.to_json(j);
@@ -107,19 +106,9 @@ TEST(KernelLocalStorageTest, json_serialization) {
     // Parameters section
     ASSERT_TRUE(j.contains("parameters"));
     ASSERT_TRUE(j["parameters"].is_object());
-    ASSERT_TRUE(j["parameters"].contains("container"));
-    EXPECT_EQ(j["parameters"]["container"].get<std::string>(), "A");
     ASSERT_TRUE(j["parameters"].contains("offset"));
     // Offsets are serialized as string expressions
     EXPECT_EQ(j["parameters"]["offset"].get<std::string>(), "0");
-
-    // Legacy fields kept for backward compatibility
-    ASSERT_TRUE(j.contains("loop_element_id"));
-    EXPECT_EQ(j["loop_element_id"].get<size_t>(), loop.element_id());
-    ASSERT_TRUE(j.contains("container"));
-    EXPECT_EQ(j["container"].get<std::string>(), "A");
-    ASSERT_TRUE(j.contains("offset"));
-    EXPECT_EQ(j["offset"].get<std::string>(), "0");
 }
 
 TEST(KernelLocalStorageTest, NoOffset) {
@@ -175,9 +164,8 @@ TEST(KernelLocalStorageTest, NoOffset) {
     builder.add_computational_memlet(block, access_in3, tasklet, "in3_", {symbolic::symbol("i"), symbolic::symbol("j")});
     builder.add_computational_memlet(block, tasklet, "out_", access_out, {symbolic::symbol("i"), symbolic::symbol("j")});
 
-    std::string container = "A";
     // Transformation
-    transformations::KernelLocalStorage kernel_local_storage(loop, symbolic::zero(), container);
+    transformations::KernelLocalStorage kernel_local_storage(loop, symbolic::zero(), access_in);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     EXPECT_TRUE(kernel_local_storage.can_be_applied(builder, analysis_manager));
@@ -328,8 +316,7 @@ TEST(KernelLocalStorageTest, WithOffset) {
     auto inner_loop = tiling.inner_loop();
     auto outer_loop = tiling.outer_loop();
 
-    std::string container = "A";
-    transformations::KernelLocalStorage kernel_local_storage(*inner_loop, outer_loop->indvar(), container);
+    transformations::KernelLocalStorage kernel_local_storage(*inner_loop, outer_loop->indvar(), access_in);
 
     EXPECT_TRUE(kernel_local_storage.can_be_applied(builder, analysis_manager));
 
@@ -493,7 +480,7 @@ TEST(KernelLocalStorageTest, CannotApply_TargetIsGPUMap) {
     builder.add_computational_memlet(block, tasklet, "out_", access_out, {symbolic::symbol("i"), symbolic::symbol("j")});
 
     // Passing map_y (a GPU map) as the "loop" must be rejected.
-    transformations::KernelLocalStorage kls(*map_y, symbolic::zero(), "A");
+    transformations::KernelLocalStorage kls(*map_y, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -534,7 +521,7 @@ TEST(KernelLocalStorageTest, CannotApply_NotInGPUScope) {
     builder.add_computational_memlet(block, access_in, tasklet, "in_", {symbolic::symbol("i"), symbolic::symbol("k")});
     builder.add_computational_memlet(block, tasklet, "out_", access_out, {symbolic::symbol("i"), symbolic::symbol("j")});
 
-    transformations::KernelLocalStorage kls(loop, symbolic::zero(), "A");
+    transformations::KernelLocalStorage kls(loop, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -557,9 +544,8 @@ TEST(KernelLocalStorageTest, CannotApply_ContainerIsPointerToPointer) {
 
     auto [map_x, map_y, loop] = build_standard_gpu_scaffold(builder);
 
-    // Loop body intentionally left empty; the check fails before inspecting accesses.
-    std::string container = "A";
-    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), container);
+    data_flow::AccessNode& access_in = builder.add_access(builder.add_block(loop->root()), "A");
+    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -621,7 +607,7 @@ TEST(KernelLocalStorageTest, CannotApply_UnknownIterationCount) {
     builder.add_computational_memlet(block, tasklet, "out_", access_out, {symbolic::symbol("i"), symbolic::symbol("j")});
 
     std::string container = "A";
-    transformations::KernelLocalStorage kls(loop, symbolic::zero(), container);
+    transformations::KernelLocalStorage kls(loop, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -656,8 +642,7 @@ TEST(KernelLocalStorageTest, CannotApply_ContainerIsWritten) {
     builder
         .add_computational_memlet(block, tasklet, "out_", access_write, {symbolic::symbol("i"), symbolic::symbol("j")});
 
-    std::string container = "A";
-    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), container);
+    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -680,16 +665,28 @@ TEST(KernelLocalStorageTest, CannotApply_ContainerNotRead) {
 
     auto [map_x, map_y, loop] = build_standard_gpu_scaffold(builder);
 
+    // Place an access to A outside the loop (before it, in the map body).
+    auto& outer_block = builder.add_block(map_y->root());
+    auto& access_A_outside = builder.add_access(outer_block, "A");
+    auto& access_C_outside = builder.add_access(outer_block, "C");
+    auto& tasklet_outside = builder.add_tasklet(outer_block, data_flow::TaskletCode::assign, "out_", {"in_"});
+    builder.add_computational_memlet(
+        outer_block, access_A_outside, tasklet_outside, "in_", {symbolic::symbol("i"), symbolic::symbol("j")}
+    );
+    builder.add_computational_memlet(
+        outer_block, tasklet_outside, "out_", access_C_outside, {symbolic::symbol("i"), symbolic::symbol("j")}
+    );
+
+    // Inside the loop, only B and C are accessed; A is never read here.
     auto& block = builder.add_block(loop->root());
-    // Only B and C are accessed; A is declared but never read inside the loop.
     auto& access_B = builder.add_access(block, "B");
     auto& access_C = builder.add_access(block, "C");
     auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "out_", {"in_"});
     builder.add_computational_memlet(block, access_B, tasklet, "in_", {symbolic::symbol("i"), symbolic::symbol("k")});
     builder.add_computational_memlet(block, tasklet, "out_", access_C, {symbolic::symbol("i"), symbolic::symbol("j")});
 
-    std::string container = "A";
-    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), container);
+    // Pass the outside access node — A has no reads in the loop body.
+    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), access_A_outside);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -730,8 +727,8 @@ TEST(KernelLocalStorageTest, CannotApply_MultipleReads) {
     builder
         .add_computational_memlet(block, tasklet2, "out_", access_out2, {symbolic::symbol("i"), symbolic::symbol("j")});
 
-    std::string container = "A";
-    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), container);
+    auto& access_in = builder.add_access(block, "A");
+    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -762,8 +759,7 @@ TEST(KernelLocalStorageTest, CannotApply_InnerIndvarNotUsed) {
     builder.add_computational_memlet(block, access_in, tasklet, "in_", {symbolic::symbol("i"), symbolic::symbol("j")});
     builder.add_computational_memlet(block, tasklet, "out_", access_out, {symbolic::symbol("i"), symbolic::symbol("j")});
 
-    std::string container = "A";
-    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), container);
+    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -813,8 +809,7 @@ TEST(KernelLocalStorageTest, CannotApply_OnlyOneGPUDimension) {
     builder.add_computational_memlet(block, access_in, tasklet, "in_", {symbolic::symbol("i"), symbolic::symbol("k")});
     builder.add_computational_memlet(block, tasklet, "out_", access_out, {symbolic::symbol("i"), symbolic::symbol("k")});
 
-    std::string container = "A";
-    transformations::KernelLocalStorage kls(loop, symbolic::zero(), container);
+    transformations::KernelLocalStorage kls(loop, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -859,8 +854,7 @@ TEST(KernelLocalStorageTest, CannotApply_SubsetVariableWritten) {
     builder.add_computational_memlet(block, access_n_in, tasklet_n, "in_", {});
     builder.add_computational_memlet(block, tasklet_n, "out_", access_n_out, {});
 
-    std::string container = "A";
-    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), container);
+    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), access_A);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -906,8 +900,7 @@ TEST(KernelLocalStorageTest, CannotApply_SubsetDependsOnNestedLoopIndvar) {
     builder.add_computational_memlet(block, access_in, tasklet, "in_", {symbolic::symbol("i"), symbolic::symbol("m")});
     builder.add_computational_memlet(block, tasklet, "out_", access_out, {symbolic::symbol("i"), symbolic::symbol("j")});
 
-    std::string container = "A";
-    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), container);
+    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }
@@ -947,8 +940,7 @@ TEST(KernelLocalStorageTest, CannotApply_NoFreeDimension) {
     );
     builder.add_computational_memlet(block, tasklet, "out_", access_out, {symbolic::symbol("i"), symbolic::symbol("j")});
 
-    std::string container = "A";
-    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), container);
+    transformations::KernelLocalStorage kls(*loop, symbolic::zero(), access_in);
     analysis::AnalysisManager am(builder.subject());
     EXPECT_FALSE(kls.can_be_applied(builder, am));
 }

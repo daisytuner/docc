@@ -157,7 +157,7 @@ public:
      */
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
-    bool require_out_edge(const DataFlowGraph& graph, const Memlet* memlet) const override;
+    EdgeRemoveOption can_remove_out_edge(const DataFlowGraph& graph, const Memlet* memlet) const override;
 };
 
 /**

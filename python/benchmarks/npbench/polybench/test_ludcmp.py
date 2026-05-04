@@ -55,7 +55,7 @@ def test_ludcmp(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"HIGHWAY": 2, "MAP": 2, "FOR": 11, "Memset": 2, "Malloc": 2}
+            verification={"VECTORIZE": 2, "MAP": 2, "FOR": 11, "Memset": 2, "Malloc": 2}
         )
     elif target == "openmp":
         verifier = SDFGVerification(

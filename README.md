@@ -7,7 +7,7 @@ It contains the definition of the intermediate representation as well as numerou
 For instance, docc comes with support for auto-parallelization using data-centric and polyhedral analysis.
 
 SDFGs can be generated from Python (JIT) and MLIR frontends, which are separate components including Python bindings and an MLIR dialect for conversion.
-Targets such as Generic, [Google Highway](https://github.com/google/highway), [OpenMP](https://www.openmp.org/), [CUDA](https://developer.nvidia.com/cuda/toolkit), and [ROCm](https://rocmdocs.amd.com/en/latest/) are implemented in `opt`.
+Targets such as Generic, [OpenMP](https://www.openmp.org/), [CUDA](https://developer.nvidia.com/cuda/toolkit), and [ROCm](https://rocmdocs.amd.com/en/latest/) are implemented in `opt`.
 
 Furthermore, the repository contains runtime libraries for code instrumentation (performance counters and data capturing).
 
@@ -15,12 +15,12 @@ Furthermore, the repository contains runtime libraries for code instrumentation 
 
 ### Frontend / Backend Matrix
 
-|                      | Highway | OpenMP | CUDA | ROCm | Metal |
-|----------------------|:-------:|:------:|:----:|:----:|:-----:|
-| Python (Linux)       | ✅      | ✅     | ✅   | ✅   | —     |
-| PyTorch (Linux)      | ✅      | ✅     | ✅   | ✅   | —     |
-| Python (macOS)       | ✅      | ✅     | —    | —    | 🚧    |
-| PyTorch (macOS)      | 🚧      | 🚧     | —   | —   | 🚧    |
+|                      | OpenMP | CUDA | ROCm | Metal |
+|----------------------|:------:|:----:|:----:|:-----:|
+| Python (Linux)       | ✅     | ✅   | ✅  | —     |
+| PyTorch (Linux)      | ✅     | ✅   | ✅  | —     |
+| Python (macOS)       | ✅     | —    | —    | 🚧   |
+| PyTorch (macOS)      | 🚧     | —    | —    | 🚧   |
 
 ✅ Supported | 🚧 Work in progress
 
@@ -28,13 +28,12 @@ Furthermore, the repository contains runtime libraries for code instrumentation 
 
 Each target enables a specific combination of backends:
 
-| Target       | Transfer Tuning | Highway | OpenMP | CUDA | ROCm | Metal |
-|--------------|:---------------:|:-------:|:------:|:----:|:----:|:-----:|
-| `sequential` | ✅              | ✅      | —      | —    | —    | —     |
-| `openmp`     | 🚧              | ✅      | ✅     | —    | —    | —     |
-| `cuda`       | 🚧              | ✅      | ✅     | ✅   | —    | —     |
-| `rocm`       | 🚧              | ✅      | ✅     | —    | ✅   | —     |
-<!-- | `metal`      | 🚧              | ✅      | ✅     | ❌   | ✅    | -->
+| Target       | Transfer Tuning | OpenMP | CUDA | ROCm | Metal |
+|--------------|:---------------:|:------:|:----:|:----:|:-----:|
+| `sequential` | ✅              | —      | —    | —    | —     |
+| `openmp`     | 🚧              | ✅     | —    | —    | —     |
+| `cuda`       | 🚧              | ✅     | ✅   | —    | —     |
+| `rocm`       | 🚧              | ✅     | —    | ✅   | —     |
 
 Transfer Tuning refers to a collection of dataflow optimizations using optimization databases.
 

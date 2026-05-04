@@ -415,7 +415,8 @@ public:
 
     std::string toStr() const override;
 
-    virtual bool require_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const override;
+    data_flow::EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet)
+        const override;
 };
 
 class CMathNodeSerializer : public serializer::LibraryNodeSerializer {

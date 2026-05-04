@@ -18,6 +18,7 @@ class DotVisualizer : public Visualizer {
 private:
     std::string last_comp_name_;
     std::string last_comp_name_cluster_;
+    bool show_block_ids = false;
 
     virtual void visualizeBlock(const StructuredSDFG& sdfg, const structured_control_flow::Block& block) override;
     virtual void visualizeSequence(const StructuredSDFG& sdfg, const structured_control_flow::Sequence& sequence)

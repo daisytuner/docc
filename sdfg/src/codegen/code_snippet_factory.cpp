@@ -1,4 +1,5 @@
 #include "sdfg/codegen/code_snippet_factory.h"
+#include <unordered_set>
 
 namespace sdfg::codegen {
 
@@ -23,5 +24,17 @@ std::unordered_map<std::string, CodeSnippet>::iterator CodeSnippetFactory::find(
     return snippets_.find(name);
 }
 const std::unordered_map<std::string, CodeSnippet>& CodeSnippetFactory::snippets() const { return snippets_; }
+
+void CodeSnippetFactory::add_setup(const std::string& snippet) { setup_snippets_.insert(snippet); }
+
+void CodeSnippetFactory::add_teardown(const std::string& snippet) { teardown_snippets_.insert(snippet); }
+
+void CodeSnippetFactory::add_global(const std::string& snippet) { globals_snippets_.insert(snippet); }
+
+const std::unordered_set<std::string>& CodeSnippetFactory::setup_snippets() const { return setup_snippets_; }
+
+const std::unordered_set<std::string>& CodeSnippetFactory::teardown_snippets() const { return teardown_snippets_; }
+
+const std::unordered_set<std::string>& CodeSnippetFactory::globals_snippets() const { return globals_snippets_; }
 
 } // namespace sdfg::codegen

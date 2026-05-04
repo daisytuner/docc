@@ -7,6 +7,7 @@
 #include "sdfg/codegen/dispatchers/map_dispatcher.h"
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 #include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/plugins/targets.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_sdfg.h"
 
@@ -25,6 +26,8 @@ struct Context {
     // Schedulers
     passes::scheduler::SchedulerRegistry& scheduler_registry;
 
+    std::unordered_map<std::string, docc::target::DoccTarget*> available_targets;
+
     static Context global_context() {
         return Context{
             serializer::LibraryNodeSerializerRegistry::instance(),
@@ -33,6 +36,19 @@ struct Context {
             codegen::LibraryNodeDispatcherRegistry::instance(),
             passes::scheduler::SchedulerRegistry::instance()
         };
+    }
+
+    bool add_target(docc::target::DoccTarget* target) {
+        auto res = available_targets.insert_or_assign(target->short_name, target);
+        return res.second;
+    }
+
+    docc::target::DoccTarget* get_target_handler(const std::string& target) const {
+        auto it = available_targets.find(target);
+        if (it != available_targets.end()) {
+            return it->second;
+        }
+        return nullptr;
     }
 };
 

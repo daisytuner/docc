@@ -18,7 +18,7 @@ bool TypeMinimization::is_safe_trunc(symbolic::Expression expr, const symbolic::
     int64_t output_min_value_signed = 0;
     int64_t output_max_value_signed = (1ULL << (output_bitwidth - 1)) - 1;
 
-    auto mini = symbolic::minimum_new(expr, {}, assumptions, true);
+    auto mini = symbolic::minimum(expr, {}, assumptions, true);
     if (mini.is_null()) {
         return false;
     }
@@ -27,7 +27,7 @@ bool TypeMinimization::is_safe_trunc(symbolic::Expression expr, const symbolic::
         return false;
     }
 
-    auto maxi = symbolic::maximum_new(expr, {}, assumptions, false);
+    auto maxi = symbolic::maximum(expr, {}, assumptions, false);
     if (maxi.is_null()) {
         return false;
     }

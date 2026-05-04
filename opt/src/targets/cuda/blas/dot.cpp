@@ -22,8 +22,8 @@ void DotNodeDispatcher_CUBLASWithTransfers::dispatch_code(
 ) {
     auto& dot_node = static_cast<const math::blas::DotNode&>(this->node_);
 
-    globals_stream << "#include <cuda.h>" << std::endl;
-    globals_stream << "#include <cublas_v2.h>" << std::endl;
+    library_snippet_factory.add_global("#include <cuda.h>");
+    library_snippet_factory.add_global("#include <cublas_v2.h>");
 
     std::string type, type2;
     switch (dot_node.precision()) {
@@ -62,7 +62,7 @@ void DotNodeDispatcher_CUBLASWithTransfers::dispatch_code(
     stream << "err_cuda = cudaMemcpy(dy, __y, " << y_size << ", cudaMemcpyHostToDevice);" << std::endl;
     cuda_error_checking(stream, this->language_extension_, "err_cuda");
 
-    create_blas_handle(stream, this->language_extension_);
+    setup_blas_handle(library_snippet_factory, this->language_extension_);
     stream << "cublasStatus_t err;" << std::endl;
 
     stream << "err = cublas" << type2 << "dot(handle, " << this->language_extension_.expression(dot_node.n())
@@ -70,8 +70,6 @@ void DotNodeDispatcher_CUBLASWithTransfers::dispatch_code(
            << this->language_extension_.expression(dot_node.incy()) << ", &__out);" << std::endl;
     cublas_error_checking(stream, this->language_extension_, "err");
     check_cuda_kernel_launch_errors(stream, this->language_extension_, false);
-
-    destroy_blas_handle(stream, this->language_extension_);
 
     stream << "err_cuda = cudaFree(dx);" << std::endl;
     cuda_error_checking(stream, this->language_extension_, "err_cuda");
@@ -93,13 +91,13 @@ void DotNodeDispatcher_CUBLASWithoutTransfers::dispatch_code(
     codegen::CodeSnippetFactory& library_snippet_factory
 ) {
     auto& dot_node = static_cast<const math::blas::DotNode&>(this->node_);
-    globals_stream << "#include <cuda.h>" << std::endl;
-    globals_stream << "#include <cublas_v2.h>" << std::endl;
+    library_snippet_factory.add_global("#include <cuda.h>");
+    library_snippet_factory.add_global("#include <cublas_v2.h>");
+
+    setup_blas_handle(library_snippet_factory, this->language_extension_);
 
     stream << "cudaError_t err_cuda;" << std::endl;
     stream << "cublasStatus_t err;" << std::endl;
-
-    create_blas_handle(stream, this->language_extension_);
 
     stream << "err = cublas";
     switch (dot_node.precision()) {
@@ -118,8 +116,6 @@ void DotNodeDispatcher_CUBLASWithoutTransfers::dispatch_code(
 
     cublas_error_checking(stream, this->language_extension_, "err");
     check_cuda_kernel_launch_errors(stream, this->language_extension_, false);
-
-    destroy_blas_handle(stream, this->language_extension_);
 }
 
 } // namespace sdfg::cuda::blas

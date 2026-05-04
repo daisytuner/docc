@@ -69,7 +69,8 @@ TEST(CUDAKernel, DispatcherTest) {
     // Check if the generated code contains the expected function call
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
-    EXPECT_EQ(globals_stream.str(), "#include <cstdio>\n__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -157,7 +158,8 @@ TEST(CUDAKernel, NestedXYDispatcherTest) {
     // Check if the generated code contains the expected function call
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
-    EXPECT_EQ(globals_stream.str(), "#include <cstdio>\n__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -247,7 +249,8 @@ TEST(CUDAKernel, NestedXZDispatcherTest) {
     // Check if the generated code contains the expected function call
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
-    EXPECT_EQ(globals_stream.str(), "#include <cstdio>\n__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -354,7 +357,8 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
     // Check if the generated code contains the expected function call
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
-    EXPECT_EQ(globals_stream.str(), "#include <cstdio>\n__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),

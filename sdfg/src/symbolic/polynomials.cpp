@@ -200,5 +200,81 @@ std::pair<Expression, Expression> polynomial_div(const Expression& offset, const
     return {quotient_expr, remainder_expr};
 }
 
+AffineDecomposition affine_decomposition(const Expression& expr, const Symbol& symbol) {
+    SymbolVec syms = {symbol};
+    auto poly = polynomial(expr, syms);
+    if (poly.is_null()) {
+        return AffineDecomposition::failure();
+    }
+
+    auto coeffs = affine_coefficients(poly, syms);
+    if (coeffs.empty()) {
+        // Not affine (degree > 1)
+        return AffineDecomposition::failure();
+    }
+
+    Expression coeff = symbolic::zero();
+    if (coeffs.count(symbol)) {
+        coeff = coeffs.at(symbol);
+    }
+
+    Expression offset = symbolic::zero();
+    if (coeffs.count(symbolic::symbol("__daisy_constant__"))) {
+        offset = coeffs.at(symbolic::symbol("__daisy_constant__"));
+    }
+
+    // Coefficient must be a non-zero integer for a valid decomposition
+    if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) {
+        return AffineDecomposition::failure();
+    }
+    long long coeff_int;
+    try {
+        coeff_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(coeff)->as_int();
+    } catch (const SymEngine::SymEngineException&) {
+        // Integer too large, decomposition failed
+        return AffineDecomposition::failure();
+    }
+    if (coeff_int == 0) {
+        return AffineDecomposition::failure();
+    }
+
+    return {true, coeff, offset};
+}
+
+Expression
+solve_affine_bound(const Expression& expr, const Symbol& symbol, const Expression& bound_value, bool is_lower_bound) {
+    auto decomp = affine_decomposition(expr, symbol);
+    if (!decomp.success) {
+        return SymEngine::null;
+    }
+
+    long long coeff_int;
+    try {
+        coeff_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(decomp.coeff)->as_int();
+    } catch (const SymEngine::SymEngineException&) {
+        // Integer too large
+        return SymEngine::null;
+    }
+
+    // For expr = coeff * symbol + offset:
+    // - Lower bound (expr >= bound_value): symbol >= (bound_value - offset) / coeff (if coeff > 0)
+    //                                       symbol <= (bound_value - offset) / coeff (if coeff < 0)
+    // - Upper bound (expr <= bound_value): symbol <= (bound_value - offset) / coeff (if coeff > 0)
+    //                                       symbol >= (bound_value - offset) / coeff (if coeff < 0)
+
+    // Currently only support positive coefficients for simplicity
+    if (coeff_int <= 0) {
+        return SymEngine::null;
+    }
+
+    // bound = (bound_value - offset) / coeff
+    Expression result = symbolic::expand(symbolic::sub(bound_value, decomp.offset));
+    if (coeff_int != 1) {
+        result = symbolic::expand(symbolic::div(result, decomp.coeff));
+    }
+
+    return result;
+}
+
 } // namespace symbolic
 } // namespace sdfg

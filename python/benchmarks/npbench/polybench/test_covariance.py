@@ -56,9 +56,9 @@ def test_covariance(target):
             verification={
                 "Free": 3,
                 "GEMM": 1,
-                "HIGHWAY": 6,
+                "VECTORIZE": 8,
                 "MAP": 12,
-                "SEQUENTIAL": 6,
+                "SEQUENTIAL": 4,
                 "FOR": 14,
                 "Memset": 1,
                 "Malloc": 5,
@@ -68,11 +68,10 @@ def test_covariance(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "HIGHWAY": 2,
+                "VECTORIZE": 3,
                 "GEMM": 1,
                 "CPU_PARALLEL": 6,
                 "MAP": 9,
-                "SEQUENTIAL": 1,
                 "FOR": 11,
                 "Memset": 1,
                 "Malloc": 5,

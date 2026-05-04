@@ -13,6 +13,7 @@ class PrettyPrinter {
 public:
     // Constructor
     PrettyPrinter(int indent = 0, bool frozen = false);
+    PrettyPrinter(std::ostream& stream, int indent = 0, bool frozen = false);
 
     // Set the indentation level
     void setIndent(int indent);
@@ -42,7 +43,8 @@ public:
     PrettyPrinter& operator<<(std::ostream& (*manip)(std::ostream&) );
 
 private:
-    std::stringstream stream;
+    std::unique_ptr<std::stringstream> owned_stream;
+    std::ostream& stream;
     int indentSize;
     bool isNewLine = true;
     bool frozen_;

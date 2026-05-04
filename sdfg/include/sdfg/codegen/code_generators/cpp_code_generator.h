@@ -12,9 +12,9 @@ private:
     CPPLanguageExtension language_extension_;
 
 protected:
-    void dispatch_includes() override;
+    void dispatch_header_includes(PrettyPrinter& out) override;
 
-    void dispatch_structures() override;
+    void dispatch_header_structures(PrettyPrinter& out) override;
 
     void dispatch_globals() override;
 

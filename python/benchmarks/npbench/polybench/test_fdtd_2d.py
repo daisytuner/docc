@@ -33,45 +33,34 @@ def kernel(TMAX, ex, ey, hz, _fict_):
 def test_fdtd_2d(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"Malloc": 9, "MAP": 25, "SEQUENTIAL": 25, "FOR": 26}
+            verification={"MAP": 13, "SEQUENTIAL": 13, "FOR": 14, "Malloc": 3}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 13,
-                "MAP": 25,
-                "SEQUENTIAL": 12,
-                "FOR": 26,
-                "Malloc": 9,
+                "VECTORIZE": 7,
+                "MAP": 13,
+                "SEQUENTIAL": 6,
+                "FOR": 14,
+                "Malloc": 3,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={
-                "CPU_PARALLEL": 13,
-                "MAP": 13,
-                "FOR": 14,
-                "Malloc": 9,
-            }
+            verification={"CPU_PARALLEL": 7, "MAP": 7, "FOR": 8, "Malloc": 3}
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "CUDA": 25,
-                "MAP": 25,
-                "CUDAOffloading": 51,
-                "FOR": 26,
-                "Malloc": 9,
-            }
+            verification={"CUDA": 13, "MAP": 13, "CUDAOffloading": 22, "FOR": 14}
         )
     else:  # rocm
         verifier = SDFGVerification(
             verification={
                 "ROCM": 25,
                 "MAP": 25,
-                "ROCMOffloading": 51,
+                "ROCMOffloading": 38,
                 "FOR": 26,
-                "Malloc": 9,
+                "Malloc": 0,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

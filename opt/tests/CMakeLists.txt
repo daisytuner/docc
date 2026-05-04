@@ -32,13 +32,10 @@ set(TEST_FILES
     passes/offloading/cuda_library_node_rewriter_pass_test.cpp
     passes/offloading/rocm_library_node_rewriter_pass_test.cpp
     passes/scheduler/cuda_scheduler_test.cpp
-    passes/scheduler/highway_scheduler_test.cpp
     passes/scheduler/omp_scheduler_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
     targets/omp/schedule_test.cpp
-    targets/highway/codegen/highway_map_dispatcher_test.cpp
     transformations/collapse_to_depth_test.cpp
-    transformations/highway_transform_test.cpp
     transformations/omp_transform_test.cpp
     transformations/map_collapse_test.cpp
     transformations/einsum2gemm_test.cpp
@@ -61,6 +58,7 @@ set(TEST_FILES
     transformations/recorder_test.cpp
     transformations/optimizations/diamond_tiling_test.cpp
     transformations/optimizations/blocking_test.cpp
+    transformations/transformation_serialization_test.cpp
     test.cpp
 )
 
@@ -68,6 +66,9 @@ set(TEST_FILES
 add_executable(sdfgopt_test ${TEST_FILES})
 target_include_directories(sdfgopt_test PRIVATE ./)
 target_link_libraries(sdfgopt_test gtest_main sdfg::opt)
+if(DOCC_BUILD_TARGET_TENSTORRENT)
+    target_link_libraries(sdfgopt_test docc::target::tenstorrent)
+endif()
 if(SDFG_ENABLE_COVERAGE)
   target_compile_options(sdfgopt_test PRIVATE
     -fprofile-instr-generate
