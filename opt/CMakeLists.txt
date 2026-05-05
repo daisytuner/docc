@@ -90,6 +90,7 @@ set(SOURCE_FILES
     src/transformations/loop_peeling.cpp
     src/transformations/loop_rotate.cpp
     src/transformations/loop_shift.cpp
+    src/transformations/loop_split.cpp
     src/transformations/loop_skewing.cpp
     src/transformations/loop_tiling.cpp
     src/transformations/loop_unit_stride.cpp

@@ -267,20 +267,9 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     // ARRAY PATH: tile_info_.dimensions is non-empty
     // ========================================================================
     else {
-        // Collect varying dimensions (extent > 1) and compute buffer layout
-        std::vector<size_t> varying_dims;
-        std::vector<symbolic::Expression> dim_sizes;
-        for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
-            auto& dim_size = tile_info_.dimensions.at(d);
-            if (!symbolic::eq(dim_size, symbolic::integer(1))) {
-                varying_dims.push_back(d);
-                dim_sizes.push_back(dim_size);
-            }
-        }
-
         // Compute total buffer size
         symbolic::Expression total_size = symbolic::integer(1);
-        for (auto& ds : dim_sizes) {
+        for (auto& ds : tile_info_.dimensions) {
             total_size = symbolic::mul(total_size, ds);
         }
 
@@ -294,7 +283,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             symbolic::Expression stride = symbolic::integer(1);
             for (int i = indices.size() - 1; i >= 0; i--) {
                 linear_idx = symbolic::add(linear_idx, symbolic::mul(indices[i], stride));
-                stride = symbolic::mul(stride, dim_sizes[i]);
+                stride = symbolic::mul(stride, tile_info_.dimensions[i]);
             }
             return linear_idx;
         };
@@ -411,11 +400,11 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 // Decompose idx_var into per-dim indices
                 std::vector<symbolic::Expression> init_indices;
                 symbolic::Expression remainder = idx_var;
-                for (size_t i = 0; i < dim_sizes.size(); i++) {
-                    if (i < dim_sizes.size() - 1) {
+                for (size_t i = 0; i < tile_info_.dimensions.size(); i++) {
+                    if (i < tile_info_.dimensions.size() - 1) {
                         symbolic::Expression divisor = symbolic::integer(1);
-                        for (size_t j = i + 1; j < dim_sizes.size(); j++) {
-                            divisor = symbolic::mul(divisor, dim_sizes[j]);
+                        for (size_t j = i + 1; j < tile_info_.dimensions.size(); j++) {
+                            divisor = symbolic::mul(divisor, tile_info_.dimensions[j]);
                         }
                         init_indices.push_back(symbolic::div(remainder, divisor));
                         remainder = symbolic::mod(remainder, divisor);
@@ -465,11 +454,11 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 // Decompose idx_var into per-dim indices
                 std::vector<symbolic::Expression> wb_indices;
                 symbolic::Expression remainder = idx_var;
-                for (size_t i = 0; i < dim_sizes.size(); i++) {
-                    if (i < dim_sizes.size() - 1) {
+                for (size_t i = 0; i < tile_info_.dimensions.size(); i++) {
+                    if (i < tile_info_.dimensions.size() - 1) {
                         symbolic::Expression divisor = symbolic::integer(1);
-                        for (size_t j = i + 1; j < dim_sizes.size(); j++) {
-                            divisor = symbolic::mul(divisor, dim_sizes[j]);
+                        for (size_t j = i + 1; j < tile_info_.dimensions.size(); j++) {
+                            divisor = symbolic::mul(divisor, tile_info_.dimensions[j]);
                         }
                         wb_indices.push_back(symbolic::div(remainder, divisor));
                         remainder = symbolic::mod(remainder, divisor);
@@ -495,8 +484,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 structured_control_flow::Sequence* init_scope = parent;
                 bool first_init_loop = true;
 
-                for (size_t i = 0; i < varying_dims.size(); i++) {
-                    size_t d = varying_dims[i];
+                for (size_t i = 0; i < tile_info_.dimensions.size(); i++) {
+                    size_t d = i;
                     auto indvar_name =
                         builder.find_new_name("__daisy_ols_init_" + this->container_ + "_d" + std::to_string(d));
                     types::Scalar indvar_type(types::PrimitiveType::UInt64);
@@ -505,7 +494,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                     init_indvars.push_back(indvar);
 
                     auto init = symbolic::integer(0);
-                    auto condition = symbolic::Lt(indvar, dim_sizes[i]);
+                    auto condition = symbolic::Lt(indvar, tile_info_.dimensions[i]);
                     auto update = symbolic::add(indvar, symbolic::integer(1));
 
                     if (first_init_loop) {
@@ -558,8 +547,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 structured_control_flow::Sequence* wb_scope = parent;
                 bool first_wb_loop = true;
 
-                for (size_t i = 0; i < varying_dims.size(); i++) {
-                    size_t d = varying_dims[i];
+                for (size_t i = 0; i < tile_info_.dimensions.size(); i++) {
+                    size_t d = i;
                     auto indvar_name =
                         builder.find_new_name("__daisy_ols_wb_" + this->container_ + "_d" + std::to_string(d));
                     types::Scalar indvar_type(types::PrimitiveType::UInt64);
@@ -568,7 +557,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                     wb_indvars.push_back(indvar);
 
                     auto init = symbolic::integer(0);
-                    auto condition = symbolic::Lt(indvar, dim_sizes[i]);
+                    auto condition = symbolic::Lt(indvar, tile_info_.dimensions[i]);
                     auto update = symbolic::add(indvar, symbolic::integer(1));
 
                     if (first_wb_loop) {

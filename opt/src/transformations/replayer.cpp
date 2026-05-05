@@ -9,6 +9,7 @@
 #include <sdfg/transformations/loop_peeling.h>
 #include <sdfg/transformations/loop_shift.h>
 #include <sdfg/transformations/loop_skewing.h>
+#include <sdfg/transformations/loop_split.h>
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
@@ -57,6 +58,8 @@ void Replayer::replay(
             this->apply<transformations::LoopSkewing>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "LoopShift") {
             this->apply<transformations::LoopShift>(builder, analysis_manager, desc, skip_if_not_applicable);
+        } else if (transformation_name == "LoopSplit") {
+            this->apply<transformations::LoopSplit>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "OMPTransform") {
             this->apply<transformations::OMPTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "LoopPeeling") {
