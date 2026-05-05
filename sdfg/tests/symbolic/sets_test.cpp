@@ -41,12 +41,12 @@ TEST(SetsTest, is_subset_1d_equivalent_rename) {
     types::Scalar desc(types::PrimitiveType::UInt8);
 
     auto assum_x = symbolic::Assumption::create(x, desc);
-    assum_x.lower_bound_deprecated(y);
-    assum_x.upper_bound_deprecated(y);
+    assum_x.add_lower_bound(y);
+    assum_x.add_upper_bound(y);
 
     auto assum_y = symbolic::Assumption::create(y, desc);
-    assum_y.lower_bound_deprecated(x);
-    assum_y.upper_bound_deprecated(x);
+    assum_y.add_lower_bound(x);
+    assum_y.add_upper_bound(x);
 
     symbolic::Assumptions assums;
     assums.insert({x, assum_x});
@@ -65,16 +65,16 @@ TEST(SetsTest, is_subset_1d_equivalent_recursive_assumptions) {
     types::Scalar desc(types::PrimitiveType::UInt8);
 
     auto assum_x = symbolic::Assumption::create(x, desc);
-    assum_x.lower_bound_deprecated(x);
-    assum_x.upper_bound_deprecated(z);
+    assum_x.add_lower_bound(x);
+    assum_x.add_upper_bound(z);
 
     auto assum_y = symbolic::Assumption::create(y, desc);
-    assum_y.lower_bound_deprecated(z);
-    assum_y.upper_bound_deprecated(y);
+    assum_y.add_lower_bound(z);
+    assum_y.add_upper_bound(y);
 
     auto assum_z = symbolic::Assumption::create(z, desc);
-    assum_z.lower_bound_deprecated(y);
-    assum_z.upper_bound_deprecated(x);
+    assum_z.add_lower_bound(y);
+    assum_z.add_upper_bound(x);
 
     symbolic::Assumptions assums;
     assums.insert({x, assum_x});
@@ -96,12 +96,16 @@ TEST(SetsTest, is_subset_1d_minmax_assumptions) {
     types::Scalar desc(types::PrimitiveType::UInt8);
 
     auto assum_x = symbolic::Assumption::create(x, desc);
-    assum_x.lower_bound_deprecated(symbolic::max(N, M));
-    assum_x.upper_bound_deprecated(symbolic::min(M, K));
+    assum_x.add_lower_bound(N);
+    assum_x.add_lower_bound(M);
+    assum_x.add_upper_bound(M);
+    assum_x.add_upper_bound(K);
 
     auto assum_y = symbolic::Assumption::create(y, desc);
-    assum_y.lower_bound_deprecated(symbolic::max(N, M));
-    assum_y.upper_bound_deprecated(symbolic::min(M, K));
+    assum_y.add_lower_bound(N);
+    assum_y.add_lower_bound(M);
+    assum_y.add_upper_bound(M);
+    assum_y.add_upper_bound(K);
 
     symbolic::Assumptions assums;
     assums.insert({x, assum_x});

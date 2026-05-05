@@ -59,7 +59,7 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --docc --target=sequential
       energy: true
       env:
-        DOCC_CI: regions
+        DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     bn_conv_bn_relu_maxpool_run_openmp:
       command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/bn_conv_bn_relu_maxpool.py --docc --target=openmp

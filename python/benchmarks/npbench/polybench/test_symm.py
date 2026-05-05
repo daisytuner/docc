@@ -56,7 +56,7 @@ def test_symm(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "HIGHWAY": 4,
+                "VECTORIZE": 4,
                 "SEQUENTIAL": 3,
                 "FOR": 9,
                 "MAP": 7,
@@ -68,7 +68,7 @@ def test_symm(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "HIGHWAY": 2,
+                "VECTORIZE": 2,
                 "CPU_PARALLEL": 4,
                 "SEQUENTIAL": 1,
                 "FOR": 9,
@@ -85,7 +85,7 @@ def test_symm(target):
                 "SEQUENTIAL": 0,
                 "CUDA": 5,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 1,
                 "DOT": 0,
             }
@@ -98,7 +98,7 @@ def test_symm(target):
                 "SEQUENTIAL": 0,
                 "ROCM": 5,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 1,
                 "DOT": 0,
             }

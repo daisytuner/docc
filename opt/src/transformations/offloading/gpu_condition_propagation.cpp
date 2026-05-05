@@ -53,7 +53,7 @@ void GPUConditionPropagation::apply(builder::StructuredSDFGBuilder& builder, ana
         auto current_node = nodes_to_visit.back();
         nodes_to_visit.pop_back();
         auto parent_scope = scope_analysis.parent_scope(current_node);
-        auto parent_sequence = static_cast<structured_control_flow::Sequence*>(parent_scope);
+        auto parent_sequence = dynamic_cast<structured_control_flow::Sequence*>(parent_scope);
         analysis::UsersView current_users(users, *current_node);
         auto uses = current_users.uses(map_.indvar()->get_name());
         if (uses.empty()) {

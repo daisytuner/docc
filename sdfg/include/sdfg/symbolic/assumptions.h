@@ -55,8 +55,6 @@ namespace symbolic {
 class Assumption {
 private:
     Symbol symbol_;
-    Expression lower_bound_deprecated_;
-    Expression upper_bound_deprecated_;
     ExpressionSet lower_bounds_;
     ExpressionSet upper_bounds_;
     Expression tight_lower_bound_;
@@ -96,47 +94,6 @@ public:
     const Symbol symbol() const;
 
     /**
-     * @brief Gets the deprecated lower bound
-     * @deprecated Use lower_bound() or tight_lower_bound() instead
-     * @return The deprecated lower bound expression
-     */
-    //[[deprecated("use lower_bound/tight_lower_bound instead")]]
-    const Expression lower_bound_deprecated() const;
-
-    /**
-     * @brief Sets the deprecated lower bound
-     * @deprecated Use add_lower_bound() or tight_lower_bound() instead
-     * @param lower_bound The lower bound to set
-     */
-    //[[deprecated("use lower_bound/tight_lower_bound instead")]]
-    void lower_bound_deprecated(const Expression lower_bound);
-
-    /**
-     * @brief Gets the deprecated upper bound
-     * @deprecated Use upper_bound() or tight_upper_bound() instead
-     * @return The deprecated upper bound expression
-     */
-    //[[deprecated("use upper_bound/tight_upper_bound instead")]]
-    const Expression upper_bound_deprecated() const;
-
-    /**
-     * @brief Sets the deprecated upper bound
-     * @deprecated Use add_upper_bound() or tight_upper_bound() instead
-     * @param upper_bound The upper bound to set
-     */
-    //[[deprecated("use upper_bound/tight_upper_bound instead")]]
-    void upper_bound_deprecated(const Expression upper_bound);
-
-    /**
-     * @brief Gets the computed lower bound from all lower bound constraints
-     * @return The maximum of all lower bounds (tightest lower bound), or null if none
-     *
-     * This computes the effective lower bound by finding the maximum among all
-     * lower bound constraints, representing the tightest lower bound.
-     */
-    const Expression lower_bound() const;
-
-    /**
      * @brief Gets all lower bound constraints
      * @return Set of all lower bound expressions
      *
@@ -167,15 +124,6 @@ public:
      * @return true if the bound was found and removed
      */
     bool remove_lower_bound(const Expression lb);
-
-    /**
-     * @brief Gets the computed upper bound from all upper bound constraints
-     * @return The minimum of all upper bounds (tightest upper bound), or null if none
-     *
-     * This computes the effective upper bound by finding the minimum among all
-     * upper bound constraints, representing the tightest upper bound.
-     */
-    const Expression upper_bound() const;
 
     /**
      * @brief Gets all upper bound constraints

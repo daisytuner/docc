@@ -51,7 +51,7 @@ def test_correlation(target):
             verification={
                 "GEMM": 1,
                 "CMath": 2,
-                "HIGHWAY": 12,
+                "VECTORIZE": 12,
                 "Memset": 1,
                 "SEQUENTIAL": 11,
                 "FOR": 27,
@@ -63,7 +63,7 @@ def test_correlation(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "HIGHWAY": 3,
+                "VECTORIZE": 3,
                 "CMath": 2,
                 "CPU_PARALLEL": 17,
                 "Memset": 1,

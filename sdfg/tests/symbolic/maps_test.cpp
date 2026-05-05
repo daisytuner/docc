@@ -14,47 +14,47 @@ TEST(MapsTest, IsDisjoint_Stencil7P) {
     // Bounds
     auto _19 = symbolic::symbol("_19");
     auto assum_19 = symbolic::Assumption::create(_19, desc_i32);
-    assum_19.lower_bound_deprecated(symbolic::one());
+    assum_19.add_lower_bound(symbolic::one());
     assum_19.constant(true);
 
     auto _1 = symbolic::symbol("_1");
     auto assum_1 = symbolic::Assumption::create(_1, desc_i64);
-    assum_1.lower_bound_deprecated(symbolic::one());
+    assum_1.add_lower_bound(symbolic::one());
     assum_1.constant(true);
 
     auto _2 = symbolic::symbol("_2");
     auto assum_2 = symbolic::Assumption::create(_2, desc_i64);
-    assum_2.lower_bound_deprecated(symbolic::one());
+    assum_2.add_lower_bound(symbolic::one());
     assum_2.constant(true);
 
     auto _3 = symbolic::symbol("_3");
     auto assum_3 = symbolic::Assumption::create(_3, desc_i64);
-    assum_3.lower_bound_deprecated(symbolic::one());
+    assum_3.add_lower_bound(symbolic::one());
     assum_3.constant(true);
 
     // Indvars
     auto _13 = symbolic::symbol("_13");
     auto assum_13 = symbolic::Assumption::create(_13, desc_i64);
-    assum_13.lower_bound_deprecated(symbolic::zero());
-    assum_13.upper_bound_deprecated(symbolic::sub(_19, symbolic::one()));
+    assum_13.add_lower_bound(symbolic::zero());
+    assum_13.add_upper_bound(symbolic::sub(_19, symbolic::one()));
     assum_13.map(symbolic::add(_13, symbolic::one()));
 
     auto _24 = symbolic::symbol("_24");
     auto assum_24 = symbolic::Assumption::create(_24, desc_i64);
-    assum_24.lower_bound_deprecated(symbolic::zero());
-    assum_24.upper_bound_deprecated(symbolic::sub(_1, symbolic::one()));
+    assum_24.add_lower_bound(symbolic::zero());
+    assum_24.add_upper_bound(symbolic::sub(_1, symbolic::one()));
     assum_24.map(symbolic::add(_24, symbolic::one()));
 
     auto _28 = symbolic::symbol("_28");
     auto assum_28 = symbolic::Assumption::create(_28, desc_i64);
-    assum_28.lower_bound_deprecated(symbolic::zero());
-    assum_28.upper_bound_deprecated(symbolic::sub(_2, symbolic::one()));
+    assum_28.add_lower_bound(symbolic::zero());
+    assum_28.add_upper_bound(symbolic::sub(_2, symbolic::one()));
     assum_28.map(symbolic::add(_28, symbolic::one()));
 
     auto _32 = symbolic::symbol("_32");
     auto assum_32 = symbolic::Assumption::create(_32, desc_i64);
-    assum_32.lower_bound_deprecated(symbolic::zero());
-    assum_32.upper_bound_deprecated(symbolic::sub(_3, symbolic::one()));
+    assum_32.add_lower_bound(symbolic::zero());
+    assum_32.add_upper_bound(symbolic::sub(_3, symbolic::one()));
     assum_32.map(symbolic::add(_32, symbolic::one()));
 
     symbolic::Assumptions assums1;

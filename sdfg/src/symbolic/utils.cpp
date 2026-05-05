@@ -100,7 +100,8 @@ std::string expression_to_map_str(const MultiExpression& expr, const Assumptions
     std::vector<std::string> parameters;
     SymbolSet parameters_syms;
     for (auto& sym : syms) {
-        if (assums.find(sym) == assums.end() && assums.at(sym).constant()) {
+        auto it = assums.find(sym);
+        if (it != assums.end() && it->second.constant() && it->second.map().is_null()) {
             if (parameters_syms.find(sym) != parameters_syms.end()) {
                 continue;
             }
@@ -186,7 +187,7 @@ std::string expression_to_map_str(const MultiExpression& expr, const Assumptions
         if (symbolic::eq(arg1, symbolic::one())) {
             continue;
         }
-        auto lb = assums.at(sym).lower_bound_deprecated();
+        auto lb = assums.at(sym).tight_lower_bound();
         if (!SymEngine::is_a<SymEngine::Integer>(*lb)) {
             continue;
         }
@@ -260,8 +261,14 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
                 if (parameters_syms.find(con_sym) != parameters_syms.end()) {
                     continue;
                 }
-                parameters.push_back(con_sym->get_name());
-                parameters_syms.insert(con_sym);
+                // Check if this symbol is the indvar - if so, it should be a dimension, not a parameter
+                if (con_sym->get_name() == indvar->get_name()) {
+                    dimensions.push_back(con_sym->get_name());
+                    dimensions_syms.insert(con_sym);
+                } else {
+                    parameters.push_back(con_sym->get_name());
+                    parameters_syms.insert(con_sym);
+                }
             }
         }
     }
@@ -272,8 +279,14 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
                 if (parameters_syms.find(con_sym) != parameters_syms.end()) {
                     continue;
                 }
-                parameters.push_back(con_sym->get_name());
-                parameters_syms.insert(con_sym);
+                // Check if this symbol is the indvar - if so, it should be a dimension, not a parameter
+                if (con_sym->get_name() == indvar->get_name()) {
+                    dimensions.push_back(con_sym->get_name());
+                    dimensions_syms.insert(con_sym);
+                } else {
+                    parameters.push_back(con_sym->get_name());
+                    parameters_syms.insert(con_sym);
+                }
             }
         }
     }
@@ -365,7 +378,7 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
         if (symbolic::eq(arg1, symbolic::one())) {
             continue;
         }
-        auto lb = assums2.at(sym).lower_bound_deprecated();
+        auto lb = assums1.at(sym).tight_lower_bound();
         if (!SymEngine::is_a<SymEngine::Integer>(*lb)) {
             continue;
         }
@@ -422,7 +435,7 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
         if (symbolic::eq(arg1, symbolic::one())) {
             continue;
         }
-        auto lb = assums2.at(sym).lower_bound_deprecated();
+        auto lb = assums2.at(sym).tight_lower_bound();
         if (!SymEngine::is_a<SymEngine::Integer>(*lb)) {
             continue;
         }
@@ -457,7 +470,10 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
     map_3_ss << "]";
     std::vector<std::string> monotonicity_constraints;
     if (dimensions_syms.find(indvar) != dimensions_syms.end()) {
-        monotonicity_constraints.push_back(indvar->get_name() + "_1 != " + indvar->get_name() + "_2");
+        // For loop-carried dependencies, we only care about the forward direction
+        // (iteration_1 < iteration_2 in execution order).
+        // This ensures we detect real dependencies, not symmetric pairs.
+        monotonicity_constraints.push_back(indvar->get_name() + "_1 < " + indvar->get_name() + "_2");
     }
     if (!monotonicity_constraints.empty()) {
         map_3_ss << " : ";
@@ -483,49 +499,21 @@ ExpressionSet generate_constraints(SymbolSet& syms, const Assumptions& assums, S
         }
         seen.insert(sym);
 
-        auto ub = assums.at(sym).upper_bound_deprecated();
-        auto lb = assums.at(sym).lower_bound_deprecated();
-        if (!symbolic::eq(ub, SymEngine::Inf)) {
-            if (SymEngine::is_a<SymEngine::Min>(*ub)) {
-                auto min = SymEngine::rcp_static_cast<const SymEngine::Min>(ub);
-                auto args = min->get_args();
-                for (auto& arg : args) {
-                    auto con = symbolic::Le(sym, arg);
-                    auto con_syms = symbolic::atoms(con);
-                    constraints.insert(con);
+        for (auto& ub : assums.at(sym).upper_bounds()) {
+            auto con = symbolic::Le(sym, ub);
+            auto con_syms = symbolic::atoms(con);
+            constraints.insert(con);
 
-                    auto con_cons = generate_constraints(con_syms, assums, seen);
-                    constraints.insert(con_cons.begin(), con_cons.end());
-                }
-            } else {
-                auto con = symbolic::Le(sym, ub);
-                auto con_syms = symbolic::atoms(con);
-                constraints.insert(con);
-
-                auto con_cons = generate_constraints(con_syms, assums, seen);
-                constraints.insert(con_cons.begin(), con_cons.end());
-            }
+            auto con_cons = generate_constraints(con_syms, assums, seen);
+            constraints.insert(con_cons.begin(), con_cons.end());
         }
-        if (!symbolic::eq(lb, SymEngine::NegInf)) {
-            if (SymEngine::is_a<SymEngine::Max>(*lb)) {
-                auto max = SymEngine::rcp_static_cast<const SymEngine::Max>(lb);
-                auto args = max->get_args();
-                for (auto& arg : args) {
-                    auto con = symbolic::Ge(sym, arg);
-                    auto con_syms = symbolic::atoms(con);
-                    constraints.insert(con);
+        for (auto& lb : assums.at(sym).lower_bounds()) {
+            auto con = symbolic::Ge(sym, lb);
+            auto con_syms = symbolic::atoms(con);
+            constraints.insert(con);
 
-                    auto con_cons = generate_constraints(con_syms, assums, seen);
-                    constraints.insert(con_cons.begin(), con_cons.end());
-                }
-            } else {
-                auto con = symbolic::Ge(sym, lb);
-                auto con_syms = symbolic::atoms(con);
-                constraints.insert(con);
-
-                auto con_cons = generate_constraints(con_syms, assums, seen);
-                constraints.insert(con_cons.begin(), con_cons.end());
-            }
+            auto con_cons = generate_constraints(con_syms, assums, seen);
+            constraints.insert(con_cons.begin(), con_cons.end());
         }
     }
     return constraints;

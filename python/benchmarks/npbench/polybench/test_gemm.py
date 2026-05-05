@@ -43,7 +43,7 @@ def test_gemm(target):
                 "SEQUENTIAL": 0,
                 "CUDA": 0,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 1,
                 "DOT": 0,
             }
@@ -56,7 +56,7 @@ def test_gemm(target):
                 "SEQUENTIAL": 0,
                 "CUDA": 0,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 1,
                 "DOT": 0,
             }
@@ -69,7 +69,7 @@ def test_gemm(target):
                 "SEQUENTIAL": 0,
                 "CUDA": 0,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 1,
                 "DOT": 0,
             }
@@ -82,7 +82,7 @@ def test_gemm(target):
                 "SEQUENTIAL": 0,
                 "CUDA": 0,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 1,
                 "DOT": 0,
             }
@@ -95,7 +95,7 @@ def test_gemm(target):
                 "SEQUENTIAL": 0,
                 "ROCM": 0,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 1,
                 "DOT": 0,
             }

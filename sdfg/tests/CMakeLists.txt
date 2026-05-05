@@ -18,7 +18,7 @@ set(TEST_FILES
     analysis/loop_analysis_test.cpp
     analysis/loop_analysis_info_test.cpp
     analysis/mem_access_range_analysis_test.cpp
-    analysis/memlet_delinearization_analysis_test.cpp
+    analysis/memory_layout_analysis_test.cpp
     analysis/type_analysis_test.cpp
     analysis/users_test.cpp
     builder/function_builder_test.cpp

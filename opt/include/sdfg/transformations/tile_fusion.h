@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -42,6 +43,23 @@ class TileFusion : public Transformation {
         int radius;
     };
     std::vector<TileFusionCandidate> candidates_;
+
+    /// Cyclic containers (K2 writes, K1 reads) requiring double buffering
+    struct CyclicContainerInfo {
+        std::string container;
+        int min_offset; ///< Minimum stencil offset in tiled dimension (e.g., -1 for A[i-1])
+        int max_offset; ///< Maximum stencil offset in tiled dimension (e.g., +1 for A[i+1])
+        int tiled_dim; ///< Which delinearized dimension is tiled
+        int tiled_dim_buf_size; ///< Buffer size in tiled dim: S + 2*radius + max_offset - min_offset
+
+        /// Delinearized layout info (shape, strides) for multi-dim buffer management
+        std::vector<symbolic::Expression> dimensions; ///< Per-dimension sizes from layout
+        std::vector<symbolic::Expression> strides; ///< Per-dimension strides from layout
+        symbolic::Expression layout_offset = symbolic::integer(0); ///< Layout offset
+
+        int buffer_size; ///< Total buffer elements: tiled_dim_buf_size * product(other_dims)
+    };
+    std::vector<CyclicContainerInfo> cyclic_containers_;
 
     /// Compute the radius for a shared container by analyzing producer write
     /// and consumer read subsets. Returns -1 if the radius cannot be determined.

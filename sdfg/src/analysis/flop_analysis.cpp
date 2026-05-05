@@ -79,7 +79,7 @@ symbolic::Expression FlopAnalysis::replace_loop_indices(
         if (assumption.tight_upper_bound().is_null()) {
             auto bounds = this->choose_bounds(parameters, assumption.upper_bounds());
             if (bounds.empty()) {
-                ub = assumption.upper_bound();
+                ub = SymEngine::Inf;
             } else {
                 ub = SymEngine::min(std::vector<symbolic::Expression>(bounds.begin(), bounds.end()));
             }
@@ -89,7 +89,7 @@ symbolic::Expression FlopAnalysis::replace_loop_indices(
         if (assumption.tight_lower_bound().is_null()) {
             auto bounds = this->choose_bounds(parameters, assumption.lower_bounds());
             if (bounds.empty()) {
-                lb = assumption.lower_bound();
+                lb = SymEngine::NegInf;
             } else {
                 lb = SymEngine::max(std::vector<symbolic::Expression>(bounds.begin(), bounds.end()));
             }
@@ -266,7 +266,7 @@ symbolic::Expression FlopAnalysis::visit_structured_loop_with_scope(
         init = this->replace_loop_indices(parameters, loop_assumptions[indvar].tight_lower_bound(), loop_assumptions);
         done = this->is_parameter_expression(parameters, init);
     }
-    if (!done && !symbolic::eq(loop_assumptions[indvar].lower_bound(), SymEngine::NegInf)) {
+    if (!done && !loop_assumptions[indvar].lower_bounds().empty()) {
         auto bounds = this->choose_bounds(parameters, loop_assumptions[indvar].lower_bounds());
         if (!bounds.empty()) {
             init = this->replace_loop_indices(
@@ -294,7 +294,7 @@ symbolic::Expression FlopAnalysis::visit_structured_loop_with_scope(
         bound = this->replace_loop_indices(parameters, loop_assumptions[indvar].tight_upper_bound(), loop_assumptions);
         done = this->is_parameter_expression(parameters, bound);
     }
-    if (!done && !symbolic::eq(loop_assumptions[indvar].upper_bound(), SymEngine::Inf)) {
+    if (!done) {
         auto bounds = this->choose_bounds(parameters, loop_assumptions[indvar].upper_bounds());
         if (!bounds.empty()) {
             bound = this->replace_loop_indices(

@@ -35,31 +35,31 @@ void CPPCodeGenerator::emit_capture_context_init(std::ostream& ofs_source) const
     ofs_source << std::endl;
 }
 
-void CPPCodeGenerator::dispatch_includes() {
+void CPPCodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
 #if defined(__linux__)
-    this->includes_stream_ << "#include <alloca.h>" << std::endl;
-    this->includes_stream_ << "#include <malloc.h>" << std::endl;
+    out << "#include <alloca.h>" << std::endl;
+    out << "#include <malloc.h>" << std::endl;
 #endif
 
-    this->includes_stream_ << "#include <cmath>" << std::endl;
-    this->includes_stream_ << "#include <cstdio>" << std::endl;
-    this->includes_stream_ << "#include <cstdlib>" << std::endl;
-    this->includes_stream_ << "#include <cstring>" << std::endl;
-    this->includes_stream_ << "#include <cstdint>" << std::endl;
+    out << "#include <cmath>" << std::endl;
+    out << "#include <cstdio>" << std::endl;
+    out << "#include <cstdlib>" << std::endl;
+    out << "#include <cstring>" << std::endl;
+    out << "#include <cstdint>" << std::endl;
 
 #if defined(__APPLE__)
-    this->includes_stream_ << "#include <Accelerate/Accelerate.h>" << std::endl;
+    out << "#include <Accelerate/Accelerate.h>" << std::endl;
 #else
-    this->includes_stream_ << "#include <cblas.h>" << std::endl;
+    out << "#include <cblas.h>" << std::endl;
 #endif
 
-    this->includes_stream_ << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
-};
+    out << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
+}
 
-void CPPCodeGenerator::dispatch_structures() {
+void CPPCodeGenerator::dispatch_header_structures(PrettyPrinter& out) {
     // Forward declarations
     for (auto& structure : sdfg_.structures()) {
-        this->classes_stream_ << "struct " << structure << ";" << std::endl;
+        out << "struct " << structure << ";" << std::endl;
     }
 
     // Generate topology-sorted structure definitions
@@ -100,26 +100,25 @@ void CPPCodeGenerator::dispatch_structures() {
     for (auto& structure_index : order) {
         std::string structure = names.at(structure_index);
         auto& definition = sdfg_.structure(structure);
-        this->classes_stream_ << "struct ";
+        out << "struct ";
         if (definition.is_packed()) {
-            this->classes_stream_ << "__attribute__((packed)) ";
+            out << "__attribute__((packed)) ";
         }
-        this->classes_stream_ << structure << std::endl;
-        this->classes_stream_ << "{\n";
+        out << structure << std::endl;
+        out << "{\n";
 
         for (size_t i = 0; i < definition.num_members(); i++) {
             auto& member_type = definition.member_type(symbolic::integer(i));
             if (dynamic_cast<const sdfg::types::Structure*>(&member_type)) {
-                this->classes_stream_ << "struct ";
+                out << "struct ";
             }
-            this->classes_stream_
-                << language_extension_.declaration("member_" + std::to_string(i), member_type, false, true);
-            this->classes_stream_ << ";" << std::endl;
+            out << language_extension_.declaration("member_" + std::to_string(i), member_type, false, true);
+            out << ";" << std::endl;
         }
 
-        this->classes_stream_ << "};" << std::endl;
+        out << "};" << std::endl;
     }
-};
+}
 
 void CPPCodeGenerator::dispatch_globals() {
     // Declare globals

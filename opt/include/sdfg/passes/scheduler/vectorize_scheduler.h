@@ -6,7 +6,7 @@ namespace sdfg {
 namespace passes {
 namespace scheduler {
 
-class HighwayScheduler : public LoopScheduler {
+class VectorizeScheduler : public LoopScheduler {
 public:
     SchedulerAction find(
         builder::StructuredSDFGBuilder& builder,
@@ -36,7 +36,7 @@ public:
         bool offload_unknown_sizes = false
     ) override;
 
-    static std::string target() { return "highway"; };
+    static std::string target() { return "vectorize"; };
 
     std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };

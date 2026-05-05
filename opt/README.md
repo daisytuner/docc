@@ -52,27 +52,48 @@ recorder.apply<transformations::LoopTiling>(builder, am, false, loop, tile_size)
 
 | Transformation | Description | Use Case |
 |----------------|-------------|----------|
-| `InLocalStorage` | Pack read-only data into local buffer | A/B matrices in GEMM |
-| `OutLocalStorage` | Scalar accumulator for loop-invariant writes | Reduction variables |
-| `AccumulatorTile` | Multi-element tile for read-write patterns | C tile in micro-kernel |
+| `InLocalStorage` | Copy read-only tile into contiguous local buffer before loop | Packing A/B panels in GEMM |
+| `OutLocalStorage` | Create local tile buffer for write/read-write data, writeback after loop | Accumulator registers, output tiles |
+
+Both transformations use `MemoryLayoutAnalysis` tile API to compute a bounding-box
+over all accesses to the container within the target loop. The tile is delinearized
+from the flat pointer access pattern (e.g. `A[i*K+j]` → shape `[extent_i, extent_j]`).
+
+**Design principle:** All tile extents must resolve to integer constants via
+`extents_approx()` (overapproximation). This means the performance engineer must
+first establish a bounded tile region through `LoopTiling`, then apply packing at
+the inner loop level where extents are determined by integer tile sizes. This
+enforces the correct workflow: tiling defines the bounding box, packing materializes it.
 
 ### InLocalStorage
-Creates a local copy of data accessed in a loop, with optional copy loops:
+
+Creates a contiguous local copy of read-only data accessed in a loop:
+
 ```cpp
-InLocalStorage ils(target_loop, "A");  // Pack array A
+// Apply at inner loop level where tile extents are integer
+InLocalStorage ils(i_loop, a_access);  // Pack tile of A
 ```
+
+- Container must be **read-only** within the loop (no writes)
+- Container must be `Pointer` or `Array` type (not `Scalar`)
+- Copy-in loops are inserted before the target loop
+- Body accesses are rewritten to use the local buffer with base-subtracted indices
+- For `Pointer` types: re-linearizes copy-in/copy-out using layout strides
 
 ### OutLocalStorage
-Creates a scalar or small buffer for accumulation when the output index is constant w.r.t. the target loop:
+
+Creates a local tile buffer for write or read-write data:
+
 ```cpp
-OutLocalStorage ols(inner_loop, "y");  // Scalar accumulator for y[i]
+// Apply at inner loop level where tile extents are integer
+OutLocalStorage ols(i_loop, c_access);  // Accumulate into local tile
 ```
 
-### AccumulatorTile
-Creates a tile buffer for read-write patterns where output depends on inner loop indices:
-```cpp
-AccumulatorTile acc(micro_tile_loop, "C");  // MR×NR register tile
-```
+- Container must have **writes** within the loop
+- **Read-write** (accumulator): init loop copies tile before, writeback after
+- **Write-only**: no init loop, only writeback after
+- **Scalar** containers: creates a scalar local (no loops needed)
+- For `Pointer` types: re-linearizes copy-in/copy-out using layout strides
 
 ## Example: BLIS-style GEMM
 
@@ -80,15 +101,15 @@ AccumulatorTile acc(micro_tile_loop, "C");  // MR×NR register tile
 // Phase 1: Loop restructuring (7 transformations)
 // i→j→k  →  i_tile→k_tile→j_tile→i→k→j
 
-// Phase 2: Packing (2 transformations)
-InLocalStorage(k_tile, "A");  // Pack A panel
-InLocalStorage(j_tile, "B");  // Pack B panel
+// Phase 2: Packing (apply at inner loop levels where tile extents are integer)
+InLocalStorage(i_loop, a_access);  // Pack A panel (MC x KC tile)
+InLocalStorage(k_loop, b_access);  // Pack B panel (KC x NC tile)
 
 // Phase 3: Register blocking (6 transformations)
 LoopTiling(i, MR);            // Micro-tile i
 LoopTiling(j, NR);            // Micro-tile j
 // ... interchanges ...
-AccumulatorTile(i_micro, "C"); // Register tile for C
+OutLocalStorage(i_micro, c_access); // Register tile for C (MR x NR)
 ```
 
 See `tests/transformations/optimizations/blocking_test.cpp` for complete examples.

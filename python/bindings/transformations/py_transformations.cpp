@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 
+#include <sdfg/data_flow/access_node.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_skewing.h>
@@ -143,13 +144,13 @@ void register_transformations(py::module& m) {
     // OutLocalStorage transformation
     py::class_<OutLocalStorage, Transformation>(m, "OutLocalStorage")
         .def(
-            py::init<StructuredLoop&, std::string>(),
+            py::init<StructuredLoop&, const sdfg::data_flow::AccessNode&>(),
             py::arg("loop"),
-            py::arg("container"),
+            py::arg("access_node"),
             "Create an out-of-loop local storage transformation.\n\n"
             "Args:\n"
             "    loop: The loop to optimize\n"
-            "    container: The container name to extract to local storage"
+            "    access_node: The access node to extract to local storage"
         )
         .def("__repr__", [](const OutLocalStorage& t) {
             std::ostringstream oss;

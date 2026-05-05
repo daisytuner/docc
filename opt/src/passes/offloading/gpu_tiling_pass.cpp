@@ -36,8 +36,14 @@ bool GPUTilingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::
             // Pre-filter: check if any container used in the loop is a KLS candidate
             analysis::UsersView users_view(users, struc_loop->root());
             bool has_kls_candidate = false;
-            for (const auto& container : users_view.all_containers_in_order()) {
-                if (transformations::KernelLocalStorage::is_candidate(*struc_loop, container, builder, analysis_manager)) {
+            for (auto& use : users_view.reads()) {
+                auto element = use->element();
+                if (!dynamic_cast<data_flow::AccessNode*>(element)) {
+                    continue;
+                }
+                auto access_node = dynamic_cast<data_flow::AccessNode*>(element);
+                if (transformations::KernelLocalStorage::
+                        is_candidate(*struc_loop, access_node->data(), builder, analysis_manager)) {
                     has_kls_candidate = true;
                     break;
                 }

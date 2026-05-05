@@ -33,7 +33,7 @@ def test_atax(target):
                 "SEQUENTIAL": 1,
                 "CUDA": 0,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 2,
                 "DOT": 0,
             }
@@ -46,7 +46,7 @@ def test_atax(target):
                 "SEQUENTIAL": 0,
                 "CUDA": 0,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 1,
+                "VECTORIZE": 1,
                 "GEMM": 2,
                 "DOT": 0,
             }
@@ -59,7 +59,7 @@ def test_atax(target):
                 "SEQUENTIAL": 0,
                 "CUDA": 0,
                 "CPU_PARALLEL": 1,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 2,
                 "DOT": 0,
             }

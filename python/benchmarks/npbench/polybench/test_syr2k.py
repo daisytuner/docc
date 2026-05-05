@@ -39,7 +39,7 @@ def test_syr2k(target):
         verifier = SDFGVerification(
             verification={
                 "Malloc": 3,
-                "HIGHWAY": 3,
+                "VECTORIZE": 3,
                 "SEQUENTIAL": 3,
                 "FOR": 8,
                 "MAP": 6,
@@ -50,7 +50,7 @@ def test_syr2k(target):
         verifier = SDFGVerification(
             verification={
                 "Malloc": 3,
-                "HIGHWAY": 3,
+                "VECTORIZE": 3,
                 "CPU_PARALLEL": 1,
                 "SEQUENTIAL": 2,
                 "FOR": 8,

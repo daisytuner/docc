@@ -79,8 +79,19 @@ public:
 
     virtual std::string toStr() const override;
 
+    /**
+     * Checks that the nodes operate on the same device and compatible data
+     */
+    virtual bool is_compatible_with(const DataOffloadingNode& other) const;
+
+    /**
+     * The 2 nodes are opposites of each other that could cancel each other out
+     */
     virtual bool redundant_with(const DataOffloadingNode& other) const;
 
+    /**
+     * The 2 nodes do the same thing
+     */
     virtual bool equal_with(const DataOffloadingNode& other) const;
 
     virtual bool is_same_target(const DataOffloadingNode& other) const = 0;
@@ -97,6 +108,7 @@ public:
     void remove_free();
 
     void remove_h2d();
+    void remove_d2h();
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 

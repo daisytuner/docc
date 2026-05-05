@@ -7,21 +7,21 @@
 #include <sdfg/structured_control_flow/map.h>
 
 namespace sdfg {
-namespace highway {
+namespace vectorize {
 
 /**
- * @brief Google Highway schedule type
+ * @brief Vectorize schedule type
  *
- * Indicates that loop iterations can be vectorized using the Highway library.
+ * Indicates that loop iterations can be vectorized using pragmas.
  */
-class ScheduleType_Highway {
+class ScheduleType_Vectorize {
 public:
-    static const std::string value() { return "HIGHWAY"; }
+    static const std::string value() { return "VECTORIZE"; }
 
     static structured_control_flow::ScheduleType create() {
         return structured_control_flow::ScheduleType(value(), structured_control_flow::ScheduleTypeCategory::Vectorizer);
     }
 };
 
-} // namespace highway
+} // namespace vectorize
 } // namespace sdfg

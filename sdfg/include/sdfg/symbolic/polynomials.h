@@ -99,6 +99,62 @@ AffineCoeffs affine_coefficients(Polynomial poly, SymbolVec& symbols);
 Expression affine_inverse(AffineCoeffs coeffs, Symbol symbol);
 
 /**
+ * @brief Result of affine decomposition of an expression w.r.t. a symbol
+ *
+ * For an expression `expr = coeff * symbol + offset`, this struct holds
+ * the coefficient and offset values.
+ */
+struct AffineDecomposition {
+    bool success; ///< True if the expression is affine in the symbol
+    Expression coeff; ///< Coefficient of the symbol (must be non-zero integer for success)
+    Expression offset; ///< Constant offset (terms not involving the symbol)
+
+    static AffineDecomposition failure() { return {false, SymEngine::null, SymEngine::null}; }
+};
+
+/**
+ * @brief Decomposes an expression into affine form w.r.t. a single symbol
+ * @param expr The expression to decompose
+ * @param symbol The symbol to decompose with respect to
+ * @return AffineDecomposition containing coefficient and offset, or failure
+ *
+ * Given an expression, checks if it is affine (degree <= 1) in the given symbol.
+ * If so, returns the coefficient and offset such that expr = coeff * symbol + offset.
+ *
+ * @code
+ * auto result = affine_decomposition(parse("-2 + _s0"), symbol("_s0"));
+ * // result.success = true, result.coeff = 1, result.offset = -2
+ *
+ * auto result2 = affine_decomposition(parse("_s0 * _s0"), symbol("_s0"));
+ * // result2.success = false (quadratic, not affine)
+ * @endcode
+ */
+AffineDecomposition affine_decomposition(const Expression& expr, const Symbol& symbol);
+
+/**
+ * @brief Solves for a symbol's bound given an inequality constraint
+ * @param expr Expression containing the symbol
+ * @param symbol The symbol to solve for
+ * @param bound_value The value that expr must be >= (for lower) or <= (for upper)
+ * @param is_lower_bound True if solving expr >= bound_value, false for expr <= bound_value
+ * @return The bound on the symbol, or null if cannot be solved
+ *
+ * Given an affine expression `expr = coeff * symbol + offset` and a constraint:
+ * - For lower bound (expr >= bound_value): symbol >= (bound_value - offset) / coeff (if coeff > 0)
+ * - For upper bound (expr <= bound_value): symbol <= (bound_value - offset) / coeff (if coeff > 0)
+ *
+ * Only works when coeff is a positive integer.
+ *
+ * @code
+ * // For loop bound: -2 + _s0 >= 1 (loop must execute at least once)
+ * auto bound = solve_affine_bound(parse("-2 + _s0"), symbol("_s0"), integer(1), true);
+ * // Returns 3 (_s0 >= 3)
+ * @endcode
+ */
+Expression
+solve_affine_bound(const Expression& expr, const Symbol& symbol, const Expression& bound_value, bool is_lower_bound);
+
+/**
  * @brief Performs polynomial division
  * @param dividend The polynomial to divide
  * @param divisor The polynomial to divide by

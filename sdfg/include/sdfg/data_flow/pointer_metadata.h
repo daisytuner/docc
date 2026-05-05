@@ -44,7 +44,7 @@ public:
     /**
      * Despite this being a leak of the pointer,
      * the user will only use it for blocking accesses to the underlying data and not keep a reference to the data in
-     * any way Like a Rust temporary borrow for the duration for the LibNode and no more.
+     * any way. Like a Rust temporary borrow for the duration of the LibNode and no more.
      */
     bool no_ptr_escape() const { return no_ptr_escape_; }
 

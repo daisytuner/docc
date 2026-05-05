@@ -548,6 +548,17 @@ Condition Ge(const Expression lhs, const Expression rhs);
 Expression expand(const Expression expr);
 
 /**
+ * @brief Factors an expression into a product of simpler terms
+ * @param expr Expression to factor
+ * @return Factored form of the expression
+ *
+ * Attempts to factor polynomials by finding integer roots via trial division
+ * and detecting perfect squares. For example, x^2 - 4*x + 4 becomes (x - 2)^2.
+ * Recurses into Mul and Pow sub-expressions.
+ */
+Expression factor(const Expression expr);
+
+/**
  * @brief Simplifies an expression
  * @param expr Expression to simplify
  * @return Simplified form of the expression
@@ -555,6 +566,20 @@ Expression expand(const Expression expr);
  * Applies simplification rules to reduce the expression to a canonical form.
  */
 Expression simplify(const Expression expr);
+
+/**
+ * @brief Overapproximates an expression by resolving min/max to upper bounds
+ * @param expr Expression to overapproximate
+ * @return An expression that is >= the original for all symbol valuations
+ *
+ * Traverses the expression and replaces:
+ * - min(a, b) with the argument that has the larger constant offset (upper bound of min)
+ * - max(a, b) with the argument that has the larger constant offset (upper bound of max)
+ *
+ * This is useful for computing conservative upper bounds on working set sizes,
+ * e.g. a tile extent of min(32, M - i_tile) overapproximates to 32.
+ */
+Expression overapproximate(const Expression expr);
 
 /**
  * @brief Tests structural equality of two expressions

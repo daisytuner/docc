@@ -270,8 +270,6 @@ class TestWhereStridedViews:
         np.testing.assert_array_equal(result, expected)
 
     def test_2d_strided_cols(self):
-        """2D strided view on columns: a[:, ::2]"""
-
         @native
         def where_2d_strided_cols(a):
             view = a[:, ::2]

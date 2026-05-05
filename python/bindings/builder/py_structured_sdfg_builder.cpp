@@ -32,19 +32,24 @@ sdfg::symbolic::Expression parse_and_expand(const std::string& expr_str) {
     return expr;
 }
 
-PyStructuredSDFGBuilder::PyStructuredSDFGBuilder(const std::string& name)
-    : builder_(name, sdfg::FunctionType_CPU, sdfg::types::Scalar(sdfg::types::PrimitiveType::Void)) {
+PyStructuredSDFGBuilder::PyStructuredSDFGBuilder(sdfg::plugins::Context& ctx, const std::string& name)
+    : docc_context_(ctx),
+      builder_(name, sdfg::FunctionType_CPU, sdfg::types::Scalar(sdfg::types::PrimitiveType::Void)) {
     scope_stack.push_back({&builder_.subject().root(), nullptr, -1});
 }
 
-PyStructuredSDFGBuilder::PyStructuredSDFGBuilder(const std::string& name, const sdfg::types::IType& return_type)
-    : builder_(name, sdfg::FunctionType_CPU, return_type) {
+PyStructuredSDFGBuilder::
+    PyStructuredSDFGBuilder(sdfg::plugins::Context& ctx, const std::string& name, const sdfg::types::IType& return_type)
+    : docc_context_(ctx), builder_(name, sdfg::FunctionType_CPU, return_type) {
     scope_stack.push_back({&builder_.subject().root(), nullptr, -1});
 }
 
-PyStructuredSDFGBuilder::PyStructuredSDFGBuilder(PyStructuredSDFG& sdfg) : builder_(sdfg.sdfg()) {
+PyStructuredSDFGBuilder::PyStructuredSDFGBuilder(PyStructuredSDFG& sdfg)
+    : docc_context_(sdfg.docc_context_), builder_(sdfg.sdfg()) {
     scope_stack.push_back({&builder_.subject().root(), nullptr, -1});
 }
+
+sdfg::plugins::Context& PyStructuredSDFGBuilder::docc_context() const { return docc_context_; }
 
 PyStructuredSDFG PyStructuredSDFGBuilder::move() {
     sdfg::analysis::AnalysisManager analysis_manager(builder_.subject());
@@ -52,7 +57,7 @@ PyStructuredSDFG PyStructuredSDFGBuilder::move() {
     debug_info_propagation_pass.run(builder_, analysis_manager);
 
     auto sdfg = builder_.move();
-    return PyStructuredSDFG(sdfg);
+    return PyStructuredSDFG(docc_context_, sdfg);
 }
 
 void PyStructuredSDFGBuilder::add_container(const std::string& name, const sdfg::types::IType& type, bool is_argument) {
@@ -82,6 +87,28 @@ std::string PyStructuredSDFGBuilder::get_sizeof(const sdfg::types::IType& type) 
 }
 
 std::string PyStructuredSDFGBuilder::find_new_name(const std::string& prefix) { return builder_.find_new_name(prefix); }
+
+void PyStructuredSDFGBuilder::add_assumption_lb(const std::string& symbol, const std::string& bound) {
+    sdfg::symbolic::Symbol sym = sdfg::symbolic::symbol(symbol);
+    sdfg::symbolic::Expression lb = sdfg::symbolic::parse(bound);
+
+    auto& assumption = builder_.subject().assumption(sym);
+    assumption.add_lower_bound(lb);
+}
+
+void PyStructuredSDFGBuilder::add_assumption_ub(const std::string& symbol, const std::string& bound) {
+    sdfg::symbolic::Symbol sym = sdfg::symbolic::symbol(symbol);
+    sdfg::symbolic::Expression ub = sdfg::symbolic::parse(bound);
+
+    auto& assumption = builder_.subject().assumption(sym);
+    assumption.add_upper_bound(ub);
+}
+
+void PyStructuredSDFGBuilder::add_assumption_const(const std::string& symbol, bool constant) {
+    sdfg::symbolic::Symbol sym = sdfg::symbolic::symbol(symbol);
+    auto& assumption = builder_.subject().assumption(sym);
+    assumption.constant(constant);
+}
 
 sdfg::structured_control_flow::Sequence& PyStructuredSDFGBuilder::current_sequence() {
     if (scope_stack.empty()) {

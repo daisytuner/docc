@@ -25,17 +25,20 @@ struct Scope {
 
 class PyStructuredSDFGBuilder {
 private:
+    sdfg::plugins::Context& docc_context_;
     sdfg::builder::StructuredSDFGBuilder builder_;
     std::vector<Scope> scope_stack;
 
     sdfg::structured_control_flow::Sequence& current_sequence();
 
 public:
-    PyStructuredSDFGBuilder(const std::string& name);
-    PyStructuredSDFGBuilder(const std::string& name, const sdfg::types::IType& return_type);
+    PyStructuredSDFGBuilder(sdfg::plugins::Context& ctx, const std::string& name);
+    PyStructuredSDFGBuilder(sdfg::plugins::Context& ctx, const std::string& name, const sdfg::types::IType& return_type);
     PyStructuredSDFGBuilder(PyStructuredSDFG& sdfg);
 
     sdfg::builder::StructuredSDFGBuilder& builder() { return builder_; }
+
+    sdfg::plugins::Context& docc_context() const;
 
     PyStructuredSDFG move();
 
@@ -52,6 +55,12 @@ public:
     std::string get_sizeof(const sdfg::types::IType& type);
 
     std::string find_new_name(const std::string& prefix = "tmp_");
+
+    void add_assumption_lb(const std::string& symbol, const std::string& bound);
+
+    void add_assumption_ub(const std::string& symbol, const std::string& bound);
+
+    void add_assumption_const(const std::string& symbol, bool constant);
 
     /***** Control Flow *****/
 

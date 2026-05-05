@@ -33,37 +33,18 @@ def kernel(TSTEPS, A, B):
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
 def test_jacobi_2d(target):
     if target == "none":
-        verifier = SDFGVerification(
-            verification={"MAP": 24, "Malloc": 10, "SEQUENTIAL": 24, "FOR": 25}
-        )
+        verifier = SDFGVerification(verification={"MAP": 4, "SEQUENTIAL": 4, "FOR": 5})
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={
-                "HIGHWAY": 12,
-                "MAP": 24,
-                "Malloc": 10,
-                "SEQUENTIAL": 12,
-                "FOR": 25,
-            }
+            verification={"VECTORIZE": 2, "MAP": 4, "SEQUENTIAL": 2, "FOR": 5}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={
-                "CPU_PARALLEL": 12,
-                "MAP": 12,
-                "FOR": 13,
-                "Malloc": 10,
-            }
+            verification={"CPU_PARALLEL": 2, "MAP": 2, "FOR": 3}
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "CUDA": 24,
-                "MAP": 24,
-                "CUDAOffloading": 40,
-                "FOR": 25,
-                "Malloc": 0,
-            }
+            verification={"CUDA": 4, "MAP": 4, "CUDAOffloading": 8, "FOR": 5}
         )
     else:  # rocm
         verifier = SDFGVerification(

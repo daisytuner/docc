@@ -40,6 +40,9 @@ protected:
         analysis::OffloadHolder& malloc_holder,
         analysis::OffloadHolder& copy_in
     );
+    bool eliminate_redundant_d2h(
+        builder::StructuredSDFGBuilder& builder, analysis::OffloadHolder& h2d, analysis::OffloadHolder& d2h
+    );
 };
 
 class DataTransferMinimizationLegacy : public visitor::NonStoppingStructuredSDFGVisitor {

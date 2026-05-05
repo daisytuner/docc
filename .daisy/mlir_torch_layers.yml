@@ -2,12 +2,12 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: '0 0 * * *'
 
 parameters:
   container: daisytuner/docc-build-env-llvm19-base:latest-amd64
-  timeout: 120
+  timeout: 150
   partitions:
     - chamomile
 
@@ -79,7 +79,7 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --docc --target=sequential
       energy: true
       env:
-        DOCC_CI: regions
+        DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     batchnorm_run_openmp:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --docc --target=openmp
@@ -141,7 +141,7 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --docc --target=sequential
       energy: true
       env:
-        DOCC_CI: regions
+        DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     linear_run_openmp:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --docc --target=openmp
@@ -172,7 +172,7 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --docc --target=sequential
       energy: true
       env:
-        DOCC_CI: regions
+        DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     matmul_run_openmp:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --docc --target=openmp
@@ -203,7 +203,7 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --docc --target=sequential
       energy: true
       env:
-        DOCC_CI: regions
+        DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     pooling_run_openmp:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --docc --target=openmp
@@ -234,7 +234,7 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --docc --target=sequential
       energy: true
       env:
-        DOCC_CI: regions
+        DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     relu_run_openmp:
       command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --docc --target=openmp

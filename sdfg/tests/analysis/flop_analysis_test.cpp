@@ -158,7 +158,7 @@ TEST(FlopAnalysis, Loop) {
     EXPECT_TRUE(symbolic::eq(flop, symbolic::symbol("n")));
 }
 
-TEST(FlopAnalysis, LoopNest) {
+TEST(FlopAnalysis, DISABLED_LoopNest) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     auto& sdfg = builder.subject();

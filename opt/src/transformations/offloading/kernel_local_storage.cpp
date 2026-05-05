@@ -37,9 +37,9 @@ namespace sdfg {
 namespace transformations {
 
 KernelLocalStorage::KernelLocalStorage(
-    structured_control_flow::StructuredLoop& loop, symbolic::Expression offset, const std::string& container
+    structured_control_flow::StructuredLoop& loop, symbolic::Expression offset, const data_flow::AccessNode& access_node
 )
-    : loop_(loop), offset_(offset), container_(container) {};
+    : loop_(loop), offset_(offset), access_node_(access_node), container_{access_node.data()} {};
 
 std::string KernelLocalStorage::name() const { return "KernelLocalStorage"; };
 
@@ -599,14 +599,12 @@ void KernelLocalStorage::to_json(nlohmann::json& j) const {
         loop_type = "unknown";
     }
 
-    j["subgraph"] = {{"0", {{"element_id", this->loop_.element_id()}, {"type", loop_type}}}};
+    j["subgraph"] = {
+        {"0", {{"element_id", this->loop_.element_id()}, {"type", loop_type}}},
+        {"1", {{"element_id", this->access_node_.element_id()}, {"type", "access_node"}}}
+    };
 
-    j["parameters"] = {{"offset", serializer::JSONSerializer::expression(offset_)}, {"container", this->container_}};
-
-    // Legacy fields for backward compatibility
-    j["loop_element_id"] = this->loop_.element_id();
-    j["offset"] = serializer::JSONSerializer::expression(offset_);
-    j["container"] = this->container_;
+    j["parameters"] = {{"offset", serializer::JSONSerializer::expression(offset_)}};
 };
 
 KernelLocalStorage KernelLocalStorage::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
@@ -622,7 +620,19 @@ KernelLocalStorage KernelLocalStorage::from_json(builder::StructuredSDFGBuilder&
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto outer_loop = dynamic_cast<structured_control_flow::For*>(element);
+    auto outer_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    if (!outer_loop) {
+        throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " is not a loop.");
+    }
+
+    auto access_node = dynamic_cast<
+        data_flow::AccessNode*>(builder.find_element_by_id(desc.at("subgraph").at("1").at("element_id").get<size_t>()));
+    if (!access_node) {
+        throw InvalidTransformationDescriptionException(
+            "Access node with ID " + std::to_string(desc.at("subgraph").at("1").at("element_id").get<size_t>()) +
+            " not found."
+        );
+    }
 
     nlohmann::json offset_json;
     std::string container;
@@ -631,20 +641,10 @@ KernelLocalStorage KernelLocalStorage::from_json(builder::StructuredSDFGBuilder&
         if (params.contains("offset")) {
             offset_json = params.at("offset");
         }
-        if (params.contains("container")) {
-            container = params.at("container").get<std::string>();
-        }
     }
-    if (offset_json.is_null() && desc.contains("offset")) {
-        offset_json = desc.at("offset");
-    }
-    if (container.empty() && desc.contains("container")) {
-        container = desc.at("container").get<std::string>();
-    }
-
     auto offset = symbolic::parse(offset_json);
 
-    return KernelLocalStorage(*outer_loop, offset, container);
+    return KernelLocalStorage(*outer_loop, offset, *access_node);
 };
 
 } // namespace transformations

@@ -6,7 +6,7 @@ converts Python functions into SDFGs and codegens them for the available target.
 
 - **Bindings**: Build SDFGs programmatically with Python
 - **AST Parser**: Automatically compile Python/NumPy code to optimized native code
-- **Targets**: Support for CPU (sequential, OpenMP, SIMD via Highway), CUDA GPUs, and other accelerators
+- **Targets**: Support for CPU (sequential, OpenMP), CUDA GPUs, and other accelerators
 
 ## Build from Sources
 
@@ -93,7 +93,7 @@ def simple_loop(A, B, N):
 
 ### `target="sequential"`
 
-Generates optimized sequential code with SIMD vectorization using [Google Highway](https://github.com/google/highway). This target automatically vectorizes eligible loops using portable SIMD intrinsics.
+Generates optimized sequential code with SIMD vectorization.
 
 ```python
 import math
@@ -103,18 +103,11 @@ def vectorized_sin(A, B):
     for i in range(A.shape[0]):
         B[i] = math.sin(A[i])
 
-# Highway automatically vectorizes the sin computation
 N = 128
 A = np.random.rand(N).astype(np.float64)
 B = np.zeros(N, dtype=np.float64)
 vectorized_sin(A, B)
 ```
-
-**Supported Highway operations include:**
-- Trigonometric: `sin`, `cos`, `asin`, `acos`, `atan`, `atan2`
-- Exponential: `exp`, `log`, `log10`, `log2`, `pow`
-- Hyperbolic: `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`
-- Other: `sqrt`, `abs`, `floor`, `ceil`, `round`
 
 ### `target="openmp"`
 

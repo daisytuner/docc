@@ -51,7 +51,7 @@ def test_nussinov(target):
                 "SEQUENTIAL": 2,
                 "CUDA": 0,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 0,
                 "DOT": 0,
             }
@@ -64,7 +64,7 @@ def test_nussinov(target):
                 "SEQUENTIAL": 1,
                 "CUDA": 0,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 1,
+                "VECTORIZE": 1,
                 "GEMM": 0,
                 "DOT": 0,
             }
@@ -88,7 +88,7 @@ def test_nussinov(target):
                 "SEQUENTIAL": 0,
                 "CUDA": 2,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 0,
                 "DOT": 0,
             }
@@ -101,7 +101,7 @@ def test_nussinov(target):
                 "SEQUENTIAL": 0,
                 "ROCM": 2,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 0,
                 "DOT": 0,
             }

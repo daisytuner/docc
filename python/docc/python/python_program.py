@@ -230,18 +230,10 @@ class PythonProgram(DoccProgram):
 
                     arg_shape_mapping[(i, dim_idx)] = u_idx
 
-        # Detect scalar-shape equivalences: which shape indices have a matching scalar param
-        # Maps unique_shape_idx -> scalar parameter name
-        shape_to_scalar = {}
-        for s_idx, s_val in enumerate(shape_values):
-            if s_val in scalar_int_params:
-                shape_to_scalar[s_idx] = scalar_int_params[s_val]
-
         # 2. Signature - include scalar-shape equivalences for correct caching
         mapping_sig = sorted(arg_shape_mapping.items())
-        equiv_sig = sorted(shape_to_scalar.items())
         type_sig = ", ".join(self._type_to_str(t) for t in arg_types)
-        signature = f"{type_sig}|{mapping_sig}|{equiv_sig}"
+        signature = f"{type_sig}|{mapping_sig}"
 
         if output_folder is None:
             source_path = inspect.getsourcefile(self.func)
@@ -270,7 +262,7 @@ class PythonProgram(DoccProgram):
             # Multiple python processes running the same code?
             shutil.rmtree(output_folder)
         sdfg, out_args, out_shapes, out_strides = self._build_sdfg(
-            arg_types, args, arg_shape_mapping, shape_values, shape_to_scalar
+            arg_types, args, arg_shape_mapping, shape_values
         )
 
         lib_path = self.sdfg_pipe(
@@ -324,13 +316,8 @@ class PythonProgram(DoccProgram):
                         shape_sources.append((i, dim_idx))
                     arg_shape_mapping[(i, dim_idx)] = u_idx
 
-        shape_to_scalar = {}
-        for s_idx, s_val in enumerate(shape_values):
-            if s_val in scalar_int_params:
-                shape_to_scalar[s_idx] = scalar_int_params[s_val]
-
         sdfg, _, _, _ = self._build_sdfg(
-            arg_types, args, arg_shape_mapping, shape_values, shape_to_scalar
+            arg_types, args, arg_shape_mapping, shape_values
         )
         return sdfg
 
@@ -425,10 +412,7 @@ class PythonProgram(DoccProgram):
         args,
         arg_shape_mapping,
         shape_values,
-        shape_to_scalar=None,
     ):
-        if shape_to_scalar is None:
-            shape_to_scalar = {}
         sig = inspect.signature(self.func)
 
         # Handle return type - always void for SDFG, output args used for returns
@@ -563,10 +547,7 @@ class PythonProgram(DoccProgram):
                         shapes.append("1")
                     else:
                         u_idx = arg_shape_mapping[(i, dim_idx)]
-                        if u_idx in shape_to_scalar:
-                            shapes.append(shape_to_scalar[u_idx])
-                        else:
-                            shapes.append(f"_s{u_idx}")
+                        shapes.append(f"_s{u_idx}")
 
                 strides = []
                 if arg.flags["C_CONTIGUOUS"]:
@@ -610,10 +591,12 @@ class PythonProgram(DoccProgram):
         # Add unified shape arguments only for shapes without scalar equivalents
         # and skip size-1 dimensions (they use literal "1" instead)
         for i in range(len(shape_values)):
-            if i not in shape_to_scalar and shape_values[i] != 1:
+            if shape_values[i] != 1:
                 builder.add_container(
                     f"_s{i}", Scalar(PrimitiveType.Int64), is_argument=True
                 )
+                builder.add_assumption_lb(f"_s{i}", "1")  # Shapes must be positive
+                builder.add_assumption_const(f"_s{i}", True)  # Shapes are constant
 
         # Create symbol table for parser
         container_table = {}
@@ -621,7 +604,7 @@ class PythonProgram(DoccProgram):
             container_table[name] = dtype
 
         for i in range(len(shape_values)):
-            if i not in shape_to_scalar and shape_values[i] != 1:
+            if shape_values[i] != 1:
                 container_table[f"_s{i}"] = Scalar(PrimitiveType.Int64)
 
         # Parse AST

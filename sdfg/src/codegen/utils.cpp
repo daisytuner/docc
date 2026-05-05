@@ -5,9 +5,11 @@ namespace codegen {
 
 // Constructor
 PrettyPrinter::PrettyPrinter(int indent, bool frozen)
-    : indentSize(indent), frozen_(frozen) {
+    : owned_stream(std::make_unique<std::stringstream>()), stream(*owned_stream.get()), indentSize(indent),
+      frozen_(frozen) {}
 
-      };
+PrettyPrinter::PrettyPrinter(std::ostream& stream, int indent, bool frozen)
+    : stream(stream), indentSize(indent), frozen_(frozen) {}
 
 // Set the indentation level
 void PrettyPrinter::setIndent(int indent) { indentSize = indent; };
@@ -17,13 +19,13 @@ int PrettyPrinter::indent() const { return indentSize; };
 int PrettyPrinter::changeIndent(int delta) { return indentSize += delta; };
 
 // Get the underlying string
-std::string PrettyPrinter::str() const { return stream.str(); };
+std::string PrettyPrinter::str() const { return owned_stream->str(); };
 
 // Clear the stringstream content
 void PrettyPrinter::clear() {
-    stream.str("");
-    stream.clear();
-};
+    owned_stream->str("");
+    owned_stream->clear();
+}
 
 // Overload for manipulators (like std::endl)
 PrettyPrinter& PrettyPrinter::operator<<(std::ostream& (*manip)(std::ostream&) ) {

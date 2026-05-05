@@ -69,11 +69,11 @@ def test_gramschmidt(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "HIGHWAY": 2,
+                "VECTORIZE": 5,
                 "GEMM": 1,
                 "MAP": 7,
                 "CMath": 1,
-                "SEQUENTIAL": 5,
+                "SEQUENTIAL": 2,
                 "FOR": 10,
                 "Memset": 2,
                 "Malloc": 3,
@@ -87,7 +87,7 @@ def test_gramschmidt(target):
                 "MAP": 5,
                 "CPU_PARALLEL": 3,
                 "CMath": 1,
-                "SEQUENTIAL": 2,
+                "VECTORIZE": 2,
                 "FOR": 8,
                 "Memset": 2,
                 "Malloc": 3,

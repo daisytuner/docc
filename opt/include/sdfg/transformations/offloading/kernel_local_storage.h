@@ -13,11 +13,14 @@ class KernelLocalStorage : public Transformation {
 private:
     structured_control_flow::StructuredLoop& loop_;
     symbolic::Expression offset_;
+    const data_flow::AccessNode& access_node_;
     std::string container_;
 
 public:
     KernelLocalStorage(
-        structured_control_flow::StructuredLoop& loop, symbolic::Expression offset, const std::string& container
+        structured_control_flow::StructuredLoop& loop,
+        symbolic::Expression offset,
+        const data_flow::AccessNode& access_node
     );
 
     virtual std::string name() const override;

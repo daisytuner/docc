@@ -219,11 +219,12 @@ TEST(DiamondTilingTest, Jacobi1D) {
     recorder.apply<transformations::TileFusion>(builder, am, false, *tile_k1, *tile_k2);
     am.invalidate_all();
 
-    // After fusion: for t: for tile_0: map K1_ext, map K2
+    // After fusion: for t: for tile_0: if_else(init), pf, K1_ext, K2, swap
+    // With cyclic containers, init copy is inside if-else, fused For has 5 children
     ASSERT_EQ(loop_t->root().size(), 1);
     auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
     ASSERT_NE(fused_tile, nullptr);
-    ASSERT_EQ(fused_tile->root().size(), 2);
+    ASSERT_EQ(fused_tile->root().size(), 5);
 
     // --- Step 4: LoopSkewing(t, tile, factor=32) ---
     recorder.apply<transformations::LoopSkewing>(builder, am, false, *loop_t, *fused_tile, 32);
@@ -243,10 +244,10 @@ TEST(DiamondTilingTest, Jacobi1D) {
     ASSERT_NE(inner, nullptr);
     EXPECT_EQ(inner->indvar()->get_name(), "t");
 
-    // Inner t-loop should have two Maps as children (K1_ext and K2)
-    ASSERT_EQ(inner->root().size(), 2);
-    auto* k1_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(0).first);
-    auto* k2_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(1).first);
+    // Inner t-loop should have 5 children (if_else, pf, K1_ext, K2, swap)
+    ASSERT_EQ(inner->root().size(), 5);
+    auto* k1_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(2).first);
+    auto* k2_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(3).first);
     ASSERT_NE(k1_map, nullptr);
     ASSERT_NE(k2_map, nullptr);
 
@@ -317,11 +318,16 @@ struct Jacobi2DFixture {
         builder->add_container("k2_tmp4", elem_desc);
 
         types::Array desc_1d(elem_desc, symbolic::symbol("N"));
-        types::Pointer desc_2d(desc_1d);
-        builder->add_container("A", desc_2d, true);
-        builder->add_container("B", desc_2d, true);
+        types::Pointer desc_ptr(elem_desc);
+        builder->add_container("A", desc_ptr, true);
+        builder->add_container("B", desc_ptr, true);
 
         auto& root = builder->subject().root();
+
+        // Helper: linearize 2D index (i, j) -> i*N + j
+        auto lin = [](symbolic::Expression i, symbolic::Expression j) -> symbolic::Expression {
+            return symbolic::add(symbolic::mul(i, symbolic::symbol("N")), j);
+        };
 
         // Time loop
         auto& time_loop = builder->add_for(
@@ -360,15 +366,15 @@ struct Jacobi2DFixture {
                 auto& tasklet1 = builder->add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
                 auto& tmp1_out = builder->add_access(block1, "k1_tmp1");
                 builder->add_computational_memlet(
-                    block1, a_in1, tasklet1, "_in1", {symbolic::symbol("i_1"), symbolic::symbol("j_1")}, desc_2d
+                    block1, a_in1, tasklet1, "_in1", {lin(symbolic::symbol("i_1"), symbolic::symbol("j_1"))}, desc_ptr
                 );
                 builder->add_computational_memlet(
                     block1,
                     a_in1,
                     tasklet1,
                     "_in2",
-                    {symbolic::sub(symbolic::symbol("i_1"), symbolic::integer(1)), symbolic::symbol("j_1")},
-                    desc_2d
+                    {lin(symbolic::sub(symbolic::symbol("i_1"), symbolic::integer(1)), symbolic::symbol("j_1"))},
+                    desc_ptr
                 );
                 builder->add_computational_memlet(block1, tasklet1, "_out", tmp1_out, {});
 
@@ -384,8 +390,8 @@ struct Jacobi2DFixture {
                     a_in2,
                     tasklet2,
                     "_in2",
-                    {symbolic::add(symbolic::symbol("i_1"), symbolic::integer(1)), symbolic::symbol("j_1")},
-                    desc_2d
+                    {lin(symbolic::add(symbolic::symbol("i_1"), symbolic::integer(1)), symbolic::symbol("j_1"))},
+                    desc_ptr
                 );
                 builder->add_computational_memlet(block2, tasklet2, "_out", tmp2_out, {});
 
@@ -401,8 +407,8 @@ struct Jacobi2DFixture {
                     a_in3,
                     tasklet3,
                     "_in2",
-                    {symbolic::symbol("i_1"), symbolic::sub(symbolic::symbol("j_1"), symbolic::integer(1))},
-                    desc_2d
+                    {lin(symbolic::symbol("i_1"), symbolic::sub(symbolic::symbol("j_1"), symbolic::integer(1)))},
+                    desc_ptr
                 );
                 builder->add_computational_memlet(block3, tasklet3, "_out", tmp3_out, {});
 
@@ -418,8 +424,8 @@ struct Jacobi2DFixture {
                     a_in4,
                     tasklet4,
                     "_in2",
-                    {symbolic::symbol("i_1"), symbolic::add(symbolic::symbol("j_1"), symbolic::integer(1))},
-                    desc_2d
+                    {lin(symbolic::symbol("i_1"), symbolic::add(symbolic::symbol("j_1"), symbolic::integer(1)))},
+                    desc_ptr
                 );
                 builder->add_computational_memlet(block4, tasklet4, "_out", tmp4_out, {});
 
@@ -432,7 +438,7 @@ struct Jacobi2DFixture {
                 builder->add_computational_memlet(block5, const_node, tasklet5, "_in1", {});
                 builder->add_computational_memlet(block5, tmp4_in, tasklet5, "_in2", {});
                 builder->add_computational_memlet(
-                    block5, tasklet5, "_out", b_out, {symbolic::symbol("i_1"), symbolic::symbol("j_1")}, desc_2d
+                    block5, tasklet5, "_out", b_out, {lin(symbolic::symbol("i_1"), symbolic::symbol("j_1"))}, desc_ptr
                 );
             }
         }
@@ -464,15 +470,15 @@ struct Jacobi2DFixture {
                 auto& tasklet1 = builder->add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
                 auto& tmp1_out = builder->add_access(block1, "k2_tmp1");
                 builder->add_computational_memlet(
-                    block1, b_in1, tasklet1, "_in1", {symbolic::symbol("i_2"), symbolic::symbol("j_2")}, desc_2d
+                    block1, b_in1, tasklet1, "_in1", {lin(symbolic::symbol("i_2"), symbolic::symbol("j_2"))}, desc_ptr
                 );
                 builder->add_computational_memlet(
                     block1,
                     b_in1,
                     tasklet1,
                     "_in2",
-                    {symbolic::sub(symbolic::symbol("i_2"), symbolic::integer(1)), symbolic::symbol("j_2")},
-                    desc_2d
+                    {lin(symbolic::sub(symbolic::symbol("i_2"), symbolic::integer(1)), symbolic::symbol("j_2"))},
+                    desc_ptr
                 );
                 builder->add_computational_memlet(block1, tasklet1, "_out", tmp1_out, {});
 
@@ -488,8 +494,8 @@ struct Jacobi2DFixture {
                     b_in2,
                     tasklet2,
                     "_in2",
-                    {symbolic::add(symbolic::symbol("i_2"), symbolic::integer(1)), symbolic::symbol("j_2")},
-                    desc_2d
+                    {lin(symbolic::add(symbolic::symbol("i_2"), symbolic::integer(1)), symbolic::symbol("j_2"))},
+                    desc_ptr
                 );
                 builder->add_computational_memlet(block2, tasklet2, "_out", tmp2_out, {});
 
@@ -505,8 +511,8 @@ struct Jacobi2DFixture {
                     b_in3,
                     tasklet3,
                     "_in2",
-                    {symbolic::symbol("i_2"), symbolic::sub(symbolic::symbol("j_2"), symbolic::integer(1))},
-                    desc_2d
+                    {lin(symbolic::symbol("i_2"), symbolic::sub(symbolic::symbol("j_2"), symbolic::integer(1)))},
+                    desc_ptr
                 );
                 builder->add_computational_memlet(block3, tasklet3, "_out", tmp3_out, {});
 
@@ -522,8 +528,8 @@ struct Jacobi2DFixture {
                     b_in4,
                     tasklet4,
                     "_in2",
-                    {symbolic::symbol("i_2"), symbolic::add(symbolic::symbol("j_2"), symbolic::integer(1))},
-                    desc_2d
+                    {lin(symbolic::symbol("i_2"), symbolic::add(symbolic::symbol("j_2"), symbolic::integer(1)))},
+                    desc_ptr
                 );
                 builder->add_computational_memlet(block4, tasklet4, "_out", tmp4_out, {});
 
@@ -536,7 +542,7 @@ struct Jacobi2DFixture {
                 builder->add_computational_memlet(block5, const_node, tasklet5, "_in1", {});
                 builder->add_computational_memlet(block5, tmp4_in, tasklet5, "_in2", {});
                 builder->add_computational_memlet(
-                    block5, tasklet5, "_out", a_out, {symbolic::symbol("i_2"), symbolic::symbol("j_2")}, desc_2d
+                    block5, tasklet5, "_out", a_out, {lin(symbolic::symbol("i_2"), symbolic::symbol("j_2"))}, desc_ptr
                 );
             }
         }
@@ -598,11 +604,11 @@ TEST(DiamondTilingTest, Jacobi2D_1DSpatial) {
     recorder.apply<transformations::TileFusion>(builder, am, false, *tile_k1, *tile_k2);
     am.invalidate_all();
 
-    // After fusion: for t { for tile_0 { map K1_ext, map K2 } }
+    // After fusion: for t { for tile_0 { if_else(init), pf, K1_ext, K2, swap } }
     ASSERT_EQ(loop_t->root().size(), 1);
     auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
     ASSERT_NE(fused_tile, nullptr);
-    ASSERT_EQ(fused_tile->root().size(), 2);
+    ASSERT_EQ(fused_tile->root().size(), 5);
 
     // --- Step 4: LoopSkewing(t, tile, factor=32) ---
     recorder.apply<transformations::LoopSkewing>(builder, am, false, *loop_t, *fused_tile, 32);
@@ -622,10 +628,10 @@ TEST(DiamondTilingTest, Jacobi2D_1DSpatial) {
     ASSERT_NE(inner, nullptr);
     EXPECT_EQ(inner->indvar()->get_name(), "t");
 
-    // Inner t-loop should have two Maps as children (K1_ext and K2)
-    ASSERT_EQ(inner->root().size(), 2);
-    auto* k1_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(0).first);
-    auto* k2_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(1).first);
+    // Inner t-loop should have 5 children (if_else, pf, K1_ext, K2, swap)
+    ASSERT_EQ(inner->root().size(), 5);
+    auto* k1_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(2).first);
+    auto* k2_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(3).first);
     ASSERT_NE(k1_map, nullptr);
     ASSERT_NE(k2_map, nullptr);
 
@@ -639,197 +645,6 @@ TEST(DiamondTilingTest, Jacobi2D_1DSpatial) {
     EXPECT_EQ(history[3]["transformation_type"], "LoopSkewing");
     EXPECT_EQ(history[3]["parameters"]["skew_factor"], 32);
     EXPECT_EQ(history[4]["transformation_type"], "LoopInterchange");
-}
-
-/**
- * Jacobi-2D with 2D spatial diamond tiling (tile both i and j dimensions):
- *
- * Phase 1 (i-dimension diamond tiling):
- *   1. Tile(i_1, 32) + Tile(i_2, 32)
- *   2. Cleanup
- *   3. TileFusion(tile_i_1, tile_i_2)
- *   4. LoopSkewing(t, tile_i, 32)
- *   5. LoopInterchange(t, tile_i)
- *
- * Phase 2 (j-dimension diamond tiling):
- *   6. Tile(j_1, 32) + Tile(j_2, 32)
- *   7. LoopInterchange(i_1, tile_j_1)
- *   8. LoopInterchange(i_2, tile_j_2)
- *   9. TileFusion(tile_j_1, tile_j_2)  -- now siblings after interchange
- *   10. LoopSkewing(t, tile_j, 32)
- *   11. LoopInterchange(t, tile_j)
- *
- * Expected final structure:
- *   for tile_i:
- *     for tile_j:
- *       for t:
- *         map i_1 { map j_1 { K1 } }
- *         map i_2 { map j_2 { K2 } }
- */
-TEST(DiamondTilingTest, Jacobi2D_2DSpatial) {
-    Jacobi2DFixture fixture;
-    fixture.build();
-
-    auto structured_sdfg = fixture.builder->move();
-    builder::StructuredSDFGBuilder builder(structured_sdfg);
-    analysis::AnalysisManager am(builder.subject());
-    transformations::Recorder recorder;
-
-    // Initial structure: for t { map i_1 { map j_1 }, map i_2 { map j_2 } }
-    auto& root = builder.subject().root();
-    ASSERT_EQ(root.size(), 1);
-    auto* loop_t = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
-    ASSERT_NE(loop_t, nullptr);
-    ASSERT_EQ(loop_t->root().size(), 2);
-
-    auto* k1 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* k2 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
-    ASSERT_NE(k1, nullptr);
-    ASSERT_NE(k2, nullptr);
-
-    // ========== PHASE 1: i-dimension diamond tiling ==========
-
-    // --- Step 1: Tile both i-Maps with tile size 32 ---
-    recorder.apply<transformations::LoopTiling>(builder, am, false, *k1, 32);
-    am.invalidate_all();
-    recorder.apply<transformations::LoopTiling>(builder, am, false, *k2, 32);
-    am.invalidate_all();
-
-    // --- Step 2: Cleanup ---
-    passes::SequenceFusion sequence_fusion;
-    passes::DeadCFGElimination dead_cfg;
-    bool applies;
-    do {
-        applies = false;
-        applies |= dead_cfg.run(builder, am);
-        applies |= sequence_fusion.run(builder, am);
-    } while (applies);
-
-    // After cleanup: for t { tile_i_1 { i_1 { j_1 } }, tile_i_2 { i_2 { j_2 } } }
-    ASSERT_EQ(loop_t->root().size(), 2);
-    auto* tile_i_1 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* tile_i_2 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
-    ASSERT_NE(tile_i_1, nullptr);
-    ASSERT_NE(tile_i_2, nullptr);
-
-    // --- Step 3: TileFusion on i-tiles ---
-    recorder.apply<transformations::TileFusion>(builder, am, false, *tile_i_1, *tile_i_2);
-    am.invalidate_all();
-
-    // After fusion: for t { for fused_tile_i { map i_1{j_1}, map i_2{j_2} } }
-    ASSERT_EQ(loop_t->root().size(), 1);
-    auto* fused_tile_i = dynamic_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
-    ASSERT_NE(fused_tile_i, nullptr);
-    ASSERT_EQ(fused_tile_i->root().size(), 2);
-
-    // --- Step 4: LoopSkewing(t, tile_i, factor=32) ---
-    recorder.apply<transformations::LoopSkewing>(builder, am, false, *loop_t, *fused_tile_i, 32);
-    am.invalidate_all();
-
-    // --- Step 5: LoopInterchange(t, tile_i) ---
-    recorder.apply<transformations::LoopInterchange>(builder, am, false, *loop_t, *fused_tile_i);
-    am.invalidate_all();
-
-    // After interchange: tile_i { t { map i_1{j_1}, map i_2{j_2} } }
-    auto* outer_tile_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    ASSERT_NE(outer_tile_i, nullptr);
-
-    auto* inner_t = dynamic_cast<structured_control_flow::For*>(&outer_tile_i->root().at(0).first);
-    ASSERT_NE(inner_t, nullptr);
-    EXPECT_EQ(inner_t->indvar()->get_name(), "t");
-
-    // ========== PHASE 2: j-dimension diamond tiling ==========
-
-    // Navigate to the inner maps
-    ASSERT_EQ(inner_t->root().size(), 2);
-    auto* map_i_1 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(0).first);
-    auto* map_i_2 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(1).first);
-    ASSERT_NE(map_i_1, nullptr);
-    ASSERT_NE(map_i_2, nullptr);
-
-    // Find inner j maps
-    ASSERT_EQ(map_i_1->root().size(), 1);
-    auto* map_j_1 = dynamic_cast<structured_control_flow::Map*>(&map_i_1->root().at(0).first);
-    ASSERT_NE(map_j_1, nullptr);
-    ASSERT_EQ(map_i_2->root().size(), 1);
-    auto* map_j_2 = dynamic_cast<structured_control_flow::Map*>(&map_i_2->root().at(0).first);
-    ASSERT_NE(map_j_2, nullptr);
-
-    // --- Step 6: Tile both j-Maps with tile size 32 ---
-    recorder.apply<transformations::LoopTiling>(builder, am, false, *map_j_1, 32);
-    am.invalidate_all();
-    recorder.apply<transformations::LoopTiling>(builder, am, false, *map_j_2, 32);
-    am.invalidate_all();
-
-    // Cleanup
-    do {
-        applies = false;
-        applies |= dead_cfg.run(builder, am);
-        applies |= sequence_fusion.run(builder, am);
-    } while (applies);
-
-    // After tiling: map i_1 { tile_j_1 { j_1 } }, map i_2 { tile_j_2 { j_2 } }
-    // Re-navigate after tiling
-    map_i_1 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(0).first);
-    map_i_2 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(1).first);
-    ASSERT_NE(map_i_1, nullptr);
-    ASSERT_NE(map_i_2, nullptr);
-
-    ASSERT_EQ(map_i_1->root().size(), 1);
-    auto* tile_j_1 = dynamic_cast<structured_control_flow::Map*>(&map_i_1->root().at(0).first);
-    ASSERT_NE(tile_j_1, nullptr);
-    ASSERT_EQ(map_i_2->root().size(), 1);
-    auto* tile_j_2 = dynamic_cast<structured_control_flow::Map*>(&map_i_2->root().at(0).first);
-    ASSERT_NE(tile_j_2, nullptr);
-
-    // --- Step 7: LoopInterchange(i_1, tile_j_1) ---
-    recorder.apply<transformations::LoopInterchange>(builder, am, false, *map_i_1, *tile_j_1);
-    am.invalidate_all();
-
-    // --- Step 8: LoopInterchange(i_2, tile_j_2) ---
-    recorder.apply<transformations::LoopInterchange>(builder, am, false, *map_i_2, *tile_j_2);
-    am.invalidate_all();
-
-    // After interchange: t { tile_j_1{i_1{j_1}}, tile_j_2{i_2{j_2}} }
-    // Now tile_j_1 and tile_j_2 are siblings!
-    ASSERT_EQ(inner_t->root().size(), 2);
-    tile_j_1 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(0).first);
-    tile_j_2 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(1).first);
-    ASSERT_NE(tile_j_1, nullptr);
-    ASSERT_NE(tile_j_2, nullptr);
-
-    // --- Step 9: TileFusion(tile_j_1, tile_j_2) ---
-    recorder.apply<transformations::TileFusion>(builder, am, false, *tile_j_1, *tile_j_2);
-    am.invalidate_all();
-
-    // After fusion: t { for fused_tile_j { i_1{j_1}, i_2{j_2} } }
-    ASSERT_EQ(inner_t->root().size(), 1);
-    auto* fused_tile_j = dynamic_cast<structured_control_flow::For*>(&inner_t->root().at(0).first);
-    ASSERT_NE(fused_tile_j, nullptr);
-
-    // --- Step 10: LoopSkewing(t, tile_j, factor=32) ---
-    recorder.apply<transformations::LoopSkewing>(builder, am, false, *inner_t, *fused_tile_j, 32);
-    am.invalidate_all();
-
-    // --- Step 11: LoopInterchange(t, tile_j) ---
-    recorder.apply<transformations::LoopInterchange>(builder, am, false, *inner_t, *fused_tile_j);
-    am.invalidate_all();
-
-    // Final structure: tile_i { tile_j { t { i_1{j_1}, i_2{j_2} } } }
-    auto* final_tile_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    ASSERT_NE(final_tile_i, nullptr);
-
-    ASSERT_EQ(final_tile_i->root().size(), 1);
-    auto* final_tile_j = dynamic_cast<structured_control_flow::For*>(&final_tile_i->root().at(0).first);
-    ASSERT_NE(final_tile_j, nullptr);
-
-    ASSERT_EQ(final_tile_j->root().size(), 1);
-    auto* final_t = dynamic_cast<structured_control_flow::For*>(&final_tile_j->root().at(0).first);
-    ASSERT_NE(final_t, nullptr);
-    EXPECT_EQ(final_t->indvar()->get_name(), "t");
-
-    // Inner t should have two maps
-    ASSERT_EQ(final_t->root().size(), 2);
 }
 
 

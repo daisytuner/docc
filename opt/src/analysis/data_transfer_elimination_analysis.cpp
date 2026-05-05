@@ -6,9 +6,16 @@
 
 namespace sdfg::analysis {
 
-void OffloadHolder::remove_host_side() {
+void OffloadHolder::remove_h2d_parts() {
     host_data = nullptr;
     host_access = nullptr;
+    updates_on_dev = false;
+}
+
+void OffloadHolder::remove_d2h_parts() {
+    host_data = nullptr;
+    host_access = nullptr;
+    updates_on_host = false;
 }
 
 OffloadState::OffloadState(DataTransferEliminationCandidateCollector& collector) : collector_(collector) {}
@@ -35,24 +42,61 @@ void OffloadState::found_full_barrier(ControlFlowNode& node) {
 std::pair<OffloadState::KillingType, OffloadHolder*> OffloadState::find_killing_entry_node(const ExposedOffload&
                                                                                                in_flight) const {
     auto& holder = *in_flight.offload;
-    auto& host_access_type = holder.host_access->base_type();
+    static const types::Scalar void_type(types::Void);
+    auto& host_access_type = holder.host_access ? holder.host_access->base_type() : void_type;
 
     auto* offload_node = holder.offload_node;
     auto* malloc_node = holder.malloc_node;
 
-    for (const auto& entry_node : h2d_nodes_ | std::views::values) {
-        auto& entry_holder = *entry_node;
-        if (entry_holder.host_data->data() == holder.host_data->data()) {
-            if (offload_node) {
-                bool is_elim_candidate = holder.offload_node->redundant_with(*entry_holder.offload_node);
-                return {is_elim_candidate ? KillingType::DeviceReuse : KillingType::Basic, &entry_holder};
-            } else if (malloc_node) { // mallocs should only be in flight as long as they are untouched
-                bool can_be_removed = entry_holder.offload_node->is_alloc() && entry_holder.offload_node->is_h2d();
-                return {can_be_removed ? KillingType::EmptyHostMalloc : KillingType::Basic, &entry_holder};
+    if (holder.ends_dev_lifetime || holder.updates_on_host || malloc_node) {
+        for (const auto& entry : h2d_nodes_ | std::views::values) {
+            auto& entry_holder = *entry;
+            auto& entry_host_access_type = entry_holder.host_access ? entry_holder.host_access->base_type() : void_type;
+            bool host_ptr_matches = entry_holder.host_data && in_flight.container == entry_holder.host_data->data();
+
+            if (host_ptr_matches) {
+                if (offload_node && (holder.updates_on_host || holder.ends_dev_lifetime)) {
+                    // D2H -> H2D
+                    bool is_elim_candidate = holder.offload_node->is_compatible_with(*entry_holder.offload_node) &&
+                                             entry_holder.updates_on_dev;
+                    return {is_elim_candidate ? KillingType::DeviceReuse : KillingType::Basic, &entry_holder};
+                } else if (malloc_node) {
+                    // Malloc -> H2D
+                    // mallocs should only be in flight as long as they are untouched
+                    bool can_be_removed = entry_holder.offload_node->is_alloc() && entry_holder.offload_node->is_h2d();
+                    return {can_be_removed ? KillingType::EmptyHostMalloc : KillingType::Basic, &entry_holder};
+                } else {
+                    return {KillingType::Basic, &entry_holder};
+                }
+            } else if (host_access_type == entry_host_access_type) { // aliases
+                // any -> any with aliasing types
+                // return &entry_node; // TODO left unhandled for now, because then most situations like a matmul could
+                // never be eliminated
             }
-        } else if (host_access_type == entry_holder.host_access->base_type()) { // aliases
-            // return &entry_node; // TODO left unhandled for now, because then most situations like a matmul could
-            // never be eliminated
+        }
+    } else if (holder.starts_dev_lifetime) {
+        for (const auto& entry : generated_ | std::views::values) {
+            auto& entry_holder = *entry;
+
+            bool dev_ptr_matches = false;
+            if (holder.dev_data && entry_holder.dev_data) {
+                dev_ptr_matches = in_flight.container == entry_holder.dev_data->data();
+            }
+
+            if (dev_ptr_matches) {
+                // D_ALLOC -> D_FREE is the expected case, but kill for any match
+                KillingType killType = KillingType::Basic;
+                if (holder.offload_node->is_compatible_with(*entry_holder.offload_node) &&
+                    entry_holder.ends_dev_lifetime) {
+                    if (entry_holder.updates_on_host) {
+                        killType = KillingType::RedundantD2H;
+                    } else {
+                        killType = KillingType::DeviceCleanFree;
+                    }
+                }
+
+                return {killType, &entry_holder};
+            }
         }
     }
 
@@ -81,12 +125,35 @@ void OffloadState::found_offload_node(Block& block, offloading::DataOffloadingNo
     bool dst_is_dev = false;
     bool dst_is_host = false;
 
-    if (is_D2H(offload.transfer_direction())) {
+    bool starts_dev_lifetime = false;
+    bool ends_dev_lifetime = false;
+    bool updates_on_dev = false;
+    bool updates_on_host = false;
+
+    auto transfer_direction = offload.transfer_direction();
+    auto lifecycle = offload.buffer_lifecycle();
+    if (transfer_direction == offloading::DataTransferDirection::D2H) {
         src_is_dev = true;
         dst_is_host = true;
-    } else if (is_H2D(offload.transfer_direction())) {
+        updates_on_host = true;
+        if (lifecycle == offloading::BufferLifecycle::FREE) {
+            ends_dev_lifetime = true;
+        }
+    } else if (transfer_direction == offloading::DataTransferDirection::H2D) {
         src_is_host = true;
         dst_is_dev = true;
+        updates_on_dev = true;
+        if (lifecycle == offloading::BufferLifecycle::ALLOC) {
+            starts_dev_lifetime = true;
+        }
+    } else if (offloading::is_NONE(transfer_direction)) {
+        if (lifecycle == offloading::BufferLifecycle::ALLOC) {
+            starts_dev_lifetime = true;
+            dst_is_dev = true;
+        } else if (lifecycle == offloading::BufferLifecycle::FREE) {
+            ends_dev_lifetime = true;
+            src_is_dev = true;
+        }
     }
 
     const data_flow::AccessNode* found_dev_access = nullptr;
@@ -126,21 +193,37 @@ void OffloadState::found_offload_node(Block& block, offloading::DataOffloadingNo
         }
     }
 
-    if (found_host_access && found_dev_access) {
-        if (dst_is_host) {
-            generated_.emplace(
-                offload.element_id(),
-                std::make_unique<OffloadHolder>(&offload, found_host_access, found_host_memlet, found_dev_access)
-            );
-        } else {
-            add_h2d_entry(OffloadHolder{&offload, found_host_access, found_host_memlet, found_dev_access});
-        }
+    if (ends_dev_lifetime || updates_on_host) {
+        generated_.emplace(
+            offload.element_id(),
+            std::make_unique<OffloadHolder>(
+                &offload,
+                found_host_access,
+                found_host_memlet,
+                found_dev_access,
+                starts_dev_lifetime,
+                ends_dev_lifetime,
+                updates_on_dev,
+                updates_on_host
+            )
+        );
+    } else if (starts_dev_lifetime || updates_on_dev) {
+        add_h2d_entry(OffloadHolder{
+            &offload,
+            found_host_access,
+            found_host_memlet,
+            found_dev_access,
+            starts_dev_lifetime,
+            ends_dev_lifetime,
+            updates_on_dev,
+            updates_on_host
+        });
     }
 }
 
 void OffloadState::add_h2d_entry(const OffloadHolder& entry) {
     h2d_nodes_.emplace(entry.offload_node->element_id(), std::make_unique<OffloadHolder>(entry));
-    // todo also need to remove generated ones killed by this. But right now
+    // todo also need to remove generated ones killed by this. But right now, only max 1 per block anyway
 }
 
 void OffloadState::apply_kills_and_changes(ExposedType& exposed) const {
@@ -148,28 +231,27 @@ void OffloadState::apply_kills_and_changes(ExposedType& exposed) const {
         exposed.clear();
         return;
     }
+    std::list<ExposedOffload> dynamic_inserts;
     for (auto it = exposed.begin(); it != exposed.end();) {
         auto& [id, exposedOffload] = *it;
         auto& holder = *exposedOffload.offload;
 
-        auto* host = exposedOffload.offload->host_data;
-        auto& host_container = host->data();
 
-        auto host_reads = reads_.find(host_container);
-        if (host_reads != reads_.end() && host_reads->second.size() > 0) {
-            if (holder.offload_node) {
-                ++exposedOffload.read_count;
-            } else if (holder.malloc_node) { // mallocs are just killed on first
+        auto container_reads = reads_.find(exposedOffload.container);
+        if (container_reads != reads_.end() && !container_reads->second.empty()) {
+            if (holder.malloc_node) { // mallocs are just killed on first use
                 DEBUG_PRINTLN(
                     "In-flight malloc area of #" << holder.malloc_node->element_id()
                                                  << " is read without being initialized!"
                 );
                 it = exposed.erase(it);
                 continue;
+            } else { // track if a live var is read
+                ++exposedOffload.read_count;
             }
         }
 
-        if (kills_containers_.contains(host_container)) {
+        if (kills_containers_.contains(exposedOffload.container)) {
             it = exposed.erase(it);
             continue;
         }
@@ -180,6 +262,20 @@ void OffloadState::apply_kills_and_changes(ExposedType& exposed) const {
                 collector_.found_transfer_reuse_pair(exposedOffload, *killing_entry);
             } else if (kill_type == KillingType::EmptyHostMalloc) {
                 collector_.found_empty_host_malloc(exposedOffload, *killing_entry);
+            } else if (kill_type == KillingType::DeviceCleanFree) {
+                // we have a on-device-alloc that survived without kills to the on-device-free
+                // -> promote this to a host-relevant D2H point, that might be reused
+
+                // replace the current H2D with the "D2H" that would allow it to live on
+                // this creates a D2H-like exposedOffload, despite us not knowing the host-var at this point
+                auto* host_data = holder.host_data;
+                if (host_data) {
+                    dynamic_inserts.emplace_back(killing_entry, host_data->data(), 0);
+                    it = exposed.erase(it);
+                    continue;
+                }
+            } else if (kill_type == KillingType::RedundantD2H) {
+                collector_.found_redundant_d2h_pair(exposedOffload, *killing_entry);
             }
             it = exposed.erase(it);
             continue;
@@ -188,7 +284,21 @@ void OffloadState::apply_kills_and_changes(ExposedType& exposed) const {
     }
 
     for (auto& [id, gen] : generated_) {
-        exposed.insert({id, ExposedOffload{gen.get(), 0}});
+        auto* holder = gen.get();
+        if (holder->updates_on_host || holder->malloc_node) { // block unidentified host-container ones from being
+                                                              // exposed. If we could reconstruct, it will be a
+                                                              // dynamic_insert
+            exposed.insert({id, ExposedOffload{holder, holder->host_data->data(), 0}});
+        }
+    }
+    for (auto& gen : dynamic_inserts) {
+        exposed.insert({gen.offload->offload_node->element_id(), gen});
+    }
+    for (auto& [id, gen] : h2d_nodes_) {
+        auto* holder = gen.get();
+        if (holder->starts_dev_lifetime) {
+            exposed.insert({id, ExposedOffload{holder, holder->dev_data->data(), 0}});
+        }
     }
 }
 

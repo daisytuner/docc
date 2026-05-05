@@ -13,8 +13,9 @@ private:
 
 protected:
     void dispatch_includes();
-
+    void dispatch_header_includes(PrettyPrinter& out);
     void dispatch_structures();
+    void dispatch_header_structures(PrettyPrinter& out);
 
     void dispatch_globals();
 
@@ -33,9 +34,12 @@ public:
 
     std::string function_definition() override;
 
+    bool emit_header(PrettyPrinter& out) override;
+    bool emit_main_source(std::ostream& out, const std::filesystem::path& header_path) override;
+
     bool as_source(const std::filesystem::path& header_path, const std::filesystem::path& source_path) override;
 
-    void append_function_source(std::ofstream& ofs_source) override;
+    void append_function_source(std::ostream& ofs_source) override;
 };
 
 } // namespace codegen

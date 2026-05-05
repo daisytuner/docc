@@ -46,7 +46,7 @@ def test_trmm(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "HIGHWAY": 2,
+                "VECTORIZE": 2,
                 "MAP": 4,
                 "Malloc": 1,
                 "GEMM": 1,
@@ -72,7 +72,7 @@ def test_trmm(target):
                 "SEQUENTIAL": 0,
                 "CUDA": 2,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 1,
                 "DOT": 0,
             }
@@ -85,7 +85,7 @@ def test_trmm(target):
                 "SEQUENTIAL": 0,
                 "ROCM": 2,
                 "CPU_PARALLEL": 0,
-                "HIGHWAY": 0,
+                "VECTORIZE": 0,
                 "GEMM": 1,
                 "DOT": 0,
             }

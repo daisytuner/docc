@@ -62,9 +62,8 @@ def test_spmv(target):
         verifier = SDFGVerification(
             verification={
                 "DOT": 0,
-                "HIGHWAY": 3,
+                "VECTORIZE": 4,
                 "MAP": 4,
-                "SEQUENTIAL": 1,
                 "FOR": 6,
                 "Malloc": 4,
             }
@@ -74,8 +73,7 @@ def test_spmv(target):
             verification={
                 "DOT": 0,
                 "CPU_PARALLEL": 1,
-                "HIGHWAY": 2,
-                "SEQUENTIAL": 1,
+                "VECTORIZE": 3,
                 "MAP": 4,
                 "FOR": 6,
                 "Malloc": 4,

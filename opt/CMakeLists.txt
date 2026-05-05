@@ -36,28 +36,31 @@ set(SOURCE_FILES
     src/passes/opt_pipeline.cpp
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/rocm_scheduler.cpp
-    src/passes/scheduler/highway_scheduler.cpp
+    src/passes/scheduler/vectorize_scheduler.cpp
     src/passes/scheduler/loop_scheduling_pass.cpp
     src/passes/scheduler/omp_scheduler.cpp
     src/passes/scheduler/scheduler_registry.cpp
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp
-    src/targets/cuda/stdlib/memset.cpp
     src/targets/cuda/cuda.cpp
     src/targets/cuda/math/tensor/batchnorm_expander.cpp
     src/targets/cuda/math/tensor/conv_expander.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
+    src/targets/cuda/plugin.cpp
+    src/targets/cuda/stdlib/memset.cpp
     src/targets/rocm/blas/dot.cpp
     src/targets/rocm/blas/gemm.cpp
+    src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/utils.cpp
     src/targets/rocm/stdlib/memset.cpp
+    src/targets/rocm/plugin.cpp
     src/targets/rocm/rocm.cpp
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/gpu/gpu_map_utils.cpp
-    src/targets/highway/codegen/highway_map_dispatcher.cpp
+    src/targets/vectorize/codegen/vectorize_map_dispatcher.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
@@ -74,7 +77,7 @@ set(SOURCE_FILES
     src/transformations/offloading/rocm_transform.cpp
     src/transformations/offloading/kernel_local_storage.cpp
     src/transformations/collapse_to_depth.cpp
-    src/transformations/highway_transform.cpp
+    src/transformations/vectorize_transform.cpp
     src/transformations/omp_transform.cpp
     src/transformations/offloading/offload_transform.cpp
     src/transformations/map_collapse.cpp
@@ -87,8 +90,10 @@ set(SOURCE_FILES
     src/transformations/loop_condition_normalize.cpp
     src/transformations/loop_indvar_finalize.cpp
     src/transformations/loop_interchange.cpp
+    src/transformations/loop_peeling.cpp
     src/transformations/loop_rotate.cpp
     src/transformations/loop_shift.cpp
+    src/transformations/loop_split.cpp
     src/transformations/loop_skewing.cpp
     src/transformations/loop_tiling.cpp
     src/transformations/loop_unit_stride.cpp
@@ -96,7 +101,6 @@ set(SOURCE_FILES
     src/transformations/tile_fusion.cpp
     src/transformations/out_local_storage.cpp
     src/transformations/in_local_storage.cpp
-    src/transformations/accumulator_tile.cpp
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
     src/transformations/utils.cpp

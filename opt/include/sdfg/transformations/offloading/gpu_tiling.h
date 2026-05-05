@@ -13,6 +13,7 @@ class GPUTiling : public Transformation {
 
     structured_control_flow::StructuredLoop* inner_loop_ = nullptr;
     structured_control_flow::StructuredLoop* outer_loop_ = nullptr;
+    std::set<std::string> target_containers_;
 
 public:
     GPUTiling(structured_control_flow::StructuredLoop& loop, size_t size);
