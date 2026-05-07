@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import sys
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 import os
 import re
 
@@ -16,6 +16,16 @@ from docc.compiler.target_registry import (
     get_target_compile_fn,
     get_target_expand_fn,
 )
+
+
+def _cuda_expand_fn(sdfg, category: str, kwargs: Dict[str, Any]) -> None:
+    sdfg.expand_cuda()
+    sdfg.expand()
+
+
+def _rocm_expand_fn(sdfg, category: str, kwargs: Dict[str, Any]) -> None:
+    sdfg.expand_rocm()
+    sdfg.expand()
 
 
 def _parse_docc_debug() -> dict[str, str]:
@@ -84,6 +94,25 @@ class DoccProgram(ABC):
 
         self.instrumentation_mode = instrumentation_mode
         self.capture_args = capture_args
+
+        if target == "cuda":
+            from docc.python import register_target_overrides
+
+            register_target_overrides(
+                "cuda",
+                schedule_fn=None,
+                compile_fn=None,
+                expand_fn=_cuda_expand_fn,
+            )
+        elif target == "rocm":
+            from docc.python import register_target_overrides
+
+            register_target_overrides(
+                "rocm",
+                schedule_fn=None,
+                compile_fn=None,
+                expand_fn=_rocm_expand_fn,
+            )
 
     @abstractmethod
     def __call__(self, *args: Any) -> Any:

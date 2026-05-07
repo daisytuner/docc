@@ -247,6 +247,9 @@ void merge_deltas(LoopCarriedDependencyInfo& info, const symbolic::maps::Depende
 bool user_in_subtree(
     User& user, const structured_control_flow::ControlFlowNode& subtree, analysis::ScopeAnalysis& scope_analysis
 ) {
+    if (user.element() == nullptr) {
+        return false;
+    }
     auto* scope = Users::scope(&user);
     while (scope != nullptr) {
         if (scope == &subtree) {

@@ -4,6 +4,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_expansion_utils.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 
@@ -53,94 +54,6 @@ std::unique_ptr<data_flow::DataFlowNode> BatchNormNode::
 }
 
 std::string BatchNormNode::toStr() const { return "BatchNorm(" + layout_.toStr() + ")"; }
-
-struct InputContainerInfo {
-    std::string name;
-    bool is_const = false;
-    const data_flow::Memlet* memlet;
-    const data_flow::AccessNode* access_to_remove = nullptr;
-
-    void remove_old(builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& block) const {
-        if (memlet) {
-            builder.remove_memlet(block, *memlet);
-        }
-        if (access_to_remove) {
-            builder.remove_node(block, *access_to_remove);
-        }
-    }
-};
-
-InputContainerInfo find_usable_input_access_node(
-    data_flow::DataFlowGraph& dataflow, data_flow::LibraryNode& node, const std::string& input_conn
-) {
-    auto* edge = dataflow.in_edge_for_connector(node, input_conn);
-    if (!edge) {
-        throw InvalidSDFGException(node.toStr() + " requires input on " + input_conn);
-    }
-    auto* access_node = dynamic_cast<const data_flow::AccessNode*>(&edge->src());
-    if (!access_node) {
-        throw InvalidSDFGException(node.toStr() + " requires input on " + input_conn + " to be an access node");
-    }
-
-    return {
-        .name = access_node->data(),
-        .is_const = !!dynamic_cast<const data_flow::ConstantNode*>(&edge->src()),
-        .memlet = edge,
-        .access_to_remove = access_node
-    };
-}
-
-struct BuilderMapDim {
-    symbolic::Expression indvar;
-    structured_control_flow::StructuredLoop& loop;
-    structured_control_flow::Sequence& seq;
-};
-
-std::vector<BuilderMapDim> create_maps(
-    builder::StructuredSDFGBuilder& builder,
-    const std::vector<symbolic::Expression>& sizes,
-    structured_control_flow::Sequence& block
-) {
-    std::vector<BuilderMapDim> scopes;
-
-    Sequence* last_scope = &block;
-
-    for (size_t i = 0; i < sizes.size(); i++) {
-        std::string indvar_str = builder.find_new_name("_i");
-        builder.add_container(indvar_str, types::Scalar(types::PrimitiveType::UInt64));
-
-        auto indvar = symbolic::symbol(indvar_str);
-        auto init = symbolic::zero();
-        auto update = symbolic::add(indvar, symbolic::one());
-        auto condition = symbolic::Lt(indvar, sizes.at(i));
-        auto& last_map = builder.add_map(
-            *last_scope,
-            indvar,
-            condition,
-            init,
-            update,
-            structured_control_flow::ScheduleType_Sequential::create(),
-            {},
-            block.debug_info()
-        );
-        auto& seq = last_map.root();
-        last_scope = &seq;
-
-        scopes.push_back(
-            {.indvar = indvar, .loop = dynamic_cast<structured_control_flow::StructuredLoop&>(last_map), .seq = seq}
-        );
-    }
-
-    return scopes;
-}
-
-std::string
-create_temp_var(builder::StructuredSDFGBuilder& builder, const std::string& prefix, int gen, const types::IType& type) {
-    std::string n = prefix + "_" + std::to_string(gen);
-    auto name = builder.find_new_name(n);
-    builder.add_container(name, type);
-    return name;
-}
 
 bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // CPU implementation of batchnorm:

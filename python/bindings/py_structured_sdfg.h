@@ -58,6 +58,10 @@ public:
 
     void expand();
 
+    void expand_cuda();
+
+    void expand_rocm();
+
     void simplify();
 
     void dump(

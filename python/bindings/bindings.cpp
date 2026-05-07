@@ -187,6 +187,16 @@ PYBIND11_MODULE(_sdfg, m) {
         .def_property_readonly("containers", &PyStructuredSDFG::containers)
         .def("validate", &PyStructuredSDFG::validate, "Validates the SDFG")
         .def("expand", &PyStructuredSDFG::expand, "Expands all library nodes")
+        .def(
+            "expand_cuda",
+            &PyStructuredSDFG::expand_cuda,
+            "Expands library nodes with CUDA-specific implementations where available"
+        )
+        .def(
+            "expand_rocm",
+            &PyStructuredSDFG::expand_rocm,
+            "Expands library nodes with ROCm-specific implementations where available"
+        )
         .def("simplify", &PyStructuredSDFG::simplify, "Simplify the SDFG")
         .def(
             "dump",
