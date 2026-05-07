@@ -27,6 +27,9 @@ bool user_in_subtree(
     const structured_control_flow::ControlFlowNode& subtree,
     analysis::ScopeAnalysis& scope_analysis
 ) {
+    if (user->element() == nullptr) {
+        return false;
+    }
     auto* scope = analysis::Users::scope(user);
     while (scope != nullptr) {
         if (scope == &subtree) return true;
