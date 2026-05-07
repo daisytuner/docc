@@ -188,6 +188,9 @@ std::string expression_to_map_str(const MultiExpression& expr, const Assumptions
             continue;
         }
         auto lb = assums.at(sym).tight_lower_bound();
+        if (lb == SymEngine::null) {
+            continue;
+        }
         if (!SymEngine::is_a<SymEngine::Integer>(*lb)) {
             continue;
         }

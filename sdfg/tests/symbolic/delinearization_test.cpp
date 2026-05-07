@@ -710,3 +710,109 @@ TEST(DelinearizeTest, Simple4D_RepeatedStrides) {
     EXPECT_EQ(result.indices.size(), 4);
     EXPECT_EQ(result.dimensions.size(), 3);
 }
+
+// Regression: expanded-form stride like `_s0*i + (-2)*i + j` (the distributed
+// form of `(_s0 - 2)*i + j`) must delinearize to the same 2D shape as the
+// factored form. Otherwise stride-based decomposition produces 3 groups
+// {_s0:i, -2:i, 1:j} instead of {(_s0-2):i, 1:j} and fails dimension
+// matching downstream (e.g. MapFusion).
+TEST(DelinearizeTest, ExpandedNegativeIntegerStride) {
+    types::Scalar desc(types::PrimitiveType::Int64);
+
+    auto _s0 = symbolic::symbol("_s0");
+    auto assum_s0 = symbolic::Assumption::create(_s0, desc);
+    assum_s0.add_lower_bound(symbolic::integer(3));
+    assum_s0.constant(true);
+
+    auto i = symbolic::symbol("_i0");
+    auto assum_i = symbolic::Assumption::create(i, desc);
+    assum_i.add_lower_bound(symbolic::zero());
+    assum_i.add_upper_bound(symbolic::sub(_s0, symbolic::integer(3)));
+    assum_i.map(symbolic::add(i, symbolic::one()));
+
+    auto j = symbolic::symbol("_i1");
+    auto assum_j = symbolic::Assumption::create(j, desc);
+    assum_j.add_lower_bound(symbolic::zero());
+    assum_j.add_upper_bound(symbolic::sub(_s0, symbolic::integer(3)));
+    assum_j.map(symbolic::add(j, symbolic::one()));
+
+    symbolic::Assumptions assums;
+    assums.insert({_s0, assum_s0});
+    assums.insert({i, assum_i});
+    assums.insert({j, assum_j});
+
+    // Expanded form: _s0*i + (-2)*i + j  (equivalent to (_s0 - 2)*i + j)
+    auto expr = symbolic::add(symbolic::add(symbolic::mul(_s0, i), symbolic::mul(symbolic::integer(-2), i)), j);
+    expr = symbolic::expand(expr);
+
+    auto result = symbolic::delinearize(expr, assums);
+    EXPECT_TRUE(result.success);
+    ASSERT_EQ(result.indices.size(), 2u);
+    EXPECT_EQ(result.dimensions.size(), 1u);
+    EXPECT_TRUE(symbolic::eq(result.indices.at(0), i));
+    EXPECT_TRUE(symbolic::eq(result.indices.at(1), j));
+    EXPECT_TRUE(symbolic::eq(result.dimensions.at(0), symbolic::sub(_s0, symbolic::integer(2))));
+}
+
+// Regression: 3D expanded form arising from heat_3d after the producer's tmp
+// stride `(_s0-2)` cascades through. The consumer access on `_tmp_11`:
+//   4*i - 2*j + k - 4*_s0*i + _s0*j + _s0^2*i
+// must recover the 3D shape `[(_s0-2)^2, (_s0-2), 1]` with indices `[i, j, k]`.
+// Several stride monomials here are non-positive (-4*_s0, -2, 4) and must be
+// merged into the parametric sibling sharing the same index.
+TEST(DelinearizeTest, ExpandedSquaredSymbolicStride3D) {
+    types::Scalar desc(types::PrimitiveType::Int64);
+
+    auto _s0 = symbolic::symbol("_s0");
+    auto assum_s0 = symbolic::Assumption::create(_s0, desc);
+    assum_s0.add_lower_bound(symbolic::integer(3));
+    assum_s0.constant(true);
+
+    auto i = symbolic::symbol("_i36");
+    auto assum_i = symbolic::Assumption::create(i, desc);
+    assum_i.add_lower_bound(symbolic::zero());
+    assum_i.add_upper_bound(symbolic::sub(_s0, symbolic::integer(3)));
+    assum_i.map(symbolic::add(i, symbolic::one()));
+
+    auto j = symbolic::symbol("_i37");
+    auto assum_j = symbolic::Assumption::create(j, desc);
+    assum_j.add_lower_bound(symbolic::zero());
+    assum_j.add_upper_bound(symbolic::sub(_s0, symbolic::integer(3)));
+    assum_j.map(symbolic::add(j, symbolic::one()));
+
+    auto k = symbolic::symbol("_i38");
+    auto assum_k = symbolic::Assumption::create(k, desc);
+    assum_k.add_lower_bound(symbolic::zero());
+    assum_k.add_upper_bound(symbolic::sub(_s0, symbolic::integer(3)));
+    assum_k.map(symbolic::add(k, symbolic::one()));
+
+    symbolic::Assumptions assums;
+    assums.insert({_s0, assum_s0});
+    assums.insert({i, assum_i});
+    assums.insert({j, assum_j});
+    assums.insert({k, assum_k});
+
+    // 4*i - 2*j + k - 4*_s0*i + _s0*j + _s0^2*i
+    // == (_s0-2)^2 * i + (_s0-2) * j + k
+    auto s0_sq = symbolic::mul(_s0, _s0);
+    auto expr = symbolic::add(symbolic::mul(symbolic::integer(4), i), symbolic::mul(symbolic::integer(-2), j));
+    expr = symbolic::add(expr, k);
+    expr = symbolic::add(expr, symbolic::mul(symbolic::integer(-4), symbolic::mul(_s0, i)));
+    expr = symbolic::add(expr, symbolic::mul(_s0, j));
+    expr = symbolic::add(expr, symbolic::mul(s0_sq, i));
+    expr = symbolic::expand(expr);
+
+    auto result = symbolic::delinearize(expr, assums);
+    EXPECT_TRUE(result.success);
+    ASSERT_EQ(result.indices.size(), 3u);
+    EXPECT_EQ(result.dimensions.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(result.indices.at(0), i));
+    EXPECT_TRUE(symbolic::eq(result.indices.at(1), j));
+    EXPECT_TRUE(symbolic::eq(result.indices.at(2), k));
+
+    // dimensions are stride ratios: outer-stride/mid-stride and mid-stride/inner-stride.
+    // Strides peel as [(_s0-2)^2, (_s0-2), 1], yielding dims [(_s0-2), (_s0-2)].
+    auto stride_mid = symbolic::sub(_s0, symbolic::integer(2));
+    EXPECT_TRUE(symbolic::eq(result.dimensions.at(0), stride_mid));
+    EXPECT_TRUE(symbolic::eq(result.dimensions.at(1), stride_mid));
+}

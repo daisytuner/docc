@@ -1684,3 +1684,525 @@ TEST(MemoryLayoutAnalysisTest, TileGroups_TiledTwoAccesses) {
     EXPECT_TRUE(symbolic::eq(ext_jk.at(0), symbolic::one()));
     EXPECT_TRUE(symbolic::eq(ext_jk.at(1), K));
 }
+
+// ============================================================================
+// LU factorization loop nest replication.
+//
+// Mirrors the un-tiled LUFixture in docc/opt/tests/transformations/optimizations
+// /blocking_test.cpp. The point of this test is diagnostic: walk MLA over each
+// of LU's seven distinct A subscripts and document which ones delinearize and
+// which fall through. Failures here are expected to drive MLA improvements.
+//
+// LU loop nest:
+//   for i in [0, N):
+//     for j in [0, i):                                    // ChildA
+//       for k in [0, j):
+//         (1) read  A[i*N + k]
+//         (2) read  A[k*N + j]
+//         (3) read  A[i*N + j]
+//         (4) write A[i*N + j]
+//       (5) read  A[i*N + j]
+//       (6) read  A[j*N + j]
+//       (7) write A[i*N + j]
+//     for j2 in [0, N - i):                               // ChildB
+//       for k2 in [0, i):
+//         (8) read  A[i*N + k2]
+//         (9) read  A[k2*N + (i + j2)]
+//         (10) read A[i*N + (i + j2)]
+//         (11) write A[i*N + (i + j2)]
+//
+// Distinct subscripts on A:
+//   S1: i*N + k          (i, k)
+//   S2: k*N + j          (k, j)
+//   S3: i*N + j          (i, j)
+//   S4: j*N + j          (j, j)
+//   S5: i*N + k2         (i, k2)
+//   S6: k2*N + (i + j2)  (k2, i+j2)
+//   S7: i*N + (i + j2)   (i, i+j2)
+// ============================================================================
+TEST(MemoryLayoutAnalysisTest, LU_Factorization_Diagnostic) {
+    builder::StructuredSDFGBuilder builder("lu_mla", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+    builder.add_container("j2", sym_desc);
+    builder.add_container("k2", sym_desc);
+
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    builder.add_container("tmp_2", elem_desc);
+    builder.add_container("tmp_8", elem_desc);
+
+    types::Pointer ptr_desc(elem_desc);
+    builder.add_container("A", ptr_desc, true);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto j2 = symbolic::symbol("j2");
+    auto k2 = symbolic::symbol("k2");
+    auto N = symbolic::symbol("N");
+    auto one = symbolic::integer(1);
+    auto zero = symbolic::integer(0);
+
+    // for (i = 0; i < N; i++)
+    auto& i_loop = builder.add_for(root, i, symbolic::Lt(i, N), zero, symbolic::add(i, one));
+
+    // ChildA: for (j = 0; j < i; j++)
+    auto& j_loop = builder.add_for(i_loop.root(), j, symbolic::Lt(j, i), zero, symbolic::add(j, one));
+
+    // for (k = 0; k < j; k++) { tmp_2 = A[i*N+k]*A[k*N+j]; A[i*N+j] -= tmp_2; }
+    auto& k_loop = builder.add_for(j_loop.root(), k, symbolic::Lt(k, j), zero, symbolic::add(k, one));
+
+    // mul block: A[i*N + k] * A[k*N + j] -> tmp_2
+    const data_flow::Memlet* mlt_S1 = nullptr;
+    const data_flow::Memlet* mlt_S2 = nullptr;
+    {
+        auto& block = builder.add_block(k_loop.root());
+        auto& a1 = builder.add_access(block, "A");
+        auto& a2 = builder.add_access(block, "A");
+        auto& mul_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+        auto& tmp_out = builder.add_access(block, "tmp_2");
+        mlt_S1 =
+            &builder
+                 .add_computational_memlet(block, a1, mul_t, "_in1", {symbolic::add(symbolic::mul(i, N), k)}, ptr_desc);
+        mlt_S2 =
+            &builder
+                 .add_computational_memlet(block, a2, mul_t, "_in2", {symbolic::add(symbolic::mul(k, N), j)}, ptr_desc);
+        builder.add_computational_memlet(block, mul_t, "_out", tmp_out, {});
+    }
+
+    // sub block: A[i*N + j] -= tmp_2
+    const data_flow::Memlet* mlt_S3_in = nullptr;
+    const data_flow::Memlet* mlt_S3_out = nullptr;
+    {
+        auto& block = builder.add_block(k_loop.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& tmp_in = builder.add_access(block, "tmp_2");
+        auto& sub_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
+        auto& a_out = builder.add_access(block, "A");
+        mlt_S3_in =
+            &builder
+                 .add_computational_memlet(block, a_in, sub_t, "_in1", {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+        builder.add_computational_memlet(block, tmp_in, sub_t, "_in2", {});
+        mlt_S3_out =
+            &builder
+                 .add_computational_memlet(block, sub_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+    }
+
+    // div block: A[i*N + j] /= A[j*N + j]
+    const data_flow::Memlet* mlt_S3_div_in = nullptr;
+    const data_flow::Memlet* mlt_S4 = nullptr;
+    const data_flow::Memlet* mlt_S3_div_out = nullptr;
+    {
+        auto& block = builder.add_block(j_loop.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_div = builder.add_access(block, "A");
+        auto& div_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_div, "_out", {"_in1", "_in2"});
+        auto& a_out = builder.add_access(block, "A");
+        mlt_S3_div_in =
+            &builder
+                 .add_computational_memlet(block, a_in, div_t, "_in1", {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+        mlt_S4 =
+            &builder
+                 .add_computational_memlet(block, a_div, div_t, "_in2", {symbolic::add(symbolic::mul(j, N), j)}, ptr_desc);
+        mlt_S3_div_out =
+            &builder
+                 .add_computational_memlet(block, div_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+    }
+
+    // ChildB: for (j2 = 0; j2 < N - i; j2++)
+    auto& j2_loop =
+        builder.add_for(i_loop.root(), j2, symbolic::Lt(j2, symbolic::sub(N, i)), zero, symbolic::add(j2, one));
+
+    // for (k2 = 0; k2 < i; k2++) { tmp_8 = A[i*N + k2]*A[k2*N + (i+j2)]; A[i*N + (i+j2)] -= tmp_8; }
+    auto& k2_loop = builder.add_for(j2_loop.root(), k2, symbolic::Lt(k2, i), zero, symbolic::add(k2, one));
+
+    const data_flow::Memlet* mlt_S5 = nullptr;
+    const data_flow::Memlet* mlt_S6 = nullptr;
+    {
+        auto& block = builder.add_block(k2_loop.root());
+        auto& a1 = builder.add_access(block, "A");
+        auto& a2 = builder.add_access(block, "A");
+        auto& mul_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+        auto& tmp_out = builder.add_access(block, "tmp_8");
+        mlt_S5 =
+            &builder
+                 .add_computational_memlet(block, a1, mul_t, "_in1", {symbolic::add(symbolic::mul(i, N), k2)}, ptr_desc);
+        mlt_S6 = &builder.add_computational_memlet(
+            block, a2, mul_t, "_in2", {symbolic::add(symbolic::mul(k2, N), symbolic::add(i, j2))}, ptr_desc
+        );
+        builder.add_computational_memlet(block, mul_t, "_out", tmp_out, {});
+    }
+
+    const data_flow::Memlet* mlt_S7_in = nullptr;
+    const data_flow::Memlet* mlt_S7_out = nullptr;
+    {
+        auto& block = builder.add_block(k2_loop.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& tmp_in = builder.add_access(block, "tmp_8");
+        auto& sub_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
+        auto& a_out = builder.add_access(block, "A");
+        mlt_S7_in = &builder.add_computational_memlet(
+            block, a_in, sub_t, "_in1", {symbolic::add(symbolic::mul(i, N), symbolic::add(i, j2))}, ptr_desc
+        );
+        builder.add_computational_memlet(block, tmp_in, sub_t, "_in2", {});
+        mlt_S7_out = &builder.add_computational_memlet(
+            block, sub_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), symbolic::add(i, j2))}, ptr_desc
+        );
+    }
+
+    // Run the analysis
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto fmt_subset = [](const data_flow::Subset& s) {
+        std::string out = "[";
+        for (size_t idx = 0; idx < s.size(); ++idx) {
+            if (idx) out += ", ";
+            out += SymEngine::str(*s.at(idx));
+        }
+        out += "]";
+        return out;
+    };
+    auto check = [&](const char* label, const data_flow::Memlet* m) {
+        auto* acc = analysis.access(*m);
+        (void) label;
+        (void) fmt_subset;
+        return acc;
+    };
+
+    auto* a_S1 = check("S1 read  A[i*N + k]", mlt_S1);
+    auto* a_S2 = check("S2 read  A[k*N + j]", mlt_S2);
+    auto* a_S3a = check("S3 read  A[i*N + j] (sub)", mlt_S3_in);
+    auto* a_S3b = check("S3 write A[i*N + j] (sub)", mlt_S3_out);
+    auto* a_S3c = check("S3 read  A[i*N + j] (div)", mlt_S3_div_in);
+    auto* a_S4 = check("S4 read  A[j*N + j]", mlt_S4);
+    auto* a_S3d = check("S3 write A[i*N + j] (div)", mlt_S3_div_out);
+    auto* a_S5 = check("S5 read  A[i*N + k2]", mlt_S5);
+    auto* a_S6 = check("S6 read  A[k2*N + (i+j2)]", mlt_S6);
+    auto* a_S7a = check("S7 read  A[i*N + (i+j2)]", mlt_S7_in);
+    auto* a_S7b = check("S7 write A[i*N + (i+j2)]", mlt_S7_out);
+
+    // S1: i*N + k --> [i, k]
+    ASSERT_NE(a_S1, nullptr) << "S1 should delinearize";
+    ASSERT_EQ(a_S1->subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S1->subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(a_S1->subset.at(1), k));
+
+    // S2: k*N + j --> [k, j]
+    ASSERT_NE(a_S2, nullptr) << "S2 should delinearize";
+    ASSERT_EQ(a_S2->subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S2->subset.at(0), k));
+    EXPECT_TRUE(symbolic::eq(a_S2->subset.at(1), j));
+
+    // S3: i*N + j --> [i, j]
+    for (auto* acc : {a_S3a, a_S3b, a_S3c, a_S3d}) {
+        ASSERT_NE(acc, nullptr) << "S3 should delinearize";
+        ASSERT_EQ(acc->subset.size(), 2u);
+        EXPECT_TRUE(symbolic::eq(acc->subset.at(0), i));
+        EXPECT_TRUE(symbolic::eq(acc->subset.at(1), j));
+    }
+
+    // S4: j*N + j --> [j, j]
+    ASSERT_NE(a_S4, nullptr) << "S4 should delinearize";
+    ASSERT_EQ(a_S4->subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S4->subset.at(0), j));
+    EXPECT_TRUE(symbolic::eq(a_S4->subset.at(1), j));
+
+    // S5: i*N + k2 --> [i, k2]
+    ASSERT_NE(a_S5, nullptr) << "S5 should delinearize";
+    ASSERT_EQ(a_S5->subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S5->subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(a_S5->subset.at(1), k2));
+
+    // S6: k2*N + (i + j2) --> [k2, i + j2]
+    ASSERT_NE(a_S6, nullptr) << "S6 should delinearize";
+    ASSERT_EQ(a_S6->subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S6->subset.at(0), k2));
+    EXPECT_TRUE(symbolic::eq(a_S6->subset.at(1), symbolic::add(i, j2)));
+
+    // S7: i*N + (i + j2) --> [i, i + j2]
+    for (auto* acc : {a_S7a, a_S7b}) {
+        ASSERT_NE(acc, nullptr) << "S7 should delinearize";
+        ASSERT_EQ(acc->subset.size(), 2u);
+        EXPECT_TRUE(symbolic::eq(acc->subset.at(0), i));
+        EXPECT_TRUE(symbolic::eq(acc->subset.at(1), symbolic::add(i, j2)));
+    }
+}
+
+// ============================================================================
+// Blocked LU factorization MLA diagnostic
+//
+// Mirrors the loop structure that BlockingTest.LU_BlockedPipeline produces
+// after `LoopTiling(i, 64)` followed by `LoopSplit(j2, (i_tile0+64) - i)`:
+//
+//   for i_tile0 in [0, N) step 64:
+//     for i in [i_tile0, min(N, i_tile0+64)):
+//       for j in [0, i):                       // ChildA (unchanged)
+//         for k in [0, j):
+//           A[i*N + k]; A[k*N + j]
+//           A[i*N + j] -= ...
+//         A[i*N + j] /= A[j*N + j]
+//       for j2 in [0, (i_tile0+64) - i):       // in-panel ChildB
+//         for k2 in [0, i):
+//           A[i*N + k2]; A[k2*N + (i+j2)]
+//           A[i*N + (i+j2)] -= ...
+//       for j20 in [(i_tile0+64) - i, N - i):  // trailing ChildB (renamed)
+//         for k2 in [0, i):
+//           A[i*N + k2]; A[k2*N + (i+j20)]
+//           A[i*N + (i+j20)] -= ...
+//
+// All seven distinct subscript shapes on A must delinearize to 2D row-major.
+// This test serves as a fast-iteration target for MLA fixes that target the
+// blocked-LU access patterns surfaced by the integration test in
+// `BlockingTest.LU_BlockedPipeline`.
+// ============================================================================
+TEST(MemoryLayoutAnalysisTest, LU_BlockedFactorization_Diagnostic) {
+    builder::StructuredSDFGBuilder builder("lu_blocked_mla", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i_tile0", sym_desc);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+    builder.add_container("j2", sym_desc);
+    builder.add_container("j20", sym_desc);
+    builder.add_container("k2", sym_desc);
+
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    builder.add_container("tmp_2", elem_desc);
+    builder.add_container("tmp_8", elem_desc);
+
+    types::Pointer ptr_desc(elem_desc);
+    builder.add_container("A", ptr_desc, true);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    auto i_tile0 = symbolic::symbol("i_tile0");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto j2 = symbolic::symbol("j2");
+    auto j20 = symbolic::symbol("j20");
+    auto k2 = symbolic::symbol("k2");
+    auto N = symbolic::symbol("N");
+    auto one = symbolic::integer(1);
+    auto zero = symbolic::integer(0);
+    auto B = symbolic::integer(64);
+
+    // for i_tile0 in [0, N) step 64
+    auto& it_loop = builder.add_for(root, i_tile0, symbolic::Lt(i_tile0, N), zero, symbolic::add(i_tile0, B));
+
+    // for i in [i_tile0, min(N, i_tile0+64))
+    auto i_upper = symbolic::min(N, symbolic::add(i_tile0, B));
+    auto& i_loop = builder.add_for(it_loop.root(), i, symbolic::Lt(i, i_upper), i_tile0, symbolic::add(i, one));
+
+    // ChildA: for j in [0, i)
+    auto& j_loop = builder.add_for(i_loop.root(), j, symbolic::Lt(j, i), zero, symbolic::add(j, one));
+
+    // for k in [0, j)
+    auto& k_loop = builder.add_for(j_loop.root(), k, symbolic::Lt(k, j), zero, symbolic::add(k, one));
+
+    const data_flow::Memlet* mlt_S1 = nullptr;
+    const data_flow::Memlet* mlt_S2 = nullptr;
+    {
+        auto& block = builder.add_block(k_loop.root());
+        auto& a1 = builder.add_access(block, "A");
+        auto& a2 = builder.add_access(block, "A");
+        auto& mul_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+        auto& tmp_out = builder.add_access(block, "tmp_2");
+        mlt_S1 =
+            &builder
+                 .add_computational_memlet(block, a1, mul_t, "_in1", {symbolic::add(symbolic::mul(i, N), k)}, ptr_desc);
+        mlt_S2 =
+            &builder
+                 .add_computational_memlet(block, a2, mul_t, "_in2", {symbolic::add(symbolic::mul(k, N), j)}, ptr_desc);
+        builder.add_computational_memlet(block, mul_t, "_out", tmp_out, {});
+    }
+
+    const data_flow::Memlet* mlt_S3_in = nullptr;
+    const data_flow::Memlet* mlt_S3_out = nullptr;
+    {
+        auto& block = builder.add_block(k_loop.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& tmp_in = builder.add_access(block, "tmp_2");
+        auto& sub_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
+        auto& a_out = builder.add_access(block, "A");
+        mlt_S3_in =
+            &builder
+                 .add_computational_memlet(block, a_in, sub_t, "_in1", {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+        builder.add_computational_memlet(block, tmp_in, sub_t, "_in2", {});
+        mlt_S3_out =
+            &builder
+                 .add_computational_memlet(block, sub_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+    }
+
+    const data_flow::Memlet* mlt_S4 = nullptr;
+    {
+        auto& block = builder.add_block(j_loop.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_div = builder.add_access(block, "A");
+        auto& div_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_div, "_out", {"_in1", "_in2"});
+        auto& a_out = builder.add_access(block, "A");
+        builder.add_computational_memlet(block, a_in, div_t, "_in1", {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+        mlt_S4 =
+            &builder
+                 .add_computational_memlet(block, a_div, div_t, "_in2", {symbolic::add(symbolic::mul(j, N), j)}, ptr_desc);
+        builder.add_computational_memlet(block, div_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+    }
+
+    // In-panel ChildB: for j2 in [0, (i_tile0 + 64) - i) with the original
+    // LoopSplit-fixed conjoined condition `j2 < (i_tile0+64)-i AND j2 < N-i`.
+    auto j2_split = symbolic::sub(symbolic::add(i_tile0, B), i);
+    auto j2_orig_ub = symbolic::sub(N, i);
+    auto j2_cond = symbolic::And(symbolic::Lt(j2, j2_split), symbolic::Lt(j2, j2_orig_ub));
+    auto& j2_loop = builder.add_for(i_loop.root(), j2, j2_cond, zero, symbolic::add(j2, one));
+    auto& k2a_loop = builder.add_for(j2_loop.root(), k2, symbolic::Lt(k2, i), zero, symbolic::add(k2, one));
+
+    const data_flow::Memlet* mlt_S5_p = nullptr;
+    const data_flow::Memlet* mlt_S6_p = nullptr;
+    {
+        auto& block = builder.add_block(k2a_loop.root());
+        auto& a1 = builder.add_access(block, "A");
+        auto& a2 = builder.add_access(block, "A");
+        auto& mul_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+        auto& tmp_out = builder.add_access(block, "tmp_8");
+        mlt_S5_p =
+            &builder
+                 .add_computational_memlet(block, a1, mul_t, "_in1", {symbolic::add(symbolic::mul(i, N), k2)}, ptr_desc);
+        mlt_S6_p = &builder.add_computational_memlet(
+            block, a2, mul_t, "_in2", {symbolic::add(symbolic::mul(k2, N), symbolic::add(i, j2))}, ptr_desc
+        );
+        builder.add_computational_memlet(block, mul_t, "_out", tmp_out, {});
+    }
+
+    const data_flow::Memlet* mlt_S7_p_in = nullptr;
+    const data_flow::Memlet* mlt_S7_p_out = nullptr;
+    {
+        auto& block = builder.add_block(k2a_loop.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& tmp_in = builder.add_access(block, "tmp_8");
+        auto& sub_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
+        auto& a_out = builder.add_access(block, "A");
+        mlt_S7_p_in = &builder.add_computational_memlet(
+            block, a_in, sub_t, "_in1", {symbolic::add(symbolic::mul(i, N), symbolic::add(i, j2))}, ptr_desc
+        );
+        builder.add_computational_memlet(block, tmp_in, sub_t, "_in2", {});
+        mlt_S7_p_out = &builder.add_computational_memlet(
+            block, sub_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), symbolic::add(i, j2))}, ptr_desc
+        );
+    }
+
+    // Trailing ChildB: for j20 in [(i_tile0+64) - i, N - i)
+    auto j20_lower = symbolic::sub(symbolic::add(i_tile0, B), i);
+    auto j20_upper = symbolic::sub(N, i);
+    auto& j20_loop =
+        builder.add_for(i_loop.root(), j20, symbolic::Lt(j20, j20_upper), j20_lower, symbolic::add(j20, one));
+    auto& k2b_loop = builder.add_for(j20_loop.root(), k2, symbolic::Lt(k2, i), zero, symbolic::add(k2, one));
+
+    const data_flow::Memlet* mlt_S5_t = nullptr;
+    const data_flow::Memlet* mlt_S6_t = nullptr;
+    {
+        auto& block = builder.add_block(k2b_loop.root());
+        auto& a1 = builder.add_access(block, "A");
+        auto& a2 = builder.add_access(block, "A");
+        auto& mul_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+        auto& tmp_out = builder.add_access(block, "tmp_8");
+        mlt_S5_t =
+            &builder
+                 .add_computational_memlet(block, a1, mul_t, "_in1", {symbolic::add(symbolic::mul(i, N), k2)}, ptr_desc);
+        mlt_S6_t = &builder.add_computational_memlet(
+            block, a2, mul_t, "_in2", {symbolic::add(symbolic::mul(k2, N), symbolic::add(i, j20))}, ptr_desc
+        );
+        builder.add_computational_memlet(block, mul_t, "_out", tmp_out, {});
+    }
+
+    const data_flow::Memlet* mlt_S7_t_in = nullptr;
+    const data_flow::Memlet* mlt_S7_t_out = nullptr;
+    {
+        auto& block = builder.add_block(k2b_loop.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& tmp_in = builder.add_access(block, "tmp_8");
+        auto& sub_t = builder.add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
+        auto& a_out = builder.add_access(block, "A");
+        mlt_S7_t_in = &builder.add_computational_memlet(
+            block, a_in, sub_t, "_in1", {symbolic::add(symbolic::mul(i, N), symbolic::add(i, j20))}, ptr_desc
+        );
+        builder.add_computational_memlet(block, tmp_in, sub_t, "_in2", {});
+        mlt_S7_t_out = &builder.add_computational_memlet(
+            block, sub_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), symbolic::add(i, j20))}, ptr_desc
+        );
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto fmt_subset = [](const data_flow::Subset& s) {
+        std::string out = "[";
+        for (size_t idx = 0; idx < s.size(); ++idx) {
+            if (idx) out += ", ";
+            out += SymEngine::str(*s.at(idx));
+        }
+        out += "]";
+        return out;
+    };
+    auto get = [&](const char* label, const data_flow::Memlet* m) {
+        auto* acc = analysis.access(*m);
+        if (!acc) {
+            std::cerr << "[BLOCKED-MLA-FAIL] " << label << " no access info\n";
+        } else {
+            std::cerr << "[BLOCKED-MLA] " << label << " -> " << fmt_subset(acc->subset) << "\n";
+        }
+        return acc;
+    };
+
+    auto* a_S1 = get("S1 A[i*N+k]", mlt_S1);
+    auto* a_S2 = get("S2 A[k*N+j]", mlt_S2);
+    auto* a_S3a = get("S3 A[i*N+j] (sub-in)", mlt_S3_in);
+    auto* a_S3b = get("S3 A[i*N+j] (sub-out)", mlt_S3_out);
+    auto* a_S4 = get("S4 A[j*N+j]", mlt_S4);
+    auto* a_S5p = get("S5 A[i*N+k2] (in-panel)", mlt_S5_p);
+    auto* a_S6p = get("S6 A[k2*N+(i+j2)] (in-panel)", mlt_S6_p);
+    auto* a_S7p_in = get("S7 A[i*N+(i+j2)] in (in-panel)", mlt_S7_p_in);
+    auto* a_S7p_out = get("S7 A[i*N+(i+j2)] out (in-panel)", mlt_S7_p_out);
+    auto* a_S5t = get("S5 A[i*N+k2] (trailing)", mlt_S5_t);
+    auto* a_S6t = get("S6 A[k2*N+(i+j20)] (trailing)", mlt_S6_t);
+    auto* a_S7t_in = get("S7 A[i*N+(i+j20)] in (trailing)", mlt_S7_t_in);
+    auto* a_S7t_out = get("S7 A[i*N+(i+j20)] out (trailing)", mlt_S7_t_out);
+
+    auto check_2d = [](const analysis::MemoryAccess* acc,
+                       const char* label,
+                       const symbolic::Expression& d0,
+                       const symbolic::Expression& d1) {
+        ASSERT_NE(acc, nullptr) << label << " should delinearize";
+        ASSERT_EQ(acc->subset.size(), 2u) << label;
+        EXPECT_TRUE(symbolic::eq(acc->subset.at(0), d0))
+            << label << " dim0 mismatch: got " << SymEngine::str(*acc->subset.at(0)) << " expected "
+            << SymEngine::str(*d0);
+        EXPECT_TRUE(symbolic::eq(acc->subset.at(1), d1))
+            << label << " dim1 mismatch: got " << SymEngine::str(*acc->subset.at(1)) << " expected "
+            << SymEngine::str(*d1);
+    };
+
+    check_2d(a_S1, "S1", i, k);
+    check_2d(a_S2, "S2", k, j);
+    check_2d(a_S3a, "S3 sub-in", i, j);
+    check_2d(a_S3b, "S3 sub-out", i, j);
+    check_2d(a_S4, "S4", j, j);
+    check_2d(a_S5p, "S5 in-panel", i, k2);
+    check_2d(a_S6p, "S6 in-panel", k2, symbolic::add(i, j2));
+    check_2d(a_S7p_in, "S7 in-panel sub-in", i, symbolic::add(i, j2));
+    check_2d(a_S7p_out, "S7 in-panel sub-out", i, symbolic::add(i, j2));
+    check_2d(a_S5t, "S5 trailing", i, k2);
+    check_2d(a_S6t, "S6 trailing", k2, symbolic::add(i, j20));
+    check_2d(a_S7t_in, "S7 trailing sub-in", i, symbolic::add(i, j20));
+    check_2d(a_S7t_out, "S7 trailing sub-out", i, symbolic::add(i, j20));
+}

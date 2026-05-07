@@ -49,8 +49,15 @@ void LoopSplit::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
     auto parent = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(&loop_));
 
-    // Create the first loop (before the original): for (i = init; i < split_point; i++)
-    auto first_condition = symbolic::Lt(indvar, split_point_);
+    // Create the first loop (before the original): for (i = init; i < split_point && original_cond; i++)
+    //
+    // We conjoin the original loop condition so that downstream symbolic
+    // analysis (assumptions, MLA delinearization) sees the FULL bound on the
+    // in-panel iteration space, not just the split point. Without this, when
+    // `split_point` may exceed the original upper bound (a runtime-dependent
+    // case), the in-panel loop's effective range would be unrepresentable in
+    // the symbolic model.
+    auto first_condition = symbolic::And(symbolic::Lt(indvar, split_point_), condition);
 
     structured_control_flow::StructuredLoop* first_loop = nullptr;
     if (auto map = dynamic_cast<structured_control_flow::Map*>(&loop_)) {

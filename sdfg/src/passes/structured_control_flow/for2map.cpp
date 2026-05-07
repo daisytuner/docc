@@ -1,6 +1,7 @@
 #include "sdfg/passes/structured_control_flow/for2map.h"
 
 #include "sdfg/analysis/loop_analysis.h"
+#include "sdfg/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/passes/pipeline.h"
@@ -59,13 +60,12 @@ bool For2MapPass::can_be_applied(
     }
 
     // Criterion: loop must be data-parallel w.r.t containers
-    auto dependencies = data_dependency_analysis_->dependencies(for_stmt);
+    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& dependencies = lcd.dependencies(for_stmt);
 
     // a. No true dependencies (RAW) between iterations
-    for (auto& dep : dependencies) {
-        if (dep.second.type == analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE) {
-            return false;
-        }
+    if (lcd.has_loop_carried_raw(for_stmt)) {
+        return false;
     }
 
     // b. False dependencies (WAW) are limited to loop-local variables
@@ -133,9 +133,6 @@ bool For2MapPass::can_be_applied(
 }
 
 bool For2MapPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    this->data_dependency_analysis_ = std::make_unique<analysis::DataDependencyAnalysis>(builder.subject(), true);
-    this->data_dependency_analysis_->run(analysis_manager);
-
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto& loop_tree = loop_analysis.loop_tree();
 

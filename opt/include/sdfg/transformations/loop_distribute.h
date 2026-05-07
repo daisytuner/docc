@@ -23,10 +23,18 @@ namespace transformations {
  */
 class LoopDistribute : public Transformation {
     structured_control_flow::StructuredLoop& loop_;
+    structured_control_flow::ControlFlowNode& child_;
 
 public:
     /**
      * @brief Construct a loop distribute transformation
+     * @param loop The loop to be distributed
+     * @param child The child to be distributed into a separate loop
+     */
+    LoopDistribute(structured_control_flow::StructuredLoop& loop, structured_control_flow::ControlFlowNode& child);
+
+    /**
+     * @brief Construct a loop distribute transformation on the first child of the loop
      * @param loop The loop to be distributed
      */
     LoopDistribute(structured_control_flow::StructuredLoop& loop);

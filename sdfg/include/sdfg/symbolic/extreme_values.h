@@ -131,5 +131,81 @@ Expression minimum(const Expression expr, const SymbolSet& parameters, const Ass
  */
 Expression maximum(const Expression expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight);
 
+// ---- Sound inequality proofs ----
+//
+// All `is_*` predicates return TRUE only when the inequality is provable from
+// the supplied assumptions; FALSE means "unknown OR disproven" — callers must
+// not interpret a false result as the negation of the predicate.
+//
+// Proof strategy (in order, all sound):
+//   1. Direct: `symbolic::is_true(Op(a, b))` for trivially decidable cases.
+//   2. Interval: compute `lower(a-b)` / `upper(a-b)` via `BoundAnalysis` and
+//      compare against zero.
+//   3. Min/Max descent: when the residue contains a `Min`/`Max` subexpression
+//      in a monotone-nondecreasing position (e.g. additive top-level), recurse
+//      on each replacement that yields a sound bound on the residue.
+//
+// Affine expressions over symbols with assumption-derived bounds are the
+// expected input shape (subscript indices, stride differences). The descent
+// is sound for these; for arbitrary expressions the interval step is the
+// guaranteed-sound floor.
+
+/** @brief Prove `expr >= 0`. */
+bool is_nonneg(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight = false);
+
+/** @brief Prove `expr > 0`. */
+bool is_positive(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight = false);
+
+/** @brief Prove `expr <= 0`. */
+bool is_nonpos(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight = false);
+
+/** @brief Prove `expr < 0`. */
+bool is_negative(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight = false);
+
+/** @brief Prove `a >= b`. */
+bool is_ge(
+    const Expression& a,
+    const Expression& b,
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool tight = false
+);
+
+/** @brief Prove `a > b`. */
+bool is_gt(
+    const Expression& a,
+    const Expression& b,
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool tight = false
+);
+
+/** @brief Prove `a <= b`. */
+bool is_le(
+    const Expression& a,
+    const Expression& b,
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool tight = false
+);
+
+/** @brief Prove `a < b`. */
+bool is_lt(
+    const Expression& a,
+    const Expression& b,
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool tight = false
+);
+
+/** @brief Prove `a == b` (both `a >= b` and `a <= b`). */
+bool is_eq(
+    const Expression& a,
+    const Expression& b,
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool tight = false
+);
+
 } // namespace symbolic
 } // namespace sdfg

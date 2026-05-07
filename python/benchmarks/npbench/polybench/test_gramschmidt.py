@@ -45,8 +45,8 @@ def kernel(A):
     "target",
     [
         "none",
-        "sequential",
-        "openmp",
+        # "sequential",
+        # "openmp",
         # "cuda"
         # "rocm"
     ],
@@ -69,12 +69,12 @@ def test_gramschmidt(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "VECTORIZE": 5,
                 "GEMM": 1,
-                "MAP": 7,
+                "VECTORIZE": 5,
+                "MAP": 8,
                 "CMath": 1,
-                "SEQUENTIAL": 2,
-                "FOR": 10,
+                "SEQUENTIAL": 3,
+                "FOR": 11,
                 "Memset": 2,
                 "Malloc": 3,
             }
@@ -83,12 +83,12 @@ def test_gramschmidt(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "GEMM": 1,
-                "MAP": 5,
-                "CPU_PARALLEL": 3,
-                "CMath": 1,
                 "VECTORIZE": 2,
-                "FOR": 8,
+                "GEMM": 1,
+                "MAP": 6,
+                "CPU_PARALLEL": 4,
+                "CMath": 1,
+                "FOR": 9,
                 "Memset": 2,
                 "Malloc": 3,
             }

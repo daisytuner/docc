@@ -1264,7 +1264,7 @@ TEST(StrideMinimizationTest, Polybench_doitgen) {
 
         auto loop_p_1 = dynamic_cast<structured_control_flow::StructuredLoop*>(&body_q.at(0).first);
         EXPECT_TRUE(loop_p_1 != nullptr);
-        EXPECT_EQ(loop_p_1->indvar()->get_name(), "p_10");
+        EXPECT_EQ(loop_p_1->indvar()->get_name(), "p_1");
         auto& body_p_1 = loop_p_1->root();
 
         auto loop_s = dynamic_cast<structured_control_flow::StructuredLoop*>(&body_q.at(1).first);
@@ -1274,7 +1274,7 @@ TEST(StrideMinimizationTest, Polybench_doitgen) {
 
         auto loop_p_2 = dynamic_cast<structured_control_flow::StructuredLoop*>(&body_s.at(0).first);
         EXPECT_TRUE(loop_p_2 != nullptr);
-        EXPECT_EQ(loop_p_2->indvar()->get_name(), "p_1");
+        EXPECT_EQ(loop_p_2->indvar()->get_name(), "p_10");
 
         auto loop_p_3 = dynamic_cast<structured_control_flow::StructuredLoop*>(&body_q.at(2).first);
         EXPECT_TRUE(loop_p_3 != nullptr);

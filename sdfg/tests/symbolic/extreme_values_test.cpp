@@ -715,3 +715,258 @@ TEST(ExtremeValuesTest, ConstantParameterInCoefficient) {
     EXPECT_FALSE(min_val.is_null());
     EXPECT_TRUE(symbolic::eq(min_val, symbolic::integer(0)));
 }
+
+// ===== Inequality proofs =====
+
+// Helper: build an Assumption with a single (lb, ub) range.
+static symbolic::Assumption
+make_range(const symbolic::Symbol& s, const symbolic::Expression& lb, const symbolic::Expression& ub) {
+    symbolic::Assumption a(s);
+    if (!lb.is_null()) a.add_lower_bound(lb);
+    if (!ub.is_null()) a.add_upper_bound(ub);
+    return a;
+}
+
+// ----- is_nonneg / is_positive on constants -----
+
+TEST(InequalityProofs, IsNonneg_Constant_Zero) {
+    symbolic::Assumptions empty;
+    EXPECT_TRUE(symbolic::is_nonneg(symbolic::zero(), {}, empty, false));
+    EXPECT_FALSE(symbolic::is_positive(symbolic::zero(), {}, empty, false));
+}
+
+TEST(InequalityProofs, IsNonneg_Constant_Positive) {
+    symbolic::Assumptions empty;
+    EXPECT_TRUE(symbolic::is_nonneg(symbolic::integer(7), {}, empty, false));
+    EXPECT_TRUE(symbolic::is_positive(symbolic::integer(7), {}, empty, false));
+}
+
+TEST(InequalityProofs, IsNonneg_Constant_Negative) {
+    symbolic::Assumptions empty;
+    EXPECT_FALSE(symbolic::is_nonneg(symbolic::integer(-3), {}, empty, false));
+    EXPECT_FALSE(symbolic::is_positive(symbolic::integer(-3), {}, empty, false));
+    EXPECT_TRUE(symbolic::is_negative(symbolic::integer(-3), {}, empty, false));
+    EXPECT_TRUE(symbolic::is_nonpos(symbolic::integer(-3), {}, empty, false));
+}
+
+// ----- is_nonneg via interval -----
+
+TEST(InequalityProofs, IsNonneg_Symbol_With_LB_Zero) {
+    auto i = symbolic::symbol("i");
+    symbolic::Assumptions assums;
+    assums.insert({i, make_range(i, symbolic::zero(), symbolic::integer(10))});
+
+    EXPECT_TRUE(symbolic::is_nonneg(i, {}, assums, false));
+    EXPECT_FALSE(symbolic::is_positive(i, {}, assums, false));
+}
+
+TEST(InequalityProofs, IsNonneg_Symbol_With_LB_One) {
+    auto i = symbolic::symbol("i");
+    symbolic::Assumptions assums;
+    assums.insert({i, make_range(i, symbolic::one(), symbolic::integer(10))});
+
+    EXPECT_TRUE(symbolic::is_nonneg(i, {}, assums, false));
+    EXPECT_TRUE(symbolic::is_positive(i, {}, assums, false));
+}
+
+TEST(InequalityProofs, IsNonneg_AffineSum_AllPositive) {
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    symbolic::Assumptions assums;
+    assums.insert({i, make_range(i, symbolic::zero(), symbolic::integer(5))});
+    assums.insert({j, make_range(j, symbolic::zero(), symbolic::integer(5))});
+
+    auto expr = symbolic::add(i, j);
+    EXPECT_TRUE(symbolic::is_nonneg(expr, {}, assums, false));
+}
+
+// ----- Soundness: must NOT prove the unprovable -----
+
+TEST(InequalityProofs, IsNonneg_Unrelated_NotProvable) {
+    // expr = M - i with i, M >= 0 but no ordering between them.
+    // Must NOT be provable (was a soundness bug in old strategy 3/4).
+    auto i = symbolic::symbol("i");
+    auto M = symbolic::symbol("M");
+    symbolic::Assumptions assums;
+    assums.insert({i, make_range(i, symbolic::zero(), SymEngine::null)});
+    assums.insert({M, make_range(M, symbolic::zero(), SymEngine::null)});
+
+    auto expr = symbolic::sub(M, i);
+    EXPECT_FALSE(symbolic::is_nonneg(expr, {M}, assums, false));
+}
+
+TEST(InequalityProofs, IsNonneg_Related_BoundFromLT) {
+    // expr = N - i with i in [0, N-1] (i.e. i < N). Should prove.
+    auto i = symbolic::symbol("i");
+    auto N = symbolic::symbol("N");
+    symbolic::Assumptions assums;
+    assums.insert({N, make_range(N, symbolic::one(), SymEngine::null)});
+    auto N_minus_one = symbolic::sub(N, symbolic::one());
+    assums.insert({i, make_range(i, symbolic::zero(), N_minus_one)});
+
+    auto expr = symbolic::sub(N, i);
+    EXPECT_TRUE(symbolic::is_nonneg(expr, {N}, assums, false));
+    EXPECT_TRUE(symbolic::is_positive(expr, {N}, assums, false));
+}
+
+TEST(InequalityProofs, IsNonneg_Related_BoundFromLE) {
+    // expr = N - i with i in [0, N]. Should prove >= 0 but NOT > 0.
+    auto i = symbolic::symbol("i");
+    auto N = symbolic::symbol("N");
+    symbolic::Assumptions assums;
+    assums.insert({N, make_range(N, symbolic::one(), SymEngine::null)});
+    assums.insert({i, make_range(i, symbolic::zero(), N)});
+
+    auto expr = symbolic::sub(N, i);
+    EXPECT_TRUE(symbolic::is_nonneg(expr, {N}, assums, false));
+    EXPECT_FALSE(symbolic::is_positive(expr, {N}, assums, false));
+}
+
+// ----- Max-aware lower bound (e.g. tight bounds shaped `c + max(0, X)`) -----
+
+TEST(InequalityProofs, IsNonneg_OneePlusMax) {
+    // 1 + max(0, X) >= 0 always.
+    auto X = symbolic::symbol("X");
+    symbolic::Assumptions empty;
+    auto expr = symbolic::add(symbolic::one(), symbolic::max(symbolic::zero(), X));
+    EXPECT_TRUE(symbolic::is_nonneg(expr, {X}, empty, false));
+}
+
+TEST(InequalityProofs, IsNonneg_MaxInTightBound) {
+    // i has tight_lb = max(0, M-N), tight_ub = M.
+    // Then `i >= 0` should be provable via Max descent on the tight LB.
+    auto i = symbolic::symbol("i");
+    auto M = symbolic::symbol("M");
+    auto N = symbolic::symbol("N");
+    symbolic::Assumption ai(i);
+    ai.tight_lower_bound(symbolic::max(symbolic::zero(), symbolic::sub(M, N)));
+    ai.tight_upper_bound(M);
+    symbolic::Assumptions assums;
+    assums.insert({i, ai});
+
+    EXPECT_TRUE(symbolic::is_nonneg(i, {M, N}, assums, true));
+}
+
+// ----- Min-aware is_gt (the `stride > min(...)` pattern) -----
+
+TEST(InequalityProofs, IsGt_StrideBeatsMin_AnyArg) {
+    // stride = N; expr = i + min(N - i - 1, X)
+    // For any i with i >= 0, N > i + (N - i - 1) = N - 1.
+    auto N = symbolic::symbol("N");
+    auto i = symbolic::symbol("i");
+    auto X = symbolic::symbol("X");
+
+    symbolic::Assumptions assums;
+    assums.insert({N, make_range(N, symbolic::one(), SymEngine::null)});
+    assums.insert({i, make_range(i, symbolic::zero(), symbolic::sub(N, symbolic::one()))});
+    assums.insert({X, make_range(X, symbolic::zero(), SymEngine::null)});
+
+    auto inner = symbolic::min(symbolic::sub(symbolic::sub(N, i), symbolic::one()), X);
+    auto expr = symbolic::add(i, inner);
+    EXPECT_TRUE(symbolic::is_gt(N, expr, {N, X}, assums, false));
+}
+
+// ----- Binary forms reduce to nonneg/positive -----
+
+TEST(InequalityProofs, IsGe_IsLe_Symmetry) {
+    auto a = symbolic::symbol("a");
+    auto b = symbolic::symbol("b");
+    symbolic::Assumptions assums;
+    assums.insert({a, make_range(a, symbolic::integer(5), symbolic::integer(10))});
+    assums.insert({b, make_range(b, symbolic::integer(0), symbolic::integer(4))});
+
+    EXPECT_TRUE(symbolic::is_ge(a, b, {}, assums, false));
+    EXPECT_TRUE(symbolic::is_gt(a, b, {}, assums, false));
+    EXPECT_TRUE(symbolic::is_le(b, a, {}, assums, false));
+    EXPECT_TRUE(symbolic::is_lt(b, a, {}, assums, false));
+    EXPECT_FALSE(symbolic::is_ge(b, a, {}, assums, false));
+}
+
+TEST(InequalityProofs, IsEq_Trivial) {
+    auto a = symbolic::symbol("a");
+    symbolic::Assumptions empty;
+    EXPECT_TRUE(symbolic::is_eq(a, a, {}, empty, false));
+    EXPECT_TRUE(symbolic::is_eq(symbolic::integer(7), symbolic::integer(7), {}, empty, false));
+    EXPECT_FALSE(symbolic::is_eq(symbolic::integer(7), symbolic::integer(8), {}, empty, false));
+}
+
+// ----- LU-derived subscript shapes (regression coverage) -----
+// These mirror the assumption shapes seen in the blocked-LU MLA test:
+// outer i in [0, N), tile i_tile1 in [i_tile, i_tile + B - 1] but
+// also clamped via min(N - 1, i_tile + B - 1).
+
+TEST(InequalityProofs, LU_PanelIndex_NonNeg_KnownLimitation) {
+    // `i_tile1 - i` with i in [i_tile, i_tile1]. The proof requires noticing
+    // that `i_tile1` on both sides cancels — BoundAnalysis treats them as
+    // independent occurrences. The delinearization-level upper-bound
+    // substitution loop covers this case; the bare API does not.
+    auto i = symbolic::symbol("i");
+    auto i_tile = symbolic::symbol("i_tile");
+    auto i_tile1 = symbolic::symbol("i_tile1");
+    auto B = symbolic::integer(64);
+
+    symbolic::Assumptions assums;
+    assums.insert({i_tile, make_range(i_tile, symbolic::zero(), SymEngine::null)});
+    assums.insert({
+        i_tile1,
+        make_range(i_tile1, i_tile, symbolic::sub(symbolic::add(i_tile, B), symbolic::one())),
+    });
+    assums.insert({i, make_range(i, i_tile, i_tile1)});
+
+    auto expr = symbolic::sub(i_tile1, i);
+    // Documents the limitation; do not change to EXPECT_TRUE without
+    // first teaching `prove_ge_zero` to perform per-symbol substitution.
+    EXPECT_FALSE(symbolic::is_nonneg(expr, {i_tile}, assums, false));
+}
+
+TEST(InequalityProofs, LU_PanelIndex_NonNeg_Independent) {
+    // `i_tile + B - 1 - i` with i in [i_tile, i_tile + B - 1]. No coupling
+    // through a shared symbol; the API can prove this.
+    auto i = symbolic::symbol("i");
+    auto i_tile = symbolic::symbol("i_tile");
+    auto B = symbolic::integer(64);
+
+    auto i_ub = symbolic::sub(symbolic::add(i_tile, B), symbolic::one());
+    symbolic::Assumptions assums;
+    assums.insert({i_tile, make_range(i_tile, symbolic::zero(), SymEngine::null)});
+    assums.insert({i, make_range(i, i_tile, i_ub)});
+
+    auto expr = symbolic::sub(i_ub, i);
+    EXPECT_TRUE(symbolic::is_nonneg(expr, {i_tile}, assums, false));
+}
+
+TEST(InequalityProofs, LU_TileBound_StrideDominates) {
+    // After upper-bound substitution (done by delinearization), the
+    // `remaining` expression presented to `is_gt` may contain a Min:
+    //   stride = N, r = i + min(N - i - 1, j_tile + B - 1)
+    // The Min-descent path proves N > r by proving N > i + (N - i - 1) = N - 1.
+    auto N = symbolic::symbol("N");
+    auto i = symbolic::symbol("i");
+    auto j_tile = symbolic::symbol("j_tile");
+    auto B = symbolic::integer(64);
+
+    symbolic::Assumptions assums;
+    assums.insert({N, make_range(N, symbolic::integer(2), SymEngine::null)});
+    assums.insert({i, make_range(i, symbolic::zero(), symbolic::sub(N, symbolic::one()))});
+    assums.insert({j_tile, make_range(j_tile, symbolic::zero(), SymEngine::null)});
+
+    auto inner = symbolic::
+        min(symbolic::sub(symbolic::sub(N, i), symbolic::one()),
+            symbolic::sub(symbolic::add(j_tile, B), symbolic::one()));
+    auto remaining = symbolic::add(i, inner);
+    EXPECT_TRUE(symbolic::is_gt(N, remaining, {N}, assums, false));
+}
+
+// Diagnostic: documents the unsimplified shape that `minimum()` returns for
+// `N - i` with `i in [0, N - 1]`. Helpful when debugging Min-descent paths.
+TEST(InequalityProofs, Diagnostic_Minimum_NMinusI) {
+    auto i = symbolic::symbol("i");
+    auto N = symbolic::symbol("N");
+    symbolic::Assumptions assums;
+    assums.insert({N, make_range(N, symbolic::one(), SymEngine::null)});
+    assums.insert({i, make_range(i, symbolic::zero(), symbolic::sub(N, symbolic::one()))});
+
+    auto expr = symbolic::sub(N, i);
+    auto lb = symbolic::minimum(expr, {N}, assums, false);
+    EXPECT_FALSE(lb.is_null());
+}

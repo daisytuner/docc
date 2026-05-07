@@ -6,6 +6,7 @@
 #include <isl/set.h>
 
 #include "sdfg/analysis/data_dependency_analysis.h"
+#include "sdfg/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/for.h"
@@ -240,14 +241,17 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // For-For: check legality using dependence delta sets
-    analysis::DataDependencyAnalysis dda(builder.subject(), true);
-    dda.run(analysis_manager);
+    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+
+    if (!lcd.available(outer_loop_) || !lcd.available(inner_loop_)) {
+        return false;
+    }
 
     std::string outer_indvar_name = outer_loop_.indvar()->get_name();
     std::string inner_indvar_name = inner_loop_.indvar()->get_name();
 
     // Check outer loop dependencies (2D delta sets: [d_outer, d_inner])
-    auto& outer_deps = dda.dependencies(outer_loop_);
+    auto& outer_deps = lcd.dependencies(outer_loop_);
     for (auto& dep : outer_deps) {
         // Skip dependencies on loop induction variables — structurally safe
         if (dep.first == outer_indvar_name || dep.first == inner_indvar_name) {
@@ -341,7 +345,7 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // Check inner loop dependencies (1D delta sets: [d_inner])
-    auto& inner_deps = dda.dependencies(inner_loop_);
+    auto& inner_deps = lcd.dependencies(inner_loop_);
     for (auto& dep : inner_deps) {
         if (dep.first == outer_indvar_name || dep.first == inner_indvar_name) {
             continue;

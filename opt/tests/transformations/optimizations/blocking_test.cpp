@@ -14,7 +14,9 @@
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/transformations/in_local_storage.h"
+#include "sdfg/transformations/loop_distribute.h"
 #include "sdfg/transformations/loop_interchange.h"
+#include "sdfg/transformations/loop_split.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/out_local_storage.h"
 
@@ -804,5 +806,297 @@ TEST(BlockingTest, GEMV_Optimized) {
     EXPECT_EQ(final_order.size(), 3u);
 
     // Verify 3 transformations total
+    EXPECT_EQ(recorder.get_history().size(), 3u);
+}
+
+// ============================================================================
+// LU factorization: A is N x N, in-place
+// ============================================================================
+//
+// Reference (un-tiled, mirrors the kernel in sdfg_gym/kernel_sdfg.cpp without
+// the outer i_tile0 loop):
+//
+//   for (i = 0; i < N; i++) {
+//       for (j = 0; j < i; j++) {
+//           for (k = 0; k < j; k++) {
+//               tmp_2 = A[i*N+k] * A[k*N+j];
+//               A[i*N+j] = A[i*N+j] - tmp_2;
+//           }
+//           A[i*N+j] = A[i*N+j] / A[j*N+j];
+//       }
+//       for (j2 = 0; j2 < N - i; j2++) {
+//           for (k2 = 0; k2 < i; k2++) {
+//               tmp_8 = A[i*N+k2] * A[k2*N + (i+j2)];
+//               A[i*N + (i+j2)] = A[i*N + (i+j2)] - tmp_8;
+//           }
+//       }
+//   }
+//
+// All accesses to A use a single flat pointer (linearized indices).
+
+struct LUFixture {
+    std::unique_ptr<builder::StructuredSDFGBuilder> builder;
+
+    void build() {
+        builder = std::make_unique<builder::StructuredSDFGBuilder>("lu", FunctionType_CPU);
+
+        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        builder->add_container("N", sym_desc, true);
+        builder->add_container("i", sym_desc);
+        builder->add_container("j", sym_desc);
+        builder->add_container("k", sym_desc);
+        builder->add_container("j2", sym_desc);
+        builder->add_container("k2", sym_desc);
+
+        types::Scalar elem_desc(types::PrimitiveType::Double);
+        builder->add_container("tmp_2", elem_desc);
+        builder->add_container("tmp_8", elem_desc);
+
+        types::Pointer ptr_desc(elem_desc);
+        builder->add_container("A", ptr_desc, true);
+
+        auto& root = builder->subject().root();
+
+        auto i = symbolic::symbol("i");
+        auto j = symbolic::symbol("j");
+        auto k = symbolic::symbol("k");
+        auto j2 = symbolic::symbol("j2");
+        auto k2 = symbolic::symbol("k2");
+        auto N = symbolic::symbol("N");
+        auto one = symbolic::integer(1);
+        auto zero = symbolic::integer(0);
+
+        // for (i = 0; i < N; i++)
+        auto& i_loop = builder->add_for(root, i, symbolic::Lt(i, N), zero, symbolic::add(i, one));
+
+        // ChildA: for (j = 0; j < i; j++)
+        auto& j_loop = builder->add_for(i_loop.root(), j, symbolic::Lt(j, i), zero, symbolic::add(j, one));
+
+        // for (k = 0; k < j; k++) { tmp_2 = A[i*N+k]*A[k*N+j]; A[i*N+j] -= tmp_2; }
+        auto& k_loop = builder->add_for(j_loop.root(), k, symbolic::Lt(k, j), zero, symbolic::add(k, one));
+        {
+            auto& block = builder->add_block(k_loop.root());
+            auto& a1 = builder->add_access(block, "A");
+            auto& a2 = builder->add_access(block, "A");
+            auto& mul_t = builder->add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+            auto& tmp_out = builder->add_access(block, "tmp_2");
+            builder
+                ->add_computational_memlet(block, a1, mul_t, "_in1", {symbolic::add(symbolic::mul(i, N), k)}, ptr_desc);
+            builder
+                ->add_computational_memlet(block, a2, mul_t, "_in2", {symbolic::add(symbolic::mul(k, N), j)}, ptr_desc);
+            builder->add_computational_memlet(block, mul_t, "_out", tmp_out, {});
+        }
+        {
+            auto& block = builder->add_block(k_loop.root());
+            auto& a_in = builder->add_access(block, "A");
+            auto& tmp_in = builder->add_access(block, "tmp_2");
+            auto& sub_t = builder->add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
+            auto& a_out = builder->add_access(block, "A");
+            builder
+                ->add_computational_memlet(block, a_in, sub_t, "_in1", {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+            builder->add_computational_memlet(block, tmp_in, sub_t, "_in2", {});
+            builder
+                ->add_computational_memlet(block, sub_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+        }
+
+        // A[i*N+j] /= A[j*N+j]
+        {
+            auto& block = builder->add_block(j_loop.root());
+            auto& a_in = builder->add_access(block, "A");
+            auto& a_div = builder->add_access(block, "A");
+            auto& div_t = builder->add_tasklet(block, data_flow::TaskletCode::fp_div, "_out", {"_in1", "_in2"});
+            auto& a_out = builder->add_access(block, "A");
+            builder
+                ->add_computational_memlet(block, a_in, div_t, "_in1", {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+            builder
+                ->add_computational_memlet(block, a_div, div_t, "_in2", {symbolic::add(symbolic::mul(j, N), j)}, ptr_desc);
+            builder
+                ->add_computational_memlet(block, div_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), j)}, ptr_desc);
+        }
+
+        // ChildB: for (j2 = 0; j2 < N - i; j2++)
+        auto& j2_loop =
+            builder->add_for(i_loop.root(), j2, symbolic::Lt(j2, symbolic::sub(N, i)), zero, symbolic::add(j2, one));
+
+        // for (k2 = 0; k2 < i; k2++) { tmp_8 = A[i*N+k2]*A[k2*N + (i+j2)]; A[i*N + (i+j2)] -= tmp_8; }
+        auto& k2_loop = builder->add_for(j2_loop.root(), k2, symbolic::Lt(k2, i), zero, symbolic::add(k2, one));
+        {
+            auto& block = builder->add_block(k2_loop.root());
+            auto& a1 = builder->add_access(block, "A");
+            auto& a2 = builder->add_access(block, "A");
+            auto& mul_t = builder->add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+            auto& tmp_out = builder->add_access(block, "tmp_8");
+            builder
+                ->add_computational_memlet(block, a1, mul_t, "_in1", {symbolic::add(symbolic::mul(i, N), k2)}, ptr_desc);
+            builder->add_computational_memlet(
+                block, a2, mul_t, "_in2", {symbolic::add(symbolic::mul(k2, N), symbolic::add(i, j2))}, ptr_desc
+            );
+            builder->add_computational_memlet(block, mul_t, "_out", tmp_out, {});
+        }
+        {
+            auto& block = builder->add_block(k2_loop.root());
+            auto& a_in = builder->add_access(block, "A");
+            auto& tmp_in = builder->add_access(block, "tmp_8");
+            auto& sub_t = builder->add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
+            auto& a_out = builder->add_access(block, "A");
+            builder->add_computational_memlet(
+                block, a_in, sub_t, "_in1", {symbolic::add(symbolic::mul(i, N), symbolic::add(i, j2))}, ptr_desc
+            );
+            builder->add_computational_memlet(block, tmp_in, sub_t, "_in2", {});
+            builder->add_computational_memlet(
+                block, sub_t, "_out", a_out, {symbolic::add(symbolic::mul(i, N), symbolic::add(i, j2))}, ptr_desc
+            );
+        }
+    }
+};
+
+// ============================================================================
+// Blocked LU pipeline
+//
+// Goal: from un-tiled LU, reach a structure where the trailing update of each
+// panel block can later be hoisted as an independent GEMM-like loop nest.
+//
+// Pipeline:
+//   1. LoopTiling(i, B=64)                       outer i_tile, inner i in [i_tile, i_tile+B)
+//   2. LoopSplit(j2, split = (i_tile + B) - i)   ChildB becomes:
+//                                                  - in-panel  : j2 in [0, i_tile+B-i)
+//                                                  - trailing  : j2 in [i_tile+B-i, N-i)
+//   3. LoopDistribute(inner_i, child = trailing) prefix = {ChildA, in-panel ChildB}
+//                                                suffix = {trailing ChildB}
+//
+// Step 3 is the structural enabler for blocked LU. The current LoopDistribute
+// criterion is container-level: it rejects when any container with a loop-
+// carried delta is touched by both partitions, regardless of which subscripts
+// are touched. `A` is touched by both partitions (panel cells vs trailing
+// cells), so the criterion conservatively refuses. A subset-aware criterion
+// (looking at writer/reader pair locations after the j2 split) would clear
+// this case. The test pins the current behavior and serves as a regression
+// marker for that future enhancement.
+// ============================================================================
+
+TEST(BlockingTest, LU_BlockedPipeline) {
+    LUFixture fixture;
+    fixture.build();
+
+    auto structured_sdfg = fixture.builder->move();
+    builder::StructuredSDFGBuilder builder(structured_sdfg);
+    analysis::AnalysisManager am(builder.subject());
+    transformations::Recorder recorder;
+
+    // Initial loop order on the computation path: i -> j -> k (then j2/k2 are
+    // siblings, not on the "last child" path get_loop_order follows).
+    auto initial_order = get_loop_order(builder);
+    ASSERT_GE(initial_order.size(), 1u);
+    EXPECT_EQ(initial_order[0], "i");
+
+    // -----------------------------------------------------------------------
+    // Step 1: LoopTiling(i, 64) -> outer i_tile, inner i.
+    // -----------------------------------------------------------------------
+    auto* i_loop = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    ASSERT_NE(i_loop, nullptr);
+    EXPECT_EQ(i_loop->indvar()->get_name(), "i");
+
+    constexpr size_t B = 64;
+    ASSERT_TRUE(transformations::LoopTiling(*i_loop, B).can_be_applied(builder, am));
+    recorder.apply<transformations::LoopTiling>(builder, am, false, *i_loop, B);
+    am.invalidate_all();
+    cleanup(builder, am);
+
+    // After tiling: root -> i_tile -> i -> {ChildA (j_loop), ChildB (j2_loop)}
+    auto* i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    ASSERT_NE(i_tile, nullptr);
+    const std::string i_tile_name = i_tile->indvar()->get_name();
+    EXPECT_NE(i_tile_name.find("i_tile"), std::string::npos);
+
+    auto* i_inner = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    ASSERT_NE(i_inner, nullptr);
+    EXPECT_EQ(i_inner->indvar()->get_name(), "i");
+
+    // i_inner body must have the two original children
+    ASSERT_EQ(i_inner->root().size(), 2u);
+    auto* j_loop = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    auto* j2_loop = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(1).first);
+    ASSERT_NE(j_loop, nullptr);
+    ASSERT_NE(j2_loop, nullptr);
+    EXPECT_EQ(j_loop->indvar()->get_name(), "j");
+    EXPECT_EQ(j2_loop->indvar()->get_name(), "j2");
+
+    // -----------------------------------------------------------------------
+    // Step 2: LoopSplit(j2, split = (i_tile + B) - i).
+    //
+    // Splits j2's iteration space [0, N-i) at (i_tile+B - i):
+    //   in-panel  j2 in [0,            i_tile+B-i)  -> writes A[i, i..i_tile+B-1]
+    //   trailing  j2 in [i_tile+B-i,   N-i)         -> writes A[i, i_tile+B..N-1]
+    //
+    // For inner-i iterations within one tile (i' < i_tile+B), ChildA(i') only
+    // reads A cells with column < i' < i_tile+B, so the trailing partition has
+    // no carried interaction with the prefix.
+    // -----------------------------------------------------------------------
+    auto i_tile_sym = symbolic::symbol(i_tile_name);
+    auto i_sym = symbolic::symbol("i");
+    auto split_point = symbolic::sub(symbolic::add(i_tile_sym, symbolic::integer(B)), i_sym);
+
+    ASSERT_TRUE(transformations::LoopSplit(*j2_loop, split_point).can_be_applied(builder, am));
+    recorder.apply<transformations::LoopSplit>(builder, am, false, *j2_loop, split_point);
+    am.invalidate_all();
+    cleanup(builder, am);
+
+    // After split, inner_i now has 3 children: j_loop, j2_in_panel, j2_trailing.
+    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    i_inner = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    ASSERT_EQ(i_inner->root().size(), 3u);
+
+    auto* j2_in_panel = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(1).first);
+    auto* j2_trailing = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(2).first);
+    ASSERT_NE(j2_in_panel, nullptr);
+    ASSERT_NE(j2_trailing, nullptr);
+
+    // -----------------------------------------------------------------------
+    // Step 3: Probe LoopDistribute(inner_i, child_=j2_trailing).
+    //
+    // After MLA was extended to handle term-by-term decomposition, LU's
+    // un-tiled subscripts (i*N + k, j*N + j, k2*N + i + j2, i*N + i + j2)
+    // all delinearize correctly to row-major 2D, and LCDA reasons over those
+    // 2D subsets. The blocked LU subscripts that arise after Steps 1 and 2
+    // (j + N*i, i + j2 + N*i, i + j20 + N*k2) decompose the same way: each
+    // additive parameter-monomial group becomes one dimension.
+    //
+    // -----------------------------------------------------------------------
+    // Step 3: LoopDistribute(inner_i, child_=j2_trailing).
+    //
+    // After Step 2's LoopSplit, `inner_i`'s body has 3 children:
+    //   piece 0: ChildA (j_loop, panel update)
+    //   piece 1: j2_in_panel (j20)
+    //   piece 2: j2_trailing (j2)
+    //
+    // Distributing on j2_trailing creates the prefix loop (pieces 0+1) and
+    // the center loop (piece 2 = trailing GEMM). The cross-iteration RAWs on
+    // A between piece 0 (ChildA) and piece 1 (in-panel) stay inside the
+    // prefix loop and are NOT cross-loop after distribution. The trailing
+    // piece writes only A[i, ≥i_tile+B] cells while pieces 0/1 access
+    // A[i, <i_tile+B] cells, so MLA + LCDA correctly conclude no carried
+    // RAW spans piece 2 with pieces 0/1.
+    // -----------------------------------------------------------------------
+    transformations::LoopDistribute distribute(*i_inner, *j2_trailing);
+    EXPECT_TRUE(distribute.can_be_applied(builder, am));
+    recorder.apply<transformations::LoopDistribute>(builder, am, false, *i_inner, *j2_trailing);
+    am.invalidate_all();
+    cleanup(builder, am);
+
+    // After distribution: parent of i_tile should now have i_tile sequence
+    // unchanged (i_tile contains the distributed structure inside i_inner).
+    // Verify the trailing j2 loop has been hoisted into its own i_inner copy
+    // by checking that i_tile's inner i_inner now has only the prefix
+    // children (ChildA + in-panel) AND a sibling i_inner contains the
+    // trailing j2.
+    {
+        auto* i_tile_after = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+        ASSERT_NE(i_tile_after, nullptr);
+        // i_tile body should now hold the prefix i_inner, the distributed
+        // (center) i_inner, and possibly nothing else (no suffix piece).
+        EXPECT_GE(i_tile_after->root().size(), 2u);
+    }
+
+    // Verify 3 transformations were applied.
     EXPECT_EQ(recorder.get_history().size(), 3u);
 }
