@@ -23,6 +23,8 @@ public:
     const std::vector<const math::blas::BLASNode*>& get_blas_nodes() const { return blas_nodes; }
 
     bool visit(structured_control_flow::Block& node) override;
+
+    virtual bool handleStructuredLoop(sdfg::structured_control_flow::StructuredLoop& loop) override;
 };
 
 bool LibNodeFinder::visit(structured_control_flow::Block& node) {
@@ -36,6 +38,8 @@ bool LibNodeFinder::visit(structured_control_flow::Block& node) {
     }
     return false;
 }
+
+bool LibNodeFinder::handleStructuredLoop(sdfg::structured_control_flow::StructuredLoop& loop) { return false; }
 
 void add_offloading_instrumentations(codegen::InstrumentationPlan& plan, sdfg::StructuredSDFG& sdfg) {
     LibNodeFinder lib_node_finder;
