@@ -46,8 +46,8 @@ def test_ludcmp(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "MAP": 2,
-                "SEQUENTIAL": 2,
+                "MAP": 3,
+                "SEQUENTIAL": 3,
                 "FOR": 11,
                 "Memset": 2,
                 "Malloc": 2,
@@ -55,13 +55,21 @@ def test_ludcmp(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 2, "MAP": 2, "FOR": 11, "Memset": 2, "Malloc": 2}
+            verification={
+                "VECTORIZE": 2,
+                "MAP": 3,
+                "SEQUENTIAL": 1,
+                "FOR": 11,
+                "Memset": 2,
+                "Malloc": 2,
+            }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "CPU_PARALLEL": 2,
-                "MAP": 2,
+                "MAP": 3,
+                "SEQUENTIAL": 1,
                 "FOR": 11,
                 "Memset": 2,
                 "Malloc": 2,
@@ -71,7 +79,8 @@ def test_ludcmp(target):
         verifier = SDFGVerification(
             verification={
                 "CUDA": 2,
-                "MAP": 2,
+                "MAP": 3,
+                "SEQUENTIAL": 1,
                 "CUDAOffloading": 12,
                 "FOR": 11,
                 "Memset": 2,

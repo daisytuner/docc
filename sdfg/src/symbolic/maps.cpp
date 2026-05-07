@@ -119,41 +119,45 @@ DependenceDeltas compute_deltas_isl(
         auto& dim1 = expr1_delinearized[i];
         auto& dim2 = expr2_delinearized[i];
         auto maps = expressions_to_intersection_map_str({dim1}, {dim2}, indvar, assums1, assums2);
-
         isl_ctx* ctx = isl_ctx_alloc();
         isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
 
         isl_map* map_1 = isl_map_read_from_str(ctx, std::get<0>(maps).c_str());
         isl_map* map_2 = isl_map_read_from_str(ctx, std::get<1>(maps).c_str());
-        isl_map* map_3 = isl_map_read_from_str(ctx, std::get<2>(maps).c_str());
-        if (!map_1 || !map_2 || !map_3) {
+        if (!map_1 || !map_2) {
             if (map_1) {
                 isl_map_free(map_1);
             }
             if (map_2) {
                 isl_map_free(map_2);
             }
-            if (map_3) {
-                isl_map_free(map_3);
+            isl_ctx_free(ctx);
+            continue;
+        }
+
+        // Per-dimension disjointness: check if the RANGES of the two access
+        // maps can overlap at all, WITHOUT the forward-iteration ordering
+        // constraint (map_3). The ordering constraint must only be applied in
+        // the combined multi-dimensional analysis, because a single dimension
+        // may use a different variable (e.g. inner-loop indvar k) whose valid
+        // values span across multiple outer-loop iterations.
+        isl_set* range_1 = isl_map_range(map_1);
+        isl_set* range_2 = isl_map_range(map_2);
+        if (!range_1 || !range_2) {
+            if (range_1) {
+                isl_set_free(range_1);
+            }
+            if (range_2) {
+                isl_set_free(range_2);
             }
             isl_ctx_free(ctx);
             continue;
         }
-
-        isl_map* composed = isl_map_apply_domain(map_2, map_3);
-        if (!composed) {
-            isl_map_free(map_1);
-            isl_ctx_free(ctx);
-            continue;
+        isl_set* overlap = isl_set_intersect(range_1, range_2);
+        bool disjoint = overlap ? isl_set_is_empty(overlap) : false;
+        if (overlap) {
+            isl_set_free(overlap);
         }
-        isl_map* alias_pairs = isl_map_intersect(composed, map_1);
-        if (!alias_pairs) {
-            isl_ctx_free(ctx);
-            continue;
-        }
-
-        bool disjoint = isl_map_is_empty(alias_pairs);
-        isl_map_free(alias_pairs);
         isl_ctx_free(ctx);
         if (disjoint) {
             return DependenceDeltas{true, "", {}};

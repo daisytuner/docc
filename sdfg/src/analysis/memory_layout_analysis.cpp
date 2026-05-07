@@ -91,7 +91,9 @@ void MemoryLayoutAnalysis::
 void MemoryLayoutAnalysis::
     process_block(structured_control_flow::Block& block, analysis::AnalysisManager& analysis_manager) {
     auto& assumptions_analysis = analysis_manager.get<AssumptionsAnalysis>();
-    auto& assumptions = assumptions_analysis.get(block);
+    // Use trivial bounds (type-derived, e.g. unsigned >= 0) so delinearization
+    // can soundly discharge non-negativity proof obligations on parameters.
+    auto& assumptions = assumptions_analysis.get(block, /*include_trivial_bounds=*/true);
 
     auto& dfg = block.dataflow();
     for (auto& memlet : dfg.edges()) {
@@ -215,7 +217,9 @@ void MemoryLayoutAnalysis::merge_loop_layouts(
     }
 
     auto& assumptions_analysis = analysis_manager.get<AssumptionsAnalysis>();
-    auto& assumptions = assumptions_analysis.get(loop.root());
+    // Use trivial bounds (type-derived, e.g. unsigned >= 0) so symbolic min/max
+    // over per-dimension index expressions can use parameter sign information.
+    auto& assumptions = assumptions_analysis.get(loop.root(), /*include_trivial_bounds=*/true);
     // Start with SDFG-level parameters (read-only arguments like N, M)
     // then add any additional constant symbols from loop assumptions
     symbolic::SymbolSet parameters = assumptions_analysis.parameters();

@@ -643,5 +643,253 @@ Expression maximum(const Expression expr, const SymbolSet& parameters, const Ass
     return analysis.upper_bound(expr);
 }
 
+// ============================================================================
+// Inequality proofs
+// ============================================================================
+//
+// All `is_*` predicates are sound and incomplete: TRUE means proven; FALSE
+// means unknown OR disproven. Implementation chain:
+//   1. Direct boolean check on the predicate operator.
+//   2. BoundAnalysis interval check on `(a - b)` against zero.
+//   3. Min/Max descent: substitute one Min/Max subexpression with each of its
+//      arguments (one at a time) and recurse, since
+//          Max(a_1,...,a_n) >= a_i  and  Min(a_1,...,a_n) <= a_i.
+//      Substituting Max with a smaller arg yields a LOWER bound on the
+//      enclosing expression; substituting Min with any arg yields an UPPER
+//      bound. Both are sound when the Min/Max appears in a monotone-
+//      nondecreasing position (e.g. additive top-level), which is the case
+//      for the affine subscript expressions this API targets.
+
+namespace {
+
+// Find the first Min subexpression (DFS). Returns null if none.
+SymEngine::RCP<const SymEngine::Basic> find_first_min(const Expression& expr) {
+    std::vector<SymEngine::RCP<const SymEngine::Basic>> worklist;
+    worklist.push_back(expr);
+    while (!worklist.empty()) {
+        auto node = worklist.back();
+        worklist.pop_back();
+        if (SymEngine::is_a<SymEngine::Min>(*node)) return node;
+        for (auto& a : node->get_args()) worklist.push_back(a);
+    }
+    return SymEngine::null;
+}
+
+// Find the first Max subexpression (DFS). Returns null if none.
+SymEngine::RCP<const SymEngine::Basic> find_first_max(const Expression& expr) {
+    std::vector<SymEngine::RCP<const SymEngine::Basic>> worklist;
+    worklist.push_back(expr);
+    while (!worklist.empty()) {
+        auto node = worklist.back();
+        worklist.pop_back();
+        if (SymEngine::is_a<SymEngine::Max>(*node)) return node;
+        for (auto& a : node->get_args()) worklist.push_back(a);
+    }
+    return SymEngine::null;
+}
+
+constexpr int kProofDepthLimit = 4;
+
+// Forward decl: shared core that proves `diff >= 0` (when strict=false)
+// or `diff > 0` (when strict=true).
+bool prove_ge_zero(
+    const Expression& diff,
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool tight,
+    bool strict,
+    int depth
+);
+
+// Substitute the first Max subexpression with one of its args at a time, and
+// recurse: any successful branch proves the predicate for the original expr
+// because the substitution yields a sound LOWER bound on the residue.
+bool descend_max(
+    const Expression& diff,
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool tight,
+    bool strict,
+    int depth
+) {
+    auto max_node = find_first_max(diff);
+    if (max_node.is_null()) return false;
+    auto max_op = SymEngine::rcp_static_cast<const SymEngine::Max>(max_node);
+    for (auto& arg : max_op->get_args()) {
+        Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(diff, max_node, arg)));
+        if (prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) return true;
+    }
+    return false;
+}
+
+// AND-style Min descent: when proving `e >= 0` (or `> 0`) and `e` contains a
+// `Min` subexpression in monotone-nondecreasing position, the equality
+// `f(min(a, b)) = min(f(a), f(b))` (for f nondecreasing) lets us replace Min
+// with each arg in turn and require ALL substitutions to be provable.
+//
+// Conservative monotonicity check: the original `e` must be either the Min
+// itself, or an Add containing the Min as a direct addend (so the implicit
+// coefficient is +1). Anything else is rejected to avoid unsound descent
+// through negations or non-positive multipliers.
+bool descend_min_and(
+    const Expression& e, const SymbolSet& parameters, const Assumptions& assumptions, bool tight, bool strict, int depth
+) {
+    auto min_node = find_first_min(e);
+    if (min_node.is_null()) return false;
+
+    // Monotonicity check: Min must appear at top level or as a direct addend.
+    bool ok = false;
+    if (e.get() == min_node.get()) {
+        ok = true;
+    } else if (SymEngine::is_a<SymEngine::Add>(*e)) {
+        for (const auto& term : e->get_args()) {
+            if (term.get() == min_node.get() || symbolic::eq(term, min_node)) {
+                ok = true;
+                break;
+            }
+        }
+    }
+    if (!ok) return false;
+
+    auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(min_node);
+    for (auto& arg : min_op->get_args()) {
+        Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(e, min_node, arg)));
+        if (!prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) return false;
+    }
+    return true;
+}
+
+bool prove_ge_zero(
+    const Expression& diff,
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool tight,
+    bool strict,
+    int depth
+) {
+    auto e = symbolic::expand(diff);
+
+    // Constant integer fast path.
+    if (SymEngine::is_a<SymEngine::Integer>(*e)) {
+        auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(e);
+        return strict ? i->is_positive() : !i->is_negative();
+    }
+
+    // Direct decidable check.
+    if (strict) {
+        if (symbolic::is_true(symbolic::Gt(e, symbolic::zero()))) return true;
+    } else {
+        if (symbolic::is_true(symbolic::Ge(e, symbolic::zero()))) return true;
+    }
+
+    // Interval check via BoundAnalysis with the supplied parameter set.
+    auto try_lb = [&](const SymbolSet& params) -> bool {
+        BoundAnalysis analysis(params, assumptions, tight);
+        auto lb = analysis.lower_bound(e);
+        if (lb.is_null() || SymEngine::is_a<SymEngine::Infty>(*lb)) return false;
+        // Simplify the computed bound: BoundAnalysis can return shapes like
+        // `N - (N - 1)` that don't reduce inside `is_true(Ge(...))`.
+        auto lb_s = symbolic::simplify(symbolic::expand(lb));
+        if (SymEngine::is_a<SymEngine::Integer>(*lb_s)) {
+            auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(lb_s);
+            if (strict ? i->is_positive() : !i->is_negative()) return true;
+        }
+        if (strict) {
+            if (symbolic::is_true(symbolic::Gt(lb_s, symbolic::zero()))) return true;
+        } else {
+            if (symbolic::is_true(symbolic::Ge(lb_s, symbolic::zero()))) return true;
+        }
+        // Max-descent on the computed lower bound: tight bounds frequently
+        // take the shape `c + max(0, X)`. Substituting Max with one arg yields
+        // a (sound) lower bound on `lb`, which transitively bounds `e`.
+        if (depth > 0 && descend_max(lb_s, params, assumptions, tight, strict, depth - 1)) return true;
+        // Min-descent (AND): `BoundAnalysis` may emit shapes like
+        // `N + min(0, 1 - N)` whose value depends on the Min branches.
+        // For each Min arg, substitute and require ALL branches to be
+        // provable (sound when Min sits in monotone-nondecreasing position).
+        if (depth > 0 && descend_min_and(lb_s, params, assumptions, tight, strict, depth - 1)) return true;
+        return false;
+    };
+    // First with the caller's parameters (preserves chain-resolution shapes
+    // like `upper(i) = N - 1` when N is a parameter).
+    if (try_lb(parameters)) return true;
+    // Fallback with empty parameters: lets BoundAnalysis substitute
+    // assumption-derived bounds on parameters themselves (e.g. `N >= 1`).
+    if (!parameters.empty() && try_lb({})) return true;
+
+    if (depth <= 0) return false;
+
+    // Max descent on the original expression.
+    if (descend_max(e, parameters, assumptions, tight, strict, depth)) return true;
+
+    return false;
+}
+
+} // namespace
+
+bool is_nonneg(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight) {
+    return prove_ge_zero(expr, parameters, assumptions, tight, /*strict=*/false, kProofDepthLimit);
+}
+
+bool is_positive(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight) {
+    return prove_ge_zero(expr, parameters, assumptions, tight, /*strict=*/true, kProofDepthLimit);
+}
+
+bool is_nonpos(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight) {
+    // expr <= 0  iff  -expr >= 0
+    return is_nonneg(symbolic::mul(symbolic::integer(-1), expr), parameters, assumptions, tight);
+}
+
+bool is_negative(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight) {
+    // expr < 0  iff  -expr > 0
+    return is_positive(symbolic::mul(symbolic::integer(-1), expr), parameters, assumptions, tight);
+}
+
+bool is_ge(
+    const Expression& a, const Expression& b, const SymbolSet& parameters, const Assumptions& assumptions, bool tight
+) {
+    return is_nonneg(symbolic::sub(a, b), parameters, assumptions, tight);
+}
+
+bool is_gt(
+    const Expression& a, const Expression& b, const SymbolSet& parameters, const Assumptions& assumptions, bool tight
+) {
+    // For `a > b`, descending Min on the LHS is also sound: `a > min(x,y)` if
+    // `a > x` OR `a > y`. Implement by routing through `is_positive(a - b)`
+    // then, if that fails, doing a Min descent on `b` (i.e. on the negative
+    // term of the difference).
+    auto diff = symbolic::sub(a, b);
+    if (is_positive(diff, parameters, assumptions, tight)) return true;
+    // Min descent on b: a > min(args) iff a > arg_i for some i.
+    auto min_node = find_first_min(b);
+    if (!min_node.is_null()) {
+        auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(min_node);
+        for (auto& arg : min_op->get_args()) {
+            Expression b_replaced = symbolic::simplify(symbolic::expand(symbolic::subs(b, min_node, arg)));
+            if (is_gt(a, b_replaced, parameters, assumptions, tight)) return true;
+        }
+    }
+    return false;
+}
+
+bool is_le(
+    const Expression& a, const Expression& b, const SymbolSet& parameters, const Assumptions& assumptions, bool tight
+) {
+    return is_ge(b, a, parameters, assumptions, tight);
+}
+
+bool is_lt(
+    const Expression& a, const Expression& b, const SymbolSet& parameters, const Assumptions& assumptions, bool tight
+) {
+    return is_gt(b, a, parameters, assumptions, tight);
+}
+
+bool is_eq(
+    const Expression& a, const Expression& b, const SymbolSet& parameters, const Assumptions& assumptions, bool tight
+) {
+    if (symbolic::eq(a, b)) return true;
+    return is_ge(a, b, parameters, assumptions, tight) && is_ge(b, a, parameters, assumptions, tight);
+}
+
 } // namespace symbolic
 } // namespace sdfg

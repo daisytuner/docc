@@ -63,17 +63,21 @@ TEST(LoopDistributeTest, BasicDistribution) {
 
     transformation.apply(builder, analysis_manager);
 
-    // Verify transformation created a new loop
+    // Verify transformation created a new loop. New semantics: child_ stays
+    // in the original loop in place; siblings before/after move into new
+    // loops added before/after. Default constructor uses child_ = at(0), so
+    // the only sibling (block2) is moved into a suffix loop added AFTER.
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 2); // Now we should have 2 loops
 
-    // First loop should contain the first block
-    auto first_loop = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    // First loop is the original For (kept) holding block1
+    auto first_loop = dynamic_cast<structured_control_flow::For*>(&new_sdfg.root().at(0).first);
     EXPECT_TRUE(first_loop != nullptr);
     EXPECT_EQ(first_loop->root().size(), 1);
+    EXPECT_EQ(&first_loop->root().at(0).first, &block1);
 
-    // Second loop should contain the second block
-    auto second_loop = dynamic_cast<structured_control_flow::For*>(&new_sdfg.root().at(1).first);
+    // Second loop is the new Map (suffix) holding block2
+    auto second_loop = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
     EXPECT_TRUE(second_loop != nullptr);
     EXPECT_EQ(second_loop->root().size(), 1);
     EXPECT_EQ(&second_loop->root().at(0).first, &block2);

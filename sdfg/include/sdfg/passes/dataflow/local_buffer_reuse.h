@@ -5,6 +5,8 @@
 #include <typeinfo>
 #include <vector>
 
+#include "sdfg/analysis/scope_analysis.h"
+#include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"

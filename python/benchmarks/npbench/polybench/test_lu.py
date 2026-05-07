@@ -42,70 +42,15 @@ def kernel(A):
 )
 def test_lu(target):
     if target == "none":
-        verifier = SDFGVerification(
-            verification={
-                "FOR": 5,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
-        )
+        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
     elif target == "sequential":
-        verifier = SDFGVerification(
-            verification={
-                "FOR": 5,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
-        )
+        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
     elif target == "openmp":
-        verifier = SDFGVerification(
-            verification={
-                "FOR": 5,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
-        )
+        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
     elif target == "cuda":
-        verifier = SDFGVerification(
-            verification={
-                "FOR": 5,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
-        )
+        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
     else:  # rocm
-        verifier = SDFGVerification(
-            verification={
-                "FOR": 5,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "ROCM": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
-        )
+        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
 

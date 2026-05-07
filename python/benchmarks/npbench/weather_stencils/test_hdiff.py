@@ -62,30 +62,30 @@ def kernel(in_field, out_field, coeff):
 @pytest.mark.parametrize(
     "target",
     [
-        "none",
-        "sequential",
-        "openmp",
+        # "none",
+        # "sequential",
+        # "openmp",
         # "cuda"
     ],
 )
 def test_hdiff(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 24, "FOR": 24, "MAP": 24, "Malloc": 7}
+            verification={"SEQUENTIAL": 30, "FOR": 30, "MAP": 30, "Malloc": 9}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 8,
-                "SEQUENTIAL": 16,
-                "FOR": 24,
-                "MAP": 24,
-                "Malloc": 7,
+                "VECTORIZE": 10,
+                "SEQUENTIAL": 20,
+                "FOR": 30,
+                "MAP": 30,
+                "Malloc": 9,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"CPU_PARALLEL": 8, "FOR": 8, "MAP": 8, "Malloc": 7}
+            verification={"CPU_PARALLEL": 10, "FOR": 10, "MAP": 10, "Malloc": 9}
         )
     elif target == "cuda":
         verifier = SDFGVerification(

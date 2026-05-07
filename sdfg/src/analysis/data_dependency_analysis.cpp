@@ -20,20 +20,15 @@
 namespace sdfg {
 namespace analysis {
 
-DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg, bool detailed)
-    : Analysis(sdfg), node_(sdfg.root()), detailed_(detailed) {
+DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg), node_(sdfg.root()) {};
 
-      };
-
-DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node, bool detailed)
-    : Analysis(sdfg), node_(node), detailed_(detailed) {
-
-      };
+DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node)
+    : Analysis(sdfg), node_(node) {};
 
 void DataDependencyAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     results_.clear();
     undefined_users_.clear();
-    loop_carried_dependencies_.clear();
+    loop_boundaries_.clear();
 
     std::unordered_set<User*> undefined;
     std::unordered_map<User*, std::unordered_set<User*>> open_definitions;
@@ -126,8 +121,17 @@ void DataDependencyAnalysis::visit_block(
                                 found_undefined_user = this->is_undefined_user(*user.first);
                             }
                         }
-                        // If no definition found or undefined user found, mark as undefined
-                        if (!found_user || found_undefined_user) {
+                        // If no definition found, undefined user found, or
+                        // the read's subset footprint is only partially
+                        // covered by the matching open writers, mark as
+                        // upward-exposed (undefined). `depends` uses
+                        // intersect-any across the cartesian product of
+                        // subsets, which silently swallows partial-cover
+                        // multi-subset reads (e.g. an access node with two
+                        // out-edges where only one edge is killed inside
+                        // the current scope).
+                        if (!found_user || found_undefined_user ||
+                            !this->fully_covered(analysis_manager, *current_user, open_definitions)) {
                             undefined.insert(current_user);
                         }
                     }
@@ -345,119 +349,41 @@ void DataDependencyAnalysis::visit_for(
         open_definitions.erase(user);
     }
 
-    // Add loop-carried dependencies
-    if (this->detailed_ && for_loop.is_monotonic()) {
-        // Case: Can analyze
-        bool success = this->loop_carried_dependencies_.insert({&for_loop, {}}).second;
-        assert(success);
-        auto& dependencies = this->loop_carried_dependencies_.at(&for_loop);
-
-        // Helper to merge deltas into an existing entry for a container
-        auto merge_deltas = [](LoopCarriedDependencyInfo& info, const symbolic::maps::DependenceDeltas& new_deltas) {
-            if (new_deltas.empty) {
-                return;
-            }
-            if (info.deltas.empty) {
-                info.deltas = new_deltas;
-                return;
-            }
-            if (new_deltas.deltas_str.empty() || info.deltas.deltas_str.empty()) {
-                // One side has no isl representation — keep non-empty or stay empty-string
-                info.deltas.empty = false;
-                return;
-            }
-            // Union the two delta sets
-            isl_ctx* ctx = isl_ctx_alloc();
-            isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
-            isl_set* s1 = isl_set_read_from_str(ctx, info.deltas.deltas_str.c_str());
-            isl_set* s2 = isl_set_read_from_str(ctx, new_deltas.deltas_str.c_str());
-            if (s1 && s2) {
-                isl_set* u = isl_set_union(s1, s2);
-                char* str = u ? isl_set_to_str(u) : nullptr;
-                if (str) {
-                    info.deltas.deltas_str = std::string(str);
-                    free(str);
-                } else {
-                    // Union failed (e.g. mismatched dimensionalities) — degrade gracefully
-                    info.deltas.deltas_str = "";
-                    info.deltas.dimensions.clear();
-                }
-                if (u) isl_set_free(u);
-            } else {
-                if (s1) isl_set_free(s1);
-                if (s2) isl_set_free(s2);
-                // Parse failed — degrade gracefully
-                info.deltas.deltas_str = "";
-                info.deltas.dimensions.clear();
-            }
-            isl_ctx_free(ctx);
-        };
-
-        // Case 1: Read-Write between iterations
-        for (auto& read : undefined_for) {
-            for (auto& write : open_definitions_for) {
-                auto deltas = loop_deltas(*write.first, *read, analysis_manager, for_loop);
-                if (!deltas.empty) {
-                    if (dependencies.find(read->container()) == dependencies.end()) {
-                        dependencies[read->container()] =
-                            LoopCarriedDependencyInfo{LOOP_CARRIED_DEPENDENCY_READ_WRITE, deltas};
-                    } else {
-                        merge_deltas(dependencies[read->container()], deltas);
-                    }
-                    write.second.insert(read);
-                }
-            }
-        }
-
-        // Case 2: Write-Write between iterations
-        for (auto& write : open_definitions_for) {
-            if (dependencies.find(write.first->container()) != dependencies.end()) {
-                continue;
-            }
-            for (auto& write_2 : open_definitions_for) {
-                auto deltas = loop_deltas(*write.first, *write_2.first, analysis_manager, for_loop);
-                if (!deltas.empty) {
-                    dependencies.insert(
-                        {write.first->container(),
-                         LoopCarriedDependencyInfo{LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, deltas}}
-                    );
-                    break;
-                }
-            }
-        }
-    } else {
-        // Case: Cannot analyze
-        bool success = this->loop_carried_dependencies_.insert({&for_loop, {}}).second;
-        assert(success);
-        auto& dependencies = this->loop_carried_dependencies_.at(&for_loop);
-
-        // Over-Approximation:
-        // Add loop-carried dependencies for all open reads to all open writes
-        for (auto& read : undefined_for) {
-            for (auto& write : open_definitions_for) {
-                if (this->depends(analysis_manager, *write.first, *read)) {
-                    write.second.insert(read);
-                    dependencies.insert(
-                        {read->container(),
-                         LoopCarriedDependencyInfo{
-                             LOOP_CARRIED_DEPENDENCY_READ_WRITE, symbolic::maps::DependenceDeltas{false, "", {}}
-                         }}
-                    );
-                }
-            }
-        }
-        // Add loop-carried dependencies for writes
-        for (auto& write : open_definitions_for) {
-            if (dependencies.find(write.first->container()) == dependencies.end()) {
-                dependencies.insert(
-                    {write.first->container(),
-                     LoopCarriedDependencyInfo{
-                         LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, symbolic::maps::DependenceDeltas{false, "", {}}
-                     }}
-                );
-            }
+    // Cross-iteration linkage for SCALARS only.
+    //
+    // An in-body upward-exposed read may be satisfied (in some non-first
+    // iteration) by an in-body open writer. We must record those
+    // (write -> read) edges in `open_definitions_for` so that public
+    // queries like `defined_by(read)` return the in-body writer in
+    // addition to any pre-loop write -- otherwise consumers (e.g.
+    // SymbolPropagation) treat the read as having a single dominating
+    // definition and incorrectly fold the loop-carried value away.
+    //
+    // We restrict to scalar containers because:
+    //   - For scalars, every access touches the same cell, so the
+    //     prior-iteration writer always reaches the in-body read --
+    //     this is sound and precise.
+    //   - For arrays, deciding whether a writer flows across iterations
+    //     requires precise per-pair delta analysis (done in LCDA).
+    //     Adding edges via the over-approximate `depends` predicate
+    //     would create spurious in-body RAW links that pollute
+    //     consumers reasoning about precise dataflow on arrays.
+    //
+    // This must run BEFORE the snapshot below and BEFORE merging into the
+    // outer `open_definitions`, since both perform by-value copies of the
+    // (writer -> readers) sets we are mutating.
+    for (auto* open_read : undefined_for) {
+        auto& type = this->sdfg_.type(open_read->container());
+        if (!dynamic_cast<const types::Scalar*>(&type)) continue;
+        for (auto& write_entry : open_definitions_for) {
+            if (write_entry.first->container() != open_read->container()) continue;
+            if (this->is_undefined_user(*write_entry.first)) continue;
+            write_entry.second.insert(open_read);
         }
     }
+
+    // Snapshot loop boundary sets so LoopCarriedDependencyAnalysis can compute LCDs.
+    loop_boundaries_[&for_loop] = std::make_pair(undefined_for, open_definitions_for);
 
     // Add open definitions from for to outside
     for (auto& entry : open_definitions_for) {
@@ -747,118 +673,6 @@ void DataDependencyAnalysis::visit_sequence(
     }
 }
 
-symbolic::maps::DependenceDeltas DataDependencyAnalysis::loop_deltas(
-    User& previous,
-    User& current,
-    analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::StructuredLoop& loop
-) {
-    symbolic::maps::DependenceDeltas empty_result{true, "", {}};
-
-    if (previous.container() != current.container()) {
-        return empty_result;
-    }
-    // Shortcut for scalars — always dependent, but distance is unknown
-    auto& type = this->sdfg_.type(previous.container());
-    if (dynamic_cast<const types::Scalar*>(&type)) {
-        return symbolic::maps::DependenceDeltas{false, "", {}};
-    }
-
-    if (this->is_undefined_user(previous) || this->is_undefined_user(current)) {
-        return empty_result;
-    }
-
-    auto& previous_subsets = previous.subsets();
-    auto& current_subsets = current.subsets();
-
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    auto previous_scope = Users::scope(&previous);
-    auto previous_assumptions = assumptions_analysis.get(*previous_scope, true);
-    auto current_scope = Users::scope(&current);
-    auto current_assumptions = assumptions_analysis.get(*current_scope, true);
-
-    // We're using the assumptions from the blocks, where the memory accesses occur
-    // However, we need to revert constantness assumptions from the perspective of the loop
-    // for which we're checking loop-carried dependencies
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    if (previous_assumptions.find(loop.indvar()) != previous_assumptions.end()) {
-        previous_assumptions.at(loop.indvar()).constant(false);
-    }
-    if (current_assumptions.find(loop.indvar()) != current_assumptions.end()) {
-        current_assumptions.at(loop.indvar()).constant(false);
-    }
-    for (auto& inner_loop : loop_analysis.descendants(&loop)) {
-        if (auto structured_loop = dynamic_cast<const structured_control_flow::StructuredLoop*>(inner_loop)) {
-            auto indvar = structured_loop->indvar();
-            if (previous_assumptions.find(indvar) != previous_assumptions.end()) {
-                previous_assumptions.at(indvar).constant(false);
-            }
-            if (current_assumptions.find(indvar) != current_assumptions.end()) {
-                current_assumptions.at(indvar).constant(false);
-            }
-        }
-    }
-
-    // Collect deltas from all subset pairs and union them
-    isl_ctx* union_ctx = nullptr;
-    isl_set* accumulated = nullptr;
-    std::vector<std::string> result_dimensions;
-
-    for (auto& previous_subset : previous_subsets) {
-        for (auto& current_subset : current_subsets) {
-            auto deltas = symbolic::maps::dependence_deltas(
-                previous_subset, current_subset, loop.indvar(), previous_assumptions, current_assumptions
-            );
-            if (deltas.empty) {
-                continue;
-            }
-            if (deltas.deltas_str.empty()) {
-                // Dependence exists but no isl representation (scalar case)
-                if (accumulated) {
-                    isl_set_free(accumulated);
-                    isl_ctx_free(union_ctx);
-                }
-                return symbolic::maps::DependenceDeltas{false, "", {}};
-            }
-            if (!union_ctx) {
-                union_ctx = isl_ctx_alloc();
-                isl_options_set_on_error(union_ctx, ISL_ON_ERROR_CONTINUE);
-                accumulated = isl_set_read_from_str(union_ctx, deltas.deltas_str.c_str());
-                result_dimensions = deltas.dimensions;
-            } else {
-                isl_set* new_set = isl_set_read_from_str(union_ctx, deltas.deltas_str.c_str());
-                if (new_set && accumulated) {
-                    accumulated = isl_set_union(accumulated, new_set);
-                } else if (new_set) {
-                    isl_set_free(new_set);
-                }
-            }
-        }
-    }
-
-    if (!accumulated) {
-        if (union_ctx) {
-            isl_ctx_free(union_ctx);
-        }
-        return empty_result;
-    }
-
-    // Serialize the union
-    char* str = isl_set_to_str(accumulated);
-    if (!str) {
-        isl_set_free(accumulated);
-        isl_ctx_free(union_ctx);
-        return symbolic::maps::DependenceDeltas{false, "", {}};
-    }
-    std::string union_str(str);
-    free(str);
-
-    isl_set_free(accumulated);
-    isl_ctx_free(union_ctx);
-
-    return symbolic::maps::DependenceDeltas{false, union_str, result_dimensions};
-}
-
 bool DataDependencyAnalysis::
     supersedes_restrictive(User& previous, User& current, analysis::AnalysisManager& analysis_manager) {
     if (previous.container() != current.container()) {
@@ -871,6 +685,15 @@ bool DataDependencyAnalysis::
     }
 
     if (this->is_undefined_user(previous) || this->is_undefined_user(current)) {
+        return false;
+    }
+
+    // Conservative shortcut: skip the full symbolic subset analysis and
+    // assume the previous write does NOT fully cover `current`. Sound
+    // (downstream consumers treat the read as potentially upward-exposed)
+    // and avoids ISL queries that have caused fixed-point hangs in the
+    // wider pass pipeline.
+    if (!detailed_) {
         return false;
     }
 
@@ -899,6 +722,75 @@ bool DataDependencyAnalysis::
     return true;
 }
 
+bool DataDependencyAnalysis::fully_covered(
+    analysis::AnalysisManager& analysis_manager,
+    User& current,
+    const std::unordered_map<User*, std::unordered_set<User*>>& open_definitions
+) {
+    // Scalar reads: container-level open definition is full coverage.
+    auto& type = this->sdfg_.type(current.container());
+    if (dynamic_cast<const types::Scalar*>(&type)) {
+        for (auto& w : open_definitions) {
+            if (w.first->container() == current.container() && !this->is_undefined_user(*w.first)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (this->is_undefined_user(current)) {
+        return false;
+    }
+
+    // Conservative shortcut: assume coverage holds (treat the read as
+    // satisfied by some open writer, equivalent to `depends`'s
+    // intersect-any semantics). Sound: it allows the previous detection
+    // path to drop the read into `undefined` only when truly unmatched,
+    // matching pre-`fully_covered` behavior, while skipping ISL queries.
+    if (!detailed_) {
+        for (auto& w : open_definitions) {
+            if (w.first->container() == current.container() && !this->is_undefined_user(*w.first)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    auto& current_subsets = current.subsets();
+    if (current_subsets.empty()) {
+        // Symbol use / no real read footprint -- fall back to existence of any
+        // matching open definition (depends() semantics).
+        for (auto& w : open_definitions) {
+            if (w.first->container() == current.container() && !this->is_undefined_user(*w.first)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& current_assumptions = assumptions_analysis.get(*Users::scope(&current), true);
+
+    // Each read subset must be contained in some single open writer's subset.
+    for (auto& read_subset : current_subsets) {
+        bool covered = false;
+        for (auto& w_entry : open_definitions) {
+            auto* w = w_entry.first;
+            if (w->container() != current.container()) continue;
+            if (this->is_undefined_user(*w)) continue;
+            auto& w_assumptions = assumptions_analysis.get(*Users::scope(w), true);
+            for (auto& w_subset : w->subsets()) {
+                if (symbolic::is_subset(read_subset, w_subset, current_assumptions, w_assumptions)) {
+                    covered = true;
+                    break;
+                }
+            }
+            if (covered) break;
+        }
+        if (!covered) return false;
+    }
+    return true;
+}
+
 bool DataDependencyAnalysis::intersects(User& previous, User& current, analysis::AnalysisManager& analysis_manager) {
     if (previous.container() != current.container()) {
         return false;
@@ -913,7 +805,10 @@ bool DataDependencyAnalysis::intersects(User& previous, User& current, analysis:
         return true;
     }
 
-    if (!this->detailed_) {
+    // Conservative shortcut: assume the two subsets may intersect. Sound
+    // for dependence tracking (we may report spurious dependencies but
+    // never miss a real one) and avoids ISL hangs.
+    if (!detailed_) {
         return true;
     }
 
@@ -967,7 +862,10 @@ bool DataDependencyAnalysis::
         return true;
     }
 
-    if (!this->detailed_) {
+    // Conservative shortcut: assume `current` does not fully overwrite
+    // `previous`. Sound (we just keep more open definitions live) and
+    // avoids ISL hangs.
+    if (!detailed_) {
         return false;
     }
 
@@ -1012,11 +910,11 @@ bool DataDependencyAnalysis::depends(analysis::AnalysisManager& analysis_manager
         return true;
     }
 
-    if (!this->detailed_) {
+    // Conservative shortcut: assume `current` may depend on `previous`.
+    if (!detailed_) {
         return true;
     }
 
-    // Collect memlets and assumptions
     auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
     auto previous_scope = Users::scope(&previous);
     auto current_scope = Users::scope(&current);
@@ -1103,14 +1001,19 @@ bool DataDependencyAnalysis::is_undefined_user(User& user) const {
     return user.vertex_ == boost::graph_traits<graph::Graph>::null_vertex();
 };
 
-bool DataDependencyAnalysis::available(structured_control_flow::StructuredLoop& loop) const {
-    return this->loop_carried_dependencies_.find(&loop) != this->loop_carried_dependencies_.end();
-};
+bool DataDependencyAnalysis::has_loop_boundary(structured_control_flow::StructuredLoop& loop) const {
+    return this->loop_boundaries_.find(&loop) != this->loop_boundaries_.end();
+}
 
-const std::unordered_map<std::string, LoopCarriedDependencyInfo>& DataDependencyAnalysis::
-    dependencies(structured_control_flow::StructuredLoop& loop) const {
-    return this->loop_carried_dependencies_.at(&loop);
-};
+const std::unordered_set<User*>& DataDependencyAnalysis::upward_exposed_reads(structured_control_flow::StructuredLoop&
+                                                                                  loop) const {
+    return this->loop_boundaries_.at(&loop).first;
+}
+
+const std::unordered_map<User*, std::unordered_set<User*>>& DataDependencyAnalysis::
+    escaping_definitions(structured_control_flow::StructuredLoop& loop) const {
+    return this->loop_boundaries_.at(&loop).second;
+}
 
 } // namespace analysis
 } // namespace sdfg
