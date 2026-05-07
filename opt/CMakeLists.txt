@@ -55,6 +55,7 @@ set(SOURCE_FILES
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/math/tensor/batchnorm_expander.cpp
     src/targets/rocm/math/tensor/conv_expander.cpp
     src/targets/rocm/stdlib/memset.cpp
     src/targets/rocm/plugin.cpp
