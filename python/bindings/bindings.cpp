@@ -192,6 +192,11 @@ PYBIND11_MODULE(_sdfg, m) {
             &PyStructuredSDFG::expand_cuda,
             "Expands library nodes with CUDA-specific implementations where available"
         )
+        .def(
+            "expand_rocm",
+            &PyStructuredSDFG::expand_rocm,
+            "Expands library nodes with ROCm-specific implementations where available"
+        )
         .def("simplify", &PyStructuredSDFG::simplify, "Simplify the SDFG")
         .def(
             "dump",

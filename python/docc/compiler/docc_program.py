@@ -23,6 +23,11 @@ def _cuda_expand_fn(sdfg, category: str, kwargs: Dict[str, Any]) -> None:
     sdfg.expand()
 
 
+def _rocm_expand_fn(sdfg, category: str, kwargs: Dict[str, Any]) -> None:
+    sdfg.expand_rocm()
+    sdfg.expand()
+
+
 def _parse_docc_debug() -> dict[str, str]:
     debug_env = os.environ.get("DOCC_DEBUG", "")
     debug_dict = {}
@@ -98,6 +103,15 @@ class DoccProgram(ABC):
                 schedule_fn=None,
                 compile_fn=None,
                 expand_fn=_cuda_expand_fn,
+            )
+        elif target == "rocm":
+            from docc.python import register_target_overrides
+
+            register_target_overrides(
+                "rocm",
+                schedule_fn=None,
+                compile_fn=None,
+                expand_fn=_rocm_expand_fn,
             )
 
     @abstractmethod

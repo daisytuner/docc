@@ -24,6 +24,7 @@ set(SOURCE_FILES
     src/passes/offloading/gpu_nested_parallelization_pass.cpp
     src/passes/offloading/gpu_tiling_pass.cpp
     src/passes/offloading/remove_redundant_transfers_pass.cpp
+    src/passes/offloading/rocm_library_node_expansion_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
     src/passes/offloading/cuda_library_node_transfer_extraction_pass.cpp
     src/passes/offloading/rocm_library_node_transfer_extraction_pass.cpp
@@ -54,6 +55,7 @@ set(SOURCE_FILES
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/math/tensor/conv_expander.cpp
     src/targets/rocm/stdlib/memset.cpp
     src/targets/rocm/plugin.cpp
     src/targets/rocm/rocm.cpp
