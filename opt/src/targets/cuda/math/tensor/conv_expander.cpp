@@ -14,15 +14,20 @@ namespace sdfg {
 namespace offloading {
 
 bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    // Custom CUDA expansion for convolution
-    auto& dfg = node_.get_parent();
+    return expand_conv(builder, analysis_manager, node_);
+}
+
+bool CudaConvExpander::expand_conv(
+    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, math::tensor::ConvNode& node
+) {
+    auto& dfg = node.get_parent();
     if ((dfg.nodes().size() != 4 || dfg.edges().size() != 3) && (dfg.nodes().size() != 5 || dfg.edges().size() != 4)) {
         return false;
     }
 
     // Get edges
-    auto iedges = dfg.in_edges_by_connector(node_);
-    auto oedges = dfg.out_edges_by_connector(node_);
+    auto iedges = dfg.in_edges_by_connector(node);
+    auto oedges = dfg.out_edges_by_connector(node);
     if (iedges.size() != 3 || oedges.size() != 1) {
         return false;
     }
@@ -61,7 +66,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
 
     // Determine BLAS precision
     math::blas::BLAS_Precision precision;
-    types::Scalar base_type(node_.primitive_type(dfg));
+    types::Scalar base_type(node.primitive_type(dfg));
     switch (base_type.primitive_type()) {
         case types::PrimitiveType::Half:
             precision = math::blas::BLAS_Precision::h;
@@ -82,7 +87,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
     );
 
     // Dimensions, i.e., 1D, 2D, 3D, ...
-    size_t dims = node_.kernel_shape().size();
+    size_t dims = node.kernel_shape().size();
     symbolic::MultiExpression out_shape;
     out_shape.reserve(dims);
     // out_shape[i] = (shape[i + 2] + pads[i] + pads[dims + i] - dilations[i] * (kernel_shape[i] - 1) - 1)
@@ -90,13 +95,13 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
     for (size_t i = 0; i < dims; i++) {
         out_shape.push_back(symbolic::add(
             symbolic::div(
-                symbolic::
-                    sub(symbolic::sub(
-                            symbolic::add(node_.shape()[i + 2], symbolic::add(node_.pads()[i], node_.pads()[dims + i])),
-                            symbolic::mul(node_.dilations()[i], symbolic::sub(node_.kernel_shape()[i], symbolic::one()))
-                        ),
-                        symbolic::one()),
-                node_.strides()[i]
+                symbolic::sub(
+                    symbolic::
+                        sub(symbolic::add(node.shape()[i + 2], symbolic::add(node.pads()[i], node.pads()[dims + i])),
+                            symbolic::mul(node.dilations()[i], symbolic::sub(node.kernel_shape()[i], symbolic::one()))),
+                    symbolic::one()
+                ),
+                node.strides()[i]
             ),
             symbolic::one()
         ));
@@ -105,30 +110,30 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
 
     // If there are no groups (i.e., group == 1), then we can do im2row with one GEMM.
     // Else, we do naïve im2col with multiple GEMM's.
-    if (symbolic::eq(node_.group(), symbolic::one())) {
+    if (symbolic::eq(node.group(), symbolic::one())) {
         /* ===== No groups ====================================================================== */
 
         // Add patches container with malloc
-        symbolic::Expression patches_size = symbolic::mul(node_.shape()[0], node_.shape()[1]);
+        symbolic::Expression patches_size = symbolic::mul(node.shape()[0], node.shape()[1]);
         for (size_t i = 0; i < dims; i++) {
-            patches_size = symbolic::mul(patches_size, symbolic::mul(node_.kernel_shape()[i], out_shape[i]));
+            patches_size = symbolic::mul(patches_size, symbolic::mul(node.kernel_shape()[i], out_shape[i]));
         }
         types::Pointer patches_type(base_type);
         auto patches_container = builder.find_new_name("_patches");
         builder.add_container(patches_container, patches_type);
         auto& patches_malloc_block = builder.add_block(new_sequence, {}, block->debug_info());
         {
-            auto& patches_access = builder.add_access(patches_malloc_block, patches_container, node_.debug_info());
+            auto& patches_access = builder.add_access(patches_malloc_block, patches_container, node.debug_info());
             auto& libnode = builder.add_library_node<stdlib::MallocNode>(
-                patches_malloc_block, node_.debug_info(), symbolic::mul(patches_size, symbolic::size_of_type(base_type))
+                patches_malloc_block, node.debug_info(), symbolic::mul(patches_size, symbolic::size_of_type(base_type))
             );
             builder.add_computational_memlet(
-                patches_malloc_block, libnode, "_ret", patches_access, {}, patches_type, node_.debug_info()
+                patches_malloc_block, libnode, "_ret", patches_access, {}, patches_type, node.debug_info()
             );
         }
 
         // Add malloc for temporary GEMM output
-        symbolic::Expression tmp_Y_size = symbolic::mul(node_.output_channels(), node_.shape()[0]);
+        symbolic::Expression tmp_Y_size = symbolic::mul(node.output_channels(), node.shape()[0]);
         for (size_t i = 0; i < dims; i++) {
             tmp_Y_size = symbolic::mul(tmp_Y_size, out_shape[i]);
         }
@@ -138,14 +143,14 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         builder.add_container(tmp_Y_container, tmp_Y_type);
         auto& tmp_Y_malloc_block = builder.add_block(new_sequence, {}, block->debug_info());
         {
-            auto& tmp_Y_access = builder.add_access(tmp_Y_malloc_block, tmp_Y_container, node_.debug_info());
+            auto& tmp_Y_access = builder.add_access(tmp_Y_malloc_block, tmp_Y_container, node.debug_info());
             auto& libnode = builder.add_library_node<stdlib::MallocNode>(
                 tmp_Y_malloc_block,
-                node_.debug_info(),
+                node.debug_info(),
                 symbolic::mul(tmp_Y_size, symbolic::size_of_type(tmp_Y_base_type))
             );
             builder.add_computational_memlet(
-                tmp_Y_malloc_block, libnode, "_ret", tmp_Y_access, {}, tmp_Y_type, node_.debug_info()
+                tmp_Y_malloc_block, libnode, "_ret", tmp_Y_access, {}, tmp_Y_type, node.debug_info()
             );
         }
 
@@ -156,7 +161,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         auto& loop_n = builder.add_map(
             new_sequence,
             n,
-            symbolic::Lt(n, node_.shape()[0]),
+            symbolic::Lt(n, node.shape()[0]),
             symbolic::zero(),
             symbolic::add(n, symbolic::one()),
             ScheduleType_Sequential::create(),
@@ -193,7 +198,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         auto& loop_c = builder.add_map(
             *current_seq,
             c,
-            symbolic::Lt(c, node_.shape()[1]),
+            symbolic::Lt(c, node.shape()[1]),
             symbolic::zero(),
             symbolic::add(c, symbolic::one()),
             ScheduleType_Sequential::create(),
@@ -213,7 +218,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
             auto& loop_k = builder.add_map(
                 *current_seq,
                 k,
-                symbolic::Lt(k, node_.kernel_shape()[i]),
+                symbolic::Lt(k, node.kernel_shape()[i]),
                 symbolic::zero(),
                 symbolic::add(k, symbolic::one()),
                 ScheduleType_Sequential::create(),
@@ -230,15 +235,15 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         symbolic::Condition zero_condition = symbolic::__false__();
         for (size_t i = 0; i < dims; i++) {
             auto i_expr = symbolic::
-                add(symbolic::sub(symbolic::mul(os[i], node_.strides()[i]), node_.pads()[i]),
-                    symbolic::mul(ks[i], node_.dilations()[i]));
+                add(symbolic::sub(symbolic::mul(os[i], node.strides()[i]), node.pads()[i]),
+                    symbolic::mul(ks[i], node.dilations()[i]));
             is.push_back(i_expr);
             copy_condition = symbolic::
                 And(copy_condition,
-                    symbolic::And(symbolic::Lt(i_expr, node_.shape()[i + 2]), symbolic::Ge(i_expr, symbolic::zero())));
+                    symbolic::And(symbolic::Lt(i_expr, node.shape()[i + 2]), symbolic::Ge(i_expr, symbolic::zero())));
             zero_condition = symbolic::
                 Or(zero_condition,
-                   symbolic::Or(symbolic::Ge(i_expr, node_.shape()[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
+                   symbolic::Or(symbolic::Ge(i_expr, node.shape()[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
         }
         auto& branch = builder.add_if_else(*current_seq, {}, block->debug_info());
         auto& copy_case = builder.add_case(branch, copy_condition, block->debug_info());
@@ -251,10 +256,10 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         patches_subset.push_back(c);
         patches_subset.insert(patches_subset.end(), ks.begin(), ks.end());
         symbolic::MultiExpression patches_shape;
-        patches_shape.push_back(node_.shape()[0]);
+        patches_shape.push_back(node.shape()[0]);
         patches_shape.insert(patches_shape.end(), out_shape.begin(), out_shape.end());
-        patches_shape.push_back(node_.shape()[1]);
-        patches_shape.insert(patches_shape.end(), node_.kernel_shape().begin(), node_.kernel_shape().end());
+        patches_shape.push_back(node.shape()[1]);
+        patches_shape.insert(patches_shape.end(), node.kernel_shape().begin(), node.kernel_shape().end());
         types::Tensor patches_tensor_type(base_type, patches_shape);
 
         // Determine subset for X
@@ -267,50 +272,50 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         auto& copy_block = builder.add_block(copy_case, {}, block->debug_info());
         {
             auto& X_access = builder.add_access(copy_block, access_X->data(), access_X->debug_info());
-            auto& patches_access = builder.add_access(copy_block, patches_container, node_.debug_info());
+            auto& patches_access = builder.add_access(copy_block, patches_container, node.debug_info());
             auto& tasklet =
-                builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node_.debug_info());
+                builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node.debug_info());
             builder.add_computational_memlet(
                 copy_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
             );
             builder.add_computational_memlet(
-                copy_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, node_.debug_info()
+                copy_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, node.debug_info()
             );
         }
 
         // Add zero assignment to patches
         auto& zero_block = builder.add_block(zero_case, {}, block->debug_info());
         {
-            auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, node_.debug_info());
-            auto& patches_access = builder.add_access(zero_block, patches_container, node_.debug_info());
+            auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, node.debug_info());
+            auto& patches_access = builder.add_access(zero_block, patches_container, node.debug_info());
             auto& tasklet =
-                builder.add_tasklet(zero_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node_.debug_info());
+                builder.add_tasklet(zero_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node.debug_info());
             builder
-                .add_computational_memlet(zero_block, constant_zero, tasklet, "_in", {}, base_type, node_.debug_info());
+                .add_computational_memlet(zero_block, constant_zero, tasklet, "_in", {}, base_type, node.debug_info());
             builder.add_computational_memlet(
-                zero_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, node_.debug_info()
+                zero_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, node.debug_info()
             );
         }
 
         // Add GEMM node
         auto& gemm_block = builder.add_block(new_sequence, {}, block->debug_info());
         {
-            auto& alpha = builder.add_constant(gemm_block, "1.0", base_type, node_.debug_info());
-            auto& beta = builder.add_constant(gemm_block, "0.0", base_type, node_.debug_info());
+            auto& alpha = builder.add_constant(gemm_block, "1.0", base_type, node.debug_info());
+            auto& beta = builder.add_constant(gemm_block, "0.0", base_type, node.debug_info());
             auto& W_access = builder.add_access(gemm_block, access_W->data(), access_W->debug_info());
-            auto& patches_access = builder.add_access(gemm_block, patches_container, node_.debug_info());
+            auto& patches_access = builder.add_access(gemm_block, patches_container, node.debug_info());
             auto& tmp_Y_access_in = builder.add_access(gemm_block, tmp_Y_container, access_Y->debug_info());
             auto& tmp_Y_access_out = builder.add_access(gemm_block, tmp_Y_container, access_Y->debug_info());
-            symbolic::Expression gemm_m = node_.output_channels();
-            symbolic::Expression gemm_n = node_.shape()[0];
-            symbolic::Expression gemm_k = node_.shape()[1];
+            symbolic::Expression gemm_m = node.output_channels();
+            symbolic::Expression gemm_n = node.shape()[0];
+            symbolic::Expression gemm_k = node.shape()[1];
             for (size_t i = 0; i < dims; i++) {
                 gemm_n = symbolic::mul(gemm_n, out_shape[i]);
-                gemm_k = symbolic::mul(gemm_k, node_.kernel_shape()[i]);
+                gemm_k = symbolic::mul(gemm_k, node.kernel_shape()[i]);
             }
             auto& libnode = builder.add_library_node<math::blas::GEMMNode>(
                 gemm_block,
-                node_.debug_info(),
+                node.debug_info(),
                 math::blas::ImplementationType_BLAS,
                 precision, // precision
                 math::blas::BLAS_Layout::RowMajor, // layout
@@ -323,8 +328,8 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
                 gemm_k, // ldb
                 gemm_n // ldc
             );
-            builder.add_computational_memlet(gemm_block, alpha, libnode, "__alpha", {}, base_type, node_.debug_info());
-            builder.add_computational_memlet(gemm_block, beta, libnode, "__beta", {}, base_type, node_.debug_info());
+            builder.add_computational_memlet(gemm_block, alpha, libnode, "__alpha", {}, base_type, node.debug_info());
+            builder.add_computational_memlet(gemm_block, beta, libnode, "__beta", {}, base_type, node.debug_info());
             builder.add_computational_memlet(
                 gemm_block,
                 W_access,
@@ -334,9 +339,8 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
                 types::Pointer(types::Scalar(iedge_W->base_type().primitive_type())),
                 iedge_W->debug_info()
             );
-            builder.add_computational_memlet(
-                gemm_block, patches_access, libnode, "__B", {}, patches_type, node_.debug_info()
-            );
+            builder
+                .add_computational_memlet(gemm_block, patches_access, libnode, "__B", {}, patches_type, node.debug_info());
             builder.add_computational_memlet(
                 gemm_block, tmp_Y_access_in, libnode, "__C", {}, tmp_Y_type, oedge_Y->debug_info()
             );
@@ -349,7 +353,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         auto& loop_n_2 = builder.add_map(
             new_sequence,
             n,
-            symbolic::Lt(n, node_.shape()[0]),
+            symbolic::Lt(n, node.shape()[0]),
             symbolic::zero(),
             symbolic::add(n, symbolic::one()),
             ScheduleType_Sequential::create(),
@@ -365,7 +369,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         auto& loop_l = builder.add_map(
             *current_seq,
             l,
-            symbolic::Lt(l, node_.output_channels()),
+            symbolic::Lt(l, node.output_channels()),
             symbolic::zero(),
             symbolic::add(l, symbolic::one()),
             ScheduleType_Sequential::create(),
@@ -399,8 +403,8 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         tmp_Y_subset.push_back(n);
         tmp_Y_subset.insert(tmp_Y_subset.end(), os.begin(), os.end());
         symbolic::MultiExpression tmp_Y_shape;
-        tmp_Y_shape.push_back(node_.output_channels());
-        tmp_Y_shape.push_back(node_.shape()[0]);
+        tmp_Y_shape.push_back(node.output_channels());
+        tmp_Y_shape.push_back(node.shape()[0]);
         tmp_Y_shape.insert(tmp_Y_shape.end(), out_shape.begin(), out_shape.end());
         types::Tensor tmp_Y_tensor_type(tmp_Y_base_type, tmp_Y_shape);
         data_flow::Subset Y_subset;
@@ -409,14 +413,14 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         Y_subset.insert(Y_subset.end(), os.begin(), os.end());
         auto& transpose_block = builder.add_block(*current_seq, {}, block->debug_info());
         if (has_bias) {
-            auto& tmp_Y_access = builder.add_access(transpose_block, tmp_Y_container, node_.debug_info());
+            auto& tmp_Y_access = builder.add_access(transpose_block, tmp_Y_container, node.debug_info());
             auto& B_access = builder.add_access(transpose_block, access_B->data(), access_B->debug_info());
             auto& Y_access = builder.add_access(transpose_block, access_Y->data(), access_Y->debug_info());
             auto& tasklet = builder.add_tasklet(
-                transpose_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, node_.debug_info()
+                transpose_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, node.debug_info()
             );
             builder.add_computational_memlet(
-                transpose_block, tmp_Y_access, tasklet, "_in1", tmp_Y_subset, tmp_Y_tensor_type, node_.debug_info()
+                transpose_block, tmp_Y_access, tasklet, "_in1", tmp_Y_subset, tmp_Y_tensor_type, node.debug_info()
             );
             builder.add_computational_memlet(
                 transpose_block, B_access, tasklet, "_in2", {l}, iedge_B->base_type(), iedge_B->debug_info()
@@ -425,13 +429,12 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
                 transpose_block, tasklet, "_out", Y_access, Y_subset, oedge_Y->base_type(), oedge_Y->debug_info()
             );
         } else {
-            auto& tmp_Y_access = builder.add_access(transpose_block, tmp_Y_container, node_.debug_info());
+            auto& tmp_Y_access = builder.add_access(transpose_block, tmp_Y_container, node.debug_info());
             auto& Y_access = builder.add_access(transpose_block, access_Y->data(), access_Y->debug_info());
             auto& tasklet =
-                builder
-                    .add_tasklet(transpose_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node_.debug_info());
+                builder.add_tasklet(transpose_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node.debug_info());
             builder.add_computational_memlet(
-                transpose_block, tmp_Y_access, tasklet, "_in", tmp_Y_subset, tmp_Y_tensor_type, node_.debug_info()
+                transpose_block, tmp_Y_access, tasklet, "_in", tmp_Y_subset, tmp_Y_tensor_type, node.debug_info()
             );
             builder.add_computational_memlet(
                 transpose_block, tasklet, "_out", Y_access, Y_subset, oedge_Y->base_type(), oedge_Y->debug_info()
@@ -441,28 +444,28 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         // Add free for patches container
         auto& patches_free_block = builder.add_block(new_sequence, {}, block->debug_info());
         {
-            auto& patches_access_in = builder.add_access(patches_free_block, patches_container, node_.debug_info());
-            auto& patches_access_out = builder.add_access(patches_free_block, patches_container, node_.debug_info());
-            auto& libnode = builder.add_library_node<stdlib::FreeNode>(patches_free_block, node_.debug_info());
+            auto& patches_access_in = builder.add_access(patches_free_block, patches_container, node.debug_info());
+            auto& patches_access_out = builder.add_access(patches_free_block, patches_container, node.debug_info());
+            auto& libnode = builder.add_library_node<stdlib::FreeNode>(patches_free_block, node.debug_info());
             builder.add_computational_memlet(
-                patches_free_block, patches_access_in, libnode, "_ptr", {}, patches_type, node_.debug_info()
+                patches_free_block, patches_access_in, libnode, "_ptr", {}, patches_type, node.debug_info()
             );
             builder.add_computational_memlet(
-                patches_free_block, libnode, "_ptr", patches_access_out, {}, patches_type, node_.debug_info()
+                patches_free_block, libnode, "_ptr", patches_access_out, {}, patches_type, node.debug_info()
             );
         }
 
         // Add free for temporary GEMM output
         auto& tmp_Y_free_block = builder.add_block(new_sequence, {}, block->debug_info());
         {
-            auto& tmp_Y_access_in = builder.add_access(tmp_Y_free_block, tmp_Y_container, node_.debug_info());
-            auto& tmp_Y_access_out = builder.add_access(tmp_Y_free_block, tmp_Y_container, node_.debug_info());
-            auto& libnode = builder.add_library_node<stdlib::FreeNode>(tmp_Y_free_block, node_.debug_info());
+            auto& tmp_Y_access_in = builder.add_access(tmp_Y_free_block, tmp_Y_container, node.debug_info());
+            auto& tmp_Y_access_out = builder.add_access(tmp_Y_free_block, tmp_Y_container, node.debug_info());
+            auto& libnode = builder.add_library_node<stdlib::FreeNode>(tmp_Y_free_block, node.debug_info());
             builder.add_computational_memlet(
-                tmp_Y_free_block, tmp_Y_access_in, libnode, "_ptr", {}, tmp_Y_type, node_.debug_info()
+                tmp_Y_free_block, tmp_Y_access_in, libnode, "_ptr", {}, tmp_Y_type, node.debug_info()
             );
             builder.add_computational_memlet(
-                tmp_Y_free_block, libnode, "_ptr", tmp_Y_access_out, {}, tmp_Y_type, node_.debug_info()
+                tmp_Y_free_block, libnode, "_ptr", tmp_Y_access_out, {}, tmp_Y_type, node.debug_info()
             );
         }
 
@@ -471,8 +474,8 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
     } else {
         /* ===== Groups ========================================================================= */
 
-        auto in_channels = symbolic::div(node_.shape()[1], node_.group());
-        auto out_channels = symbolic::div(node_.output_channels(), node_.group());
+        auto in_channels = symbolic::div(node.shape()[1], node.group());
+        auto out_channels = symbolic::div(node.output_channels(), node.group());
 
         // Add loop over batch size
         auto n_container = builder.find_new_name("_n");
@@ -481,7 +484,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         auto& loop_n = builder.add_map(
             new_sequence,
             n,
-            symbolic::Lt(n, node_.shape()[0]),
+            symbolic::Lt(n, node.shape()[0]),
             symbolic::zero(),
             symbolic::add(n, symbolic::one()),
             ScheduleType_Sequential::create(),
@@ -496,7 +499,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         auto& loop_g = builder.add_map(
             loop_n.root(),
             g,
-            symbolic::Lt(g, node_.group()),
+            symbolic::Lt(g, node.group()),
             symbolic::zero(),
             symbolic::add(g, symbolic::one()),
             ScheduleType_Sequential::create(),
@@ -507,19 +510,19 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         // Add patches container with malloc
         symbolic::Expression patches_size = in_channels;
         for (size_t i = 0; i < dims; i++) {
-            patches_size = symbolic::mul(patches_size, symbolic::mul(node_.kernel_shape()[i], out_shape[i]));
+            patches_size = symbolic::mul(patches_size, symbolic::mul(node.kernel_shape()[i], out_shape[i]));
         }
         types::Pointer patches_type(base_type);
         auto patches_container = builder.find_new_name("_patches");
         builder.add_container(patches_container, patches_type);
         auto& patches_malloc_block = builder.add_block(loop_g.root(), {}, block->debug_info());
         {
-            auto& patches_access = builder.add_access(patches_malloc_block, patches_container, node_.debug_info());
+            auto& patches_access = builder.add_access(patches_malloc_block, patches_container, node.debug_info());
             auto& libnode = builder.add_library_node<stdlib::MallocNode>(
-                patches_malloc_block, node_.debug_info(), symbolic::mul(patches_size, symbolic::size_of_type(base_type))
+                patches_malloc_block, node.debug_info(), symbolic::mul(patches_size, symbolic::size_of_type(base_type))
             );
             builder.add_computational_memlet(
-                patches_malloc_block, libnode, "_ret", patches_access, {}, patches_type, node_.debug_info()
+                patches_malloc_block, libnode, "_ret", patches_access, {}, patches_type, node.debug_info()
             );
         }
 
@@ -572,7 +575,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
             auto& loop_k = builder.add_map(
                 *current_seq,
                 k,
-                symbolic::Lt(k, node_.kernel_shape()[i]),
+                symbolic::Lt(k, node.kernel_shape()[i]),
                 symbolic::zero(),
                 symbolic::add(k, symbolic::one()),
                 ScheduleType_Sequential::create(),
@@ -589,15 +592,15 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         symbolic::Condition zero_condition = symbolic::__false__();
         for (size_t i = 0; i < dims; i++) {
             auto i_expr = symbolic::
-                add(symbolic::sub(symbolic::mul(os[i], node_.strides()[i]), node_.pads()[i]),
-                    symbolic::mul(ks[i], node_.dilations()[i]));
+                add(symbolic::sub(symbolic::mul(os[i], node.strides()[i]), node.pads()[i]),
+                    symbolic::mul(ks[i], node.dilations()[i]));
             is.push_back(i_expr);
             copy_condition = symbolic::
                 And(copy_condition,
-                    symbolic::And(symbolic::Lt(i_expr, node_.shape()[i + 2]), symbolic::Ge(i_expr, symbolic::zero())));
+                    symbolic::And(symbolic::Lt(i_expr, node.shape()[i + 2]), symbolic::Ge(i_expr, symbolic::zero())));
             zero_condition = symbolic::
                 Or(zero_condition,
-                   symbolic::Or(symbolic::Ge(i_expr, node_.shape()[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
+                   symbolic::Or(symbolic::Ge(i_expr, node.shape()[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
         }
         auto& branch = builder.add_if_else(*current_seq, {}, block->debug_info());
         auto& copy_case = builder.add_case(branch, copy_condition, block->debug_info());
@@ -610,7 +613,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         patches_subset.insert(patches_subset.end(), os.begin(), os.end());
         symbolic::MultiExpression patches_shape;
         patches_shape.push_back(in_channels);
-        patches_shape.insert(patches_shape.end(), node_.kernel_shape().begin(), node_.kernel_shape().end());
+        patches_shape.insert(patches_shape.end(), node.kernel_shape().begin(), node.kernel_shape().end());
         patches_shape.insert(patches_shape.end(), out_shape.begin(), out_shape.end());
         types::Tensor patches_tensor_type(base_type, patches_shape);
 
@@ -624,28 +627,28 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         auto& copy_block = builder.add_block(copy_case, {}, block->debug_info());
         {
             auto& X_access = builder.add_access(copy_block, access_X->data(), access_X->debug_info());
-            auto& patches_access = builder.add_access(copy_block, patches_container, node_.debug_info());
+            auto& patches_access = builder.add_access(copy_block, patches_container, node.debug_info());
             auto& tasklet =
-                builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node_.debug_info());
+                builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node.debug_info());
             builder.add_computational_memlet(
                 copy_block, X_access, tasklet, "_in", subset_X, iedge_X->base_type(), iedge_X->debug_info()
             );
             builder.add_computational_memlet(
-                copy_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, node_.debug_info()
+                copy_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, node.debug_info()
             );
         }
 
         // Add zero assignment to patches
         auto& zero_block = builder.add_block(zero_case, {}, block->debug_info());
         {
-            auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, node_.debug_info());
-            auto& patches_access = builder.add_access(zero_block, patches_container, node_.debug_info());
+            auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, node.debug_info());
+            auto& patches_access = builder.add_access(zero_block, patches_container, node.debug_info());
             auto& tasklet =
-                builder.add_tasklet(zero_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node_.debug_info());
+                builder.add_tasklet(zero_block, data_flow::TaskletCode::assign, "_out", {"_in"}, node.debug_info());
             builder
-                .add_computational_memlet(zero_block, constant_zero, tasklet, "_in", {}, base_type, node_.debug_info());
+                .add_computational_memlet(zero_block, constant_zero, tasklet, "_in", {}, base_type, node.debug_info());
             builder.add_computational_memlet(
-                zero_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, node_.debug_info()
+                zero_block, tasklet, "_out", patches_access, patches_subset, patches_tensor_type, node.debug_info()
             );
         }
 
@@ -656,7 +659,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         builder.add_container(ref_W_container, ref_W_type);
         auto ref_W_subset = symbolic::mul(symbolic::mul(out_channels, g), in_channels);
         for (size_t i = 0; i < dims; i++) {
-            ref_W_subset = symbolic::mul(ref_W_subset, node_.kernel_shape()[i]);
+            ref_W_subset = symbolic::mul(ref_W_subset, node.kernel_shape()[i]);
         }
         auto& ref_W_block = builder.add_block(loop_g.root(), {}, block->debug_info());
         {
@@ -670,7 +673,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         types::Scalar ref_Y_base_type(builder.subject().type(access_Y->data()).primitive_type());
         types::Pointer ref_Y_type(ref_Y_base_type);
         builder.add_container(ref_Y_container, ref_Y_type);
-        auto ref_Y_subset = symbolic::add(symbolic::mul(node_.output_channels(), n), symbolic::mul(out_channels, g));
+        auto ref_Y_subset = symbolic::add(symbolic::mul(node.output_channels(), n), symbolic::mul(out_channels, g));
         for (size_t i = 0; i < dims; i++) {
             ref_Y_subset = symbolic::mul(ref_Y_subset, out_shape[i]);
         }
@@ -684,10 +687,10 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         // Add GEMM node
         auto& gemm_block = builder.add_block(loop_g.root(), {}, block->debug_info());
         {
-            auto& alpha = builder.add_constant(gemm_block, "1.0", base_type, node_.debug_info());
-            auto& beta = builder.add_constant(gemm_block, "0.0", base_type, node_.debug_info());
+            auto& alpha = builder.add_constant(gemm_block, "1.0", base_type, node.debug_info());
+            auto& beta = builder.add_constant(gemm_block, "0.0", base_type, node.debug_info());
             auto& ref_W_access = builder.add_access(gemm_block, ref_W_container, access_W->debug_info());
-            auto& patches_access = builder.add_access(gemm_block, patches_container, node_.debug_info());
+            auto& patches_access = builder.add_access(gemm_block, patches_container, node.debug_info());
             auto& ref_Y_access_in = builder.add_access(gemm_block, ref_Y_container, access_Y->debug_info());
             auto& ref_Y_access_out = builder.add_access(gemm_block, ref_Y_container, access_Y->debug_info());
             symbolic::Expression gemm_m = out_channels;
@@ -695,11 +698,11 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
             symbolic::Expression gemm_k = in_channels;
             for (size_t i = 0; i < dims; i++) {
                 gemm_n = symbolic::mul(gemm_n, out_shape[i]);
-                gemm_k = symbolic::mul(gemm_k, node_.kernel_shape()[i]);
+                gemm_k = symbolic::mul(gemm_k, node.kernel_shape()[i]);
             }
             auto& libnode = builder.add_library_node<math::blas::GEMMNode>(
                 gemm_block,
-                node_.debug_info(),
+                node.debug_info(),
                 math::blas::ImplementationType_BLAS,
                 precision, // precision
                 math::blas::BLAS_Layout::RowMajor, // layout
@@ -712,13 +715,12 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
                 gemm_n, // ldb
                 gemm_n // ldc
             );
-            builder.add_computational_memlet(gemm_block, alpha, libnode, "__alpha", {}, base_type, node_.debug_info());
-            builder.add_computational_memlet(gemm_block, beta, libnode, "__beta", {}, base_type, node_.debug_info());
+            builder.add_computational_memlet(gemm_block, alpha, libnode, "__alpha", {}, base_type, node.debug_info());
+            builder.add_computational_memlet(gemm_block, beta, libnode, "__beta", {}, base_type, node.debug_info());
             builder
                 .add_computational_memlet(gemm_block, ref_W_access, libnode, "__A", {}, ref_W_type, iedge_W->debug_info());
-            builder.add_computational_memlet(
-                gemm_block, patches_access, libnode, "__B", {}, patches_type, node_.debug_info()
-            );
+            builder
+                .add_computational_memlet(gemm_block, patches_access, libnode, "__B", {}, patches_type, node.debug_info());
             builder.add_computational_memlet(
                 gemm_block, ref_Y_access_in, libnode, "__C", {}, ref_Y_type, oedge_Y->debug_info()
             );
@@ -776,10 +778,10 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
                 auto& Y_access_in = builder.add_access(bias_block, access_Y->data(), access_Y->debug_info());
                 auto& Y_access_out = builder.add_access(bias_block, access_Y->data(), access_Y->debug_info());
                 auto& tasklet = builder.add_tasklet(
-                    bias_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, node_.debug_info()
+                    bias_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, node.debug_info()
                 );
                 builder.add_computational_memlet(
-                    bias_block, Y_access_in, tasklet, "_in1", Y_subset, oedge_Y->base_type(), node_.debug_info()
+                    bias_block, Y_access_in, tasklet, "_in1", Y_subset, oedge_Y->base_type(), node.debug_info()
                 );
                 builder.add_computational_memlet(
                     bias_block, B_access, tasklet, "_in2", {B_subset}, iedge_B->base_type(), iedge_B->debug_info()
@@ -793,14 +795,14 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         // Add free for patches container
         auto& patches_free_block = builder.add_block(loop_g.root(), {}, block->debug_info());
         {
-            auto& patches_access_in = builder.add_access(patches_free_block, patches_container, node_.debug_info());
-            auto& patches_access_out = builder.add_access(patches_free_block, patches_container, node_.debug_info());
-            auto& libnode = builder.add_library_node<stdlib::FreeNode>(patches_free_block, node_.debug_info());
+            auto& patches_access_in = builder.add_access(patches_free_block, patches_container, node.debug_info());
+            auto& patches_access_out = builder.add_access(patches_free_block, patches_container, node.debug_info());
+            auto& libnode = builder.add_library_node<stdlib::FreeNode>(patches_free_block, node.debug_info());
             builder.add_computational_memlet(
-                patches_free_block, patches_access_in, libnode, "_ptr", {}, patches_type, node_.debug_info()
+                patches_free_block, patches_access_in, libnode, "_ptr", {}, patches_type, node.debug_info()
             );
             builder.add_computational_memlet(
-                patches_free_block, libnode, "_ptr", patches_access_out, {}, patches_type, node_.debug_info()
+                patches_free_block, libnode, "_ptr", patches_access_out, {}, patches_type, node.debug_info()
             );
         }
 
@@ -820,7 +822,7 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
         builder.remove_node(*block, *access_B);
     }
     builder.remove_node(*block, *access_Y);
-    builder.remove_node(*block, node_);
+    builder.remove_node(*block, node);
     builder.remove_child(*block_parent, block_index + 1);
 
     return true;
