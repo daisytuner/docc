@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include "../../../../../sdfg/tests/sdfg_debug_dump.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -664,6 +665,16 @@ TEST(BlockHoistingTest, For_VariantMemcpy) {
         builder.add_computational_memlet(block2, tasklet1, "_out", c, {symbolic::symbol("i")});
     }
 
+    // Loop invariant memcpy
+    auto& block3 = builder.add_block(body);
+    {
+        auto& C = builder.add_access(block3, "C");
+        auto& c = builder.add_access(block3, "c");
+        auto& libnode = builder.add_library_node<stdlib::MemcpyNode>(block3, DebugInfo(), symbolic::integer(10));
+        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
+        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
+    }
+
     // Apply pass
     analysis::AnalysisManager analysis_manager(sdfg);
     passes::BlockHoistingPass pass;
@@ -716,6 +727,16 @@ TEST(BlockHoistingTest, For_VariantMemmove) {
         builder.add_computational_memlet(block2, A, tasklet1, "_in1", {symbolic::symbol("i")});
         builder.add_computational_memlet(block2, B, tasklet1, "_in2", {symbolic::symbol("i")});
         builder.add_computational_memlet(block2, tasklet1, "_out", c, {symbolic::symbol("i")});
+    }
+
+    // Loop invariant memmove
+    auto& block3 = builder.add_block(body);
+    {
+        auto& C = builder.add_access(block3, "C");
+        auto& c = builder.add_access(block3, "c");
+        auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block3, DebugInfo(), symbolic::integer(10));
+        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
+        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
     }
 
     // Apply pass
@@ -950,9 +971,9 @@ TEST(BlockHoistingTest, IfElse_InvariantView_MultipleViews) {
         auto& a2 = builder.add_access(block3, "a2");
         auto& b = builder.add_access(block3, "B");
         auto& tasklet = builder.add_tasklet(block3, data_flow::TaskletCode::fp_add, {"_out"}, {"_in1", "_in2"});
-        builder.add_computational_memlet(block3, a1, tasklet, "_in1", {symbolic::integer(3)}, desc_ptr);
-        builder.add_computational_memlet(block3, a2, tasklet, "_in2", {symbolic::integer(3)}, desc_ptr);
-        builder.add_computational_memlet(block3, tasklet, "_out", b, {symbolic::integer(3)}, desc_ptr);
+        builder.add_computational_memlet(block3, a1, tasklet, "_in1", {symbolic::symbol("i")}, desc_ptr);
+        builder.add_computational_memlet(block3, a2, tasklet, "_in2", {symbolic::symbol("i")}, desc_ptr);
+        builder.add_computational_memlet(block3, tasklet, "_out", b, {symbolic::symbol("i")}, desc_ptr);
     }
 
     // Case 2: Branch invariant views
@@ -976,9 +997,9 @@ TEST(BlockHoistingTest, IfElse_InvariantView_MultipleViews) {
         auto& a2 = builder.add_access(block6, "a2");
         auto& b = builder.add_access(block6, "B");
         auto& tasklet = builder.add_tasklet(block6, data_flow::TaskletCode::fp_add, {"_out"}, {"_in1", "_in2"});
-        builder.add_computational_memlet(block6, a1, tasklet, "_in1", {symbolic::integer(5)}, desc_ptr);
-        builder.add_computational_memlet(block6, a2, tasklet, "_in2", {symbolic::integer(5)}, desc_ptr);
-        builder.add_computational_memlet(block6, tasklet, "_out", b, {symbolic::integer(5)}, desc_ptr);
+        builder.add_computational_memlet(block6, a1, tasklet, "_in1", {symbolic::symbol("i")}, desc_ptr);
+        builder.add_computational_memlet(block6, a2, tasklet, "_in2", {symbolic::symbol("i")}, desc_ptr);
+        builder.add_computational_memlet(block6, tasklet, "_out", b, {symbolic::symbol("i")}, desc_ptr);
     }
 
     // Apply pass
@@ -1373,21 +1394,18 @@ TEST(ExtendedBlockHoistingTest, Map_InvariantDataTransfers_CUDA) {
     auto& body = map_stmt.root();
 
     // Loop invariant memcpy
-    auto& block1 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block1, "C");
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block1,
-            DebugInfo(),
-            symbolic::integer(10),
-            symbolic::zero(),
-            offloading::DataTransferDirection::H2D,
-            offloading::BufferLifecycle::NO_CHANGE
-        );
-        builder.add_computational_memlet(block1, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block1, libnode1] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+        builder,
+        body,
+        "C",
+        "c",
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        desc_ptr,
+        {},
+        symbolic::integer(10),
+        symbolic::zero()
+    );
 
     // Loop variant computation
     auto& block2 = builder.add_block(body);
@@ -1402,21 +1420,18 @@ TEST(ExtendedBlockHoistingTest, Map_InvariantDataTransfers_CUDA) {
     }
 
     // Loop invariant memcpy
-    auto& block3 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block3, "C");
-        auto& c = builder.add_access(block3, "c");
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block3,
-            DebugInfo(),
-            symbolic::integer(10),
-            symbolic::zero(),
-            offloading::DataTransferDirection::D2H,
-            offloading::BufferLifecycle::NO_CHANGE
-        );
-        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block3, libnode3] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+        builder,
+        body,
+        "C",
+        "c",
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::NO_CHANGE,
+        desc_ptr,
+        {},
+        symbolic::integer(10),
+        symbolic::zero()
+    );
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -1715,25 +1730,33 @@ TEST(ExtendedBlockHoistingTest, waxpby_CUDA) {
     // Case 1
 
     {
-        auto& block = builder.add_block(case1);
-        auto& x = builder.add_access(block, "x");
-        auto& d_x = builder.add_access(block, d_x1);
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block, DebugInfo(), n, id, offloading::DataTransferDirection::H2D, offloading::BufferLifecycle::ALLOC
+        auto [block, libnode] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            case1,
+            "x",
+            d_x1,
+            offloading::DataTransferDirection::H2D,
+            offloading::BufferLifecycle::ALLOC,
+            desc,
+            {},
+            n,
+            id
         );
-        builder.add_computational_memlet(block, x, libnode, "_src", {}, desc);
-        builder.add_computational_memlet(block, libnode, "_dst", d_x, {}, d_desc);
     }
 
     {
-        auto& block = builder.add_block(case1);
-        auto& y = builder.add_access(block, "y");
-        auto& d_y = builder.add_access(block, d_y1);
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block, DebugInfo(), n, id, offloading::DataTransferDirection::H2D, offloading::BufferLifecycle::ALLOC
+        auto [block, libnode] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            case1,
+            "y",
+            d_y1,
+            offloading::DataTransferDirection::H2D,
+            offloading::BufferLifecycle::ALLOC,
+            desc,
+            {},
+            n,
+            id
         );
-        builder.add_computational_memlet(block, y, libnode, "_src", {}, desc);
-        builder.add_computational_memlet(block, libnode, "_dst", d_y, {}, d_desc);
     }
 
     {
@@ -1751,38 +1774,50 @@ TEST(ExtendedBlockHoistingTest, waxpby_CUDA) {
     }
 
     {
-        auto& block = builder.add_block(case1);
-        auto& w = builder.add_access(block, "w");
-        auto& d_w = builder.add_access(block, d_w1);
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block, DebugInfo(), n, id, offloading::DataTransferDirection::D2H, offloading::BufferLifecycle::FREE
+        auto [block, libnode] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            case1,
+            "w",
+            d_w1,
+            offloading::DataTransferDirection::D2H,
+            offloading::BufferLifecycle::FREE,
+            desc,
+            {},
+            n,
+            id
         );
-        builder.add_computational_memlet(block, d_w, libnode, "_src", {}, d_desc);
-        builder.add_computational_memlet(block, libnode, "_dst", w, {}, desc);
     }
 
     // Case 2
 
     {
-        auto& block = builder.add_block(case2);
-        auto& x = builder.add_access(block, "x");
-        auto& d_x = builder.add_access(block, d_x2);
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block, DebugInfo(), n, id, offloading::DataTransferDirection::H2D, offloading::BufferLifecycle::ALLOC
+        auto [block, libnode] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            case2,
+            "x",
+            d_x2,
+            offloading::DataTransferDirection::H2D,
+            offloading::BufferLifecycle::ALLOC,
+            desc,
+            {},
+            n,
+            id
         );
-        builder.add_computational_memlet(block, x, libnode, "_src", {}, desc);
-        builder.add_computational_memlet(block, libnode, "_dst", d_x, {}, d_desc);
     }
 
     {
-        auto& block = builder.add_block(case2);
-        auto& y = builder.add_access(block, "y");
-        auto& d_y = builder.add_access(block, d_y2);
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block, DebugInfo(), n, id, offloading::DataTransferDirection::H2D, offloading::BufferLifecycle::ALLOC
+        auto [block, libnode] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            case2,
+            "y",
+            d_y2,
+            offloading::DataTransferDirection::H2D,
+            offloading::BufferLifecycle::ALLOC,
+            desc,
+            {},
+            n,
+            id
         );
-        builder.add_computational_memlet(block, y, libnode, "_src", {}, desc);
-        builder.add_computational_memlet(block, libnode, "_dst", d_y, {}, d_desc);
     }
 
     {
@@ -1800,38 +1835,50 @@ TEST(ExtendedBlockHoistingTest, waxpby_CUDA) {
     }
 
     {
-        auto& block = builder.add_block(case2);
-        auto& w = builder.add_access(block, "w");
-        auto& d_w = builder.add_access(block, d_w2);
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block, DebugInfo(), n, id, offloading::DataTransferDirection::D2H, offloading::BufferLifecycle::FREE
+        auto [block, libnode] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            case2,
+            "w",
+            d_w2,
+            offloading::DataTransferDirection::D2H,
+            offloading::BufferLifecycle::FREE,
+            desc,
+            {},
+            n,
+            id
         );
-        builder.add_computational_memlet(block, d_w, libnode, "_src", {}, d_desc);
-        builder.add_computational_memlet(block, libnode, "_dst", w, {}, desc);
     }
 
     // Case 3
 
     {
-        auto& block = builder.add_block(case3);
-        auto& x = builder.add_access(block, "x");
-        auto& d_x = builder.add_access(block, d_x3);
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block, DebugInfo(), n, id, offloading::DataTransferDirection::H2D, offloading::BufferLifecycle::ALLOC
+        auto [block, libnode] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            case3,
+            "x",
+            d_x3,
+            offloading::DataTransferDirection::H2D,
+            offloading::BufferLifecycle::ALLOC,
+            desc,
+            {},
+            n,
+            id
         );
-        builder.add_computational_memlet(block, x, libnode, "_src", {}, desc);
-        builder.add_computational_memlet(block, libnode, "_dst", d_x, {}, d_desc);
     }
 
     {
-        auto& block = builder.add_block(case3);
-        auto& y = builder.add_access(block, "y");
-        auto& d_y = builder.add_access(block, d_y3);
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block, DebugInfo(), n, id, offloading::DataTransferDirection::H2D, offloading::BufferLifecycle::ALLOC
+        auto [block, libnode] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            case3,
+            "y",
+            d_y3,
+            offloading::DataTransferDirection::H2D,
+            offloading::BufferLifecycle::ALLOC,
+            desc,
+            {},
+            n,
+            id
         );
-        builder.add_computational_memlet(block, y, libnode, "_src", {}, desc);
-        builder.add_computational_memlet(block, libnode, "_dst", d_y, {}, d_desc);
     }
 
     {
@@ -1855,19 +1902,25 @@ TEST(ExtendedBlockHoistingTest, waxpby_CUDA) {
     }
 
     {
-        auto& block = builder.add_block(case3);
-        auto& w = builder.add_access(block, "w");
-        auto& d_w = builder.add_access(block, d_w2);
-        auto& libnode = builder.add_library_node<cuda::CUDADataOffloadingNode>(
-            block, DebugInfo(), n, id, offloading::DataTransferDirection::D2H, offloading::BufferLifecycle::FREE
+        auto [block, libnode] = offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            case3,
+            "w",
+            d_w2,
+            offloading::DataTransferDirection::D2H,
+            offloading::BufferLifecycle::FREE,
+            desc,
+            {},
+            n,
+            id
         );
-        builder.add_computational_memlet(block, d_w, libnode, "_src", {}, d_desc);
-        builder.add_computational_memlet(block, libnode, "_dst", w, {}, desc);
     }
 
     analysis::AnalysisManager analysis_manager(sdfg);
     passes::BlockHoistingPass pass;
     EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    dump_sdfg(sdfg, "1.hoisted");
 
     EXPECT_EQ(root.size(), 6);
     EXPECT_EQ(case1.size(), 1);

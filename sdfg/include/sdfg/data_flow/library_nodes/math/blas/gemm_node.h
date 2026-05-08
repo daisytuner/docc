@@ -45,6 +45,12 @@ public:
         symbolic::Expression ldc
     );
 
+    static constexpr int A_INPUT_IDX = 0;
+    static constexpr int B_INPUT_IDX = 1;
+    static constexpr int C_INPUT_IDX = 2;
+    static constexpr int ALPHA_INPUT_IDX = 3;
+    static constexpr int BETA_INPUT_IDX = 4;
+
     BLAS_Layout layout() const;
 
     BLAS_Transpose trans_a() const;
@@ -84,6 +90,16 @@ public:
         symbolic::Condition beta_non_zero,
         symbolic::Condition beta_non_ident
     ) const;
+
+    static symbolic::Expression calc_matrix_access_range(
+        const symbolic::Expression& outer_dim,
+        const symbolic::Expression& inner_dim,
+        const symbolic::Expression& line_size,
+        BLAS_Transpose trans,
+        BLAS_Layout layout
+    );
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 };
 
 class GEMMNodeSerializer : public serializer::LibraryNodeSerializer {
@@ -104,10 +120,10 @@ public:
         const GEMMNode& node
     );
 
-    void dispatch_code(
-        codegen::PrettyPrinter& stream,
-        codegen::PrettyPrinter& globals_stream,
-        codegen::CodeSnippetFactory& library_snippet_factory
+    void dispatch_code_with_edges(
+        codegen::CodegenOutput& out,
+        std::vector<codegen::DispatchInput>& inputs,
+        std::vector<codegen::DispatchOutput>& outputs
     ) override;
 };
 

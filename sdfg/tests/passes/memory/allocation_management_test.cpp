@@ -106,10 +106,10 @@ TEST(AllocationManagementPassTest, Free_Argument) {
 
     auto& block = builder.add_block(root);
     auto& access_node_in = builder.add_access(block, "arg0");
-    auto& access_node_out = builder.add_access(block, "arg0");
+
     auto& lib_node = builder.add_library_node<stdlib::FreeNode>(block, DebugInfo());
     builder.add_computational_memlet(block, access_node_in, lib_node, "_ptr", {}, opaque_desc, DebugInfo());
-    builder.add_computational_memlet(block, lib_node, "_ptr", access_node_out, {}, opaque_desc, DebugInfo());
+
 
     dump_sdfg(builder.subject(), "0-before");
 
@@ -140,10 +140,8 @@ TEST(AllocationManagementPassTest, Free_Transient) {
 
     auto& block = builder.add_block(root);
     auto& access_node_in = builder.add_access(block, "tmp");
-    auto& access_node_out = builder.add_access(block, "tmp");
     auto& lib_node = builder.add_library_node<stdlib::FreeNode>(block, DebugInfo());
     builder.add_computational_memlet(block, access_node_in, lib_node, "_ptr", {}, opaque_desc, DebugInfo());
-    builder.add_computational_memlet(block, lib_node, "_ptr", access_node_out, {}, opaque_desc, DebugInfo());
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::AllocationManagementPass pass_;

@@ -38,6 +38,7 @@
 
 #pragma once
 
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
 #include "sdfg/serializer/json_serializer.h"
@@ -76,14 +77,14 @@ inline data_flow::LibraryNodeCode LibraryNodeType_MatMul("ml::MatMul");
  */
 class MatMulNode : public TensorNode {
 private:
-    symbolic::MultiExpression shape_a_; ///< Shape of input tensor A [..., M, K]
-    symbolic::MultiExpression shape_b_; ///< Shape of input tensor B [..., K, N]
-    symbolic::MultiExpression strides_a_; ///< Strides for tensor A (elements per dimension)
-    symbolic::MultiExpression strides_b_; ///< Strides for tensor B (elements per dimension)
-    symbolic::Expression offset_a_; ///< Offset into tensor A (in elements)
-    symbolic::Expression offset_b_; ///< Offset into tensor B (in elements)
+    types::PrimitiveType fixed_quantization_;
+    TensorLayout layout_a_;
+    TensorLayout layout_b_;
+    // TensorLayout layout_y_; // we are not using that yet
 
+    /** @deprecated use TensorLayout **/
     static bool has_basic_strides(symbolic::MultiExpression shape, symbolic::MultiExpression strides);
+    /** @deprecated use TensorLayout **/
     static bool has_transposed_strides(symbolic::MultiExpression shape, symbolic::MultiExpression strides);
 
 public:
@@ -93,61 +94,21 @@ public:
      * @param debug_info Debug information
      * @param vertex Graph vertex
      * @param parent Parent dataflow graph
-     * @param shape_a Shape of input tensor A [..., M, K]
-     * @param shape_b Shape of input tensor B [..., K, N]
-     * @param strides_a Strides for tensor A (defaults to row-major contiguous)
-     * @param strides_b Strides for tensor B (defaults to row-major contiguous)
-     * @param offset_a Offset into tensor A in elements (defaults to 0)
-     * @param offset_b Offset into tensor B in elements (defaults to 0)
      */
     MatMulNode(
         size_t element_id,
         const DebugInfo& debug_info,
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
-        const symbolic::MultiExpression& shape_a,
-        const symbolic::MultiExpression& shape_b,
-        const symbolic::MultiExpression& strides_a = {},
-        const symbolic::MultiExpression& strides_b = {},
-        symbolic::Expression offset_a = symbolic::integer(0),
-        symbolic::Expression offset_b = symbolic::integer(0)
+        const TensorLayout& layout_a,
+        const TensorLayout& layout_b,
+        types::PrimitiveType quantization = QUANTIZATION_MATCH_INPUTS
     );
 
-    /**
-     * @brief Get the shape of input tensor A
-     * @return Shape vector for tensor A
-     */
-    const symbolic::MultiExpression& shape_a() const { return shape_a_; }
+    static auto constexpr Y_INPUT_IDX = 0;
+    static auto constexpr A_INPUT_IDX = 1;
+    static auto constexpr B_INPUT_IDX = 2;
 
-    /**
-     * @brief Get the shape of input tensor B
-     * @return Shape vector for tensor B
-     */
-    const symbolic::MultiExpression& shape_b() const { return shape_b_; }
-
-    /**
-     * @brief Get the strides for tensor A
-     * @return Strides vector for tensor A
-     */
-    const symbolic::MultiExpression& strides_a() const { return strides_a_; }
-
-    /**
-     * @brief Get the strides for tensor B
-     * @return Strides vector for tensor B
-     */
-    const symbolic::MultiExpression& strides_b() const { return strides_b_; }
-
-    /**
-     * @brief Get the offset for tensor A
-     * @return Offset expression for tensor A
-     */
-    symbolic::Expression offset_a() const { return offset_a_; }
-
-    /**
-     * @brief Get the offset for tensor B
-     * @return Offset expression for tensor B
-     */
-    symbolic::Expression offset_b() const { return offset_b_; }
 
     /**
      * @brief Get the M dimension (rows of A, rows of output)
@@ -160,6 +121,29 @@ public:
      * @return N dimension expression
      */
     symbolic::Expression n() const;
+
+    /**
+     * type of the math calculations. May be inferred or fixed.
+     */
+    types::PrimitiveType quantization(const data_flow::DataFlowGraph& dataflow) const;
+
+    /**
+     * Same result as quantization if it matches all the inputs. None if its impossible to use the same types
+     * for input & output and math
+     */
+    std::optional<types::PrimitiveType> uniform_quantization(const data_flow::DataFlowGraph& dataflow) const;
+
+    /**
+     * configuration of the type for the math calculations, independent of current input types etc.
+     * 'Void' indicates auto-inferring from inputs
+     */
+    types::PrimitiveType fixed_quantization() const;
+
+    void set_fixed_quantization(const types::PrimitiveType quant);
+
+    const TensorLayout& layout_a() const;
+
+    const TensorLayout& layout_b() const;
 
     /**
      * @brief Get the K dimension (columns of A, rows of B - contraction dimension)
@@ -192,6 +176,8 @@ public:
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 
     std::string toStr() const override;
+
+    symbolic::Expression flop() const override;
 
     bool supports_integer_types() const override { return true; }
 };

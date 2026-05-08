@@ -803,17 +803,17 @@ bool BlockHoisting::equal_offloading_nodes(
     // Check in/out degree
     auto& dfg1 = block1.dataflow();
     auto& dfg2 = block2.dataflow();
-    if (dfg1.in_degree(*offloading_node1) != dfg1.in_degree(*offloading_node1)) {
+    if (dfg1.in_degree(*offloading_node1) != dfg2.in_degree(*offloading_node2)) {
         return false;
     }
-    if (dfg2.in_degree(*offloading_node2) != dfg2.in_degree(*offloading_node2)) {
+    if (dfg1.out_degree(*offloading_node1) != dfg2.out_degree(*offloading_node2)) {
         return false;
     }
 
     // In edges:
-    if (offloading_node1->has_transfer() || !offloading_node1->is_alloc()) {
-        auto* iedge1 = &*dfg1.in_edges(*offloading_node1).begin();
-        auto* iedge2 = &*dfg2.in_edges(*offloading_node2).begin();
+    for (int i = 0; i < offloading_node1->inputs().size(); i++) {
+        auto* iedge1 = dfg1.in_edge_for_connector(*offloading_node1, offloading_node1->input(i));
+        auto* iedge2 = dfg2.in_edge_for_connector(*offloading_node2, offloading_node2->input(i));
         if (!iedge1 || !iedge2) {
             return false;
         }
@@ -833,41 +833,49 @@ bool BlockHoisting::equal_offloading_nodes(
             }
         }
 
-        // Compare containers
-        if (offloading_node1->is_h2d() || (!offloading_node1->has_transfer() && offloading_node1->is_free())) {
-            auto& src1 = static_cast<data_flow::AccessNode&>(iedge1->src());
-            auto& src2 = static_cast<data_flow::AccessNode&>(iedge2->src());
-            if (src1.data() != src2.data()) {
-                return false;
-            }
+        auto& src1 = static_cast<const data_flow::AccessNode&>(iedge1->src());
+        auto& src2 = static_cast<const data_flow::AccessNode&>(iedge2->src());
+        if (src1.data() != src2.data()) {
+            return false;
         }
     }
 
     // Out edges:
-    auto& oedge1 = *dfg1.out_edges(*offloading_node1).begin();
-    auto& oedge2 = *dfg2.out_edges(*offloading_node2).begin();
-
-    // Compare types
-    if (oedge1.type() != oedge2.type()) {
-        return false;
-    }
-
-    // Compare subsets
-    if (oedge1.subset().size() != oedge2.subset().size()) {
-        return false;
-    }
-    for (size_t i = 0; i < oedge1.subset().size(); i++) {
-        if (!symbolic::eq(oedge1.subset().at(i), oedge2.subset().at(i))) {
+    for (int i = 0; i < offloading_node1->outputs().size(); i++) {
+        auto oedges1 = dfg1.out_edges_for_connector(*offloading_node1, offloading_node1->output(0));
+        auto oedges2 = dfg2.out_edges_for_connector(*offloading_node2, offloading_node2->output(0));
+        if (oedges1.size() != oedges2.size()) {
             return false;
         }
-    }
+        for (int j = 0; j < oedges1.size(); j++) {
+            auto oedge1 = oedges1.at(j);
+            auto oedge2 = oedges2.at(j);
 
-    // Compare containers
-    if (offloading_node1->is_d2h() || (!offloading_node1->has_transfer() && offloading_node1->is_free())) {
-        auto& dst1 = static_cast<data_flow::AccessNode&>(oedge1.dst());
-        auto& dst2 = static_cast<data_flow::AccessNode&>(oedge2.dst());
-        if (dst1.data() != dst2.data()) {
-            return false;
+            if (oedge1 && oedge2) {
+                // Compare types
+                if (oedge1->type() != oedge2->type()) {
+                    return false;
+                }
+
+                // Compare subsets
+                if (oedge1->subset().size() != oedge2->subset().size()) {
+                    return false;
+                }
+                for (size_t k = 0; k < oedge1->subset().size(); k++) {
+                    if (!symbolic::eq(oedge1->subset().at(k), oedge2->subset().at(k))) {
+                        return false;
+                    }
+                }
+
+                // Compare containers
+                auto& dst1 = static_cast<const data_flow::AccessNode&>(oedge1->dst());
+                auto& dst2 = static_cast<const data_flow::AccessNode&>(oedge2->dst());
+                if (dst1.data() != dst2.data()) {
+                    return false;
+                }
+            } else if (!oedge1 ^ !oedge2) {
+                return false;
+            }
         }
     }
 

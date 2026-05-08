@@ -461,7 +461,7 @@ public:
         auto res = dataflow.nodes_.insert({vertex, std::move(node)});
 
         return static_cast<data_flow::LibraryNode&>(*(res.first->second));
-    };
+    }
 
     data_flow::DataFlowNode& copy_node(structured_control_flow::Block& block, const data_flow::DataFlowNode& node) {
         auto& dataflow = block.dataflow();
@@ -508,6 +508,8 @@ public:
         const data_flow::DataFlowNode& node,
         const std::unordered_set<const data_flow::DataFlowNode*>& ignore_side_effects
     );
+
+    int clear_ptr_borrow_edge(const Block& block, const data_flow::Memlet* edge);
 
     void merge_siblings(data_flow::AccessNode& in_node);
 };

@@ -72,6 +72,10 @@ EdgeRemoveOption AccessNode::can_remove_out_edge(const data_flow::DataFlowGraph&
     return EdgeRemoveOption::Trivially;
 }
 
+EdgeRemoveOption AccessNode::can_remove_in_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const {
+    return (graph.out_degree(*this) == 0) ? EdgeRemoveOption::RemoveNodeAfter : EdgeRemoveOption::Trivially;
+}
+
 namespace {
 bool is_special_constant(const std::string& data) {
     static const std::unordered_set<std::string> constants = {

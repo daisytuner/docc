@@ -309,20 +309,6 @@ void Einsum2Gemm::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
             );
         }
     }
-    for (auto& oedge : dfg.out_edges(this->einsum_node_)) {
-        if (oedge.src_conn() == this->einsum_node_.output(0)) {
-            builder.add_memlet(
-                *block,
-                libnode,
-                "__C",
-                oedge.dst(),
-                oedge.dst_conn(),
-                oedge.subset(),
-                oedge.base_type(),
-                oedge.debug_info()
-            );
-        }
-    }
 
     // Remove the old memlets
     while (dfg.in_edges(this->einsum_node_).begin() != dfg.in_edges(this->einsum_node_).end()) {
@@ -331,7 +317,9 @@ void Einsum2Gemm::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
     }
     while (dfg.out_edges(this->einsum_node_).begin() != dfg.out_edges(this->einsum_node_).end()) {
         auto& oedge = *dfg.out_edges(this->einsum_node_).begin();
+        auto& dst = oedge.dst();
         builder.remove_memlet(*block, oedge);
+        builder.remove_node(*block, dst);
     }
 
     // Add constant scalars alpha and beta (if needed)

@@ -345,10 +345,8 @@ void SDFGTranslator::handle_frees(std::string return_container, const ::sdfg::De
         auto& container_type = this->builder_.subject().type(container);
         auto& block = this->builder_.add_block(this->insertion_point(), {}, deb_info);
         auto& ptr_in = this->builder_.add_access(block, container, deb_info);
-        auto& ptr_out = this->builder_.add_access(block, container, deb_info);
         auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::FreeNode>(block, deb_info);
         this->builder_.add_computational_memlet(block, ptr_in, libnode, "_ptr", {}, container_type, deb_info);
-        this->builder_.add_computational_memlet(block, libnode, "_ptr", ptr_out, {}, container_type, deb_info);
     }
 }
 

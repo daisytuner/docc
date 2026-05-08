@@ -233,14 +233,11 @@ DotNodeDispatcher_BLAS::DotNodeDispatcher_BLAS(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void DotNodeDispatcher_BLAS::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void DotNodeDispatcher_BLAS::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
-    stream << "{" << std::endl;
-    stream.setIndent(stream.indent() + 4);
-
     auto& dot_node = static_cast<const DotNode&>(this->node_);
 
     sdfg::types::Scalar base_type(types::PrimitiveType::Void);
@@ -259,25 +256,25 @@ void DotNodeDispatcher_BLAS::dispatch_code(
             throw std::runtime_error("Invalid BLAS_Precision value");
     }
 
-    library_snippet_factory.require_dependency(BLASLibDependency::instance());
+    out.library_snippet_factory.require_dependency(BLASLibDependency::instance());
 
-    stream << dot_node.outputs().at(0) << " = ";
-    stream << "cblas_" << BLAS_Precision_to_string(precision) << "dot(";
-    stream.setIndent(stream.indent() + 4);
-    stream << this->language_extension_.expression(dot_node.n());
-    stream << ", ";
-    stream << dot_node.inputs().at(0);
-    stream << ", ";
-    stream << this->language_extension_.expression(dot_node.incx());
-    stream << ", ";
-    stream << dot_node.inputs().at(1);
-    stream << ", ";
-    stream << this->language_extension_.expression(dot_node.incy());
-    stream.setIndent(stream.indent() - 4);
-    stream << ");" << std::endl;
+    auto& output = outputs.at(0);
+    pre_allocate_output(out, output, dot_node.output(0));
 
-    stream.setIndent(stream.indent() - 4);
-    stream << "}" << std::endl;
+    out.stream << *output.local_name << " = ";
+    out.stream << "cblas_" << BLAS_Precision_to_string(precision) << "dot(";
+    out.stream.changeIndent(+4);
+    out.stream << this->language_extension_.expression(dot_node.n());
+    out.stream << ", ";
+    out.stream << inputs.at(0).expr;
+    out.stream << ", ";
+    out.stream << this->language_extension_.expression(dot_node.incx());
+    out.stream << ", ";
+    out.stream << inputs.at(1).expr;
+    out.stream << ", ";
+    out.stream << this->language_extension_.expression(dot_node.incy());
+    out.stream.changeIndent(-4);
+    out.stream << ");" << std::endl;
 }
 
 

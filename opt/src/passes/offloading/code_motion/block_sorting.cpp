@@ -289,10 +289,14 @@ std::pair<int, std::string> BlockSortingPass::get_prio_and_order(structured_cont
     if (this->is_libnode_block(*block)) {
         auto* libnode = *block->dataflow().library_nodes().begin();
         if (dynamic_cast<stdlib::AllocaNode*>(libnode) || dynamic_cast<stdlib::CallocNode*>(libnode) ||
-            dynamic_cast<stdlib::FreeNode*>(libnode) || dynamic_cast<stdlib::MallocNode*>(libnode)) {
+            dynamic_cast<stdlib::MallocNode*>(libnode)) {
             auto& oedge = *block->dataflow().out_edges(*libnode).begin();
             auto& dst = static_cast<data_flow::AccessNode&>(oedge.dst());
             return {300, dst.data()};
+        } else if (dynamic_cast<stdlib::FreeNode*>(libnode)) {
+            auto& iedge = *block->dataflow().in_edge_for_connector(*libnode, libnode->input(0));
+            auto& src = static_cast<const data_flow::AccessNode&>(iedge.src());
+            return {300, src.data()};
         } else if (dynamic_cast<stdlib::MemsetNode*>(libnode)) {
             auto& oedge = *block->dataflow().out_edges(*libnode).begin();
             auto& dst = static_cast<data_flow::AccessNode&>(oedge.dst());

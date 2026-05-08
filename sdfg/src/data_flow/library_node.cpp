@@ -45,5 +45,9 @@ EdgeRemoveOption LibraryNode::can_remove_out_edge(const data_flow::DataFlowGraph
     }
 }
 
+EdgeRemoveOption LibraryNode::can_remove_in_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const {
+    return EdgeRemoveOption::NotRemovable;
+}
+
 } // namespace data_flow
 } // namespace sdfg

@@ -4,6 +4,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -69,7 +70,6 @@ TEST(BlasTest, GemmNode) {
     auto& input_b_node = builder.add_access(block, "arr_b");
     auto c_var_name = "output";
     auto& dummy_input_node = builder.add_access(block, c_var_name);
-    auto& output_node = builder.add_access(block, c_var_name);
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
@@ -94,13 +94,17 @@ TEST(BlasTest, GemmNode) {
     builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", output_node, {symbolic::integer(0)}, arr_res_type);
 
-    EXPECT_EQ(block.dataflow().nodes().size(), 7);
+    EXPECT_EQ(block.dataflow().nodes().size(), 6);
+
+    dump_sdfg(sdfg, "0.init");
 
     builder.subject().validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+
+    dump_sdfg(sdfg, "1.expand");
+
     builder.subject().validate();
 
     EXPECT_EQ(sdfg.root().size(), 1);
@@ -182,7 +186,6 @@ TEST(BlasTest, GemmNode_TN) {
     auto& input_b_node = builder.add_access(block, "arr_b");
     auto c_var_name = "output";
     auto& dummy_input_node = builder.add_access(block, c_var_name);
-    auto& output_node = builder.add_access(block, c_var_name);
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
@@ -207,7 +210,6 @@ TEST(BlasTest, GemmNode_TN) {
     builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", output_node, {symbolic::integer(0)}, arr_res_type);
 
     builder.subject().validate();
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -242,7 +244,6 @@ TEST(BlasTest, GemmNode_NT) {
     auto& input_b_node = builder.add_access(block, "arr_b");
     auto c_var_name = "output";
     auto& dummy_input_node = builder.add_access(block, c_var_name);
-    auto& output_node = builder.add_access(block, c_var_name);
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
@@ -267,7 +268,6 @@ TEST(BlasTest, GemmNode_NT) {
     builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", output_node, {symbolic::integer(0)}, arr_res_type);
 
     builder.subject().validate();
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -302,7 +302,6 @@ TEST(BlasTest, GemmNode_TT) {
     auto& input_b_node = builder.add_access(block, "arr_b");
     auto c_var_name = "output";
     auto& dummy_input_node = builder.add_access(block, c_var_name);
-    auto& output_node = builder.add_access(block, c_var_name);
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
@@ -327,7 +326,6 @@ TEST(BlasTest, GemmNode_TT) {
     builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", output_node, {symbolic::integer(0)}, arr_res_type);
 
     builder.subject().validate();
     analysis::AnalysisManager analysis_manager(sdfg);

@@ -1647,7 +1647,27 @@ int StructuredSDFGBuilder::clear_node(
     } while (!queue.empty());
 
     return removed_nodes;
-};
+}
+
+int StructuredSDFGBuilder::clear_ptr_borrow_edge(Block& block, const data_flow::Memlet& edge) {
+    auto& graph = block.dataflow();
+    auto& dst = edge.dst();
+
+    auto edge_removal = dst.can_remove_in_edge(graph, &edge);
+    if (edge_removal == data_flow::EdgeRemoveOption::Trivially) {
+        remove_memlet(block, edge);
+        return 1;
+    } else if (edge_removal == data_flow::EdgeRemoveOption::RemoveNodeAfter) {
+        remove_memlet(block, edge);
+        return 1 + clear_node(block, dst);
+    } else if (edge_removal == data_flow::EdgeRemoveOption::RequiresUpdate) {
+        remove_memlet(block, edge);
+        const_cast<data_flow::DataFlowNode&>(dst).update_edge_removed(edge.dst_conn());
+        return 1;
+    } else if (edge_removal == data_flow::EdgeRemoveOption::NotRemovable) {
+        return 0;
+    }
+}
 
 void StructuredSDFGBuilder::add_dataflow(const data_flow::DataFlowGraph& from, Block& to) {
     auto& to_dataflow = to.dataflow();

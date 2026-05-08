@@ -54,7 +54,7 @@ TEST(LoadConstNodeTest, BuildInMemory2Code) {
 
     auto expected_main = R"a(void* result;
     {
-        float *_out = (reinterpret_cast<float *>(result));
+        float *_out;
 
         _out = const_cast<float *>(reinterpret_cast<const float *>(&daisy_load_const_3[0]));
 

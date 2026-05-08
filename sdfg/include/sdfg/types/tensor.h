@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg {
@@ -10,13 +11,19 @@ class Scalar;
 class Tensor : public IType {
 private:
     std::unique_ptr<Scalar> element_type_;
-    symbolic::MultiExpression shape_;
-    symbolic::MultiExpression strides_;
-    symbolic::Expression offset_;
+    math::tensor::TensorLayout layout_;
 
 public:
+    /**
+     * @deprecated use TensorLayout
+     */
     Tensor(const Scalar& element_type, const symbolic::MultiExpression& shape);
 
+    Tensor(const Scalar& element_type, const math::tensor::TensorLayout& layout);
+
+    /**
+     * @deprecated use TensorLayout
+     */
     Tensor(
         const Scalar& element_type,
         const symbolic::MultiExpression& shape,
@@ -24,6 +31,17 @@ public:
         const symbolic::Expression& offset = symbolic::zero()
     );
 
+    Tensor(
+        StorageType storage_type,
+        size_t alignment,
+        const std::string& initializer,
+        const Scalar& element_type,
+        const math::tensor::TensorLayout& layout
+    );
+
+    /**
+     * @deprecated use TensorLayout
+     */
     Tensor(
         StorageType storage_type,
         size_t alignment,
@@ -42,10 +60,21 @@ public:
 
     const Scalar& element_type() const;
 
+    const math::tensor::TensorLayout& layout() const;
+
+    /**
+     * @deprecated use TensorLayout
+     */
     const symbolic::MultiExpression& shape() const;
 
+    /**
+     * @deprecated use TensorLayout
+     */
     const symbolic::MultiExpression& strides() const;
 
+    /**
+     * @deprecated use TensorLayout
+     */
     const symbolic::Expression& offset() const;
 
     symbolic::Expression total_elements() const;

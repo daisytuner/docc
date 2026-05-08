@@ -49,16 +49,19 @@ void CUBLASDataTransferExtraction::create_allocate(
     const types::Pointer& type
 ) {
     auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    auto& d_cont = builder.add_access(alloc_block, device_container);
-    auto& alloc_node = builder.add_library_node<CUDADataOffloadingNode>(
+    offloading::add_offloading_node<CUDADataOffloadingNode>(
+        builder,
         alloc_block,
+        device_container,
+        device_container,
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::ALLOC,
+        type,
+        type,
         this->blas_node_.debug_info(),
         size,
-        symbolic::zero(),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC
+        symbolic::zero()
     );
-    builder.add_computational_memlet(alloc_block, alloc_node, "_ret", d_cont, {}, type);
 }
 
 void CUBLASDataTransferExtraction::create_deallocate(
@@ -69,18 +72,19 @@ void CUBLASDataTransferExtraction::create_deallocate(
     const types::Pointer& type
 ) {
     auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    auto& d_cont_in = builder.add_access(dealloc_block, device_container);
-    auto& d_cont_out = builder.add_access(dealloc_block, device_container);
-    auto& dealloc_node = builder.add_library_node<CUDADataOffloadingNode>(
+    offloading::add_offloading_node<CUDADataOffloadingNode>(
+        builder,
         dealloc_block,
+        device_container,
+        device_container,
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::FREE,
+        type,
+        type,
         this->blas_node_.debug_info(),
         SymEngine::null,
-        symbolic::zero(),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::FREE
+        symbolic::zero()
     );
-    builder.add_computational_memlet(dealloc_block, d_cont_in, dealloc_node, "_ptr", {}, type);
-    builder.add_computational_memlet(dealloc_block, dealloc_node, "_ptr", d_cont_out, {}, type);
 }
 
 void CUBLASDataTransferExtraction::create_copy_to_device(
@@ -93,18 +97,19 @@ void CUBLASDataTransferExtraction::create_copy_to_device(
     const types::Pointer& type
 ) {
     auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    auto& cont = builder.add_access(copy_block, host_container);
-    auto& d_cont = builder.add_access(copy_block, device_container);
-    auto& copy_node = builder.add_library_node<CUDADataOffloadingNode>(
+    offloading::add_offloading_node<CUDADataOffloadingNode>(
+        builder,
         copy_block,
+        host_container,
+        device_container,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        type,
+        type,
         this->blas_node_.debug_info(),
         size,
-        symbolic::zero(),
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::zero()
     );
-    builder.add_computational_memlet(copy_block, cont, copy_node, "_src", {}, type);
-    builder.add_computational_memlet(copy_block, copy_node, "_dst", d_cont, {}, type);
 }
 
 void CUBLASDataTransferExtraction::create_copy_from_device(
@@ -117,18 +122,19 @@ void CUBLASDataTransferExtraction::create_copy_from_device(
     const types::Pointer& type
 ) {
     auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    auto& cont = builder.add_access(copy_block, host_container);
-    auto& d_cont = builder.add_access(copy_block, device_container);
-    auto& copy_node = builder.add_library_node<CUDADataOffloadingNode>(
+    offloading::add_offloading_node<CUDADataOffloadingNode>(
+        builder,
         copy_block,
+        host_container,
+        device_container,
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::NO_CHANGE,
+        type,
+        type,
         this->blas_node_.debug_info(),
         size,
-        symbolic::zero(),
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::zero()
     );
-    builder.add_computational_memlet(copy_block, d_cont, copy_node, "_src", {}, type);
-    builder.add_computational_memlet(copy_block, copy_node, "_dst", cont, {}, type);
 }
 
 void CUBLASDataTransferExtraction::create_copy_to_device_with_allocation(
@@ -141,18 +147,19 @@ void CUBLASDataTransferExtraction::create_copy_to_device_with_allocation(
     const types::Pointer& type
 ) {
     auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    auto& cont = builder.add_access(copy_block, host_container);
-    auto& d_cont = builder.add_access(copy_block, device_container);
-    auto& copy_node = builder.add_library_node<CUDADataOffloadingNode>(
+    offloading::add_offloading_node<CUDADataOffloadingNode>(
+        builder,
         copy_block,
+        host_container,
+        device_container,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::ALLOC,
+        type,
+        type,
         this->blas_node_.debug_info(),
         size,
-        symbolic::zero(),
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::ALLOC
+        symbolic::zero()
     );
-    builder.add_computational_memlet(copy_block, cont, copy_node, "_src", {}, type);
-    builder.add_computational_memlet(copy_block, copy_node, "_dst", d_cont, {}, type);
 }
 
 void CUBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
@@ -165,18 +172,19 @@ void CUBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
     const types::Pointer& type
 ) {
     auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    auto& cont = builder.add_access(copy_block, host_container);
-    auto& d_cont = builder.add_access(copy_block, device_container);
-    auto& copy_node = builder.add_library_node<CUDADataOffloadingNode>(
+    offloading::add_offloading_node<CUDADataOffloadingNode>(
+        builder,
         copy_block,
+        host_container,
+        device_container,
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::FREE,
+        type,
+        type,
         this->blas_node_.debug_info(),
         size,
-        symbolic::zero(),
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::FREE
+        symbolic::zero()
     );
-    builder.add_computational_memlet(copy_block, d_cont, copy_node, "_src", {}, type);
-    builder.add_computational_memlet(copy_block, copy_node, "_dst", cont, {}, type);
 }
 
 CUBLASDataTransferExtraction::CUBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
@@ -286,20 +294,16 @@ void CUBLASDataTransferExtraction::
         this->create_copy_to_device_with_allocation(
             builder, *sequence, *block, in_access.at("__B").data(), dB, b_size, type
         );
-        this->create_copy_to_device_with_allocation(
-            builder, *sequence, *block, in_access.at("__C").data(), dC, c_size, type
-        );
+        auto c_container = in_access.at("__C").data();
+        this->create_copy_to_device_with_allocation(builder, *sequence, *block, c_container, dC, c_size, type);
 
-        this->create_copy_from_device_with_deallocation(
-            builder, *sequence, *block, out_access.at("__C").data(), dC, c_size, type
-        );
+        this->create_copy_from_device_with_deallocation(builder, *sequence, *block, c_container, dC, c_size, type);
         this->create_deallocate(builder, *sequence, *block, dA, type);
         this->create_deallocate(builder, *sequence, *block, dB, type);
 
         in_access.at("__A").data(dA);
         in_access.at("__B").data(dB);
         in_access.at("__C").data(dC);
-        out_access.at("__C").data(dC);
     } else {
         throw InvalidSDFGException("CUBLASDataTransferExtraction: Unsupported BLAS type");
     }

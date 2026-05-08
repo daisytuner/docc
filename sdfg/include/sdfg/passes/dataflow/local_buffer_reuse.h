@@ -240,7 +240,7 @@ private:
     // Find free block for a malloc container (returns nullptr if not found or constraints not met)
     structured_control_flow::Block* find_free_block(const std::string& malloc_container, analysis::Users& users_analysis) {
         auto users = users_analysis.uses(malloc_container);
-        if (users.size() != 4) { // malloc (2 accesses) + ref (2 accesses) - but uses counts access nodes
+        if (users.size() != 3) { // malloc (2 accesses) + ref (2 accesses) - but uses counts access nodes
             return nullptr;
         }
 

@@ -136,19 +136,11 @@ bool AllocationManagement::
 
     // Retrieve allocated container
     auto& sdfg = this->builder_.subject();
-    auto& oedge = *graph.out_edges(library_node).begin();
-    auto& dst = static_cast<data_flow::AccessNode&>(oedge.dst());
-    const std::string& container = dst.data();
+    auto& iedge = *graph.in_edge_for_connector(library_node, library_node.input(0));
+    auto& src = static_cast<const data_flow::AccessNode&>(iedge.src());
+    const std::string& container = src.data();
     auto& type = sdfg.type(container);
     if (type.type_id() != types::TypeID::Pointer) {
-        return false;
-    }
-
-    // Limitations
-    if (graph.out_degree(dst) != 0) {
-        return false;
-    }
-    if (graph.in_degree(dst) != 1) {
         return false;
     }
 
@@ -163,7 +155,8 @@ bool AllocationManagement::
     auto& users_analysis = this->analysis_manager_.get<analysis::Users>();
     auto& dominance_analysis = this->analysis_manager_.get<analysis::DominanceAnalysis>();
     auto uses = users_analysis.uses(container);
-    analysis::User* deallocation_user = users_analysis.get_user(container, &dst, analysis::Use::WRITE);
+    analysis::User* deallocation_user =
+        users_analysis.get_user(container, const_cast<data_flow::AccessNode*>(&src), analysis::Use::READ);
     for (auto& use : uses) {
         if (use == deallocation_user) {
             continue;
@@ -178,9 +171,9 @@ bool AllocationManagement::
 
 void AllocationManagement::apply_deallocation(data_flow::DataFlowGraph& graph, data_flow::LibraryNode& library_node) {
     auto& sdfg = this->builder_.subject();
-    auto& oedge = *graph.out_edges(library_node).begin();
-    auto& dst = static_cast<data_flow::AccessNode&>(oedge.dst());
-    const std::string& container = dst.data();
+    auto& iedge = *graph.in_edge_for_connector(library_node, library_node.input(0));
+    auto& src = static_cast<const data_flow::AccessNode&>(iedge.src());
+    const std::string& container = src.data();
 
     // Update storage type
     auto& type = sdfg.type(container);
@@ -198,7 +191,7 @@ void AllocationManagement::apply_deallocation(data_flow::DataFlowGraph& graph, d
 
     // Remove allocation node
     auto& block = static_cast<structured_control_flow::Block&>(*graph.get_parent());
-    builder_.clear_access_node_legacy(block, dst);
+    builder_.clear_node(block, library_node);
 }
 
 bool AllocationManagement::accept(structured_control_flow::Block& node) {

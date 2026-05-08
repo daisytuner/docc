@@ -26,12 +26,12 @@ public:
         const DebugInfo& debug_info,
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
-        bool blocking,
-        std::string device_handle,
-        symbolic::Expression size,
-        symbolic::Expression page_size,
         offloading::DataTransferDirection transfer_direction,
         offloading::BufferLifecycle allocation_handling,
+        symbolic::Expression size,
+        bool blocking,
+        std::string device_handle,
+        symbolic::Expression page_size,
         int cq_no = 0
     );
 
@@ -135,7 +135,7 @@ public:
     virtual codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
-class TTDataOffloadingNodeSerializer : public serializer::LibraryNodeSerializer {
+class TTDataOffloadingNodeSerializer : public offloading::DataOffloadingNodeSerializer {
 public:
     nlohmann::json serialize(const sdfg::data_flow::LibraryNode& library_node) override;
 

@@ -70,10 +70,6 @@ bool DataTransferMinimizationPass::eliminate_redundant_d2h(
             builder.remove_memlet(*d2h_block, *d2h.host_access);
             builder.remove_node(*d2h_block, *d2h.host_data);
             d2h.offload_node->remove_d2h();
-            auto& free_write = builder.add_access(*d2h_block, copy_out_device_container, copy_out_dst_debinfo);
-            builder.add_computational_memlet(
-                *d2h_block, *d2h.offload_node, out_conn, free_write, {}, *access_type, copy_out_dst_debinfo
-            );
         } else { // remove it entirely
             builder.clear_code_node_legacy(*d2h_block, *d2h.offload_node);
         }

@@ -3,6 +3,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -430,12 +431,15 @@ TEST(ConvNodeTest, Conv2D_SimpleExpansion) {
     builder.add_computational_memlet(block, weights_node, conv_node, "W", {}, desc_tensor_weights, block.debug_info());
     builder.add_computational_memlet(block, conv_node, "Y", output_node, {}, desc_tensor_output, block.debug_info());
 
+    dump_sdfg(sdfg, "0.init");
     // Validate the SDFG before expansion
     EXPECT_NO_THROW(sdfg.validate());
 
     // Try to expand the node - expansion should now succeed for 2D convolution
     analysis::AnalysisManager analysis_manager(sdfg);
     bool expanded = conv_node.expand(builder, analysis_manager);
+
+    dump_sdfg(sdfg, "1.expanded");
 
     // Expansion should now be implemented and return true
     EXPECT_TRUE(expanded);

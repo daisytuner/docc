@@ -765,7 +765,6 @@ void PyStructuredSDFGBuilder::add_gemm(
     handle_access(A, type_a, a_subset, "__A", false);
     handle_access(B, type_b, b_subset, "__B", false);
     handle_access(C, type_c, c_subset, "__C", false);
-    handle_access(C, type_c, c_subset, "__C", true);
 
     auto handle_scalar = [&](const std::string& val, const std::string& port) {
         try {

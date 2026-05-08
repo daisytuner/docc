@@ -28,10 +28,10 @@ public:
         const DebugInfo& debug_info,
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
-        symbolic::Expression size,
-        symbolic::Expression device_id,
         offloading::DataTransferDirection transfer_direction,
-        offloading::BufferLifecycle buffer_lifecycle
+        offloading::BufferLifecycle buffer_lifecycle,
+        symbolic::Expression size,
+        symbolic::Expression device_id
     );
 
     void validate(const Function& function) const override;
@@ -72,7 +72,7 @@ public:
     virtual codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
-class ROCMDataOffloadingNodeSerializer : public serializer::LibraryNodeSerializer {
+class ROCMDataOffloadingNodeSerializer : public offloading::DataOffloadingNodeSerializer {
 public:
     nlohmann::json serialize(const sdfg::data_flow::LibraryNode& library_node) override;
 

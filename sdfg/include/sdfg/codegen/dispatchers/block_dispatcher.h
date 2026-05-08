@@ -86,6 +86,29 @@ public:
     void dispatch(PrettyPrinter& stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory);
 };
 
+struct CodegenOutput {
+    PrettyPrinter& stream;
+    PrettyPrinter& globals_stream;
+    CodeSnippetFactory& library_snippet_factory;
+    LanguageExtension& language_extension;
+};
+
+/**
+ * Short-lived container for an input into a dispatcher (based on dflow edges)
+ * references are only valid up until the return of the dispatch call.
+ */
+struct DispatchInput {
+    const std::string expr;
+    const data_flow::Memlet& edge;
+    bool is_locally_modifiable;
+};
+
+struct DispatchOutput {
+    const std::string* local_name;
+    std::unique_ptr<types::IType> out_type;
+    bool used;
+};
+
 /**
  * @class LibraryNodeDispatcher
  * @brief Base class for library node code generation dispatchers
@@ -94,13 +117,21 @@ public:
  * nodes. Subclasses implement specific code generation for different library
  * operations (BLAS calls, memory operations, etc.).
  *
- * The dispatcher has access to:
- * - The library node being dispatched
- * - The containing dataflow graph
- * - The function context
- * - The language extension for code generation
+ * A modern impl overrides [dispatch_code_with_edges].
  *
- * Subclasses override dispatch_code() to generate the actual operation code.
+ * CodegenOutput is used as a wrapper around multiple args needed. This makes extending the args provided a simpler
+ * code-change. We expect this to also include state to handle data-flow edges in the future.
+ *
+ * The base class collects all inputs and outputs and provides them. For inputs, this is 1:1 with edges, since outputs
+ * in dataflow can have multiple edges, no edge is attached to them. The dispatcher only needs to provide the output per
+ * connector, the base class will handle providing the output to all edges as needed.
+ *
+ * Legacy code can still override the [dispatch_code] as before and is provided with almost the same environment of
+ * variables.
+ *
+ * Note the class handles ptrs correctly, meaning there is no need to consider inputs and outputs overlapping in any
+ * way. If a pointer is provided as input, that can be used to change all the data it points to. A pointer output is
+ * only needed if a pointer is selected, created or modified. Not if the data behind is changed.
  */
 class LibraryNodeDispatcher {
 protected:
@@ -165,11 +196,47 @@ public:
     virtual void
     dispatch_code(PrettyPrinter& stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory) {}
 
+    virtual void dispatch_code_with_edges(
+        CodegenOutput& out, std::vector<DispatchInput>& inputs, std::vector<DispatchOutput>& outputs
+    );
+
     /**
      * @brief Get instrumentation information for this node
      * @return Instrumentation information
      */
     virtual InstrumentationInfo instrumentation_info() const;
+
+protected:
+    /**
+     * Ensure that [input] points to a local copy that can be changed without modifying the actual source of the input
+     * Should only be needed to ensure that legacy [dispatch_code] code can act as before, where it always was a copy.
+     */
+    void require_locally_modifiable_var(CodegenOutput& out, DispatchInput& input) const;
+
+    /**
+     * Declare a variable of the type of the output and with the name "var_name".
+     * Compatible to preexisting [dispatch_code] impls.
+     */
+    void pre_allocate_output(CodegenOutput& out, DispatchOutput& output, const std::string& var_name) const;
+
+    /**
+     * The dispatcher as created an output that is identified by [result_identifier].
+     * Use that as the source for the output edges of [output]
+     */
+    void register_output(DispatchOutput& output, const std::string& result_identifier) const;
+
+    /**
+     * This is a temporary & hopefully short-lived workaround. For a sensible and flexible data flow graph you want to
+     * know the available data (by some unique ID, like the vertex IDs) And then just use those whenever they are
+     * declared as an input. Edges can possibly apply some on the fly transformations, like selects or casts. Access
+     * Nodes / whatever new modeling of memory writes & reads we then have, needs to dispatch whatever side effects they
+     * need themselves, just like lib-nodes do. This saves unneeded copying around which can cause issues and
+     * inadvertently remove or add side effects. Also makes the code redundant.
+     *
+     * But this also requires a per-dataflow-graph state of data-handles-by-id. But this would also be what you would
+     * want to emit LLVM-IR directly
+     */
+    void copy_output(CodegenOutput& out, const DispatchOutput& output, const data_flow::Memlet& oedge) const;
 };
 
 } // namespace codegen

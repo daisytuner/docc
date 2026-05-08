@@ -37,11 +37,14 @@ public:
 
     const symbolic::MultiExpression& shape() const { return shape_; }
     const symbolic::MultiExpression& strides() const { return strides_; }
+
     const symbolic::Expression& offset() const { return offset_; }
 
     void serialize_to_json(nlohmann::json& j) const;
 
     std::string toStr() const;
+
+    symbolic::Expression total_elements() const;
 
     symbolic::MultiExpression linear_strides() const;
 
@@ -53,10 +56,20 @@ public:
 
     /**
      *
+     * @param i the dimension / entry in shape. 0 is outermost
+     */
+    const symbolic::Expression& get_dim(int i) const { return shape_.at(i); }
+    /**
+     *
      * @param i 0 is innermost dim, 1 next level out etc.
      */
     symbolic::Expression get_dim_innermost(int i) const { return shape_.at(shape_.size() - 1 - i); }
 
+    /**
+     *
+     * @param i the dimension / entry in strides. 0 is outermost
+     */
+    symbolic::Expression get_stride(int i) const { return strides_.at(i); }
     /**
      *
      * @param i 0 is innermost dim, 1 next level out etc.
@@ -72,6 +85,20 @@ public:
     bool has_linear_accesses_no_padding() const;
 
     bool has_transposed_strides_no_padding() const;
+
+    bool operator==(const TensorLayout& other) const;
+
+    std::unique_ptr<TensorLayout> newaxis(size_t axis) const;
+
+    std::unique_ptr<TensorLayout> flip(size_t axis) const;
+
+    std::unique_ptr<TensorLayout> unsqueeze(size_t axis) const;
+
+    std::unique_ptr<TensorLayout> squeeze(size_t axis) const;
+
+    std::unique_ptr<TensorLayout> squeeze() const;
+
+    std::unique_ptr<TensorLayout> reshape(const symbolic::MultiExpression& new_shape) const;
 };
 
 std::ostream& operator<<(std::ostream& stream, const TensorLayout& layout);

@@ -22,21 +22,18 @@ TEST(CUDAD2HTransferTest, CloneTest) {
     auto& A_host = builder.add_container("A_host", pointer_type);
     auto& A_device = builder.add_container("A_device", pointer_type);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& d2h_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, d2h_transfer] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::integer(1024),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    builder.add_computational_memlet(block, access_device, d2h_transfer, "_src", {}, pointer_type);
-    builder.add_computational_memlet(block, d2h_transfer, "_dst", access_host, {}, pointer_type);
 
     auto cloned_node = d2h_transfer.clone(1, d2h_transfer.vertex(), block.dataflow());
 
@@ -64,21 +61,18 @@ TEST(CUDAH2DTransferTest, CloneTest) {
     auto& A_host = builder.add_container("A_host", pointer_type);
     auto& A_device = builder.add_container("A_device", pointer_type);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& h2d_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, h2d_transfer] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::integer(1024),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    builder.add_computational_memlet(block, access_host, h2d_transfer, "_src", {}, pointer_type);
-    builder.add_computational_memlet(block, h2d_transfer, "_dst", access_device, {}, pointer_type);
 
     auto cloned_node = h2d_transfer.clone(1, h2d_transfer.vertex(), block.dataflow());
 
@@ -105,19 +99,18 @@ TEST(CUDAMallocTest, CloneTest) {
 
     auto& A_device = builder.add_container("A_device", pointer_type);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_out = builder.add_access(block, "A_device");
-    auto& malloc_node = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, malloc_node] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_device",
+        "A_device",
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::ALLOC,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::integer(1024),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC
+        symbolic::integer(0)
     );
-
-    auto& memlet_out = builder.add_computational_memlet(block, malloc_node, "_ret", access_out, {}, pointer_type);
 
     auto cloned_node = malloc_node.clone(1, malloc_node.vertex(), block.dataflow());
 
@@ -144,21 +137,18 @@ TEST(CUDAFreeTest, CloneTest) {
 
     auto& A_device = builder.add_container("A_device", pointer_type);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_in = builder.add_access(block, "A_device");
-    auto& access_out = builder.add_access(block, "A_device");
-    auto& free_node = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, free_node] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_device",
+        "A_device",
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::FREE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         SymEngine::null,
-        symbolic::integer(0),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::FREE
+        symbolic::integer(0)
     );
-
-    auto& memlet_in = builder.add_computational_memlet(block, access_in, free_node, "_ptr", {}, pointer_type);
-    auto& memlet_out = builder.add_computational_memlet(block, free_node, "_ptr", access_out, {}, pointer_type);
 
     auto cloned_node = free_node.clone(1, free_node.vertex(), block.dataflow());
 
@@ -188,20 +178,19 @@ TEST(CUDAD2HTransferTest, ReplaceTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& d2h_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, d2h_transfer] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-    auto& memlet_in = builder.add_computational_memlet(block, access_device, d2h_transfer, "_src", {}, pointer_type);
-    auto& memlet_out = builder.add_computational_memlet(block, d2h_transfer, "_dst", access_host, {}, pointer_type);
+
     // Replace the size with a symbolic expression
     d2h_transfer.replace(symbolic::symbol("N"), symbolic::symbol("i"));
     // cast the node to CUDAD2HTransfer
@@ -222,21 +211,18 @@ TEST(CUDAH2DTransferTest, ReplaceTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& h2d_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, h2d_transfer] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    builder.add_computational_memlet(block, access_host, h2d_transfer, "_src", {}, pointer_type);
-    builder.add_computational_memlet(block, h2d_transfer, "_dst", access_device, {}, pointer_type);
 
     // Replace the size with a symbolic expression
     h2d_transfer.replace(symbolic::symbol("N"), symbolic::symbol("i"));
@@ -258,19 +244,18 @@ TEST(CUDAMallocTest, ReplaceTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_out = builder.add_access(block, "A_device");
-    auto& malloc_node = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, malloc_node] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_device",
+        "A_device",
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::ALLOC,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC
+        symbolic::integer(0)
     );
-
-    auto& memlet_out = builder.add_computational_memlet(block, malloc_node, "_ret", access_out, {}, pointer_type);
 
     // Replace the size with a symbolic expression
     malloc_node.replace(symbolic::symbol("N"), symbolic::symbol("i"));
@@ -293,21 +278,18 @@ TEST(CUDAD2HTransferTest, SerializeDeserializeTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& d2h_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, d2h_transfer] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    builder.add_computational_memlet(block, access_device, d2h_transfer, "_src", {}, pointer_type);
-    builder.add_computational_memlet(block, d2h_transfer, "_dst", access_host, {}, pointer_type);
 
     auto& sdfg = builder.subject();
     serializer::JSONSerializer serializer;
@@ -351,21 +333,18 @@ TEST(CUDAH2DTransferTest, SerializeDeserializeTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& h2d_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, h2d_transfer] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    builder.add_computational_memlet(block, access_host, h2d_transfer, "_src", {}, pointer_type);
-    builder.add_computational_memlet(block, h2d_transfer, "_dst", access_device, {}, pointer_type);
 
     auto& sdfg = builder.subject();
     serializer::JSONSerializer serializer;
@@ -410,19 +389,18 @@ TEST(CUDAMallocTest, SerializeDeserializeTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_out = builder.add_access(block, "A_device");
-    auto& malloc_node = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, malloc_node] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_device",
+        "A_device",
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::ALLOC,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC
+        symbolic::integer(0)
     );
-
-    auto& memlet_out = builder.add_computational_memlet(block, malloc_node, "_ret", access_out, {}, pointer_type);
 
     auto& sdfg = builder.subject();
     serializer::JSONSerializer serializer;
@@ -464,21 +442,18 @@ TEST(CUDAFreeTest, SerializeDeserializeTest) {
 
     auto& A_device = builder.add_container("A_device", pointer_type);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_in = builder.add_access(block, "A_device");
-    auto& access_out = builder.add_access(block, "A_device");
-    auto& free_node = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, free_node] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_device",
+        "A_device",
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::FREE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         SymEngine::null,
-        symbolic::integer(0),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::FREE
+        symbolic::integer(0)
     );
-
-    auto& memlet_in = builder.add_computational_memlet(block, access_in, free_node, "_ptr", {}, pointer_type);
-    auto& memlet_out = builder.add_computational_memlet(block, free_node, "_ptr", access_out, {}, pointer_type);
 
     auto& sdfg = builder.subject();
     serializer::JSONSerializer serializer;
@@ -491,8 +466,8 @@ TEST(CUDAFreeTest, SerializeDeserializeTest) {
     EXPECT_TRUE(deserialized_sdfg->root().size() == 1);
     auto& des_block = deserialized_sdfg->root().at(0).first;
     auto& des_dataflow = dynamic_cast<sdfg::structured_control_flow::Block&>(des_block).dataflow();
-    EXPECT_TRUE(des_dataflow.nodes().size() == 3);
-    EXPECT_TRUE(des_dataflow.edges().size() == 2);
+    EXPECT_EQ(des_dataflow.nodes().size(), 2);
+    EXPECT_EQ(des_dataflow.edges().size(), 1);
 
     bool found_free_node = false;
     for (const auto& node : des_dataflow.nodes()) {
@@ -523,21 +498,18 @@ TEST(CUDAD2HTransferTest, DispatcherTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& d2h_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, d2h_node] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    builder.add_computational_memlet(block, access_device, d2h_transfer, "_src", {}, pointer_type);
-    builder.add_computational_memlet(block, d2h_transfer, "_dst", access_host, {}, pointer_type);
 
     // Create a dispatcher for the CUDAD2HTransfer node
     codegen::CLanguageExtension language_extension(builder.subject());
@@ -546,13 +518,15 @@ TEST(CUDAD2HTransferTest, DispatcherTest) {
     codegen::CodeSnippetFactory snippet_factory;
 
     CUDADataOffloadingNodeDispatcher
-        dispatcher_instance(language_extension, builder.subject(), block.dataflow(), d2h_transfer);
+        dispatcher_instance(language_extension, builder.subject(), block.dataflow(), d2h_node);
     dispatcher_instance.dispatch(pretty_printer, globals_printer, snippet_factory);
 
     // Check if the generated code contains the expected function call
-    std::string expected_code =
-        "{\n    float *_src = ((float *) A_device);\n    float *_dst = ((float *) A_host);\n\n    cudaError_t err;\n   "
-        " err = cudaMemcpy(_dst, _src, N, cudaMemcpyDeviceToHost);\n\n    A_host = _dst;\n}\n";
+    std::string expected_code = R"({
+    cudaError_t err;
+    err = cudaMemcpy(((float *) A_host), ((float *) A_device), N, cudaMemcpyDeviceToHost);
+)"
+                                "}\n";
     std::string generated_code = pretty_printer.str();
     EXPECT_EQ(expected_code, generated_code);
 }
@@ -570,21 +544,18 @@ TEST(CUDAH2DTransferTest, DispatcherTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& h2d_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, h2d_transfer] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    builder.add_computational_memlet(block, access_host, h2d_transfer, "_src", {}, pointer_type);
-    builder.add_computational_memlet(block, h2d_transfer, "_dst", access_device, {}, pointer_type);
 
     // Create a dispatcher for the CUDAH2DTransfer node
     codegen::CLanguageExtension language_extension(builder.subject());
@@ -597,9 +568,11 @@ TEST(CUDAH2DTransferTest, DispatcherTest) {
     dispatcher_instance.dispatch(pretty_printer, globals_printer, snippet_factory);
 
     // Check if the generated code contains the expected function call
-    std::string expected_code =
-        "{\n    float *_src = ((float *) A_host);\n    float *_dst = ((float *) A_device);\n\n    cudaError_t err;\n   "
-        " err = cudaMemcpy(_dst, _src, N, cudaMemcpyHostToDevice);\n\n    A_device = _dst;\n}\n";
+    std::string expected_code = R"({
+    cudaError_t err;
+    err = cudaMemcpy(((float *) A_device), ((float *) A_host), N, cudaMemcpyHostToDevice);
+)"
+                                "}\n";
     std::string generated_code = pretty_printer.str();
     EXPECT_EQ(expected_code, generated_code);
 }
@@ -616,19 +589,18 @@ TEST(CUDAMallocTest, DispatcherTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_out = builder.add_access(block, "A_device");
-    auto& malloc_node = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, malloc_node] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_device",
+        "A_device",
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::ALLOC,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC
+        symbolic::integer(0)
     );
-
-    auto& memlet_out = builder.add_computational_memlet(block, malloc_node, "_ret", access_out, {}, pointer_type);
 
     // Create a dispatcher for the CUDAMalloc node
     codegen::CLanguageExtension language_extension(builder.subject());
@@ -641,9 +613,13 @@ TEST(CUDAMallocTest, DispatcherTest) {
     dispatcher_instance.dispatch(pretty_printer, globals_printer, snippet_factory);
 
     // Check if the generated code contains the expected function call
-    std::string expected_code =
-        "{\n    float *_ret = ((float *) A_device);\n\n    cudaError_t err;\n    err = cudaMalloc(&_ret, N);\n\n    "
-        "A_device = _ret;\n}\n";
+    std::string expected_code = R"({
+    cudaError_t err;
+    float *_dev;
+    err = cudaMalloc(&_dev, N);
+    A_device = _dev;
+)"
+                                "}\n";
     std::string generated_code = pretty_printer.str();
     EXPECT_EQ(expected_code, generated_code);
 }
@@ -657,21 +633,18 @@ TEST(CUDAFreeTest, DispatcherTest) {
 
     auto& A_device = builder.add_container("A_device", pointer_type);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_in = builder.add_access(block, "A_device");
-    auto& access_out = builder.add_access(block, "A_device");
-    auto& free_node = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, free_node] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::FREE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         SymEngine::null,
-        symbolic::integer(0),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::FREE
+        symbolic::integer(0)
     );
-
-    auto& memlet_in = builder.add_computational_memlet(block, access_in, free_node, "_ptr", {}, pointer_type);
-    auto& memlet_out = builder.add_computational_memlet(block, free_node, "_ptr", access_out, {}, pointer_type);
 
     // Create a dispatcher for the CUDAFree node
     codegen::CLanguageExtension language_extension(builder.subject());
@@ -684,9 +657,11 @@ TEST(CUDAFreeTest, DispatcherTest) {
     dispatcher_instance.dispatch(pretty_printer, globals_printer, snippet_factory);
 
     // Check if the generated code contains the expected function call
-    std::string expected_code =
-        "{\n    float *_ptr = ((float *) A_device);\n\n    cudaError_t err;\n    err = cudaFree(_ptr);\n\n    A_device "
-        "= _ptr;\n}\n";
+    std::string expected_code = R"({
+    cudaError_t err;
+    err = cudaFree(((float *) A_device));
+)"
+                                "}\n";
     std::string generated_code = pretty_printer.str();
     EXPECT_EQ(expected_code, generated_code);
 }
@@ -704,21 +679,18 @@ TEST(CUDAD2HTransferTest, SymbolSetTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& d2h_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, d2h_transfer] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    builder.add_computational_memlet(block, access_device, d2h_transfer, "_src", {}, pointer_type);
-    builder.add_computational_memlet(block, d2h_transfer, "_dst", access_host, {}, pointer_type);
 
     // Create a symbol set for the CUDAD2HTransfer node
     auto* real_d2h_transfer = dynamic_cast<CUDADataOffloadingNode*>(&d2h_transfer);
@@ -742,21 +714,18 @@ TEST(CUDAH2DTransferTest, SymbolSetTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_host = builder.add_access(block, "A_host");
-    auto& access_device = builder.add_access(block, "A_device");
-    auto& h2d_transfer = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, h2d_transfer] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    builder.add_computational_memlet(block, access_host, h2d_transfer, "_src", {}, pointer_type);
-    builder.add_computational_memlet(block, h2d_transfer, "_dst", access_device, {}, pointer_type);
 
     // Create a symbol set for the CUDAH2DTransfer node
     auto* real_h2d_transfer = dynamic_cast<CUDADataOffloadingNode*>(&h2d_transfer);
@@ -780,19 +749,18 @@ TEST(CUDAMallocTest, SymbolSetTest) {
     auto& N = builder.add_container("N", integer_desc);
     auto& i = builder.add_container("i", integer_desc);
 
-    auto& block = builder.add_block(root);
-
-    auto& access_out = builder.add_access(block, "A_device");
-    auto& cuda_malloc = builder.add_library_node<CUDADataOffloadingNode>(
-        block,
+    auto [block, cuda_malloc] = offloading::add_offloading_block<CUDADataOffloadingNode>(
+        builder,
+        root,
+        "A_host",
+        "A_device",
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::ALLOC,
+        pointer_type,
         DebugInfo("test_file.cpp", 1, 1, 1, 10),
         symbolic::symbol("N"),
-        symbolic::integer(0),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC
+        symbolic::integer(0)
     );
-
-    auto& memlet_out = builder.add_computational_memlet(block, cuda_malloc, "_ret", access_out, {}, pointer_type);
 
     // Create a symbol set for the CUDAMalloc node
     auto* real_cuda_malloc = dynamic_cast<CUDADataOffloadingNode*>(&cuda_malloc);

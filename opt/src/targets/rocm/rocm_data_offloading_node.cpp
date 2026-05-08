@@ -28,10 +28,10 @@ ROCMDataOffloadingNode::ROCMDataOffloadingNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    symbolic::Expression size,
-    symbolic::Expression device_id,
     offloading::DataTransferDirection transfer_direction,
-    offloading::BufferLifecycle buffer_lifecycle
+    offloading::BufferLifecycle buffer_lifecycle,
+    symbolic::Expression size,
+    symbolic::Expression device_id
 )
     : offloading::DataOffloadingNode(
           element_id,
@@ -39,23 +39,11 @@ ROCMDataOffloadingNode::ROCMDataOffloadingNode(
           vertex,
           parent,
           LibraryNodeType_ROCM_Offloading,
-          {},
-          {},
           transfer_direction,
           buffer_lifecycle,
           size
       ),
-      device_id_(device_id) {
-    if (!is_NONE(transfer_direction)) {
-        this->inputs_.push_back("_src");
-        this->outputs_.push_back("_dst");
-    } else if (is_ALLOC(buffer_lifecycle)) {
-        this->outputs_.push_back("_ret");
-    } else if (is_FREE(buffer_lifecycle)) {
-        this->inputs_.push_back("_ptr");
-        this->outputs_.push_back("_ptr");
-    }
-}
+      device_id_(device_id) {}
 
 void ROCMDataOffloadingNode::validate(const Function& function) const {
     // Prevent copy-in and free
@@ -78,10 +66,10 @@ std::unique_ptr<data_flow::DataFlowNode> ROCMDataOffloadingNode::
         this->debug_info(),
         vertex,
         parent,
-        this->size(),
-        this->device_id(),
         this->transfer_direction(),
-        this->buffer_lifecycle()
+        this->buffer_lifecycle(),
+        this->size(),
+        this->device_id()
     );
 }
 
@@ -199,34 +187,11 @@ codegen::InstrumentationInfo ROCMDataOffloadingNodeDispatcher::instrumentation_i
 
 nlohmann::json ROCMDataOffloadingNodeSerializer::serialize(const sdfg::data_flow::LibraryNode& library_node) {
     const auto& node = static_cast<const ROCMDataOffloadingNode&>(library_node);
-    nlohmann::json j;
-
-    // Library node
-    j["type"] = "library_node";
-    j["element_id"] = library_node.element_id();
-
-    // Debug info
-    auto& debug_info = library_node.debug_info();
-    j["has"] = debug_info.has();
-    j["filename"] = debug_info.filename();
-    j["start_line"] = debug_info.start_line();
-    j["start_column"] = debug_info.start_column();
-    j["end_line"] = debug_info.end_line();
-    j["end_column"] = debug_info.end_column();
-
-    // Library node properties
-    j["code"] = std::string(library_node.code().value());
+    auto j = offloading::DataOffloadingNodeSerializer::serialize(library_node);
 
     // Offloading node properties
     sdfg::serializer::JSONSerializer serializer;
-    if (node.size().is_null()) {
-        j["size"] = nlohmann::json::value_t::null;
-    } else {
-        j["size"] = serializer.expression(node.size());
-    }
     j["device_id"] = serializer.expression(node.device_id());
-    j["transfer_direction"] = static_cast<int8_t>(node.transfer_direction());
-    j["buffer_lifecycle"] = static_cast<int8_t>(node.buffer_lifecycle());
 
     return j;
 }
@@ -239,21 +204,10 @@ data_flow::LibraryNode& ROCMDataOffloadingNodeSerializer::deserialize(
         throw std::runtime_error("Invalid library node code");
     }
 
-    sdfg::serializer::JSONSerializer serializer;
-    DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
-
-    symbolic::Expression size;
-    if (!j.contains("size") || j.at("size").is_null()) {
-        size = SymEngine::null;
-    } else {
-        size = symbolic::parse(j.at("size"));
-    }
     SymEngine::Expression device_id(j.at("device_id"));
-    auto transfer_direction = static_cast<offloading::DataTransferDirection>(j["transfer_direction"].get<int8_t>());
-    auto buffer_lifecycle = static_cast<offloading::BufferLifecycle>(j["buffer_lifecycle"].get<int8_t>());
 
-    return builder.add_library_node<
-        ROCMDataOffloadingNode>(parent, debug_info, size, device_id, transfer_direction, buffer_lifecycle);
+    return offloading::DataOffloadingNodeSerializer::deserialize_generic_offload<
+        ROCMDataOffloadingNode>(j, builder, parent, device_id);
 }
 
 } // namespace rocm

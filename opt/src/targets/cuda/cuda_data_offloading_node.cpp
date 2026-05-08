@@ -28,10 +28,10 @@ CUDADataOffloadingNode::CUDADataOffloadingNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    symbolic::Expression size,
-    symbolic::Expression device_id,
     offloading::DataTransferDirection transfer_direction,
-    offloading::BufferLifecycle buffer_lifecycle
+    offloading::BufferLifecycle buffer_lifecycle,
+    symbolic::Expression size,
+    symbolic::Expression device_id
 )
     : offloading::DataOffloadingNode(
           element_id,
@@ -39,23 +39,11 @@ CUDADataOffloadingNode::CUDADataOffloadingNode(
           vertex,
           parent,
           LibraryNodeType_CUDA_Offloading,
-          {},
-          {},
           transfer_direction,
           buffer_lifecycle,
-          size
+          std::move(size)
       ),
-      device_id_(device_id) {
-    if (!is_NONE(transfer_direction)) {
-        this->inputs_.push_back("_src");
-        this->outputs_.push_back("_dst");
-    } else if (is_ALLOC(buffer_lifecycle)) {
-        this->outputs_.push_back("_ret");
-    } else if (is_FREE(buffer_lifecycle)) {
-        this->inputs_.push_back("_ptr");
-        this->outputs_.push_back("_ptr");
-    }
-}
+      device_id_(std::move(device_id)) {}
 
 void CUDADataOffloadingNode::validate(const Function& function) const {
     // Prevent copy-in and free
@@ -78,10 +66,10 @@ std::unique_ptr<data_flow::DataFlowNode> CUDADataOffloadingNode::
         this->debug_info(),
         vertex,
         parent,
-        this->size(),
-        this->device_id(),
         this->transfer_direction(),
-        this->buffer_lifecycle()
+        this->buffer_lifecycle(),
+        this->size(),
+        this->device_id()
     );
 }
 
@@ -141,39 +129,45 @@ CUDADataOffloadingNodeDispatcher::CUDADataOffloadingNodeDispatcher(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void CUDADataOffloadingNodeDispatcher::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void CUDADataOffloadingNodeDispatcher::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
     auto& offloading_node = static_cast<const CUDADataOffloadingNode&>(this->node_);
 
     // stream << "cudaSetDevice(" << this->language_extension_.expression(offloading_node.device_id()) << ");"
     //        << std::endl;
 
-    stream << "cudaError_t err;" << std::endl;
+    out.stream << "cudaError_t err;" << std::endl;
 
+    std::string dev_ptr;
     if (offloading_node.is_alloc()) {
-        stream << "err = cudaMalloc(&" << offloading_node.output(0) << ", "
-               << this->language_extension_.expression(offloading_node.size()) << ");" << std::endl;
-        cuda_error_checking(stream, this->language_extension_, "err");
+        auto& ptr = outputs.at(0);
+        pre_allocate_output(out, ptr, offloading_node.output(0));
+        out.stream << "err = cudaMalloc(&" << *ptr.local_name << ", "
+                   << this->language_extension_.expression(offloading_node.size()) << ");" << std::endl;
+        cuda_error_checking(out.stream, this->language_extension_, "err");
+        dev_ptr = *ptr.local_name;
+    } else {
+        dev_ptr = inputs.at(offloading_node.dev_ptr_input_idx()).expr;
     }
 
     if (offloading_node.is_h2d()) {
-        stream << "err = cudaMemcpy(" << offloading_node.output(0) << ", " << offloading_node.input(0) << ", "
-               << this->language_extension_.expression(offloading_node.size()) << ", cudaMemcpyHostToDevice);"
-               << std::endl;
-        cuda_error_checking(stream, this->language_extension_, "err");
+        out.stream << "err = cudaMemcpy(" << dev_ptr << ", " << inputs.at(offloading_node.host_ptr_input_idx()).expr
+                   << ", " << this->language_extension_.expression(offloading_node.size())
+                   << ", cudaMemcpyHostToDevice);" << std::endl;
+        cuda_error_checking(out.stream, this->language_extension_, "err");
     } else if (offloading_node.is_d2h()) {
-        stream << "err = cudaMemcpy(" << offloading_node.output(0) << ", " << offloading_node.input(0) << ", "
-               << this->language_extension_.expression(offloading_node.size()) << ", cudaMemcpyDeviceToHost);"
-               << std::endl;
-        cuda_error_checking(stream, this->language_extension_, "err");
+        out.stream << "err = cudaMemcpy(" << inputs.at(offloading_node.host_ptr_input_idx()).expr << ", " << dev_ptr
+                   << ", " << this->language_extension_.expression(offloading_node.size())
+                   << ", cudaMemcpyDeviceToHost);" << std::endl;
+        cuda_error_checking(out.stream, this->language_extension_, "err");
     }
 
     if (offloading_node.is_free()) {
-        stream << "err = cudaFree(" << offloading_node.input(0) << ");" << std::endl;
-        cuda_error_checking(stream, this->language_extension_, "err");
+        out.stream << "err = cudaFree(" << dev_ptr << ");" << std::endl;
+        cuda_error_checking(out.stream, this->language_extension_, "err");
     }
 }
 
@@ -201,35 +195,14 @@ codegen::InstrumentationInfo CUDADataOffloadingNodeDispatcher::instrumentation_i
 }
 
 nlohmann::json CUDADataOffloadingNodeSerializer::serialize(const sdfg::data_flow::LibraryNode& library_node) {
+    auto j = DataOffloadingNodeSerializer::serialize(library_node);
+
     const auto& node = static_cast<const CUDADataOffloadingNode&>(library_node);
-    nlohmann::json j;
-
-    // Library node
-    j["type"] = "library_node";
-    j["element_id"] = library_node.element_id();
-
-    // Debug info
-    auto& debug_info = library_node.debug_info();
-    j["has"] = debug_info.has();
-    j["filename"] = debug_info.filename();
-    j["start_line"] = debug_info.start_line();
-    j["start_column"] = debug_info.start_column();
-    j["end_line"] = debug_info.end_line();
-    j["end_column"] = debug_info.end_column();
-
-    // Library node properties
-    j["code"] = std::string(library_node.code().value());
 
     // Offloading node properties
     sdfg::serializer::JSONSerializer serializer;
-    if (node.size().is_null()) {
-        j["size"] = nlohmann::json::value_t::null;
-    } else {
-        j["size"] = serializer.expression(node.size());
-    }
+
     j["device_id"] = serializer.expression(node.device_id());
-    j["transfer_direction"] = static_cast<int8_t>(node.transfer_direction());
-    j["buffer_lifecycle"] = static_cast<int8_t>(node.buffer_lifecycle());
 
     return j;
 }
@@ -242,21 +215,10 @@ data_flow::LibraryNode& CUDADataOffloadingNodeSerializer::deserialize(
         throw std::runtime_error("Invalid library node code");
     }
 
-    sdfg::serializer::JSONSerializer serializer;
-    DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
-
-    symbolic::Expression size;
-    if (!j.contains("size") || j.at("size").is_null()) {
-        size = SymEngine::null;
-    } else {
-        size = symbolic::parse(j.at("size"));
-    }
     SymEngine::Expression device_id(j.at("device_id"));
-    auto transfer_direction = static_cast<offloading::DataTransferDirection>(j["transfer_direction"].get<int8_t>());
-    auto buffer_lifecycle = static_cast<offloading::BufferLifecycle>(j["buffer_lifecycle"].get<int8_t>());
 
-    return builder.add_library_node<
-        CUDADataOffloadingNode>(parent, debug_info, size, device_id, transfer_direction, buffer_lifecycle);
+    return offloading::DataOffloadingNodeSerializer::deserialize_generic_offload<
+        CUDADataOffloadingNode>(j, builder, parent, device_id);
 }
 
 } // namespace cuda

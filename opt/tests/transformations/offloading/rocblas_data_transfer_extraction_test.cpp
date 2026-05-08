@@ -161,7 +161,6 @@ TEST(ROCBLASDataTransferExtractionTest, GemmCanBeApplied) {
     auto& a_node = builder.add_access(block, "arr_a");
     auto& b_node = builder.add_access(block, "arr_b");
     auto& c_in_node = builder.add_access(block, "arr_c");
-    auto& c_out_node = builder.add_access(block, "arr_c");
     auto& alpha_node = builder.add_constant(block, "1.0", desc);
     auto& beta_node = builder.add_constant(block, "0.0", desc);
 
@@ -186,7 +185,6 @@ TEST(ROCBLASDataTransferExtractionTest, GemmCanBeApplied) {
     builder.add_computational_memlet(block, c_in_node, gemm_node, "__C", {symbolic::zero()}, arr_c_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", c_out_node, {symbolic::zero()}, arr_c_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -216,7 +214,6 @@ TEST(ROCBLASDataTransferExtractionTest, GemmApply) {
     auto& a_node = builder.add_access(block, "arr_a");
     auto& b_node = builder.add_access(block, "arr_b");
     auto& c_in_node = builder.add_access(block, "arr_c");
-    auto& c_out_node = builder.add_access(block, "arr_c");
     auto& alpha_node = builder.add_constant(block, "1.0", desc);
     auto& beta_node = builder.add_constant(block, "0.0", desc);
 
@@ -241,7 +238,6 @@ TEST(ROCBLASDataTransferExtractionTest, GemmApply) {
     builder.add_computational_memlet(block, c_in_node, gemm_node, "__C", {symbolic::zero()}, arr_c_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", c_out_node, {symbolic::zero()}, arr_c_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -280,7 +276,6 @@ TEST(ROCBLASDataTransferExtractionTest, GemmWrongImplType) {
     auto& a_node = builder.add_access(block, "arr_a");
     auto& b_node = builder.add_access(block, "arr_b");
     auto& c_in_node = builder.add_access(block, "arr_c");
-    auto& c_out_node = builder.add_access(block, "arr_c");
     auto& alpha_node = builder.add_constant(block, "1.0", desc);
     auto& beta_node = builder.add_constant(block, "0.0", desc);
 
@@ -305,7 +300,6 @@ TEST(ROCBLASDataTransferExtractionTest, GemmWrongImplType) {
     builder.add_computational_memlet(block, c_in_node, gemm_node, "__C", {symbolic::zero()}, arr_c_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", c_out_node, {symbolic::zero()}, arr_c_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -371,7 +365,6 @@ TEST(ROCBLASDataTransferExtractionTest, GemmSerialization) {
     auto& a_node = builder.add_access(block, "arr_a");
     auto& b_node = builder.add_access(block, "arr_b");
     auto& c_in_node = builder.add_access(block, "arr_c");
-    auto& c_out_node = builder.add_access(block, "arr_c");
     auto& alpha_node = builder.add_constant(block, "1.0", desc);
     auto& beta_node = builder.add_constant(block, "0.0", desc);
 
@@ -396,7 +389,6 @@ TEST(ROCBLASDataTransferExtractionTest, GemmSerialization) {
     builder.add_computational_memlet(block, c_in_node, gemm_node, "__C", {symbolic::zero()}, arr_c_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", c_out_node, {symbolic::zero()}, arr_c_type);
 
     rocm::ROCBLASDataTransferExtraction expansion(gemm_node);
 

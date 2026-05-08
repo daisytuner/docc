@@ -13,6 +13,7 @@
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -78,10 +79,8 @@ public:
         auto& root = builder.subject().root();
         auto& block = builder.add_block(root);
         auto& access_in = builder.add_access(block, container);
-        auto& access_out = builder.add_access(block, container);
         auto& free_node = builder.add_library_node<stdlib::FreeNode>(block, DebugInfo());
         builder.add_computational_memlet(block, access_in, free_node, "_ptr", {}, ptr_desc, DebugInfo());
-        builder.add_computational_memlet(block, free_node, "_ptr", access_out, {}, ptr_desc, DebugInfo());
         return block;
     }
 };
@@ -292,10 +291,8 @@ public:
         auto& root = builder.subject().root();
         auto& block = builder.add_block(root);
         auto& access_in = builder.add_access(block, container);
-        auto& access_out = builder.add_access(block, container);
         auto& free_node = builder.add_library_node<stdlib::FreeNode>(block, DebugInfo());
         builder.add_computational_memlet(block, access_in, free_node, "_ptr", {}, ptr_desc, DebugInfo());
-        builder.add_computational_memlet(block, free_node, "_ptr", access_out, {}, ptr_desc, DebugInfo());
         return block;
     }
 
@@ -469,6 +466,9 @@ TEST(LocalBufferReuseTest, ConvBatchNorm_Elimination_Applied) {
     setup.add_free_block("ptr2");
 
     auto sdfg = setup.builder.move();
+
+    dump_sdfg(*sdfg, "0.init");
+
     size_t original_size = sdfg->root().size();
     EXPECT_EQ(original_size, 8);
 
@@ -477,6 +477,8 @@ TEST(LocalBufferReuseTest, ConvBatchNorm_Elimination_Applied) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
     passes::ConvBatchNormEliminationPass pass;
     bool applied = pass.run(builder_opt, analysis_manager);
+
+    dump_sdfg(builder_opt.subject(), "1.elimnated");
 
     EXPECT_TRUE(applied);
 

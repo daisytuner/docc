@@ -35,12 +35,12 @@ TTDataOffloadingNode::TTDataOffloadingNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    bool blocking,
-    std::string device_handle,
-    symbolic::Expression size,
-    symbolic::Expression page_size,
     offloading::DataTransferDirection transfer_direction,
     offloading::BufferLifecycle allocation_handling,
+    symbolic::Expression size,
+    bool blocking,
+    std::string device_handle,
+    symbolic::Expression page_size,
     int cq_no
 )
     : offloading::DataOffloadingNode(
@@ -49,23 +49,11 @@ TTDataOffloadingNode::TTDataOffloadingNode(
           vertex,
           parent,
           LibraryNodeType_Tenstorrent_Offloading,
-          {},
-          {},
           transfer_direction,
           allocation_handling,
           size
       ),
-      blocking_(blocking), page_size_(page_size), cq_no_(cq_no), device_handle_(device_handle) {
-    if (!is_NONE(transfer_direction)) {
-        this->inputs_.push_back("_src");
-        this->outputs_.push_back("_dst");
-    } else if (is_ALLOC(allocation_handling)) {
-        this->outputs_.push_back("_ret");
-    } else if (is_FREE(allocation_handling)) {
-        this->inputs_.push_back("_ptr");
-        this->outputs_.push_back("_ptr");
-    }
-}
+      blocking_(blocking), page_size_(page_size), cq_no_(cq_no), device_handle_(device_handle) {}
 
 void TTDataOffloadingNode::validate(const Function& function) const {
     // Prevent copy-in and free
@@ -100,12 +88,12 @@ std::unique_ptr<data_flow::DataFlowNode> TTDataOffloadingNode::
         this->debug_info(),
         vertex,
         parent,
-        this->blocking(),
-        this->device_handle(),
-        this->size(),
-        this->page_size(),
         this->transfer_direction(),
         this->buffer_lifecycle(),
+        this->size(),
+        this->blocking(),
+        this->device_handle(),
+        this->page_size(),
         this->cq_no()
     );
 }
@@ -369,37 +357,18 @@ codegen::InstrumentationInfo TTDataOffloadingNodeDispatcher::instrumentation_inf
 
 nlohmann::json TTDataOffloadingNodeSerializer::serialize(const sdfg::data_flow::LibraryNode& library_node) {
     const auto& node = static_cast<const TTDataOffloadingNode&>(library_node);
-    nlohmann::json j;
-
-    // Library node
-    j["type"] = "library_node";
-    j["element_id"] = library_node.element_id();
-
-    // Debug info
-    auto& debug_info = library_node.debug_info();
-    j["has"] = debug_info.has();
-    j["filename"] = debug_info.filename();
-    j["start_line"] = debug_info.start_line();
-    j["start_column"] = debug_info.start_column();
-    j["end_line"] = debug_info.end_line();
-    j["end_column"] = debug_info.end_column();
-
-    // Library node properties
-    j["code"] = std::string(library_node.code().value());
+    auto j = DataOffloadingNodeSerializer::serialize(library_node);
 
     // Offloading node properties
     j["blocking"] = node.blocking();
     j["cq_no"] = node.cq_no();
     j["device_handle"] = node.device_handle();
     sdfg::serializer::JSONSerializer serializer;
-    j["size"] = serializer.expression(node.size());
     if (node.page_size().is_null()) {
         j["page_size"] = nlohmann::json::value_t::null;
     } else {
         j["page_size"] = serializer.expression(node.page_size());
     }
-    j["transfer_direction"] = static_cast<int8_t>(node.transfer_direction());
-    j["buffer_lifecycle"] = static_cast<int8_t>(node.buffer_lifecycle());
 
     return j;
 }
@@ -412,25 +381,18 @@ data_flow::LibraryNode& TTDataOffloadingNodeSerializer::deserialize(
         throw std::runtime_error("Invalid library node code");
     }
 
-    sdfg::serializer::JSONSerializer serializer;
-    DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
-
     bool blocking = j.at("blocking").get<bool>();
     int cq_no = j.at("cq_no").get<int>();
     std::string device_handle = j.at("device_handle").get<std::string>();
-    SymEngine::Expression size(j.at("size"));
     symbolic::Expression page_size;
     if (!j.contains("page_size") || j.at("page_size").is_null()) {
         page_size = SymEngine::null;
     } else {
         page_size = symbolic::parse(j.at("page_size"));
     }
-    auto transfer_direction = static_cast<offloading::DataTransferDirection>(j["transfer_direction"].get<int8_t>());
-    auto buffer_lifecycle = static_cast<offloading::BufferLifecycle>(j["buffer_lifecycle"].get<int8_t>());
 
-    return builder.add_library_node<TTDataOffloadingNode>(
-        parent, debug_info, blocking, device_handle, size, page_size, transfer_direction, buffer_lifecycle, cq_no
-    );
+    return offloading::DataOffloadingNodeSerializer::deserialize_generic_offload<
+        TTDataOffloadingNode>(j, builder, parent, blocking, device_handle, page_size, cq_no);
 }
 
 } // namespace tenstorrent

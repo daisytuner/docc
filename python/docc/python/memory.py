@@ -89,14 +89,9 @@ class ManagedMemoryHandler:
             block = self.builder.add_block()
             t_free = self.builder.add_free(block)
             t_ptr_in = self.builder.add_access(block, alloc["name"])
-            t_ptr_out = self.builder.add_access(block, alloc["name"])
             # Input memlet: access_node -> free._ptr
             self.builder.add_memlet(
                 block, t_ptr_in, "void", t_free, "_ptr", "", alloc["ptr_type"]
-            )
-            # Output memlet: free._ptr -> access_node (required for library node)
-            self.builder.add_memlet(
-                block, t_free, "_ptr", t_ptr_out, "void", "", alloc["ptr_type"]
             )
 
     def has_allocations(self):

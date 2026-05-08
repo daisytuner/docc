@@ -168,10 +168,8 @@ TEST(BlockSortingTest, Free_Before_Move) {
     auto& block1 = builder.add_block(root);
     {
         auto& a_in = builder.add_access(block1, "a");
-        auto& a_out = builder.add_access(block1, "a");
         auto& libnode = builder.add_library_node<stdlib::FreeNode>(block1, DebugInfo());
         builder.add_computational_memlet(block1, a_in, libnode, "_ptr", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_ptr", a_out, {}, desc_ptr);
     }
 
     // Move block
@@ -211,10 +209,8 @@ TEST(BlockSortingTest, Free_Before_Malloc) {
     auto& block1 = builder.add_block(root);
     {
         auto& a_in = builder.add_access(block1, "a");
-        auto& a_out = builder.add_access(block1, "a");
         auto& libnode = builder.add_library_node<stdlib::FreeNode>(block1, DebugInfo());
         builder.add_computational_memlet(block1, a_in, libnode, "_ptr", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_ptr", a_out, {}, desc_ptr);
     }
 
     // Malloc block

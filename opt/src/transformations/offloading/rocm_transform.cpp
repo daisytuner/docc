@@ -48,20 +48,21 @@ void ROCMTransform::allocate_device_arg(
             builder.add_container(device_arg_name, *new_type);
         }
     }
+    auto& out_type = builder.subject().type(device_arg_name);
 
-    auto& access_node_out_device = builder.add_access(alloc_block, device_arg_name);
-
-    auto& malloc_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
         alloc_block,
+        host_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::ALLOC,
+        out_type,
+        out_type,
         this->map_.debug_info(),
         arg_size,
-        symbolic::zero(),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC
+        symbolic::zero()
     );
-
-    auto& out_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(alloc_block, malloc_node, "_ret", access_node_out_device, {}, out_type);
 }
 
 void ROCMTransform::deallocate_device_arg(
@@ -71,21 +72,20 @@ void ROCMTransform::deallocate_device_arg(
     symbolic::Expression arg_size,
     symbolic::Expression page_size
 ) {
-    auto& access_node_in_device = builder.add_access(dealloc_block, device_arg_name);
-    auto& access_node_out_device = builder.add_access(dealloc_block, device_arg_name);
-
-    auto& free_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    auto& free_type = builder.subject().type(device_arg_name);
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
         dealloc_block,
+        device_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::FREE,
+        free_type,
+        free_type,
         this->map_.debug_info(),
         arg_size,
-        symbolic::zero(),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::FREE
+        symbolic::zero()
     );
-
-    auto& free_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(dealloc_block, access_node_in_device, free_node, "_ptr", {}, free_type);
-    builder.add_computational_memlet(dealloc_block, free_node, "_ptr", access_node_out_device, {}, free_type);
 }
 
 void ROCMTransform::copy_to_device(
@@ -96,23 +96,19 @@ void ROCMTransform::copy_to_device(
     symbolic::Expression page_size,
     Block& copy_block
 ) {
-    auto& access_node_host = builder.add_access(copy_block, host_arg_name);
-    auto& access_node_device = builder.add_access(copy_block, device_arg_name);
-
-    auto& memcpy_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
         copy_block,
+        host_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        builder.subject().type(host_arg_name),
+        builder.subject().type(device_arg_name),
         this->map_.debug_info(),
         size,
-        symbolic::integer(0),
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    auto& in_type = builder.subject().type(host_arg_name);
-    builder.add_computational_memlet(copy_block, access_node_host, memcpy_node, "_src", {}, in_type);
-
-    auto& out_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(copy_block, memcpy_node, "_dst", access_node_device, {}, out_type);
 }
 
 void ROCMTransform::copy_to_device_with_allocation(
@@ -123,23 +119,19 @@ void ROCMTransform::copy_to_device_with_allocation(
     symbolic::Expression page_size,
     Block& copy_block
 ) {
-    auto& access_node_host = builder.add_access(copy_block, host_arg_name);
-    auto& access_node_device = builder.add_access(copy_block, device_arg_name);
-
-    auto& memcpy_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
         copy_block,
+        host_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::ALLOC,
+        builder.subject().type(host_arg_name),
+        builder.subject().type(device_arg_name),
         this->map_.debug_info(),
         size,
-        symbolic::integer(0),
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::ALLOC
+        symbolic::integer(0)
     );
-
-    auto& in_type = builder.subject().type(host_arg_name);
-    builder.add_computational_memlet(copy_block, access_node_host, memcpy_node, "_src", {}, in_type);
-
-    auto& out_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(copy_block, memcpy_node, "_dst", access_node_device, {}, out_type);
 }
 
 void ROCMTransform::copy_from_device(
@@ -150,23 +142,19 @@ void ROCMTransform::copy_from_device(
     symbolic::Expression size,
     symbolic::Expression page_size
 ) {
-    auto& access_node_device = builder.add_access(copy_out_block, device_arg_name);
-    auto& access_node_host = builder.add_access(copy_out_block, host_arg_name);
-
-    auto& memcpy_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
         copy_out_block,
+        host_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::NO_CHANGE,
+        builder.subject().type(host_arg_name),
+        builder.subject().type(device_arg_name),
         this->map_.debug_info(),
         size,
-        symbolic::integer(0),
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::NO_CHANGE
+        symbolic::integer(0)
     );
-
-    auto& in_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(copy_out_block, access_node_device, memcpy_node, "_src", {}, in_type);
-
-    auto& out_type = builder.subject().type(host_arg_name);
-    builder.add_computational_memlet(copy_out_block, memcpy_node, "_dst", access_node_host, {}, out_type);
 }
 
 void ROCMTransform::copy_from_device_with_free(
@@ -177,23 +165,19 @@ void ROCMTransform::copy_from_device_with_free(
     symbolic::Expression size,
     symbolic::Expression page_size
 ) {
-    auto& access_node_device = builder.add_access(copy_out_block, device_arg_name);
-    auto& access_node_host = builder.add_access(copy_out_block, host_arg_name);
-
-    auto& memcpy_node = builder.add_library_node<ROCMDataOffloadingNode>(
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
         copy_out_block,
+        host_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::FREE,
+        builder.subject().type(host_arg_name),
+        builder.subject().type(device_arg_name),
         this->map_.debug_info(),
         size,
-        symbolic::integer(0),
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::FREE
+        symbolic::integer(0)
     );
-
-    auto& in_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(copy_out_block, access_node_device, memcpy_node, "_src", {}, in_type);
-
-    auto& out_type = builder.subject().type(host_arg_name);
-    builder.add_computational_memlet(copy_out_block, memcpy_node, "_dst", access_node_host, {}, out_type);
 }
 
 void ROCMTransform::to_json(nlohmann::json& j) const {

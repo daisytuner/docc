@@ -59,12 +59,9 @@ MatMulNode::MatMulNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    const symbolic::MultiExpression& shape_a,
-    const symbolic::MultiExpression& shape_b,
-    const symbolic::MultiExpression& strides_a,
-    const symbolic::MultiExpression& strides_b,
-    symbolic::Expression offset_a,
-    symbolic::Expression offset_b
+    const TensorLayout& layout_a,
+    const TensorLayout& layout_b,
+    types::PrimitiveType quantization
 )
     : TensorNode(
           element_id,
@@ -72,49 +69,37 @@ MatMulNode::MatMulNode(
           vertex,
           parent,
           LibraryNodeType_MatMul,
-          {"Y"},
-          {"A", "B"},
+          {},
+          {"Y", "A", "B"},
           data_flow::ImplementationType_NONE
       ),
-      shape_a_(shape_a), shape_b_(shape_b), strides_a_(strides_a), strides_b_(strides_b), offset_a_(offset_a),
-      offset_b_(offset_b) {
-    if (shape_a_.size() < 2) {
+      fixed_quantization_(quantization), layout_a_(layout_a), layout_b_(layout_b) {
+    if (layout_a.dims() < 2) {
         throw std::invalid_argument("MatMulNode: Input A must have at least 2 dimensions");
     }
-    if (shape_b_.size() < 2) {
+    if (layout_b.dims() < 2) {
         throw std::invalid_argument("MatMulNode: Input B must have at least 2 dimensions");
-    }
-    // Compute default row-major strides if not provided
-    if (strides_a_.empty()) {
-        strides_a_.resize(shape_a_.size());
-        strides_a_[shape_a_.size() - 1] = symbolic::integer(1);
-        for (int i = static_cast<int>(shape_a_.size()) - 2; i >= 0; --i) {
-            strides_a_[i] = symbolic::mul(strides_a_[i + 1], shape_a_[i + 1]);
-        }
-    }
-    if (strides_b_.empty()) {
-        strides_b_.resize(shape_b_.size());
-        strides_b_[shape_b_.size() - 1] = symbolic::integer(1);
-        for (int i = static_cast<int>(shape_b_.size()) - 2; i >= 0; --i) {
-            strides_b_[i] = symbolic::mul(strides_b_[i + 1], shape_b_[i + 1]);
-        }
     }
 }
 
 symbolic::Expression MatMulNode::m() const {
     // M is the second-to-last dimension of A
-    return shape_a_[shape_a_.size() - 2];
+    return layout_a_.get_dim_innermost(1);
 }
 
 symbolic::Expression MatMulNode::n() const {
     // N is the last dimension of B
-    return shape_b_[shape_b_.size() - 1];
+    return layout_b_.get_dim_innermost(0);
 }
 
 symbolic::Expression MatMulNode::k() const {
     // K is the last dimension of A (and second-to-last of B)
-    return shape_a_[shape_a_.size() - 1];
+    return layout_a_.get_dim_innermost(0);
 }
+
+const TensorLayout& MatMulNode::layout_a() const { return layout_a_; }
+
+const TensorLayout& MatMulNode::layout_b() const { return layout_b_; }
 
 void MatMulNode::validate(const Function& function) const {
     TensorNode::validate(function);
@@ -122,16 +107,16 @@ void MatMulNode::validate(const Function& function) const {
     auto& graph = this->get_parent();
 
     // Check that we have exactly 2 inputs and 1 output
-    if (graph.in_degree(*this) != 2) {
-        throw InvalidSDFGException("MatMulNode: Expected exactly 2 inputs (A and B)");
+    if (graph.in_degree(*this) != 3) {
+        throw InvalidSDFGException("MatMulNode: Expected exactly 3 inputs (Y, A, B)");
     }
-    if (graph.out_degree(*this) != 1) {
-        throw InvalidSDFGException("MatMulNode: Expected exactly 1 output (Y)");
+    if (graph.out_degree(*this) != 0) {
+        throw InvalidSDFGException("MatMulNode: Expected no outputs");
     }
 
     // Validate K dimension matches between A and B
-    auto k_a = shape_a_[shape_a_.size() - 1];
-    auto k_b = shape_b_[shape_b_.size() - 2];
+    auto k_a = layout_a_.get_dim_innermost(0);
+    auto k_b = layout_b_.get_dim_innermost(1);
     if (!symbolic::eq(k_a, k_b)) {
         throw InvalidSDFGException(
             "MatMulNode: K dimension mismatch. A has K=" + k_a->__str__() + ", B has K=" + k_b->__str__()
@@ -141,86 +126,101 @@ void MatMulNode::validate(const Function& function) const {
 
 symbolic::SymbolSet MatMulNode::symbols() const {
     symbolic::SymbolSet syms;
-    for (const auto& dim : shape_a_) {
-        for (auto& atom : symbolic::atoms(dim)) {
-            syms.insert(atom);
-        }
-    }
-    for (const auto& dim : shape_b_) {
-        for (auto& atom : symbolic::atoms(dim)) {
-            syms.insert(atom);
-        }
-    }
-    for (const auto& stride : strides_a_) {
-        for (auto& atom : symbolic::atoms(stride)) {
-            syms.insert(atom);
-        }
-    }
-    for (const auto& stride : strides_b_) {
-        for (auto& atom : symbolic::atoms(stride)) {
-            syms.insert(atom);
-        }
-    }
-    for (auto& atom : symbolic::atoms(offset_a_)) {
-        syms.insert(atom);
-    }
-    for (auto& atom : symbolic::atoms(offset_b_)) {
-        syms.insert(atom);
-    }
+    layout_a_.collect_symbols(syms);
+    layout_b_.collect_symbols(syms);
     return syms;
 }
 
 void MatMulNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
-    for (auto& dim : shape_a_) {
-        dim = symbolic::subs(dim, old_expression, new_expression);
-    }
-    for (auto& dim : shape_b_) {
-        dim = symbolic::subs(dim, old_expression, new_expression);
-    }
-    for (auto& stride : strides_a_) {
-        stride = symbolic::subs(stride, old_expression, new_expression);
-    }
-    for (auto& stride : strides_b_) {
-        stride = symbolic::subs(stride, old_expression, new_expression);
-    }
-    offset_a_ = symbolic::subs(offset_a_, old_expression, new_expression);
-    offset_b_ = symbolic::subs(offset_b_, old_expression, new_expression);
+    layout_a_.replace_symbols(old_expression, new_expression);
+    layout_b_.replace_symbols(old_expression, new_expression);
 }
 
 std::unique_ptr<data_flow::DataFlowNode> MatMulNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<data_flow::DataFlowNode>(new MatMulNode(
-        element_id, debug_info(), vertex, parent, shape_a_, shape_b_, strides_a_, strides_b_, offset_a_, offset_b_
-    ));
+    return std::unique_ptr<data_flow::DataFlowNode>(
+        new MatMulNode(element_id, debug_info(), vertex, parent, layout_a_, layout_b_, fixed_quantization_)
+    );
+}
+
+types::PrimitiveType MatMulNode::fixed_quantization() const { return fixed_quantization_; }
+
+types::PrimitiveType MatMulNode::quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
+    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
+        return fixed_quantization_;
+    } else {
+        return this->primitive_type(data_flow_graph);
+    }
+}
+
+std::optional<types::PrimitiveType> MatMulNode::uniform_quantization(const data_flow::DataFlowGraph& data_flow_graph
+) const {
+    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
+        auto inferred = this->primitive_type(data_flow_graph);
+        if (inferred == fixed_quantization_) {
+            return fixed_quantization_;
+        } else {
+            return std::nullopt;
+        }
+    } else {
+        return this->primitive_type(data_flow_graph);
+    }
 }
 
 std::string MatMulNode::toStr() const {
     std::stringstream ss;
     ss << "MatMul(";
-    ss << "A=[";
-    for (size_t i = 0; i < shape_a_.size(); ++i) {
-        if (i > 0) ss << ", ";
-        ss << shape_a_[i]->__str__();
-    }
-    ss << "], strides_a=[";
-    for (size_t i = 0; i < strides_a_.size(); ++i) {
-        if (i > 0) ss << ", ";
-        ss << strides_a_[i]->__str__();
-    }
-    ss << "], offset_a=" << offset_a_->__str__();
-    ss << ", B=[";
-    for (size_t i = 0; i < shape_b_.size(); ++i) {
-        if (i > 0) ss << ", ";
-        ss << shape_b_[i]->__str__();
-    }
-    ss << "], strides_b=[";
-    for (size_t i = 0; i < strides_b_.size(); ++i) {
-        if (i > 0) ss << ", ";
-        ss << strides_b_[i]->__str__();
-    }
-    ss << "], offset_b=" << offset_b_->__str__();
+    ss << types::primitive_type_to_string(fixed_quantization_) << ", ";
+    ss << "A: " << layout_a_;
+    ss << ", B: " << layout_b_;
     ss << ")";
     return ss.str();
+}
+
+symbolic::Expression MatMulNode::flop() const {
+    auto res_elems = symbolic::mul(this->m(), this->n());
+    auto k = this->k();
+
+    auto mm_mul_ops = symbolic::mul(res_elems, k);
+    auto mm_sum_ops = symbolic::mul(res_elems, symbolic::sub(k, symbolic::one()));
+
+    auto mul_ops = mm_mul_ops;
+    auto add_ops = mm_sum_ops;
+    auto per_mat = symbolic::add(mul_ops, add_ops);
+    int a_dims = layout_a_.dims();
+    int b_dims = layout_b_.dims();
+    if (a_dims > 2 || b_dims > 2) {
+        std::vector<symbolic::Expression> factors{per_mat};
+        auto max_dims = std::max(a_dims, b_dims);
+        for (int i = 2; i < max_dims; ++i) {
+            symbolic::Expression dim_a, dim_b;
+            if (i < a_dims) {
+                dim_a = layout_a_.get_dim_innermost(i);
+            }
+            if (i < b_dims) {
+                dim_b = layout_b_.get_dim_innermost(i);
+            }
+            if (dim_a.is_null() & !dim_b.is_null()) {
+                factors.push_back(dim_b);
+            } else if (!dim_a.is_null() & dim_b.is_null()) {
+                factors.push_back(dim_a);
+            } else if (!dim_a.is_null() & !dim_b.is_null()) {
+                if (!symbolic::eq(dim_a, dim_b)) {
+                    throw InvalidSDFGException(
+                        "Batch dimension " + std::to_string(i) + " mismatch between A and B. A has " +
+                        dim_a->__str__() + ", B has " + dim_b->__str__()
+                    );
+                } else {
+                    factors.push_back(dim_a);
+                }
+            } else {
+                return SymEngine::null;
+            }
+        }
+        return SymEngine::mul(factors);
+    } else {
+        return per_mat;
+    }
 }
 
 void free_after_copy(
@@ -228,13 +228,9 @@ void free_after_copy(
 ) {
     auto& block = builder.add_block(parent, {}, DebugInfo());
     auto& access_in = builder.add_access(block, copy_name);
-    auto& access_out = builder.add_access(block, copy_name);
     auto& free_node = builder.add_library_node<stdlib::FreeNode>(block, DebugInfo());
     builder.add_computational_memlet(
         block, access_in, free_node, "_ptr", {}, types::Pointer(types::Scalar(types::PrimitiveType::Void))
-    );
-    builder.add_computational_memlet(
-        block, free_node, "_ptr", access_out, {}, types::Pointer(types::Scalar(types::PrimitiveType::Void))
     );
 }
 
@@ -242,7 +238,7 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     auto& dataflow = this->get_parent();
     auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
 
-    if (dataflow.in_degree(*this) != 2 || dataflow.out_degree(*this) != 1) {
+    if (dataflow.in_degree(*this) != 3 || dataflow.out_degree(*this) != 0) {
         return false;
     }
 
@@ -253,31 +249,30 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
 
     // Get input and output edges
     auto iedges = dataflow.in_edges_by_connector(*this);
-    if (iedges.size() != 2) {
+    if (iedges.size() != 3) {
         return false;
     }
-    auto* iedge_a = iedges.at(0);
-    auto* iedge_b = iedges.at(1);
-    auto oedges = dataflow.out_edges_by_connector(*this);
-    if (oedges.size() != 1) {
-        return false;
-    }
-    auto* oedge = oedges.at(0);
+    auto* iedge_y = iedges.at(Y_INPUT_IDX);
+    auto* iedge_a = iedges.at(A_INPUT_IDX);
+    auto* iedge_b = iedges.at(B_INPUT_IDX);
 
     // Check if legal - access nodes must not have other connections
     auto& input_node_a = static_cast<data_flow::AccessNode&>(iedge_a->src());
     auto& input_node_b = static_cast<data_flow::AccessNode&>(iedge_b->src());
-    auto& output_node = static_cast<data_flow::AccessNode&>(oedge->dst());
+    auto& output_ptr = static_cast<data_flow::AccessNode&>(iedge_y->src());
 
     if (dataflow.in_degree(input_node_a) != 0 || dataflow.in_degree(input_node_b) != 0 ||
-        dataflow.out_degree(output_node) != 0) {
+        dataflow.in_degree(output_ptr) != 0) {
         return false;
     }
 
     // Determine BLAS precision from primitive type
-    auto prim_type = this->primitive_type(dataflow);
+    auto prim_type = this->uniform_quantization(dataflow);
+    if (!prim_type) {
+        return false;
+    }
     blas::BLAS_Precision precision;
-    switch (prim_type) {
+    switch (prim_type.value()) {
         case types::PrimitiveType::Half:
             precision = blas::BLAS_Precision::h;
             break;
@@ -296,22 +291,21 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
 
     auto copy_name_a = input_node_a.data();
-    auto basic_strides_a = types::Tensor::strides_from_shape(shape_a_);
     auto copy_name_b = input_node_b.data();
 
     // Check if A and B have basic strides and whether they are transposed in the last dimension
     blas::BLAS_Transpose trans_a, trans_b;
-    if (MatMulNode::has_basic_strides(this->shape_a(), this->strides_a())) {
+    if (layout_a_.has_linear_accesses_no_padding()) {
         trans_a = blas::BLAS_Transpose::No;
-    } else if (MatMulNode::has_transposed_strides(this->shape_a(), this->strides_a())) {
+    } else if (layout_a_.has_transposed_strides_no_padding()) {
         trans_a = blas::BLAS_Transpose::Trans;
     } else {
         trans_a = blas::BLAS_Transpose::No;
         throw InvalidSDFGException("A must be in c-order");
     }
-    if (MatMulNode::has_basic_strides(this->shape_b(), this->strides_b())) {
+    if (layout_b_.has_linear_accesses_no_padding()) {
         trans_b = blas::BLAS_Transpose::No;
-    } else if (MatMulNode::has_transposed_strides(this->shape_b(), this->strides_b())) {
+    } else if (layout_b_.has_transposed_strides_no_padding()) {
         trans_b = blas::BLAS_Transpose::Trans;
     } else {
         trans_b = blas::BLAS_Transpose::No;
@@ -324,8 +318,8 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     symbolic::MultiExpression batch_vars;
 
     // Compute batch dimensions (all except last 2)
-    size_t batch_dims_a = shape_a_.size() - 2;
-    size_t batch_dims_b = shape_b_.size() - 2;
+    size_t batch_dims_a = layout_a_.dims() - 2;
+    size_t batch_dims_b = layout_b_.dims() - 2;
     size_t max_batch_dims = std::max(batch_dims_a, batch_dims_b);
 
     // Create maps for batch dimensions (using broadcasting)
@@ -344,11 +338,11 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
 
         if (a_idx != SIZE_MAX && b_idx != SIZE_MAX) {
             // Both have this dimension - they should be equal or one should be 1 (broadcasting)
-            bound = shape_a_[a_idx]; // Assume they match or broadcasting is handled
+            bound = layout_a_.get_dim(a_idx); // Assume they match or broadcasting is handled
         } else if (a_idx != SIZE_MAX) {
-            bound = shape_a_[a_idx];
+            bound = layout_a_.get_dim(a_idx);
         } else {
-            bound = shape_b_[b_idx];
+            bound = layout_b_.get_dim(b_idx);
         }
 
         auto condition = symbolic::Lt(indvar, bound);
@@ -368,21 +362,21 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
 
     auto& ref_block = builder.add_block(*last_scope, {}, block.debug_info());
 
-    auto scalar_type = types::Scalar(prim_type);
+    auto scalar_type = types::Scalar(prim_type.value());
 
     // Compute offsets for this batch iteration
     // For A: base_offset_a = offset_a + sum_i(batch_idx_i * batch_stride_a_i)
-    symbolic::Expression a_batch_offset = offset_a_;
+    symbolic::Expression a_batch_offset = layout_a_.offset();
     for (size_t i = 0; i < batch_dims_a; ++i) {
         size_t batch_idx = max_batch_dims - batch_dims_a + i;
-        a_batch_offset = symbolic::add(a_batch_offset, symbolic::mul(batch_vars[batch_idx], strides_a_[i]));
+        a_batch_offset = symbolic::add(a_batch_offset, symbolic::mul(batch_vars[batch_idx], layout_a_.get_stride(i)));
     }
 
     // For B: base_offset_b = offset_b + sum_i(batch_idx_i * batch_stride_b_i)
-    symbolic::Expression b_batch_offset = offset_b_;
+    symbolic::Expression b_batch_offset = layout_b_.offset();
     for (size_t i = 0; i < batch_dims_b; ++i) {
         size_t batch_idx = max_batch_dims - batch_dims_b + i;
-        b_batch_offset = symbolic::add(b_batch_offset, symbolic::mul(batch_vars[batch_idx], strides_b_[i]));
+        b_batch_offset = symbolic::add(b_batch_offset, symbolic::mul(batch_vars[batch_idx], layout_b_.get_stride(i)));
     }
 
     // Compute output batch offset (same as batch_vars pattern for Y)
@@ -394,9 +388,9 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         for (size_t j = i + 1; j < batch_vars.size(); ++j) {
             // Multiply by subsequent batch dimensions
             if (j < batch_dims_a) {
-                c_stride = symbolic::mul(c_stride, shape_a_[j]);
+                c_stride = symbolic::mul(c_stride, layout_a_.get_dim(j));
             } else if (j - batch_dims_a < batch_dims_b) {
-                c_stride = symbolic::mul(c_stride, shape_b_[j - batch_dims_a]);
+                c_stride = symbolic::mul(c_stride, layout_b_.get_dim(j - batch_dims_a));
             }
         }
         c_batch_offset = symbolic::add(c_batch_offset, symbolic::mul(batch_vars[i], c_stride));
@@ -405,7 +399,7 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     // Create access nodes
     auto& a_access = builder.add_access(ref_block, copy_name_a, debug_info());
     auto& b_access = builder.add_access(ref_block, copy_name_b, debug_info());
-    auto& c_access_in = builder.add_access(ref_block, output_node.data(), debug_info());
+    auto& c_access_in = builder.add_access(ref_block, output_ptr.data(), debug_info());
 
     std::string ref_name_a = builder.find_new_name(copy_name_a + "_ref");
     builder.add_container(ref_name_a, types::Pointer(types::Scalar(types::PrimitiveType::Void)));
@@ -413,7 +407,7 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     std::string ref_name_b = builder.find_new_name(copy_name_b + "_ref");
     builder.add_container(ref_name_b, types::Pointer(types::Scalar(types::PrimitiveType::Void)));
     auto& b_access_ref = builder.add_access(ref_block, ref_name_b, debug_info());
-    std::string ref_name_c = builder.find_new_name(output_node.data() + "_ref");
+    std::string ref_name_c = builder.find_new_name(output_ptr.data() + "_ref");
     builder.add_container(ref_name_c, types::Pointer(types::Scalar(types::PrimitiveType::Void)));
     auto& c_access_ref_in = builder.add_access(ref_block, ref_name_c, debug_info());
 
@@ -434,17 +428,17 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     symbolic::Expression lda, ldb;
     if (trans_a == blas::BLAS_Transpose::No) {
         // For row-major A [m * k] -> lda = k
-        lda = strides_a_[strides_a_.size() - 2];
+        lda = layout_a_.get_stride_innermost(1);
     } else {
         // For row-major A [m * k] -> lda = m
-        lda = strides_a_[strides_a_.size() - 1];
+        lda = layout_a_.get_stride_innermost(0);
     }
     if (trans_b == blas::BLAS_Transpose::No) {
         // For row-major B [k * n] -> ldb = n
-        ldb = strides_b_[strides_b_.size() - 2];
+        ldb = layout_b_.get_stride_innermost(1);
     } else {
         // For row-major B [k * n] -> ldb = k
-        ldb = strides_b_[strides_b_.size() - 1];
+        ldb = layout_b_.get_stride_innermost(0);
     }
     // For row-major C [m * n] -> ldc = n
     auto ldc = this->n();
@@ -471,8 +465,6 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     auto& b_access_ref_in_gemm = builder.add_access(gemm_block, ref_name_b, debug_info());
     auto& c_access_ref_in_gemm = builder.add_access(gemm_block, ref_name_c, debug_info());
 
-    auto& c_access_ref_out = builder.add_access(gemm_block, ref_name_c, debug_info());
-
     // Create alpha and beta constants
     auto& alpha_const = builder.add_constant(gemm_block, "1.0", scalar_type, debug_info());
     auto& beta_const = builder.add_constant(gemm_block, "0.0", scalar_type, debug_info());
@@ -494,10 +486,6 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     builder.add_computational_memlet(gemm_block, alpha_const, gemm_node, "__alpha", {}, scalar_type, debug_info());
     // Beta constant
     builder.add_computational_memlet(gemm_block, beta_const, gemm_node, "__beta", {}, scalar_type, debug_info());
-    // Output C
-    builder.add_computational_memlet(
-        gemm_block, gemm_node, "__C", c_access_ref_out, {}, ::sdfg::types::Pointer(scalar_type), debug_info()
-    );
 
     // Free copies if we made them
     if (copy_name_a != input_node_a.data()) {
@@ -510,12 +498,12 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     // Remove the original nodes
     builder.remove_memlet(block, *iedge_a);
     builder.remove_memlet(block, *iedge_b);
-    builder.remove_memlet(block, *oedge);
+    builder.remove_memlet(block, *iedge_y);
     if (&input_node_a != &input_node_b) {
         builder.remove_node(block, input_node_a);
     }
     builder.remove_node(block, input_node_b);
-    builder.remove_node(block, output_node);
+    builder.remove_node(block, output_ptr);
     builder.remove_node(block, *this);
     builder.remove_child(parent, index + 1);
 
@@ -530,28 +518,10 @@ nlohmann::json MatMulNodeSerializer::serialize(const data_flow::LibraryNode& lib
 
     serializer::JSONSerializer serializer;
 
-    j["shape_a"] = nlohmann::json::array();
-    for (auto& dim : matmul_node.shape_a()) {
-        j["shape_a"].push_back(serializer.expression(dim));
-    }
+    matmul_node.layout_a().serialize_to_json(j["layout_a"]);
+    matmul_node.layout_b().serialize_to_json(j["layout_b"]);
 
-    j["shape_b"] = nlohmann::json::array();
-    for (auto& dim : matmul_node.shape_b()) {
-        j["shape_b"].push_back(serializer.expression(dim));
-    }
-
-    j["strides_a"] = nlohmann::json::array();
-    for (auto& stride : matmul_node.strides_a()) {
-        j["strides_a"].push_back(serializer.expression(stride));
-    }
-
-    j["strides_b"] = nlohmann::json::array();
-    for (auto& stride : matmul_node.strides_b()) {
-        j["strides_b"].push_back(serializer.expression(stride));
-    }
-
-    j["offset_a"] = serializer.expression(matmul_node.offset_a());
-    j["offset_b"] = serializer.expression(matmul_node.offset_b());
+    j["result_quant"] = matmul_node.fixed_quantization();
 
     return j;
 }
@@ -562,48 +532,67 @@ data_flow::LibraryNode& MatMulNodeSerializer::deserialize(
     assert(j.contains("element_id"));
     assert(j.contains("code"));
     assert(j.contains("debug_info"));
-    assert(j.contains("shape_a"));
-    assert(j.contains("shape_b"));
 
-    symbolic::MultiExpression shape_a;
-    for (const auto& dim : j["shape_a"]) {
-        shape_a.push_back(symbolic::parse(dim.get<std::string>()));
-    }
+    std::optional<TensorLayout> layout_a;
+    std::optional<TensorLayout> layout_b;
+    types::PrimitiveType quantization = QUANTIZATION_MATCH_INPUTS;
 
-    symbolic::MultiExpression shape_b;
-    for (const auto& dim : j["shape_b"]) {
-        shape_b.push_back(symbolic::parse(dim.get<std::string>()));
-    }
+    auto layout_a_it = j.find("layout_a");
+    if (layout_a_it != j.end()) {
+        layout_a = TensorLayout::deserialize_from_json(*layout_a_it);
+        layout_b = TensorLayout::deserialize_from_json(j.at("layout_b"));
 
-    symbolic::MultiExpression strides_a;
-    if (j.contains("strides_a")) {
-        for (const auto& stride : j["strides_a"]) {
-            strides_a.push_back(symbolic::parse(stride.get<std::string>()));
+    } else {
+        assert(j.contains("shape_a"));
+        assert(j.contains("shape_b"));
+
+        symbolic::MultiExpression shape_a;
+        for (const auto& dim : j["shape_a"]) {
+            shape_a.push_back(symbolic::parse(dim.get<std::string>()));
         }
-    }
 
-    symbolic::MultiExpression strides_b;
-    if (j.contains("strides_b")) {
-        for (const auto& stride : j["strides_b"]) {
-            strides_b.push_back(symbolic::parse(stride.get<std::string>()));
+        symbolic::MultiExpression shape_b;
+        for (const auto& dim : j["shape_b"]) {
+            shape_b.push_back(symbolic::parse(dim.get<std::string>()));
         }
+
+        symbolic::MultiExpression strides_a;
+        if (j.contains("strides_a")) {
+            for (const auto& stride : j["strides_a"]) {
+                strides_a.push_back(symbolic::parse(stride.get<std::string>()));
+            }
+        }
+
+        symbolic::MultiExpression strides_b;
+        if (j.contains("strides_b")) {
+            for (const auto& stride : j["strides_b"]) {
+                strides_b.push_back(symbolic::parse(stride.get<std::string>()));
+            }
+        }
+
+        symbolic::Expression offset_a = symbolic::integer(0);
+        if (j.contains("offset_a")) {
+            offset_a = symbolic::parse(j["offset_a"].get<std::string>());
+        }
+
+        symbolic::Expression offset_b = symbolic::integer(0);
+        if (j.contains("offset_b")) {
+            offset_b = symbolic::parse(j["offset_b"].get<std::string>());
+        }
+
+        layout_a = TensorLayout(shape_a, strides_a, offset_a);
+        layout_b = TensorLayout(shape_b, strides_b, offset_b);
     }
 
-    symbolic::Expression offset_a = symbolic::integer(0);
-    if (j.contains("offset_a")) {
-        offset_a = symbolic::parse(j["offset_a"].get<std::string>());
-    }
-
-    symbolic::Expression offset_b = symbolic::integer(0);
-    if (j.contains("offset_b")) {
-        offset_b = symbolic::parse(j["offset_b"].get<std::string>());
+    auto result_quant = j.find("result_quant");
+    if (result_quant != j.end()) {
+        quantization = result_quant->get<types::PrimitiveType>();
     }
 
     sdfg::serializer::JSONSerializer serializer;
     DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
 
-    return builder
-        .add_library_node<MatMulNode>(parent, debug_info, shape_a, shape_b, strides_a, strides_b, offset_a, offset_b);
+    return builder.add_library_node<MatMulNode>(parent, debug_info, layout_a.value(), layout_b.value(), quantization);
 }
 
 } // namespace tensor

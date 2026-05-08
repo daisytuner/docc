@@ -12,7 +12,7 @@ FreeNode::FreeNode(
           vertex,
           parent,
           LibraryNodeType_Free,
-          {"_ptr"},
+          {},
           {"_ptr"},
           true,
           data_flow::ImplementationType_NONE
@@ -31,6 +31,14 @@ std::unique_ptr<data_flow::DataFlowNode> FreeNode::
 void FreeNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     // Do nothing
     return;
+}
+
+data_flow::PointerAccessType FreeNode::pointer_access_type(int input_idx) const {
+    if (input_idx == 0) {
+        return std::make_unique<data_flow::PointerInvalidate>();
+    } else {
+        return LibraryNode::pointer_access_type(input_idx);
+    }
 }
 
 nlohmann::json FreeNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
@@ -67,14 +75,12 @@ FreeNodeDispatcher::FreeNodeDispatcher(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void FreeNodeDispatcher::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void FreeNodeDispatcher::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
-    auto& free_node = static_cast<const FreeNode&>(node_);
-
-    stream << language_extension_.external_prefix() << "free(" << free_node.inputs().at(0) << ");" << std::endl;
+    out.stream << out.language_extension.external_prefix() << "free(" << inputs.at(0).expr << ");" << std::endl;
 }
 
 } // namespace stdlib

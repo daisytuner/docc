@@ -33,6 +33,71 @@ DataOffloadingNode::DataOffloadingNode(
       ),
       transfer_direction_(transfer_direction), buffer_lifecycle_(buffer_lifecycle), size_(std::move(size)) {}
 
+DataOffloadingNode::DataOffloadingNode(
+    size_t element_id,
+    const DebugInfo& debug_info,
+    const graph::Vertex vertex,
+    data_flow::DataFlowGraph& parent,
+    const data_flow::LibraryNodeCode code,
+    DataTransferDirection transfer_direction,
+    BufferLifecycle buffer_lifecycle,
+    symbolic::Expression size
+)
+    : DataOffloadingNode(
+          element_id,
+          debug_info,
+          vertex,
+          parent,
+          code,
+          output_conns(transfer_direction, buffer_lifecycle),
+          input_conns(transfer_direction, buffer_lifecycle),
+          transfer_direction,
+          buffer_lifecycle,
+          size
+      ) {}
+
+std::vector<std::string> DataOffloadingNode::
+    output_conns(DataTransferDirection transfer_direction, BufferLifecycle buffer_lifecycle) {
+    if (is_ALLOC(buffer_lifecycle)) {
+        return {"_dev"};
+    } else {
+        return {};
+    }
+}
+
+std::vector<std::string> DataOffloadingNode::
+    input_conns(DataTransferDirection transfer_direction, BufferLifecycle buffer_lifecycle) {
+    if (is_H2D(transfer_direction) && is_ALLOC(buffer_lifecycle)) {
+        return {"_hst"};
+    } else if (!is_NONE(transfer_direction)) {
+        return {"_hst", "_dev"};
+    } else if (is_FREE(buffer_lifecycle)) {
+        return {"_dev"};
+    } else {
+        return {};
+    }
+}
+
+int DataOffloadingNode::dev_ptr_input_idx() const {
+    if (transfer_direction_ == DataTransferDirection::NONE && buffer_lifecycle_ == BufferLifecycle::FREE) {
+        return 0;
+    } else if (transfer_direction_ == DataTransferDirection::D2H) {
+        return 1;
+    } else if (transfer_direction_ == DataTransferDirection::H2D && buffer_lifecycle_ != BufferLifecycle::ALLOC) {
+        return 1;
+    } else {
+        return -1;
+    }
+}
+
+int DataOffloadingNode::host_ptr_input_idx() const {
+    if (transfer_direction_ != DataTransferDirection::NONE) {
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
 DataTransferDirection DataOffloadingNode::transfer_direction() const { return this->transfer_direction_; }
 
 BufferLifecycle DataOffloadingNode::buffer_lifecycle() const { return this->buffer_lifecycle_; }
@@ -148,8 +213,18 @@ void DataOffloadingNode::remove_h2d() {
 }
 
 data_flow::PointerAccessType DataOffloadingNode::pointer_access_type(int input_idx) const {
-    if (is_h2d() && input_idx == 0) {
-        return data_flow::PointerReadOnly(size_, true);
+    if (is_h2d() && input_idx == host_ptr_input_idx()) {
+        return std::make_unique<data_flow::PointerReadOnly>(size_, true);
+    } else if (is_h2d() && !is_alloc() && input_idx == dev_ptr_input_idx()) {
+        return std::make_unique<data_flow::PointerFullWrite>(size_, true);
+    } else if (is_d2h() && input_idx == dev_ptr_input_idx()) {
+        return std::make_unique<data_flow::PointerReadOnly>(size_, true);
+    } else if (is_d2h() && input_idx == host_ptr_input_idx()) {
+        return std::make_unique<data_flow::PointerFullWrite>(size_, true, true);
+    } else if (is_d2h() && is_free() && input_idx == dev_ptr_input_idx()) {
+        return std::make_unique<data_flow::PointerInvalidate>();
+    } else if (is_d2h() && !is_free() && input_idx == 1) {
+        return std::make_unique<data_flow::PointerReadOnly>(size_, true);
     } else {
         return LibraryNode::pointer_access_type(input_idx);
     }
@@ -171,6 +246,7 @@ void DataOffloadingNode::remove_d2h() {
             throw InvalidSDFGException("DataOffloadingNode: Tried removing d2h but node has no other purpose");
         }
         this->transfer_direction_ = DataTransferDirection::NONE;
+        this->inputs_.erase(this->inputs_.begin());
     }
 }
 
@@ -178,29 +254,43 @@ data_flow::EdgeRemoveOption DataOffloadingNode::
     can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {
     if (graph.out_edges_for_connector(*this, memlet->src_conn()).size() > 1) {
         return data_flow::EdgeRemoveOption::Trivially;
-    } else if (transfer_direction_ != DataTransferDirection::NONE && outputs_.size() == 1 &&
-               memlet->src_conn() == outputs_.at(0)) {
-        // the node represents a transfer, whose output is dead.
-        if (buffer_lifecycle_ != BufferLifecycle::NO_CHANGE) {
-            // the node still has remaining purpose without the transfer
-            return data_flow::EdgeRemoveOption::RequiresUpdate;
-        } else {
-            // the node in its entirety is dead if it the transfer is not needed
-            return data_flow::EdgeRemoveOption::RemoveNodeAfter;
-        }
+    } else if (is_alloc() && outputs_.size() == 1 && memlet->src_conn() == outputs_.at(0)) {
+        // the node in its entirety is dead if it the alloc is not needed
+        return data_flow::EdgeRemoveOption::RemoveNodeAfter;
     } else {
         return data_flow::EdgeRemoveOption::NotRemovable;
     }
 }
 
-bool DataOffloadingNode::update_edge_removed(const std::string& out_conn) {
-    if (transfer_direction_ != DataTransferDirection::NONE && outputs_.size() == 1 && out_conn == outputs_.at(0)) {
-        transfer_direction_ = DataTransferDirection::NONE;
-        outputs_.erase(outputs_.begin());
-        return true;
+bool DataOffloadingNode::update_edge_removed(const std::string& out_conn) { return false; }
+
+data_flow::EdgeRemoveOption DataOffloadingNode::
+    can_remove_in_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {
+    if (is_h2d() && is_alloc() && memlet->dst_conn() == inputs_.at(0)) {
+        return data_flow::EdgeRemoveOption::RequiresUpdate;
     } else {
-        return false;
+        return data_flow::EdgeRemoveOption::NotRemovable;
     }
+}
+
+nlohmann::json DataOffloadingNodeSerializer::serialize(const sdfg::data_flow::LibraryNode& library_node) {
+    const auto& node = static_cast<const DataOffloadingNode&>(library_node);
+    nlohmann::json j;
+
+    // Library node properties
+    j["code"] = std::string(library_node.code().value());
+
+    // Offloading node properties
+    sdfg::serializer::JSONSerializer serializer;
+    if (node.size().is_null()) {
+        j["size"] = nlohmann::json::value_t::null;
+    } else {
+        j["size"] = serializer.expression(node.size());
+    }
+    j["transfer_direction"] = static_cast<int8_t>(node.transfer_direction());
+    j["buffer_lifecycle"] = static_cast<int8_t>(node.buffer_lifecycle());
+
+    return j;
 }
 
 } // namespace offloading

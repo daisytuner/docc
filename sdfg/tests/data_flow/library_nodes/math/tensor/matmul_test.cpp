@@ -6,6 +6,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -39,20 +40,22 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
     symbolic::MultiExpression output_shape = {symbolic::integer(4), symbolic::integer(6)};
     types::Tensor output_tensor(desc.primitive_type(), output_shape);
 
-    auto& matmul_node =
-        static_cast<math::tensor::MatMulNode&>(builder.add_library_node<
-                                               math::tensor::MatMulNode>(block, DebugInfo(), shape_a, shape_b));
+    auto& matmul_node = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a), math::tensor::TensorLayout(shape_b)
+    ));
 
     builder.add_computational_memlet(block, a_node, matmul_node, "A", {}, input_tensor_a, block.debug_info());
     builder.add_computational_memlet(block, b_node, matmul_node, "B", {}, input_tensor_b, block.debug_info());
-    builder.add_computational_memlet(block, matmul_node, "Y", y_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, y_node, matmul_node, "Y", {}, output_tensor, block.debug_info());
+
+    dump_sdfg(sdfg, "0.before");
 
     // Check basic properties
-    EXPECT_EQ(matmul_node.inputs().size(), 2);
-    EXPECT_EQ(matmul_node.inputs()[0], "A");
-    EXPECT_EQ(matmul_node.inputs()[1], "B");
-    EXPECT_EQ(matmul_node.outputs().size(), 1);
-    EXPECT_EQ(matmul_node.outputs()[0], "Y");
+    EXPECT_EQ(matmul_node.inputs().size(), 3);
+    EXPECT_EQ(matmul_node.inputs()[math::tensor::MatMulNode::Y_INPUT_IDX], "Y");
+    EXPECT_EQ(matmul_node.inputs()[math::tensor::MatMulNode::A_INPUT_IDX], "A");
+    EXPECT_EQ(matmul_node.inputs()[math::tensor::MatMulNode::B_INPUT_IDX], "B");
+    EXPECT_EQ(matmul_node.outputs().size(), 0);
 
     // Check dimensions
     EXPECT_TRUE(symbolic::eq(matmul_node.m(), symbolic::integer(4)));
@@ -66,6 +69,8 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(matmul_node.expand(builder, analysis_manager));
+
+    dump_sdfg(sdfg, "1.expanded");
 
     // After expansion, the root should contain a new sequence
     EXPECT_EQ(sdfg.root().size(), 1);
@@ -98,7 +103,7 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
                     // Check GEMM has correct connections
                     auto& dataflow = gemm->get_parent();
                     EXPECT_EQ(dataflow.in_degree(*gemm), 5); // A, B, C, alpha, beta
-                    EXPECT_EQ(dataflow.out_degree(*gemm), 1); // C output
+                    EXPECT_EQ(dataflow.out_degree(*gemm), 0); // no output edge, C is written via the ptr
                 }
             }
         }
@@ -136,13 +141,13 @@ TEST(MatMulTest, MatMul_3D_Batched) {
     symbolic::MultiExpression output_shape = {symbolic::integer(2), symbolic::integer(4), symbolic::integer(6)};
     types::Tensor output_tensor(desc.primitive_type(), output_shape);
 
-    auto& matmul_node =
-        static_cast<math::tensor::MatMulNode&>(builder.add_library_node<
-                                               math::tensor::MatMulNode>(block, DebugInfo(), shape_a, shape_b));
+    auto& matmul_node = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a), math::tensor::TensorLayout(shape_b)
+    ));
 
     builder.add_computational_memlet(block, a_node, matmul_node, "A", {}, input_tensor_a, block.debug_info());
     builder.add_computational_memlet(block, b_node, matmul_node, "B", {}, input_tensor_b, block.debug_info());
-    builder.add_computational_memlet(block, matmul_node, "Y", y_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, y_node, matmul_node, "Y", {}, output_tensor, block.debug_info());
 
     // Check dimensions
     EXPECT_TRUE(symbolic::eq(matmul_node.m(), symbolic::integer(4)));
@@ -204,13 +209,13 @@ TEST(MatMulTest, MatMul_WithSymbolicDimensions) {
     symbolic::MultiExpression output_shape = {M, N};
     types::Tensor output_tensor(desc.primitive_type(), output_shape);
 
-    auto& matmul_node =
-        static_cast<math::tensor::MatMulNode&>(builder.add_library_node<
-                                               math::tensor::MatMulNode>(block, DebugInfo(), shape_a, shape_b));
+    auto& matmul_node = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a), math::tensor::TensorLayout(shape_b)
+    ));
 
     builder.add_computational_memlet(block, a_node, matmul_node, "A", {}, input_tensor_a, block.debug_info());
     builder.add_computational_memlet(block, b_node, matmul_node, "B", {}, input_tensor_b, block.debug_info());
-    builder.add_computational_memlet(block, matmul_node, "Y", y_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, y_node, matmul_node, "Y", {}, output_tensor, block.debug_info());
 
     // Check dimensions are symbolic
     EXPECT_TRUE(symbolic::eq(matmul_node.m(), M));
@@ -275,13 +280,13 @@ TEST(MatMulTest, MatMul_IntegerType_ReturnsFailure) {
     symbolic::MultiExpression output_shape = {symbolic::integer(4), symbolic::integer(6)};
     types::Tensor output_tensor(desc.primitive_type(), output_shape);
 
-    auto& matmul_node =
-        static_cast<math::tensor::MatMulNode&>(builder.add_library_node<
-                                               math::tensor::MatMulNode>(block, DebugInfo(), shape_a, shape_b));
+    auto& matmul_node = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a), math::tensor::TensorLayout(shape_b)
+    ));
 
     builder.add_computational_memlet(block, a_node, matmul_node, "A", {}, input_tensor_a, block.debug_info());
     builder.add_computational_memlet(block, b_node, matmul_node, "B", {}, input_tensor_b, block.debug_info());
-    builder.add_computational_memlet(block, matmul_node, "Y", y_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, y_node, matmul_node, "Y", {}, output_tensor, block.debug_info());
 
     sdfg.validate();
 
@@ -327,12 +332,15 @@ TEST(MatMulTest, MatMul_NoCopyForDefaultStrides) {
     types::Tensor output_tensor(desc.primitive_type(), output_shape);
 
     auto& matmul_node = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
-        block, DebugInfo(), shape_a, shape_b, strides_a, strides_b, offset_a, offset_b
+        block,
+        DebugInfo(),
+        math::tensor::TensorLayout(shape_a, strides_a, offset_a),
+        math::tensor::TensorLayout(shape_b, strides_b, offset_b)
     ));
 
     builder.add_computational_memlet(block, a_node, matmul_node, "A", {}, input_tensor_a, block.debug_info());
     builder.add_computational_memlet(block, b_node, matmul_node, "B", {}, input_tensor_b, block.debug_info());
-    builder.add_computational_memlet(block, matmul_node, "Y", y_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, y_node, matmul_node, "Y", {}, output_tensor, block.debug_info());
 
     sdfg.validate();
 

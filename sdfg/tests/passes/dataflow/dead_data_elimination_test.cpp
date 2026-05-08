@@ -746,9 +746,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryWithFree) {
     auto& free_block = builder.add_block(root);
     auto& tmp_read = builder.add_access(free_block, "tmp");
     auto& free_node = builder.add_library_node<stdlib::FreeNode>(free_block, DebugInfo());
-    auto& tmp_null = builder.add_access(free_block, "tmp");
     builder.add_computational_memlet(free_block, tmp_read, free_node, "_ptr", {}, t_fp_ptr);
-    builder.add_computational_memlet(free_block, free_node, "_ptr", tmp_null, {}, t_fp_ptr);
 
     auto sdfg = builder.move();
 

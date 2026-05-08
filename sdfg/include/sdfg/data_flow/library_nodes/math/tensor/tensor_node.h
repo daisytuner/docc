@@ -22,6 +22,8 @@ namespace sdfg {
 namespace math {
 namespace tensor {
 
+constexpr types::PrimitiveType QUANTIZATION_MATCH_INPUTS = types::PrimitiveType::Void;
+
 /**
  * @class TensorNode
  * @brief Abstract base class for all tensor operations
@@ -76,6 +78,8 @@ public:
      *
      * Determines the primitive type by examining connected memlets.
      * All memlets must have the same primitive type.
+     *
+     * TODO this may not be true for all operations and will require a filter for which inputs to check
      *
      * @param graph The dataflow graph containing this node
      * @return The primitive type used by this operation

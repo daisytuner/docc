@@ -66,7 +66,10 @@ void Memlet::validate(const Function& function) const {
                 // Criterion: Non-void connector must be an output of the code node
                 if (std::find(code_node->outputs().begin(), code_node->outputs().end(), this->src_conn_) ==
                     code_node->outputs().end()) {
-                    throw InvalidSDFGException("Memlet: Computation memlets must have an output in the code node");
+                    throw InvalidSDFGException(
+                        "Memlet " + std::to_string(element_id_) + " attached to non-existent " + this->src_conn_ +
+                        " connector on #" + std::to_string(code_node->element_id())
+                    );
                 }
             } else {
                 throw InvalidSDFGException(

@@ -124,21 +124,21 @@ void TenstorrentOffloadingExpansion::allocate_device_arg(
     symbolic::Expression arg_size,
     symbolic::Expression page_size
 ) {
-    auto& access_node_out_device = builder.add_access(alloc_block, device_arg_name);
-
-    auto& malloc_node = builder.add_library_node<TTDataOffloadingNode>(
+    offloading::add_offloading_node<TTDataOffloadingNode>(
+        builder,
         alloc_block,
+        host_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::FREE,
+        builder.subject().type(host_arg_name),
+        builder.subject().type(device_arg_name),
         org.debug_info(),
+        std::move(arg_size),
         force_synchronous_,
         device_handle_,
-        std::move(arg_size),
-        std::move(page_size),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC
+        page_size
     );
-
-    auto& out_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(alloc_block, malloc_node, "_ret", access_node_out_device, {}, out_type);
 }
 
 void TenstorrentOffloadingExpansion::deallocate_device_arg(
@@ -149,23 +149,21 @@ void TenstorrentOffloadingExpansion::deallocate_device_arg(
     symbolic::Expression arg_size,
     symbolic::Expression page_size
 ) {
-    auto& access_node_in_device = builder.add_access(dealloc_block, device_arg_name);
-    auto& access_node_out_device = builder.add_access(dealloc_block, device_arg_name);
-
-    auto& free_node = builder.add_library_node<TTDataOffloadingNode>(
+    offloading::add_offloading_node<TTDataOffloadingNode>(
+        builder,
         dealloc_block,
+        device_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::FREE,
+        builder.subject().type(device_arg_name),
+        builder.subject().type(device_arg_name),
         org.debug_info(),
+        SymEngine::null,
         force_synchronous_,
         device_handle_,
-        std::move(arg_size),
-        std::move(page_size),
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::FREE
+        page_size
     );
-
-    auto& device_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(dealloc_block, access_node_in_device, free_node, "_ptr", {}, device_type);
-    builder.add_computational_memlet(dealloc_block, free_node, "_ptr", access_node_out_device, {}, device_type);
 }
 
 void TenstorrentOffloadingExpansion::copy_to_device(
@@ -177,25 +175,21 @@ void TenstorrentOffloadingExpansion::copy_to_device(
     symbolic::Expression page_size,
     Block& copy_block
 ) {
-    auto& access_node_in = builder.add_access(copy_block, host_arg_name);
-    auto& access_node_out = builder.add_access(copy_block, device_arg_name);
-
-    auto& memcpy_node = builder.add_library_node<TTDataOffloadingNode>(
+    offloading::add_offloading_node<TTDataOffloadingNode>(
+        builder,
         copy_block,
+        host_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        builder.subject().type(host_arg_name),
+        builder.subject().type(device_arg_name),
         org.debug_info(),
+        size,
         force_synchronous_,
         device_handle_,
-        size,
-        page_size,
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::NO_CHANGE
+        page_size
     );
-
-    auto& in_type = builder.subject().type(host_arg_name);
-    builder.add_computational_memlet(copy_block, access_node_in, memcpy_node, "_src", {}, in_type);
-
-    auto& out_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(copy_block, memcpy_node, "_dst", access_node_out, {}, out_type);
 }
 
 void TenstorrentOffloadingExpansion::copy_to_device_with_allocation(
@@ -207,25 +201,21 @@ void TenstorrentOffloadingExpansion::copy_to_device_with_allocation(
     Block& block,
     symbolic::Expression page_size
 ) {
-    auto& access_node_in = builder.add_access(block, host_arg_name);
-    auto& access_node_out = builder.add_access(block, device_arg_name);
-
-    auto& memcpy_node = builder.add_library_node<TTDataOffloadingNode>(
+    offloading::add_offloading_node<TTDataOffloadingNode>(
+        builder,
         block,
+        host_arg_name,
+        device_arg_name,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::ALLOC,
+        builder.subject().type(host_arg_name),
+        builder.subject().type(device_arg_name),
         org.debug_info(),
+        size,
         force_synchronous_,
         device_handle_,
-        size,
-        page_size,
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::ALLOC
+        page_size
     );
-
-    auto& in_type = builder.subject().type(host_arg_name);
-    builder.add_computational_memlet(block, access_node_in, memcpy_node, "_src", {}, in_type);
-
-    auto& out_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(block, memcpy_node, "_dst", access_node_out, {}, out_type);
 }
 
 void TenstorrentOffloadingExpansion::copy_from_device(
@@ -237,26 +227,21 @@ void TenstorrentOffloadingExpansion::copy_from_device(
     symbolic::Expression size,
     symbolic::Expression page_size
 ) {
-    auto& access_node_in = builder.add_access(copy_out_block, device_arg_name);
-    auto& access_node_out = builder.add_access(copy_out_block, host_arg_name);
-
-    bool blocking_copy_from_device = true;
-    auto& memcpy_node = builder.add_library_node<TTDataOffloadingNode>(
+    offloading::add_offloading_node<TTDataOffloadingNode>(
+        builder,
         copy_out_block,
-        org.debug_info(),
-        blocking_copy_from_device,
-        device_handle_,
-        size,
-        page_size,
+        host_arg_name,
+        device_arg_name,
         offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::NO_CHANGE
+        offloading::BufferLifecycle::NO_CHANGE,
+        builder.subject().type(host_arg_name),
+        builder.subject().type(device_arg_name),
+        org.debug_info(),
+        size,
+        force_synchronous_,
+        device_handle_,
+        page_size
     );
-
-    auto& in_type = builder.subject().type(device_arg_name);
-    builder.add_computational_memlet(copy_out_block, access_node_in, memcpy_node, "_src", {}, in_type);
-
-    auto& out_type = builder.subject().type(host_arg_name);
-    builder.add_computational_memlet(copy_out_block, memcpy_node, "_dst", access_node_out, {}, out_type);
 }
 
 void TenstorrentOffloadingExpansion::create_offloaded_memory_handling(std::vector<TransferArg>& transfer_args) {

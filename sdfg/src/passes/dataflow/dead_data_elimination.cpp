@@ -53,9 +53,10 @@ class MemoryOwnershipAnalysis : public analysis::BaseUserVisitor,
     struct FreeCluster {
         const Block* block;
         const data_flow::Memlet* in;
-        const data_flow::Memlet* out;
+        const stdlib::FreeNode* node;
 
-        FreeCluster(const Block* b, const data_flow::Memlet* i, const data_flow::Memlet* o) : block(b), in(i), out(o) {}
+        FreeCluster(const Block* b, const data_flow::Memlet* i, const stdlib::FreeNode* free)
+            : block(b), in(i), node(free) {}
     };
 
     struct OwnedArea {
@@ -142,11 +143,8 @@ void MemoryOwnershipAnalysis::OwnedArea::remove_from(builder::StructuredSDFGBuil
     // );
 
     for (auto& free_cluster : this->free_clusters) {
-        auto& memlet = *free_cluster.out;
-        builder.clear_code_node_legacy(
-            *const_cast<Block*>(free_cluster.block), dynamic_cast<const data_flow::CodeNode&>(memlet.src())
-        );
-        // builder.clear_node(*const_cast<Block*>(free_cluster.block), memlet.dst(), {&memlet.dst(), &memlet.src()});
+        auto& free = *free_cluster.node;
+        builder.clear_code_node_legacy(*const_cast<Block*>(free_cluster.block), free);
     }
 }
 
@@ -156,7 +154,7 @@ MemoryOwnershipAnalysis::MemoryOwnershipAnalysis(StructuredSDFG& sdfg)
 bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedArea& area) {
     // An escape is excused if it matches the input edge of one of the free_clusters.
     // Reading the pointer to pass it to free() is not a real escape.
-    for (const auto& cluster : area.free_clusters) {
+    for (const auto& cluster : area.free_clusters) { // could be expanded into looking aptr access type
         if (element == cluster.in) {
             return true;
         }
@@ -169,8 +167,7 @@ bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedA
             auto conns = libNode->inputs();
             auto idx = std::find(conns.begin(), conns.end(), memlet->dst_conn()) - conns.begin();
             auto access_type = libNode->pointer_access_type(idx);
-            auto maybe_rd_only = std::get_if<data_flow::PointerReadOnly>(&access_type);
-            if (maybe_rd_only && maybe_rd_only->no_ptr_escape()) {
+            if (access_type && access_type->no_ptr_escape()) {
                 return true;
             }
         }
@@ -190,21 +187,7 @@ bool MemoryOwnershipAnalysis::excusedOverwrite(const Element* element, const Own
     if (element == area.producer) {
         return true;
     }
-    // DataOffloadNodes currently have a fake-output edge instead of a pointer input.
-    // But they can only write to memory, never generate/overwrite the pointer
-    if (auto* offload = dynamic_cast<const offloading::DataOffloadingNode*>(&memlet->src())) {
-        if (offload->transfer_direction() != offloading::DataTransferDirection::NONE) {
-            return true;
-        }
-    }
 
-    // The output edge of a free cluster is an excused overwrite — free sets the pointer
-    // to NULL (a fake overwrite that doesn't represent a meaningful reassignment).
-    for (const auto& cluster : area.free_clusters) {
-        if (element == cluster.out) {
-            return true;
-        }
-    }
     return false;
 }
 
@@ -279,18 +262,17 @@ bool MemoryOwnershipAnalysis::visit(sdfg::structured_control_flow::Block& node) 
             auto* free_node = dynamic_cast<const stdlib::FreeNode*>(library_node);
             auto input = dflow.in_edge_for_connector(*free_node, free_node->input(0));
             auto outputs = dflow.out_edges_for_connector(*free_node, free_node->output(0));
-            if (input && outputs.size() == 1) {
+            if (input && outputs.empty()) {
                 auto* in_access = dynamic_cast<const data_flow::AccessNode*>(&input->src());
-                auto* out_access = dynamic_cast<const data_flow::AccessNode*>(&outputs.at(0)->dst());
 
-                if (in_access && out_access && in_access->data() == out_access->data()) {
+                if (in_access) {
                     auto& container = in_access->data();
                     if (sdfg_.type(container).type_id() == types::TypeID::Pointer) {
                         auto area_it = originally_owned_data_.find(container);
                         if (area_it != originally_owned_data_.end()) { // we scan in execution order. Malloc needs to
                                                                        // have been found before
                             auto& area = area_it->second;
-                            area.free_clusters.emplace_back(&node, input, outputs[0]);
+                            area.free_clusters.emplace_back(&node, input, free_node);
                         }
                     }
                 }
@@ -310,9 +292,16 @@ bool MemoryOwnershipAnalysis::visit(sdfg::structured_control_flow::Block& node) 
  */
 class IndirectMemoryAccessFinder : public analysis::BaseUserVisitor { // TODO update to use the PointerUsedAnalyzer and
                                                                       // a policy that filters the containstarg
+public:
+    enum class IndirectWriteType { AccessNode, PtrBorrow };
+    struct IndirectWrite {
+        const Block* block;
+        IndirectWriteType type;
+    };
+
 private:
     std::unordered_map<std::string, std::unordered_set<const data_flow::Memlet*>> indirect_reads_;
-    std::unordered_map<std::string, std::unordered_map<const data_flow::Memlet*, const Block*>> writes_to_remove_;
+    std::unordered_map<std::string, std::unordered_map<const data_flow::Memlet*, IndirectWrite>> writes_to_remove_;
     const std::unordered_set<std::string>& target_containers_;
 
 public:
@@ -321,7 +310,7 @@ public:
     const std::unordered_map<std::string, std::unordered_set<const data_flow::Memlet*>>& indirect_reads() {
         return indirect_reads_;
     }
-    const std::unordered_map<std::string, std::unordered_map<const data_flow::Memlet*, const Block*>>& writes_to_remove() {
+    const std::unordered_map<std::string, std::unordered_map<const data_flow::Memlet*, IndirectWrite>>& writes_to_remove() {
         return writes_to_remove_;
     }
 
@@ -369,9 +358,12 @@ void IndirectMemoryAccessFinder::use_as_src_node(
                 auto conns = libNode->inputs();
                 auto idx = std::find(conns.begin(), conns.end(), edge.dst_conn()) - conns.begin();
                 auto access_type = libNode->pointer_access_type(idx);
-                auto maybe_rd_only = std::get_if<data_flow::PointerReadOnly>(&access_type);
-                if (maybe_rd_only && maybe_rd_only->no_ptr_escape()) {
-                    indirect_reads_[container].insert(&edge);
+                if (access_type && access_type->no_ptr_escape()) {
+                    if (access_type->may_contain_reads()) {
+                        indirect_reads_[container].insert(&edge);
+                    } else if (access_type->may_contain_writes()) {
+                        writes_to_remove_[container][&edge] = {&block, IndirectWriteType::PtrBorrow};
+                    }
                 }
             }
         }
@@ -383,18 +375,7 @@ void IndirectMemoryAccessFinder::use_as_dst_node(
 ) {
     if (target_containers_.contains(container)) {
         if (edge.is_dst_pointed_to_write()) {
-            writes_to_remove_[container][&edge] = &block;
-        }
-        // hack to classify Offload nodes with D2H correctly. For historic reasons they use a direct output edge
-        // to the host ptr, even though they will never write the pointer, but only write the memory the pointer points
-        // to. As that edge is destructive to many optimizations and scheduled to be removed, use custom handling here
-        // to classify it correctly
-        if (edge.is_dst_write()) {
-            if (auto* offload = dynamic_cast<const offloading::DataOffloadingNode*>(&edge.src())) {
-                if (offload->transfer_direction() != offloading::DataTransferDirection::NONE) {
-                    writes_to_remove_[container][&edge] = &block;
-                }
-            }
+            writes_to_remove_[container][&edge] = {&block, IndirectWriteType::AccessNode};
         }
     }
 }
@@ -430,10 +411,17 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
                 bool all_removed = true;
                 if (writes_it != writes.end()) {
                     auto& to_remove = writes_it->second;
-                    for (auto& [edge_to_remove, w_block] : to_remove) {
-                        auto& write_node = dynamic_cast<const data_flow::AccessNode&>(edge_to_remove->dst());
-                        int removed =
-                            builder.clear_node(*const_cast<structured_control_flow::Block*>(w_block), write_node);
+                    for (auto [edge_to_remove, indirect_write] : to_remove) {
+                        int removed = 0;
+                        if (indirect_write.type == IndirectMemoryAccessFinder::IndirectWriteType::PtrBorrow) {
+                            removed =
+                                builder.clear_ptr_borrow_edge(*const_cast<Block*>(indirect_write.block), edge_to_remove);
+                        } else if (indirect_write.type == IndirectMemoryAccessFinder::IndirectWriteType::AccessNode) {
+                            auto& write_node = dynamic_cast<const data_flow::AccessNode&>(edge_to_remove->dst());
+                            removed = builder.clear_node(
+                                *const_cast<structured_control_flow::Block*>(indirect_write.block), write_node
+                            );
+                        }
                         if (removed == 0) {
                             all_removed = false;
                         } else {

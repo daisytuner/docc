@@ -179,6 +179,8 @@ public:
      */
     virtual EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const = 0;
 
+    virtual EdgeRemoveOption can_remove_in_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const = 0;
+
     /**
      *
      * @param out_conn a output connector, whose edge was just removed after approval via [can_remove_out_edge] ==

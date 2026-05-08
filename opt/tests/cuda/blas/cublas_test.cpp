@@ -118,7 +118,6 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers) {
     auto& input_b_node = builder.add_access(block, "arr_b");
     auto c_var_name = "output";
     auto& dummy_input_node = builder.add_access(block, c_var_name);
-    auto& output_node = builder.add_access(block, c_var_name);
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
@@ -143,9 +142,8 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers) {
     builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", output_node, {symbolic::integer(0)}, arr_res_type);
 
-    EXPECT_EQ(block.dataflow().nodes().size(), 7);
+    EXPECT_EQ(block.dataflow().nodes().size(), 6);
 
     builder.subject().validate();
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -230,7 +228,6 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers) {
     auto& input_b_node = builder.add_access(block, "arr_b");
     auto c_var_name = "output";
     auto& dummy_input_node = builder.add_access(block, c_var_name);
-    auto& output_node = builder.add_access(block, c_var_name);
     auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
         block,
         DebugInfo(),
@@ -255,9 +252,8 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers) {
     builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
-    builder.add_computational_memlet(block, gemm_node, "__C", output_node, {symbolic::integer(0)}, arr_res_type);
 
-    EXPECT_EQ(block.dataflow().nodes().size(), 7);
+    EXPECT_EQ(block.dataflow().nodes().size(), 6);
 
     builder.subject().validate();
     analysis::AnalysisManager analysis_manager(sdfg);

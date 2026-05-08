@@ -80,26 +80,26 @@ MallocNodeDispatcher::MallocNodeDispatcher(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void MallocNodeDispatcher::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void MallocNodeDispatcher::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
     auto& malloc_node = static_cast<const MallocNode&>(node_);
 
     auto& graph = malloc_node.get_parent();
     auto& oedge = *graph.out_edges(malloc_node).begin();
 
-    stream << malloc_node.outputs().at(0);
-    stream << " = ";
-    stream << "("
-           << language_extension_.type_cast(
-                  language_extension_.external_prefix() + "malloc(" +
-                      language_extension_.expression(malloc_node.size()) + ")",
-                  oedge.base_type()
-              )
-           << ");";
-    stream << std::endl;
+    auto& ptr_out = outputs.at(0);
+
+    pre_allocate_output(out, ptr_out, node_.output(0));
+    out.stream << *ptr_out.local_name << " = ("
+               << language_extension_.type_cast(
+                      language_extension_.external_prefix() + "malloc(" +
+                          language_extension_.expression(malloc_node.size()) + ")",
+                      oedge.base_type()
+                  )
+               << ");" << std::endl;
 }
 
 } // namespace stdlib

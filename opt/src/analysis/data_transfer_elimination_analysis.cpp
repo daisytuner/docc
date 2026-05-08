@@ -160,16 +160,21 @@ void OffloadState::found_offload_node(Block& block, offloading::DataOffloadingNo
     const data_flow::AccessNode* found_host_access = nullptr;
     const data_flow::Memlet* found_host_memlet = nullptr;
 
-    for (auto& conn : offload.inputs()) {
+    for (int i = 0; i < offload.inputs().size(); ++i) {
+        auto& conn = offload.inputs()[i];
         auto* memlet = dflow.in_edge_for_connector(offload, conn);
         auto* access_node = dynamic_cast<const data_flow::AccessNode*>(&memlet->src());
 
-        if (src_is_host) {
-            found_host_access = access_node;
-            found_host_memlet = memlet;
+        if (i == offload.host_ptr_input_idx()) {
+            if (src_is_host || dst_is_host) {
+                found_host_access = access_node;
+                found_host_memlet = memlet;
+            }
         }
-        if (src_is_dev) {
-            found_dev_access = access_node;
+        if (i == offload.dev_ptr_input_idx()) {
+            if (dst_is_dev || src_is_dev) {
+                found_dev_access = access_node;
+            }
         }
     }
 
@@ -184,10 +189,6 @@ void OffloadState::found_offload_node(Block& block, offloading::DataOffloadingNo
         auto* memlet = edges.at(0);
         auto* access_node = dynamic_cast<const data_flow::AccessNode*>(&memlet->dst());
 
-        if (dst_is_host) {
-            found_host_access = access_node;
-            found_host_memlet = memlet;
-        }
         if (dst_is_dev) {
             found_dev_access = access_node;
         }
