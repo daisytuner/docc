@@ -48,12 +48,6 @@ void CCodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
     out << "#include <string.h>" << std::endl;
     out << "#include <stdint.h>" << std::endl;
 
-#if defined(__APPLE__)
-    out << "#include <Accelerate/Accelerate.h>" << std::endl;
-#else
-    out << "#include <cblas.h>" << std::endl;
-#endif
-
     out << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
 };
 

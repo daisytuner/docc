@@ -153,7 +153,15 @@ void Function::add_metadata(const std::string& key, const std::string& value) { 
 
 void Function::remove_metadata(const std::string& key) { this->metadata_.erase(key); };
 
-const std::string& Function::metadata(const std::string& key) const { return this->metadata_.at(key); };
+const std::string& Function::metadata(const std::string& key) const { return this->metadata_.at(key); }
+
+const std::string* Function::metadata_if_exists(const std::string& key) const {
+    auto entry = this->metadata_.find(key);
+    if (entry == this->metadata_.end()) {
+        return nullptr;
+    }
+    return &entry->second;
+};
 
 const std::unordered_map<std::string, std::string>& Function::metadata() const { return this->metadata_; };
 

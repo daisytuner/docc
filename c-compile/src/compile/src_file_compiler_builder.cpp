@@ -4,7 +4,7 @@
 
 namespace docc::compile {
 
-SrcFileCompilerBuilder::SrcFileCompilerBuilder() {}
+SrcFileCompilerBuilder::SrcFileCompilerBuilder() = default;
 
 SrcFileCompilerBuilder::~SrcFileCompilerBuilder() = default;
 
@@ -95,6 +95,11 @@ SrcFileCompilerBuilder& SrcFileCompilerBuilder::inherit(const SrcFileCompilerBui
     return *this;
 }
 
+SrcFileCompilerBuilder& SrcFileCompilerBuilder::codegen_only() {
+    compiler_.reset();
+    return *this;
+}
+
 SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_bin_extension(const std::string& ext) {
     bin_ext_ = ext;
     return *this;
@@ -112,7 +117,6 @@ SrcFileCompilerBuilder& SrcFileCompilerBuilder::
 }
 
 std::unique_ptr<SrcFileCompiler> SrcFileCompilerBuilder::build() {
-    std::string compiler = this->compiler_.value();
     std::stringstream compiler_args;
     std::stringstream common_args;
 
@@ -131,7 +135,7 @@ std::unique_ptr<SrcFileCompiler> SrcFileCompilerBuilder::build() {
         main_src_ext_.value(),
         "h",
         bin_ext_,
-        compiler,
+        compiler_,
         this->linker_,
         common_args.str(),
         compiler_args.str(),

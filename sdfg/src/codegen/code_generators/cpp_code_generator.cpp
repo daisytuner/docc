@@ -47,12 +47,6 @@ void CPPCodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
     out << "#include <cstring>" << std::endl;
     out << "#include <cstdint>" << std::endl;
 
-#if defined(__APPLE__)
-    out << "#include <Accelerate/Accelerate.h>" << std::endl;
-#else
-    out << "#include <cblas.h>" << std::endl;
-#endif
-
     out << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
 }
 

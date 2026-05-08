@@ -55,6 +55,7 @@ public:
     SrcFileCompilerBuilder& set_from_paths(std::shared_ptr<util::DefaultDoccPaths> paths) override;
     SrcFileCompilerBuilder& set_bin_extension(const std::string& ext);
     SrcFileCompilerBuilder& inherit(const SrcFileCompilerBuilder& builder, bool compile_options = false);
+    SrcFileCompilerBuilder& codegen_only();
     /**
      * There is only 1 source and no need to compile an object file and then link all object files.
      * Fuse compile and link options. Expects the [compiler-executable] to be a gcc-like driver that can also handle

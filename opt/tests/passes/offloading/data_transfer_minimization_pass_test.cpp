@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include "../../../../sdfg/tests/sdfg_debug_dump.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/code_generator.h"
@@ -17,6 +16,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 

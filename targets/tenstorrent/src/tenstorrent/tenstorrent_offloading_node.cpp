@@ -6,7 +6,6 @@
 #include <nlohmann/json_fwd.hpp>
 #include <string>
 
-#include "../../../../sdfg/include/sdfg/targets/offloading/data_offloading_node.h"
 #include "docc/target/tenstorrent/codegen.h"
 #include "docc/target/tenstorrent/plugin.h"
 #include "docc/target/tenstorrent/tenstorrent_transfer_arg.h"
@@ -25,6 +24,7 @@
 #include "sdfg/graph/graph.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/offloading/data_offloading_node.h"
 #include "symengine/symengine_rcp.h"
 
 namespace sdfg {

@@ -17,10 +17,13 @@ inline const std::string ETSOC_KERNEL_FILE_EXT = "et.cpp";
 
 void register_plugin(sdfg::plugins::Context& context);
 
+/**
+ * @deprecated Legacy. Use the handler on the DoccTarget instead, which will be auto-discoverable
+ */
 void et_scheduling_passes(
     sdfg::builder::StructuredSDFGBuilder& builder,
     sdfg::analysis::AnalysisManager& analysis_manager,
-    const std::string& category
+    const plugins::TargetOptions& options
 );
 
 std::string et_get_host_additional_compile_args(

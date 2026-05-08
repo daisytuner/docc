@@ -9,11 +9,11 @@ FileCompileState::FileCompileState(
     const sdfg::codegen::CodeSnippet* snippet,
     const std::filesystem::path& src_path,
     const std::filesystem::path& out_path,
-    bool link_immediately,
+    FileCompileOutputType output_type,
     std::function<void(std::ostream&)>& generator
 )
     : CompileState(), compiler_(compiler), snippet_(snippet), src_path_(src_path), out_path_(out_path),
-      link_immediately_(link_immediately), generator_(generator), src_done_(generator == nullptr) {}
+      output_type_(output_type), generator_(generator), src_done_(generator == nullptr) {}
 
 CodegenCompiler& FileCompileState::creator() const { return compiler_; }
 
@@ -34,8 +34,17 @@ bool FileCompileState::codegen() {
 
 bool FileCompileState::compile() {
     std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-    auto success = link_immediately_ ? compiler_.run_compile_and_link_single(src_path_, out_path_)
-                                     : compiler_.run_compiler(src_path_, out_path_);
+    bool success;
+    if (output_type_ == FileCompileOutputType::SrcOnly) {
+        success = true;
+    } else if (output_type_ == FileCompileOutputType::ObjectFile) {
+        success = compiler_.run_compiler(src_path_, out_path_);
+    } else if (output_type_ == FileCompileOutputType::LinkedArtifact) {
+        success = compiler_.run_compile_and_link_single(src_path_, out_path_);
+    } else {
+        throw std::runtime_error("Unknown output type");
+    }
+
     std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
     if (success) {
         obj_done_ = true;
@@ -47,14 +56,17 @@ bool FileCompileState::compile() {
 
 const std::filesystem::path& FileCompileState::out_path() const { return out_path_; }
 
-bool FileCompileState::has_obj_to_link() const { return !link_immediately_; }
+bool FileCompileState::has_obj_to_link() const { return output_type_ == FileCompileOutputType::ObjectFile; }
 
 void FileCompileState::record_stats(const sdfg::StructuredSDFG& sdfg, sdfg::passes::CodegenStatistics& stats) {
     auto name = snippet_ ? sdfg.name() + ":" + snippet_->name() + "." + snippet_->extension() : sdfg.name();
     stats.add_codegen(name + "@gen", gen_time_.count());
 
-    auto build_name = name + (link_immediately_ ? "@build" : "@compile");
-    stats.add_codegen(name, build_time_.count());
+    if (output_type_ == FileCompileOutputType::ObjectFile) {
+        stats.add_codegen(name + "@compile", build_time_.count());
+    } else if (output_type_ == FileCompileOutputType::LinkedArtifact) {
+        stats.add_codegen(name + "@build", build_time_.count());
+    }
 }
 
 SrcFileCompiler::SrcFileCompiler(
@@ -62,7 +74,7 @@ SrcFileCompiler::SrcFileCompiler(
     const std::string& main_src_ext,
     const std::string& main_header_ext,
     const std::string& bin_ext,
-    const std::string& compiler,
+    const std::optional<std::string>& compiler,
     const std::optional<std::string>& linker,
     const std::string& common_args,
     const std::string& compile_args,
@@ -125,14 +137,12 @@ std::unique_ptr<CompileState> SrcFileCompiler::do_create_compile(
         ext = &main_src_ext_;
     }
     const std::string& out_ext = (link_immediately_ ? bin_ext_ : "o");
+    FileCompileOutputType type = compiler_ ? (link_immediately_ ? FileCompileOutputType::LinkedArtifact
+                                                                : FileCompileOutputType::ObjectFile)
+                                           : FileCompileOutputType::SrcOnly;
 
     auto state = std::make_unique<FileCompileState>(
-        *this,
-        snippet,
-        output_dir_ / (*name + "." + *ext),
-        output_dir_ / (*name + "." + out_ext),
-        link_immediately_,
-        generator
+        *this, snippet, output_dir_ / (*name + "." + *ext), output_dir_ / (*name + "." + out_ext), type, generator
     );
 
     return std::move(state);
@@ -209,8 +219,8 @@ std::filesystem::path SrcFileCompiler::
 bool SrcFileCompiler::run_compiler(const std::filesystem::path& src, const std::filesystem::path& obj) const {
     std::stringstream cmd;
 
-    cmd << compiler_ << " " << COMPILE_ONLY_FLAG << " " << common_args_ << " " << compile_args_ << " " << src << " "
-        << OUTPUT_FILE_ARG << " " << obj;
+    cmd << compiler_.value() << " " << COMPILE_ONLY_FLAG << " " << common_args_ << " " << compile_args_ << " " << src
+        << " " << OUTPUT_FILE_ARG << " " << obj;
 
     DEBUG_PRINTLN("Compile: " << cmd.str());
     int ret = std::system(cmd.str().c_str());
@@ -224,7 +234,7 @@ bool SrcFileCompiler::run_compile_and_link_single(const std::filesystem::path& s
     const {
     std::stringstream cmd;
 
-    cmd << compiler_ << " " << common_args_ << " " << compile_args_ << " ";
+    cmd << compiler_.value() << " " << common_args_ << " " << compile_args_ << " ";
     cmd << src << " -o " << bin << " ";
     add_link_args(cmd);
 
@@ -250,7 +260,7 @@ bool SrcFileCompiler::
     run_link(const sdfg::StructuredSDFG& sdfg, CompileExecutor& executor, const std::filesystem::path& bin_file) const {
     std::stringstream cmd;
 
-    cmd << linker_.value_or(compiler_) << " ";
+    cmd << (linker_ ? linker_.value() : compiler_.value()) << " ";
 
     cmd << common_args_ << " ";
 

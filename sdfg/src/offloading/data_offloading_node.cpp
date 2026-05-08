@@ -14,7 +14,7 @@
 namespace sdfg {
 namespace offloading {
 
-constexpr bool dump_offload_node_ids = false;
+constexpr bool dump_offload_node_ids = true;
 
 DataOffloadingNode::DataOffloadingNode(
     size_t element_id,

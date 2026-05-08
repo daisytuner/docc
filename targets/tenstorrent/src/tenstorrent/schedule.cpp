@@ -128,7 +128,7 @@ void TenstorrentMapDispatcher::generate_movement_kernel(
     TTMovementKernelType type
 ) {
     auto filename = "tenstorrent_kernel_" + kernel_id + (type == TTMovementKernelType::Read ? ".movRd" : ".movWr");
-    auto& snippet = snippets.require(filename, "cpp", true);
+    auto& snippet = snippets.require(filename, TTKernelManagementCodegen::TT_SNIPPET_EXT, true);
     auto& stream = snippet.stream();
 
     std::vector<ArgDesc> selected_args;
@@ -143,7 +143,7 @@ void TenstorrentMapDispatcher::generate_movement_kernel(
 
     TTKernelConfig kernel_config{
         true,
-        snippets.output_path() / (filename + ".cpp"),
+        snippets.output_path() / (snippet.name() + "." + snippet.extension()),
         cores_var,
         type == TTMovementKernelType::Read ? TTKernelTarget::DatMovRd : TTKernelTarget::DatMovWr
     };
@@ -803,7 +803,7 @@ void TenstorrentMapDispatcher::dispatch_node(
 ) {
     auto& tt_schedType = map_.schedule_type();
 
-    emit_tt_includes_once(globals_stream, library_snippet_factory);
+    library_snippet_factory.require_dependency(TenstorrentRuntimeDependency::instance());
 
     std::string dev_handle_var = "tt_device";
 

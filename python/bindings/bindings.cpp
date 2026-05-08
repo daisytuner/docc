@@ -53,6 +53,7 @@
 #ifdef DOCC_HAS_TARGET_ET
 #include <docc/target/et/target.h>
 #endif
+#include <docc/target/tenstorrent/target.h>
 
 namespace py = pybind11;
 using namespace sdfg::types;
@@ -71,6 +72,7 @@ PYBIND11_MODULE(_sdfg, m) {
 #ifdef DOCC_HAS_TARGET_ET
     docc::target::et::register_plugin(docc_context);
 #endif
+    docc::target::tenstorrent::register_plugin(docc_context);
 
     register_types(m);
     register_data_flow_node(m);

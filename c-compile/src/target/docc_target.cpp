@@ -2,6 +2,8 @@
 #include <filesystem>
 
 #include "docc/compile/src_file_compiler_builder.h"
+#include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
+#include "sdfg/passes/offloading/rocm_library_node_rewriter_pass.h"
 
 namespace docc::target {
 
@@ -20,6 +22,12 @@ static DoccTarget cuda_target = {
         b.set_bin_extension("cu");
         builder.redirect_snippet("cu", std::move(b));
         return true;
+    },
+    .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
+                                   sdfg::analysis::AnalysisManager& analysis_manager,
+                                   const plugins::TargetOptions& options) -> bool {
+        sdfg::cuda::CudaLibraryNodeRewriterPass cuda_pass;
+        return cuda_pass.run(builder, analysis_manager);
     }
 };
 
@@ -46,6 +54,12 @@ static DoccTarget rocm_target = {
         builder.redirect_snippet("rocm.cpp", std::move(b));
 
         return true;
+    },
+    .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
+                                   sdfg::analysis::AnalysisManager& analysis_manager,
+                                   const plugins::TargetOptions& options) -> bool {
+        sdfg::rocm::RocmLibraryNodeRewriterPass rocm_pass;
+        return rocm_pass.run(builder, analysis_manager);
     }
 };
 

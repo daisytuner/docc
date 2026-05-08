@@ -10,6 +10,7 @@
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/plugins/plugins.h"
 #include "tenstorrent_create_device.h"
 
 namespace sdfg {
@@ -70,9 +71,41 @@ inline bool is_tenstorrent_schedule(const structured_control_flow::ScheduleType 
 
 inline codegen::TargetType TargetType_Tenstorrent{"TENSTORRENT"};
 
+class TenstorrentRuntimeDependency : public codegen::LibDependency {
+private:
+    TenstorrentRuntimeDependency() = default;
+
+public:
+    static const TenstorrentRuntimeDependency *instance() {
+        static TenstorrentRuntimeDependency inst;
+        return &inst;
+    }
+
+    std::string_view name() const override { return "tenstorrent_runtime"; }
+    void enumerate_includes(std::vector<std::string> &out_list) const override {
+        out_list.push_back("memory");
+        out_list.push_back("vector");
+        out_list.push_back("tt-metalium/host_api.hpp");
+        out_list.push_back("tt-metalium/work_split.hpp");
+        out_list.push_back("tt-metalium/tensor_accessor_args.hpp");
+        out_list.push_back("daisy_rtl/global_tenstorrent_init.h");
+        out_list.push_back("tracy/Tracy.hpp");
+        out_list.push_back("tt-metalium/tt_metal_profiler.hpp");
+    }
+    std::vector<std::string_view> &globally_unique_ids() const override {
+        static std::vector<std::string_view> ids{"bfloat16"};
+        return ids;
+    }
+};
+
 extern bool tt_emit_full_metrics;
 extern bool tt_force_close_devices_after_kernel;
 
+void register_tenstorrent_plugin(plugins::Context &docc_context);
+
+/**
+ * @deprecated, not everything can be registers w/o context
+ */
 void register_tenstorrent_plugin(bool emit_full_metrics = false, bool force_close_devices = false);
 
 } // namespace tenstorrent

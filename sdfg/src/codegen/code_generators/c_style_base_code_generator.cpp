@@ -58,6 +58,13 @@ bool CStyleBaseCodeGenerator::emit_main_source(std::ostream& out, const std::fil
     for (auto& snippet : library_snippet_factory_->globals_snippets()) {
         out << snippet << std::endl;
     }
+    std::vector<std::string> includes;
+    for (auto* dep : library_snippet_factory_->get_used_lib_dependencies()) {
+        dep->enumerate_includes(includes);
+    }
+    for (auto& include : includes) {
+        out << "#include <" << include << ">" << std::endl;
+    }
 
     out << this->globals_stream_.str() << std::endl;
 

@@ -1,4 +1,5 @@
 #include "sdfg/codegen/code_snippet_factory.h"
+#include <algorithm>
 #include <unordered_set>
 
 namespace sdfg::codegen {
@@ -35,6 +36,74 @@ const std::unordered_set<std::string>& CodeSnippetFactory::setup_snippets() cons
 
 const std::unordered_set<std::string>& CodeSnippetFactory::teardown_snippets() const { return teardown_snippets_; }
 
+std::vector<const LibDependency*> CodeSnippetFactory::get_used_lib_dependencies() const {
+    std::vector<const LibDependency*> dependencies;
+    dependencies.reserve(dependencies_.size());
+
+    for (const auto& [dependency, state] : dependencies_) {
+        dependencies.push_back(dependency);
+    }
+
+    std::sort(dependencies.begin(), dependencies.end(), [](const LibDependency* lhs, const LibDependency* rhs) {
+        return lhs->name() < rhs->name();
+    });
+
+    return dependencies;
+}
+
 const std::unordered_set<std::string>& CodeSnippetFactory::globals_snippets() const { return globals_snippets_; }
+
+void CodeSnippetFactory::add_available_dependency(const LibDependency* dependency) {
+    dependencies_.emplace(dependency, DependencyState{.used = false, .runtime_available = true});
+}
+
+bool CodeSnippetFactory::is_available(const LibDependency* dependency) const {
+    auto it = dependencies_.find(dependency);
+    return it != dependencies_.end();
+}
+
+std::optional<std::pair<const std::string&, const LibDependency*>> CodeSnippetFactory::
+    check_for_conflicts(const LibDependency* dependency) const {
+    auto& ids = dependency->globally_unique_ids();
+    for (auto& id : ids) {
+        std::string s(id);
+        auto it = conflicting_ids_.find(s);
+        if (it != conflicting_ids_.end()) {
+            return {{s, it->second}};
+        }
+    }
+    return std::nullopt;
+}
+
+void CodeSnippetFactory::require_no_conflicts(const LibDependency* dependency) {
+    auto& ids = dependency->globally_unique_ids();
+    for (auto& id : ids) {
+        auto [it, newly_created] = conflicting_ids_.emplace(id, dependency);
+        if (!newly_created) {
+            throw std::runtime_error(
+                "Cannot add '" + std::string(dependency->name()) + "', conflicting globally unique id '" +
+                std::string(id) + "' with '" + std::string(it->second->name()) + "'"
+            );
+        }
+    }
+}
+
+bool CodeSnippetFactory::require_dependency(const LibDependency* dependency) {
+    auto [it, newly_created] = dependencies_.emplace(dependency, DependencyState{.used = true});
+    if (newly_created) {
+        require_no_conflicts(dependency);
+        return true;
+    } else {
+        auto& state = it->second;
+        if (!state.used) {
+            require_no_conflicts(dependency);
+            state.used = true;
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
 
 } // namespace sdfg::codegen

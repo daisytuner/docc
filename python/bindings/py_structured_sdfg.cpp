@@ -387,7 +387,7 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
     docc::plugins::TargetOptions topts = {.target = target, .category = category, .transfer_tuning = remote_tuning};
-    docc::plugins::apply_lib_node_target_mapping(builder, analysis_manager, topts);
+    docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, topts);
 
     std::vector<std::string> schedulers;
 
@@ -497,6 +497,7 @@ std::string PyStructuredSDFG::compile(
         .add_common_option("-march=native")
         .add_common_option("-mtune=native")
         .add_compile_option("-funroll-loops")
+        .add_compile_option("-std=c++20")
         .add_link_option("-shared")
         .add_link_option("-ldaisy_rtl")
         .add_link_option("-larg_capture_io")
@@ -536,9 +537,10 @@ std::string PyStructuredSDFG::compile(
 }
 
 std::string PyStructuredSDFG::metadata(const std::string& key) const {
-    try {
-        return sdfg_->metadata(key);
-    } catch (const std::out_of_range&) {
+    auto meta = sdfg_->metadata_if_exists(key);
+    if (meta) {
+        return *meta;
+    } else {
         return "";
     }
 }

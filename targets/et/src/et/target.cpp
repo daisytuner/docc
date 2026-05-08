@@ -5,6 +5,7 @@
 #include <sdfg/data_flow/library_nodes/math/blas/gemm_node.h>
 #include <sdfg/passes/targets/target_mapping_pass.h>
 #include <sdfg/plugins/plugins.h>
+#include <sdfg/plugins/target_mapping.h>
 
 #include "docc/target/et/target.h"
 
@@ -94,10 +95,18 @@ DoccTarget et_target = {
 
         builder.redirect_snippet(ETSOC_KERNEL_FILE_EXT, std::move(etBuilder));
         return true;
+    },
+    .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
+                                   sdfg::analysis::AnalysisManager& analysis_manager,
+                                   const plugins::TargetOptions& options) -> bool {
+        DEBUG_PRINTLN("Running etsoc sched-time mapping...");
+        std::vector<std::shared_ptr<sdfg::plugins::TargetMapper>> mappers{std::make_shared<EtLibNodeMapper>()};
+        sdfg::passes::TargetMappingPass mappingPass(mappers);
+        return mappingPass.run_pass(builder, analysis_manager);
     }
 };
 
-void register_plugin(plugins::Context& context) {
+void register_plugin(sdfg::plugins::Context& context) {
     auto& libNodeDispatcherRegistry = context.library_node_dispatcher_registry;
     auto& libNodeSerRegistry = context.library_node_serializer_registry;
 
@@ -119,12 +128,9 @@ void register_plugin(plugins::Context& context) {
 void et_scheduling_passes(
     sdfg::builder::StructuredSDFGBuilder& builder,
     sdfg::analysis::AnalysisManager& analysis_manager,
-    const std::string& category
+    const plugins::TargetOptions& options
 ) {
-    DEBUG_PRINTLN("Running etsoc passes...");
-    std::vector<std::shared_ptr<plugins::TargetMapper>> mappers{std::make_shared<EtLibNodeMapper>()};
-    sdfg::passes::TargetMappingPass mappingPass(mappers);
-    mappingPass.run_pass(builder, analysis_manager);
+    et_target.apply_sched_time_mapping(builder, analysis_manager, options);
 }
 
 std::string

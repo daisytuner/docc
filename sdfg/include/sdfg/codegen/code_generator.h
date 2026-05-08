@@ -86,6 +86,9 @@ public:
     /// that also depend on the header
     virtual bool emit_main_source(std::ostream& out, const std::filesystem::path& header_path) = 0;
 
+    /// @deprecated this requires generate() being run manually prior and will output directly into filepaths
+    ///     for header and source at the same time. Which is quite restrictive.
+    ///     New parallel builder require [emit_header] and [emit_main_source] instead
     /// @brief Generate the SDFG's code into source files
     virtual bool as_source(const std::filesystem::path& header_path, const std::filesystem::path& source_path) = 0;
 

@@ -50,7 +50,7 @@ if(SDFG_ENABLE_COVERAGE)
   )
 endif()
 
-target_link_libraries(docc-target-tenstorrent PUBLIC docc::core docc::opt)
+target_link_libraries(docc-target-tenstorrent PUBLIC docc::core docc::opt docc::c-compile)
 set_target_properties(docc-target-tenstorrent PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}

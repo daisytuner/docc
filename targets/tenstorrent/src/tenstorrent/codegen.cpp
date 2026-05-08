@@ -16,12 +16,12 @@ void emit_tt_device_ready(
     std::unordered_map<int, std::unique_ptr<codegen::CodeSnippet>> device_ready_snippets;
     auto& entry = device_ready_snippets[0];
 
+    library_snippet_factory.require_dependency(TenstorrentRuntimeDependency::instance());
+
     if (!sdfg.exists(handle)) {
         auto tt_global_marker = "tenstorrent_global_init";
         if (library_snippet_factory.find(tt_global_marker) == library_snippet_factory.snippets().end()) {
             library_snippet_factory.require(tt_global_marker, "", false);
-
-            emit_tt_includes_once(globals_stream, library_snippet_factory);
 
             globals_stream << std::endl;
 
@@ -356,11 +356,11 @@ void emit_h2d_transfer_helper_once(
     codegen::PrettyPrinter& stream,
     codegen::CodeSnippetFactory& code_snippet_factory
 ) {
+    code_snippet_factory.require_dependency(TenstorrentRuntimeDependency::instance());
+
     auto marker = "tt_h2d_transfer_once";
     if (code_snippet_factory.find(marker) == code_snippet_factory.snippets().end()) {
         code_snippet_factory.require(marker, "", false);
-
-        emit_tt_includes_once(stream, code_snippet_factory);
 
         // hacky way to only emit to global once
         stream << std::endl << "static " << tt_h2d_transfer_helper_code << std::endl;
@@ -373,36 +373,14 @@ void emit_d2h_transfer_helper_once(
     codegen::CodeSnippetFactory& code_snippet_factory
 ) {
     auto marker = "tt_d2h_transfer_once";
+
+    code_snippet_factory.require_dependency(TenstorrentRuntimeDependency::instance());
+
     if (code_snippet_factory.find(marker) == code_snippet_factory.snippets().end()) {
         code_snippet_factory.require(marker, "", false);
-
-        emit_tt_includes_once(stream, code_snippet_factory);
 
         // hacky way to only emit to global once
         stream << std::endl << "static " << tt_d2h_transfer_helper_code << std::endl;
-    }
-}
-
-void emit_tt_includes_once(codegen::PrettyPrinter& stream, codegen::CodeSnippetFactory& code_snippet_factory) {
-    auto marker = "tt_includes_once";
-
-    if (code_snippet_factory.find(marker) == code_snippet_factory.snippets().end()) {
-        code_snippet_factory.require(marker, "", false);
-        // hacky way to only emit to global once
-        stream << "#include <cstdint>" << std::endl;
-        stream << "#include <cstring>" << std::endl;
-        stream << "#include <cassert>" << std::endl;
-        stream << "#include <memory>" << std::endl;
-        stream << "#include <vector>" << std::endl;
-        stream << "#include <tt-metalium/host_api.hpp>" << std::endl;
-        stream << "#include <tt-metalium/work_split.hpp>" << std::endl;
-        stream << "#include <tt-metalium/tensor_accessor_args.hpp>" << std::endl;
-        stream << "#include <daisy_rtl/global_tenstorrent_init.h>" << std::endl;
-
-        stream << "#include <tracy/Tracy.hpp>" << std::endl;
-        stream << "#include <tt-metalium/tt_metal_profiler.hpp>" << std::endl;
-
-        stream << std::endl;
     }
 }
 
@@ -465,7 +443,7 @@ int TTKernelManagementCodegen::add_kernel(
 
     std::string kernel_str;
     if (snippet.is_as_file()) {
-        kernel_str = snippets_.output_path() / (snippet.name() + ".cpp");
+        kernel_str = snippets_.output_path() / (snippet.name() + "." + snippet.extension());
     } else {
         kernel_str = snippet.stream().str();
     }
@@ -762,7 +740,7 @@ const codegen::CodeSnippet& TTKernelManagementCodegen::
     emit_predefined_kernel(const std::string& name, const std::string& code) {
     auto it = snippets_.find(name);
     if (it == snippets_.snippets().end()) {
-        auto& snippet = snippets_.require(name, "cpp");
+        auto& snippet = snippets_.require(name, TT_SNIPPET_EXT);
         snippet.stream() << code << std::endl;
         return snippet;
     } else {

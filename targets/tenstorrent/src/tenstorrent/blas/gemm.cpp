@@ -2,6 +2,7 @@
 
 #include "docc/target/tenstorrent/codegen.h"
 #include "docc/target/tenstorrent/kernels/generic_writer_unary_interleaved.h"
+#include "docc/target/tenstorrent/plugin.h"
 #include "docc/target/tenstorrent/schedule.h"
 #include "docc/target/tenstorrent/tenstorrent_offloading_node.h"
 #include "sdfg/transformations/offloading/offload_transform.h"
@@ -278,7 +279,7 @@ void GEMMNodeDispatcher_Tenstorrent::dispatch(
     codegen::PrettyPrinter& globals_stream,
     codegen::CodeSnippetFactory& library_snippet_factory
 ) {
-    emit_tt_includes_once(globals_stream, library_snippet_factory);
+    library_snippet_factory.require_dependency(TenstorrentRuntimeDependency::instance());
 
     auto& gemm_node = static_cast<const math::blas::GEMMNode&>(this->node_);
 

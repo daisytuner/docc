@@ -1,17 +1,67 @@
 #include "docc/target/tenstorrent/plugin.h"
+
+#include "docc/compile/src_file_compiler_builder.h"
+#include "docc/target/tenstorrent/math_node_implementation_override_pass.h"
+#include "docc/target/tenstorrent/target.h"
 #include "docc/target/tenstorrent/tenstorrent_scheduler.h"
 #include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/passes/targets/target_mapping_pass.h"
+#include "sdfg/plugins/target_mapping.h"
+#include "sdfg/plugins/targets.h"
 
 namespace sdfg::tenstorrent {
-
 bool tt_emit_full_metrics = false;
 bool tt_force_close_devices_after_kernel = false;
+
+docc::target::DoccTarget tenstorrent_target = {
+    .short_name = "tenstorrent",
+    .apply_additional_compile_options = [](docc::compile::SrcFileCompilerBuilder &builder) -> bool {
+        auto tt_metal_path = std::getenv("TT_METAL_HOME");
+        if (!tt_metal_path) {
+            throw std::runtime_error("TT_METAL_HOME not set");
+        }
+        std::filesystem::path tt_path = std::filesystem::path(tt_metal_path) / "build";
+        auto lib_path = tt_path / "lib";
+        builder.add_library_path(lib_path);
+        builder.add_link_option("-ltt_metal");
+        builder.add_link_option("-Wl,-rpath,\"" + lib_path.string() + "\"");
+        builder.add_include_path(tt_path / "include");
+        builder.add_include_path(tt_path / "include" / "metalium-thirdparty");
+        builder.add_compile_option("-DSPDLOG_FMT_EXTERNAL");
+
+        docc::compile::SrcFileCompilerBuilder sub;
+        sub.inherit(builder);
+        sub.set_src_extension(TTKernelManagementCodegen::TT_SNIPPET_EXT);
+        sub.codegen_only();
+        builder.redirect_snippet(TTKernelManagementCodegen::TT_SNIPPET_EXT, std::move(sub));
+        return true;
+    },
+    .apply_expand_time_mapping = nullptr,
+    .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder &builder,
+                                   sdfg::analysis::AnalysisManager &analysis_manager,
+                                   const docc::plugins::TargetOptions &options) -> bool {
+        std::vector<std::shared_ptr<plugins::TargetMapper>> mappers{std::make_shared<TTLibNodeMapper>()};
+        passes::TargetMappingPass mappingPass(mappers);
+        return mappingPass.run_pass(builder, analysis_manager);
+    }
+};
 
 void register_tenstorrent_plugin(bool emit_full_metrics, bool force_close_devices) {
     tt_emit_full_metrics = emit_full_metrics;
     tt_force_close_devices_after_kernel = force_close_devices;
+    auto context = plugins::Context::global_context();
+    docc::target::tenstorrent::register_plugin(context);
+}
 
-    codegen::MapDispatcherRegistry::instance().register_map_dispatcher(
+} // namespace sdfg::tenstorrent
+
+namespace docc::target::tenstorrent {
+
+using namespace sdfg::tenstorrent;
+using namespace sdfg;
+
+void register_plugin(sdfg::plugins::Context &context) {
+    context.map_dispatcher_registry.register_map_dispatcher(
         ScheduleType_Tenstorrent_Device::value(),
         [](codegen::LanguageExtension &language_extension,
            StructuredSDFG &sdfg,
@@ -26,7 +76,7 @@ void register_tenstorrent_plugin(bool emit_full_metrics, bool force_close_device
     );
 
 
-    codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+    context.library_node_dispatcher_registry.register_library_node_dispatcher(
         LibraryNodeType_Tenstorrent_Offloading.value() + "::" + data_flow::ImplementationType_NONE.value(),
         [](codegen::LanguageExtension &language_extension,
            const Function &function,
@@ -36,12 +86,12 @@ void register_tenstorrent_plugin(bool emit_full_metrics, bool force_close_device
         }
     );
 
-    serializer::LibraryNodeSerializerRegistry::instance()
+    context.library_node_serializer_registry
         .register_library_node_serializer(LibraryNodeType_Tenstorrent_Offloading.value(), []() {
             return std::make_unique<TTDataOffloadingNodeSerializer>();
         });
 
-    codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+    context.library_node_dispatcher_registry.register_library_node_dispatcher(
         LibraryNodeType_Tenstorrent_CreateDevice.value() + "::" + data_flow::ImplementationType_NONE.value(),
         [](codegen::LanguageExtension &language_extension,
            const Function &function,
@@ -51,14 +101,14 @@ void register_tenstorrent_plugin(bool emit_full_metrics, bool force_close_device
         }
     );
 
-    serializer::LibraryNodeSerializerRegistry::instance()
+    context.library_node_serializer_registry
         .register_library_node_serializer(LibraryNodeType_Tenstorrent_CreateDevice.value(), []() {
             return std::make_unique<TTCreateDeviceSerializer>();
         });
 
     // blas dispatchers
 
-    codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+    context.library_node_dispatcher_registry.register_library_node_dispatcher(
         math::blas::LibraryNodeType_GEMM.value() + "::" + ImplementationType_Tenstorrent_WithTransfers.value(),
         [](codegen::LanguageExtension &language_extension,
            const Function &function,
@@ -70,7 +120,7 @@ void register_tenstorrent_plugin(bool emit_full_metrics, bool force_close_device
         }
     );
 
-    codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
+    context.library_node_dispatcher_registry.register_library_node_dispatcher(
         math::blas::LibraryNodeType_DOT.value() + "::" + ImplementationType_Tenstorrent_WithTransfers.value(),
         [](codegen::LanguageExtension &language_extension,
            const Function &function,
@@ -82,9 +132,10 @@ void register_tenstorrent_plugin(bool emit_full_metrics, bool force_close_device
         }
     );
 
-    passes::scheduler::SchedulerRegistry::instance()
-        .register_loop_scheduler<
-            passes::scheduler::TenstorrentScheduler>(passes::scheduler::TenstorrentScheduler::target());
+    context.scheduler_registry.register_loop_scheduler<
+        passes::scheduler::TenstorrentScheduler>(passes::scheduler::TenstorrentScheduler::target());
+
+    context.add_target(&tenstorrent_target);
 }
 
-} // namespace sdfg::tenstorrent
+} // namespace docc::target::tenstorrent

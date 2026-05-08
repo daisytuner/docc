@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include "sdfg/codegen/code_snippet_factory.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
 
 namespace sdfg {
@@ -202,6 +203,24 @@ public:
      * @return Primitive type for this precision
      */
     types::PrimitiveType scalar_primitive() const;
+};
+
+class BLASLibDependency : public codegen::LibDependency {
+private:
+    BLASLibDependency() = default;
+
+public:
+    static const BLASLibDependency* instance() {
+        static BLASLibDependency inst;
+        return &inst;
+    }
+
+    std::string_view name() const override { return "blas"; }
+    void enumerate_includes(std::vector<std::string>& out_list) const override { out_list.push_back("cblas.h"); }
+    std::vector<std::string_view>& globally_unique_ids() const override {
+        static std::vector<std::string_view> ids{"bfloat16"};
+        return ids;
+    }
 };
 
 } // namespace blas

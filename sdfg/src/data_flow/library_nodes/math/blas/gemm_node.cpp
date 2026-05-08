@@ -480,6 +480,8 @@ void GEMMNodeDispatcher_BLAS::dispatch_code(
             throw std::runtime_error("Invalid BLAS_Precision value");
     }
 
+    library_snippet_factory.require_dependency(BLASLibDependency::instance());
+
     stream << "cblas_" << BLAS_Precision_to_string(gemm_node.precision()) << "gemm(";
     stream.setIndent(stream.indent() + 4);
     stream << BLAS_Layout_to_string(gemm_node.layout());

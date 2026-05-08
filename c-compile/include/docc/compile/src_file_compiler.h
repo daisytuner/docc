@@ -8,13 +8,15 @@ namespace docc::compile {
 
 class SrcFileCompiler;
 
+enum class FileCompileOutputType { ObjectFile, LinkedArtifact, SrcOnly };
+
 class FileCompileState : public CompileState {
     friend class SrcFileCompiler;
     SrcFileCompiler& compiler_;
     const sdfg::codegen::CodeSnippet* snippet_;
     std::filesystem::path src_path_;
     std::filesystem::path out_path_;
-    bool link_immediately_;
+    FileCompileOutputType output_type_;
     std::function<void(std::ostream&)> generator_;
 
     bool src_done_ = false;
@@ -29,7 +31,7 @@ public:
         const sdfg::codegen::CodeSnippet* snippet,
         const std::filesystem::path& src_path,
         const std::filesystem::path& obj_path,
-        bool link_immediately,
+        FileCompileOutputType output_type,
         std::function<void(std::ostream&)>& generator
     );
 
@@ -53,9 +55,8 @@ public:
 class SrcFileCompiler : public CodegenCompiler, public LinkOptContributor {
     friend class FileCompileState;
 
-    std::mutex mutex_;
     std::filesystem::path output_dir_;
-    std::string compiler_;
+    std::optional<std::string> compiler_;
     std::optional<std::string> linker_;
     std::string common_args_;
     std::string compile_args_;
@@ -78,7 +79,7 @@ public:
         const std::string& main_src_ext,
         const std::string& main_header_ext,
         const std::string& bin_ext,
-        const std::string& compiler,
+        const std::optional<std::string>& compiler,
         const std::optional<std::string>& linker,
         const std::string& common_args,
         const std::string& compile_args,

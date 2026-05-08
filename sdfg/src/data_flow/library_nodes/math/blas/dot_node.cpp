@@ -259,6 +259,8 @@ void DotNodeDispatcher_BLAS::dispatch_code(
             throw std::runtime_error("Invalid BLAS_Precision value");
     }
 
+    library_snippet_factory.require_dependency(BLASLibDependency::instance());
+
     stream << dot_node.outputs().at(0) << " = ";
     stream << "cblas_" << BLAS_Precision_to_string(precision) << "dot(";
     stream.setIndent(stream.indent() + 4);

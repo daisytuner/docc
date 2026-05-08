@@ -45,5 +45,9 @@ if(TARGET docc::target::et)
     target_link_libraries(sdfg-py PRIVATE docc::target::et)
 endif()
 
+if(TARGET docc::target::tenstorrent)
+    target_link_libraries(sdfg-py PRIVATE docc::target::tenstorrent)
+endif()
+
 # Install artifacts for the Python wheel
 install(TARGETS sdfg-py DESTINATION docc/sdfg COMPONENT docc_python)

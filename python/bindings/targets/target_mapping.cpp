@@ -1,31 +1,27 @@
 #include "target_mapping.h"
 
-#include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
-#include "sdfg/passes/offloading/rocm_library_node_rewriter_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
 #include "sdfg/plugins/target_mapping.h"
 
-#ifdef DOCC_HAS_TARGET_ET
-#include "docc/target/et/target.h"
-#endif
 
 namespace docc::plugins {
 
 void apply_lib_node_target_mapping(
+    sdfg::plugins::Context& docc_context,
     sdfg::builder::StructuredSDFGBuilder& builder,
     sdfg::analysis::AnalysisManager& analysis_manager,
     TargetOptions& options
 ) {
-    if (options.target == "cuda") {
-        sdfg::cuda::CudaLibraryNodeRewriterPass cuda_pass;
-        cuda_pass.run(builder, analysis_manager);
-    } else if (options.target == "etsoc") {
-#ifdef DOCC_HAS_TARGET_ET
-        docc::target::et::et_scheduling_passes(builder, analysis_manager, options.category);
-#endif
-    } else if (options.target == "rocm") {
-        sdfg::rocm::RocmLibraryNodeRewriterPass rocm_pass;
-        rocm_pass.run(builder, analysis_manager);
+    auto* target_handler = docc_context.get_target_handler(options.target);
+    if (target_handler) {
+        auto target_sched_time_mapping = target_handler->apply_sched_time_mapping;
+        if (target_sched_time_mapping) {
+            auto success = target_sched_time_mapping(builder, analysis_manager, options);
+            if (success) {
+                // for now, targets are exclusive
+                return;
+            }
+        }
     }
 
     // Generic code. Find a way to declare TargetMappers with each plugin and then discover those from target and use

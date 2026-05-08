@@ -135,6 +135,7 @@ public:
     void remove_metadata(const std::string& key);
 
     const std::string& metadata(const std::string& key) const;
+    const std::string* metadata_if_exists(const std::string& key) const;
 
     const std::unordered_map<std::string, std::string>& metadata() const;
 };

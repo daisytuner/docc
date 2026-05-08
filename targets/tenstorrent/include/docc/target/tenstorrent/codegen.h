@@ -150,6 +150,8 @@ private:
     std::vector<kernel_id_t> instantiations_to_kernel_;
 
 public:
+    static constexpr auto TT_SNIPPET_EXT = "tt.cpp";
+
     TTKernelManagementCodegen(
         codegen::PrettyPrinter& stream,
         codegen::CodeSnippetFactory& snippets,
