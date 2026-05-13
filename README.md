@@ -80,8 +80,7 @@ pip install docc-ai
 To use the frontend with PyTorch, also install `torch-mlir`, which we use to translate models to core MLIR dialects initially:
 
 ```bash
-pip install torch==2.10.0+cpu torchvision==0.25.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
-pip install torch-mlir==20260309.746 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
+pip install -r mlir/requirements.txt
 ```
 
 This allows you to import models directly from PyTorch, generate an optimized SDFG, and run inference.
