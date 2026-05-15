@@ -56,6 +56,8 @@ public:
 
     void validate();
 
+    /** @deprecated give targetOptions **/
+    void expand();
     void expand(const std::string& target, const std::string& category);
     void expand(const docc::target::TargetOptions& options);
 

@@ -23,7 +23,7 @@ def _compile(sdfg, out_dir: str, inst_mode: str, capture: bool, kwargs: Dict[str
 
 def _expand(sdfg, cat: str, kwargs: Dict[str, Any]):
     print("hooking expand")
-    return sdfg.expand()
+    return sdfg.expand("special", cat)
 
 
 def test_python_target_overrides(capsys):

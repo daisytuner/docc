@@ -139,10 +139,16 @@ pybind11::dict PyStructuredSDFG::containers() const {
 
 void PyStructuredSDFG::validate() { sdfg_->validate(); }
 
+void PyStructuredSDFG::expand() {
+    docc::target::TargetOptions opt{.target = "none", .category = "", .remote_tuning = false};
+    expand(opt);
+}
+
 void PyStructuredSDFG::expand(const std::string& target, const std::string& category) {
     docc::target::TargetOptions options{target, category, /*transfer_tuning=*/false};
     expand(options);
 }
+
 void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);

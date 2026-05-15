@@ -204,6 +204,11 @@ PYBIND11_MODULE(_sdfg, m) {
         .def("validate", &PyStructuredSDFG::validate, "Validates the SDFG")
         .def(
             "expand",
+            static_cast<void (PyStructuredSDFG::*)()>(&PyStructuredSDFG::expand),
+            "Expand step w/o target support for backwards compatibility"
+        )
+        .def(
+            "expand",
             static_cast<void (PyStructuredSDFG::*)(const std::string&, const std::string&)>(&PyStructuredSDFG::expand),
             "Expand step"
         )
