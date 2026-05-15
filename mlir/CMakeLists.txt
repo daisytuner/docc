@@ -5,6 +5,11 @@ project(mlir-sdfg VERSION 0.0.1 DESCRIPTION "MLIR to SDFG Conversion Library")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Suppress SymEngine compilation warnings
+add_compile_options(-Wno-suggest-override)
+add_compile_options(-Wno-non-virtual-dtor)
+add_compile_options(-Wno-ignored-qualifiers)
+
 # This project is not built by default
 # Enable with: cmake -DDOCC_BUILD_MLIR=ON
 

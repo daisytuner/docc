@@ -11,7 +11,7 @@ set(TARGET_SDFG_FILES
     TranslateToSDFG.cpp
 )
 
-set_source_files_properties(${TARGET_SDFG_FILES} PROPERTIES COMPILE_FLAGS "-fexceptions -Wno-suggest-override -Wno-non-virtual-dtor -Wno-ignored-qualifiers")
+set_source_files_properties(${TARGET_SDFG_FILES} PROPERTIES COMPILE_FLAGS -fexceptions)
 add_mlir_translation_library(MLIRTargetSDFG
     ${TARGET_SDFG_FILES}
 
