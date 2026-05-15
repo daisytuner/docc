@@ -216,7 +216,13 @@ public:
     }
 
     std::string_view name() const override { return "blas"; }
-    void enumerate_includes(std::vector<std::string>& out_list) const override { out_list.push_back("cblas.h"); }
+    void enumerate_includes(std::vector<std::string>& out_list) const override {
+#if defined(__APPLE__)
+        out_list.push_back("Accelerate/Accelerate.h");
+#else
+        out_list.push_back("cblas.h");
+#endif
+    }
     std::vector<std::string_view>& globally_unique_ids() const override {
         static std::vector<std::string_view> ids{"bfloat16"};
         return ids;
