@@ -56,11 +56,8 @@ public:
 
     void validate();
 
-    void expand();
-
-    void expand_cuda();
-
-    void expand_rocm();
+    void expand(const std::string& target, const std::string& category);
+    void expand(const docc::target::TargetOptions& options);
 
     void simplify();
 
@@ -75,6 +72,7 @@ public:
     void normalize();
 
     void schedule(const std::string& target, const std::string& category, bool remote_tuning = false);
+    void schedule(const docc::target::TargetOptions& options);
 
     /**
      * Build the shared library containing the SDFG

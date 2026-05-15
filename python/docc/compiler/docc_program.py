@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 import os
 import re
 
-from docc.sdfg import StructuredSDFG
+from docc.sdfg import StructuredSDFG, TargetOptions
 from docc.sdfg._sdfg import (
     _enable_statistics,
     _statistics_enabled_by_env,
@@ -17,14 +17,6 @@ from docc.compiler.target_registry import (
     get_target_expand_fn,
     register_target_overrides,
 )
-
-
-def _cuda_expand_fn(sdfg, category: str, kwargs: Dict[str, Any]) -> None:
-    sdfg.expand_cuda()
-
-
-def _rocm_expand_fn(sdfg, category: str, kwargs: Dict[str, Any]) -> None:
-    sdfg.expand_rocm()
 
 
 def _parse_docc_debug() -> dict[str, str]:
@@ -94,20 +86,6 @@ class DoccProgram(ABC):
         self.instrumentation_mode = instrumentation_mode
         self.capture_args = capture_args
 
-        # ensure they are registered. This is temporary until the plugin handling in docc can do it
-        register_target_overrides(
-            "cuda",
-            schedule_fn=None,
-            compile_fn=None,
-            expand_fn=_cuda_expand_fn,
-        )
-        register_target_overrides(
-            "rocm",
-            schedule_fn=None,
-            compile_fn=None,
-            expand_fn=_rocm_expand_fn,
-        )
-
     @abstractmethod
     def __call__(self, *args: Any) -> Any:
         pass
@@ -133,12 +111,17 @@ class DoccProgram(ABC):
 
         sdfg.validate()
 
+        target_options = TargetOptions()
+        target_options.target = self.target
+        target_options.category = self.category
+        target_options.remote_tuning = self.remote_tuning
+
         # Tensor targets keep tensor nodes
         custom_expand_fn = get_target_expand_fn(self.target)
         if custom_expand_fn is not None:
             custom_expand_fn(sdfg, self.category, {})
         else:
-            sdfg.expand()
+            sdfg.expand(target_options)
         if self.debug_dump:
             sdfg.dump(output_folder, "py1.expanded", dump_dot=True)
 
@@ -162,18 +145,16 @@ class DoccProgram(ABC):
 
         # Schedule if target is specified
 
-        if self.target != "none":
-            # Check for custom registered target first
-            custom_schedule_fn = get_target_schedule_fn(self.target)
-            if custom_schedule_fn is not None:
-                custom_schedule_fn(
-                    sdfg, self.category, {"remote_tuning": self.remote_tuning}
-                )
-            else:
-                sdfg.schedule(self.target, self.category, self.remote_tuning)
+        custom_schedule_fn = get_target_schedule_fn(self.target)
+        if custom_schedule_fn is not None:
+            custom_schedule_fn(
+                sdfg, self.category, {"remote_tuning": self.remote_tuning}
+            )
+        else:
+            sdfg.schedule(target_options)
 
-            if self.debug_dump:
-                sdfg.dump(output_folder, "py4.post_sched", dump_dot=True)
+        if self.debug_dump:
+            sdfg.dump(output_folder, "py4.post_sched", dump_dot=True)
 
         self.last_sdfg = sdfg
 

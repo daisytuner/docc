@@ -2,12 +2,15 @@
 #include <filesystem>
 
 #include "docc/compile/src_file_compiler_builder.h"
+#include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
+#include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_rewriter_pass.h"
 
 namespace docc::target {
 
 static DoccTarget cuda_target = {
+    .api_ver = DoccTarget::NEWEST_API_VER,
     .short_name = "cuda",
     .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
         builder.add_compile_option("-x cuda");
@@ -23,15 +26,22 @@ static DoccTarget cuda_target = {
         builder.redirect_snippet("cu", std::move(b));
         return true;
     },
+    .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
+                                    sdfg::analysis::AnalysisManager& analysis_manager,
+                                    const TargetOptions& options) -> bool {
+        sdfg::passes::CudaExpansionPass cuda_expansion_pass;
+        return cuda_expansion_pass.run(builder, analysis_manager);
+    },
     .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
                                    sdfg::analysis::AnalysisManager& analysis_manager,
-                                   const plugins::TargetOptions& options) -> bool {
+                                   const TargetOptions& options) -> bool {
         sdfg::cuda::CudaLibraryNodeRewriterPass cuda_pass;
         return cuda_pass.run(builder, analysis_manager);
     }
 };
 
 static DoccTarget rocm_target = {
+    .api_ver = DoccTarget::NEWEST_API_VER,
     .short_name = "rocm",
     .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
         builder.add_compile_option("-x hip");
@@ -55,13 +65,23 @@ static DoccTarget rocm_target = {
 
         return true;
     },
+    .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
+                                    sdfg::analysis::AnalysisManager& analysis_manager,
+                                    const TargetOptions& options) -> bool {
+        sdfg::passes::RocmExpansionPass rocm_expansion_pass;
+        return rocm_expansion_pass.run(builder, analysis_manager);
+    },
     .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
                                    sdfg::analysis::AnalysisManager& analysis_manager,
-                                   const plugins::TargetOptions& options) -> bool {
+                                   const TargetOptions& options) -> bool {
         sdfg::rocm::RocmLibraryNodeRewriterPass rocm_pass;
         return rocm_pass.run(builder, analysis_manager);
     }
 };
+
+static DoccTarget sequential_target = {.short_name = "sequential"};
+
+static DoccTarget openmp_target = {.short_name = "openmp"};
 
 /**
  * Temporary workaround. Ideally, these should live with the plugins themselves.
@@ -71,6 +91,8 @@ static DoccTarget rocm_target = {
 void register_builtin_targets(sdfg::plugins::Context& context) {
     context.add_target(&cuda_target);
     context.add_target(&rocm_target);
+    context.add_target(&sequential_target);
+    context.add_target(&openmp_target);
 }
 
 } // namespace docc::target

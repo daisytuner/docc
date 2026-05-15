@@ -23,7 +23,7 @@ void register_plugin(sdfg::plugins::Context& context);
 void et_scheduling_passes(
     sdfg::builder::StructuredSDFGBuilder& builder,
     sdfg::analysis::AnalysisManager& analysis_manager,
-    const plugins::TargetOptions& options
+    const TargetOptions& options
 );
 
 std::string et_get_host_additional_compile_args(

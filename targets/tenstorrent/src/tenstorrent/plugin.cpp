@@ -39,7 +39,7 @@ docc::target::DoccTarget tenstorrent_target = {
     .apply_expand_time_mapping = nullptr,
     .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder &builder,
                                    sdfg::analysis::AnalysisManager &analysis_manager,
-                                   const docc::plugins::TargetOptions &options) -> bool {
+                                   const docc::target::TargetOptions &options) -> bool {
         std::vector<std::shared_ptr<plugins::TargetMapper>> mappers{std::make_shared<TTLibNodeMapper>()};
         passes::TargetMappingPass mappingPass(mappers);
         return mappingPass.run_pass(builder, analysis_manager);

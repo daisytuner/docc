@@ -139,9 +139,19 @@ pybind11::dict PyStructuredSDFG::containers() const {
 
 void PyStructuredSDFG::validate() { sdfg_->validate(); }
 
-void PyStructuredSDFG::expand() {
+void PyStructuredSDFG::expand(const std::string& target, const std::string& category) {
+    docc::target::TargetOptions options{target, category, /*transfer_tuning=*/false};
+    expand(options);
+}
+void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
+
+    if (auto* target = docc_context_.get_target_handler(options.target)) {
+        if (auto target_expand = target->safe_apply_expand_time_mapping_fn_get()) {
+            target_expand(builder_opt, analysis_manager, options);
+        }
+    }
 
     auto local_buffer_reuse_pipeline = sdfg::passes::local_buffer_reuse_pipeline();
     local_buffer_reuse_pipeline.run(builder_opt, analysis_manager);
@@ -165,24 +175,6 @@ void PyStructuredSDFG::expand() {
 
     sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;
     tensor_to_pointer_conversion_pass.run(builder_opt, analysis_manager);
-}
-
-void PyStructuredSDFG::expand_cuda() {
-    sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
-    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
-    sdfg::passes::CudaExpansionPass cuda_expansion_pass;
-    cuda_expansion_pass.run(builder_opt, analysis_manager);
-
-    expand();
-}
-
-void PyStructuredSDFG::expand_rocm() {
-    sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
-    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
-    sdfg::passes::RocmExpansionPass rocm_expansion_pass;
-    rocm_expansion_pass.run(builder_opt, analysis_manager);
-
-    expand();
 }
 
 
@@ -379,27 +371,31 @@ void PyStructuredSDFG::normalize() {
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
-    if (target == "none") {
+    docc::target::TargetOptions topts = {.target = target, .category = category, .remote_tuning = remote_tuning};
+    schedule(topts);
+}
+void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
+    if (options.target == "none") {
         return;
     }
 
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
-    docc::plugins::TargetOptions topts = {.target = target, .category = category, .transfer_tuning = remote_tuning};
-    docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, topts);
+
+    docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, options);
 
     std::vector<std::string> schedulers;
 
-    if (remote_tuning) {
+    if (options.remote_tuning) {
         std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
             sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-        sdfg::passes::rpc::register_rpc_loop_opt(context, target, category);
+        sdfg::passes::rpc::register_rpc_loop_opt(context, options.target, options.category);
         schedulers.push_back("rpc");
     }
 
     // CPU Opt Pipeline
-    if (target == "sequential" || target == "openmp") {
+    if (options.target == "sequential" || options.target == "openmp") {
         sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
         sdfg::passes::DeadDataElimination dde;
         sdfg::passes::SymbolPropagation symbol_propagation_pass;
@@ -407,20 +403,14 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
         dde.run(builder, analysis_manager);
         dce.run(builder, analysis_manager);
 
-        if (target == "openmp") {
-            schedulers.push_back(target);
+        if (options.target == "openmp") {
+            schedulers.push_back(options.target);
         }
         schedulers.push_back("vectorize");
     }
     // GPU Opt Pipeline
-    else if (target == "cuda" || target == "rocm") {
-        schedulers.push_back(target);
-    } else if (target == "etsoc") {
-#ifdef DOCC_HAS_TARGET_ET
-
-#endif
-    } else {
-        std::cerr << "[WARNING] Target '" << target << "' is not supported, ignoring!" << std::endl;
+    else if (options.target == "cuda" || options.target == "rocm") {
+        schedulers.push_back(options.target);
     }
     sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, nullptr);
     bool loop_scheduling_changes = loop_scheduling_pass.run(builder, analysis_manager);
@@ -521,9 +511,10 @@ std::string PyStructuredSDFG::compile(
     compile_builder.add_link_option("-lblas");
 #endif
 
-    auto* target_handler = docc_context_.get_target_handler(target);
-    if (target_handler) {
-        target_handler->apply_additional_compile_options(compile_builder);
+    if (auto* target_handler = docc_context_.get_target_handler(target)) {
+        if (auto add_opts = target_handler->safe_apply_additional_compile_options_fn_get()) {
+            add_opts(compile_builder);
+        }
     }
 
     auto fcomp_handler = compile_builder.build();

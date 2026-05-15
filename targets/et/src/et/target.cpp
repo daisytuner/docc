@@ -98,7 +98,7 @@ DoccTarget et_target = {
     },
     .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
                                    sdfg::analysis::AnalysisManager& analysis_manager,
-                                   const plugins::TargetOptions& options) -> bool {
+                                   const TargetOptions& options) -> bool {
         DEBUG_PRINTLN("Running etsoc sched-time mapping...");
         std::vector<std::shared_ptr<sdfg::plugins::TargetMapper>> mappers{std::make_shared<EtLibNodeMapper>()};
         sdfg::passes::TargetMappingPass mappingPass(mappers);
@@ -128,7 +128,7 @@ void register_plugin(sdfg::plugins::Context& context) {
 void et_scheduling_passes(
     sdfg::builder::StructuredSDFGBuilder& builder,
     sdfg::analysis::AnalysisManager& analysis_manager,
-    const plugins::TargetOptions& options
+    const TargetOptions& options
 ) {
     et_target.apply_sched_time_mapping(builder, analysis_manager, options);
 }
