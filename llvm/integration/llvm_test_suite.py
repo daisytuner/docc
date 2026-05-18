@@ -1,6 +1,7 @@
 import pytest
 import subprocess
 import os
+import signal
 
 from pathlib import Path
 
@@ -447,11 +448,12 @@ def test(setup, path, name, compiles, executes):
         stderr=subprocess.PIPE,
         universal_newlines=True,
         cwd=build_dir,
+        start_new_session=True,
     )
     try:
         stdout, stderr = make_process.communicate(timeout=300)
     except subprocess.TimeoutExpired: # must catch this otherwise subprocess is not killed
-        make_process.kill()
+        os.killpg(make_process.pid, signal.SIGTERM)
         if compiles == "TIMEOUT":
             return # Expected this
         pytest.fail("Compilation timed out but expected compiles = " + compiles)
@@ -461,6 +463,8 @@ def test(setup, path, name, compiles, executes):
         print("STDOUT:\n", stdout)
         print("STDERR:\n", stderr)
     assert make_process.returncode == 0, "Compilation failed but expected compiles = " + compiles
+    if all_tests and compiles != "YES":
+        print("Compilation succeeded but expected compiles = " + compiles)
 
     # Execute
     lit_process = subprocess.Popen(
@@ -469,11 +473,12 @@ def test(setup, path, name, compiles, executes):
         stderr=subprocess.PIPE,
         universal_newlines=True,
         cwd=build_dir,
+        start_new_session=True,
     )
     try:
         stdout, stderr = lit_process.communicate(timeout=300)
     except subprocess.TimeoutExpired: # must catch this otherwise subprocess is not killed
-        lit_process.kill()
+        os.killpg(lit_process.pid, signal.SIGTERM)
         if executes == "TIMEOUT":
             return # Expected this
         pytest.fail("Execution timed out but expected executes = " + executes)
@@ -483,3 +488,5 @@ def test(setup, path, name, compiles, executes):
         print("STDOUT:\n", stdout)
         print("STDERR:\n", stderr)
     assert lit_process.returncode == 0, "Execution failed but expected executes = " + executes
+    if all_tests and executes != "PASS":
+        print("Execution passed but expected executes = " + executes)
