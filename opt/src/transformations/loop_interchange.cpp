@@ -141,7 +141,7 @@ static AffineDecomp check_affine(const symbolic::Expression& expr, const symboli
     symbolic::SymbolVec syms = {sym};
     auto poly = symbolic::polynomial(expr, syms);
     if (poly == SymEngine::null) return {};
-    auto coeffs = symbolic::affine_coefficients(poly, syms);
+    auto coeffs = symbolic::affine_coefficients(poly);
     if (coeffs.empty()) return {};
     auto coeff = coeffs[sym];
     // Coefficient must be a positive integer

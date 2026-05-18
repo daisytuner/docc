@@ -88,5 +88,13 @@ typedef std::vector<std::vector<Condition>> CNF;
  */
 CNF conjunctive_normal_form(const Condition cond);
 
+/**
+ * @brief Check if a disjunctive clause is a tautology
+ *
+ * @param clause The clause to check, represented as a vector of conditions (literals)
+ * @return true if the clause is a tautology, false otherwise
+ */
+bool is_tautology(const std::vector<symbolic::Condition>& clause);
+
 } // namespace symbolic
 } // namespace sdfg

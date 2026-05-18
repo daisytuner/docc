@@ -17,6 +17,7 @@ Furthermore, the repository contains runtime libraries for code instrumentation 
 
 |                      | OpenMP | CUDA | ROCm | Metal |
 |----------------------|:------:|:----:|:----:|:-----:|
+| C/C++ (Linux)        | ✅     | ✅   | ✅   | —     |
 | Python (Linux)       | ✅     | ✅   | ✅  | —     |
 | PyTorch (Linux)      | ✅     | ✅   | ✅  | —     |
 | Python (macOS)       | ✅     | —    | —    | 🚧   |
@@ -69,9 +70,9 @@ C = matrix_multiply(A, B)
 
 For further details, check out the [component's README.md](./python/).
 
-### MLIR (PyTorch)
+### PyTorch
 
-The MLIR frontend can be installed from PyPi:
+The PyTorch frontend can be installed from PyPi:
 
 ```bash
 pip install docc-ai
@@ -80,8 +81,7 @@ pip install docc-ai
 To use the frontend with PyTorch, also install `torch-mlir`, which we use to translate models to core MLIR dialects initially:
 
 ```bash
-pip install torch==2.10.0+cpu torchvision==0.25.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
-pip install torch-mlir==20260309.746 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
+pip install -r mlir/requirements.txt
 ```
 
 This allows you to import models directly from PyTorch, generate an optimized SDFG, and run inference.
@@ -151,33 +151,84 @@ for _ in range(20):
 
 For further details, check out the [component's README.md](./mlir/).
 
-## Building the Core Components
+### C/C++
+
+The C/C++ frontend provides a compiler that can automatically detect parallelism in your code and generate optimized code for multiple targets.
+Simply compile your existing C/C++ code with `docc` instead of `clang` or `gcc`, and optionally enable optimizations for specific targets.
+
+To use the C/C++ compiler, install `docc` (Ubuntu 24.04, see [our website](https://daisytuner.com/) for more distros):
 
 ```bash
-sudo apt-get install -y libgmp-dev libzstd-dev
-sudo apt-get install -y nlohmann-json3-dev
-sudo apt-get install -y libboost-graph-dev
-sudo apt-get install -y libisl-dev
-sudo apt-get install -y libcurl4-gnutls-dev
+wget -qO docc.deb 'https://firebasestorage.googleapis.com/v0/b/daisy-367210.appspot.com/o/docc-distributables%2Fpackage%2Fdocc_0.4.0-ubuntu_24.04_amd64.deb?alt=media&token=2c32130b-bdfc-41c5-86dd-d3f6de179113'
+sudo apt-get install ./docc.deb
 ```
 
-The core components `sdfg`, `opt`, `rtl` and `rpc` can be built with cmake.
+Then use the `docc` compiler directly on your C/C++ files. Here's a simple example that performs vector addition:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <omp.h>
+
+#define N 8194
+
+int main(int argc, char** argv) {
+    float* x = (float*)malloc(N * sizeof(float));
+    float* y = (float*)malloc(N * sizeof(float));
+    float* w = (float*)malloc(N * sizeof(float));
+
+    // Initialize arrays
+    float alpha = 2.0f;
+    float beta = 3.0f;
+    for (int i = 0; i < N; i++) {
+        x[i] = (float)i;
+        y[i] = (float)(N - i);
+        w[i] = 0.0f;
+    }
+
+    double start = omp_get_wtime();
+
+    // Perform waxpby operation: w = alpha * x + beta * y
+    for (int i = 0; i < N; i++) {
+        w[i] = alpha * x[i] + beta * y[i];
+    }
+
+    double end = omp_get_wtime();
+
+    // Print the result
+    for (int i = 0; i < 32; i++) {
+        printf("w[%d] = %f, ", i, w[i]);
+    }
+    printf("\n");
+
+    free(x);
+    free(y);
+    free(w);
+
+    return 0;
+}
+```
+
+Compile this example with `docc` using standard compiler flags:
 
 ```bash
-mkdir build && cd build
-cmake \
-  -G Ninja \
-  -DCMAKE_C_COMPILER=clang-19 \
-  -DCMAKE_CXX_COMPILER=clang++-19 \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DBUILD_TESTS:BOOL=OFF \
-  -DBUILD_BENCHMARKS:BOOL=OFF \
-  -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
-  ..
-ninja -j$(nproc)
+docc -g -O3 example.c -o example.out
+./example.out
 ```
 
-For instructions on how to build and extend frontends, check out the README.md of the components' directories.
+To automatically parallelize your code for multi-core CPUs using OpenMP, enable the OpenMP tuning mode:
+
+```bash
+docc -g -O3 -docc-tune=openmp example.c -o example.out
+```
+
+You can also cross-compile for GPU accelerators. For CUDA:
+
+```bash
+docc -g -O3 -docc-tune=cuda example.c -o example.out
+```
+
+For further details, check out the [the documentation](https://docs.daisytuner.com/getting-started-docc/install).
 
 ## Attribution
 

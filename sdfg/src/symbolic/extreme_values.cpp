@@ -424,7 +424,7 @@ Interval BoundAnalysis::visit_add(const SymEngine::RCP<const SymEngine::Add>& ad
         if (!poly.is_null()) {
             // Try affine fast-path: if all terms are degree <= 1,
             // use sign-aware monotonicity substitution.
-            auto coeffs = affine_coefficients(poly, gens);
+            auto coeffs = affine_coefficients(poly);
             if (!coeffs.empty()) {
                 auto result = visit_add_affine(coeffs, gens, depth);
                 if (result.has_lower() || result.has_upper()) {

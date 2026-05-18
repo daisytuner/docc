@@ -21,7 +21,7 @@ bool is_monotonic_affine(const Expression expr, const Symbol sym, const Assumpti
     if (poly == SymEngine::null) {
         return false;
     }
-    auto coeffs = affine_coefficients(poly, symbols);
+    auto coeffs = affine_coefficients(poly);
     if (coeffs.empty()) {
         return false;
     }

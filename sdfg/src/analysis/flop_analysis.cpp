@@ -326,7 +326,7 @@ symbolic::Expression FlopAnalysis::visit_structured_loop_with_scope(
         this->precise_ = false;
         return SymEngine::null;
     }
-    auto update_coeffs = symbolic::affine_coefficients(update_polynomial, symbols);
+    auto update_coeffs = symbolic::affine_coefficients(update_polynomial);
 
     // For now, only allow polynomial of the form: 1 * indvar + n
     assert(update_coeffs.contains(indvar) && symbolic::eq(update_coeffs[indvar], symbolic::one()));

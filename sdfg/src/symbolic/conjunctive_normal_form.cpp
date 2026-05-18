@@ -169,5 +169,119 @@ CNF conjunctive_normal_form(const Condition cond) {
     return {{cond}};
 }
 
+enum class RelOp { EQ, NE, LT, LE, GT, GE };
+
+RelOp flip_sign(RelOp op) {
+    switch (op) {
+        case RelOp::EQ:
+            return RelOp::EQ;
+        case RelOp::NE:
+            return RelOp::NE;
+        case RelOp::LT:
+            return RelOp::GT;
+        case RelOp::LE:
+            return RelOp::GE;
+        case RelOp::GT:
+            return RelOp::LT;
+        case RelOp::GE:
+            return RelOp::LE;
+    }
+    return op;
+}
+
+bool extract_relational(const symbolic::Condition& lit, RelOp& op, symbolic::Expression& diff) {
+    if (SymEngine::is_a<SymEngine::Equality>(*lit)) {
+        op = RelOp::EQ;
+    } else if (SymEngine::is_a<SymEngine::Unequality>(*lit)) {
+        op = RelOp::NE;
+    } else if (SymEngine::is_a<SymEngine::StrictLessThan>(*lit)) {
+        op = RelOp::LT;
+    } else if (SymEngine::is_a<SymEngine::LessThan>(*lit)) {
+        op = RelOp::LE;
+    } else {
+        return false;
+    }
+    auto rel = SymEngine::rcp_static_cast<const SymEngine::Relational>(lit);
+    diff = symbolic::expand(symbolic::sub(rel->get_arg1(), rel->get_arg2()));
+    return true;
+}
+
+bool comparisions_cover_domain(const std::vector<RelOp>& ops) {
+    bool neg = false, zero = false, pos = false;
+    for (auto op : ops) {
+        switch (op) {
+            case RelOp::EQ:
+                zero = true;
+                break;
+            case RelOp::NE:
+                neg = true;
+                pos = true;
+                break;
+            case RelOp::LT:
+                neg = true;
+                break;
+            case RelOp::LE:
+                neg = true;
+                zero = true;
+                break;
+            case RelOp::GT:
+                pos = true;
+                break;
+            case RelOp::GE:
+                pos = true;
+                zero = true;
+                break;
+        }
+        if (neg && zero && pos) return true;
+    }
+    return false;
+}
+
+bool is_tautology(const std::vector<symbolic::Condition>& clause) {
+    if (clause.empty()) return false;
+
+    // Structural simplification (handles complementary pairs like Gt/Le).
+    auto disj = symbolic::__false__();
+    for (auto& lit : clause) {
+        disj = symbolic::Or(disj, lit);
+    }
+    if (symbolic::is_true(disj)) return true;
+
+    // Relational coverage: group literals by canonical diff (modulo sign) and
+    // check whether any group's operators cover the entire real line.
+    std::vector<symbolic::Expression> group_diffs;
+    std::vector<std::vector<RelOp>> group_ops;
+    for (auto& lit : clause) {
+        RelOp op;
+        symbolic::Expression diff;
+        if (!extract_relational(lit, op, diff)) {
+            continue;
+        }
+        bool placed = false;
+        for (size_t g = 0; g < group_diffs.size(); ++g) {
+            if (SymEngine::eq(*diff, *group_diffs[g])) {
+                group_ops[g].push_back(op);
+                placed = true;
+                break;
+            }
+            auto sum = symbolic::expand(symbolic::add(diff, group_diffs[g]));
+            if (SymEngine::eq(*sum, *symbolic::zero())) {
+                group_ops[g].push_back(flip_sign(op));
+                placed = true;
+                break;
+            }
+        }
+        if (!placed) {
+            group_diffs.push_back(diff);
+            group_ops.push_back({op});
+        }
+    }
+    for (auto& ops : group_ops) {
+        if (comparisions_cover_domain(ops)) return true;
+    }
+    return false;
+}
+
+
 } // namespace symbolic
 } // namespace sdfg

@@ -27,7 +27,7 @@
  *
  * SymbolVec symbols = {i, j};
  * auto poly = polynomial(expr, symbols);
- * auto coeffs = affine_coefficients(poly, symbols);
+ * auto coeffs = affine_coefficients(poly);
  * // coeffs[i] = 2, coeffs[j] = 3, constant = 5
  * @endcode
  *
@@ -65,22 +65,26 @@ Polynomial polynomial(const Expression expr, SymbolVec& symbols);
 /**
  * @brief Converts a Polynomial of degree 1 to coefficient map
  * @param poly The Polynomial to convert (must be degree 1)
- * @param symbols A vector of symbols that will be used in the coefficients map
  *
- * @return A AffineCoeffs map where keys are symbols and values are their coefficients
+ * @return A AffineCoeffs map where keys are the polynomial's variables and
+ *         values are their coefficients, plus a `__daisy_constant__` entry
+ *         for the constant term.
  *
- * Extracts the coefficients from a degree-1 (affine) polynomial. For an expression
- * like 2*i + 3*j + 5, this returns a map with entries {i: 2, j: 3} plus the constant term.
+ * Extracts the coefficients from a degree-1 (affine) polynomial. For an
+ * expression like `2*i + 3*j + 5`, this returns a map with entries
+ * `{i: 2, j: 3, __daisy_constant__: 5}`. The variable -> exponent-index
+ * mapping is recovered from the polynomial itself, so the result is
+ * independent of the order in which variables were originally passed to
+ * `polynomial()`.
  *
  * @code
- * // Extract coefficients from 2*i + 3*j + 5
  * SymbolVec symbols = {i, j};
  * auto poly = polynomial(expr, symbols);
- * auto coeffs = affine_coefficients(poly, symbols);
+ * auto coeffs = affine_coefficients(poly);
  * // Access individual coefficients: coeffs[i] gives 2
  * @endcode
  */
-AffineCoeffs affine_coefficients(Polynomial poly, SymbolVec& symbols);
+AffineCoeffs affine_coefficients(Polynomial poly);
 
 /**
  * @brief Computes the inverse function for an affine expression

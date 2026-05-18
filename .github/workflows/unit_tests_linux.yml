@@ -245,8 +245,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt-get install -y libmlir-19-dev mlir-19-tools
-
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
           pip install numpy scipy ml_dtypes
@@ -281,9 +279,7 @@ jobs:
       - name: Integration Tests
         if: matrix.python-version == '3.11' || matrix.python-version == '3.12'
         run: |
-          # Install torch-mlir with pinned versions for compatibility
-          pip install torch==2.10.0+cpu torchvision==0.25.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
-          pip install torch-mlir==20260309.746 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
+          pip install -r mlir/requirements.txt
 
           cd mlir/
           pytest -v integration/
@@ -298,8 +294,88 @@ jobs:
           cd mlir/benchmarks/torch/model_zoo/
           python fasterrcnn_resnet50.py
 
+  llvm-tests-linux:
+    runs-on:
+      group: dahlia
+      labels: Linux
+    container:
+      image: daisytuner/docc-build-env-llvm19-base:latest-amd64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Formatting
+        shell: bash
+        run: |
+          shopt -s globstar
+          clang-format-19 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja \
+            -DCMAKE_C_COMPILER=clang-19 \
+            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DSDFG_ENABLE_COVERAGE=ON \
+            -DLLVM_BUILD_FRONTEND=ON \
+            -DLLVM_BUILD_TESTS=ON \
+            -DINSTALL_GTEST=OFF \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+            ..
+          ninja -j$(nproc)
+          cpack -G DEB
+          apt-get install -y ./docc-llvm*.deb
+
+      - name: Unit Tests
+        run: |
+          cd build
+          LLVM_PROFILE_FILE="docc_llvm_pass_test.profraw" ./llvm/tests/docc_llvm_pass_test
+
+          # Run coverage
+          llvm-profdata-19 merge -sparse docc_llvm_pass_test.profraw -o default.profdata
+          cd ../
+          llvm-cov-19 export ./build/llvm/tests/docc_llvm_pass_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
+          lcov --ignore-errors unused --extract build/coverage_full.lcov '*/llvm/src/*' '*/llvm/include/*' --output-file build/coverage.lcov
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          flag-name: llvm
+          parallel: true
+          format: lcov
+          file: build/coverage.lcov
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup virtual environment
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
+          python -m pip install --upgrade pip
+          pip install pytest==7.1.3 pytest-parallel lit
+
+      - name: Integration Tests
+        run: |
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
+
+          cd llvm/integration
+          pytest -v llvm_test_suite.py
+
   finish:
-    needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux]
+    needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Coveralls Finished

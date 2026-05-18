@@ -1,0 +1,63 @@
+# cmake/CPackOptions.cmake.in
+
+# This file is configured by CMake and included by CPack at package generation time.
+# It allows us to calculate architecture-dependent filenames without requiring
+# dpkg/rpm to be present during the initial CMake configuration step.
+
+if(CPACK_RELEASE_PACKAGE)
+    set(CPACK_PACKAGE_FILE_VERSION ${CPACK_PACKAGE_VERSION})
+else()
+    execute_process(
+        COMMAND git rev-parse --short HEAD
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE GIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE GIT_RESULT
+    )
+    if(NOT GIT_RESULT EQUAL 0)
+        set(GIT_HASH "dev")
+    endif()
+    set(CPACK_PACKAGE_FILE_VERSION "${CPACK_PACKAGE_VERSION}-${GIT_HASH}")
+endif()
+
+if(CPACK_GENERATOR MATCHES "DEB")
+    # Resolve architecture dynamically if not already set
+    if(NOT CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
+        find_program(DPKG_CMD "dpkg")
+        if(DPKG_CMD)
+            execute_process(COMMAND "${DPKG_CMD}" --print-architecture
+                OUTPUT_VARIABLE CPACK_DEBIAN_PACKAGE_ARCHITECTURE
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+        endif()
+    endif()
+    
+    # Fallback if detection failed (e.g. cross-compiling logic might need explicit set, or defaults)
+    if(NOT CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
+        set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "unknown")
+    endif()
+
+    set(CPACK_DEBIAN_FILE_NAME "@CPACK_PACKAGE_NAME@_${CPACK_PACKAGE_FILE_VERSION}-@PACKAGE_DISTRO_ID@_@PACKAGE_DISTRO_VERSION@_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+endif()
+
+if(CPACK_GENERATOR MATCHES "RPM")
+    # Resolve architecture dynamically if not already set
+    if(NOT CPACK_RPM_PACKAGE_ARCHITECTURE)
+        find_program(RPM_CMD "rpm")
+        if(RPM_CMD)
+             # Try to ask rpm for the target architecture
+             # This might depend on what we are building for, but usually matches the system or what rpmbuild does
+             execute_process(COMMAND "${RPM_CMD}" --eval "%{_arch}"
+                OUTPUT_VARIABLE CPACK_RPM_PACKAGE_ARCHITECTURE
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+        endif()
+    endif()
+
+    if(NOT CPACK_RPM_PACKAGE_ARCHITECTURE)
+        execute_process(COMMAND uname -m 
+            OUTPUT_VARIABLE CPACK_RPM_PACKAGE_ARCHITECTURE
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif()
+
+    set(CPACK_RPM_FILE_NAME "@CPACK_PACKAGE_NAME@_${CPACK_PACKAGE_FILE_VERSION}-@PACKAGE_DISTRO_ID@_@PACKAGE_DISTRO_VERSION@_${CPACK_RPM_PACKAGE_ARCHITECTURE}.rpm")
+endif()

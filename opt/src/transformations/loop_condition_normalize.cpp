@@ -289,7 +289,7 @@ symbolic::Condition isolate_indvar_in_relational(const symbolic::Condition& cond
             return std::nullopt;
         }
 
-        auto coeffs = symbolic::affine_coefficients(poly, syms);
+        auto coeffs = symbolic::affine_coefficients(poly);
         if (coeffs.empty() || coeffs.find(indvar) == coeffs.end()) {
             return std::nullopt;
         }
@@ -442,7 +442,7 @@ bool has_non_isolated_indvar(const symbolic::Condition& cond, const symbolic::Sy
             if (poly.is_null()) {
                 return false;
             }
-            auto coeffs = symbolic::affine_coefficients(poly, syms);
+            auto coeffs = symbolic::affine_coefficients(poly);
             if (coeffs.find(indvar) == coeffs.end()) {
                 return false;
             }
@@ -620,7 +620,7 @@ bool LoopConditionNormalize::
                         continue;
                     }
 
-                    auto coeffs = symbolic::affine_coefficients(poly, syms);
+                    auto coeffs = symbolic::affine_coefficients(poly);
                     if (coeffs.empty() || coeffs.find(indvar) == coeffs.end()) {
                         continue;
                     }
@@ -716,7 +716,7 @@ void LoopConditionNormalize::apply(builder::StructuredSDFGBuilder& builder, anal
                         continue;
                     }
 
-                    auto coeffs = symbolic::affine_coefficients(poly, syms);
+                    auto coeffs = symbolic::affine_coefficients(poly);
                     if (coeffs.empty() || coeffs.find(indvar) == coeffs.end()) {
                         new_clause.push_back(literal);
                         continue;

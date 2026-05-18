@@ -43,13 +43,11 @@ bool IfElse::is_complete() const {
     for (auto& entry : this->conditions_) {
         condition = symbolic::Or(condition, entry);
     }
+    if (symbolic::is_true(condition)) return true;
+
     symbolic::CNF cnf_cond = symbolic::conjunctive_normal_form(condition);
     for (auto& clause : cnf_cond) {
-        auto cond = symbolic::__false__();
-        for (auto& literal : clause) {
-            cond = symbolic::Or(cond, literal);
-        }
-        if (!symbolic::is_true(cond)) {
+        if (!symbolic::is_tautology(clause)) {
             return false;
         }
     }

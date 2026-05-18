@@ -68,7 +68,7 @@ symbolic::Integer StructuredLoop::stride() {
     if (polynomial.is_null()) {
         return SymEngine::null;
     }
-    auto coeffs = symbolic::affine_coefficients(polynomial, gens);
+    auto coeffs = symbolic::affine_coefficients(polynomial);
     if (coeffs.empty()) {
         return SymEngine::null;
     }

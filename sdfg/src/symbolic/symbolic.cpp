@@ -925,7 +925,7 @@ Expression inverse(const Expression expr, const Symbol symbol) {
     if (poly.is_null()) {
         return SymEngine::null;
     }
-    AffineCoeffs affine_coeffs = affine_coefficients(poly, symbols);
+    AffineCoeffs affine_coeffs = affine_coefficients(poly);
     return affine_inverse(affine_coeffs, symbol);
 }
 

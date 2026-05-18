@@ -96,7 +96,7 @@ jobs:
           name: wheels-docc-ai-${{ matrix.os }}-${{ matrix.python }}
           path: wheelhouse/*.whl
 
-  publish:
+  wheels-publish:
     needs: [wheels-compiler, wheels-ai]
     runs-on: build-amd64-big
     permissions:
@@ -110,3 +110,91 @@ jobs:
           merge-multiple: true
 
       - uses: pypa/gh-action-pypi-publish@v1.10.0
+  
+  packages-llvm:
+    strategy:
+      matrix:
+        include:
+          - platform: ubuntu-24.04
+            package-format: deb
+            cpack-generator: DEB
+            upload-dist-id: ubuntu
+            upload-dist-version: 24.04
+            runner: build-amd64-big
+            architecture: x64
+            image: daisytuner/docc-build-env-llvm19-ubuntu-24.04:latest
+          - platform: ubuntu-24.04
+            package-format: deb
+            cpack-generator: DEB
+            upload-dist-id: ubuntu
+            upload-dist-version: 24.04
+            runner: build-arm64-big
+            architecture: arm64
+            image: daisytuner/docc-build-env-llvm19:latest-arm64
+          - platform: rhel-10
+            package-format: rpm
+            cpack-generator: RPM
+            upload-dist-id: rhel
+            upload-dist-version: 10
+            upload-dist-platform-id: platform:el10
+            runner: build-amd64-big
+            architecture: x64
+            image: daisytuner/docc-build-env-llvm19-rhel-10:latest
+          - platform: debian-13
+            package-format: deb
+            cpack-generator: DEB
+            upload-dist-id: debian
+            upload-dist-version: 13
+            runner: build-amd64-big
+            architecture: x64
+            image: daisytuner/docc-build-env-llvm19-debian-13:latest
+
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Define Version
+        id: define_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build package
+        run: |
+          mkdir -p build
+          cd build
+          cmake -G Ninja \
+            -DCMAKE_C_COMPILER=clang-19 \
+            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DINSTALL_GTEST=OFF \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DSDFGLIB_AUTO_INSTALL_MODE=ON \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+            -DRELEASE_PACKAGE=ON \
+            -DPACKAGE_WITH_TOOL_DEPS=ON \
+            ..
+          ninja -j$(nproc)
+          cpack -G ${{ matrix.cpack-generator }}
+
+      - name: Upload docc package as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docc-${{ matrix.platform }}-${{ matrix.architecture }}
+          path: "build/*.${{ matrix.package-format }}"
+
+      - name: Upload docc package to Firebase
+        uses: daisytuner/upload-distribution-action@main
+        with:
+          file: "build/*.${{ matrix.package-format }}"
+          version: ${{ steps.define_version.outputs.VERSION }}
+          architecture: ${{ matrix.architecture }}
+          dist-id: ${{ matrix.upload-dist-id }}
+          dist-version: ${{ matrix.upload-dist-version }}
+          dist-platform-id: ${{ matrix.upload-dist-platform-id }}
+          token: ${{ secrets.DOCC_RELEASE_TOKEN }}
+          url: /v1/system/docc-distributions/upload

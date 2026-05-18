@@ -168,14 +168,9 @@ TEST(SymbolEvolutionTest, Pattern4_AffineUpdate_Negative_Multiplication) {
     EXPECT_FALSE(applied);
 }
 
-// ============================================================================
-// Pattern 1: Constant with Verification
-// ============================================================================
-
 // Positive case: c = 42 throughout
 // Expected: c = 42
-// TODO: Pattern 1 is not fully supported yet - needs investigation
-TEST(SymbolEvolutionTest, DISABLED_Pattern1_Constant) {
+TEST(SymbolEvolutionTest, Pattern1_Constant) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
     types::Scalar desc(types::PrimitiveType::Int32);
@@ -217,14 +212,9 @@ TEST(SymbolEvolutionTest, DISABLED_Pattern1_Constant) {
     }
 }
 
-// ============================================================================
-// Pattern 2: Loop Alias with Verification
-// ============================================================================
-
 // Positive case: j tracks i exactly
 // Expected: j = i
-// TODO: Pattern 2 is not fully supported yet - needs investigation
-TEST(SymbolEvolutionTest, DISABLED_Pattern2_LoopAlias) {
+TEST(SymbolEvolutionTest, Pattern2_LoopAlias) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
     types::Scalar desc(types::PrimitiveType::Int32);
@@ -384,27 +374,13 @@ TEST(SymbolEvolutionTest, Pattern3_Quadratic) {
     passes::SymbolEvolution pass;
     bool applied = pass.run(builder, analysis_manager);
 
-    // This should apply with Pattern 3 if init condition matches
-    if (applied) {
-        // Verify the closed-form solution exists
-        auto first_elem = loop.root().at(0);
-        auto& assignments = first_elem.second.assignments();
-
-        EXPECT_TRUE(assignments.find(sq) != assignments.end());
-        if (assignments.find(sq) != assignments.end()) {
-            auto evolved_expr = assignments.at(sq);
-            // Expected: (i-1)*(i-1) because it's f(i_{n-1})
-            auto i_minus_1 = symbolic::sub(i, symbolic::one());
-            auto expected = symbolic::mul(i_minus_1, i_minus_1);
-            EXPECT_TRUE(symbolic::eq(evolved_expr, expected));
-        }
-    }
+    EXPECT_FALSE(applied);
 }
 
 // Test Pattern 3: Linear function double_i = 2*i
 // Expected closed-form: double_i = 2*(i-1)
 // TODO: Pattern 3 linear function needs init condition adjustment
-TEST(SymbolEvolutionTest, DISABLED_Pattern3_LinearFunction) {
+TEST(SymbolEvolutionTest, Pattern3_LinearFunction) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
     types::Scalar desc(types::PrimitiveType::Int32);
@@ -543,4 +519,283 @@ TEST(SymbolEvolutionTest, Pattern4_FinalValueVerification) {
         auto expected = symbolic::mul(symbolic::integer(3), symbolic::sub(i, symbolic::integer(5)));
         EXPECT_TRUE(symbolic::eq(evolved_expr, expected));
     }
+}
+
+// ============================================================================
+// Extended Tests for the unified affine recurrence solver
+// ============================================================================
+
+// Affine in indvar with non-unit slope: k = 3*i + 5, init = 2 (= 3*(0-1)+5)
+// Expected closed form: k = 3*(i - 1) + 5
+TEST(SymbolEvolutionTest, AffineInIndvar_NonUnit) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int32);
+    builder.add_container("i", desc);
+    builder.add_container("k", desc);
+    auto i = symbolic::symbol("i");
+    auto k = symbolic::symbol("k");
+
+    auto& root = builder.subject().root();
+
+    auto& init_block = builder.add_block(root);
+    builder.add_block_after(root, init_block, {{k, symbolic::integer(2)}}, init_block.debug_info());
+
+    auto& loop =
+        builder
+            .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
+
+    auto& loop_block = builder.add_block(loop.root());
+    builder.add_block_after(
+        loop.root(),
+        loop_block,
+        {{k, symbolic::add(symbolic::mul(symbolic::integer(3), i), symbolic::integer(5))}},
+        loop_block.debug_info()
+    );
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::SymbolEvolution pass;
+    bool applied = pass.run(builder, analysis_manager);
+
+    EXPECT_TRUE(applied);
+
+    auto first_elem = loop.root().at(0);
+    auto& assignments = first_elem.second.assignments();
+    ASSERT_TRUE(assignments.find(k) != assignments.end());
+    auto evolved = assignments.at(k);
+    auto expected =
+        symbolic::add(symbolic::mul(symbolic::integer(3), symbolic::sub(i, symbolic::one())), symbolic::integer(5));
+    auto diff = symbolic::simplify(symbolic::expand(symbolic::sub(evolved, expected)));
+    EXPECT_TRUE(symbolic::eq(diff, symbolic::zero()));
+}
+
+// Negative stride accumulator: for (i = 10; i > 0; i--) sum += 1
+// Expected closed form: sum = sum_init + 1*(i - 10)/(-1) = (10 - i)
+TEST(SymbolEvolutionTest, NegativeStride_Accumulator) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int32);
+    builder.add_container("i", desc);
+    builder.add_container("sum", desc);
+    auto i = symbolic::symbol("i");
+    auto sum = symbolic::symbol("sum");
+
+    auto& root = builder.subject().root();
+
+    auto& init_block = builder.add_block(root);
+    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+
+    auto& loop =
+        builder
+            .add_for(root, i, symbolic::Gt(i, symbolic::zero()), symbolic::integer(10), symbolic::sub(i, symbolic::one()));
+
+    auto& loop_block = builder.add_block(loop.root());
+    builder
+        .add_block_after(loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::one())}}, loop_block.debug_info());
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::SymbolEvolution pass;
+    bool applied = pass.run(builder, analysis_manager);
+
+    EXPECT_TRUE(applied);
+
+    auto first_elem = loop.root().at(0);
+    auto& assignments = first_elem.second.assignments();
+    ASSERT_TRUE(assignments.find(sum) != assignments.end());
+    auto evolved = assignments.at(sum);
+    auto expected = symbolic::sub(symbolic::integer(10), i);
+    // Compare by substitution at concrete points: structural simplification
+    // of (10 - i) variants is fragile across SymEngine's normalization.
+    for (int v : {1, 2, 5, 10}) {
+        auto e = symbolic::simplify(symbolic::subs(evolved, i, symbolic::integer(v)));
+        auto x = symbolic::simplify(symbolic::subs(expected, i, symbolic::integer(v)));
+        EXPECT_TRUE(symbolic::eq(e, x)) << "at i=" << v;
+    }
+}
+
+// Non-unit positive stride: for (i = 0; i < 20; i += 2) sum += 5
+// Expected closed form: sum = 5 * (i / 2)
+TEST(SymbolEvolutionTest, NonUnitStride_Accumulator) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int32);
+    builder.add_container("i", desc);
+    builder.add_container("sum", desc);
+    auto i = symbolic::symbol("i");
+    auto sum = symbolic::symbol("sum");
+
+    auto& root = builder.subject().root();
+
+    auto& init_block = builder.add_block(root);
+    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+
+    auto& loop = builder.add_for(
+        root, i, symbolic::Lt(i, symbolic::integer(20)), symbolic::zero(), symbolic::add(i, symbolic::integer(2))
+    );
+
+    auto& loop_block = builder.add_block(loop.root());
+    builder.add_block_after(
+        loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::integer(5))}}, loop_block.debug_info()
+    );
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::SymbolEvolution pass;
+    bool applied = pass.run(builder, analysis_manager);
+
+    EXPECT_TRUE(applied);
+
+    auto first_elem = loop.root().at(0);
+    auto& assignments = first_elem.second.assignments();
+    ASSERT_TRUE(assignments.find(sum) != assignments.end());
+    auto evolved = assignments.at(sum);
+    auto expected = symbolic::mul(symbolic::integer(5), symbolic::div(i, symbolic::integer(2)));
+    auto diff = symbolic::simplify(symbolic::expand(symbolic::sub(evolved, expected)));
+    EXPECT_TRUE(symbolic::eq(diff, symbolic::zero()));
+}
+
+// Constant body but mismatched init: c_init = 0, body c = 42.
+// Closed form 42 fails the verification 42 == 0, so the rewrite must NOT apply.
+TEST(SymbolEvolutionTest, Constant_DifferentInit_Negative) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int32);
+    builder.add_container("i", desc);
+    builder.add_container("c", desc);
+    auto i = symbolic::symbol("i");
+    auto c = symbolic::symbol("c");
+
+    auto& root = builder.subject().root();
+
+    auto& init_block = builder.add_block(root);
+    builder.add_block_after(root, init_block, {{c, symbolic::zero()}}, init_block.debug_info());
+
+    auto& loop =
+        builder
+            .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
+
+    auto& loop_block = builder.add_block(loop.root());
+    builder.add_block_after(loop.root(), loop_block, {{c, symbolic::integer(42)}}, loop_block.debug_info());
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::SymbolEvolution pass;
+    bool applied = pass.run(builder, analysis_manager);
+
+    EXPECT_FALSE(applied);
+}
+
+// Two independent accumulators in the same loop body. Each rewrite mutates
+// the IR; the per-loop fixpoint must invalidate analyses and revisit the
+// remaining candidate so that both end up rewritten in a single pass.
+TEST(SymbolEvolutionTest, CoEvolving_FixpointRewrites) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int32);
+    builder.add_container("i", desc);
+    builder.add_container("a", desc);
+    builder.add_container("b", desc);
+    auto i = symbolic::symbol("i");
+    auto a = symbolic::symbol("a");
+    auto b = symbolic::symbol("b");
+
+    auto& root = builder.subject().root();
+
+    auto& init_block = builder.add_block(root);
+    builder.add_block_after(root, init_block, {{a, symbolic::zero()}, {b, symbolic::zero()}}, init_block.debug_info());
+
+    auto& loop =
+        builder
+            .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
+
+    auto& a_block = builder.add_block(loop.root());
+    builder.add_block_after(loop.root(), a_block, {{a, symbolic::add(a, symbolic::one())}}, a_block.debug_info());
+
+    auto& b_block = builder.add_block(loop.root());
+    builder.add_block_after(loop.root(), b_block, {{b, symbolic::add(b, symbolic::integer(2))}}, b_block.debug_info());
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::SymbolEvolution pass;
+    bool applied = pass.run(builder, analysis_manager);
+
+    EXPECT_TRUE(applied);
+
+    bool a_rewritten = false;
+    bool b_rewritten = false;
+    for (size_t k = 0; k < loop.root().size(); ++k) {
+        auto& tr = loop.root().at(k).second;
+        if (tr.assignments().find(a) != tr.assignments().end()) a_rewritten = true;
+        if (tr.assignments().find(b) != tr.assignments().end()) b_rewritten = true;
+    }
+    EXPECT_TRUE(a_rewritten);
+    EXPECT_TRUE(b_rewritten);
+}
+
+// Nested loop where the inner update depends on the outer indvar:
+//   for (i = 0; i < 5; i++) for (k = 0; k < 5; k++) { j = j + i; }
+// `i` is loop-invariant w.r.t. the inner loop, so the accumulator solver
+// produces closed(j) = j_init + i * (k - 0).
+TEST(SymbolEvolutionTest, NestedLoop_OuterIndvarAsCoeff) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int32);
+    builder.add_container("i", desc);
+    builder.add_container("k", desc);
+    builder.add_container("j", desc);
+    auto i = symbolic::symbol("i");
+    auto k = symbolic::symbol("k");
+    auto j = symbolic::symbol("j");
+
+    auto& root = builder.subject().root();
+
+    auto& init_block = builder.add_block(root);
+    builder.add_block_after(root, init_block, {{j, symbolic::zero()}}, init_block.debug_info());
+
+    auto& outer =
+        builder
+            .add_for(root, i, symbolic::Lt(i, symbolic::integer(5)), symbolic::zero(), symbolic::add(i, symbolic::one()));
+    auto& inner = builder.add_for(
+        outer.root(), k, symbolic::Lt(k, symbolic::integer(5)), symbolic::zero(), symbolic::add(k, symbolic::one())
+    );
+
+    auto& inner_block = builder.add_block(inner.root());
+    builder.add_block_after(inner.root(), inner_block, {{j, symbolic::add(j, i)}}, inner_block.debug_info());
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::SymbolEvolution pass;
+    bool applied = pass.run(builder, analysis_manager);
+
+    EXPECT_TRUE(applied);
+    auto& first_inner = inner.root().at(0).second;
+    EXPECT_TRUE(first_inner.assignments().find(j) != first_inner.assignments().end());
+}
+
+// Symbolic (non-constant) stride: loop.stride() returns null, so the pass
+// must conservatively skip.
+TEST(SymbolEvolutionTest, SymbolicStride_Skipped) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int32);
+    builder.add_container("N", desc);
+    builder.add_container("i", desc);
+    builder.add_container("sum", desc);
+    auto N = symbolic::symbol("N");
+    auto i = symbolic::symbol("i");
+    auto sum = symbolic::symbol("sum");
+
+    auto& root = builder.subject().root();
+
+    auto& init_block = builder.add_block(root);
+    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+
+    auto& loop =
+        builder.add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, N));
+
+    auto& loop_block = builder.add_block(loop.root());
+    builder
+        .add_block_after(loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::one())}}, loop_block.debug_info());
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::SymbolEvolution pass;
+    bool applied = pass.run(builder, analysis_manager);
+
+    EXPECT_FALSE(applied);
 }

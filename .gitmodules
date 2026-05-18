@@ -1,3 +1,6 @@
 [submodule "sdfg/3rdParty/symengine"]
 	path = sdfg/3rdParty/symengine
 	url = git@github.com:symengine/symengine.git
+[submodule "cmake"]
+	path = cmake
+	url = git@github.com:daisytuner/cmake-scripts.git

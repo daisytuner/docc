@@ -6,34 +6,37 @@ namespace sdfg {
 namespace passes {
 
 /**
- * @brief Optimization pass that performs scalar evolution analysis on loop-dependent symbols.
+ * @brief Rewrites loop-carried scalar recurrences into closed-form expressions.
  *
- * The SymbolEvolution pass analyzes scalar variables that are updated within loops and attempts
- * to derive closed-form expressions for their values based on the loop induction variable.
- * This enables optimizations such as loop-invariant code motion and symbolic simplification.
+ * For every structured loop the pass identifies integer-scalar symbols whose
+ * body update can be modelled as the affine recurrence
  *
- * The pass recognizes several common evolution patterns:
- * - Pattern 1: Constant values that don't change
- * - Pattern 2: Loop aliases that directly track the induction variable
- * - Pattern 3: Functions of the previous iteration's induction variable
- * - Pattern 4: Affine updates (increments/decrements by a constant each iteration)
+ *     sym_{n+1} = a * sym_n + b * indvar_n + c     (a, b, c loop-invariant)
  *
- * For each pattern, the pass:
- * 1. Verifies the symbol meets specific criteria (single write, not in nested loop, etc.)
- * 2. Derives a closed-form expression for the symbol's evolution
- * 3. Redefines the symbol at the loop entry with the derived expression
- * 4. Updates the transition after the loop to set the final value
+ * and rewrites them so the body redefines the symbol from the induction
+ * variable directly. This breaks loop-carried dependencies and exposes the
+ * symbol as an affine function of the induction variable to downstream
+ * polyhedral / memlet analyses.
+ *
+ * Solvable recurrence classes:
+ *   - a == 1, b == 0  (accumulator):     closed(i) = sym_init + c * (i - init) / stride
+ *   - a == 0          (function of i):   closed(i) = b * (i - stride) + c
+ *
+ * Loops are processed innermost-first; each loop is rewritten to a fixpoint,
+ * with analyses invalidated between rewrites because each rewrite mutates the
+ * IR.
  */
 class SymbolEvolution : public Pass {
 private:
     /**
-     * @brief Attempts to eliminate loop-dependent symbols by deriving their evolution.
+     * @brief Attempts a single rewrite within @p loop.
      *
-     * @param builder The SDFG builder for modifying the graph
-     * @param analysis_manager The analysis manager providing dataflow and dominance information
-     * @param loop The structured loop to analyze
-     * @param transition The transition after the loop (for setting final values)
-     * @return true if any symbols were successfully eliminated, false otherwise
+     * Performs cheap structural filtering, then runs the affine recurrence
+     * solver, and only then pays for dominance / use-after-update analyses.
+     * Returns on the first successful rewrite so the caller can refresh
+     * analyses before retrying.
+     *
+     * @return true if exactly one symbol was rewritten.
      */
     bool eliminate_symbols(
         builder::StructuredSDFGBuilder& builder,

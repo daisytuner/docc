@@ -57,9 +57,7 @@ TEST(IfElseTest, IsCompleteTrue_SimpleIfElse) {
 }
 
 // Test is_complete() with positive cases - complete with three branches
-// Note: This test is disabled because the CNF-based completeness check
-// may not always recognize this pattern as complete
-TEST(IfElseTest, DISABLED_IsCompleteTrue_ThreeBranches) {
+TEST(IfElseTest, IsCompleteTrue_ThreeBranches) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
     types::Scalar int_type(types::PrimitiveType::Int32);

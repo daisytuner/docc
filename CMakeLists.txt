@@ -71,6 +71,11 @@ add_subdirectory(arg-capture-io)
 add_subdirectory(tutorial/printf_target)
 add_subdirectory(targets)
 
+option(LLVM_BUILD_FRONTEND "Build LLVM frontend" OFF)
+if(LLVM_BUILD_FRONTEND)
+    add_subdirectory(llvm)
+endif()
+
 option(PYTHON_BUILD_FRONTEND "Build Python frontend" OFF)
 if(PYTHON_BUILD_FRONTEND)
     add_subdirectory(python)

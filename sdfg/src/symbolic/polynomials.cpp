@@ -17,10 +17,21 @@ Polynomial polynomial(const Expression expr, SymbolVec& symbols) {
     }
 };
 
-AffineCoeffs affine_coefficients(Polynomial poly, SymbolVec& symbols) {
+AffineCoeffs affine_coefficients(Polynomial poly) {
     AffineCoeffs coeffs;
-    for (auto& symbol : symbols) {
-        coeffs[symbol] = symbolic::zero();
+
+    // The polynomial stores its variables in a sorted `set_basic`, whose
+    // ordering is determined by SymEngine's `RCPBasicKeyLess` and is in
+    // general unrelated to whatever `SymbolVec` was originally passed to
+    // `polynomial()`. Recover the exponent-index -> symbol mapping from the
+    // polynomial itself so the result is correct regardless of how the
+    // caller ordered its inputs.
+    std::vector<Symbol> col_syms;
+    col_syms.reserve(poly->get_vars().size());
+    for (const auto& var : poly->get_vars()) {
+        auto sym = SymEngine::rcp_static_cast<const SymEngine::Symbol>(var);
+        col_syms.push_back(sym);
+        coeffs[sym] = symbolic::zero();
     }
     coeffs[symbolic::symbol("__daisy_constant__")] = symbolic::zero();
 
@@ -32,7 +43,7 @@ AffineCoeffs affine_coefficients(Polynomial poly, SymbolVec& symbols) {
         for (size_t i = 0; i < exponents.size(); i++) {
             auto& e = exponents[i];
             if (e > 0) {
-                symbol = symbols[i];
+                symbol = col_syms[i];
             }
             total_deg += e;
         }
@@ -131,6 +142,19 @@ std::pair<Expression, Expression> polynomial_div(const Expression& offset, const
     Expression remainder_expr = symbolic::zero();
     Expression dividend_expr = offset;
 
+    // Recover the polynomial column -> Symbol mapping. SymEngine stores the
+    // generators of an MExprPoly in a sorted `set_basic`, so the exponent
+    // vector indices returned by `get_leading_term` are aligned with this
+    // sorted order — not with the caller's `symbols` vector. Reconstructing
+    // monomials with `symbols[i]` would therefore mix up variables.
+    // Both `poly_stride` and every `poly_dividend` are built from the same
+    // explicit `gens` set, so they share this column ordering.
+    std::vector<Symbol> col_syms;
+    col_syms.reserve(poly_stride->get_vars().size());
+    for (const auto& var : poly_stride->get_vars()) {
+        col_syms.push_back(SymEngine::rcp_static_cast<const SymEngine::Symbol>(var));
+    }
+
     int max_iter = 100;
     size_t prev_term_count = std::numeric_limits<size_t>::max();
     while (!symbolic::eq(dividend_expr, symbolic::zero()) && max_iter-- > 0) {
@@ -171,7 +195,7 @@ std::pair<Expression, Expression> polynomial_div(const Expression& offset, const
                 term = coeff_q;
                 for (size_t i = 0; i < exp_diff.size(); ++i) {
                     if (exp_diff[i] > 0) {
-                        term = symbolic::mul(term, symbolic::pow(symbols[i], symbolic::integer(exp_diff[i])));
+                        term = symbolic::mul(term, symbolic::pow(col_syms[i], symbolic::integer(exp_diff[i])));
                     }
                 }
             }
@@ -186,7 +210,7 @@ std::pair<Expression, Expression> polynomial_div(const Expression& offset, const
             term = coeff_div;
             for (size_t i = 0; i < exp_div.size(); ++i) {
                 if (exp_div[i] > 0) {
-                    term = symbolic::mul(term, symbolic::pow(symbols[i], symbolic::integer(exp_div[i])));
+                    term = symbolic::mul(term, symbolic::pow(col_syms[i], symbolic::integer(exp_div[i])));
                 }
             }
             remainder_expr = symbolic::add(remainder_expr, term);
@@ -207,7 +231,7 @@ AffineDecomposition affine_decomposition(const Expression& expr, const Symbol& s
         return AffineDecomposition::failure();
     }
 
-    auto coeffs = affine_coefficients(poly, syms);
+    auto coeffs = affine_coefficients(poly);
     if (coeffs.empty()) {
         // Not affine (degree > 1)
         return AffineDecomposition::failure();
