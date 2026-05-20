@@ -12,6 +12,7 @@ if os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'):
 import matplotlib.pyplot as plt
 import PIL.Image as Image
 import requests
+import copy
 
 import docc.torch
 
@@ -20,6 +21,7 @@ weights = models.detection.FasterRCNN_ResNet50_FPN_Weights.DEFAULT
 model = models.detection.fasterrcnn_resnet50_fpn(weights=weights)
 model.eval()
 transforms = weights.transforms()
+model_ref = copy.deepcopy(model)
 
 print("\n=== Selective Compilation Strategy ===")
 print("Strategy: Compile ONLY the backbone with docc backend")
@@ -38,12 +40,11 @@ print(f"Backbone compile (docc): {docc_compile_time:.4f} s")
 model.backbone = compiled_backbone
 
 # Create reference model for comparison
-model_ref = models.detection.fasterrcnn_resnet50_fpn(weights=weights)
-model_ref.eval()
 start = time.perf_counter()
-program_ref = torch.compile(model_ref)
+compiled_backbone_ref = torch.compile(model_ref.backbone)
 torch_compile_time = time.perf_counter() - start
 print(f"Full model compile (torch inductor): {torch_compile_time:.4f} s")
+model_ref.backbone = compiled_backbone_ref
 
 url = "https://github.com/pytorch/hub/raw/master/images/dog.jpg"  # dog (Samoyed)
 
@@ -51,7 +52,6 @@ image = Image.open(requests.get(url, stream=True).raw)
 
 
 input_tensor = transforms(image)
-input_batch = input_tensor.unsqueeze(0)  # create a mini-batch as expected by the model
 
 if not (os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS')):
     _ = plt.imshow(image)
@@ -63,18 +63,28 @@ with torch.no_grad():
     print("\n--- Execution Times ---")
     print("Mixed compilation (docc backbone + eager RPN/ROI):")
     start = time.perf_counter()
-    res = model(input_batch)
+    res = model([input_tensor])
     mixed_exec_time = time.perf_counter() - start
     print(f"  First execution: {mixed_exec_time:.4f} s")
 
     print("\nTorch inductor (full model):")
     start = time.perf_counter()
-    ref = program_ref(input_batch)
+    ref = model_ref([input_tensor])
     torch_exec_time = time.perf_counter() - start
     print(f"  First execution: {torch_exec_time:.4f} s")
 
     print("\n--- Results Comparison ---")
+
     # Compare outputs - these assertions will fail the test if results don't match
+    number_of_outputs_match = (len(res) == len(ref) and len(res) == 1 and len(res[0]['labels']) == len(ref[0]['labels']))
+    if number_of_outputs_match:
+        print("✓ Number of outputs match between docc and torch")
+    else:
+        print(f"✗ Number of outputs differ: {len(res[0]['labels'])} != {len(ref[0]['labels'])}")
+    
+    # Assert here because else the other checks crash
+    assert number_of_outputs_match, "Number of outputs don't match between docc and torch inductor"
+
     boxes_match = torch.allclose(res[0]['boxes'], ref[0]['boxes'], rtol=1e-2)
     if boxes_match:
         print("✓ Boxes match between docc and torch")
@@ -124,6 +134,6 @@ if not (os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS')):
         plt.show()
 
     draw_boxes(image, ref[0]["boxes"].cpu().numpy(), ref[0]["labels"].cpu().numpy(), labels, ref[0]["scores"].cpu().numpy(), threshold=0.5, title="Torch Detections")
-    draw_boxes(image, res[0]["boxes"].cpu().numpy(), res[0]["labels"].cpu().numpy(), labels, res[0]["scores"].cpu().numpy(), threshold=0.5, title="Q.ANT Detections")
+    draw_boxes(image, res[0]["boxes"].cpu().numpy(), res[0]["labels"].cpu().numpy(), labels, res[0]["scores"].cpu().numpy(), threshold=0.5, title="DOCC Detections")
 else:
     print("\nSkipping visualization in CI environment")
