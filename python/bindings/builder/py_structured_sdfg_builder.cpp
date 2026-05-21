@@ -8,6 +8,7 @@
 #include <symengine/integer.h>
 #include <symengine/logic.h>
 #include <symengine/real_double.h>
+#include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
@@ -21,6 +22,7 @@
 #include "sdfg/passes/debug_info_propagation.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/types/type.h"
 #include "sdfg/visualizer/dot_visualizer.h"
 
 using namespace sdfg::structured_control_flow;
@@ -863,64 +865,156 @@ void PyStructuredSDFGBuilder::add_elementwise_op(
     const sdfg::types::Tensor& C_type,
     const sdfg::DebugInfo& debug_info
 ) {
+    // If all tensor types are scalar, use the normal tasklets instead of the tensor operations
+    bool is_scalar_op =
+        (A_type.is_scalar() && sdfg::symbolic::eq(A_type.offset(), sdfg::symbolic::zero()) && B_type.is_scalar() &&
+         sdfg::symbolic::eq(B_type.offset(), sdfg::symbolic::zero()) && C_type.is_scalar() &&
+         sdfg::symbolic::eq(C_type.offset(), sdfg::symbolic::zero()));
+    enum { FloatingPoint = 0, UnsignedInteger = 1, SignedInteger = 2 } code_type;
+    sdfg::types::PrimitiveType prim_type;
+    if (is_scalar_op) {
+        bool is_A_float = sdfg::types::is_floating_point(A_type.primitive_type());
+        bool is_A_int = sdfg::types::is_integer(A_type.primitive_type());
+        bool is_A_unsigned_int = sdfg::types::is_unsigned(A_type.primitive_type());
+        bool is_A_signed_int = sdfg::types::is_signed(A_type.primitive_type());
+        bool is_B_float = sdfg::types::is_floating_point(B_type.primitive_type());
+        bool is_B_int = sdfg::types::is_integer(B_type.primitive_type());
+        bool is_B_unsigned_int = sdfg::types::is_unsigned(B_type.primitive_type());
+        bool is_B_signed_int = sdfg::types::is_signed(B_type.primitive_type());
+        if ((is_A_float && is_B_float) || (is_A_float && is_B_int)) {
+            code_type = FloatingPoint;
+            prim_type = A_type.primitive_type();
+        } else if (is_A_int && is_B_float) {
+            code_type = FloatingPoint;
+            prim_type = B_type.primitive_type();
+        } else if ((is_A_unsigned_int && is_B_unsigned_int) || (is_A_unsigned_int && is_B_signed_int)) {
+            code_type = UnsignedInteger;
+            prim_type = A_type.primitive_type();
+        } else if (is_A_signed_int && is_B_unsigned_int) {
+            code_type = UnsignedInteger;
+            prim_type = B_type.primitive_type();
+        } else if (is_A_signed_int && is_B_signed_int) {
+            code_type = SignedInteger;
+            prim_type = A_type.primitive_type();
+        } else {
+            is_scalar_op = false;
+        }
+    }
+    std::string A_conn, B_conn, C_conn;
+    if (is_scalar_op) {
+        A_conn = "_in1";
+        B_conn = "_in2";
+        C_conn = "_out";
+    } else {
+        A_conn = "A";
+        B_conn = "B";
+        C_conn = "C";
+    }
+    const std::map<std::pair<std::string, int>, sdfg::data_flow::TaskletCode> tasklet_codes = {
+        {{"add", FloatingPoint}, sdfg::data_flow::TaskletCode::fp_add},
+        {{"add", UnsignedInteger}, sdfg::data_flow::TaskletCode::int_add},
+        {{"add", SignedInteger}, sdfg::data_flow::TaskletCode::int_add},
+        {{"sub", FloatingPoint}, sdfg::data_flow::TaskletCode::fp_sub},
+        {{"sub", UnsignedInteger}, sdfg::data_flow::TaskletCode::int_sub},
+        {{"sub", SignedInteger}, sdfg::data_flow::TaskletCode::int_sub},
+        {{"mul", FloatingPoint}, sdfg::data_flow::TaskletCode::fp_mul},
+        {{"mul", UnsignedInteger}, sdfg::data_flow::TaskletCode::int_mul},
+        {{"mul", SignedInteger}, sdfg::data_flow::TaskletCode::int_mul},
+        {{"div", FloatingPoint}, sdfg::data_flow::TaskletCode::fp_div},
+        {{"div", UnsignedInteger}, sdfg::data_flow::TaskletCode::int_udiv},
+        {{"div", SignedInteger}, sdfg::data_flow::TaskletCode::int_sdiv},
+        {{"min", UnsignedInteger}, sdfg::data_flow::TaskletCode::int_umin},
+        {{"min", SignedInteger}, sdfg::data_flow::TaskletCode::int_smin},
+        {{"max", UnsignedInteger}, sdfg::data_flow::TaskletCode::int_umax},
+        {{"max", SignedInteger}, sdfg::data_flow::TaskletCode::int_smax},
+    };
+
     auto& parent = current_sequence();
     auto& block = builder_.add_block(parent, {}, debug_info);
 
-    sdfg::math::tensor::ElementWiseBinaryNode* node = nullptr;
+    sdfg::data_flow::CodeNode* node = nullptr;
     if (op_type == "add") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseBinaryNode*>(&builder_.add_library_node<
-                                                         sdfg::math::tensor::AddNode>(block, debug_info, C_type.shape())
-        );
+        if (is_scalar_op) {
+            node =
+                &builder_.add_tasklet(block, tasklet_codes.at({"add", code_type}), C_conn, {A_conn, B_conn}, debug_info);
+        } else {
+            node = &builder_.add_library_node<sdfg::math::tensor::AddNode>(block, debug_info, C_type.shape());
+        }
     } else if (op_type == "sub") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseBinaryNode*>(&builder_.add_library_node<
-                                                         sdfg::math::tensor::SubNode>(block, debug_info, C_type.shape())
-        );
+        if (is_scalar_op) {
+            node =
+                &builder_.add_tasklet(block, tasklet_codes.at({"sub", code_type}), C_conn, {A_conn, B_conn}, debug_info);
+        } else {
+            node = &builder_.add_library_node<sdfg::math::tensor::SubNode>(block, debug_info, C_type.shape());
+        }
     } else if (op_type == "mul") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseBinaryNode*>(&builder_.add_library_node<
-                                                         sdfg::math::tensor::MulNode>(block, debug_info, C_type.shape())
-        );
+        if (is_scalar_op) {
+            node =
+                &builder_.add_tasklet(block, tasklet_codes.at({"mul", code_type}), C_conn, {A_conn, B_conn}, debug_info);
+        } else {
+            node = &builder_.add_library_node<sdfg::math::tensor::MulNode>(block, debug_info, C_type.shape());
+        }
     } else if (op_type == "div") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseBinaryNode*>(&builder_.add_library_node<
-                                                         sdfg::math::tensor::DivNode>(block, debug_info, C_type.shape())
-        );
+        if (is_scalar_op) {
+            node =
+                &builder_.add_tasklet(block, tasklet_codes.at({"div", code_type}), C_conn, {A_conn, B_conn}, debug_info);
+        } else {
+            node = &builder_.add_library_node<sdfg::math::tensor::DivNode>(block, debug_info, C_type.shape());
+        }
     } else if (op_type == "pow") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseBinaryNode*>(&builder_.add_library_node<
-                                                         sdfg::math::tensor::PowNode>(block, debug_info, C_type.shape())
-        );
+        if (is_scalar_op) {
+            node = &builder_.add_library_node<
+                sdfg::math::cmath::CMathNode>(block, debug_info, sdfg::math::cmath::CMathFunction::pow, prim_type);
+        } else {
+            node = &builder_.add_library_node<sdfg::math::tensor::PowNode>(block, debug_info, C_type.shape());
+        }
     } else if (op_type == "min") {
-        node = static_cast<sdfg::math::tensor::ElementWiseBinaryNode*>(
-            &builder_.add_library_node<sdfg::math::tensor::MinimumNode>(block, debug_info, C_type.shape())
-        );
+        if (is_scalar_op) {
+            if (code_type == FloatingPoint) {
+                node = &builder_.add_library_node<
+                    sdfg::math::cmath::CMathNode>(block, debug_info, sdfg::math::cmath::CMathFunction::fmin, prim_type);
+            } else {
+                node =
+                    &builder_
+                         .add_tasklet(block, tasklet_codes.at({"min", code_type}), C_conn, {A_conn, B_conn}, debug_info);
+            }
+        } else {
+            node = &builder_.add_library_node<sdfg::math::tensor::MinimumNode>(block, debug_info, C_type.shape());
+        }
     } else if (op_type == "max") {
-        node = static_cast<sdfg::math::tensor::ElementWiseBinaryNode*>(
-            &builder_.add_library_node<sdfg::math::tensor::MaximumNode>(block, debug_info, C_type.shape())
-        );
+        if (is_scalar_op) {
+            if (code_type == FloatingPoint) {
+                node = &builder_.add_library_node<
+                    sdfg::math::cmath::CMathNode>(block, debug_info, sdfg::math::cmath::CMathFunction::fmax, prim_type);
+            } else {
+                node =
+                    &builder_
+                         .add_tasklet(block, tasklet_codes.at({"max", code_type}), C_conn, {A_conn, B_conn}, debug_info);
+            }
+        } else {
+            node = &builder_.add_library_node<sdfg::math::tensor::MaximumNode>(block, debug_info, C_type.shape());
+        }
     } else {
         throw std::runtime_error("Unsupported elementwise op: " + op_type);
     }
 
     auto& node_c = builder_.add_access(block, C, debug_info);
-    builder_.add_computational_memlet(block, *node, "C", node_c, {}, C_type, debug_info);
+    builder_.add_computational_memlet(block, *node, C_conn, node_c, {}, C_type, debug_info);
 
     if (builder_.subject().exists(A)) {
         auto& node_in = builder_.add_access(block, A, debug_info);
-        builder_.add_computational_memlet(block, node_in, *node, "A", {}, A_type, debug_info);
+        builder_.add_computational_memlet(block, node_in, *node, A_conn, {}, A_type, debug_info);
     } else {
         auto& node_in = builder_.add_constant(block, A, A_type.element_type(), debug_info);
-        builder_.add_memlet(block, node_in, "void", *node, "A", {}, A_type, debug_info);
+        builder_.add_memlet(block, node_in, "void", *node, A_conn, {}, A_type, debug_info);
     }
 
     if (builder_.subject().exists(B)) {
         auto& node_in = builder_.add_access(block, B, debug_info);
-        builder_.add_computational_memlet(block, node_in, *node, "B", {}, B_type, debug_info);
+        builder_.add_computational_memlet(block, node_in, *node, B_conn, {}, B_type, debug_info);
     } else {
         auto& node_in = builder_.add_constant(block, B, B_type.element_type(), debug_info);
-        builder_.add_memlet(block, node_in, "void", *node, "B", {}, B_type, debug_info);
+        builder_.add_memlet(block, node_in, "void", *node, B_conn, {}, B_type, debug_info);
     }
 }
 
