@@ -202,6 +202,7 @@ PYBIND11_MODULE(_sdfg, m) {
         .def_property_readonly("arguments", &PyStructuredSDFG::arguments)
         .def_property_readonly("containers", &PyStructuredSDFG::containers)
         .def("validate", &PyStructuredSDFG::validate, "Validates the SDFG")
+        .def("einsum", &PyStructuredSDFG::einsum, "Performs Einsum detection")
         .def(
             "expand",
             static_cast<void (PyStructuredSDFG::*)()>(&PyStructuredSDFG::expand),

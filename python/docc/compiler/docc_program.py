@@ -116,6 +116,11 @@ class DoccProgram(ABC):
         target_options.category = self.category
         target_options.remote_tuning = self.remote_tuning
 
+        # Einsum detection
+        sdfg.einsum()
+        if self.debug_dump:
+            sdfg.dump(output_folder, "py1.einsum", dump_dot=True)
+
         # Tensor targets keep tensor nodes
         custom_expand_fn = get_target_expand_fn(self.target)
         if custom_expand_fn is not None:
@@ -123,12 +128,12 @@ class DoccProgram(ABC):
         else:
             sdfg.expand(target_options)
         if self.debug_dump:
-            sdfg.dump(output_folder, "py1.expanded", dump_dot=True)
+            sdfg.dump(output_folder, "py2.expanded", dump_dot=True)
 
         # Simplify pipelines
         sdfg.simplify()
         if self.debug_dump:
-            sdfg.dump(output_folder, "py2.opt", dump_dot=True)
+            sdfg.dump(output_folder, "py3.opt", dump_dot=True)
 
         # Normalization for scheduling
         if self.target != "none":
@@ -137,7 +142,7 @@ class DoccProgram(ABC):
         if self.debug_dump or instrumentation_mode or capture_args:
             sdfg.dump(
                 output_folder,
-                "py3.norm",
+                "py4.norm",
                 dump_dot=self.debug_dump,
                 dump_json=True,
                 record_for_instrumentation=True,
@@ -154,7 +159,7 @@ class DoccProgram(ABC):
             sdfg.schedule(target_options)
 
         if self.debug_dump:
-            sdfg.dump(output_folder, "py4.post_sched", dump_dot=True)
+            sdfg.dump(output_folder, "py5.post_sched", dump_dot=True)
 
         self.last_sdfg = sdfg
 

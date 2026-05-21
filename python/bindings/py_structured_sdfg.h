@@ -56,6 +56,8 @@ public:
 
     void validate();
 
+    void einsum();
+
     /** @deprecated give targetOptions **/
     void expand();
     void expand(const std::string& target, const std::string& category);

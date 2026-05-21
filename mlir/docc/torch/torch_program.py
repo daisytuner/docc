@@ -250,7 +250,7 @@ class TorchProgram(DoccProgram):
                 raise ValueError(
                     f"Tried reusing binary '{lib_path}' but does not exist"
                 )
-            sdfg_path = f"{output_folder}/__docc_{self.name}.py3.norm.json"
+            sdfg_path = f"{output_folder}/__docc_{self.name}.py4.norm.json"
             if not os.path.exists(sdfg_path):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
             sdfg = StructuredSDFG.from_file(sdfg_path)
