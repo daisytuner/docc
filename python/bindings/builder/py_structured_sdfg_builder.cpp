@@ -1,4 +1,5 @@
 #include "py_structured_sdfg_builder.h"
+#include <memory>
 #include <sdfg/data_flow/tasklet.h>
 #include <sdfg/structured_control_flow/map.h>
 #include <sdfg/symbolic/symbolic.h>
@@ -901,14 +902,21 @@ void PyStructuredSDFGBuilder::add_elementwise_op(
         }
     }
     std::string A_conn, B_conn, C_conn;
+    std::unique_ptr<sdfg::types::IType> A_memlet_type, B_memlet_type, C_memlet_type;
     if (is_scalar_op) {
         A_conn = "_in1";
         B_conn = "_in2";
         C_conn = "_out";
+        A_memlet_type = A_type.element_type().clone();
+        B_memlet_type = B_type.element_type().clone();
+        C_memlet_type = C_type.element_type().clone();
     } else {
         A_conn = "A";
         B_conn = "B";
         C_conn = "C";
+        A_memlet_type = A_type.clone();
+        B_memlet_type = B_type.clone();
+        C_memlet_type = C_type.clone();
     }
     const std::map<std::pair<std::string, int>, sdfg::data_flow::TaskletCode> tasklet_codes = {
         {{"add", FloatingPoint}, sdfg::data_flow::TaskletCode::fp_add},
@@ -999,22 +1007,22 @@ void PyStructuredSDFGBuilder::add_elementwise_op(
     }
 
     auto& node_c = builder_.add_access(block, C, debug_info);
-    builder_.add_computational_memlet(block, *node, C_conn, node_c, {}, C_type, debug_info);
+    builder_.add_computational_memlet(block, *node, C_conn, node_c, {}, *C_memlet_type, debug_info);
 
     if (builder_.subject().exists(A)) {
         auto& node_in = builder_.add_access(block, A, debug_info);
-        builder_.add_computational_memlet(block, node_in, *node, A_conn, {}, A_type, debug_info);
+        builder_.add_computational_memlet(block, node_in, *node, A_conn, {}, *A_memlet_type, debug_info);
     } else {
         auto& node_in = builder_.add_constant(block, A, A_type.element_type(), debug_info);
-        builder_.add_memlet(block, node_in, "void", *node, A_conn, {}, A_type, debug_info);
+        builder_.add_memlet(block, node_in, "void", *node, A_conn, {}, *A_memlet_type, debug_info);
     }
 
     if (builder_.subject().exists(B)) {
         auto& node_in = builder_.add_access(block, B, debug_info);
-        builder_.add_computational_memlet(block, node_in, *node, B_conn, {}, B_type, debug_info);
+        builder_.add_computational_memlet(block, node_in, *node, B_conn, {}, *B_memlet_type, debug_info);
     } else {
         auto& node_in = builder_.add_constant(block, B, B_type.element_type(), debug_info);
-        builder_.add_memlet(block, node_in, "void", *node, B_conn, {}, B_type, debug_info);
+        builder_.add_memlet(block, node_in, "void", *node, B_conn, {}, *B_memlet_type, debug_info);
     }
 }
 

@@ -42,7 +42,7 @@ public:
         this->passes_.push_back(std::make_unique<T>(std::forward<Args>(args)...));
     };
 
-    static Pipeline dataflow_simplification();
+    static Pipeline dataflow_simplification(bool block_fusion_ignor_libnodes = false);
 
     static Pipeline symbolic_simplification();
 

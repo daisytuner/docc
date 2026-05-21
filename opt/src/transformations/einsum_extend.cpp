@@ -23,7 +23,7 @@
 namespace sdfg {
 namespace transformations {
 
-EinsumExtend::EinsumExtend(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
+EinsumExtend::EinsumExtend(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node), new_einsum_node_(nullptr) {}
 
 std::string EinsumExtend::name() const { return "EinsumExtend"; }
 
@@ -164,10 +164,10 @@ void EinsumExtend::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
         const data_flow::Subset&,
         const std::vector<
             data_flow::Subset>&>(*block, new_deb_info, inputs, {}, this->einsum_node_.out_indices(), in_indices);
-    auto& new_einsum_node = static_cast<einsum::EinsumNode&>(new_libnode);
+    this->new_einsum_node_ = static_cast<einsum::EinsumNode*>(&new_libnode);
 
     // Construct in edges
-    for (auto& conn : new_einsum_node.inputs()) {
+    for (auto& conn : this->new_einsum_node_->inputs()) {
         auto [access_node, type, deb_info] = new_iedges_map.at(conn);
         builder.add_memlet(*block, access_node, "void", new_libnode, conn, {}, type, deb_info);
     }
@@ -201,6 +201,8 @@ void EinsumExtend::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
 
     analysis_manager.invalidate_all();
 }
+
+einsum::EinsumNode* EinsumExtend::new_einsum_node() { return this->new_einsum_node_; }
 
 void EinsumExtend::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();

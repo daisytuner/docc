@@ -1,4 +1,4 @@
-#include "sdfg/transformations/einsum_expand.h"
+#include "sdfg/transformations/einsum_promotion.h"
 
 #include <gtest/gtest.h>
 #include <string>
@@ -48,7 +48,7 @@ static bool subsets_eq(const data_flow::Subset& subset1, const data_flow::Subset
     return true;
 }
 
-TEST(EinsumExpandTest, Simple) {
+TEST(EinsumPromotionTest, Simple) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -82,7 +82,7 @@ TEST(EinsumExpandTest, Simple) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
     EXPECT_NO_THROW(sdfg.validate());
@@ -122,7 +122,7 @@ TEST(EinsumExpandTest, Simple) {
     EXPECT_EQ(conn2cont.at("__einsum_out"), "a");
 }
 
-TEST(EinsumExpandTest, Multiple) {
+TEST(EinsumPromotionTest, Multiple) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -164,7 +164,7 @@ TEST(EinsumExpandTest, Multiple) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation1(einsum_node);
+    transformations::EinsumPromotion transformation1(einsum_node);
     ASSERT_TRUE(transformation1.can_be_applied(builder, analysis_manager));
     transformation1.apply(builder, analysis_manager);
     EXPECT_NO_THROW(sdfg.validate());
@@ -184,7 +184,7 @@ TEST(EinsumExpandTest, Multiple) {
     auto* intermediate_einsum_node = dynamic_cast<einsum::EinsumNode*>(intermediate_libnode);
     ASSERT_TRUE(intermediate_einsum_node);
 
-    transformations::EinsumExpand transformation2(*intermediate_einsum_node);
+    transformations::EinsumPromotion transformation2(*intermediate_einsum_node);
     ASSERT_TRUE(transformation2.can_be_applied(builder, analysis_manager));
     transformation2.apply(builder, analysis_manager);
     EXPECT_NO_THROW(sdfg.validate());
@@ -227,7 +227,7 @@ TEST(EinsumExpandTest, Multiple) {
     EXPECT_EQ(conn2cont.at("__einsum_out"), "a");
 }
 
-TEST(EinsumExpandTest, DataFlowBefore) {
+TEST(EinsumPromotionTest, DataFlowBefore) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -266,11 +266,11 @@ TEST(EinsumExpandTest, DataFlowBefore) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
-TEST(EinsumExpandTest, DataFlowAfter) {
+TEST(EinsumPromotionTest, DataFlowAfter) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -309,11 +309,11 @@ TEST(EinsumExpandTest, DataFlowAfter) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
-TEST(EinsumExpandTest, ControlFlowBefore) {
+TEST(EinsumPromotionTest, ControlFlowBefore) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -355,11 +355,11 @@ TEST(EinsumExpandTest, ControlFlowBefore) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
-TEST(EinsumExpandTest, ControlFlowAfter) {
+TEST(EinsumPromotionTest, ControlFlowAfter) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -401,11 +401,11 @@ TEST(EinsumExpandTest, ControlFlowAfter) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
-TEST(EinsumExpandTest, InsufficientLoop) {
+TEST(EinsumPromotionTest, InsufficientLoop) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -439,11 +439,11 @@ TEST(EinsumExpandTest, InsufficientLoop) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
-TEST(EinsumExpandTest, LoopCarriedDependency) {
+TEST(EinsumPromotionTest, LoopCarriedDependency) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -476,11 +476,11 @@ TEST(EinsumExpandTest, LoopCarriedDependency) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
-TEST(EinsumExpandTest, LocalWriteBefore) {
+TEST(EinsumPromotionTest, LocalWriteBefore) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -519,11 +519,11 @@ TEST(EinsumExpandTest, LocalWriteBefore) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
-TEST(EinsumExpandTest, LocalReadAfter) {
+TEST(EinsumPromotionTest, LocalReadAfter) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -562,11 +562,11 @@ TEST(EinsumExpandTest, LocalReadAfter) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
-TEST(EinsumExpandTest, LocalSymbols) {
+TEST(EinsumPromotionTest, LocalSymbols) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -613,6 +613,6 @@ TEST(EinsumExpandTest, LocalSymbols) {
 
     auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
-    transformations::EinsumExpand transformation(einsum_node);
+    transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }

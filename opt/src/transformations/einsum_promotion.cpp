@@ -1,4 +1,4 @@
-#include "sdfg/transformations/einsum_expand.h"
+#include "sdfg/transformations/einsum_promotion.h"
 
 #include <cassert>
 #include <cstddef>
@@ -32,7 +32,7 @@
 namespace sdfg {
 namespace transformations {
 
-symbolic::Expression EinsumExpand::cnf_to_upper_bound(const symbolic::CNF& cnf, const symbolic::Symbol indvar) {
+symbolic::Expression EinsumPromotion::cnf_to_upper_bound(const symbolic::CNF& cnf, const symbolic::Symbol indvar) {
     std::vector<symbolic::Expression> candidates;
 
     for (const auto& clause : cnf) {
@@ -74,7 +74,7 @@ symbolic::Expression EinsumExpand::cnf_to_upper_bound(const symbolic::CNF& cnf, 
     return result;
 }
 
-bool EinsumExpand::subset_contains_symbol(const data_flow::Subset& subset, const symbolic::Symbol& symbol) {
+bool EinsumPromotion::subset_contains_symbol(const data_flow::Subset& subset, const symbolic::Symbol& symbol) {
     for (auto& expr : subset) {
         if (symbolic::uses(expr, symbol)) {
             return true;
@@ -83,11 +83,11 @@ bool EinsumExpand::subset_contains_symbol(const data_flow::Subset& subset, const
     return false;
 }
 
-EinsumExpand::EinsumExpand(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
+EinsumPromotion::EinsumPromotion(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node), new_einsum_node_(nullptr) {}
 
-std::string EinsumExpand::name() const { return "EinsumExpand"; }
+std::string EinsumPromotion::name() const { return "EinsumPromotion"; }
 
-bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+bool EinsumPromotion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get & check DFG
     auto& dfg = this->einsum_node_.get_parent();
     if (dfg.library_nodes().size() > 1 || dfg.tasklets().size() > 0) {
@@ -195,7 +195,7 @@ bool EinsumExpand::can_be_applied(builder::StructuredSDFGBuilder& builder, analy
     return true;
 }
 
-void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get DFG and block
     auto& dfg = this->einsum_node_.get_parent();
     auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
@@ -266,6 +266,7 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
         new_in_indices,
         false // skip renaming - indvars are already internal symbols
     );
+    this->new_einsum_node_ = static_cast<einsum::EinsumNode*>(&new_libnode);
 
     // Create the memlets in the new block after the loops
     for (auto& oedge : dfg.out_edges(this->einsum_node_)) {
@@ -308,12 +309,14 @@ void EinsumExpand::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
     analysis_manager.invalidate_all();
 }
 
-void EinsumExpand::to_json(nlohmann::json& j) const {
+einsum::EinsumNode* EinsumPromotion::new_einsum_node() { return this->new_einsum_node_; }
+
+void EinsumPromotion::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["einsum_node_element_id"] = this->einsum_node_.element_id();
 }
 
-EinsumExpand EinsumExpand::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
+EinsumPromotion EinsumPromotion::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     assert(j.contains("einsum_node_element_id"));
     assert(j["einsum_node_element_id"].is_number_unsigned());
     size_t einsum_node_id = j["einsum_node_element_id"].get<size_t>();
@@ -330,7 +333,7 @@ EinsumExpand EinsumExpand::from_json(builder::StructuredSDFGBuilder& builder, co
         );
     }
 
-    return EinsumExpand(*einsum_node);
+    return EinsumPromotion(*einsum_node);
 }
 
 } // namespace transformations

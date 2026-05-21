@@ -14,6 +14,7 @@ namespace transformations {
 class EinsumExtend : public Transformation {
 private:
     einsum::EinsumNode& einsum_node_;
+    einsum::EinsumNode* new_einsum_node_;
 
 public:
     EinsumExtend(einsum::EinsumNode& einsum_node);
@@ -24,6 +25,8 @@ public:
         override;
 
     virtual void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
+    einsum::EinsumNode* new_einsum_node();
 
     virtual void to_json(nlohmann::json& j) const override;
 

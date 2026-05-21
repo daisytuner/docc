@@ -9,7 +9,7 @@
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/transformations/einsum2dot.h"
 #include "sdfg/transformations/einsum2gemm.h"
-#include "sdfg/transformations/einsum_expand.h"
+#include "sdfg/transformations/einsum_promotion.h"
 #include "sdfg/transformations/einsum_extend.h"
 #include "sdfg/transformations/einsum_lift.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
@@ -17,57 +17,101 @@
 namespace sdfg {
 namespace passes {
 
-EinsumLift::EinsumLift(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+class BlockFinder : public visitor::NonStoppingStructuredSDFGVisitor {
+private:
+    std::list<structured_control_flow::Block*> blocks_;
 
-bool EinsumLift::accept(structured_control_flow::Block& block) {
+public:
+    BlockFinder(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
+        : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), blocks_() {}
+
+    static std::string name() { return "BlockFinder"; }
+
+    virtual bool accept(structured_control_flow::Block& block) {
+        blocks_.push_back(&block);
+        return true;
+    }
+
+    std::list<structured_control_flow::Block*>& blocks() { return blocks_; }
+};
+
+bool EinsumDetectionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    BlockFinder block_finder(builder, analysis_manager);
+    if (!block_finder.visit()) {
+        // Fast exit because no blocks where found
+        return false;
+    }
+
+    // Try lifting all available tasklets to einsum nodes and capture them
     bool applied = false;
+    std::list<structured_control_flow::Block*> block_queue(block_finder.blocks());
+    std::unordered_set<einsum::EinsumNode*> einsum_nodes;
+    while (!block_queue.empty()) {
+        structured_control_flow::Block* block = block_queue.front();
+        block_queue.pop_front();
 
-    auto tasklets = block.dataflow().tasklets();
-    for (auto* tasklet : tasklets) {
-        transformations::EinsumLift transformation(*tasklet);
-        if (transformation.can_be_applied(this->builder_, this->analysis_manager_)) {
-            transformation.apply(this->builder_, this->analysis_manager_);
-            DEBUG_PRINTLN("Applied EinsumLift");
+        // Find already existing einsum nodes
+        auto libnodes = block->dataflow().library_nodes();
+        for (auto* libnode : libnodes) {
+            if (auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode)) {
+                einsum_nodes.insert(einsum_node);
+            }
+        }
+
+        // Lift tasklets to einsum node as far as possible
+        auto tasklets = block->dataflow().tasklets();
+        for (auto* tasklet : tasklets) {
+            transformations::EinsumLift transformation(*tasklet);
+            if (transformation.can_be_applied(builder, analysis_manager)) {
+                transformation.apply(builder, analysis_manager);
+                DEBUG_PRINTLN("Applied " << transformation.name());
+                applied = true;
+
+                // Re-visit the current block
+                block_queue.push_front(block);
+                break;
+            }
+        }
+    }
+
+    // Try extending all captured einsum nodes as much as possible
+    std::list<einsum::EinsumNode*> einsum_queue(einsum_nodes.begin(), einsum_nodes.end());
+    while (!einsum_queue.empty()) {
+        einsum::EinsumNode* einsum_node = einsum_queue.front();
+        einsum_queue.pop_front();
+
+        // Extend einsum node as far as possible
+        transformations::EinsumExtend transformation(*einsum_node);
+        if (transformation.can_be_applied(builder, analysis_manager)) {
+            einsum_nodes.erase(einsum_node);
+            transformation.apply(builder, analysis_manager);
+            DEBUG_PRINTLN("Applied " << transformation.name());
             applied = true;
+
+            // Re-add and re-visit new einsum node
+            auto* new_einsum_node = transformation.new_einsum_node();
+            einsum_nodes.insert(new_einsum_node);
+            einsum_queue.push_front(new_einsum_node);
+        }
+    }
+
+    einsum_queue.insert(einsum_queue.end(), einsum_nodes.begin(), einsum_nodes.end());
+    while (!einsum_queue.empty()) {
+        einsum::EinsumNode* einsum_node = einsum_queue.front();
+        einsum_queue.pop_front();
+
+        transformations::EinsumPromotion transformation(*einsum_node);
+        if (transformation.can_be_applied(builder, analysis_manager)) {
+            transformation.apply(builder, analysis_manager);
+            DEBUG_PRINTLN("Applied " << transformation.name());
+            applied = true;
+
+            // Re-visit new einsum node
+            einsum_queue.push_front(transformation.new_einsum_node());
         }
     }
 
     return applied;
-}
-
-EinsumExtend::EinsumExtend(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
-
-bool EinsumExtend::accept(structured_control_flow::Block& block) {
-    for (auto* libnode : block.dataflow().library_nodes()) {
-        if (auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode)) {
-            transformations::EinsumExtend transformation(*einsum_node);
-            if (transformation.can_be_applied(this->builder_, this->analysis_manager_)) {
-                transformation.apply(this->builder_, this->analysis_manager_);
-                DEBUG_PRINTLN("Applied EinsumExtend");
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-EinsumExpand::EinsumExpand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {}
-
-bool EinsumExpand::accept(structured_control_flow::Block& block) {
-    for (auto* libnode : block.dataflow().library_nodes()) {
-        if (auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode)) {
-            transformations::EinsumExpand transformation(*einsum_node);
-            if (transformation.can_be_applied(this->builder_, this->analysis_manager_)) {
-                transformation.apply(this->builder_, this->analysis_manager_);
-                DEBUG_PRINTLN("Applied EinsumExpand");
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 EinsumConversion::EinsumConversion(

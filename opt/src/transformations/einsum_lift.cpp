@@ -112,7 +112,7 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
         for (auto& iedge : dfg.in_edges(this->tasklet_)) {
             auto& in = static_cast<data_flow::AccessNode&>(iedge.src());
-            if (in.data() == out_container) {
+            if (in.data() == out_container && this->subsets_eq(out_indices, iedge.subset())) {
                 reduction_conn = iedge.dst_conn();
             } else {
                 inputs.push_back(iedge.dst_conn());
@@ -125,7 +125,7 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
         reduction_conn = this->tasklet_.inputs().back();
         for (auto& iedge : dfg.in_edges(this->tasklet_)) {
-            if (iedge.dst_conn() != reduction_conn) {
+            if (iedge.dst_conn() != reduction_conn || !this->subsets_eq(out_indices, iedge.subset())) {
                 inputs.push_back(iedge.dst_conn());
                 in_indices.push_back(iedge.subset());
             }
@@ -136,7 +136,7 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
         reduction_conn = this->tasklet_.inputs().front();
         for (auto& iedge : dfg.in_edges(this->tasklet_)) {
-            if (iedge.dst_conn() != reduction_conn) {
+            if (iedge.dst_conn() != reduction_conn || !this->subsets_eq(out_indices, iedge.subset())) {
                 inputs.push_back(iedge.dst_conn());
                 in_indices.push_back(iedge.subset());
             }

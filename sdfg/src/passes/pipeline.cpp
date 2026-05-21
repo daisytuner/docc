@@ -7,6 +7,7 @@
 #include "sdfg/passes/dataflow/trivial_reference_conversion.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/statistics.h"
+#include "sdfg/passes/structured_control_flow/block_fusion.h"
 
 namespace sdfg {
 namespace passes {
@@ -90,10 +91,14 @@ bool Pipeline::run(builder::StructuredSDFGBuilder& builder, analysis::AnalysisMa
     return applied;
 };
 
-Pipeline Pipeline::dataflow_simplification() {
+Pipeline Pipeline::dataflow_simplification(bool block_fusion_ignor_libnodes) {
     Pipeline p("DataflowSimplification");
 
-    p.register_pass<BlockFusionPass>();
+    if (block_fusion_ignor_libnodes) {
+        p.register_pass<NoLibnodesBlockFusionPass>();
+    } else {
+        p.register_pass<BlockFusionPass>();
+    }
     p.register_pass<TaskletFusionPass>();
     p.register_pass<SequenceFusion>();
 

@@ -12,38 +12,12 @@
 namespace sdfg {
 namespace passes {
 
-class EinsumLift : public visitor::NonStoppingStructuredSDFGVisitor {
+class EinsumDetectionPass : public Pass {
 public:
-    EinsumLift(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+    virtual std::string name() override { return "EinsumDetectionPass"; }
 
-    static std::string name() { return "EinsumLift"; }
-
-    virtual bool accept(structured_control_flow::Block& block) override;
+    virtual bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };
-
-typedef VisitorPass<EinsumLift> EinsumLiftPass;
-
-class EinsumExtend : public visitor::NonStoppingStructuredSDFGVisitor {
-public:
-    EinsumExtend(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
-
-    static std::string name() { return "EinsumExtend"; }
-
-    virtual bool accept(structured_control_flow::Block& block) override;
-};
-
-typedef VisitorPass<EinsumExtend> EinsumExtendPass;
-
-class EinsumExpand : public visitor::StructuredSDFGVisitor {
-public:
-    EinsumExpand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
-
-    static std::string name() { return "EinsumExpand"; }
-
-    virtual bool accept(structured_control_flow::Block& block) override;
-};
-
-typedef VisitorPass<EinsumExpand> EinsumExpandPass;
 
 class EinsumConversion : public visitor::NonStoppingStructuredSDFGVisitor {
 private:

@@ -8,8 +8,10 @@
 namespace sdfg {
 namespace passes {
 
-BlockFusion::BlockFusion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+BlockFusion::BlockFusion(
+    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, bool ignore_libnodes
+)
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), ignore_libnodes_(ignore_libnodes) {}
 
 bool BlockFusion::can_be_applied(
     data_flow::DataFlowGraph& first_graph,
@@ -21,7 +23,7 @@ bool BlockFusion::can_be_applied(
     std::unordered_set<std::string> first_write_symbols;
     for (auto& node : first_graph.nodes()) {
         if (auto lib_node = dynamic_cast<const data_flow::LibraryNode*>(&node)) {
-            if (lib_node->side_effect()) {
+            if (this->ignore_libnodes_ || lib_node->side_effect()) {
                 return false;
             }
         } else if (auto access_node = dynamic_cast<const data_flow::AccessNode*>(&node)) {
@@ -36,7 +38,7 @@ bool BlockFusion::can_be_applied(
     std::unordered_set<std::string> second_write_symbols;
     for (auto& node : second_graph.nodes()) {
         if (auto lib_node = dynamic_cast<const data_flow::LibraryNode*>(&node)) {
-            if (lib_node->side_effect()) {
+            if (this->ignore_libnodes_ || lib_node->side_effect()) {
                 return false;
             }
         } else if (auto access_node = dynamic_cast<const data_flow::AccessNode*>(&node)) {

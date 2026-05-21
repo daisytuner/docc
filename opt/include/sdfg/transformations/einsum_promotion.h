@@ -15,16 +15,17 @@
 namespace sdfg {
 namespace transformations {
 
-class EinsumExpand : public Transformation {
+class EinsumPromotion : public Transformation {
 private:
     einsum::EinsumNode& einsum_node_;
+    einsum::EinsumNode* new_einsum_node_;
 
     symbolic::Expression cnf_to_upper_bound(const symbolic::CNF& cnf, const symbolic::Symbol indvar);
 
     bool subset_contains_symbol(const data_flow::Subset& subset, const symbolic::Symbol& symbol);
 
 public:
-    EinsumExpand(einsum::EinsumNode& einsum_node);
+    EinsumPromotion(einsum::EinsumNode& einsum_node);
 
     virtual std::string name() const override;
 
@@ -33,9 +34,11 @@ public:
 
     virtual void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
+    einsum::EinsumNode* new_einsum_node();
+
     virtual void to_json(nlohmann::json& j) const override;
 
-    static EinsumExpand from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
+    static EinsumPromotion from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 };
 
 } // namespace transformations

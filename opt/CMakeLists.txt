@@ -87,9 +87,9 @@ set(SOURCE_FILES
     src/transformations/loop_distribute.cpp
     src/transformations/einsum2dot.cpp
     src/transformations/einsum2gemm.cpp
-    src/transformations/einsum_expand.cpp
     src/transformations/einsum_extend.cpp
     src/transformations/einsum_lift.cpp
+    src/transformations/einsum_promotion.cpp
     src/transformations/loop_condition_normalize.cpp
     src/transformations/loop_indvar_finalize.cpp
     src/transformations/loop_interchange.cpp
