@@ -34,8 +34,9 @@
 #include <vector>
 
 #include "docc/analysis/attributes.h"
-#include "docc/docc_paths.h"
+#include "docc/cmd_args.h"
 #include "docc/target/tenstorrent/tenstorrent_offloading_node.h"
+#include "docc/util/docc_paths.h"
 #include "docc/utils.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/loop_report.h"
@@ -132,7 +133,7 @@ void add_schedule_type_specific_compile_args(
     const ScheduleType& schedule_type,
     llvm::dwarf::SourceLanguage& language,
     std::vector<std::string>& compile_args,
-    const utils::DoccPaths& docc_paths
+    const util::DoccPaths& docc_paths
 ) {
     if (schedule_type.value() == sdfg::rocm::ScheduleType_ROCM::value()) {
         compile_args.emplace_back("-x hip");
@@ -182,7 +183,7 @@ void add_schedule_type_specific_compile_args(
         }
     }
     // add our own include dirs (for example arg_capture & daisy_rtl) to the search path
-    for (const auto& inc : docc_paths.target_inc_paths()) {
+    for (const auto& inc : docc_paths.get_default_include_paths()) {
         compile_args.push_back("-I" + inc.string());
     }
 }
@@ -192,14 +193,14 @@ bool CodeGenerationPass::compile_additional_files(
     const std::vector<std::string>& compile_args,
     std::set<std::string>& link_2nd_args,
     std::unordered_map<std::string, std::vector<std::filesystem::path>> files_for_post_processing,
-    const utils::DoccPaths& docc_paths
+    const util::DoccPaths& docc_paths
 ) {
     bool success = true;
 
     auto it = files_for_post_processing.find("cu");
     if (it != files_for_post_processing.end()) {
         std::vector<std::string> comp_args = compile_args;
-        for (const auto& inc : docc_paths.target_inc_paths()) {
+        for (const auto& inc : docc_paths.get_default_include_paths()) {
             comp_args.push_back("-I" + inc.string());
         }
         auto& cu_files = it->second;
@@ -224,7 +225,7 @@ bool CodeGenerationPass::compile_additional_files(
         comp_args.push_back("--offload-arch=gfx1201");
         comp_args.push_back("--rocm-path=/opt/rocm");
         comp_args.push_back("-I/opt/rocm/include");
-        for (const auto& inc : docc_paths.target_inc_paths()) {
+        for (const auto& inc : docc_paths.get_default_include_paths()) {
             comp_args.push_back("-I" + inc.string());
         }
         auto& rocm_files = it_rocm->second;
@@ -250,7 +251,7 @@ bool CodeGenerationPass::generate_code(
     llvm::dwarf::SourceLanguage& language,
     const std::vector<std::string>& mod_wide_compile_flags,
     std::set<std::string>& link_2nd_args,
-    utils::DoccPaths docc_paths
+    const util::DoccPaths& docc_paths
 ) {
     LLVM_DEBUG_PRINTLN("Generating code for SDFG: " << sdfg.name());
     bool success = true;
@@ -594,7 +595,8 @@ llvm::PreservedAnalyses CodeGenerationPass::
 #endif
     }
 
-    utils::DoccPaths docc_paths = utils::DoccPaths::get_instance();
+    std::unique_ptr<util::DefaultDoccPaths> docc_paths =
+        util::DefaultDoccPaths::from_lib_location(util::find_lib_location());
 
     auto original_flags = utils::get_recorded_driver_flags(Mod);
     // TODO broken. captures many commandlines from many original modules (llvm.commandline is merged and thinLTO seems
@@ -620,7 +622,7 @@ llvm::PreservedAnalyses CodeGenerationPass::
     bool success = true;
     docc::analysis::SDFGRegistry::for_each_sdfg_modifiable(sdfgs, [&](analysis::SDFGHolder&, sdfg::StructuredSDFG& sdfg) {
         auto& attributes = registry.attributes(sdfg.name());
-        success &= generate_code(Mod, sdfg, attributes, language, subcomp_args, link_2nd_args, docc_paths);
+        success &= generate_code(Mod, sdfg, attributes, language, subcomp_args, link_2nd_args, *docc_paths);
     });
 
     if (!success) {
@@ -1008,30 +1010,30 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
                 new_libnode = &builder.add_library_node<sdfg::cuda::CUDADataOffloadingNode>(
                     new_block,
                     cuda_offloading_node->debug_info(),
-                    cuda_offloading_node->size(),
-                    cuda_offloading_node->device_id(),
                     sdfg::offloading::DataTransferDirection::NONE,
-                    sdfg::offloading::BufferLifecycle::ALLOC
+                    sdfg::offloading::BufferLifecycle::ALLOC,
+                    cuda_offloading_node->size(),
+                    cuda_offloading_node->device_id()
                 );
             } else if (auto* rocm_offloading_node = dynamic_cast<sdfg::rocm::ROCMDataOffloadingNode*>(libnode)) {
                 new_libnode = &builder.add_library_node<sdfg::rocm::ROCMDataOffloadingNode>(
                     new_block,
                     rocm_offloading_node->debug_info(),
-                    rocm_offloading_node->size(),
-                    rocm_offloading_node->device_id(),
                     sdfg::offloading::DataTransferDirection::NONE,
-                    sdfg::offloading::BufferLifecycle::ALLOC
+                    sdfg::offloading::BufferLifecycle::ALLOC,
+                    rocm_offloading_node->size(),
+                    rocm_offloading_node->device_id()
                 );
             } else if (auto* tt_offloading_node = dynamic_cast<sdfg::tenstorrent::TTDataOffloadingNode*>(libnode)) {
                 new_libnode = &builder.add_library_node<sdfg::tenstorrent::TTDataOffloadingNode>(
                     new_block,
                     tt_offloading_node->debug_info(),
-                    tt_offloading_node->blocking(),
-                    tt_offloading_node->device_handle(),
-                    tt_offloading_node->size(),
-                    tt_offloading_node->page_size(),
                     sdfg::offloading::DataTransferDirection::NONE,
                     sdfg::offloading::BufferLifecycle::ALLOC,
+                    tt_offloading_node->size(),
+                    tt_offloading_node->blocking(),
+                    tt_offloading_node->device_handle(),
+                    tt_offloading_node->page_size(),
                     tt_offloading_node->cq_no()
                 );
             } else if (auto* external_offloading_node =
@@ -1149,30 +1151,30 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
                 new_libnode = &builder.add_library_node<sdfg::cuda::CUDADataOffloadingNode>(
                     new_block,
                     cuda_offloading_node->debug_info(),
-                    cuda_offloading_node->size(),
-                    cuda_offloading_node->device_id(),
                     sdfg::offloading::DataTransferDirection::H2D,
-                    sdfg::offloading::BufferLifecycle::NO_CHANGE
+                    sdfg::offloading::BufferLifecycle::NO_CHANGE,
+                    cuda_offloading_node->size(),
+                    cuda_offloading_node->device_id()
                 );
             } else if (auto* rocm_offloading_node = dynamic_cast<sdfg::rocm::ROCMDataOffloadingNode*>(libnode)) {
                 new_libnode = &builder.add_library_node<sdfg::rocm::ROCMDataOffloadingNode>(
                     new_block,
                     rocm_offloading_node->debug_info(),
-                    rocm_offloading_node->size(),
-                    rocm_offloading_node->device_id(),
                     sdfg::offloading::DataTransferDirection::H2D,
-                    sdfg::offloading::BufferLifecycle::NO_CHANGE
+                    sdfg::offloading::BufferLifecycle::NO_CHANGE,
+                    rocm_offloading_node->size(),
+                    rocm_offloading_node->device_id()
                 );
             } else if (auto* tt_offloading_node = dynamic_cast<sdfg::tenstorrent::TTDataOffloadingNode*>(libnode)) {
                 new_libnode = &builder.add_library_node<sdfg::tenstorrent::TTDataOffloadingNode>(
                     new_block,
                     tt_offloading_node->debug_info(),
-                    tt_offloading_node->blocking(),
-                    tt_offloading_node->device_handle(),
-                    tt_offloading_node->size(),
-                    tt_offloading_node->page_size(),
                     sdfg::offloading::DataTransferDirection::H2D,
                     sdfg::offloading::BufferLifecycle::NO_CHANGE,
+                    tt_offloading_node->size(),
+                    tt_offloading_node->blocking(),
+                    tt_offloading_node->device_handle(),
+                    tt_offloading_node->page_size(),
                     tt_offloading_node->cq_no()
                 );
             } else if (auto* external_offloading_node =
@@ -1421,30 +1423,30 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
                 new_libnode = &builder.add_library_node<sdfg::cuda::CUDADataOffloadingNode>(
                     new_block,
                     cuda_offloading_node->debug_info(),
-                    cuda_offloading_node->size(),
-                    cuda_offloading_node->device_id(),
                     sdfg::offloading::DataTransferDirection::D2H,
-                    sdfg::offloading::BufferLifecycle::NO_CHANGE
+                    sdfg::offloading::BufferLifecycle::NO_CHANGE,
+                    cuda_offloading_node->size(),
+                    cuda_offloading_node->device_id()
                 );
             } else if (auto* rocm_offloading_node = dynamic_cast<sdfg::rocm::ROCMDataOffloadingNode*>(libnode)) {
                 new_libnode = &builder.add_library_node<sdfg::rocm::ROCMDataOffloadingNode>(
                     new_block,
                     rocm_offloading_node->debug_info(),
-                    rocm_offloading_node->size(),
-                    rocm_offloading_node->device_id(),
                     sdfg::offloading::DataTransferDirection::D2H,
-                    sdfg::offloading::BufferLifecycle::NO_CHANGE
+                    sdfg::offloading::BufferLifecycle::NO_CHANGE,
+                    rocm_offloading_node->size(),
+                    rocm_offloading_node->device_id()
                 );
             } else if (auto* tt_offloading_node = dynamic_cast<sdfg::tenstorrent::TTDataOffloadingNode*>(libnode)) {
                 new_libnode = &builder.add_library_node<sdfg::tenstorrent::TTDataOffloadingNode>(
                     new_block,
                     tt_offloading_node->debug_info(),
-                    tt_offloading_node->blocking(),
-                    tt_offloading_node->device_handle(),
-                    tt_offloading_node->size(),
-                    tt_offloading_node->page_size(),
                     sdfg::offloading::DataTransferDirection::D2H,
                     sdfg::offloading::BufferLifecycle::NO_CHANGE,
+                    tt_offloading_node->size(),
+                    tt_offloading_node->blocking(),
+                    tt_offloading_node->device_handle(),
+                    tt_offloading_node->page_size(),
                     tt_offloading_node->cq_no()
                 );
             } else if (auto* external_offloading_node =
@@ -1528,30 +1530,30 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
                 new_libnode = &builder.add_library_node<sdfg::cuda::CUDADataOffloadingNode>(
                     new_block,
                     cuda_offloading_node->debug_info(),
-                    cuda_offloading_node->size(),
-                    cuda_offloading_node->device_id(),
                     sdfg::offloading::DataTransferDirection::NONE,
-                    sdfg::offloading::BufferLifecycle::FREE
+                    sdfg::offloading::BufferLifecycle::FREE,
+                    cuda_offloading_node->size(),
+                    cuda_offloading_node->device_id()
                 );
             } else if (auto* rocm_offloading_node = dynamic_cast<sdfg::rocm::ROCMDataOffloadingNode*>(libnode)) {
                 new_libnode = &builder.add_library_node<sdfg::rocm::ROCMDataOffloadingNode>(
                     new_block,
                     rocm_offloading_node->debug_info(),
-                    rocm_offloading_node->size(),
-                    rocm_offloading_node->device_id(),
                     sdfg::offloading::DataTransferDirection::NONE,
-                    sdfg::offloading::BufferLifecycle::FREE
+                    sdfg::offloading::BufferLifecycle::FREE,
+                    rocm_offloading_node->size(),
+                    rocm_offloading_node->device_id()
                 );
             } else if (auto* tt_offloading_node = dynamic_cast<sdfg::tenstorrent::TTDataOffloadingNode*>(libnode)) {
                 new_libnode = &builder.add_library_node<sdfg::tenstorrent::TTDataOffloadingNode>(
                     new_block,
                     tt_offloading_node->debug_info(),
-                    tt_offloading_node->blocking(),
-                    tt_offloading_node->device_handle(),
-                    tt_offloading_node->size(),
-                    tt_offloading_node->page_size(),
                     sdfg::offloading::DataTransferDirection::NONE,
                     sdfg::offloading::BufferLifecycle::FREE,
+                    tt_offloading_node->size(),
+                    tt_offloading_node->blocking(),
+                    tt_offloading_node->device_handle(),
+                    tt_offloading_node->page_size(),
                     tt_offloading_node->cq_no()
                 );
             } else if (auto* external_offloading_node =

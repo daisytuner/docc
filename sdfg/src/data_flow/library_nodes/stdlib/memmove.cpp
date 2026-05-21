@@ -16,8 +16,8 @@ MemmoveNode::MemmoveNode(
           vertex,
           parent,
           LibraryNodeType_Memmove,
-          {"_dst"},
-          {"_src"},
+          {},
+          {"_dst", "_src"},
           true,
           data_flow::ImplementationType_NONE
       ),
@@ -83,16 +83,16 @@ MemmoveNodeDispatcher::MemmoveNodeDispatcher(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void MemmoveNodeDispatcher::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void MemmoveNodeDispatcher::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
     auto& node = static_cast<const MemmoveNode&>(node_);
 
-    stream << language_extension_.external_prefix() << "memmove(" << node.outputs().at(0) << ", " << node.inputs().at(0)
-           << ", " << language_extension_.expression(node.count()) << ")" << ";";
-    stream << std::endl;
+    out.stream << language_extension_.external_prefix() << "memmove(" << inputs.at(0).expr << ", " << inputs.at(1).expr
+               << ", " << language_extension_.expression(node.count()) << ")" << ";";
+    out.stream << std::endl;
 }
 
 } // namespace stdlib

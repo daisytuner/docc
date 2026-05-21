@@ -320,6 +320,9 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
         // RAW: escaping_writes × upward_exposed_reads
         for (auto& write_entry : esc_defs) {
             auto* write = write_entry.first;
+            if (dda.is_undefined_user(*write)) {
+                pair_list.push_back(LoopCarriedDependencyPair{write, nullptr, LOOP_CARRIED_DEPENDENCY_UNDEFINED, {}});
+            }
             for (auto* read : ue_reads) {
                 if (write->container() != read->container()) {
                     continue;
@@ -411,6 +414,15 @@ bool LoopCarriedDependencyAnalysis::has_loop_carried_raw(structured_control_flow
     if (it == pairs_.end()) return false;
     for (auto& p : it->second) {
         if (p.type == LOOP_CARRIED_DEPENDENCY_READ_WRITE) return true;
+    }
+    return false;
+}
+
+bool LoopCarriedDependencyAnalysis::has_loop_carried_hazard(structured_control_flow::StructuredLoop& loop) const {
+    auto it = pairs_.find(&loop);
+    if (it == pairs_.end()) return false;
+    for (auto& p : it->second) {
+        if (p.type != LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) return true;
     }
     return false;
 }

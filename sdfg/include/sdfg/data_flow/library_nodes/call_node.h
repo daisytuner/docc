@@ -13,6 +13,7 @@ inline LibraryNodeCode LibraryNodeType_Call("Call");
 class CallNode : public LibraryNode {
 protected:
     std::string callee_name_;
+    std::vector<PointerAccessType> ptr_access_meta_;
 
 public:
     CallNode(
@@ -22,7 +23,8 @@ public:
         DataFlowGraph& parent,
         const std::string& callee_name,
         const std::vector<std::string>& outputs,
-        const std::vector<std::string>& inputs
+        const std::vector<std::string>& inputs,
+        std::vector<PointerAccessType> ptr_access_meta = {}
     );
 
     const std::string& callee_name() const;
@@ -39,6 +41,9 @@ public:
 
     std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
         const override;
+
+    PointerAccessType pointer_access_type(int input_idx) const override;
+    const std::vector<PointerAccessType>& pointer_access_meta() const;
 
     std::string toStr() const override;
 };
@@ -61,10 +66,10 @@ public:
         const CallNode& node
     );
 
-    void dispatch_code(
-        codegen::PrettyPrinter& stream,
-        codegen::PrettyPrinter& globals_stream,
-        codegen::CodeSnippetFactory& library_snippet_factory
+    void dispatch_code_with_edges(
+        codegen::CodegenOutput& out,
+        std::vector<codegen::DispatchInput>& inputs,
+        std::vector<codegen::DispatchOutput>& outputs
     ) override;
 };
 

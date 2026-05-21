@@ -98,6 +98,20 @@ int DataOffloadingNode::host_ptr_input_idx() const {
     }
 }
 
+int DataOffloadingNode::dev_ptr_output_idx() const {
+    if (buffer_lifecycle_ == BufferLifecycle::ALLOC) {
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
+const std::string& DataOffloadingNode::dev_in_conn() const { return inputs_.at(dev_ptr_input_idx()); }
+
+const std::string& DataOffloadingNode::dev_out_conn() const { return outputs_.at(dev_ptr_output_idx()); }
+
+const std::string& DataOffloadingNode::host_in_conn() const { return inputs_.at(host_ptr_input_idx()); }
+
 DataTransferDirection DataOffloadingNode::transfer_direction() const { return this->transfer_direction_; }
 
 BufferLifecycle DataOffloadingNode::buffer_lifecycle() const { return this->buffer_lifecycle_; }
@@ -214,17 +228,17 @@ void DataOffloadingNode::remove_h2d() {
 
 data_flow::PointerAccessType DataOffloadingNode::pointer_access_type(int input_idx) const {
     if (is_h2d() && input_idx == host_ptr_input_idx()) {
-        return std::make_unique<data_flow::PointerReadOnly>(size_, true);
+        return data_flow::PointerAccessMeta::create_read_only(size_, true);
     } else if (is_h2d() && !is_alloc() && input_idx == dev_ptr_input_idx()) {
-        return std::make_unique<data_flow::PointerFullWrite>(size_, true);
+        return data_flow::PointerAccessMeta::create_full_write_only(size_, true);
     } else if (is_d2h() && input_idx == dev_ptr_input_idx()) {
-        return std::make_unique<data_flow::PointerReadOnly>(size_, true);
+        return data_flow::PointerAccessMeta::create_read_only(size_, true);
     } else if (is_d2h() && input_idx == host_ptr_input_idx()) {
-        return std::make_unique<data_flow::PointerFullWrite>(size_, true, true);
+        return data_flow::PointerAccessMeta::create_full_write_only(size_, true);
     } else if (is_d2h() && is_free() && input_idx == dev_ptr_input_idx()) {
-        return std::make_unique<data_flow::PointerInvalidate>();
+        return data_flow::PointerAccessMeta::create_invalidate();
     } else if (is_d2h() && !is_free() && input_idx == 1) {
-        return std::make_unique<data_flow::PointerReadOnly>(size_, true);
+        return data_flow::PointerAccessMeta::create_read_only(size_, true);
     } else {
         return LibraryNode::pointer_access_type(input_idx);
     }
@@ -266,8 +280,11 @@ bool DataOffloadingNode::update_edge_removed(const std::string& out_conn) { retu
 
 data_flow::EdgeRemoveOption DataOffloadingNode::
     can_remove_in_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {
-    if (is_h2d() && is_alloc() && memlet->dst_conn() == inputs_.at(0)) {
+    if (is_h2d() && is_alloc() && memlet->dst_conn() == inputs_.at(host_ptr_input_idx())) {
         return data_flow::EdgeRemoveOption::RequiresUpdate;
+    } else if (is_d2h() && is_NO_CHANGE(this->buffer_lifecycle_) &&
+               memlet->dst_conn() == inputs_.at(host_ptr_input_idx())) {
+        return data_flow::EdgeRemoveOption::RemoveNodeAfter;
     } else {
         return data_flow::EdgeRemoveOption::NotRemovable;
     }

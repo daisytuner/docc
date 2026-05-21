@@ -16,6 +16,7 @@ namespace analysis {
 enum LoopCarriedDependency {
     LOOP_CARRIED_DEPENDENCY_READ_WRITE,
     LOOP_CARRIED_DEPENDENCY_WRITE_WRITE,
+    LOOP_CARRIED_DEPENDENCY_UNDEFINED,
 };
 
 /**
@@ -131,6 +132,12 @@ public:
      * @brief True if any loop-carried RAW dependency exists for the loop.
      */
     bool has_loop_carried_raw(structured_control_flow::StructuredLoop& loop) const;
+
+    /**
+     * True if RAW or undefined loop-carried dependency exists. Either is a hazard for example for For2Map /
+     * parallization
+     */
+    bool has_loop_carried_hazard(structured_control_flow::StructuredLoop& loop) const;
 };
 
 } // namespace analysis

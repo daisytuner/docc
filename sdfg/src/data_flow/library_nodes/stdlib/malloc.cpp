@@ -91,15 +91,17 @@ void MallocNodeDispatcher::dispatch_code_with_edges(
     auto& oedge = *graph.out_edges(malloc_node).begin();
 
     auto& ptr_out = outputs.at(0);
+    auto& out_name = node_.output(0);
 
-    pre_allocate_output(out, ptr_out, node_.output(0));
-    out.stream << *ptr_out.local_name << " = ("
+    out.stream << language_extension_.declaration(node_.output(0), *ptr_out.out_type) << " = ("
                << language_extension_.type_cast(
                       language_extension_.external_prefix() + "malloc(" +
                           language_extension_.expression(malloc_node.size()) + ")",
                       oedge.base_type()
                   )
                << ");" << std::endl;
+
+    register_output(ptr_out, out_name);
 }
 
 } // namespace stdlib

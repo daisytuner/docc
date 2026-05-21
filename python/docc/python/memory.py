@@ -68,7 +68,7 @@ class ManagedMemoryHandler:
                 t_memset = self.builder.add_memset(block, "0", alloc["total_size"])
                 t_ptr = self.builder.add_access(block, alloc["name"])
                 self.builder.add_memlet(
-                    block, t_memset, "_ptr", t_ptr, "void", "", alloc["ptr_type"]
+                    block, t_ptr, "void", t_memset, "_ptr", "", alloc["ptr_type"]
                 )
 
             # Insert malloc (will end up before memset)

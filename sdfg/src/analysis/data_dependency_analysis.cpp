@@ -68,6 +68,7 @@ void DataDependencyAnalysis::visit_block(
         }
 
         if (auto access_node = dynamic_cast<data_flow::AccessNode*>(node)) {
+            auto& access_node_type = sdfg_.type(access_node->data());
             if (!symbolic::is_pointer(symbolic::symbol(access_node->data()))) {
                 if (dataflow.in_degree(*node) > 0) {
                     Use use = Use::WRITE;
@@ -101,9 +102,25 @@ void DataDependencyAnalysis::visit_block(
                 if (dataflow.out_degree(*access_node) > 0) {
                     Use use = Use::READ;
                     for (auto& oedge : dataflow.out_edges(*access_node)) {
-                        if (oedge.type() == data_flow::MemletType::Reference ||
-                            oedge.type() == data_flow::MemletType::Dereference_Dst) {
-                            use = Use::VIEW;
+                        if (access_node_type.type_id() == types::TypeID::Pointer &&
+                            oedge.is_src_pointed_to_address_leak(access_node_type)) {
+                            if (auto* libConsumer = dynamic_cast<data_flow::LibraryNode*>(&oedge.dst())) {
+                                auto access = libConsumer->pointer_access_type(oedge);
+                                if (!access || access->may_contain_writes() || !access->no_capture()) {
+                                    use = Use::MOVE;
+                                    auto artificial_user = std::make_unique<User>(
+                                        boost::graph_traits<graph::Graph>::null_vertex(),
+                                        access_node->data(),
+                                        nullptr,
+                                        Use::WRITE
+                                    );
+                                    this->undefined_users_.push_back(std::move(artificial_user));
+                                    open_definitions.insert({this->undefined_users_.back().get(), {}});
+                                }
+                            } else {
+                                use = Use::VIEW;
+                            }
+
                             break;
                         }
                     }

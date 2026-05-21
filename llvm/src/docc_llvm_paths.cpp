@@ -1,4 +1,4 @@
-#include "docc/docc_paths.h"
+#include "docc/docc_llvm_paths.h"
 #include <llvm/Support/Debug.h>
 
 #include "docc/cmd_args.h"
@@ -12,10 +12,7 @@ namespace docc::utils {
 std::vector<std::filesystem::path> DoccPaths::target_inc_paths() const {
     switch (root_mode) {
         case DoccRootMode::CMake:
-            return {
-                docc_root_path / ".." / "docc" / "rtl" / "include",
-                docc_root_path / ".." / "docc" / "arg-capture-io" / "include"
-            };
+            return {docc_root_path / ".." / "rtl" / "include", docc_root_path / ".." / "arg-capture-io" / "include"};
         case DoccRootMode::Dist:
             return {docc_root_path / "include"};
         default:

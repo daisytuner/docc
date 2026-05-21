@@ -7,7 +7,7 @@
 
 #include "docc/analysis/sdfg_registry.h"
 #include "docc/cmd_args.h"
-#include "docc/docc_paths.h"
+#include "docc/docc_llvm_paths.h"
 #include "docc/lifting/function_to_sdfg.h"
 #include "docc/lifting/lift_report.h"
 #include "docc/utils.h"
@@ -32,7 +32,7 @@ llvm::PreservedAnalyses FunctionToSDFGPass::
     }
 
     // Create cutout directories
-    std::filesystem::path docc_dir = utils::get_docc_work_dir();
+    std::filesystem::path docc_dir = docc::utils::get_docc_work_dir();
     std::filesystem::path module_dir = docc_dir / utils::hash_module_name(Module);
     std::filesystem::create_directories(module_dir);
 

@@ -1179,6 +1179,10 @@ std::string JSONSerializer::expression(const symbolic::Expression expr) {
     return printer.apply(expr);
 };
 
+symbolic::Expression JSONSerializer::json_to_expr(const nlohmann::json& j) {
+    return symbolic::parse(j.get<std::string>());
+}
+
 void JSONSerializer::writeToFile(const StructuredSDFG& sdfg, const std::filesystem::path& file) {
     JSONSerializer ser;
     auto json = ser.serialize(sdfg);

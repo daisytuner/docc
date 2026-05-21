@@ -759,7 +759,7 @@ TEST(DataTransferMinimizationPassTest, NotReadOnlyDataReuseTest) {
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_h2d).buffer_lifecycle(),
         offloading::BufferLifecycle::ALLOC
     );
-    EXPECT_EQ(block_d2h.dataflow().nodes().size(), 3);
+    EXPECT_EQ(block_d2h.dataflow().nodes().size(), 2);
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_d2h).transfer_direction(),
         offloading::DataTransferDirection::NONE
@@ -777,7 +777,7 @@ TEST(DataTransferMinimizationPassTest, NotReadOnlyDataReuseTest) {
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_h2d).buffer_lifecycle(),
         offloading::BufferLifecycle::ALLOC
     );
-    EXPECT_EQ(block_d2h_reuse.dataflow().nodes().size(), 3);
+    EXPECT_EQ(block_d2h_reuse.dataflow().nodes().size(), 2);
     EXPECT_EQ(
         dynamic_cast<cuda::CUDADataOffloadingNode&>(memcpy_node_reuse_d2h).transfer_direction(),
         offloading::DataTransferDirection::NONE

@@ -17,8 +17,8 @@ MemsetNode::MemsetNode(
           vertex,
           parent,
           LibraryNodeType_Memset,
-          {"_ptr"},
           {},
+          {"_ptr"},
           true,
           data_flow::ImplementationType_NONE
       ),
@@ -40,6 +40,18 @@ symbolic::SymbolSet MemsetNode::symbols() const {
 std::unique_ptr<data_flow::DataFlowNode> MemsetNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::make_unique<MemsetNode>(element_id, debug_info_, vertex, parent, value_, num_);
+}
+
+data_flow::PointerAccessType MemsetNode::pointer_access_type(int input_idx) const {
+    if (input_idx == 0) {
+        return data_flow::PointerAccessMeta::create_full_write_only(num_, true);
+    } else {
+        return StdlibNode::pointer_access_type(input_idx);
+    }
+}
+
+std::string MemsetNode::toStr() const {
+    return StdlibNode::toStr() + "(n: " + num_->__str__() + ", v: " + value_->__str__() + ")";
 }
 
 void MemsetNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
@@ -92,17 +104,18 @@ MemsetNodeDispatcher::MemsetNodeDispatcher(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void MemsetNodeDispatcher::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void MemsetNodeDispatcher::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
     auto& node = static_cast<const MemsetNode&>(node_);
 
-    stream << language_extension_.external_prefix() << "memset(" << node.outputs().at(0) << ", "
-           << language_extension_.expression(node.value()) << ", " << language_extension_.expression(node.num()) << ")"
-           << ";";
-    stream << std::endl;
+    out.stream << language_extension_.external_prefix() << "memset(" << inputs.at(0).expr << ", "
+               << language_extension_.expression(node.value()) << ", " << language_extension_.expression(node.num())
+               << ")"
+               << ";";
+    out.stream << std::endl;
 }
 
 } // namespace stdlib

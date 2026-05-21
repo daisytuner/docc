@@ -75,6 +75,7 @@ set(SOURCE_FILES
     src/data_flow/data_flow_node.cpp
     src/data_flow/library_node.cpp
     src/data_flow/memlet.cpp
+    src/data_flow/pointer_metadata.cpp
     src/data_flow/tasklet.cpp
     src/data_flow/library_nodes/barrier_local_node.cpp
     src/data_flow/library_nodes/call_node.cpp

@@ -173,6 +173,7 @@ sdfg::control_flow::State& FunctionLifting::visit_call(
     std::vector<std::string> inputs;
     std::unordered_map<std::string, sdfg::data_flow::AccessNode*> in_conns;
     std::unordered_map<std::string, sdfg::data_flow::AccessNode*> unique_nodes_in;
+    std::vector<sdfg::data_flow::PointerAccessType> ptr_meta;
     size_t i = 0;
     for (auto& op : instruction->args()) {
         std::string conn = "_arg" + std::to_string(i);
@@ -205,24 +206,22 @@ sdfg::control_flow::State& FunctionLifting::visit_call(
             inputs.push_back(conn);
             in_conns.insert({conn, unique_nodes_in[data]});
 
+            sdfg::data_flow::PointerAccessType meta;
             if (op_type->type_id() == sdfg::types::TypeID::Pointer) {
                 if (called_func && i < called_func->arg_size()) {
-                    if (called_func->getArg(i)->onlyReadsMemory()) {
-                        // No output node needed
-                        i++;
-                        continue;
-                    } else if (called_func->getArg(i)->hasByValAttr()) {
-                        // No output node needed
-                        i++;
-                        continue;
+                    auto* arg = called_func->getArg(i);
+                    bool onlyReadsMemory = arg->onlyReadsMemory();
+                    bool noCapture = arg->hasNoCaptureAttr();
+
+                    if (onlyReadsMemory) {
+                        meta = sdfg::data_flow::PointerAccessMeta::create_read_only(SymEngine::null, noCapture);
+                    } else if (noCapture) {
+                        meta = sdfg::data_flow::PointerAccessMeta::create_generic(nullptr, nullptr, noCapture);
                     }
                 }
-                if (unique_nodes_out.find(data) == unique_nodes_out.end()) {
-                    auto& data_node_out = this->builder_.add_access(current_state, data, dbg_info);
-                    unique_nodes_out.insert({data, &data_node_out});
-                }
-                outputs.push_back(conn);
-                out_conns.insert({conn, unique_nodes_out[data]});
+            }
+            if (meta) {
+                ptr_meta.push_back(std::move(meta));
             }
         }
 

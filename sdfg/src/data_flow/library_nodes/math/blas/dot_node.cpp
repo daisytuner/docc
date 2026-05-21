@@ -184,6 +184,16 @@ std::unique_ptr<data_flow::DataFlowNode> DotNode::
     return std::move(node_clone);
 }
 
+data_flow::PointerAccessType DotNode::pointer_access_type(int input_idx) const {
+    if (input_idx == 0) {
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::mul(n_, incx_), true);
+    } else if (input_idx == 1) {
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::mul(n_, incy_), true);
+    } else {
+        return BLASNode::pointer_access_type(input_idx);
+    }
+}
+
 nlohmann::json DotNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const DotNode& gemm_node = static_cast<const DotNode&>(library_node);
     nlohmann::json j;

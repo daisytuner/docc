@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include "../../../../../sdfg/tests/sdfg_debug_dump.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -19,6 +18,7 @@
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -1366,7 +1366,7 @@ TEST(BlockHoistingTest, IfElse_InvariantMemset) {
     EXPECT_EQ(case2.size(), 1);
 }
 
-TEST(ExtendedBlockHoistingTest, Map_InvariantDataTransfers_CUDA) {
+TEST(BlockHoistingTest, Map_InvariantDataTransfers_CUDA) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -1645,7 +1645,7 @@ TEST(ExtendedBlockHoistingTest, IfElse_InvariantDataTransfers_CUDA) {
 }
 */
 
-TEST(ExtendedBlockHoistingTest, waxpby_CUDA) {
+TEST(BlockHoistingTest, waxpby_CUDA) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -1915,6 +1915,8 @@ TEST(ExtendedBlockHoistingTest, waxpby_CUDA) {
             id
         );
     }
+
+    dump_sdfg(sdfg, "0.init");
 
     analysis::AnalysisManager analysis_manager(sdfg);
     passes::BlockHoistingPass pass;

@@ -76,6 +76,10 @@ EdgeRemoveOption AccessNode::can_remove_in_edge(const data_flow::DataFlowGraph& 
     return (graph.out_degree(*this) == 0) ? EdgeRemoveOption::RemoveNodeAfter : EdgeRemoveOption::Trivially;
 }
 
+bool AccessNode::identicalBackingData(const AccessNode& src1, const AccessNode& src2) {
+    return src1.data() == src2.data();
+}
+
 namespace {
 bool is_special_constant(const std::string& data) {
     static const std::unordered_set<std::string> constants = {

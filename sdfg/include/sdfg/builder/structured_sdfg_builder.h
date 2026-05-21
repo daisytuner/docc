@@ -509,7 +509,7 @@ public:
         const std::unordered_set<const data_flow::DataFlowNode*>& ignore_side_effects
     );
 
-    int clear_ptr_borrow_edge(const Block& block, const data_flow::Memlet* edge);
+    int clear_ptr_borrow_edge(Block& block, const data_flow::Memlet& edge);
 
     void merge_siblings(data_flow::AccessNode& in_node);
 };

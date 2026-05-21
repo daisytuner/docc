@@ -85,7 +85,7 @@ set(SOURCE_FILES
   src/passes/scheduling/scheduling_pass.cpp
   src/passes/function_to_sdfg_pass.cpp
   src/cmd_args.cpp
-  src/docc_paths.cpp
+  src/docc_llvm_paths.cpp
   src/docc.cpp
 )
 

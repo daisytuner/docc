@@ -64,7 +64,7 @@ bool For2MapPass::can_be_applied(
     auto& dependencies = lcd.dependencies(for_stmt);
 
     // a. No true dependencies (RAW) between iterations
-    if (lcd.has_loop_carried_raw(for_stmt)) {
+    if (lcd.has_loop_carried_hazard(for_stmt)) {
         return false;
     }
 

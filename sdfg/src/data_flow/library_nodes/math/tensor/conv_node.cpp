@@ -541,10 +541,10 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     {
         auto& patches_access_in = builder.add_access(patches_free_block, patches_container, this->debug_info());
         auto& libnode = builder.add_library_node<stdlib::FreeNode>(patches_free_block, this->debug_info());
-            builder.add_computational_memlet(
-                patches_free_block, patches_access_in, libnode, "_ptr", {}, patches_type, this->debug_info()
-            );
-        }
+        builder.add_computational_memlet(
+            patches_free_block, patches_access_in, libnode, "_ptr", {}, patches_type, this->debug_info()
+        );
+    }
 
     // Clean up the original block
     builder.remove_memlet(*block, *iedge_X);

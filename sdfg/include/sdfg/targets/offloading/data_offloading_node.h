@@ -89,6 +89,11 @@ public:
 
     int host_ptr_input_idx() const;
     int dev_ptr_input_idx() const;
+    int dev_ptr_output_idx() const;
+
+    const std::string& dev_in_conn() const;
+    const std::string& dev_out_conn() const;
+    const std::string& host_in_conn() const;
 
     const symbolic::Expression size() const;
 

@@ -164,10 +164,8 @@ bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedA
     if (memlet) {
         auto* libNode = dynamic_cast<const data_flow::LibraryNode*>(&memlet->dst());
         if (libNode) {
-            auto conns = libNode->inputs();
-            auto idx = std::find(conns.begin(), conns.end(), memlet->dst_conn()) - conns.begin();
-            auto access_type = libNode->pointer_access_type(idx);
-            if (access_type && access_type->no_ptr_escape()) {
+            auto access_type = libNode->pointer_access_type(*memlet);
+            if (access_type && access_type->no_capture()) {
                 return true;
             }
         }
@@ -355,10 +353,8 @@ void IndirectMemoryAccessFinder::use_as_src_node(
         // actual leak. These we can instead count as indirect reads
         if (edge.is_src_read()) {
             if (auto* libNode = dynamic_cast<const data_flow::LibraryNode*>(&edge.dst())) {
-                auto conns = libNode->inputs();
-                auto idx = std::find(conns.begin(), conns.end(), edge.dst_conn()) - conns.begin();
-                auto access_type = libNode->pointer_access_type(idx);
-                if (access_type && access_type->no_ptr_escape()) {
+                auto access_type = libNode->pointer_access_type(edge);
+                if (access_type && access_type->no_capture()) {
                     if (access_type->may_contain_reads()) {
                         indirect_reads_[container].insert(&edge);
                     } else if (access_type->may_contain_writes()) {
@@ -415,7 +411,8 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
                         int removed = 0;
                         if (indirect_write.type == IndirectMemoryAccessFinder::IndirectWriteType::PtrBorrow) {
                             removed =
-                                builder.clear_ptr_borrow_edge(*const_cast<Block*>(indirect_write.block), edge_to_remove);
+                                builder
+                                    .clear_ptr_borrow_edge(*const_cast<Block*>(indirect_write.block), *edge_to_remove);
                         } else if (indirect_write.type == IndirectMemoryAccessFinder::IndirectWriteType::AccessNode) {
                             auto& write_node = dynamic_cast<const data_flow::AccessNode&>(edge_to_remove->dst());
                             removed = builder.clear_node(

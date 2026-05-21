@@ -35,7 +35,7 @@ void FreeNode::replace(const symbolic::Expression old_expression, const symbolic
 
 data_flow::PointerAccessType FreeNode::pointer_access_type(int input_idx) const {
     if (input_idx == 0) {
-        return std::make_unique<data_flow::PointerInvalidate>();
+        return data_flow::PointerAccessMeta::create_invalidate();
     } else {
         return LibraryNode::pointer_access_type(input_idx);
     }

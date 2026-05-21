@@ -1,6 +1,6 @@
 #pragma once
 
-#include <docc/docc_paths.h>
+#include <docc/util/docc_paths.h>
 #include <llvm/BinaryFormat/Dwarf.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
 
@@ -39,7 +39,7 @@ private:
         const std::vector<std::string> &compile_args,
         std::set<std::string> &link_2nd_args,
         std::unordered_map<std::string, std::vector<std::filesystem::path>> files_for_post_processing,
-        const utils::DoccPaths &docc_paths
+        const util::DoccPaths &docc_paths
     );
 
     bool generate_code(
@@ -49,7 +49,7 @@ private:
         llvm::dwarf::SourceLanguage &language,
         const std::vector<std::string> &mod_wide_compile_flags,
         std::set<std::string> &link_2nd_args,
-        utils::DoccPaths docc_paths
+        const util::DoccPaths &docc_paths
     );
 
     bool link_into_existing_module(

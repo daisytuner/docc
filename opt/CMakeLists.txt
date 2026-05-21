@@ -23,7 +23,6 @@ set(SOURCE_FILES
     src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_parallelization_pass.cpp
     src/passes/offloading/gpu_tiling_pass.cpp
-    src/passes/offloading/remove_redundant_transfers_pass.cpp
     src/passes/offloading/rocm_library_node_expansion_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
     src/passes/offloading/cuda_library_node_transfer_extraction_pass.cpp

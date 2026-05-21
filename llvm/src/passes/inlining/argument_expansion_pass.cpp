@@ -479,10 +479,6 @@ llvm::PreservedAnalyses ArgumentExpansionPass::
             analysis_manager.invalidate_all();
             sdfg::passes::ReadonlyTransferHoistingPass readonly_transfer_hoisting_pass;
             readonly_transfer_hoisting_pass.run(builder, analysis_manager);
-
-            analysis_manager.invalidate_all();
-            sdfg::passes::RemoveRedundantTransfersPass remove_redundant_transfers_pass;
-            remove_redundant_transfers_pass.run(builder, analysis_manager);
         }
     });
 

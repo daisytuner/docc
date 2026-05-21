@@ -10,7 +10,8 @@ CallNode::CallNode(
     data_flow::DataFlowGraph& parent,
     const std::string& callee_name,
     const std::vector<std::string>& outputs,
-    const std::vector<std::string>& inputs
+    const std::vector<std::string>& inputs,
+    std::vector<PointerAccessType> ptr_access_meta
 )
     : LibraryNode(
           element_id,
@@ -23,7 +24,7 @@ CallNode::CallNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      callee_name_(callee_name) {}
+      callee_name_(callee_name), ptr_access_meta_(std::move(ptr_access_meta)) {}
 
 const std::string& CallNode::callee_name() const { return this->callee_name_; }
 
@@ -67,12 +68,39 @@ symbolic::SymbolSet CallNode::symbols() const { return {symbolic::symbol(this->c
 
 std::unique_ptr<data_flow::DataFlowNode> CallNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::make_unique<CallNode>(element_id, debug_info_, vertex, parent, callee_name_, outputs_, inputs_);
+    std::vector<PointerAccessType> ptr_access_meta_clone;
+    ptr_access_meta_clone.reserve(ptr_access_meta_.size());
+    for (auto& ptr_access_meta : ptr_access_meta_) {
+        if (ptr_access_meta) {
+            ptr_access_meta_clone.push_back(ptr_access_meta->clone());
+        } else {
+            ptr_access_meta_clone.push_back(nullptr);
+        }
+    }
+    return std::make_unique<CallNode>(
+        element_id, debug_info_, vertex, parent, callee_name_, outputs_, inputs_, std::move(ptr_access_meta_clone)
+    );
 }
+
+PointerAccessType CallNode::pointer_access_type(int input_idx) const {
+    if (ptr_access_meta_.size() > input_idx) {
+        return ptr_access_meta_.at(0)->ref();
+    } else {
+        return LibraryNode::pointer_access_type(input_idx);
+    }
+}
+
+const std::vector<PointerAccessType>& CallNode::pointer_access_meta() const { return ptr_access_meta_; }
 
 std::string CallNode::toStr() const { return LibraryNode::toStr() + "('" + callee_name_ + "')"; }
 
-void CallNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
+void CallNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    for (auto& meta : ptr_access_meta_) {
+        if (meta) {
+            meta->replace(old_expression, new_expression);
+        }
+    }
+}
 
 nlohmann::json CallNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const CallNode& node = static_cast<const CallNode&>(library_node);
@@ -82,6 +110,7 @@ nlohmann::json CallNodeSerializer::serialize(const data_flow::LibraryNode& libra
     j["callee_name"] = node.callee_name();
     j["outputs"] = node.outputs();
     j["inputs"] = node.inputs();
+    j["ptr_access_meta"] = PointerAccessMetaSerializer::serialize(node.pointer_access_meta());
 
     return j;
 }
@@ -106,8 +135,10 @@ data_flow::LibraryNode& CallNodeSerializer::deserialize(
     std::string callee_name = j["callee_name"].get<std::string>();
     auto outputs = j["outputs"].get<std::vector<std::string>>();
     auto inputs = j["inputs"].get<std::vector<std::string>>();
+    auto ptr_access_meta = PointerAccessMetaSerializer::deserialize_list(j.find("ptr_access_meta"), j);
 
-    return builder.add_library_node<CallNode>(parent, debug_info, callee_name, outputs, inputs);
+    return builder
+        .add_library_node<CallNode>(parent, debug_info, callee_name, outputs, inputs, std::move(ptr_access_meta));
 }
 
 CallNodeDispatcher::CallNodeDispatcher(
@@ -118,51 +149,36 @@ CallNodeDispatcher::CallNodeDispatcher(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void CallNodeDispatcher::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void CallNodeDispatcher::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
     auto& node = static_cast<const CallNode&>(node_);
 
+    codegen::DispatchOutput* output = nullptr;
     if (!node.is_void(function_)) {
-        stream << node.outputs().at(0) << " = ";
+        output = &outputs.at(0);
+        pre_allocate_output(out, *output, node.output(0));
+        out.stream << *output->local_name << " = ";
     }
     if (node.is_indirect_call(function_)) {
-        auto& graph = node.get_parent();
-
-        // Collect return memlet
-        const data_flow::Memlet* ret_memlet = nullptr;
-        for (auto& oedge : graph.out_edges(node)) {
-            if (oedge.src_conn() == "_ret") {
-                ret_memlet = &oedge;
-                break;
-            }
-        }
-
-        // Collect input memlets
-        std::unordered_map<std::string, const data_flow::Memlet*> input_memlets;
-        for (auto& iedge : graph.in_edges(node)) {
-            input_memlets[iedge.dst_conn()] = &iedge;
-        }
-
         // Cast callee to function pointer type
         std::string func_ptr_type;
 
         // Return type
-        if (ret_memlet) {
-            auto ret_type = ret_memlet->result_type(function_);
-            func_ptr_type = language_extension_.declaration("", *ret_type) + " (*)";
+        if (output) {
+            func_ptr_type = language_extension_.declaration("", *output->out_type) + " (*)";
         } else {
             func_ptr_type = "void (*)";
         }
 
         // Parameters
         func_ptr_type += "(";
-        for (size_t i = 0; i < node.inputs().size(); i++) {
-            auto memlet_in = input_memlets.find(node.inputs().at(i));
-            assert(memlet_in != input_memlets.end());
-            auto in_type = memlet_in->second->result_type(function_);
+        for (size_t i = 0; i < inputs.size(); i++) {
+            auto& input = inputs.at(i);
+
+            auto in_type = input.edge.result_type(function_);
             func_ptr_type += language_extension_.declaration("", *in_type);
             if (i < node.inputs().size() - 1) {
                 func_ptr_type += ", ";
@@ -171,21 +187,21 @@ void CallNodeDispatcher::dispatch_code(
         func_ptr_type += ")";
 
         if (this->language_extension_.language() == "C") {
-            stream << "((" << func_ptr_type << ") " << node.callee_name() << ")" << "(";
+            out.stream << "((" << func_ptr_type << ") " << node.callee_name() << ")" << "(";
         } else if (this->language_extension_.language() == "C++") {
-            stream << "reinterpret_cast<" << func_ptr_type << ">(" << node.callee_name() << ")" << "(";
+            out.stream << "reinterpret_cast<" << func_ptr_type << ">(" << node.callee_name() << ")" << "(";
         }
     } else {
-        stream << this->language_extension_.external_prefix() << node.callee_name() << "(";
+        out.stream << this->language_extension_.external_prefix() << node.callee_name() << "(";
     }
-    for (size_t i = 0; i < node.inputs().size(); ++i) {
-        stream << node.inputs().at(i);
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        out.stream << inputs.at(i).expr;
         if (i < node.inputs().size() - 1) {
-            stream << ", ";
+            out.stream << ", ";
         }
     }
-    stream << ")" << ";";
-    stream << std::endl;
+    out.stream << ")" << ";";
+    out.stream << std::endl;
 }
 
 } // namespace data_flow

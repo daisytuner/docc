@@ -185,6 +185,8 @@ public:
      */
     virtual PointerAccessType pointer_access_type(int input_idx) const { return nullptr; }
 
+    PointerAccessType pointer_access_type(const Memlet& edge) const;
+
     EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const override;
 
     EdgeRemoveOption can_remove_in_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const override;

@@ -121,6 +121,8 @@ public:
 
     static std::string expression(const symbolic::Expression expr);
 
+    symbolic::Expression json_to_expr(const nlohmann::json& j);
+
     static void writeToFile(const StructuredSDFG& sdfg, const std::filesystem::path& file);
 };
 

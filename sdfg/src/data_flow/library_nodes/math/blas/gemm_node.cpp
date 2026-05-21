@@ -403,22 +403,24 @@ symbolic::Expression GEMMNode::calc_matrix_access_range(
 
 data_flow::PointerAccessType GEMMNode::pointer_access_type(int input_idx) const {
     if (input_idx == 0) { // A: m x k
-        return std::make_unique<
-            data_flow::PointerReadOnly>(calc_matrix_access_range(m_, k_, lda_, trans_a_, layout_), true);
+        return data_flow::PointerAccessMeta::
+            create_read_only(calc_matrix_access_range(m_, k_, lda_, trans_a_, layout_), true);
     } else if (input_idx == 1) { // B: k x n
-        return std::make_unique<
-            data_flow::PointerReadOnly>(calc_matrix_access_range(k_, n_, ldb_, trans_b_, layout_), true);
+        return data_flow::PointerAccessMeta::
+            create_read_only(calc_matrix_access_range(k_, n_, ldb_, trans_b_, layout_), true);
     } else if (input_idx == 2) {
         // for beta == 0, there would no reads of C. But we currently have no mechanism to access const-prop knowledge
         // like tha
         if (symbolic::eq(ldc_, n_)) { // non-sparse access over the m x n range
-            return std::make_unique<data_flow::PointerFullWrite>(
-                calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_), true, false
-            );
-        } else { // sparse access. But with only Convex Pattern for now, we cannot represent which values are
-                 // full-overwritten and which are DC.
-            return std::make_unique<
-                data_flow::PointerUnknownAccess>(calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_));
+            return data_flow::PointerAccessMeta::
+                create_full_write_only(calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_), true);
+        } else {
+            // sparse access. But with only Convex Pattern for now, we cannot represent which values are
+            auto pattern =
+                data_flow::ConvexAccessPattern::create(calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_)
+                );
+            // full-overwritten and which are DC.
+            return data_flow::PointerAccessMeta::create_generic(pattern->ref(), std::move(pattern), true);
         }
     } else {
         return LibraryNode::pointer_access_type(input_idx);

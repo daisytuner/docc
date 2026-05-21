@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/element.h"
@@ -8,6 +9,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -78,8 +80,12 @@ TEST(RemoveRedundantTransfersPassTest, MultiMapTest) {
         symbolic::integer(0)
     );
 
+    dump_sdfg(builder.subject(), "0.init");
+
     passes::RemoveRedundantTransfersPass pass;
     EXPECT_TRUE(pass.run_pass(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.after");
 
     int d2h_count = 0;
     for (int i = 0; i < root.size(); i++) {
@@ -141,8 +147,12 @@ TEST(RemoveRedundantTransfersPassTest, MultiMapWithLatterUseTest) {
     auto& tasklet3 = builder.add_tasklet(block3, data_flow::TaskletCode::assign, "_out", {"_in"});
     auto& memlet_c3 = builder.add_computational_memlet(block3, C3, tasklet3, "_in", {symbolic::zero()});
 
+    dump_sdfg(builder.subject(), "0.init");
+
     passes::RemoveRedundantTransfersPass pass;
     EXPECT_TRUE(pass.run_pass(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.after");
 
     // Check that there is exactly two H2D and one D2H transfer for C
     int h2d_count = 0;

@@ -16,8 +16,8 @@ MemcpyNode::MemcpyNode(
           vertex,
           parent,
           LibraryNodeType_Memcpy,
-          {"_dst"},
-          {"_src"},
+          {},
+          {"_dst", "_src"},
           true,
           data_flow::ImplementationType_NONE
       ),
@@ -36,6 +36,18 @@ std::unique_ptr<data_flow::DataFlowNode> MemcpyNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::make_unique<MemcpyNode>(element_id, debug_info_, vertex, parent, count_);
 }
+
+data_flow::PointerAccessType MemcpyNode::pointer_access_type(int input_idx) const {
+    if (input_idx == 0) {
+        return data_flow::PointerAccessMeta::create_full_write_only(count_, true);
+    } else if (input_idx == 1) {
+        return data_flow::PointerAccessMeta::create_read_only(count_, true);
+    } else {
+        return StdlibNode::pointer_access_type(input_idx);
+    }
+}
+
+std::string MemcpyNode::toStr() const { return StdlibNode::toStr() + "(n: " + count_->__str__() + ")"; }
 
 void MemcpyNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     this->count_ = symbolic::subs(this->count_, old_expression, new_expression);
@@ -83,16 +95,16 @@ MemcpyNodeDispatcher::MemcpyNodeDispatcher(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void MemcpyNodeDispatcher::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void MemcpyNodeDispatcher::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
     auto& node = static_cast<const MemcpyNode&>(node_);
 
-    stream << language_extension_.external_prefix() << "memcpy(" << node.outputs().at(0) << ", " << node.inputs().at(0)
-           << ", " << language_extension_.expression(node.count()) << ")" << ";";
-    stream << std::endl;
+    out.stream << language_extension_.external_prefix() << "memcpy(" << inputs.at(0).expr << ", " << inputs.at(1).expr
+               << ", " << language_extension_.expression(node.count()) << ")" << ";";
+    out.stream << std::endl;
 }
 
 } // namespace stdlib

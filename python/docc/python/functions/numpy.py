@@ -2752,7 +2752,7 @@ class NumPyHandler:
             t_memset = self.builder.add_memset(block2, "0", total_size)
             t_ptr2 = self.builder.add_access(block2, tmp_name)
             self.builder.add_memlet(
-                block2, t_memset, "_ptr", t_ptr2, "void", "", ptr_type
+                block2, t_ptr2, "void", t_memset, "_ptr", "", ptr_type
             )
         elif ones_init:
             loop_var = f"_i_{self._get_unique_id()}"
