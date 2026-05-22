@@ -336,7 +336,9 @@ std::string resolve_input_edge_to_expression(
         );
     }
     std::string expr;
-    if (iedge.base_type().type_id() == types::TypeID::Pointer) {
+    if (dynamic_cast<const data_flow::ConstantNode*>(&src)) {
+        expr = src_name;
+    } else if (iedge.base_type().type_id() == types::TypeID::Pointer) {
         expr = "(" + language_extension.type_cast(src_name, iedge.base_type()) + ")";
     } else {
         expr = src_name;

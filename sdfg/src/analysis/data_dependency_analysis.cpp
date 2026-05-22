@@ -112,7 +112,8 @@ void DataDependencyAnalysis::visit_block(
                                     break;
                                 } else {
                                     if (access->may_contain_reads()) {
-                                        // let handle as a normal read
+                                        // TODO let handle as a normal read
+                                        use = Use::VIEW;
                                     } else if (access->may_contain_writes()) {
                                         // handle as a normal write
                                         use = Use::WRITE;
@@ -123,6 +124,10 @@ void DataDependencyAnalysis::visit_block(
                                 use = Use::VIEW;
                                 break;
                             }
+                        } else if (oedge.type() == data_flow::MemletType::Reference ||
+                                   oedge.type() == data_flow::MemletType::Dereference_Dst) {
+                            use = Use::VIEW;
+                            break;
                         }
                     }
 

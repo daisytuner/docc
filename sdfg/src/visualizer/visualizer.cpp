@@ -155,10 +155,11 @@ void Visualizer::
     if (auto structure_type = dynamic_cast<const types::Structure*>(type)) {
         types::StructureDefinition const& definition = function.structure(structure_type->name());
 
-        auto memberIdx = SymEngine::rcp_dynamic_cast<const SymEngine::Integer>(sub.at(subIdx));
-        if (!memberIdx.is_null()) {
+        auto& memberIdx = sub.at(subIdx);
+        if (!memberIdx.is_null() && SymEngine::is_a<SymEngine::Integer>(*memberIdx)) {
             this->stream_ << ".member_" << this->expression(memberIdx->__str__());
-            auto& member_type = definition.member_type(memberIdx);
+            auto& member_type = definition.member_type(SymEngine::rcp_dynamic_cast<const SymEngine::Integer>(memberIdx)
+            );
             this->visualizeSubset(function, sub, &member_type, subIdx + 1);
         } else {
             this->stream_ << ".member[" << subsetRangeString(sub, subIdx) << "]";
