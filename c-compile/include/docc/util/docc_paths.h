@@ -24,7 +24,8 @@ public:
         None, // dont know
         CMake, // from source in git folder structure
         Pip, // installed as a python package
-        GlobalDist // expect all relevant parts to be installed in globally available and searched paths
+        GlobalDist, // expect all relevant parts to be installed in globally available and searched paths
+        Dist // within a specific folder, we have lib, include etc. subdirs. Classic docc package
     };
 
 private:
@@ -40,6 +41,7 @@ public:
     DoccRootMode root_mode() const { return root_mode_; }
 
     static std::unique_ptr<DefaultDoccPaths> from_lib_location(std::optional<std::filesystem::path> lib_location);
+    static std::unique_ptr<DefaultDoccPaths> from_root(const std::string_view& root);
 
     std::vector<std::filesystem::path> get_default_include_paths() const override;
     std::vector<std::filesystem::path> get_default_library_paths() const override;

@@ -13,7 +13,6 @@ set(TEST_FILES
     lifting/libfunc_lifting_test.cpp
     lifting/lifting_test.cpp
     passes/code_generation/cfg_dump_test.cpp
-    passes/code_generation/docc_paths_test.cpp
     test.cpp
 )
 

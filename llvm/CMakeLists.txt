@@ -177,7 +177,7 @@ endif()
 
 add_subdirectory(driver)
 
-option(LLVM_BUILD_TESTS "Build tests" OFF)
+option(LLVM_BUILD_TESTS "Build tests" ON)
 if(LLVM_BUILD_TESTS)
     add_subdirectory(tests)
 endif()

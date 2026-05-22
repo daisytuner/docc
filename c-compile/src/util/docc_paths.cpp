@@ -75,8 +75,43 @@ std::unique_ptr<DefaultDoccPaths> DefaultDoccPaths::from_lib_location(std::optio
     return std::make_unique<DefaultDoccPaths>("", "", DoccRootMode::None);
 }
 
+std::unique_ptr<DefaultDoccPaths> DefaultDoccPaths::from_root(const std::string_view& root) {
+    std::string_view stripped_root = root;
+    if (stripped_root.size() >= 2) {
+        if ((stripped_root.starts_with('"') && stripped_root.ends_with('"')) ||
+            (stripped_root.starts_with('\'') && stripped_root.ends_with('\''))) {
+            stripped_root = stripped_root.substr(1, stripped_root.size() - 2);
+        }
+    }
+
+    auto idx = stripped_root.find(':');
+    if (idx > 0) {
+        auto type = stripped_root.substr(0, idx);
+        std::filesystem::path path = stripped_root.substr(idx + 1);
+        if (type == "CMake") {
+            auto bin_idx = stripped_root.find(':', idx + 1);
+            if (bin_idx < 0) {
+                throw std::runtime_error("Invalid DOCC Root. Expecting CMake to have CMake:src:bin paths");
+            }
+            std::filesystem::path bin_path = stripped_root.substr(idx + 1, bin_idx - idx - 1);
+            std::filesystem::path src_path = stripped_root.substr(bin_idx + 1);
+            return std::make_unique<DefaultDoccPaths>(bin_path, src_path, DoccRootMode::CMake);
+        } else if (type == "Dist") {
+            return std::make_unique<DefaultDoccPaths>(path / "bin", path, DoccRootMode::Dist);
+        } else {
+            DEBUG_PRINTLN("DOCC Root undefined. Expecting resources on paths");
+            return std::make_unique<DefaultDoccPaths>("", "", DoccRootMode::None);
+        }
+    } else {
+        DEBUG_PRINTLN("Invalid DOCC Root. Expecting resources on paths");
+        return std::make_unique<DefaultDoccPaths>("", "", DoccRootMode::None);
+    }
+}
+
 std::vector<std::filesystem::path> DefaultDoccPaths::get_default_include_paths() const {
     switch (root_mode_) {
+        case DoccRootMode::Dist:
+            return {src_root_ / "include"};
         case DoccRootMode::Pip:
             return {bin_root_ / "include"};
         case DoccRootMode::CMake: // src root must point to the root of docc.git
@@ -90,6 +125,8 @@ std::vector<std::filesystem::path> DefaultDoccPaths::get_default_include_paths()
 
 std::vector<std::filesystem::path> DefaultDoccPaths::get_default_library_paths() const {
     switch (root_mode_) {
+        case DoccRootMode::Dist:
+            return {src_root_ / "lib"};
         case DoccRootMode::Pip:
             return {bin_root_ / "lib"};
         case DoccRootMode::CMake: // bin root must point to the cmake build dir of docc
@@ -114,6 +151,8 @@ std::optional<std::filesystem::path> DefaultDoccPaths::get_builtin_target_plugin
 std::optional<std::filesystem::path> DefaultDoccPaths::get_builtin_target_plugin_rt_lib_path(const std::string& plugin
 ) const {
     switch (root_mode_) {
+        case DoccRootMode::Dist:
+            return src_root_ / "include";
         case DoccRootMode::Pip:
             return bin_root_ / "lib";
         case DoccRootMode::CMake:
@@ -128,6 +167,8 @@ std::optional<std::filesystem::path> DefaultDoccPaths::get_builtin_target_plugin
 std::optional<std::filesystem::path> DefaultDoccPaths::get_builtin_target_plugin_rt_include_path(const std::string&
                                                                                                      plugin) const {
     switch (root_mode_) {
+        case DoccRootMode::Dist:
+            return src_root_ / "lib";
         case DoccRootMode::Pip:
             return bin_root_ / "lib";
         case DoccRootMode::CMake:
@@ -142,6 +183,8 @@ std::optional<std::filesystem::path> DefaultDoccPaths::get_builtin_target_plugin
 std::optional<std::filesystem::path> DefaultDoccPaths::
     get_builtin_target_plugin_rt_libexec_src_path(const std::string& plugin, const std::string& rt_name) const {
     switch (root_mode_) {
+        case DoccRootMode::Dist:
+            return src_root_ / "libexec" / "docc" / plugin / rt_name;
         case DoccRootMode::Pip:
             return bin_root_ / "libexec" / "docc" / plugin / rt_name;
         case DoccRootMode::CMake:
