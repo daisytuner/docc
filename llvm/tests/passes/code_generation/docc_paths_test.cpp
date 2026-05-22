@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "docc/docc_paths.h"
+#include "docc/docc_llvm_paths.h"
 
 using namespace docc;
 
