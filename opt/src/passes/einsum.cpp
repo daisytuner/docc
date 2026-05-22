@@ -3,15 +3,15 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_node.h"
-#include "sdfg/einsum/einsum.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/helpers/helpers.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/transformations/einsum2dot.h"
 #include "sdfg/transformations/einsum2gemm.h"
-#include "sdfg/transformations/einsum_promotion.h"
 #include "sdfg/transformations/einsum_extend.h"
 #include "sdfg/transformations/einsum_lift.h"
+#include "sdfg/transformations/einsum_promotion.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
 
 namespace sdfg {
@@ -45,7 +45,7 @@ bool EinsumDetectionPass::run_pass(builder::StructuredSDFGBuilder& builder, anal
     // Try lifting all available tasklets to einsum nodes and capture them
     bool applied = false;
     std::list<structured_control_flow::Block*> block_queue(block_finder.blocks());
-    std::unordered_set<einsum::EinsumNode*> einsum_nodes;
+    std::unordered_set<math::tensor::EinsumNode*> einsum_nodes;
     while (!block_queue.empty()) {
         structured_control_flow::Block* block = block_queue.front();
         block_queue.pop_front();
@@ -53,7 +53,7 @@ bool EinsumDetectionPass::run_pass(builder::StructuredSDFGBuilder& builder, anal
         // Find already existing einsum nodes
         auto libnodes = block->dataflow().library_nodes();
         for (auto* libnode : libnodes) {
-            if (auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode)) {
+            if (auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(libnode)) {
                 einsum_nodes.insert(einsum_node);
             }
         }
@@ -75,9 +75,9 @@ bool EinsumDetectionPass::run_pass(builder::StructuredSDFGBuilder& builder, anal
     }
 
     // Try extending all captured einsum nodes as much as possible
-    std::list<einsum::EinsumNode*> einsum_queue(einsum_nodes.begin(), einsum_nodes.end());
+    std::list<math::tensor::EinsumNode*> einsum_queue(einsum_nodes.begin(), einsum_nodes.end());
     while (!einsum_queue.empty()) {
-        einsum::EinsumNode* einsum_node = einsum_queue.front();
+        math::tensor::EinsumNode* einsum_node = einsum_queue.front();
         einsum_queue.pop_front();
 
         // Extend einsum node as far as possible
@@ -97,7 +97,7 @@ bool EinsumDetectionPass::run_pass(builder::StructuredSDFGBuilder& builder, anal
 
     einsum_queue.insert(einsum_queue.end(), einsum_nodes.begin(), einsum_nodes.end());
     while (!einsum_queue.empty()) {
-        einsum::EinsumNode* einsum_node = einsum_queue.front();
+        math::tensor::EinsumNode* einsum_node = einsum_queue.front();
         einsum_queue.pop_front();
 
         transformations::EinsumPromotion transformation(*einsum_node);
@@ -125,7 +125,7 @@ bool EinsumConversion::accept(structured_control_flow::Block& block) {
     bool applied = false;
 
     for (auto* libnode : block.dataflow().library_nodes()) {
-        if (auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode)) {
+        if (auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(libnode)) {
             transformations::Einsum2Dot dot_transformation(*einsum_node);
             if (report_) {
                 dot_transformation.set_report(report_);
@@ -160,7 +160,7 @@ EinsumLower::EinsumLower(builder::StructuredSDFGBuilder& builder, analysis::Anal
 
 bool EinsumLower::accept(structured_control_flow::Block& block) {
     for (auto* libnode : block.dataflow().library_nodes()) {
-        if (auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode)) {
+        if (auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(libnode)) {
             if (einsum_node->expand(this->builder_, this->analysis_manager_)) {
                 DEBUG_PRINTLN("Applied EinsumLower");
                 return true;

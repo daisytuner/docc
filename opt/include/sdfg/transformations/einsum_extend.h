@@ -5,7 +5,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/einsum/einsum.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/transformations/transformation.h"
 
 namespace sdfg {
@@ -13,11 +13,11 @@ namespace transformations {
 
 class EinsumExtend : public Transformation {
 private:
-    einsum::EinsumNode& einsum_node_;
-    einsum::EinsumNode* new_einsum_node_;
+    math::tensor::EinsumNode& einsum_node_;
+    math::tensor::EinsumNode* new_einsum_node_;
 
 public:
-    EinsumExtend(einsum::EinsumNode& einsum_node);
+    EinsumExtend(math::tensor::EinsumNode& einsum_node);
 
     virtual std::string name() const override;
 
@@ -26,7 +26,7 @@ public:
 
     virtual void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
-    einsum::EinsumNode* new_einsum_node();
+    math::tensor::EinsumNode* new_einsum_node();
 
     virtual void to_json(nlohmann::json& j) const override;
 

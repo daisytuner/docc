@@ -10,9 +10,9 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/data_flow_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
-#include "sdfg/einsum/einsum.h"
 #include "sdfg/element.h"
 #include "sdfg/function.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -71,16 +71,16 @@ TEST(EinsumPromotionTest, Simple) {
     auto& a_out = builder.add_access(block, "a");
     auto& b_in = builder.add_access(block, "b");
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block, DebugInfo(), {"_in"}, {}, {i}, {{i}});
     builder.add_computational_memlet(block, a_in, libnode, "__einsum_out", {}, desc);
     builder.add_computational_memlet(block, b_in, libnode, "_in", {}, desc);
     builder.add_computational_memlet(block, libnode, "__einsum_out", a_out, {}, desc);
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
@@ -99,7 +99,7 @@ TEST(EinsumPromotionTest, Simple) {
     ASSERT_GE(dfg.library_nodes().size(), 1);
 
     auto* new_libnode = *dfg.library_nodes().begin();
-    auto* new_einsum_node = dynamic_cast<einsum::EinsumNode*>(new_libnode);
+    auto* new_einsum_node = dynamic_cast<math::tensor::EinsumNode*>(new_libnode);
     ASSERT_TRUE(new_einsum_node);
     EXPECT_EQ(new_einsum_node->outputs(), std::vector<std::string>({"__einsum_out"}));
     EXPECT_EQ(new_einsum_node->inputs(), std::vector<std::string>({"_in", "__einsum_out"}));
@@ -153,16 +153,16 @@ TEST(EinsumPromotionTest, Multiple) {
     auto& a_out = builder.add_access(block, "a");
     auto& b_in = builder.add_access(block, "b");
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block, DebugInfo(), {"_in"}, {}, {i, j}, {{i, j}});
     builder.add_computational_memlet(block, a_in, libnode, "__einsum_out", {}, desc);
     builder.add_computational_memlet(block, b_in, libnode, "_in", {}, desc);
     builder.add_computational_memlet(block, libnode, "__einsum_out", a_out, {}, desc);
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation1(einsum_node);
     ASSERT_TRUE(transformation1.can_be_applied(builder, analysis_manager));
@@ -181,7 +181,7 @@ TEST(EinsumPromotionTest, Multiple) {
     ASSERT_GE(intermediate_dfg.library_nodes().size(), 1);
 
     auto* intermediate_libnode = *intermediate_dfg.library_nodes().begin();
-    auto* intermediate_einsum_node = dynamic_cast<einsum::EinsumNode*>(intermediate_libnode);
+    auto* intermediate_einsum_node = dynamic_cast<math::tensor::EinsumNode*>(intermediate_libnode);
     ASSERT_TRUE(intermediate_einsum_node);
 
     transformations::EinsumPromotion transformation2(*intermediate_einsum_node);
@@ -201,7 +201,7 @@ TEST(EinsumPromotionTest, Multiple) {
     ASSERT_GE(dfg.library_nodes().size(), 1);
 
     auto* new_libnode = *dfg.library_nodes().begin();
-    auto* new_einsum_node = dynamic_cast<einsum::EinsumNode*>(new_libnode);
+    auto* new_einsum_node = dynamic_cast<math::tensor::EinsumNode*>(new_libnode);
     ASSERT_TRUE(new_einsum_node);
     EXPECT_EQ(new_einsum_node->outputs(), std::vector<std::string>({"__einsum_out"}));
     EXPECT_EQ(new_einsum_node->inputs(), std::vector<std::string>({"_in", "__einsum_out"}));
@@ -255,16 +255,16 @@ TEST(EinsumPromotionTest, DataFlowBefore) {
     builder.add_computational_memlet(block, c_in, tasklet, "_in", {i});
     builder.add_computational_memlet(block, tasklet, "_out", b, {i});
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block, DebugInfo(), {"_in"}, {}, {i}, {{i}});
     builder.add_computational_memlet(block, a_in, libnode, "__einsum_out", {}, desc);
     builder.add_computational_memlet(block, b, libnode, "_in", {}, desc);
     builder.add_computational_memlet(block, libnode, "__einsum_out", a_out, {}, desc);
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -295,9 +295,9 @@ TEST(EinsumPromotionTest, DataFlowAfter) {
     auto& b_in = builder.add_access(block, "b");
     auto& c_out = builder.add_access(block, "b");
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block, DebugInfo(), {"_in"}, {}, {i}, {{i}});
     builder.add_computational_memlet(block, a_in, libnode, "__einsum_out", {}, desc);
@@ -307,7 +307,7 @@ TEST(EinsumPromotionTest, DataFlowAfter) {
     builder.add_computational_memlet(block, a, tasklet, "_in", {i});
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {i});
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -344,16 +344,16 @@ TEST(EinsumPromotionTest, ControlFlowBefore) {
     auto& a_out = builder.add_access(block2, "a");
     auto& b_in = builder.add_access(block2, "b");
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block2, DebugInfo(), {"_in"}, {}, {i}, {{i}});
     builder.add_computational_memlet(block2, a_in, libnode, "__einsum_out", {}, desc);
     builder.add_computational_memlet(block2, b_in, libnode, "_in", {}, desc);
     builder.add_computational_memlet(block2, libnode, "__einsum_out", a_out, {}, desc);
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -383,9 +383,9 @@ TEST(EinsumPromotionTest, ControlFlowAfter) {
     auto& a_out = builder.add_access(block1, "a");
     auto& b_in = builder.add_access(block1, "b");
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block1, DebugInfo(), {"_in"}, {}, {i}, {{i}});
     builder.add_computational_memlet(block1, a_in, libnode, "__einsum_out", {}, desc);
@@ -399,7 +399,7 @@ TEST(EinsumPromotionTest, ControlFlowAfter) {
     builder.add_computational_memlet(block2, a_in2, tasklet, "_in", {i});
     builder.add_computational_memlet(block2, tasklet, "_out", c_out, {i});
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -428,16 +428,16 @@ TEST(EinsumPromotionTest, InsufficientLoop) {
     auto& a_out = builder.add_access(block, "a");
     auto& b_in = builder.add_access(block, "b");
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block, DebugInfo(), {"_in"}, {}, {i}, {{i}});
     builder.add_computational_memlet(block, a_in, libnode, "__einsum_out", {}, desc);
     builder.add_computational_memlet(block, b_in, libnode, "_in", {}, desc);
     builder.add_computational_memlet(block, libnode, "__einsum_out", a_out, {}, desc);
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -465,16 +465,16 @@ TEST(EinsumPromotionTest, LoopCarriedDependency) {
     auto& a_in = builder.add_access(block, "a");
     auto& a_out = builder.add_access(block, "a");
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block, DebugInfo(), {"_in"}, {}, {i}, {{symbolic::symbol("j")}});
     builder.add_computational_memlet(block, a_in, libnode, "__einsum_out", {}, desc);
     builder.add_computational_memlet(block, a_in, libnode, "_in", {}, desc);
     builder.add_computational_memlet(block, libnode, "__einsum_out", a_out, {}, desc);
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -508,16 +508,16 @@ TEST(EinsumPromotionTest, LocalWriteBefore) {
     builder.add_computational_memlet(block, c_in, tasklet, "_in", {i});
     builder.add_computational_memlet(block, tasklet, "_out", b, {});
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block, DebugInfo(), {"_in"}, {}, {i}, {{}});
     builder.add_computational_memlet(block, a_in, libnode, "__einsum_out", {}, desc);
     builder.add_computational_memlet(block, b, libnode, "_in", {}, desc);
     builder.add_computational_memlet(block, libnode, "__einsum_out", a_out, {}, desc);
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -548,9 +548,9 @@ TEST(EinsumPromotionTest, LocalReadAfter) {
     auto& b_in = builder.add_access(block, "b");
     auto& c_out = builder.add_access(block, "b");
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block, DebugInfo(), {"_in"}, {}, {}, {{i}});
     builder.add_computational_memlet(block, a_in, libnode, "__einsum_out", {}, desc);
@@ -560,7 +560,7 @@ TEST(EinsumPromotionTest, LocalReadAfter) {
     builder.add_computational_memlet(block, a, tasklet, "_in", {});
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {i});
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -602,16 +602,16 @@ TEST(EinsumPromotionTest, LocalSymbols) {
     builder.add_computational_memlet(block, constant_five, tasklet, "_in2", {});
     builder.add_computational_memlet(block, tasklet, "_out", n_out, {});
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(block, DebugInfo(), {"_in"}, {{j, zero, n}}, {i}, {{i}});
     builder.add_computational_memlet(block, a_in, libnode, "__einsum_out", {}, desc);
     builder.add_computational_memlet(block, b_in, libnode, "_in", {}, desc);
     builder.add_computational_memlet(block, libnode, "__einsum_out", a_out, {}, desc);
 
-    auto& einsum_node = static_cast<einsum::EinsumNode&>(libnode);
+    auto& einsum_node = static_cast<math::tensor::EinsumNode&>(libnode);
     analysis::AnalysisManager analysis_manager(sdfg);
     transformations::EinsumPromotion transformation(einsum_node);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));

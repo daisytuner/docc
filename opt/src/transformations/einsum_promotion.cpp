@@ -13,9 +13,9 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/code_node.h"
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
-#include "sdfg/einsum/einsum.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/for.h"
@@ -83,7 +83,8 @@ bool EinsumPromotion::subset_contains_symbol(const data_flow::Subset& subset, co
     return false;
 }
 
-EinsumPromotion::EinsumPromotion(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node), new_einsum_node_(nullptr) {}
+EinsumPromotion::EinsumPromotion(math::tensor::EinsumNode& einsum_node)
+    : einsum_node_(einsum_node), new_einsum_node_(nullptr) {}
 
 std::string EinsumPromotion::name() const { return "EinsumPromotion"; }
 
@@ -243,7 +244,7 @@ void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     }
 
     // Add the expanded einsum node to the new block after the loop
-    std::vector<einsum::EinsumDimension> new_dims;
+    std::vector<math::tensor::EinsumDimension> new_dims;
     new_dims.push_back({.indvar = indvar, .init = init, .bound = bound});
     for (size_t i = 0; i < this->einsum_node_.dims().size(); i++) {
         new_dims.push_back(this->einsum_node_.dim(i));
@@ -252,9 +253,9 @@ void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     std::vector<data_flow::Subset>
         new_in_indices(this->einsum_node_.in_indices().begin(), this->einsum_node_.in_indices().end() - 1);
     auto& new_libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&,
         bool>(
@@ -266,7 +267,7 @@ void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         new_in_indices,
         false // skip renaming - indvars are already internal symbols
     );
-    this->new_einsum_node_ = static_cast<einsum::EinsumNode*>(&new_libnode);
+    this->new_einsum_node_ = static_cast<math::tensor::EinsumNode*>(&new_libnode);
 
     // Create the memlets in the new block after the loops
     for (auto& oedge : dfg.out_edges(this->einsum_node_)) {
@@ -309,7 +310,7 @@ void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     analysis_manager.invalidate_all();
 }
 
-einsum::EinsumNode* EinsumPromotion::new_einsum_node() { return this->new_einsum_node_; }
+math::tensor::EinsumNode* EinsumPromotion::new_einsum_node() { return this->new_einsum_node_; }
 
 void EinsumPromotion::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
@@ -326,7 +327,7 @@ EinsumPromotion EinsumPromotion::from_json(builder::StructuredSDFGBuilder& build
             "Element with ID " + std::to_string(einsum_node_id) + " not found"
         );
     }
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(einsum_node_element);
+    auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(einsum_node_element);
     if (!einsum_node) {
         throw InvalidTransformationDescriptionException(
             "Element with ID " + std::to_string(einsum_node_id) + " is not an EinsumNode"

@@ -6,7 +6,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_node.h"
-#include "sdfg/einsum/einsum.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/transformations/transformation.h"
 
@@ -15,12 +15,12 @@ namespace transformations {
 
 class Einsum2Gemm : public Transformation {
 private:
-    einsum::EinsumNode& einsum_node_;
+    math::tensor::EinsumNode& einsum_node_;
 
     bool check_matrix_indices(long long mat, const symbolic::Symbol& indvar1, const symbolic::Symbol& indvar2);
 
 public:
-    Einsum2Gemm(einsum::EinsumNode& einsum_node);
+    Einsum2Gemm(math::tensor::EinsumNode& einsum_node);
 
     virtual std::string name() const override;
 

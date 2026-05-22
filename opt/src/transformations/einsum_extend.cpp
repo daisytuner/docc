@@ -12,9 +12,9 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/data_flow_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
-#include "sdfg/einsum/einsum.h"
 #include "sdfg/element.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/transformations/transformation.h"
@@ -23,7 +23,8 @@
 namespace sdfg {
 namespace transformations {
 
-EinsumExtend::EinsumExtend(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node), new_einsum_node_(nullptr) {}
+EinsumExtend::EinsumExtend(math::tensor::EinsumNode& einsum_node)
+    : einsum_node_(einsum_node), new_einsum_node_(nullptr) {}
 
 std::string EinsumExtend::name() const { return "EinsumExtend"; }
 
@@ -158,13 +159,13 @@ void EinsumExtend::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
 
     // Create new einsum node
     auto& new_libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<
             data_flow::Subset>&>(*block, new_deb_info, inputs, {}, this->einsum_node_.out_indices(), in_indices);
-    this->new_einsum_node_ = static_cast<einsum::EinsumNode*>(&new_libnode);
+    this->new_einsum_node_ = static_cast<math::tensor::EinsumNode*>(&new_libnode);
 
     // Construct in edges
     for (auto& conn : this->new_einsum_node_->inputs()) {
@@ -202,7 +203,7 @@ void EinsumExtend::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
     analysis_manager.invalidate_all();
 }
 
-einsum::EinsumNode* EinsumExtend::new_einsum_node() { return this->new_einsum_node_; }
+math::tensor::EinsumNode* EinsumExtend::new_einsum_node() { return this->new_einsum_node_; }
 
 void EinsumExtend::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
@@ -219,7 +220,7 @@ EinsumExtend EinsumExtend::from_json(builder::StructuredSDFGBuilder& builder, co
             "Element with ID " + std::to_string(einsum_node_id) + " not found"
         );
     }
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(einsum_node_element);
+    auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(einsum_node_element);
     if (!einsum_node) {
         throw InvalidTransformationDescriptionException(
             "Element with ID " + std::to_string(einsum_node_id) + " is not an EinsumNode"

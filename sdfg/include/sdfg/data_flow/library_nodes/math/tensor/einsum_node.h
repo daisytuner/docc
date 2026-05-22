@@ -21,7 +21,8 @@
 #include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
-namespace einsum {
+namespace math {
+namespace tensor {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_Einsum("Einsum");
 
@@ -103,5 +104,6 @@ public:
     ) override;
 };
 
-} // namespace einsum
+} // namespace tensor
+} // namespace math
 } // namespace sdfg

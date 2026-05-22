@@ -6,8 +6,8 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/data_flow/tasklet.h"
-#include "sdfg/einsum/einsum.h"
 #include "sdfg/function.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/pointer.h"
@@ -70,7 +70,7 @@ TEST(EinsumLiftTest, Simple_fp_add) {
     EXPECT_EQ(dfg.library_nodes().size(), 1);
 
     auto* libnode = *dfg.library_nodes().begin();
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(libnode);
     ASSERT_TRUE(einsum_node);
     EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"__einsum_out"}));
     EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in2", "__einsum_out"}));
@@ -131,7 +131,7 @@ TEST(EinsumLiftTest, Simple_fp_fma) {
     EXPECT_EQ(dfg.library_nodes().size(), 1);
 
     auto* libnode = *dfg.library_nodes().begin();
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(libnode);
     ASSERT_TRUE(einsum_node);
     EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"__einsum_out"}));
     EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in1", "_in2", "__einsum_out"}));
@@ -167,7 +167,7 @@ TEST(EinsumLiftTest, Simple_fp_sub) {
     EXPECT_EQ(dfg.library_nodes().size(), 1);
 
     auto* libnode = *dfg.library_nodes().begin();
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(libnode);
     ASSERT_TRUE(einsum_node);
     EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"__einsum_out"}));
     EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in2", "__einsum_const", "__einsum_out"}));
@@ -249,7 +249,7 @@ TEST(EinsumLiftTest, SameContainerDifferentSubset) {
     EXPECT_EQ(dfg.library_nodes().size(), 1);
 
     auto* libnode = *dfg.library_nodes().begin();
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(libnode);
     ASSERT_TRUE(einsum_node);
     EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"__einsum_out"}));
     EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in2", "__einsum_out"}));
@@ -284,7 +284,7 @@ TEST(EinsumLiftTest, SameContainerSameSubset) {
     EXPECT_EQ(dfg.library_nodes().size(), 1);
 
     auto* libnode = *dfg.library_nodes().begin();
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(libnode);
+    auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(libnode);
     ASSERT_TRUE(einsum_node);
     EXPECT_EQ(einsum_node->outputs(), std::vector<std::string>({"__einsum_out"}));
     EXPECT_EQ(einsum_node->inputs(), std::vector<std::string>({"_in2", "__einsum_out"}));

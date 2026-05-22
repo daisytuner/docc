@@ -18,7 +18,6 @@
 #include <sdfg/codegen/instrumentation/arg_capture_plan.h>
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
-#include <sdfg/einsum/einsum.h>
 #include <sdfg/passes/dataflow/constant_propagation.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>

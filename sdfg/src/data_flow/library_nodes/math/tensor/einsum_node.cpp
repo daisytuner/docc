@@ -1,4 +1,4 @@
-#include "sdfg/einsum/einsum.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 
 #include <cstddef>
 #include <memory>
@@ -35,7 +35,8 @@
 #include "symengine/symbol.h"
 
 namespace sdfg {
-namespace einsum {
+namespace math {
+namespace tensor {
 
 EinsumNode::EinsumNode(
     size_t element_id,
@@ -870,5 +871,6 @@ data_flow::LibraryNode& EinsumSerializer::deserialize(
     return einsum_node;
 }
 
-} // namespace einsum
+} // namespace tensor
+} // namespace math
 } // namespace sdfg

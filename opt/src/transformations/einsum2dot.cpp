@@ -10,7 +10,7 @@
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
-#include "sdfg/einsum/einsum.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/optimization_report/pass_report_consumer.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -22,7 +22,7 @@
 namespace sdfg {
 namespace transformations {
 
-Einsum2Dot::Einsum2Dot(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
+Einsum2Dot::Einsum2Dot(math::tensor::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
 
 std::string Einsum2Dot::name() const { return "Einsum2Dot"; }
 
@@ -180,7 +180,7 @@ Einsum2Dot Einsum2Dot::from_json(builder::StructuredSDFGBuilder& builder, const 
             "Element with ID " + std::to_string(einsum_node_id) + " not found"
         );
     }
-    auto* einsum_node = dynamic_cast<einsum::EinsumNode*>(einsum_node_element);
+    auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(einsum_node_element);
     if (!einsum_node) {
         throw InvalidTransformationDescriptionException(
             "Element with ID " + std::to_string(einsum_node_id) + " is not an EinsumNode"

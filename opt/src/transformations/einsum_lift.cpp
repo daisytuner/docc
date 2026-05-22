@@ -8,9 +8,9 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
-#include "sdfg/einsum/einsum.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/transformations/transformation.h"
 #include "sdfg/types/scalar.h"
@@ -148,9 +148,9 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
     // Create EinsumNode
     auto& libnode = builder.add_library_node<
-        einsum::EinsumNode,
+        math::tensor::EinsumNode,
         const std::vector<std::string>&,
-        const std::vector<einsum::EinsumDimension>&,
+        const std::vector<math::tensor::EinsumDimension>&,
         const data_flow::Subset&,
         const std::vector<data_flow::Subset>&>(*block, this->tasklet_.debug_info(), inputs, {}, out_indices, in_indices);
 
