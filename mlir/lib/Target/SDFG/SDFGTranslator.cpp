@@ -398,12 +398,15 @@ std::string SDFGTranslator::get_or_copy_output_container(Value output, const ::s
     if (!output.getDefiningOp() || !llvm::isa<tensor::EmptyOp>(output.getDefiningOp())) {
         auto& src_type = builder_.subject().type(output_container);
         auto& dst_type = builder_.subject().type(copy_container);
-        auto& block = builder_.add_block(this->insertion_point(), {}, deb_info);
-        auto& src_access = builder_.add_access(block, output_container, deb_info);
-        auto& dst_access = builder_.add_access(block, copy_container, deb_info);
-        auto& memcpy_node = builder_.add_library_node<::sdfg::stdlib::MemcpyNode>(block, deb_info, byte_count);
-        builder_.add_computational_memlet(block, src_access, memcpy_node, "_src", {}, src_type, deb_info);
-        builder_.add_computational_memlet(block, memcpy_node, "_dst", dst_access, {}, dst_type, deb_info);
+        ::sdfg::stdlib::add_memcpy_block(
+            builder_,
+            this->insertion_point(),
+            output_container,
+            copy_container,
+            byte_count,
+            src_type, // original had dst_type as well. but memcpy needs both same and we do not model read-only
+            deb_info
+        );
     }
 
     this->tensor_info_map_.insert({copy_container, tensor_info});

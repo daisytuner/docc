@@ -132,24 +132,24 @@ entry:
         EXPECT_NE(call_node, nullptr);
 
         EXPECT_EQ(state.dataflow().in_degree(*call_node), 2);
-        EXPECT_EQ(state.dataflow().out_degree(*call_node), 2);
+        EXPECT_EQ(state.dataflow().out_degree(*call_node), 1);
 
-        auto oedge1 = &(*state.dataflow().out_edges(*call_node).begin());
-        auto oedge2 = &(*++state.dataflow().out_edges(*call_node).begin());
-        if (oedge1->src_conn() != "_ret") {
-            std::swap(oedge1, oedge2);
-        }
-        EXPECT_EQ(oedge1->src_conn(), "_ret");
+        auto ret_edges = state.dataflow().out_edges_for_connector(*call_node, "_ret");
+        EXPECT_EQ(ret_edges.size(), 1);
+        auto ret_edge = ret_edges.at(0);
+        EXPECT_EQ(ret_edge->src_conn(), "_ret");
 
-        EXPECT_EQ(oedge1->src_conn(), "_ret");
-        EXPECT_EQ(oedge1->dst_conn(), "void");
-        EXPECT_EQ(oedge1->subset().size(), 0);
-        EXPECT_EQ(oedge1->base_type(), sdfg::types::Pointer());
+        auto* ptr_edge = state.dataflow().in_edge_for_connector(*call_node, "_arg1");
+        EXPECT_EQ(ptr_edge->src_conn(), "void");
+        EXPECT_EQ(ptr_edge->dst_conn(), "_arg1");
+        EXPECT_EQ(ptr_edge->subset().size(), 0);
+        EXPECT_EQ(ptr_edge->base_type(), sdfg::types::Pointer());
 
-        auto& dst = static_cast<const sdfg::data_flow::AccessNode&>(oedge1->dst());
+        auto& dst = static_cast<const sdfg::data_flow::AccessNode&>(ret_edge->dst());
         EXPECT_EQ(dst.data(), "_0");
 
-        EXPECT_EQ(oedge2->src_conn(), "_arg1");
+        auto& ptr_src = ptr_edge->src();
+        EXPECT_EQ(static_cast<const sdfg::data_flow::AccessNode&>(ptr_src).data(), "a");
     }
     EXPECT_TRUE(found_call);
 }
