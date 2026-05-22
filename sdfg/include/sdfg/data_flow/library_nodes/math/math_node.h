@@ -84,7 +84,8 @@ public:
         const data_flow::LibraryNodeCode& code,
         const std::vector<std::string>& outputs,
         const std::vector<std::string>& inputs,
-        const data_flow::ImplementationType& implementation_type
+        const data_flow::ImplementationType& implementation_type,
+        bool side_effects = false
     );
 
     /**

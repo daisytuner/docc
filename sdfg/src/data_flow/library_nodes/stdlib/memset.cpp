@@ -118,5 +118,37 @@ void MemsetNodeDispatcher::dispatch_code_with_edges(
     out.stream << std::endl;
 }
 
+MemsetNode& add_memset_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& dst_ptr,
+    const symbolic::Expression& value,
+    const symbolic::Expression& num,
+    const types::IType& ptr_type,
+    DebugInfo debug_info
+) {
+    auto& dst_ptr_access = builder.add_access(block, dst_ptr);
+    auto& libnode = builder.add_library_node<stdlib::MemsetNode>(block, debug_info, value, num);
+    builder.add_computational_memlet(block, dst_ptr_access, libnode, "_ptr", {}, ptr_type);
+
+    return static_cast<MemsetNode&>(libnode);
+}
+
+std::tuple<Block&, MemsetNode&> add_memset_block(
+    builder::StructuredSDFGBuilder& builder,
+    Sequence& parent,
+    const std::string& dst_ptr,
+    const symbolic::Expression& value,
+    const symbolic::Expression& num,
+    const types::IType& ptr_type,
+    DebugInfo debug_info
+) {
+    auto& block = builder.add_block(parent);
+
+    auto& libnode = add_memset_node(builder, block, dst_ptr, value, num, ptr_type, debug_info);
+
+    return {block, libnode};
+}
+
 } // namespace stdlib
 } // namespace sdfg

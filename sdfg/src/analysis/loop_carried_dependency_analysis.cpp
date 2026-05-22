@@ -320,9 +320,6 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
         // RAW: escaping_writes × upward_exposed_reads
         for (auto& write_entry : esc_defs) {
             auto* write = write_entry.first;
-            if (dda.is_undefined_user(*write)) {
-                pair_list.push_back(LoopCarriedDependencyPair{write, nullptr, LOOP_CARRIED_DEPENDENCY_UNDEFINED, {}});
-            }
             for (auto* read : ue_reads) {
                 if (write->container() != read->container()) {
                     continue;

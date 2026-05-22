@@ -69,5 +69,25 @@ public:
     ) override;
 };
 
+MemsetNode& add_memset_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& dst_ptr,
+    const symbolic::Expression& value,
+    const symbolic::Expression& num,
+    const types::IType& ptr_type,
+    DebugInfo debug_info = DebugInfo()
+);
+
+std::tuple<Block&, MemsetNode&> add_memset_block(
+    builder::StructuredSDFGBuilder& builder,
+    Sequence& parent,
+    const std::string& dst_ptr,
+    const symbolic::Expression& value,
+    const symbolic::Expression& num,
+    const types::IType& ptr_type,
+    DebugInfo debug_info = DebugInfo()
+);
+
 } // namespace stdlib
 } // namespace sdfg

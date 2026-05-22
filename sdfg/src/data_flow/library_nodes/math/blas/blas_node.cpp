@@ -13,7 +13,7 @@ BLASNode::BLASNode(
     const data_flow::ImplementationType& implementation_type,
     const BLAS_Precision& precision
 )
-    : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, implementation_type),
+    : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, implementation_type, true),
       precision_(precision) {}
 
 types::PrimitiveType BLASNode::scalar_primitive() const {

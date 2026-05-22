@@ -11,9 +11,10 @@ MathNode::MathNode(
     const data_flow::LibraryNodeCode& code,
     const std::vector<std::string>& outputs,
     const std::vector<std::string>& inputs,
-    const data_flow::ImplementationType& implementation_type
+    const data_flow::ImplementationType& implementation_type,
+    bool side_effects
 )
-    : LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs, false, implementation_type) {}
+    : LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs, side_effects, implementation_type) {}
 
 } // namespace math
 } // namespace sdfg

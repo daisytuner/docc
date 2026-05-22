@@ -228,14 +228,7 @@ TEST(BlockHoistingTest, Map_InvariantMemcpy) {
     auto& body = map_stmt.root();
 
     // Loop invariant memcpy
-    auto& block1 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block1, "C");
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemcpyNode>(block1, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block1, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block1, memcpy1] = stdlib::add_memcpy_block(builder, body, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Loop variant computation
     auto& block2 = builder.add_block(body);
@@ -250,14 +243,7 @@ TEST(BlockHoistingTest, Map_InvariantMemcpy) {
     }
 
     // Loop invariant memcpy
-    auto& block3 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block3, "C");
-        auto& c = builder.add_access(block3, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemcpyNode>(block3, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block3, memcpy3] = stdlib::add_memcpy_block(builder, body, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -296,14 +282,7 @@ TEST(BlockHoistingTest, Map_InvariantMemmove) {
     auto& body = map_stmt.root();
 
     // Loop invariant memmove
-    auto& block1 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block1, "C");
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block1, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block1, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block1, memcpy1] = stdlib::add_memmove_block(builder, body, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Loop variant computation
     auto& block2 = builder.add_block(body);
@@ -318,14 +297,7 @@ TEST(BlockHoistingTest, Map_InvariantMemmove) {
     }
 
     // Loop invariant memmove
-    auto& block3 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block3, "C");
-        auto& c = builder.add_access(block3, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block3, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block3, memcpy3] = stdlib::add_memmove_block(builder, body, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -363,14 +335,8 @@ TEST(BlockHoistingTest, Map_InvariantMemset) {
     auto& body = map_stmt.root();
 
     // Loop invariant memset
-    auto& block1 = builder.add_block(body);
-    {
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode =
-            builder
-                .add_library_node<stdlib::MemsetNode>(block1, DebugInfo(), symbolic::integer(2), symbolic::integer(10));
-        builder.add_computational_memlet(block1, libnode, "_ptr", c, {}, desc_ptr);
-    }
+    auto [block1, memcpy1] =
+        stdlib::add_memset_block(builder, body, "c", symbolic::integer(2), symbolic::integer(10), desc_ptr);
 
     // Loop variant computation
     auto& block2 = builder.add_block(body);
@@ -644,14 +610,7 @@ TEST(BlockHoistingTest, For_VariantMemcpy) {
     auto& body = for_stmt.root();
 
     // C -> c memcpy
-    auto& block1 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block1, "C");
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemcpyNode>(block1, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block1, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block1, memcpy1] = stdlib::add_memcpy_block(builder, body, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Loop variant computation
     auto& block2 = builder.add_block(body);
@@ -666,14 +625,7 @@ TEST(BlockHoistingTest, For_VariantMemcpy) {
     }
 
     // Loop invariant memcpy
-    auto& block3 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block3, "C");
-        auto& c = builder.add_access(block3, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemcpyNode>(block3, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block3, memcpy3] = stdlib::add_memcpy_block(builder, body, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -708,14 +660,7 @@ TEST(BlockHoistingTest, For_VariantMemmove) {
     auto& body = for_stmt.root();
 
     // C -> c memcpy
-    auto& block1 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block1, "C");
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block1, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block1, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block1, memcpy1] = stdlib::add_memmove_block(builder, body, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Loop variant computation
     auto& block2 = builder.add_block(body);
@@ -730,14 +675,7 @@ TEST(BlockHoistingTest, For_VariantMemmove) {
     }
 
     // Loop invariant memmove
-    auto& block3 = builder.add_block(body);
-    {
-        auto& C = builder.add_access(block3, "C");
-        auto& c = builder.add_access(block3, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block3, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
-    }
+    auto [block3, memcpy3] = stdlib::add_memmove_block(builder, body, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -771,15 +709,8 @@ TEST(BlockHoistingTest, For_VariantMemset) {
     auto& body = for_stmt.root();
 
     // 2 -> c memset
-    auto& block1 = builder.add_block(body);
-    {
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode =
-            builder
-                .add_library_node<stdlib::MemsetNode>(block1, DebugInfo(), symbolic::integer(2), symbolic::integer(10));
-        builder.add_computational_memlet(block1, libnode, "_ptr", c, {}, desc_ptr);
-    }
-
+    auto [block1, memcpy1] =
+        stdlib::add_memset_block(builder, body, "c", symbolic::integer(2), symbolic::integer(10), desc_ptr);
     // Loop variant computation
     auto& block2 = builder.add_block(body);
     {
@@ -1128,14 +1059,7 @@ TEST(BlockHoistingTest, IfElse_InvariantMemcpy) {
     auto& case2 = builder.add_case(if_else, symbolic::Ge(symbolic::symbol("A"), symbolic::integer(5)));
 
     // Case 1: Branch invariant memcpy
-    {
-        auto& block1 = builder.add_block(case1);
-        auto& C = builder.add_access(block1, "C");
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemcpyNode>(block1, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block1, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_dst", c, {}, desc_ptr);
-    }
+    stdlib::add_memcpy_block(builder, case1, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Case 1: Branch variant computation
     {
@@ -1150,24 +1074,10 @@ TEST(BlockHoistingTest, IfElse_InvariantMemcpy) {
     }
 
     // Case 1: Branch invariant memcpy
-    {
-        auto& block3 = builder.add_block(case1);
-        auto& C = builder.add_access(block3, "C");
-        auto& c = builder.add_access(block3, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemcpyNode>(block3, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
-    }
+    stdlib::add_memcpy_block(builder, case1, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Case 2: Branch invariant memcpy
-    {
-        auto& block1 = builder.add_block(case2);
-        auto& C = builder.add_access(block1, "C");
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemcpyNode>(block1, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block1, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_dst", c, {}, desc_ptr);
-    }
+    stdlib::add_memcpy_block(builder, case2, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Case 2: Branch variant computation
     {
@@ -1182,14 +1092,7 @@ TEST(BlockHoistingTest, IfElse_InvariantMemcpy) {
     }
 
     // Case 2: Branch invariant memcpy
-    {
-        auto& block3 = builder.add_block(case2);
-        auto& C = builder.add_access(block3, "C");
-        auto& c = builder.add_access(block3, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemcpyNode>(block3, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
-    }
+    stdlib::add_memcpy_block(builder, case2, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -1221,14 +1124,7 @@ TEST(BlockHoistingTest, IfElse_InvariantMemmove) {
     auto& case2 = builder.add_case(if_else, symbolic::Ge(symbolic::symbol("A"), symbolic::integer(5)));
 
     // Case 1: Branch invariant memcpy
-    {
-        auto& block1 = builder.add_block(case1);
-        auto& C = builder.add_access(block1, "C");
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block1, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block1, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_dst", c, {}, desc_ptr);
-    }
+    stdlib::add_memmove_block(builder, case1, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Case 1: Branch variant computation
     {
@@ -1243,24 +1139,10 @@ TEST(BlockHoistingTest, IfElse_InvariantMemmove) {
     }
 
     // Case 1: Branch invariant memmove
-    {
-        auto& block3 = builder.add_block(case1);
-        auto& C = builder.add_access(block3, "C");
-        auto& c = builder.add_access(block3, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block3, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
-    }
+    stdlib::add_memmove_block(builder, case1, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Case 2: Branch invariant memcpy
-    {
-        auto& block1 = builder.add_block(case2);
-        auto& C = builder.add_access(block1, "C");
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block1, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block1, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block1, libnode, "_dst", c, {}, desc_ptr);
-    }
+    stdlib::add_memmove_block(builder, case2, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Case 2: Branch variant computation
     {
@@ -1275,14 +1157,7 @@ TEST(BlockHoistingTest, IfElse_InvariantMemmove) {
     }
 
     // Case 2: Branch invariant memmove
-    {
-        auto& block3 = builder.add_block(case2);
-        auto& C = builder.add_access(block3, "C");
-        auto& c = builder.add_access(block3, "c");
-        auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block3, DebugInfo(), symbolic::integer(10));
-        builder.add_computational_memlet(block3, C, libnode, "_src", {}, desc_ptr);
-        builder.add_computational_memlet(block3, libnode, "_dst", c, {}, desc_ptr);
-    }
+    stdlib::add_memmove_block(builder, case2, "C", "c", symbolic::integer(10), desc_ptr);
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -1313,14 +1188,7 @@ TEST(BlockHoistingTest, IfElse_InvariantMemset) {
     auto& case2 = builder.add_case(if_else, symbolic::Ge(symbolic::symbol("A"), symbolic::integer(5)));
 
     // Case 1: Branch invariant memcpy
-    {
-        auto& block1 = builder.add_block(case1);
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode =
-            builder
-                .add_library_node<stdlib::MemsetNode>(block1, DebugInfo(), symbolic::integer(2), symbolic::integer(10));
-        builder.add_computational_memlet(block1, libnode, "_ptr", c, {}, desc_ptr);
-    }
+    stdlib::add_memset_block(builder, case1, "c", symbolic::integer(2), symbolic::integer(10), desc_ptr);
 
     // Case 1: Branch variant computation
     {
@@ -1335,14 +1203,7 @@ TEST(BlockHoistingTest, IfElse_InvariantMemset) {
     }
 
     // Case 2: Branch invariant memcpy
-    {
-        auto& block1 = builder.add_block(case2);
-        auto& c = builder.add_access(block1, "c");
-        auto& libnode =
-            builder
-                .add_library_node<stdlib::MemsetNode>(block1, DebugInfo(), symbolic::integer(2), symbolic::integer(10));
-        builder.add_computational_memlet(block1, libnode, "_ptr", c, {}, desc_ptr);
-    }
+    stdlib::add_memset_block(builder, case2, "c", symbolic::integer(2), symbolic::integer(10), desc_ptr);
 
     // Case 2: Branch variant computation
     {

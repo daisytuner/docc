@@ -190,6 +190,8 @@ public:
     EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const override;
 
     EdgeRemoveOption can_remove_in_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const override;
+
+    bool pointer_use_creates_side_effects(const DataFlowGraph& dataflow, const Function& func);
 };
 
 } // namespace data_flow

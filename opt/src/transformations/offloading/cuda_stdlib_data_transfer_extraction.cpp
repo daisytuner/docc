@@ -139,13 +139,12 @@ void CUDAStdlibDataTransferExtraction::
     assert(sequence);
 
     // Capture output accesses
-    std::unordered_map<std::string, data_flow::AccessNode&> out_access;
-    for (auto& oedge : dfg.out_edges(this->memset_node_)) {
-        out_access.insert({oedge.src_conn(), static_cast<data_flow::AccessNode&>(oedge.dst())});
-    }
+    auto ptr_edge = dfg.in_edge_for_connector(this->memset_node_, "_ptr");
+    auto& host_access_node =
+        const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(ptr_edge->src()));
+    auto& host_container_name = host_access_node.data();
 
     // Use the host container's actual type to avoid type mismatches
-    auto& host_container_name = out_access.at("_ptr").data();
     auto& host_type = builder.subject().type(host_container_name);
     auto& type = static_cast<const types::Pointer&>(host_type);
 
@@ -156,12 +155,10 @@ void CUDAStdlibDataTransferExtraction::
     this->create_allocate(builder, *sequence, *block, dPtr, ptr_size, type);
 
     // Copy from device to host and deallocate
-    this->create_copy_from_device_with_deallocation(
-        builder, *sequence, *block, out_access.at("_ptr").data(), dPtr, ptr_size, type
-    );
+    this->create_copy_from_device_with_deallocation(builder, *sequence, *block, host_container_name, dPtr, ptr_size, type);
 
     // Redirect output to device container
-    out_access.at("_ptr").data(dPtr);
+    host_access_node.data(dPtr);
 
     // Change the implementation type to without transfers
     this->memset_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;

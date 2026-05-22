@@ -23,14 +23,9 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetCanBeApplied) {
 
     builder.add_container("buf", ptr_type);
 
-    auto& block = builder.add_block(sdfg.root());
-    auto& buf_node = builder.add_access(block, "buf");
+    auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    auto& memset_node =
-        static_cast<stdlib::MemsetNode&>(builder.add_library_node<stdlib::MemsetNode>(block, DebugInfo(), value, num));
     memset_node.implementation_type() = rocm::ImplementationType_ROCMWithTransfers;
-
-    builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -50,14 +45,10 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetApply) {
 
     builder.add_container("buf", ptr_type);
 
-    auto& block = builder.add_block(sdfg.root());
-    auto& buf_node = builder.add_access(block, "buf");
+    auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    auto& memset_node =
-        static_cast<stdlib::MemsetNode&>(builder.add_library_node<stdlib::MemsetNode>(block, DebugInfo(), value, num));
     memset_node.implementation_type() = rocm::ImplementationType_ROCMWithTransfers;
-
-    builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
+    auto* buf_node = *block.dataflow().data_nodes().begin();
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -73,7 +64,7 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetApply) {
     EXPECT_EQ(sdfg.root().size(), 3);
 
     // The output access node should now reference a device container
-    EXPECT_NE(buf_node.data().find(rocm::ROCM_DEVICE_PREFIX), std::string::npos);
+    EXPECT_NE(buf_node->data().find(rocm::ROCM_DEVICE_PREFIX), std::string::npos);
 }
 
 TEST(ROCMStdlibDataTransferExtractionTest, MemsetWrongImplType) {
@@ -88,14 +79,9 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetWrongImplType) {
 
     builder.add_container("buf", ptr_type);
 
-    auto& block = builder.add_block(sdfg.root());
-    auto& buf_node = builder.add_access(block, "buf");
+    auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    auto& memset_node =
-        static_cast<stdlib::MemsetNode&>(builder.add_library_node<stdlib::MemsetNode>(block, DebugInfo(), value, num));
     memset_node.implementation_type() = rocm::ImplementationType_ROCMWithoutTransfers;
-
-    builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -115,13 +101,7 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetNoneImplType) {
 
     builder.add_container("buf", ptr_type);
 
-    auto& block = builder.add_block(sdfg.root());
-    auto& buf_node = builder.add_access(block, "buf");
-
-    auto& memset_node =
-        static_cast<stdlib::MemsetNode&>(builder.add_library_node<stdlib::MemsetNode>(block, DebugInfo(), value, num));
-
-    builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
+    auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -141,14 +121,9 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetSerialization) {
 
     builder.add_container("buf", ptr_type);
 
-    auto& block = builder.add_block(sdfg.root());
-    auto& buf_node = builder.add_access(block, "buf");
+    auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    auto& memset_node =
-        static_cast<stdlib::MemsetNode&>(builder.add_library_node<stdlib::MemsetNode>(block, DebugInfo(), value, num));
     memset_node.implementation_type() = rocm::ImplementationType_ROCMWithTransfers;
-
-    builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
 
     rocm::ROCMStdlibDataTransferExtraction expansion(memset_node);
 

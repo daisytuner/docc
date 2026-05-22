@@ -61,5 +61,25 @@ public:
     ) override;
 };
 
+MemmoveNode& add_memmove_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& src_ptr,
+    const std::string& dst_ptr,
+    const symbolic::Expression& count,
+    const types::IType& ptr_type,
+    DebugInfo debug_info = DebugInfo()
+);
+
+std::tuple<Block&, MemmoveNode&> add_memmove_block(
+    builder::StructuredSDFGBuilder& builder,
+    Sequence& parent,
+    const std::string& src_ptr,
+    const std::string& dst_ptr,
+    const symbolic::Expression& count,
+    const types::IType& ptr_type,
+    DebugInfo debug_info = DebugInfo()
+);
+
 } // namespace stdlib
 } // namespace sdfg

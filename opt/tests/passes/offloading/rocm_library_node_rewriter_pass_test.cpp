@@ -20,13 +20,7 @@ TEST(RocmLibraryNodeRewriterPassTest, MemsetRewrite) {
 
     builder.add_container("buf", ptr_type);
 
-    auto& block = builder.add_block(sdfg.root());
-    auto& buf_node = builder.add_access(block, "buf");
-
-    auto& memset_node =
-        static_cast<stdlib::MemsetNode&>(builder.add_library_node<stdlib::MemsetNode>(block, DebugInfo(), value, num));
-
-    builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
+    auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
     // Before rewriter: implementation type should be NONE
     EXPECT_EQ(memset_node.implementation_type().value(), data_flow::ImplementationType_NONE.value());
@@ -52,13 +46,7 @@ TEST(RocmLibraryNodeRewriterPassTest, MemsetRewriteDoublePrecision) {
 
     builder.add_container("buf", ptr_type);
 
-    auto& block = builder.add_block(sdfg.root());
-    auto& buf_node = builder.add_access(block, "buf");
-
-    auto& memset_node =
-        static_cast<stdlib::MemsetNode&>(builder.add_library_node<stdlib::MemsetNode>(block, DebugInfo(), value, num));
-
-    builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
+    auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 

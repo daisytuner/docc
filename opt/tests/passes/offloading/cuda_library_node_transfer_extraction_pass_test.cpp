@@ -20,14 +20,9 @@ TEST(CudaLibraryNodeTransferExtractionPassTest, MemsetExpansion) {
 
     builder.add_container("buf", ptr_type);
 
-    auto& block = builder.add_block(sdfg.root());
-    auto& buf_node = builder.add_access(block, "buf");
+    auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    auto& memset_node =
-        static_cast<stdlib::MemsetNode&>(builder.add_library_node<stdlib::MemsetNode>(block, DebugInfo(), value, num));
     memset_node.implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
-
-    builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -54,14 +49,8 @@ TEST(CudaLibraryNodeTransferExtractionPassTest, MemsetNoExpansionWhenNone) {
 
     builder.add_container("buf", ptr_type);
 
-    auto& block = builder.add_block(sdfg.root());
-    auto& buf_node = builder.add_access(block, "buf");
-
-    auto& memset_node =
-        static_cast<stdlib::MemsetNode&>(builder.add_library_node<stdlib::MemsetNode>(block, DebugInfo(), value, num));
+    auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
     // Leave as NONE — pass should not expand
-
-    builder.add_computational_memlet(block, memset_node, "_ptr", buf_node, {}, ptr_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 

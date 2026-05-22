@@ -106,22 +106,23 @@ void DataDependencyAnalysis::visit_block(
                             oedge.is_src_pointed_to_address_leak(access_node_type)) {
                             if (auto* libConsumer = dynamic_cast<data_flow::LibraryNode*>(&oedge.dst())) {
                                 auto access = libConsumer->pointer_access_type(oedge);
-                                if (!access || access->may_contain_writes() || !access->no_capture()) {
-                                    use = Use::MOVE;
-                                    auto artificial_user = std::make_unique<User>(
-                                        boost::graph_traits<graph::Graph>::null_vertex(),
-                                        access_node->data(),
-                                        nullptr,
-                                        Use::WRITE
-                                    );
-                                    this->undefined_users_.push_back(std::move(artificial_user));
-                                    open_definitions.insert({this->undefined_users_.back().get(), {}});
+                                if (!access || !access->no_capture()) {
+                                    use = Use::MOVE; // we know nothing and cannot say anything reliable. Consider the
+                                                     // libNode having side effects
+                                    break;
+                                } else {
+                                    if (access->may_contain_reads()) {
+                                        // let handle as a normal read
+                                    } else if (access->may_contain_writes()) {
+                                        // handle as a normal write
+                                        use = Use::WRITE;
+                                        break;
+                                    }
                                 }
                             } else {
                                 use = Use::VIEW;
+                                break;
                             }
-
-                            break;
                         }
                     }
 

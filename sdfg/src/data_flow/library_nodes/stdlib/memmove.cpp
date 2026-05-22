@@ -95,5 +95,39 @@ void MemmoveNodeDispatcher::dispatch_code_with_edges(
     out.stream << std::endl;
 }
 
+MemmoveNode& add_memmove_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& src_ptr,
+    const std::string& dst_ptr,
+    const symbolic::Expression& count,
+    const types::IType& ptr_type,
+    DebugInfo debug_info
+) {
+    auto& src_ptr_access = builder.add_access(block, src_ptr);
+    auto& dst_ptr_access = builder.add_access(block, dst_ptr);
+    auto& libnode = builder.add_library_node<stdlib::MemmoveNode>(block, debug_info, count);
+    builder.add_computational_memlet(block, src_ptr_access, libnode, "_src", {}, ptr_type);
+    builder.add_computational_memlet(block, dst_ptr_access, libnode, "_dst", {}, ptr_type);
+
+    return static_cast<MemmoveNode&>(libnode);
+}
+
+std::tuple<Block&, MemmoveNode&> add_memmove_block(
+    builder::StructuredSDFGBuilder& builder,
+    Sequence& parent,
+    const std::string& src_ptr,
+    const std::string& dst_ptr,
+    const symbolic::Expression& count,
+    const types::IType& ptr_type,
+    DebugInfo debug_info
+) {
+    auto& block = builder.add_block(parent);
+
+    auto& libnode = add_memmove_node(builder, block, src_ptr, dst_ptr, count, ptr_type, debug_info);
+
+    return {block, libnode};
+}
+
 } // namespace stdlib
 } // namespace sdfg

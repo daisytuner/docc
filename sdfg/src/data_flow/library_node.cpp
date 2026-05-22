@@ -55,5 +55,20 @@ EdgeRemoveOption LibraryNode::can_remove_in_edge(const data_flow::DataFlowGraph&
     return EdgeRemoveOption::NotRemovable;
 }
 
+bool LibraryNode::pointer_use_creates_side_effects(const DataFlowGraph& dataflow, const Function& func) {
+    for (int i = 0; i < inputs_.size(); ++i) {
+        auto& conn = inputs_.at(i);
+        auto* edge = dataflow.in_edge_for_connector(*this, conn);
+        if (edge && edge->result_type(func)->type_id() == types::TypeID::Pointer) {
+            auto access = pointer_access_type(i);
+            if (!access || !access->no_capture() || (access->may_contain_reads() && !access->access_read_pattern()) ||
+                (access->may_contain_writes() && !access->access_write_pattern())) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 } // namespace data_flow
 } // namespace sdfg

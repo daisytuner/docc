@@ -16,7 +16,7 @@ TensorNode::TensorNode(
     const std::vector<std::string>& inputs,
     data_flow::ImplementationType impl_type
 )
-    : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type) {}
+    : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type, true) {}
 
 void TensorNode::validate(const Function& function) const {
     MathNode::validate(function);
