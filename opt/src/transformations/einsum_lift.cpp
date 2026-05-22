@@ -112,7 +112,7 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
         for (auto& iedge : dfg.in_edges(this->tasklet_)) {
             auto& in = static_cast<data_flow::AccessNode&>(iedge.src());
-            if (in.data() == out_container && this->subsets_eq(out_indices, iedge.subset())) {
+            if (reduction_conn.empty() && in.data() == out_container && this->subsets_eq(out_indices, iedge.subset())) {
                 reduction_conn = iedge.dst_conn();
             } else {
                 inputs.push_back(iedge.dst_conn());
