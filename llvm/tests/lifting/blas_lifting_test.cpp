@@ -173,7 +173,7 @@ define void @foo(ptr %A, ptr %B, ptr %C) {
 
         auto& data_flow = state.dataflow();
         EXPECT_EQ(data_flow.nodes().size(), 7);
-        EXPECT_EQ(data_flow.edges().size(), 6);
+        EXPECT_EQ(data_flow.edges().size(), 5);
 
         for (auto& node : data_flow.nodes()) {
             if (dynamic_cast<const sdfg::math::blas::GEMMNode*>(&node)) {
@@ -235,7 +235,7 @@ define void @foo(ptr %A, ptr %B, ptr %C) {
 
         auto& data_flow = state.dataflow();
         EXPECT_EQ(data_flow.nodes().size(), 7);
-        EXPECT_EQ(data_flow.edges().size(), 6);
+        EXPECT_EQ(data_flow.edges().size(), 5);
 
         for (auto& node : data_flow.nodes()) {
             if (dynamic_cast<const sdfg::math::blas::GEMMNode*>(&node)) {
