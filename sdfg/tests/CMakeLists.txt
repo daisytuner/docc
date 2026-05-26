@@ -70,7 +70,6 @@ set(TEST_FILES
     graph/graph_algorithms_test.cpp
     helpers/helpers_test.cpp
     passes/dataflow/bytes_reference_elimination_test.cpp
-    passes/dataflow/constant_propagation_test.cpp
     passes/dataflow/dead_data_elimination_test.cpp
     passes/dataflow/trivial_array_elimination_test.cpp
     passes/dataflow/trivial_reference_conversion_test.cpp

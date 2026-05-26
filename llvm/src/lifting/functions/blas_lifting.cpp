@@ -200,7 +200,6 @@ sdfg::control_flow::State& BLASLifting::visit_gemm(
     this->builder_.add_computational_memlet(current_state, a_node_in, gemm_node, "__A", {}, ptr_type, dbg_info);
     this->builder_.add_computational_memlet(current_state, b_node_in, gemm_node, "__B", {}, ptr_type, dbg_info);
     this->builder_.add_computational_memlet(current_state, c_node_in, gemm_node, "__C", {}, ptr_type, dbg_info);
-    this->builder_.add_computational_memlet(current_state, gemm_node, "__C", c_node_out, {}, ptr_type, dbg_info);
     this->builder_.add_computational_memlet(current_state, *alpha_node, gemm_node, "__alpha", {}, base_type, dbg_info);
     this->builder_.add_computational_memlet(current_state, *beta_node, gemm_node, "__beta", {}, base_type, dbg_info);
 

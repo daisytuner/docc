@@ -104,5 +104,35 @@ void MallocNodeDispatcher::dispatch_code_with_edges(
     register_output(ptr_out, out_name);
 }
 
+MallocNode& add_malloc_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& dst_ptr,
+    const symbolic::Expression& size,
+    const types::IType& ptr_type,
+    DebugInfo debug_info
+) {
+    auto& dst_ptr_access = builder.add_access(block, dst_ptr);
+    auto& libnode = builder.add_library_node<stdlib::MallocNode>(block, debug_info, size);
+    builder.add_computational_memlet(block, libnode, "_ret", dst_ptr_access, {}, ptr_type);
+
+    return static_cast<MallocNode&>(libnode);
+}
+
+std::tuple<Block&, MallocNode&> add_malloc_block(
+    builder::StructuredSDFGBuilder& builder,
+    Sequence& parent,
+    const std::string& dst_ptr,
+    const symbolic::Expression& size,
+    const types::IType& ptr_type,
+    DebugInfo debug_info
+) {
+    auto& block = builder.add_block(parent);
+
+    auto& libnode = add_malloc_node(builder, block, dst_ptr, size, ptr_type, debug_info);
+
+    return {block, libnode};
+}
+
 } // namespace stdlib
 } // namespace sdfg

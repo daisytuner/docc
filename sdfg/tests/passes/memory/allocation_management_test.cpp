@@ -16,10 +16,7 @@ TEST(AllocationManagementPassTest, Malloc_Argument) {
     types::Pointer opaque_desc;
     builder.add_container("arg0", opaque_desc, true);
 
-    auto& block = builder.add_block(root);
-    auto& access_node = builder.add_access(block, "arg0");
-    auto& lib_node = builder.add_library_node<stdlib::MallocNode>(block, DebugInfo(), symbolic::integer(1024));
-    builder.add_computational_memlet(block, lib_node, "_ret", access_node, {}, opaque_desc, DebugInfo());
+    auto [block, lib_node] = stdlib::add_malloc_block(builder, root, "arg0", symbolic::integer(1024), opaque_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::AllocationManagementPass pass_;
@@ -44,10 +41,7 @@ TEST(AllocationManagementPassTest, Malloc_Transient) {
     types::Pointer opaque_desc;
     builder.add_container("tmp", opaque_desc);
 
-    auto& block = builder.add_block(root);
-    auto& access_node = builder.add_access(block, "tmp");
-    auto& lib_node = builder.add_library_node<stdlib::MallocNode>(block, DebugInfo(), symbolic::integer(1024));
-    builder.add_computational_memlet(block, lib_node, "_ret", access_node, {}, opaque_desc, DebugInfo());
+    auto [block, lib_node] = stdlib::add_malloc_block(builder, root, "tmp", symbolic::integer(1024), opaque_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::AllocationManagementPass pass_;
@@ -104,12 +98,7 @@ TEST(AllocationManagementPassTest, Free_Argument) {
     types::Pointer opaque_desc;
     builder.add_container("arg0", opaque_desc, true);
 
-    auto& block = builder.add_block(root);
-    auto& access_node_in = builder.add_access(block, "arg0");
-
-    auto& lib_node = builder.add_library_node<stdlib::FreeNode>(block, DebugInfo());
-    builder.add_computational_memlet(block, access_node_in, lib_node, "_ptr", {}, opaque_desc, DebugInfo());
-
+    auto [block, lib_node] = stdlib::add_free_block(builder, root, "arg0", opaque_desc);
 
     dump_sdfg(builder.subject(), "0-before");
 
@@ -138,10 +127,7 @@ TEST(AllocationManagementPassTest, Free_Transient) {
     types::Pointer opaque_desc;
     builder.add_container("tmp", opaque_desc);
 
-    auto& block = builder.add_block(root);
-    auto& access_node_in = builder.add_access(block, "tmp");
-    auto& lib_node = builder.add_library_node<stdlib::FreeNode>(block, DebugInfo());
-    builder.add_computational_memlet(block, access_node_in, lib_node, "_ptr", {}, opaque_desc, DebugInfo());
+    auto [block, lib_node] = stdlib::add_free_block(builder, root, "tmp", opaque_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::AllocationManagementPass pass_;

@@ -265,16 +265,14 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     types::Pointer patches_type(base_type);
     auto patches_container = builder.find_new_name("_patches");
     builder.add_container(patches_container, patches_type);
-    auto& patches_malloc_block = builder.add_block(loop_g.root(), {}, block->debug_info());
-    {
-        auto& patches_access = builder.add_access(patches_malloc_block, patches_container, this->debug_info());
-        auto& libnode = builder.add_library_node<stdlib::MallocNode>(
-            patches_malloc_block, this->debug_info(), symbolic::mul(patches_size, symbolic::size_of_type(base_type))
-        );
-        builder.add_computational_memlet(
-            patches_malloc_block, libnode, "_ret", patches_access, {}, patches_type, this->debug_info()
-        );
-    }
+    auto [patches_malloc_block, patches_malloc_node] = stdlib::add_malloc_block(
+        builder,
+        loop_g.root(),
+        patches_container,
+        symbolic::mul(patches_size, symbolic::size_of_type(base_type)),
+        patches_type,
+        this->debug_info()
+    );
 
     // Add loop over channels
     structured_control_flow::Sequence* current_seq = &loop_g.root();

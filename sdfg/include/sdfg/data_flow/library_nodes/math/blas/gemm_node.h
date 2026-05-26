@@ -127,6 +127,62 @@ public:
     ) override;
 };
 
+GEMMNode& add_gemm_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& ptr_a,
+    const std::string& ptr_b,
+    const std::string& ptr_c,
+    data_flow::AccessNode& alpha_node,
+    data_flow::AccessNode& beta_node,
+    const BLAS_Precision& precision,
+    const BLAS_Layout& layout,
+    const BLAS_Transpose& trans_a,
+    const BLAS_Transpose& trans_b,
+    symbolic::Expression& m,
+    symbolic::Expression& n,
+    symbolic::Expression& k,
+    symbolic::Expression& lda,
+    symbolic::Expression& ldb,
+    symbolic::Expression& ldc,
+    const types::IType& a_type,
+    const types::IType& b_type,
+    const types::IType& c_type,
+    const types::IType& factor_type,
+    DebugInfo debug_info,
+    DebugInfo a_access_deb_info,
+    DebugInfo b_access_deb_info,
+    DebugInfo c_access_deb_info,
+    DebugInfo a_edge_deb_info,
+    DebugInfo b_edge_deb_info,
+    DebugInfo c_edge_deb_info,
+    data_flow::ImplementationType impl_type
+);
+
+GEMMNode& add_gemm_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& ptr_a,
+    const std::string& ptr_b,
+    const std::string& ptr_c,
+    data_flow::AccessNode& alpha_node,
+    data_flow::AccessNode& beta_node,
+    const BLAS_Precision& precision,
+    const BLAS_Layout& layout,
+    const BLAS_Transpose& trans_a,
+    const BLAS_Transpose& trans_b,
+    symbolic::Expression& m,
+    symbolic::Expression& n,
+    symbolic::Expression& k,
+    symbolic::Expression& lda,
+    symbolic::Expression& ldb,
+    symbolic::Expression& ldc,
+    const types::IType& ptr_type,
+    const types::IType& factor_type,
+    DebugInfo debug_info = DebugInfo(),
+    data_flow::ImplementationType impl_type = ImplementationType_BLAS
+);
+
 } // namespace blas
 } // namespace math
 } // namespace sdfg

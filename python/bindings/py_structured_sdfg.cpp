@@ -18,7 +18,6 @@
 #include <sdfg/codegen/instrumentation/arg_capture_plan.h>
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
-#include <sdfg/passes/dataflow/constant_propagation.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
@@ -236,16 +235,6 @@ void PyStructuredSDFG::simplify() {
         dde.run(builder_opt, analysis_manager);
         dce.run(builder_opt, analysis_manager);
         symbolic_simplification.run(builder_opt, analysis_manager);
-    }
-
-    // Propagate variables into constants
-    {
-        sdfg::passes::ConstantPropagation constant_propagation_pass;
-        bool applies = false;
-        do {
-            applies = false;
-            applies |= constant_propagation_pass.run(builder_opt, analysis_manager);
-        } while (applies);
     }
 
     // Convert loops into structured loops

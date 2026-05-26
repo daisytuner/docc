@@ -52,5 +52,21 @@ public:
     ) override;
 };
 
+FreeNode& add_free_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& ptr,
+    const types::IType& ptr_type,
+    DebugInfo debug_info = DebugInfo()
+);
+
+std::tuple<Block&, FreeNode&> add_free_block(
+    builder::StructuredSDFGBuilder& builder,
+    Sequence& parent,
+    const std::string& ptr,
+    const types::IType& ptr_type,
+    DebugInfo debug_info = DebugInfo()
+);
+
 } // namespace stdlib
 } // namespace sdfg

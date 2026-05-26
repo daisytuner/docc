@@ -121,16 +121,14 @@ bool CudaConvExpander::expand_conv(
         types::Pointer patches_type(base_type);
         auto patches_container = builder.find_new_name("_patches");
         builder.add_container(patches_container, patches_type);
-        auto& patches_malloc_block = builder.add_block(new_sequence, {}, block->debug_info());
-        {
-            auto& patches_access = builder.add_access(patches_malloc_block, patches_container, node.debug_info());
-            auto& libnode = builder.add_library_node<stdlib::MallocNode>(
-                patches_malloc_block, node.debug_info(), symbolic::mul(patches_size, symbolic::size_of_type(base_type))
-            );
-            builder.add_computational_memlet(
-                patches_malloc_block, libnode, "_ret", patches_access, {}, patches_type, node.debug_info()
-            );
-        }
+        auto [patches_malloc_block, patches_malloc_node] = stdlib::add_malloc_block(
+            builder,
+            new_sequence,
+            patches_container,
+            symbolic::mul(patches_size, symbolic::size_of_type(base_type)),
+            patches_type,
+            node.debug_info()
+        );
 
         // Add malloc for temporary GEMM output
         symbolic::Expression tmp_Y_size = symbolic::mul(node.output_channels(), node.shape()[0]);
@@ -141,18 +139,14 @@ bool CudaConvExpander::expand_conv(
         types::Scalar tmp_Y_base_type(builder.subject().type(access_Y->data()).primitive_type());
         types::Pointer tmp_Y_type(tmp_Y_base_type);
         builder.add_container(tmp_Y_container, tmp_Y_type);
-        auto& tmp_Y_malloc_block = builder.add_block(new_sequence, {}, block->debug_info());
-        {
-            auto& tmp_Y_access = builder.add_access(tmp_Y_malloc_block, tmp_Y_container, node.debug_info());
-            auto& libnode = builder.add_library_node<stdlib::MallocNode>(
-                tmp_Y_malloc_block,
-                node.debug_info(),
-                symbolic::mul(tmp_Y_size, symbolic::size_of_type(tmp_Y_base_type))
-            );
-            builder.add_computational_memlet(
-                tmp_Y_malloc_block, libnode, "_ret", tmp_Y_access, {}, tmp_Y_type, node.debug_info()
-            );
-        }
+        auto [tmp_Y_malloc_block, tmp_Y_malloc_node] = stdlib::add_malloc_block(
+            builder,
+            new_sequence,
+            tmp_Y_container,
+            symbolic::mul(tmp_Y_size, symbolic::size_of_type(tmp_Y_base_type)),
+            tmp_Y_type,
+            node.debug_info()
+        );
 
         // Add loop over batch size
         auto n_container = builder.find_new_name("_n");
@@ -302,10 +296,6 @@ bool CudaConvExpander::expand_conv(
         {
             auto& alpha = builder.add_constant(gemm_block, "1.0", base_type, node.debug_info());
             auto& beta = builder.add_constant(gemm_block, "0.0", base_type, node.debug_info());
-            auto& W_access = builder.add_access(gemm_block, access_W->data(), access_W->debug_info());
-            auto& patches_access = builder.add_access(gemm_block, patches_container, node.debug_info());
-            auto& tmp_Y_access_in = builder.add_access(gemm_block, tmp_Y_container, access_Y->debug_info());
-            auto& tmp_Y_access_out = builder.add_access(gemm_block, tmp_Y_container, access_Y->debug_info());
             symbolic::Expression gemm_m = node.output_channels();
             symbolic::Expression gemm_n = node.shape()[0];
             symbolic::Expression gemm_k = node.shape()[1];
@@ -313,11 +303,15 @@ bool CudaConvExpander::expand_conv(
                 gemm_n = symbolic::mul(gemm_n, out_shape[i]);
                 gemm_k = symbolic::mul(gemm_k, node.kernel_shape()[i]);
             }
-            auto& libnode = builder.add_library_node<math::blas::GEMMNode>(
+            auto& libnode = math::blas::add_gemm_node(
+                builder,
                 gemm_block,
-                node.debug_info(),
-                math::blas::ImplementationType_BLAS,
-                precision, // precision
+                access_W->data(),
+                patches_container,
+                tmp_Y_container,
+                alpha,
+                beta,
+                precision,
                 math::blas::BLAS_Layout::RowMajor, // layout
                 math::blas::BLAS_Transpose::No, // transA
                 math::blas::BLAS_Transpose::Trans, // transB
@@ -326,26 +320,19 @@ bool CudaConvExpander::expand_conv(
                 gemm_k, // k
                 gemm_k, // lda
                 gemm_k, // ldb
-                gemm_n // ldc
-            );
-            builder.add_computational_memlet(gemm_block, alpha, libnode, "__alpha", {}, base_type, node.debug_info());
-            builder.add_computational_memlet(gemm_block, beta, libnode, "__beta", {}, base_type, node.debug_info());
-            builder.add_computational_memlet(
-                gemm_block,
-                W_access,
-                libnode,
-                "__A",
-                {},
+                gemm_n, // ldc
                 types::Pointer(types::Scalar(iedge_W->base_type().primitive_type())),
-                iedge_W->debug_info()
-            );
-            builder
-                .add_computational_memlet(gemm_block, patches_access, libnode, "__B", {}, patches_type, node.debug_info());
-            builder.add_computational_memlet(
-                gemm_block, tmp_Y_access_in, libnode, "__C", {}, tmp_Y_type, oedge_Y->debug_info()
-            );
-            builder.add_computational_memlet(
-                gemm_block, libnode, "__C", tmp_Y_access_out, {}, tmp_Y_type, oedge_Y->debug_info()
+                patches_type,
+                tmp_Y_type,
+                base_type,
+                node.debug_info(),
+                access_W->debug_info(),
+                node.debug_info(),
+                access_Y->debug_info(),
+                iedge_W->debug_info(),
+                node.debug_info(),
+                oedge_Y->debug_info(),
+                math::blas::ImplementationType_BLAS
             );
         }
 
@@ -442,32 +429,12 @@ bool CudaConvExpander::expand_conv(
         }
 
         // Add free for patches container
-        auto& patches_free_block = builder.add_block(new_sequence, {}, block->debug_info());
-        {
-            auto& patches_access_in = builder.add_access(patches_free_block, patches_container, node.debug_info());
-            auto& patches_access_out = builder.add_access(patches_free_block, patches_container, node.debug_info());
-            auto& libnode = builder.add_library_node<stdlib::FreeNode>(patches_free_block, node.debug_info());
-            builder.add_computational_memlet(
-                patches_free_block, patches_access_in, libnode, "_ptr", {}, patches_type, node.debug_info()
-            );
-            builder.add_computational_memlet(
-                patches_free_block, libnode, "_ptr", patches_access_out, {}, patches_type, node.debug_info()
-            );
-        }
+        auto [patches_free_block, patches_free_node] =
+            stdlib::add_free_block(builder, new_sequence, patches_container, patches_type, node.debug_info());
 
         // Add free for temporary GEMM output
-        auto& tmp_Y_free_block = builder.add_block(new_sequence, {}, block->debug_info());
-        {
-            auto& tmp_Y_access_in = builder.add_access(tmp_Y_free_block, tmp_Y_container, node.debug_info());
-            auto& tmp_Y_access_out = builder.add_access(tmp_Y_free_block, tmp_Y_container, node.debug_info());
-            auto& libnode = builder.add_library_node<stdlib::FreeNode>(tmp_Y_free_block, node.debug_info());
-            builder.add_computational_memlet(
-                tmp_Y_free_block, tmp_Y_access_in, libnode, "_ptr", {}, tmp_Y_type, node.debug_info()
-            );
-            builder.add_computational_memlet(
-                tmp_Y_free_block, libnode, "_ptr", tmp_Y_access_out, {}, tmp_Y_type, node.debug_info()
-            );
-        }
+        auto [tmp_Y_free_block, tmp_Y_free_node] =
+            stdlib::add_free_block(builder, new_sequence, tmp_Y_container, tmp_Y_type, node.debug_info());
 
         /* ===== No groups ====================================================================== */
 
@@ -515,16 +482,14 @@ bool CudaConvExpander::expand_conv(
         types::Pointer patches_type(base_type);
         auto patches_container = builder.find_new_name("_patches");
         builder.add_container(patches_container, patches_type);
-        auto& patches_malloc_block = builder.add_block(loop_g.root(), {}, block->debug_info());
-        {
-            auto& patches_access = builder.add_access(patches_malloc_block, patches_container, node.debug_info());
-            auto& libnode = builder.add_library_node<stdlib::MallocNode>(
-                patches_malloc_block, node.debug_info(), symbolic::mul(patches_size, symbolic::size_of_type(base_type))
-            );
-            builder.add_computational_memlet(
-                patches_malloc_block, libnode, "_ret", patches_access, {}, patches_type, node.debug_info()
-            );
-        }
+        auto [patches_malloc_block, patches_malloc_node] = stdlib::add_malloc_block(
+            builder,
+            new_sequence,
+            patches_container,
+            symbolic::mul(patches_size, symbolic::size_of_type(base_type)),
+            patches_type,
+            node.debug_info()
+        );
 
         // Add loops over output dimensions
         structured_control_flow::Sequence* current_seq = &loop_g.root();
@@ -692,7 +657,6 @@ bool CudaConvExpander::expand_conv(
             auto& ref_W_access = builder.add_access(gemm_block, ref_W_container, access_W->debug_info());
             auto& patches_access = builder.add_access(gemm_block, patches_container, node.debug_info());
             auto& ref_Y_access_in = builder.add_access(gemm_block, ref_Y_container, access_Y->debug_info());
-            auto& ref_Y_access_out = builder.add_access(gemm_block, ref_Y_container, access_Y->debug_info());
             symbolic::Expression gemm_m = out_channels;
             symbolic::Expression gemm_n = symbolic::one();
             symbolic::Expression gemm_k = in_channels;
@@ -700,11 +664,15 @@ bool CudaConvExpander::expand_conv(
                 gemm_n = symbolic::mul(gemm_n, out_shape[i]);
                 gemm_k = symbolic::mul(gemm_k, node.kernel_shape()[i]);
             }
-            auto& libnode = builder.add_library_node<math::blas::GEMMNode>(
+            auto& libnode = math::blas::add_gemm_node(
+                builder,
                 gemm_block,
-                node.debug_info(),
-                math::blas::ImplementationType_BLAS,
-                precision, // precision
+                ref_W_container,
+                patches_container,
+                ref_Y_container,
+                alpha,
+                beta,
+                precision,
                 math::blas::BLAS_Layout::RowMajor, // layout
                 math::blas::BLAS_Transpose::No, // transA
                 math::blas::BLAS_Transpose::No, // transB
@@ -713,19 +681,19 @@ bool CudaConvExpander::expand_conv(
                 gemm_k, // k
                 gemm_k, // lda
                 gemm_n, // ldb
-                gemm_n // ldc
-            );
-            builder.add_computational_memlet(gemm_block, alpha, libnode, "__alpha", {}, base_type, node.debug_info());
-            builder.add_computational_memlet(gemm_block, beta, libnode, "__beta", {}, base_type, node.debug_info());
-            builder
-                .add_computational_memlet(gemm_block, ref_W_access, libnode, "__A", {}, ref_W_type, iedge_W->debug_info());
-            builder
-                .add_computational_memlet(gemm_block, patches_access, libnode, "__B", {}, patches_type, node.debug_info());
-            builder.add_computational_memlet(
-                gemm_block, ref_Y_access_in, libnode, "__C", {}, ref_Y_type, oedge_Y->debug_info()
-            );
-            builder.add_computational_memlet(
-                gemm_block, libnode, "__C", ref_Y_access_out, {}, ref_Y_type, oedge_Y->debug_info()
+                gemm_n, // ldc
+                ref_W_type,
+                patches_type,
+                ref_Y_type,
+                base_type,
+                node.debug_info(),
+                access_W->debug_info(),
+                node.debug_info(),
+                access_Y->debug_info(),
+                iedge_W->debug_info(),
+                node.debug_info(),
+                oedge_Y->debug_info(),
+                math::blas::ImplementationType_BLAS
             );
         }
 
@@ -793,18 +761,8 @@ bool CudaConvExpander::expand_conv(
         }
 
         // Add free for patches container
-        auto& patches_free_block = builder.add_block(loop_g.root(), {}, block->debug_info());
-        {
-            auto& patches_access_in = builder.add_access(patches_free_block, patches_container, node.debug_info());
-            auto& patches_access_out = builder.add_access(patches_free_block, patches_container, node.debug_info());
-            auto& libnode = builder.add_library_node<stdlib::FreeNode>(patches_free_block, node.debug_info());
-            builder.add_computational_memlet(
-                patches_free_block, patches_access_in, libnode, "_ptr", {}, patches_type, node.debug_info()
-            );
-            builder.add_computational_memlet(
-                patches_free_block, libnode, "_ptr", patches_access_out, {}, patches_type, node.debug_info()
-            );
-        }
+        auto [patches_free_block, patches_free_node] =
+            stdlib::add_free_block(builder, loop_g.root(), patches_container, patches_type, node.debug_info());
 
         /* ===== Groups ========================================================================= */
     }

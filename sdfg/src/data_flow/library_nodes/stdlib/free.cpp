@@ -83,5 +83,33 @@ void FreeNodeDispatcher::dispatch_code_with_edges(
     out.stream << out.language_extension.external_prefix() << "free(" << inputs.at(0).expr << ");" << std::endl;
 }
 
+FreeNode& add_free_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& ptr,
+    const types::IType& ptr_type,
+    DebugInfo debug_info
+) {
+    auto& dst_ptr_access = builder.add_access(block, ptr);
+    auto& libnode = builder.add_library_node<stdlib::FreeNode>(block, debug_info);
+    builder.add_computational_memlet(block, dst_ptr_access, libnode, "_ptr", {}, ptr_type);
+
+    return static_cast<FreeNode&>(libnode);
+}
+
+std::tuple<Block&, FreeNode&> add_free_block(
+    builder::StructuredSDFGBuilder& builder,
+    Sequence& parent,
+    const std::string& ptr,
+    const types::IType& ptr_type,
+    DebugInfo debug_info
+) {
+    auto& block = builder.add_block(parent);
+
+    auto& libnode = add_free_node(builder, block, ptr, ptr_type, debug_info);
+
+    return {block, libnode};
+}
+
 } // namespace stdlib
 } // namespace sdfg

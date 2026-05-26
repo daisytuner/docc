@@ -126,7 +126,6 @@ Pipeline Pipeline::expression_combine() {
     Pipeline p("ExpressionCombine");
 
     p.register_pass<SymbolPropagation>();
-    p.register_pass<ConstantPropagation>();
     p.register_pass<DeadDataElimination>();
     p.register_pass<SymbolEvolution>();
     p.register_pass<TaskletFusionPass>();

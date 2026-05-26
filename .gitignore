@@ -10,6 +10,8 @@ _deps/
 build-*/
 pybuild/
 pybuild-*/
+.docc-*/
+test_outputs/
 
 # Prerequisites
 *.d

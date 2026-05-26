@@ -63,5 +63,23 @@ public:
     ) override;
 };
 
+MallocNode& add_malloc_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& dst_ptr,
+    const symbolic::Expression& size,
+    const types::IType& ptr_type,
+    DebugInfo debug_info = DebugInfo()
+);
+
+std::tuple<Block&, MallocNode&> add_malloc_block(
+    builder::StructuredSDFGBuilder& builder,
+    Sequence& parent,
+    const std::string& dst_ptr,
+    const symbolic::Expression& size,
+    const types::IType& ptr_type,
+    DebugInfo debug_info = DebugInfo()
+);
+
 } // namespace stdlib
 } // namespace sdfg

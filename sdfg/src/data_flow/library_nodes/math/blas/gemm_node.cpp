@@ -547,6 +547,112 @@ void GEMMNodeDispatcher_BLAS::dispatch_code_with_edges(
     out.stream << ");" << std::endl;
 }
 
+GEMMNode& add_gemm_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& ptr_a,
+    const std::string& ptr_b,
+    const std::string& ptr_c,
+    data_flow::AccessNode& alpha_node,
+    data_flow::AccessNode& beta_node,
+    const BLAS_Precision& precision,
+    const BLAS_Layout& layout,
+    const BLAS_Transpose& trans_a,
+    const BLAS_Transpose& trans_b,
+    symbolic::Expression& m,
+    symbolic::Expression& n,
+    symbolic::Expression& k,
+    symbolic::Expression& lda,
+    symbolic::Expression& ldb,
+    symbolic::Expression& ldc,
+    const types::IType& a_type,
+    const types::IType& b_type,
+    const types::IType& c_type,
+    const types::IType& factor_type,
+    DebugInfo debug_info,
+    DebugInfo a_access_deb_info,
+    DebugInfo b_access_deb_info,
+    DebugInfo c_access_deb_info,
+    DebugInfo a_edge_deb_info,
+    DebugInfo b_edge_deb_info,
+    DebugInfo c_edge_deb_info,
+    data_flow::ImplementationType impl_type
+) {
+    auto& gemm_node = builder.add_library_node<sdfg::math::blas::GEMMNode>(
+        block, debug_info, std::move(impl_type), precision, layout, trans_a, trans_b, m, n, k, lda, ldb, ldc
+    );
+
+    // Add access nodes
+    auto& a_node_in = builder.add_access(block, ptr_a, a_access_deb_info);
+    auto& b_node_in = builder.add_access(block, ptr_b, b_access_deb_info);
+    auto& c_node_in = builder.add_access(block, ptr_c, c_access_deb_info);
+
+    // Add edges
+    builder.add_computational_memlet(block, a_node_in, gemm_node, "__A", {}, a_type, a_edge_deb_info);
+    builder.add_computational_memlet(block, b_node_in, gemm_node, "__B", {}, b_type, b_edge_deb_info);
+    builder.add_computational_memlet(block, c_node_in, gemm_node, "__C", {}, c_type, c_edge_deb_info);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, factor_type, debug_info);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, factor_type, debug_info);
+
+    return static_cast<GEMMNode&>(gemm_node);
+}
+
+GEMMNode& add_gemm_node(
+    builder::StructuredSDFGBuilder& builder,
+    Block& block,
+    const std::string& ptr_a,
+    const std::string& ptr_b,
+    const std::string& ptr_c,
+    data_flow::AccessNode& alpha_node,
+    data_flow::AccessNode& beta_node,
+    const BLAS_Precision& precision,
+    const BLAS_Layout& layout,
+    const BLAS_Transpose& trans_a,
+    const BLAS_Transpose& trans_b,
+    symbolic::Expression& m,
+    symbolic::Expression& n,
+    symbolic::Expression& k,
+    symbolic::Expression& lda,
+    symbolic::Expression& ldb,
+    symbolic::Expression& ldc,
+    const types::IType& ptr_type,
+    const types::IType& factor_type,
+    DebugInfo debug_info,
+    data_flow::ImplementationType impl_type
+) {
+    return add_gemm_node(
+        builder,
+        block,
+        ptr_a,
+        ptr_b,
+        ptr_c,
+        alpha_node,
+        beta_node,
+        precision,
+        layout,
+        trans_a,
+        trans_b,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        ptr_type,
+        ptr_type,
+        ptr_type,
+        factor_type,
+        debug_info,
+        debug_info,
+        debug_info,
+        debug_info,
+        debug_info,
+        debug_info,
+        debug_info,
+        impl_type
+    );
+}
+
 } // namespace blas
 } // namespace math
 } // namespace sdfg
