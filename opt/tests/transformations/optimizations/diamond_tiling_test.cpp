@@ -4,7 +4,6 @@
 #include <fstream>
 #include <memory>
 
-#include "../../../../sdfg/tests/sdfg_debug_dump.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/passes/dataflow/dead_data_elimination.h"
@@ -19,6 +18,7 @@
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/tile_fusion.h"
 #include "sdfg/types/pointer.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -182,8 +182,6 @@ TEST(DiamondTilingTest, Jacobi1D) {
     transformations::Recorder recorder;
 
     dump_sdfg(builder.subject(), "0.before");
-
-    std::cerr << "#####" << std::endl;
 
     // Re-navigate after move
     auto& root = builder.subject().root();

@@ -5,7 +5,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../../../sdfg/tests/sdfg_debug_dump.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/data_flow_graph.h"
@@ -21,6 +20,7 @@
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
