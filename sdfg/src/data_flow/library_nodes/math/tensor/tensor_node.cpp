@@ -1,10 +1,21 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
+#include "daisy_rtl/primitive_types.h"
 #include "sdfg/types/tensor.h"
 
 namespace sdfg {
 namespace math {
 namespace tensor {
+
+types::PrimitiveType
+deserialize_quantization(const nlohmann::json& j, const std::string& field_name, types::PrimitiveType default_value) {
+    auto it = j.find(field_name);
+    types::PrimitiveType quantization = default_value;
+    if (it != j.end()) {
+        quantization = it->get<types::PrimitiveType>();
+    }
+    return quantization;
+}
 
 TensorNode::TensorNode(
     size_t element_id,
@@ -14,7 +25,7 @@ TensorNode::TensorNode(
     const data_flow::LibraryNodeCode& code,
     const std::vector<std::string>& outputs,
     const std::vector<std::string>& inputs,
-    data_flow::ImplementationType impl_type
+    const data_flow::ImplementationType& impl_type
 )
     : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type, true) {}
 

@@ -129,7 +129,7 @@ public:
 
         builder.add_computational_memlet(block, input_access, conv_node, "X", {}, tensor_type, DebugInfo());
         builder.add_computational_memlet(block, weights_access, conv_node, "W", {}, weights_type, DebugInfo());
-        builder.add_computational_memlet(block, conv_node, "Y", output_access, {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, output_access, conv_node, "Y", {}, tensor_type, DebugInfo());
 
         return block;
     }
@@ -331,7 +331,7 @@ public:
 
         builder.add_computational_memlet(block, input_access, conv_node, "X", {}, tensor_type, DebugInfo());
         builder.add_computational_memlet(block, weights_access, conv_node, "W", {}, weights_type, DebugInfo());
-        builder.add_computational_memlet(block, conv_node, "Y", output_access, {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, output_access, conv_node, "Y", {}, tensor_type, DebugInfo());
 
         return block;
     }
@@ -432,7 +432,7 @@ public:
 
         builder.add_computational_memlet(block, input_access, conv_node, "X", {}, tensor_type, DebugInfo());
         builder.add_computational_memlet(block, weights_access, conv_node, "W", {}, weights_type, DebugInfo());
-        builder.add_computational_memlet(block, conv_node, "Y", output_access, {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, output_access, conv_node, "Y", {}, tensor_type, DebugInfo());
 
         return block;
     }

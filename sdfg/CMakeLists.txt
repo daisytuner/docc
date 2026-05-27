@@ -92,7 +92,6 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/conv_node.cpp
     src/data_flow/library_nodes/math/tensor/einsum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_node.cpp
-    src/data_flow/library_nodes/math/tensor/tensor_expansion_utils.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.cpp
@@ -123,6 +122,8 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/std_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.cpp
+    src/data_flow/library_nodes/math/tensor/spatial_tensor_node.cpp
+    src/data_flow/library_nodes/math/tensor/tensor_expansion_utils.cpp
     src/data_flow/library_nodes/math/tensor/tensor_layout.cpp
     src/data_flow/library_nodes/math/tensor/tensor_node.cpp
     src/data_flow/library_nodes/math/tensor/transpose_node.cpp

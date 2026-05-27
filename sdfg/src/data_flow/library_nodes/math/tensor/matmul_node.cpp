@@ -61,18 +61,10 @@ MatMulNode::MatMulNode(
     data_flow::DataFlowGraph& parent,
     const TensorLayout& layout_a,
     const TensorLayout& layout_b,
-    types::PrimitiveType quantization
+    types::PrimitiveType quantization,
+    const data_flow::ImplementationType& impl_type
 )
-    : TensorNode(
-          element_id,
-          debug_info,
-          vertex,
-          parent,
-          LibraryNodeType_MatMul,
-          {},
-          {"Y", "A", "B"},
-          data_flow::ImplementationType_NONE
-      ),
+    : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_MatMul, {}, {"Y", "A", "B"}, impl_type),
       fixed_quantization_(quantization), layout_a_(layout_a), layout_b_(layout_b) {
     if (layout_a.dims() < 2) {
         throw std::invalid_argument("MatMulNode: Input A must have at least 2 dimensions");
@@ -138,9 +130,9 @@ void MatMulNode::replace(const symbolic::Expression old_expression, const symbol
 
 std::unique_ptr<data_flow::DataFlowNode> MatMulNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<data_flow::DataFlowNode>(
-        new MatMulNode(element_id, debug_info(), vertex, parent, layout_a_, layout_b_, fixed_quantization_)
-    );
+    return std::unique_ptr<data_flow::DataFlowNode>(new MatMulNode(
+        element_id, debug_info(), vertex, parent, layout_a_, layout_b_, fixed_quantization_, implementation_type_
+    ));
 }
 
 types::PrimitiveType MatMulNode::fixed_quantization() const { return fixed_quantization_; }
@@ -535,7 +527,6 @@ data_flow::LibraryNode& MatMulNodeSerializer::deserialize(
 
     std::optional<TensorLayout> layout_a;
     std::optional<TensorLayout> layout_b;
-    types::PrimitiveType quantization = QUANTIZATION_MATCH_INPUTS;
 
     auto layout_a_it = j.find("layout_a");
     if (layout_a_it != j.end()) {
@@ -584,10 +575,7 @@ data_flow::LibraryNode& MatMulNodeSerializer::deserialize(
         layout_b = TensorLayout(shape_b, strides_b, offset_b);
     }
 
-    auto result_quant = j.find("result_quant");
-    if (result_quant != j.end()) {
-        quantization = result_quant->get<types::PrimitiveType>();
-    }
+    auto quantization = deserialize_quantization(j, "result_quant", QUANTIZATION_MATCH_INPUTS);
 
     sdfg::serializer::JSONSerializer serializer;
     DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);

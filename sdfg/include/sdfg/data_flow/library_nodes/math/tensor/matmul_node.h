@@ -102,7 +102,8 @@ public:
         data_flow::DataFlowGraph& parent,
         const TensorLayout& layout_a,
         const TensorLayout& layout_b,
-        types::PrimitiveType quantization = QUANTIZATION_MATCH_INPUTS
+        types::PrimitiveType quantization = QUANTIZATION_MATCH_INPUTS,
+        const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
     static auto constexpr Y_INPUT_IDX = 0;

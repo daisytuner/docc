@@ -24,6 +24,12 @@ namespace tensor {
 
 constexpr types::PrimitiveType QUANTIZATION_MATCH_INPUTS = types::PrimitiveType::Void;
 
+types::PrimitiveType deserialize_quantization(
+    const nlohmann::json& j,
+    const std::string& field_name,
+    types::PrimitiveType default_value = QUANTIZATION_MATCH_INPUTS
+);
+
 /**
  * @class TensorNode
  * @brief Abstract base class for all tensor operations
@@ -57,7 +63,7 @@ public:
         const data_flow::LibraryNodeCode& code,
         const std::vector<std::string>& outputs,
         const std::vector<std::string>& inputs,
-        data_flow::ImplementationType impl_type
+        const data_flow::ImplementationType& impl_type
     );
 
     /**
