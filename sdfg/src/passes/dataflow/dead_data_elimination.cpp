@@ -259,8 +259,7 @@ bool MemoryOwnershipAnalysis::visit(sdfg::structured_control_flow::Block& node) 
         } else if (library_node->code() == stdlib::LibraryNodeType_Free) {
             auto* free_node = dynamic_cast<const stdlib::FreeNode*>(library_node);
             auto input = dflow.in_edge_for_connector(*free_node, free_node->input(0));
-            auto outputs = dflow.out_edges_for_connector(*free_node, free_node->output(0));
-            if (input && outputs.empty()) {
+            if (input) {
                 auto* in_access = dynamic_cast<const data_flow::AccessNode*>(&input->src());
 
                 if (in_access) {
