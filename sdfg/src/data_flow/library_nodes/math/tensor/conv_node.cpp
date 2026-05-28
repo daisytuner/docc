@@ -44,7 +44,7 @@ ConvNode::ConvNode(
     const std::vector<symbolic::Expression>& dilations,
     symbolic::Expression output_channels,
     symbolic::Expression group,
-    const types::PrimitiveType quantization,
+    QuantizationType quantization,
     const data_flow::ImplementationType& impl_type
 )
     : SpatialTensorNode(

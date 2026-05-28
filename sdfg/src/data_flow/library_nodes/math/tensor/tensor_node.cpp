@@ -10,7 +10,7 @@ namespace tensor {
 types::PrimitiveType
 deserialize_quantization(const nlohmann::json& j, const std::string& field_name, types::PrimitiveType default_value) {
     auto it = j.find(field_name);
-    types::PrimitiveType quantization = default_value;
+    QuantizationType quantization = default_value;
     if (it != j.end()) {
         quantization = it->get<types::PrimitiveType>();
     }

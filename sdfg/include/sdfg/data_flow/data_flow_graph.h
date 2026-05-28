@@ -199,6 +199,20 @@ public:
         data_flow::LibraryNode* lib_node = *this->library_nodes().begin();
         return dynamic_cast<T*>(lib_node);
     };
+
+    /**
+     * For the given input, identify a standalone input from which one could use to replace the following dataflow
+     * For a Block that contains a libNode with 2 inputs, 1 output, the access nodes of the inputs would be those
+     * standalone entry points. For expanding of the libNode one can reuse those accessNodes, if they are the
+     * entrypoints into the dataflow
+     *
+     * This is to abstract away the expectation that all edges are memlets that always must either start or end in an
+     * AccessNode in preparation of supporting pure data-edges between tasklets etc.
+     *
+     * @param input_edge the input edge for which we want to find a standalone cut point.
+     * @return nullptr, if no viable standalone input could be found
+     */
+    const AccessNode* find_standalone_entry(const Memlet* input_edge) const;
 };
 
 } // namespace data_flow

@@ -78,6 +78,8 @@ public:
 
     int dims() const { return shape_.size(); }
 
+    bool is_scalar() const;
+
     static TensorLayout deserialize_from_json(const nlohmann::json& j);
 
     static bool has_linear_accesses_no_padding(symbolic::MultiExpression shape, symbolic::MultiExpression strides);

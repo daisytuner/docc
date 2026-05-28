@@ -61,7 +61,7 @@ MatMulNode::MatMulNode(
     data_flow::DataFlowGraph& parent,
     const TensorLayout& layout_a,
     const TensorLayout& layout_b,
-    types::PrimitiveType quantization,
+    QuantizationType quantization,
     const data_flow::ImplementationType& impl_type
 )
     : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_MatMul, {}, {"Y", "A", "B"}, impl_type),

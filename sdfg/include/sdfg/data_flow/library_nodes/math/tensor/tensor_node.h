@@ -22,7 +22,8 @@ namespace sdfg {
 namespace math {
 namespace tensor {
 
-constexpr types::PrimitiveType QUANTIZATION_MATCH_INPUTS = types::PrimitiveType::Void;
+typedef types::PrimitiveType QuantizationType;
+constexpr QuantizationType QUANTIZATION_MATCH_INPUTS = types::PrimitiveType::Void;
 
 types::PrimitiveType deserialize_quantization(
     const nlohmann::json& j,

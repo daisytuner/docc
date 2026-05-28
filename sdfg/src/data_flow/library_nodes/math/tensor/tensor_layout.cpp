@@ -89,6 +89,8 @@ symbolic::Expression TensorLayout::total_elements() const { return SymEngine::mu
 
 symbolic::MultiExpression TensorLayout::linear_strides() const { return std::move(linear_strides(shape_)); }
 
+bool TensorLayout::is_scalar() const { return shape_.empty(); }
+
 TensorLayout TensorLayout::deserialize_from_json(const nlohmann::json& j) {
     symbolic::MultiExpression shape;
     for (const auto& dim : j["shape"]) {

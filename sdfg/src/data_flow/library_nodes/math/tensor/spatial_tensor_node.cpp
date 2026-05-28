@@ -12,7 +12,7 @@ SpatialTensorNode::SpatialTensorNode(
     const std::vector<std::string>& outputs,
     const std::vector<std::string>& inputs,
     const data_flow::ImplementationType& impl_type,
-    const types::PrimitiveType quantization,
+    QuantizationType quantization,
     const std::vector<symbolic::Expression>& shape,
     const std::vector<symbolic::Expression>& kernel_shape,
     const std::vector<symbolic::Expression>& strides,
@@ -22,9 +22,9 @@ SpatialTensorNode::SpatialTensorNode(
     : TensorNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type), shape_(shape),
       kernel_shape_(kernel_shape), strides_(strides), pads_(pads), dilations_(dilations), quantization_(quantization) {}
 
-types::PrimitiveType SpatialTensorNode::quantization() const { return quantization_; }
+QuantizationType SpatialTensorNode::quantization() const { return quantization_; }
 
-void SpatialTensorNode::set_quantization(const types::PrimitiveType quant) { quantization_ = quant; }
+void SpatialTensorNode::set_quantization(const QuantizationType quant) { quantization_ = quant; }
 
 symbolic::SymbolSet SpatialTensorNode::symbols() const {
     symbolic::SymbolSet syms;

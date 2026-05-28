@@ -35,7 +35,7 @@ namespace tensor {
  */
 class SpatialTensorNode : public TensorNode {
 protected:
-    types::PrimitiveType quantization_;
+    QuantizationType quantization_;
     std::vector<symbolic::Expression> shape_; ///< Input shape [N, C, D1, ..., Dn]
     std::vector<symbolic::Expression> kernel_shape_; ///< Pooling window shape [k1, ..., kn]
     std::vector<symbolic::Expression> strides_; ///< Stride along each spatial axis
@@ -52,7 +52,7 @@ public:
         const std::vector<std::string>& outputs,
         const std::vector<std::string>& inputs,
         const data_flow::ImplementationType& impl_type,
-        const types::PrimitiveType quantization,
+        QuantizationType quantization,
         const std::vector<symbolic::Expression>& shape,
         const std::vector<symbolic::Expression>& kernel_shape,
         const std::vector<symbolic::Expression>& strides,
@@ -66,7 +66,7 @@ public:
     const std::vector<symbolic::Expression>& pads() const { return pads_; }
     const std::vector<symbolic::Expression>& dilations() const { return dilations_; }
 
-    types::PrimitiveType quantization() const;
+    QuantizationType quantization() const;
 
     void set_quantization(const types::PrimitiveType quant);
 
@@ -120,7 +120,7 @@ public:
         std::vector<symbolic::Expression> strides;
         std::vector<symbolic::Expression> pads;
         std::vector<symbolic::Expression> dilations;
-        types::PrimitiveType quantization;
+        QuantizationType quantization;
         DebugInfo debug_info;
     };
 

@@ -871,6 +871,18 @@ const std::pair<size_t, const std::unordered_map<const data_flow::DataFlowNode*,
     }
 
     return {ccs_vertex.first, ccs};
+}
+
+const AccessNode* DataFlowGraph::find_standalone_entry(const Memlet* input_edge) const {
+    if (!input_edge) {
+        return nullptr;
+    }
+    auto* access_node = dynamic_cast<const data_flow::AccessNode*>(&input_edge->src());
+    if (access_node && in_degree(*access_node) == 0) {
+        return access_node;
+    } else {
+        return nullptr;
+    }
 };
 
 

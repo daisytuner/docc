@@ -17,7 +17,7 @@ BatchNormNode::BatchNormNode(
     graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
     TensorLayout layout,
-    types::PrimitiveType quantization,
+    QuantizationType quantization,
     data_flow::ImplementationType impl_type
 )
     : TensorNode(

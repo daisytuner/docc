@@ -24,7 +24,7 @@ PoolingNode::PoolingNode(
     const std::vector<symbolic::Expression>& strides,
     const std::vector<symbolic::Expression>& pads,
     const std::vector<symbolic::Expression>& dilations,
-    const types::PrimitiveType quantization,
+    QuantizationType quantization,
     const data_flow::ImplementationType& impl_type
 )
     : SpatialTensorNode(

@@ -117,7 +117,7 @@ public:
         const std::vector<symbolic::Expression>& dilations,
         symbolic::Expression output_channels,
         symbolic::Expression group,
-        types::PrimitiveType quantization = QUANTIZATION_MATCH_INPUTS,
+        QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
