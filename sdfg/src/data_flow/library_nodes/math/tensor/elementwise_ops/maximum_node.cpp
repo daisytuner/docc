@@ -15,50 +15,48 @@ MaximumNode::MaximumNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    const std::vector<symbolic::Expression>& shape
+    const std::vector<symbolic::Expression>& shape,
+    QuantizationType quantization,
+    const data_flow::ImplementationType& impl_type
 )
-    : ElementWiseBinaryNode(element_id, debug_info, vertex, parent, LibraryNodeType_Maximum, shape) {}
+    : ElementWiseDataflowTensorNode(
+          element_id, debug_info, vertex, parent, LibraryNodeType_Maximum, shape, "C", {"A", "B"}, quantization, impl_type
+      ) {}
 
-bool MaximumNode::expand_operation(
+ElementWiseDataflowTensorNode::ElementOutput MaximumNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Sequence& body,
-    const std::string& input_name_a,
-    const std::string& input_name_b,
-    const std::string& output_name,
-    const types::Tensor& input_type_a,
-    const types::Tensor& input_type_b,
-    const types::Tensor& output_type,
-    const data_flow::Subset& subset
+    Block& block,
+    std::vector<ElementInput>& needed_inputs,
+    types::PrimitiveType expected_type
 ) {
-    auto& code_block = builder.add_block(body);
-    auto& output_node = builder.add_access(code_block, output_name);
+    auto& input0 = needed_inputs.at(0);
+    auto& input1 = needed_inputs.at(1);
 
-    bool is_int = types::is_integer(input_type_a.primitive_type());
-
-    data_flow::CodeNode* code_node;
-    if (is_int) {
+    CodeNode* code_node;
+    if (types::is_integer(input0.required_type)) {
         // Use tasklets for integer types - distinguish between signed and unsigned
-        auto tasklet_code = TensorNode::get_integer_minmax_tasklet(input_type_a.primitive_type(), true);
-        code_node = &builder.add_tasklet(code_block, tasklet_code, "_out", {"_in1", "_in2"});
-
+        auto tasklet_code = TensorNode::get_integer_minmax_tasklet(input0.required_type, true);
+        code_node = &builder.add_tasklet(block, tasklet_code, "_out", {"_in1", "_in2"});
     } else {
         // Use intrinsics for floating-point types with correct suffix
         code_node = &builder.add_library_node<
-            cmath::CMathNode>(code_block, this->debug_info(), cmath::CMathFunction::fmax, input_type_a.primitive_type());
+            cmath::CMathNode>(block, this->debug_info(), cmath::CMathFunction::fmax, input0.required_type);
     }
 
-    create_input_memlet(builder, "_in1", input_name_a, input_type_a, subset, code_block, *code_node);
-    create_input_memlet(builder, "_in2", input_name_b, input_type_b, subset, code_block, *code_node);
-    builder.add_computational_memlet(code_block, *code_node, "_out", output_node, subset, output_type);
+    input0.consumer = code_node;
+    input0.input_conn_index = 0;
+    input1.consumer = code_node;
+    input1.input_conn_index = 1;
 
-    return true;
+    return {.producer = code_node, .output_conn_index = 0, .type = input0.required_type};
 }
 
 std::unique_ptr<data_flow::DataFlowNode> MaximumNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new MaximumNode(element_id, this->debug_info(), vertex, parent, this->shape_));
+    return std::unique_ptr<data_flow::DataFlowNode>(new MaximumNode(
+        element_id, this->debug_info(), vertex, parent, this->shape_, fixed_quantization_, implementation_type_
+    ));
 }
 
 } // namespace tensor

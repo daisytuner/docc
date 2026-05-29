@@ -165,7 +165,6 @@ data_flow::LibraryNode& CMathTensorNodeSerializer::deserialize(
     auto base = deserialize_base_values(j);
 
     // Assertions for required fields
-    assert(j.contains("output"));
     assert(j.contains("inputs"));
     assert(j.contains("cmath_function"));
 

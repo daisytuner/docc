@@ -100,6 +100,28 @@ data_flow::TaskletCode TensorNode::get_integer_minmax_tasklet(types::PrimitiveTy
     }
 }
 
+void TensorNode::validate_shape_matches(
+    const std::vector<symbolic::Expression>& required_shape, const TensorLayout& layout, const std::string& name
+) const {
+    if (layout.shape().size() != required_shape.size()) {
+        throw InvalidSDFGException(
+            "On libNode #" + std::to_string(element_id()) + ": " + name +
+            " tensor shape must match node shape dims: Given: " + std::to_string(layout.shape().size()) +
+            " Required: " + std::to_string(required_shape.size())
+        );
+    }
+    auto& given_shape = layout.shape();
+    for (size_t i = 0; i < required_shape.size(); ++i) {
+        if (!symbolic::eq(layout.shape().at(i), required_shape.at(i))) {
+            throw InvalidSDFGException(
+                "On libNode #" + std::to_string(element_id()) + ": " + name +
+                " tensor shape must match shape: Given: " + layout.shape().at(i)->__str__() +
+                " Expected shape: " + required_shape.at(i)->__str__()
+            );
+        }
+    }
+}
+
 } // namespace tensor
 } // namespace math
 } // namespace sdfg

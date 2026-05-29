@@ -21,7 +21,7 @@ TanhNode::TanhNode(
     const data_flow::ImplementationType& impl_type
 )
     : ElementWiseDataflowTensorNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_Tanh, shape, "X", {"Y"}, quantization, impl_type
+          element_id, debug_info, vertex, parent, LibraryNodeType_Tanh, shape, "Y", {"X"}, quantization, impl_type
       ) {}
 
 ElementWiseDataflowTensorNode::ElementOutput TanhNode::expand_operation_dataflow(

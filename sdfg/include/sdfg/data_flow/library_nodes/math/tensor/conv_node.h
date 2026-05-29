@@ -177,6 +177,8 @@ public:
     symbolic::Expression kernel_iteration_count() const;
 
     symbolic::Expression flop() const override;
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 };
 
 /**

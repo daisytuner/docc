@@ -1036,27 +1036,15 @@ void PyStructuredSDFGBuilder::add_elementwise_unary_op(
     auto& parent = current_sequence();
     auto& block = builder_.add_block(parent, {}, debug_info);
 
-    sdfg::math::tensor::ElementWiseUnaryNode* node = nullptr;
+    sdfg::data_flow::LibraryNode* node = nullptr;
     if (op_type == "abs") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseUnaryNode*>(&builder_.add_library_node<
-                                                        sdfg::math::tensor::AbsNode>(block, debug_info, C_type.shape())
-        );
+        node = &builder_.add_library_node<sdfg::math::tensor::AbsNode>(block, debug_info, C_type.shape());
     } else if (op_type == "sqrt") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseUnaryNode*>(&builder_.add_library_node<
-                                                        sdfg::math::tensor::SqrtNode>(block, debug_info, C_type.shape())
-        );
+        node = &builder_.add_library_node<sdfg::math::tensor::SqrtNode>(block, debug_info, C_type.shape());
     } else if (op_type == "tanh") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseUnaryNode*>(&builder_.add_library_node<
-                                                        sdfg::math::tensor::TanhNode>(block, debug_info, C_type.shape())
-        );
+        node = &builder_.add_library_node<sdfg::math::tensor::TanhNode>(block, debug_info, C_type.shape());
     } else if (op_type == "exp") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseUnaryNode*>(&builder_.add_library_node<
-                                                        sdfg::math::tensor::ExpNode>(block, debug_info, C_type.shape())
-        );
+        node = &builder_.add_library_node<sdfg::math::tensor::ExpNode>(block, debug_info, C_type.shape());
     } else {
         throw std::runtime_error("Unsupported elementwise unary op: " + op_type);
     }

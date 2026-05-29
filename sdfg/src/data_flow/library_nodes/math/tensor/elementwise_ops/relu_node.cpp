@@ -21,7 +21,7 @@ ReLUNode::ReLUNode(
     const data_flow::ImplementationType& impl_type
 )
     : ElementWiseDataflowTensorNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_ReLU, shape, "X", {"Y"}, quantization, impl_type
+          element_id, debug_info, vertex, parent, LibraryNodeType_ReLU, shape, "Y", {"X"}, quantization, impl_type
       ) {}
 
 ElementWiseDataflowTensorNode::ElementOutput ReLUNode::expand_operation_dataflow(

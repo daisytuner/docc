@@ -38,7 +38,7 @@ public:
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 };
 
-typedef ElementWiseUnaryNodeSerializer<FillNode> FillNodeSerializer;
+typedef SimpleElementWiseDataflowTensorNodeSerializer<FillNode> FillNodeSerializer;
 
 
 } // namespace tensor

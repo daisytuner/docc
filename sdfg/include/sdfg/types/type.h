@@ -547,7 +547,14 @@ public:
     virtual TypeID type_id() const = 0;
 
     /// @brief Gets the storage type (const version)
-    StorageType storage_type() const { return storage_type_; };
+    StorageType storage_type() const { return storage_type_; }
+
+    /**
+     * @brief Checks if this is a pointer or a structure behaves like a pointer
+     *
+     * Some structures may have pointer-like semantics in certain contexts.
+     */
+    virtual bool is_pointer_like() const = 0;
 
     /// @brief Gets the storage type (mutable reference)
     StorageType& storage_type() { return storage_type_; };

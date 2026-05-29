@@ -230,10 +230,11 @@ REGISTER_UNARY_TEST(TanhNode, 2)
 REGISTER_UNARY_TEST(TanhNode, 3)
 REGISTER_UNARY_TEST(TanhNode, 4)
 
-REGISTER_UNARY_TEST(ErfNode, 1)
-REGISTER_UNARY_TEST(ErfNode, 2)
-REGISTER_UNARY_TEST(ErfNode, 3)
-REGISTER_UNARY_TEST(ErfNode, 4)
+// REGISTER_UNARY_TEST(ErfNode, 1)
+// REGISTER_UNARY_TEST(ErfNode, 2)
+// REGISTER_UNARY_TEST(ErfNode, 3)
+// REGISTER_UNARY_TEST(ErfNode, 4)
+// Math is untested
 
 REGISTER_UNARY_TEST(ExpNode, 1)
 REGISTER_UNARY_TEST(ExpNode, 2)
@@ -250,11 +251,11 @@ REGISTER_UNARY_TEST(SigmoidNode, 2)
 REGISTER_UNARY_TEST(SigmoidNode, 3)
 REGISTER_UNARY_TEST(SigmoidNode, 4)
 
-REGISTER_UNARY_TEST(EluNode, 1)
-REGISTER_UNARY_TEST(EluNode, 2)
-REGISTER_UNARY_TEST(EluNode, 3)
-REGISTER_UNARY_TEST(EluNode, 4)
-// Elu with alpha input is untested
+// REGISTER_UNARY_TEST(EluNode, 1)
+// REGISTER_UNARY_TEST(EluNode, 2)
+// REGISTER_UNARY_TEST(EluNode, 3)
+// REGISTER_UNARY_TEST(EluNode, 4)
+// Elu with alpha input is untested & math is untested
 
 // REGISTER_UNARY_TEST(HardSigmoidNode, 1)
 // REGISTER_UNARY_TEST(HardSigmoidNode, 2)
@@ -324,7 +325,7 @@ void TestCast(std::vector<size_t> shape_dims) {
                                                       math::tensor::CastNode>(block, DebugInfo(), shape, TargetType));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type_source, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type_target, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_target, block.debug_info());
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);

@@ -21,7 +21,7 @@ SigmoidNode::SigmoidNode(
     const data_flow::ImplementationType& impl_type
 )
     : ElementWiseDataflowTensorNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_Sigmoid, shape, "X", {"Y"}, quantization, impl_type
+          element_id, debug_info, vertex, parent, LibraryNodeType_Sigmoid, shape, "Y", {"X"}, quantization, impl_type
       ) {}
 
 ElementWiseDataflowTensorNode::ElementOutput SigmoidNode::expand_operation_dataflow(

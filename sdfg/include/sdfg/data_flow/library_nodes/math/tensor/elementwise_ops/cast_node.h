@@ -12,10 +12,7 @@ namespace tensor {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_Cast("ml::Cast");
 
-class CastNode : public ElementWiseUnaryNode {
-private:
-    types::PrimitiveType target_type_;
-
+class CastNode : public ElementWiseDataflowTensorNode {
 public:
     CastNode(
         size_t element_id,
@@ -23,23 +20,21 @@ public:
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
         const std::vector<symbolic::Expression>& shape,
-        types::PrimitiveType target_type
+        types::PrimitiveType target_type, // we reuse the fixed_quantization field for this
+        const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
-    bool expand_operation(
+    ElementOutput expand_operation_dataflow(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::Sequence& body,
-        const std::string& input_name,
-        const std::string& output_name,
-        const types::Tensor& input_type,
-        const types::Tensor& output_type,
-        const data_flow::Subset& subset
+        Block& block,
+        std::vector<ElementInput>& needed_inputs,
+        types::PrimitiveType expected_type
     ) override;
 
     bool supports_integer_types() const override { return true; }
 
-    types::PrimitiveType target_type() const { return target_type_; }
+    types::PrimitiveType target_type() const { return fixed_quantization_; }
 
     void validate(const Function& function) const override;
 
@@ -47,14 +42,7 @@ public:
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 };
 
-class CastNodeSerializer : public serializer::LibraryNodeSerializer {
-public:
-    nlohmann::json serialize(const data_flow::LibraryNode& library_node) override;
-
-    data_flow::LibraryNode& deserialize(
-        const nlohmann::json& j, builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& parent
-    ) override;
-};
+typedef SimpleElementWiseDataflowTensorNodeSerializer<CastNode> CastNodeSerializer;
 
 } // namespace tensor
 } // namespace math

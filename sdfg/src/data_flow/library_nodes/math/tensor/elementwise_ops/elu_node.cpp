@@ -21,7 +21,7 @@ EluNode::EluNode(
     const data_flow::ImplementationType& impl_type
 )
     : ElementWiseDataflowTensorNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_Elu, shape, "X", {"Y", "alpha"}, quantization, impl_type
+          element_id, debug_info, vertex, parent, LibraryNodeType_Elu, shape, "Y", {"X", "alpha"}, quantization, impl_type
       ) {}
 
 ElementWiseDataflowTensorNode::ElementOutput EluNode::expand_operation_dataflow(
@@ -35,6 +35,8 @@ ElementWiseDataflowTensorNode::ElementOutput EluNode::expand_operation_dataflow(
     bool has_alpha_input = needed_inputs.size() > 1;
 
     types::Scalar scalar_type(input0.required_type);
+
+    throw std::runtime_error("Elu: untested expand");
 
     // 1. exp(x)
     auto& first_op = builder.add_library_node<

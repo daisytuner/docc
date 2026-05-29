@@ -21,7 +21,7 @@ ExpNode::ExpNode(
     const data_flow::ImplementationType& impl_type
 )
     : ElementWiseDataflowTensorNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_Exp, shape, "X", {"Y"}, quantization, impl_type
+          element_id, debug_info, vertex, parent, LibraryNodeType_Exp, shape, "Y", {"X"}, quantization, impl_type
       ) {}
 
 ElementWiseDataflowTensorNode::ElementOutput ExpNode::expand_operation_dataflow(

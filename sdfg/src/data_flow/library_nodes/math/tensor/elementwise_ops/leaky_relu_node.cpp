@@ -43,6 +43,7 @@ ElementWiseDataflowTensorNode::ElementOutput LeakyReLUNode::expand_operation_dat
     auto& input0 = needed_inputs.at(0);
     auto& alpha_input = needed_inputs.at(1);
 
+    throw std::runtime_error("LeakyReLUNode: untested expand");
     types::Scalar scalar_type(input0.required_type);
 
     // max(x, 0)

@@ -21,7 +21,7 @@ ErfNode::ErfNode(
     const data_flow::ImplementationType& impl_type
 )
     : ElementWiseDataflowTensorNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_Erf, shape, "X", {"Y"}, quantization, impl_type
+          element_id, debug_info, vertex, parent, LibraryNodeType_Erf, shape, "Y", {"X"}, quantization, impl_type
       ) {}
 
 ElementWiseDataflowTensorNode::ElementOutput ErfNode::expand_operation_dataflow(
@@ -32,6 +32,8 @@ ElementWiseDataflowTensorNode::ElementOutput ErfNode::expand_operation_dataflow(
     types::PrimitiveType expected_type
 ) {
     auto& input = needed_inputs.at(0);
+
+    throw std::runtime_error("Erf: untested expand");
 
     auto& libnode =
         builder.add_library_node<cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::erf, input.required_type);

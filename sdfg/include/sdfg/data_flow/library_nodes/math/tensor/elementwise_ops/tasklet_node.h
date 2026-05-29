@@ -11,6 +11,7 @@
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/data_flow_node.h"
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/element.h"
@@ -26,10 +27,9 @@ namespace tensor {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_TensorTasklet("ml::Tasklet");
 
-class TaskletTensorNode : public TensorNode {
+class TaskletTensorNode : public ElementWiseDataflowTensorNode {
 private:
     data_flow::TaskletCode tasklet_code_;
-    std::vector<symbolic::Expression> shape_; ///< Logical tensor shape
 
 public:
     TaskletTensorNode(
@@ -38,9 +38,11 @@ public:
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
         const data_flow::TaskletCode tasklet_code,
-        const std::vector<std::string>& outputs,
-        const std::vector<std::string>& inputs,
-        const std::vector<symbolic::Expression>& shape
+        const std::string& modified_tensor_conn,
+        const std::vector<std::string>& tensor_inputs,
+        const std::vector<symbolic::Expression>& shape,
+        QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
+        const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
     void validate(const Function& function) const override;
@@ -51,29 +53,15 @@ public:
      */
     data_flow::TaskletCode tasklet_code() const;
 
-    /**
-     * @brief Get the tensor shape
-     * @return Logical tensor shape
-     */
-    const std::vector<symbolic::Expression>& shape() const;
-
-    symbolic::SymbolSet symbols() const override;
-
-    void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
-
-    /**
-     * @brief Expand into map with linearized indexing
-     *
-     * Creates nested maps over each dimension with linearized index computation
-     * for accessing the flat input/output arrays.
-     *
-     * @param builder SDFG builder
-     * @param analysis_manager Analysis manager
-     * @return True if expansion succeeded
-     */
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
-
     bool supports_integer_types() const override;
+
+    ElementOutput expand_operation_dataflow(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        Block& block,
+        std::vector<ElementInput>& needed_inputs,
+        types::PrimitiveType expected_type
+    ) override;
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
@@ -81,7 +69,7 @@ public:
     std::string toStr() const override;
 };
 
-class TaskletTensorNodeSerializer : public serializer::LibraryNodeSerializer {
+class TaskletTensorNodeSerializer : public BaseElementWiseDataflowTensorNodeSerializer {
 public:
     nlohmann::json serialize(const data_flow::LibraryNode& library_node) override;
 

@@ -77,6 +77,8 @@ public:
     static PoolingMode string_to_mode(const std::string& str);
 
     symbolic::Expression flop() const override;
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 };
 
 /**

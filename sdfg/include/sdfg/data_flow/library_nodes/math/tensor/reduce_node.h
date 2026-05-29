@@ -188,6 +188,24 @@ public:
      * @return Identity value as string expression
      */
     virtual std::string identity(types::PrimitiveType primitive_type) const = 0;
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+
+protected:
+    virtual bool expand_inner(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Block& block,
+        data_flow::DataFlowGraph& dataflow,
+        structured_control_flow::Sequence& parent,
+        Transition& transition,
+        const data_flow::Memlet* iedge_input,
+        const data_flow::Memlet* iedge_result,
+        const data_flow::AccessNode* input_node,
+        const data_flow::AccessNode* output_node,
+        const std::vector<symbolic::Expression>& output_shape,
+        const std::vector<int64_t>& sorted_axes
+    );
 };
 
 template<typename T>

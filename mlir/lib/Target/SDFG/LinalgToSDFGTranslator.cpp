@@ -102,16 +102,11 @@ LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, El
         );
     auto& result_access = builder.add_access(block, result_container, deb_info);
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::TaskletTensorNode>(
-        block,
-        deb_info,
-        code,
-        std::vector<std::string>({"_out"}),
-        std::vector<std::string>({"_in1", "_in2"}),
-        result_sdfg_tensor->shape()
+        block, deb_info, code, "_out", std::vector<std::string>({"_in1", "_in2"}), result_sdfg_tensor->shape()
     );
     builder.add_computational_memlet(block, input1_access, libnode, "_in1", {}, *input1_sdfg_tensor, deb_info);
     builder.add_computational_memlet(block, input2_access, libnode, "_in2", {}, *input2_sdfg_tensor, deb_info);
-    builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *result_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "_out", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -140,15 +135,10 @@ LogicalResult translateLinalgElementwiseCMathOp(SDFGTranslator& translator, Elem
     auto& input_access = builder.add_access(block, input_container, deb_info);
     auto& result_access = builder.add_access(block, result_container, deb_info);
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::CMathTensorNode>(
-        block,
-        deb_info,
-        function,
-        std::vector<std::string>({"_out"}),
-        std::vector<std::string>({"_in"}),
-        sdfg_tensor->shape()
+        block, deb_info, function, "_out", std::vector<std::string>({"_in"}), sdfg_tensor->shape()
     );
     builder.add_computational_memlet(block, input_access, libnode, "_in", {}, *sdfg_tensor, deb_info);
-    builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "_out", {}, *sdfg_tensor, deb_info);
 
     return success();
 }
@@ -435,7 +425,7 @@ LogicalResult translateLinalgCustomReLUOp(SDFGTranslator& translator, linalg::cu
     auto& libnode =
         builder.add_library_node<::sdfg::math::tensor::ReLUNode>(block, deb_info, result_sdfg_tensor->shape());
     builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
-    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "Y", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -471,7 +461,7 @@ LogicalResult translateLinalgCustomSigmoidOp(SDFGTranslator& translator, linalg:
     auto& libnode =
         builder.add_library_node<::sdfg::math::tensor::SigmoidNode>(block, deb_info, result_sdfg_tensor->shape());
     builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
-    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "Y", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -622,7 +612,7 @@ LogicalResult translateLinalgCustomConv2DNchwFchwOp(SDFGTranslator& translator, 
     );
     builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
     builder.add_computational_memlet(block, weights_access, libnode, "W", {}, *weights_sdfg_tensor, deb_info);
-    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "Y", {}, *result_sdfg_tensor, deb_info);
 
     if (bias) {
         auto bias_container = translator.get_or_create_container(bias);
@@ -698,7 +688,7 @@ LogicalResult translateLinalgCustomPoolingNchwOp(SDFGTranslator& translator, lin
     auto& libnode = builder.add_library_node<
         ::sdfg::math::tensor::PoolingNode>(block, deb_info, mode, shape, kernel_shape, strides, pads, dilations);
     builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
-    builder.add_computational_memlet(block, libnode, "Y", result_access, {}, *result_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "Y", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -885,7 +875,7 @@ LogicalResult translateLinalgFillOp(SDFGTranslator& translator, linalg::FillOp* 
     }
 
     auto& out_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
-    builder.add_computational_memlet(block, lib_node, "Y", out_access, {}, *tensor_type, deb_info);
+    builder.add_computational_memlet(block, out_access, lib_node, "Y", {}, *tensor_type, deb_info);
 
     return success();
 }
@@ -1291,7 +1281,7 @@ LogicalResult translateLinalgDepthwiseConv2DNchwChwOp(SDFGTranslator& translator
 
     builder.add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type, deb_info);
     builder.add_computational_memlet(block, w_access, libnode, "W", {}, weight_tensor_type, deb_info);
-    builder.add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type, deb_info);
+    builder.add_computational_memlet(block, y_access, libnode, "Y", {}, output_tensor_type, deb_info);
 
     return success();
 }
@@ -1450,7 +1440,7 @@ LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg
         builder.add_computational_memlet(block, b_access, libnode, "B", {}, bias_tensor_type, deb_info);
     }
 
-    builder.add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type, deb_info);
+    builder.add_computational_memlet(block, y_access, libnode, "Y", {}, output_tensor_type, deb_info);
 
     return success();
 }
@@ -1557,7 +1547,7 @@ LogicalResult translateLinalgPoolingNchwOp(SDFGTranslator& translator, PoolOp* o
     auto& y_access = builder.add_access(block, out_container, deb_info);
 
     builder.add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type, deb_info);
-    builder.add_computational_memlet(block, libnode, "Y", y_access, {}, output_tensor_type, deb_info);
+    builder.add_computational_memlet(block, y_access, libnode, "Y", {}, output_tensor_type, deb_info);
 
     return success();
 }

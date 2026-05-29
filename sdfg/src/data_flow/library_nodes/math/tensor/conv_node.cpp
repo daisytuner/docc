@@ -624,6 +624,16 @@ symbolic::Expression ConvNode::flop() const {
     return symbolic::add(mul_ops, add_ops);
 }
 
+data_flow::PointerAccessType ConvNode::pointer_access_type(int input_idx) const {
+    if (input_idx == 0) {
+        return data_flow::PointerAccessMeta::create_full_write_only(symbolic::__nullptr__(), true);
+    } else if (input_idx >= 1 && input_idx < inputs_.size()) {
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::__nullptr__(), true);
+    } else {
+        return TensorNode::pointer_access_type(input_idx);
+    }
+}
+
 symbolic::Expression ConvNode::num_output_elements() const {
     // N * C_out * prod(output_spatial_dim(i))
     return symbolic::mul(symbolic::mul(shape_[0], output_channels_), output_spatial_volume());

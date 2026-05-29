@@ -21,6 +21,7 @@
 namespace sdfg {
 namespace math {
 namespace tensor {
+class TensorLayout;
 
 typedef types::PrimitiveType QuantizationType;
 constexpr QuantizationType QUANTIZATION_MATCH_INPUTS = types::PrimitiveType::Void;
@@ -116,6 +117,10 @@ protected:
      * @return The appropriate tasklet code
      */
     static data_flow::TaskletCode get_integer_minmax_tasklet(types::PrimitiveType prim_type, bool is_max);
+
+    void validate_shape_matches(
+        const std::vector<symbolic::Expression>& required_shape, const TensorLayout& layout, const std::string& name
+    ) const;
 };
 
 } // namespace tensor

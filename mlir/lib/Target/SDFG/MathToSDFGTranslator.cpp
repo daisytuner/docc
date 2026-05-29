@@ -59,15 +59,10 @@ LogicalResult translateMathUnaryOp(SDFGTranslator& translator, Op* op) {
         auto& operand_access = builder.add_access(block, operand_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         auto& libnode = builder.add_library_node<::sdfg::math::tensor::CMathTensorNode>(
-            block,
-            deb_info,
-            function,
-            std::vector<std::string>({"_out"}),
-            std::vector<std::string>({"_in"}),
-            sdfg_tensor->shape()
+            block, deb_info, function, "_out", std::vector<std::string>({"_in"}), sdfg_tensor->shape()
         );
         builder.add_computational_memlet(block, operand_access, libnode, "_in", {}, *sdfg_tensor, deb_info);
-        builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor, deb_info);
+        builder.add_computational_memlet(block, result_access, libnode, "_out", {}, *sdfg_tensor, deb_info);
     } else {
         return op->emitOpError("Unsupported type(s)");
     }
@@ -125,16 +120,11 @@ LogicalResult translateMathBinaryOp(SDFGTranslator& translator, Op* op) {
         auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         auto& libnode = builder.add_library_node<::sdfg::math::tensor::CMathTensorNode>(
-            block,
-            deb_info,
-            function,
-            std::vector<std::string>({"_out"}),
-            std::vector<std::string>({"_in1", "_in2"}),
-            sdfg_tensor->shape()
+            block, deb_info, function, "_out", std::vector<std::string>({"_in1", "_in2"}), sdfg_tensor->shape()
         );
         builder.add_computational_memlet(block, lhs_access, libnode, "_in1", {}, *sdfg_tensor, deb_info);
         builder.add_computational_memlet(block, rhs_access, libnode, "_in2", {}, *sdfg_tensor, deb_info);
-        builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor, deb_info);
+        builder.add_computational_memlet(block, result_access, libnode, "_out", {}, *sdfg_tensor, deb_info);
     } else {
         return op->emitOpError("Unsupported type(s)");
     }
@@ -182,12 +172,12 @@ LogicalResult translateMathAbsIOp(SDFGTranslator& translator, math::AbsIOp* absi
             block,
             deb_info,
             ::sdfg::data_flow::TaskletCode::int_abs,
-            std::vector<std::string>({"_out"}),
+            "_out",
             std::vector<std::string>({"_in"}),
             sdfg_tensor->shape()
         );
         builder.add_computational_memlet(block, operand_access, libnode, "_in", {}, *sdfg_tensor, deb_info);
-        builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor, deb_info);
+        builder.add_computational_memlet(block, result_access, libnode, "_out", {}, *sdfg_tensor, deb_info);
     } else {
         return absi_op->emitOpError("Unsupported type(s)");
     }
@@ -249,14 +239,14 @@ LogicalResult translateMathFmaOp(SDFGTranslator& translator, math::FmaOp* fma_op
             block,
             deb_info,
             ::sdfg::data_flow::TaskletCode::fp_fma,
-            std::vector<std::string>({"_out"}),
+            "_out",
             std::vector<std::string>({"_in1", "_in2", "_in3"}),
             sdfg_tensor->shape()
         );
         builder.add_computational_memlet(block, a_access, libnode, "_in1", {}, *sdfg_tensor, deb_info);
         builder.add_computational_memlet(block, b_access, libnode, "_in2", {}, *sdfg_tensor, deb_info);
         builder.add_computational_memlet(block, c_access, libnode, "_in3", {}, *sdfg_tensor, deb_info);
-        builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor, deb_info);
+        builder.add_computational_memlet(block, result_access, libnode, "_out", {}, *sdfg_tensor, deb_info);
     } else {
         return fma_op->emitOpError("Unsupported type(s)");
     }
@@ -328,13 +318,13 @@ LogicalResult translateMathFPowIOp(SDFGTranslator& translator, math::FPowIOp* fp
             block,
             deb_info,
             ::sdfg::math::cmath::CMathFunction::pow,
-            std::vector<std::string>({"_out"}),
+            "_out",
             std::vector<std::string>({"_in1", "_in2"}),
             result_sdfg_tensor->shape()
         );
         builder.add_computational_memlet(block, lhs_access, libnode, "_in1", {}, *lhs_sdfg_tensor, deb_info);
         builder.add_computational_memlet(block, rhs_access, libnode, "_in2", {}, *rhs_sdfg_tensor, deb_info);
-        builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *result_sdfg_tensor, deb_info);
+        builder.add_computational_memlet(block, result_access, libnode, "_out", {}, *result_sdfg_tensor, deb_info);
     } else {
         return fpowi_op->emitOpError("Unsupported type(s)");
     }

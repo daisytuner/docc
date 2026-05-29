@@ -480,6 +480,16 @@ symbolic::Expression PoolingNode::flop() const {
     }
 }
 
+data_flow::PointerAccessType PoolingNode::pointer_access_type(int input_idx) const {
+    if (input_idx == 0) {
+        return data_flow::PointerAccessMeta::create_full_write_only(symbolic::__nullptr__(), true);
+    } else if (input_idx == 1) {
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::__nullptr__(), true);
+    } else {
+        return TensorNode::pointer_access_type(input_idx);
+    }
+}
+
 std::string PoolingNode::toStr() const {
     std::stringstream ss;
     ss << "Pooling(mode=" << mode_to_string(mode_) << ", ";

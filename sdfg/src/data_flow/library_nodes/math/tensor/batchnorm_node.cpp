@@ -326,6 +326,16 @@ symbolic::Expression BatchNormNode::flop() const {
     return outer_flops;
 }
 
+data_flow::PointerAccessType BatchNormNode::pointer_access_type(int input_idx) const {
+    if (input_idx >= 0 && input_idx <= 4) {
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::__nullptr__(), true);
+    } else if (input_idx == 6) {
+        return data_flow::PointerAccessMeta::create_full_write_only(symbolic::__nullptr__(), true);
+    } else {
+        return TensorNode::pointer_access_type(input_idx);
+    }
+}
+
 nlohmann::json BatchNormNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     auto& node = static_cast<const BatchNormNode&>(library_node);
     nlohmann::json j;

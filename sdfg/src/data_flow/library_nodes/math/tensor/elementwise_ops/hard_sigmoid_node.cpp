@@ -46,6 +46,8 @@ ElementWiseDataflowTensorNode::ElementOutput HardSigmoidNode::expand_operation_d
 
     types::Scalar scalar_type(input0.required_type);
 
+    throw std::runtime_error("Hardsigmoid: untested expand");
+
     // alpha * x + beta
     auto& first_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
     input_alpha.consumer = &first_op;
