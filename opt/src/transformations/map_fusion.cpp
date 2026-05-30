@@ -1304,7 +1304,27 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         }
     }
 
-    analysis_manager.invalidate_all();
+    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+        // The loop structure is unchanged after ProducerIntoConsumer: only new Block
+        // nodes are inserted into consumer_body_. Patch them into AssumptionsAnalysis
+        // so it stays valid, then preserve it (and LoopAnalysis) across the invalidation.
+        if (analysis_manager.has<analysis::AssumptionsAnalysis>()) {
+            size_t n = fusion_candidates_.size();
+            if (n < consumer_body_->size()) {
+                auto& aa = analysis_manager.get<analysis::AssumptionsAnalysis>();
+                // Original consumer blocks were shifted to index n..size-1; use
+                // the first of them as the scope reference for the new blocks.
+                auto& sibling = consumer_body_->at(n).first;
+                for (size_t i = 0; i < n; ++i) {
+                    aa.register_node(consumer_body_->at(i).first, sibling);
+                }
+            }
+        }
+        analysis_manager.invalidate_preserving<analysis::AssumptionsAnalysis, analysis::LoopAnalysis>();
+    } else {
+        // ConsumerIntoProducer removes the consumer loop node entirely — full invalidation.
+        analysis_manager.invalidate_all();
+    }
     applied_ = true;
 }
 

@@ -74,6 +74,11 @@ public:
     }
 
     template<class T>
+    bool has() const {
+        return cache_.find(std::type_index(typeid(T))) != cache_.end();
+    }
+
+    template<class T>
     void invalidate() {
         std::type_index type = std::type_index(typeid(T));
         if (cache_.find(type) != cache_.end()) {
@@ -81,10 +86,10 @@ public:
         }
     }
 
-    // Preserve only the listed analyses and invalidate all others.
+    // Invalidate all cached analyses except the listed types.
     // Analyses not present in the cache are unaffected.
     template<class... Ts>
-    void preserve() {
+    void invalidate_preserving() {
         std::unordered_map<std::type_index, std::unique_ptr<Analysis>> kept;
         auto try_keep = [&](std::type_index type) {
             auto it = cache_.find(type);
