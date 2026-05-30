@@ -30,13 +30,19 @@ def test_backend():
     program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
     end = time.perf_counter()
     print(f"compilation time: {(end - start) * 1000:.2f} ms")
+
+    start = time.perf_counter()
+    ref_program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    end = time.perf_counter()
+    print(f"ref compilation time: {(end - start) * 1000:.2f} ms")
+
     with torch.no_grad():
         start = time.perf_counter()
         res = program(pixel_values=example_input)
         end = time.perf_counter()
         print(f"inference time: {(end - start) * 1000:.2f} ms")
         start = time.perf_counter()
-        res_ref = model_ref(pixel_values=example_input)
+        res_ref = ref_program(pixel_values=example_input)
         end = time.perf_counter()
         print(f"reference inference time: {(end - start) * 1000:.2f} ms")
         for k in range(res.logits.shape[0]):
