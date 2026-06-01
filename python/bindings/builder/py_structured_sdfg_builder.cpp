@@ -1006,7 +1006,11 @@ void PyStructuredSDFGBuilder::add_elementwise_op(
     }
 
     auto& node_c = builder_.add_access(block, C, debug_info);
-    builder_.add_computational_memlet(block, *node, C_conn, node_c, {}, *C_memlet_type, debug_info);
+    if (is_scalar_op) {
+        builder_.add_computational_memlet(block, *node, C_conn, node_c, {}, *C_memlet_type, debug_info);
+    } else {
+        builder_.add_computational_memlet(block, node_c, *node, C_conn, {}, *C_memlet_type, debug_info);
+    }
 
     if (builder_.subject().exists(A)) {
         auto& node_in = builder_.add_access(block, A, debug_info);
@@ -1050,7 +1054,7 @@ void PyStructuredSDFGBuilder::add_elementwise_unary_op(
     }
 
     auto& node_c = builder_.add_access(block, C, debug_info);
-    builder_.add_computational_memlet(block, *node, "Y", node_c, {}, C_type, debug_info);
+    builder_.add_computational_memlet(block, node_c, *node, "Y", {}, C_type, debug_info);
 
     if (builder_.subject().exists(A)) {
         auto& node_a = builder_.add_access(block, A, debug_info);
@@ -1131,7 +1135,7 @@ void PyStructuredSDFGBuilder::add_cast_op(
             .add_library_node<sdfg::math::tensor::CastNode>(block, debug_info, C_type.shape(), C_type.primitive_type());
 
     auto& node_c = builder_.add_access(block, C, debug_info);
-    builder_.add_computational_memlet(block, node, "Y", node_c, {}, C_type, debug_info);
+    builder_.add_computational_memlet(block, node_c, node, "Y", {}, C_type, debug_info);
 
     if (builder_.subject().exists(A)) {
         auto& node_in = builder_.add_access(block, A, debug_info);
@@ -1188,7 +1192,7 @@ void PyStructuredSDFGBuilder::add_reduce_op(
     auto& out_access = builder_.add_access(block, output, debug_info);
     builder_.add_computational_memlet(block, in_access, *node, "X", {}, input_type, debug_info);
 
-    builder_.add_computational_memlet(block, *node, "Y", out_access, {}, output_type, debug_info);
+    builder_.add_computational_memlet(block, out_access, *node, "Y", {}, output_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_einsum(

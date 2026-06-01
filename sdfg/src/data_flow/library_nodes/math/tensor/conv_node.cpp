@@ -548,19 +548,8 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     }
 
     // Clean up the original block
-    builder.remove_memlet(*block, *iedge_X);
-    builder.remove_memlet(*block, *iedge_W);
-    if (has_bias) {
-        builder.remove_memlet(*block, *iedge_B);
-    }
-    builder.remove_memlet(*block, *iedge_Y);
-    builder.remove_node(*block, *access_X);
-    builder.remove_node(*block, *access_W);
-    if (has_bias) {
-        builder.remove_node(*block, *access_B);
-    }
-    builder.remove_node(*block, *access_Y);
-    builder.remove_node(*block, *this);
+    builder.clear_code_node_legacy(*block, *this);
+    // WARNING: this has been deallocated at this point!!
     builder.remove_child(*block_parent, block_index + 1);
 
     return true;

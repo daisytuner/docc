@@ -271,11 +271,8 @@ bool ReduceNode::expand_inner(
     }
 
     // Clean up block
-    builder.remove_memlet(block, *iedge_input);
-    builder.remove_memlet(block, *iedge_result);
-    builder.remove_node(block, *input_node);
-    builder.remove_node(block, *output_node);
-    builder.remove_node(block, *this);
+    builder.clear_code_node_legacy(block, *this);
+    // WARNING: this has been deallocated at this point!!
     builder.remove_child(parent, org_idx + 1);
 
     return true;

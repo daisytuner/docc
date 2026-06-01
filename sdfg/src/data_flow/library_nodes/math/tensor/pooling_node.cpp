@@ -411,11 +411,9 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
     }
 
     // Clean up original block
-    builder.remove_memlet(block, *x_edge);
-    builder.remove_memlet(block, *y_edge);
-    builder.remove_node(block, *x_node);
-    builder.remove_node(block, *y_node);
-    builder.remove_node(block, *this);
+    builder.clear_code_node_legacy(block, *this);
+    // WARNING: this has been deallocated at this point!!
+
     builder.remove_child(parent, index + 1);
 
     return true;

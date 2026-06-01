@@ -350,15 +350,8 @@ bool ElementWiseDataflowTensorNode::
         );
     }
     create_output(builder, new_block, *output_tensor_sa, target_tensor, produced_output, loop_vars);
-    // careful, many pointers in the input vectors become invalid beyond this point
-    for (int i = 0; i < iedges.size(); ++i) {
-        builder.remove_memlet(org_block, *iedges.at(i));
-        builder.remove_node(org_block, *inputs_sa.at(i));
-    }
-    // Clean up block
-    builder.remove_memlet(org_block, *output_tensor_iedge);
-    builder.remove_node(org_block, *output_tensor_sa);
-    builder.remove_node(org_block, *this);
+    builder.clear_code_node_legacy(org_block, *this);
+    // WARNING: this has been deallocated at this point!!
     builder.remove_child(parent, index + 1);
 
     return true;

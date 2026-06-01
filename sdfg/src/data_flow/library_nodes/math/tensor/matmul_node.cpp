@@ -487,16 +487,9 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         free_after_copy(copy_name_b, builder, new_sequence);
     }
 
-    // Remove the original nodes
-    builder.remove_memlet(block, *iedge_a);
-    builder.remove_memlet(block, *iedge_b);
-    builder.remove_memlet(block, *iedge_y);
-    if (&input_node_a != &input_node_b) {
-        builder.remove_node(block, input_node_a);
-    }
-    builder.remove_node(block, input_node_b);
-    builder.remove_node(block, output_ptr);
-    builder.remove_node(block, *this);
+
+    builder.clear_code_node_legacy(block, *this);
+    // WARNING: this has been deallocated at this point!!
     builder.remove_child(parent, index + 1);
 
     return true;
