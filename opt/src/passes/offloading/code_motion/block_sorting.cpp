@@ -298,8 +298,8 @@ std::pair<int, std::string> BlockSortingPass::get_prio_and_order(structured_cont
             auto& src = static_cast<const data_flow::AccessNode&>(iedge.src());
             return {300, src.data()};
         } else if (dynamic_cast<stdlib::MemsetNode*>(libnode)) {
-            auto& oedge = *block->dataflow().out_edges(*libnode).begin();
-            auto& dst = static_cast<data_flow::AccessNode&>(oedge.dst());
+            auto& iedge = *block->dataflow().in_edge_for_connector(*libnode, libnode->input(0));
+            auto& dst = static_cast<const data_flow::AccessNode&>(iedge.src());
             return {200, dst.data()};
         } else if (auto* offloading_node = dynamic_cast<offloading::DataOffloadingNode*>(libnode)) {
             std::string order = "";

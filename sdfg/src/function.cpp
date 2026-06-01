@@ -67,6 +67,9 @@ bool Function::exists(const std::string& name) const {
 };
 
 const types::IType& Function::type(const std::string& name) const {
+    if (symbolic::is_nullptr(symbolic::symbol(name))) {
+        return this->opaque_pointer_;
+    }
     auto entry = this->containers_.find(name);
     if (entry == this->containers_.end()) {
         throw InvalidSDFGException("Type: Container " + name + " not found");

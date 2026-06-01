@@ -38,9 +38,13 @@ void DotVisualizer::visualizeSDFG(const SDFG& sdfg) {
         this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
         this->stream_.setIndent(this->stream_.indent() + 4);
         this->stream_ << "style=filled;fillcolor=white;color=black;label=\"State " << state.element_id() << "\";"
-                      << std::endl
-                      << id << " [shape=point,style=invis;label=\"\"];" << std::endl;
-        this->visualizeDataFlowGraph(id, state.dataflow());
+                      << std::endl;
+        if (auto* return_state = dynamic_cast<const control_flow::ReturnState*>(&state)) {
+            this->stream_ << id << " [shape=cds,label=\" return " << return_state->data() << " \"];" << std::endl;
+        } else {
+            this->stream_ << id << " [shape=point,style=invis;label=\"\"];" << std::endl;
+            this->visualizeDataFlowGraph(id, state.dataflow());
+        }
         this->stream_.setIndent(this->stream_.indent() - 4);
         this->stream_ << "}" << std::endl;
         node_ids.insert({state.element_id(), id});

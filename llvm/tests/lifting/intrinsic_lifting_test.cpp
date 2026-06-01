@@ -8,6 +8,10 @@
 
 using namespace docc;
 
+#define EXPECT_SYMBOLIC_EQ(val1, val2)              \
+    EXPECT_TRUE(sdfg::symbolic::eq((val1), (val2))) \
+        << "symbolic(" << (val1)->__str__() << ") != symbolic(" << (val2)->__str__() << ")";
+
 TEST(IntrinsicLiftingTest, VisitMathIntrinsic_Scalar_FP32) {
     const std::string ir = R"(
 ; ModuleID = 'test'
@@ -1423,4 +1427,221 @@ entry:
         found_add = true;
     }
     EXPECT_TRUE(found_add);
+}
+
+TEST(IntrinsicLiftingTest, VisitMemcpy) {
+    const std::string ir = R"(
+; ModuleID = 'test'
+source_filename = "test.ll"
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+
+define ptr @foo(ptr noundef returned writeonly %0, ptr nocapture noundef readonly %1, i64 noundef %2) {
+  tail call void @llvm.memcpy.p0.p0.i64(ptr align 1 %0, ptr align 1 %1, i64 %2, i1 false)
+  ret ptr %0
+}
+)";
+
+    llvm::LLVMContext context;
+    auto module = loadModuleFromIR(ir, context);
+    ASSERT_NE(module, nullptr);
+
+    // Construct the TargetLibraryInfo required by the lifting pass
+    llvm::TargetLibraryInfoImpl TLIImpl(llvm::Triple(module->getTargetTriple()));
+    llvm::TargetLibraryInfo TLI(TLIImpl);
+
+    llvm::Function* function = module->getFunction("foo");
+    ASSERT_NE(function, nullptr);
+
+    // Run the lifting pass
+    lifting::Lifting lifting(TLI, *function, sdfg::FunctionType_CPU);
+    std::unique_ptr<sdfg::SDFG> sdfg;
+    ASSERT_NO_THROW(sdfg = lifting.run());
+
+    EXPECT_EQ(sdfg->states().size(), 4);
+    EXPECT_EQ(sdfg->edges().size(), 3);
+    EXPECT_GE(sdfg->containers().size(), 3);
+    EXPECT_TRUE(sdfg->exists("_0"));
+    EXPECT_TRUE(sdfg->is_argument("_0"));
+    EXPECT_TRUE(sdfg->exists("_1"));
+    EXPECT_TRUE(sdfg->is_argument("_1"));
+    EXPECT_TRUE(sdfg->exists("_2"));
+    EXPECT_TRUE(sdfg->is_argument("_2"));
+
+    bool found_memcpy = false;
+    for (auto& state : sdfg->states()) {
+        auto& dfg = state.dataflow();
+        if (dfg.nodes().size() == 0) {
+            continue;
+        }
+        ASSERT_FALSE(found_memcpy);
+
+        EXPECT_EQ(dfg.nodes().size(), 3);
+        EXPECT_EQ(dfg.tasklets().size(), 0);
+        EXPECT_EQ(dfg.library_nodes().size(), 1);
+        EXPECT_EQ(dfg.data_nodes().size(), 2);
+        EXPECT_EQ(dfg.edges().size(), 2);
+
+        auto* memcpy_node = dynamic_cast<const sdfg::stdlib::MemcpyNode*>(*dfg.library_nodes().begin());
+        ASSERT_NE(memcpy_node, nullptr);
+        EXPECT_SYMBOLIC_EQ(memcpy_node->count(), sdfg::symbolic::symbol("_2"));
+
+        auto* dst_iedge = dfg.in_edge_for_connector(*memcpy_node, memcpy_node->input(0));
+        ASSERT_NE(dst_iedge, nullptr);
+        auto* dst_access = dynamic_cast<const sdfg::data_flow::AccessNode*>(&dst_iedge->src());
+        ASSERT_NE(dst_access, nullptr);
+        EXPECT_EQ(dst_access->data(), "_0");
+
+        auto* src_iedge = dfg.in_edge_for_connector(*memcpy_node, memcpy_node->input(1));
+        ASSERT_NE(src_iedge, nullptr);
+        auto* src_access = dynamic_cast<const sdfg::data_flow::AccessNode*>(&src_iedge->src());
+        ASSERT_NE(src_access, nullptr);
+        EXPECT_EQ(src_access->data(), "_1");
+
+        found_memcpy = true;
+    }
+    EXPECT_TRUE(found_memcpy);
+}
+
+TEST(IntrinsicLiftingTest, VisitMemmove) {
+    const std::string ir = R"(
+; ModuleID = 'test'
+source_filename = "test.ll"
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+
+define ptr @foo(ptr noundef returned writeonly %0, ptr nocapture noundef readonly %1, i64 noundef %2) {
+  tail call void @llvm.memmove.p0.p0.i6(ptr align 1 %0, ptr align 1 %1, i64 %2, i1 false)
+  ret ptr %0
+}
+)";
+
+    llvm::LLVMContext context;
+    auto module = loadModuleFromIR(ir, context);
+    ASSERT_NE(module, nullptr);
+
+    // Construct the TargetLibraryInfo required by the lifting pass
+    llvm::TargetLibraryInfoImpl TLIImpl(llvm::Triple(module->getTargetTriple()));
+    llvm::TargetLibraryInfo TLI(TLIImpl);
+
+    llvm::Function* function = module->getFunction("foo");
+    ASSERT_NE(function, nullptr);
+
+    // Run the lifting pass
+    lifting::Lifting lifting(TLI, *function, sdfg::FunctionType_CPU);
+    std::unique_ptr<sdfg::SDFG> sdfg;
+    ASSERT_NO_THROW(sdfg = lifting.run());
+
+    EXPECT_EQ(sdfg->states().size(), 4);
+    EXPECT_EQ(sdfg->edges().size(), 3);
+    EXPECT_GE(sdfg->containers().size(), 3);
+    EXPECT_TRUE(sdfg->exists("_0"));
+    EXPECT_TRUE(sdfg->is_argument("_0"));
+    EXPECT_TRUE(sdfg->exists("_1"));
+    EXPECT_TRUE(sdfg->is_argument("_1"));
+    EXPECT_TRUE(sdfg->exists("_2"));
+    EXPECT_TRUE(sdfg->is_argument("_2"));
+
+    bool found_memmove = false;
+    for (auto& state : sdfg->states()) {
+        auto& dfg = state.dataflow();
+        if (dfg.nodes().size() == 0) {
+            continue;
+        }
+        ASSERT_FALSE(found_memmove);
+
+        EXPECT_EQ(dfg.nodes().size(), 3);
+        EXPECT_EQ(dfg.tasklets().size(), 0);
+        EXPECT_EQ(dfg.library_nodes().size(), 1);
+        EXPECT_EQ(dfg.data_nodes().size(), 2);
+        EXPECT_EQ(dfg.edges().size(), 2);
+
+        auto* memmove_node = dynamic_cast<const sdfg::stdlib::MemmoveNode*>(*dfg.library_nodes().begin());
+        ASSERT_NE(memmove_node, nullptr);
+        EXPECT_SYMBOLIC_EQ(memmove_node->count(), sdfg::symbolic::symbol("_2"));
+
+        auto* dst_iedge = dfg.in_edge_for_connector(*memmove_node, memmove_node->input(0));
+        ASSERT_NE(dst_iedge, nullptr);
+        auto* dst_access = dynamic_cast<const sdfg::data_flow::AccessNode*>(&dst_iedge->src());
+        ASSERT_NE(dst_access, nullptr);
+        EXPECT_EQ(dst_access->data(), "_0");
+
+        auto* src_iedge = dfg.in_edge_for_connector(*memmove_node, memmove_node->input(1));
+        ASSERT_NE(src_iedge, nullptr);
+        auto* src_access = dynamic_cast<const sdfg::data_flow::AccessNode*>(&src_iedge->src());
+        ASSERT_NE(src_access, nullptr);
+        EXPECT_EQ(src_access->data(), "_1");
+
+        found_memmove = true;
+    }
+    EXPECT_TRUE(found_memmove);
+}
+
+TEST(IntrinsicLiftingTest, VisitMemset) {
+    const std::string ir = R"(
+; ModuleID = 'test'
+source_filename = "test.ll"
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+
+define ptr @foo(ptr noundef returned writeonly %0, i8 noundef signext %1, i64 noundef %2) {
+  tail call void @llvm.memset.p0.i64(ptr align 1 %0, i8 %1, i64 %2, i1 false)
+  ret ptr %0
+}
+)";
+
+    llvm::LLVMContext context;
+    auto module = loadModuleFromIR(ir, context);
+    ASSERT_NE(module, nullptr);
+
+    // Construct the TargetLibraryInfo required by the lifting pass
+    llvm::TargetLibraryInfoImpl TLIImpl(llvm::Triple(module->getTargetTriple()));
+    llvm::TargetLibraryInfo TLI(TLIImpl);
+
+    llvm::Function* function = module->getFunction("foo");
+    ASSERT_NE(function, nullptr);
+
+    // Run the lifting pass
+    lifting::Lifting lifting(TLI, *function, sdfg::FunctionType_CPU);
+    std::unique_ptr<sdfg::SDFG> sdfg;
+    ASSERT_NO_THROW(sdfg = lifting.run());
+
+    EXPECT_EQ(sdfg->states().size(), 4);
+    EXPECT_EQ(sdfg->edges().size(), 3);
+    EXPECT_GE(sdfg->containers().size(), 3);
+    EXPECT_TRUE(sdfg->exists("_0"));
+    EXPECT_TRUE(sdfg->is_argument("_0"));
+    EXPECT_TRUE(sdfg->exists("_1"));
+    EXPECT_TRUE(sdfg->is_argument("_1"));
+    EXPECT_TRUE(sdfg->exists("_2"));
+    EXPECT_TRUE(sdfg->is_argument("_2"));
+
+    bool found_memset = false;
+    for (auto& state : sdfg->states()) {
+        auto& dfg = state.dataflow();
+        if (dfg.nodes().size() == 0) {
+            continue;
+        }
+        ASSERT_FALSE(found_memset);
+
+        EXPECT_EQ(dfg.nodes().size(), 2);
+        EXPECT_EQ(dfg.tasklets().size(), 0);
+        EXPECT_EQ(dfg.library_nodes().size(), 1);
+        EXPECT_EQ(dfg.data_nodes().size(), 1);
+        EXPECT_EQ(dfg.edges().size(), 1);
+
+        auto* memset_node = dynamic_cast<const sdfg::stdlib::MemsetNode*>(*dfg.library_nodes().begin());
+        ASSERT_NE(memset_node, nullptr);
+        EXPECT_SYMBOLIC_EQ(memset_node->num(), sdfg::symbolic::symbol("_2"));
+        EXPECT_SYMBOLIC_EQ(memset_node->value(), sdfg::symbolic::symbol("_1"));
+
+        auto* ptr_iedge = dfg.in_edge_for_connector(*memset_node, memset_node->input(0));
+        ASSERT_NE(ptr_iedge, nullptr);
+        auto* ptr_access = dynamic_cast<const sdfg::data_flow::AccessNode*>(&ptr_iedge->src());
+        ASSERT_NE(ptr_access, nullptr);
+        EXPECT_EQ(ptr_access->data(), "_0");
+
+        found_memset = true;
+    }
+    EXPECT_TRUE(found_memset);
 }
