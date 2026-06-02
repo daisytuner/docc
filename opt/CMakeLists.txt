@@ -98,6 +98,7 @@ set(SOURCE_FILES
     src/transformations/loop_split.cpp
     src/transformations/loop_skewing.cpp
     src/transformations/loop_tiling.cpp
+    src/transformations/loop_tile_rescaling.cpp
     src/transformations/loop_unit_stride.cpp
     src/transformations/map_fusion.cpp
     src/transformations/multi_level_tiling.cpp

@@ -53,6 +53,7 @@ set(TEST_FILES
     transformations/loop_skewing_test.cpp
     transformations/loop_split_test.cpp
     transformations/loop_tiling_test.cpp
+    transformations/loop_tile_rescaling_test.cpp
     transformations/loop_unit_stride_test.cpp
     transformations/map_fusion_test.cpp
     transformations/multi_level_tiling_test.cpp
