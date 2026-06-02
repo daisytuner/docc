@@ -35,8 +35,10 @@ void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
 
     auto& block = builder.add_block(sdfg.root());
 
-    auto& a_node = builder.add_access(block, "a");
-    auto& b_node = builder.add_access(block, "b");
+    auto a_name = "a";
+    auto& a_node = builder.add_access(block, a_name);
+    auto b_name = "b";
+    auto& b_node = builder.add_access(block, b_name);
 
     std::vector<symbolic::Expression> shape;
     for (auto d : shape_dims) {
@@ -93,7 +95,7 @@ void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
             continue; // Skip constant nodes
         }
         if (auto* src_access = dynamic_cast<data_flow::AccessNode*>(&edge.src())) {
-            if (src_access->data() == a_node.data()) {
+            if (src_access->data() == a_name) {
                 if (edge.subset().size() != shape_dims.size()) {
                     EXPECT_EQ(edge.subset().size(), shape_dims.size())
                         << "Input subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
@@ -105,7 +107,7 @@ void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
     // Check output edges
     for (auto& edge : dataflow.out_edges(*inner_node)) {
         if (auto* dst_access = dynamic_cast<data_flow::AccessNode*>(&edge.dst())) {
-            if (dst_access->data() == b_node.data()) {
+            if (dst_access->data() == b_name) {
                 if (edge.subset().size() != shape_dims.size()) {
                     EXPECT_EQ(edge.subset().size(), shape_dims.size())
                         << "Output subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
