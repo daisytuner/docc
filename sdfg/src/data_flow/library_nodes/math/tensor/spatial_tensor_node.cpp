@@ -20,11 +20,34 @@ SpatialTensorNode::SpatialTensorNode(
     const std::vector<symbolic::Expression>& dilations
 )
     : TensorNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type), shape_(shape),
-      kernel_shape_(kernel_shape), strides_(strides), pads_(pads), dilations_(dilations), quantization_(quantization) {}
+      kernel_shape_(kernel_shape), strides_(strides), pads_(pads), dilations_(dilations),
+      fixed_quantization_(quantization) {}
 
-QuantizationType SpatialTensorNode::quantization() const { return quantization_; }
+QuantizationType SpatialTensorNode::fixed_quantization() const { return fixed_quantization_; }
 
-void SpatialTensorNode::set_quantization(const QuantizationType quant) { quantization_ = quant; }
+QuantizationType SpatialTensorNode::quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
+    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
+        return fixed_quantization_;
+    } else {
+        return this->primitive_type(data_flow_graph);
+    }
+}
+
+std::optional<QuantizationType> SpatialTensorNode::uniform_quantization(const data_flow::DataFlowGraph& data_flow_graph
+) const {
+    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
+        auto inferred = this->primitive_type(data_flow_graph);
+        if (inferred == fixed_quantization_) {
+            return fixed_quantization_;
+        } else {
+            return std::nullopt;
+        }
+    } else {
+        return this->primitive_type(data_flow_graph);
+    }
+}
+
+void SpatialTensorNode::set_fixed_quantization(const QuantizationType quant) { fixed_quantization_ = quant; }
 
 symbolic::SymbolSet SpatialTensorNode::symbols() const {
     symbolic::SymbolSet syms;
@@ -149,7 +172,7 @@ std::basic_ostream<char>& SpatialTensorNode::operator<<(std::basic_ostream<char>
         os << dilations_[i]->__str__();
     }
     os << "], ";
-    os << "quant=" << types::primitive_type_to_string(quantization_);
+    os << "quant=" << types::primitive_type_to_string(fixed_quantization_);
     return os;
 }
 

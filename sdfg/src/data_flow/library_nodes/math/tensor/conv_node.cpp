@@ -178,6 +178,10 @@ symbolic::MultiExpression ConvNode::get_out_shape() {
     return out_shape;
 }
 
+bool ConvNode::has_bias() const {
+    auto* bias_edge = get_parent().in_edge_for_connector(*this, "B");
+    return bias_edge != nullptr;
+}
 
 bool ConvNode::check_expandable(
     data_flow::DataFlowGraph& dfg, analysis::AnalysisManager& analysis_manager, ConvExpandPrerequisits& boundary
@@ -614,7 +618,7 @@ std::unique_ptr<data_flow::DataFlowNode> ConvNode::
         dilations_,
         output_channels_,
         group_,
-        quantization_,
+        fixed_quantization_,
         implementation_type_
     ));
 }

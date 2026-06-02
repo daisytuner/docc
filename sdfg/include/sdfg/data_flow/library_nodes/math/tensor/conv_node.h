@@ -140,6 +140,8 @@ public:
 
     symbolic::MultiExpression get_out_shape();
 
+    bool has_bias() const;
+
     /**
      * @brief Expand convolution into nested maps for n-dimensional convolution
      *

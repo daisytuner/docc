@@ -35,7 +35,7 @@ namespace tensor {
  */
 class SpatialTensorNode : public TensorNode {
 protected:
-    QuantizationType quantization_;
+    QuantizationType fixed_quantization_;
     std::vector<symbolic::Expression> shape_; ///< Input shape [N, C, D1, ..., Dn]
     std::vector<symbolic::Expression> kernel_shape_; ///< Pooling window shape [k1, ..., kn]
     std::vector<symbolic::Expression> strides_; ///< Stride along each spatial axis
@@ -66,9 +66,26 @@ public:
     const std::vector<symbolic::Expression>& pads() const { return pads_; }
     const std::vector<symbolic::Expression>& dilations() const { return dilations_; }
 
-    QuantizationType quantization() const;
+    QuantizationType quantization() const { return quantization(get_parent()); }
 
-    void set_quantization(const types::PrimitiveType quant);
+    /**
+     * type of the math calculations. May be inferred or fixed.
+     */
+    QuantizationType quantization(const data_flow::DataFlowGraph& dataflow) const;
+
+    /**
+     * Same result as quantization if it matches all the inputs. None if its impossible to use the same types
+     * for input & output and math
+     */
+    std::optional<QuantizationType> uniform_quantization(const data_flow::DataFlowGraph& dataflow) const;
+
+    /**
+     * configuration of the type for the math calculations, independent of current input types etc.
+     * 'Void' indicates auto-inferring from inputs
+     */
+    QuantizationType fixed_quantization() const;
+
+    void set_fixed_quantization(const QuantizationType quant);
 
     symbolic::SymbolSet symbols() const override;
 

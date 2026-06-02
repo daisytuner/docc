@@ -432,7 +432,7 @@ std::unique_ptr<data_flow::DataFlowNode> PoolingNode::
         strides_,
         pads_,
         dilations_,
-        quantization_,
+        fixed_quantization_,
         implementation_type_
     ));
 }
