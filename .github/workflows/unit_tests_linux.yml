@@ -308,7 +308,6 @@ jobs:
       image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
-        --gpus=all
     strategy:
       fail-fast: false
       matrix:
