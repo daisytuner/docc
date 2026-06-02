@@ -129,6 +129,8 @@ public:
      */
     virtual int mandatory_input_count() const { return inputs_.size(); }
 
+    QuantizationType quantization() const { return quantization(get_parent()); }
+
     /**
      * type of the math calculations. May be inferred or fixed.
      */

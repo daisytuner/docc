@@ -123,6 +123,8 @@ public:
      */
     symbolic::Expression n() const;
 
+    QuantizationType quantization() const { return quantization(get_parent()); }
+
     /**
      * type of the math calculations. May be inferred or fixed.
      */

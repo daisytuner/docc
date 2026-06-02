@@ -46,6 +46,10 @@ std::vector<std::string> ElementWiseDataflowTensorNode::
 
 types::PrimitiveType ElementWiseDataflowTensorNode::fixed_quantization() const { return fixed_quantization_; }
 
+void ElementWiseDataflowTensorNode::set_fixed_quantization(const QuantizationType quant) {
+    fixed_quantization_ = quant;
+}
+
 types::PrimitiveType ElementWiseDataflowTensorNode::quantization(const data_flow::DataFlowGraph& data_flow_graph
 ) const {
     if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {

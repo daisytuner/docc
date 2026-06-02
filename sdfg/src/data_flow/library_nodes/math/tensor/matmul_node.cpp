@@ -137,6 +137,8 @@ std::unique_ptr<data_flow::DataFlowNode> MatMulNode::
 
 types::PrimitiveType MatMulNode::fixed_quantization() const { return fixed_quantization_; }
 
+void MatMulNode::set_fixed_quantization(const QuantizationType quant) { fixed_quantization_ = quant; }
+
 types::PrimitiveType MatMulNode::quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
     if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
         return fixed_quantization_;
