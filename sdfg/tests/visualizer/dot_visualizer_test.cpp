@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <regex>
+#include "sdfg/builder/sdfg_builder.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/data_flow/access_node.h"
@@ -785,4 +786,39 @@ TEST(DotVisualizerTest, visualizeSubset_does_not_fail_on_incomplete_opaque_ptr) 
 
         EXPECT_EQ(dot.getStream().str(), "[0](rogue)[1]");
     }
+}
+
+TEST(DotVisualizerTest, UnstructuredSDFG) {
+    builder::SDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("a", int_type, true);
+    builder.add_container("b", int_type, true);
+    builder.add_container("c", int_type, true);
+
+    auto a = symbolic::symbol("a");
+    auto b = symbolic::symbol("b");
+    auto c = symbolic::symbol("c");
+
+    auto& state_1 = builder.add_state(true);
+    auto& state_2 = builder.add_state();
+    auto& state_3 = builder.add_state();
+    auto& state_4 = builder.add_state();
+    builder.add_edge(state_1, state_2, symbolic::Gt(a, b));
+    builder.add_edge(state_1, state_3, symbolic::Le(a, b));
+    builder.add_edge(state_2, state_4);
+    builder.add_edge(state_3, state_4, {{c, symbolic::zero()}});
+
+    auto& a_access = builder.add_access(state_2, "a");
+    auto& b_access = builder.add_access(state_2, "b");
+    auto& c_access = builder.add_access(state_2, "c");
+    auto& tasklet = builder.add_tasklet(state_2, data_flow::TaskletCode::int_sub, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(state_2, a_access, tasklet, "_in1", {});
+    builder.add_computational_memlet(state_2, b_access, tasklet, "_in2", {});
+    builder.add_computational_memlet(state_2, tasklet, "_out", c_access, {});
+
+    auto& sdfg = builder.subject();
+
+    visualizer::DotVisualizer viz(sdfg);
+    EXPECT_NO_THROW(viz.visualize());
 }

@@ -141,9 +141,6 @@ std::vector<std::unique_ptr<sdfg::StructuredSDFG>> FunctionToSDFG::run() {
         } catch (NotImplementedException& e) {
             // Fallthrough
             LLVM_DEBUG_PRINTLN("NotImplementedException on '" << this->function_.getName() << "': " << e.what());
-        } catch (sdfg::InvalidSDFGException& e) {
-            // Fallthrough
-            LLVM_DEBUG_PRINTLN("InvalidSDFGException on '" << this->function_.getName() << "': " << e.what());
         }
     } else {
         if (res.second != nullptr) {
