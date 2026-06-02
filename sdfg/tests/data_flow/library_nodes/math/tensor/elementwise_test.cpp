@@ -1,7 +1,7 @@
-#include "../../../../../../opt/tests/sdfg_debug_dump.h"
 #include "gtest/gtest.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg_debug_dump.h"
 
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.h"

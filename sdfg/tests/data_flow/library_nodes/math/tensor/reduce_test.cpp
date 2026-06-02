@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "../../../../../../opt/tests/sdfg_debug_dump.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/std_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 

@@ -2,8 +2,8 @@
 
 #include <gtest/gtest.h>
 
-#include "../../../../opt/tests/sdfg_debug_dump.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
