@@ -13,7 +13,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-build-env-llvm19-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
     strategy:
       fail-fast: false
       matrix:

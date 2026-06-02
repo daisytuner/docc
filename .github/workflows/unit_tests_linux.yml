@@ -15,7 +15,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-build-env-llvm19-ubuntu-24.04-et:latest
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -144,7 +144,7 @@ jobs:
       group: dahlia
       labels: cuda
     container:
-      image: daisytuner/docc-build-env-llvm19-ubuntu-24.04-et:latest
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -201,8 +201,7 @@ jobs:
           nvidia-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          export ETSOC_TESTS=1
-          coverage run --source=python/docc -m pytest -v python/tests
+          coverage run --source=python/docc -m pytest -v python/tests -m "unmarked or cuda or etsoc"
           coverage xml
 
       - name: Integration Tests
@@ -224,7 +223,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-build-env-llvm19-base:latest-amd64
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
     strategy:
       fail-fast: false
       matrix:
@@ -289,7 +288,7 @@ jobs:
           pip install -r mlir/requirements.txt
 
           cd mlir/
-          pytest -v integration/
+          pytest -v integration/ -m "unmarked"
 
       # - name: Model Zoo Tests (Nightly only)
       #   if: github.event_name == 'schedule'
@@ -300,6 +299,74 @@ jobs:
       #     # Run fasterrcnn test (will fail if assertions don't pass)
       #     cd mlir/benchmarks/torch/model_zoo/
       #     python fasterrcnn_resnet50.py
+
+  tenstorrent-tests-linux:
+    runs-on:
+      group: dahlia
+      labels: tenstorrent
+    container:
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+      options: >-
+        --cap-add=PERFMON
+        --gpus=all
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.12" ]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          pip install numpy scipy ml_dtypes
+          pip install -r mlir/requirements.txt
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja \
+            -DCMAKE_C_COMPILER=clang-19 \
+            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DPYTHON_BUILD_FRONTEND=ON \
+            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
+            -DMLIR_BUILD_FRONTEND=ON \
+            -DMLIR_BUILD_BINDINGS=ON \
+            -DMLIR_BUILD_TESTS=ON \
+            -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
+            -DINSTALL_GTEST=OFF \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+            ..
+          ninja -j$(nproc)
+
+      - name: Python & MLIR Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+        run: |
+          pytest -v python/tests mlir/integration -m "tenstorrent"
 
   llvm-tests-linux:
     runs-on:

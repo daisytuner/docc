@@ -8,13 +8,10 @@ import sys
 
 # COR-1607 find a way to depend on target plugins being available or not for pytest
 @pytest.mark.skipif(
-    not os.path.exists("/dev/tenstorrent") or os.environ.get("TT_TESTS") != "1",
-    reason=(
-        "TT tests are disabled"
-        if os.path.exists("/dev/tenstorrent")
-        else "No TT Accelerator present"
-    ),
+    not os.path.exists("/dev/tenstorrent"),
+    reason="No TT Accelerator present",
 )
+@pytest.mark.tenstorrent()
 def test_scheduling_tt_matmul_large():
     @native(target="tenstorrent", category="server")
     def matmul_tt(A, B, C):

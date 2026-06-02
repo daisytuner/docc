@@ -15,7 +15,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-build-env-llvm19-base:latest-amd64
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all

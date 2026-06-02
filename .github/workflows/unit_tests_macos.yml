@@ -74,7 +74,7 @@ jobs:
           DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
         run: |
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-          pytest -v python/tests
+          pytest -v python/tests -m "unmarked"
 
       - name: Python Integration Tests
         run: |
