@@ -150,6 +150,7 @@ class TorchProgram(DoccProgram):
         output_folder: Optional[str] = None,
         instrumentation_mode: Optional[str] = None,
         capture_args: Optional[bool] = None,
+        remote_tuning: Optional[bool] = None,
     ) -> CompiledSDFG:
         original_output_folder = output_folder
 
@@ -159,10 +160,11 @@ class TorchProgram(DoccProgram):
             compile_start_time = time.perf_counter()
 
         # Resolve options
-        if instrumentation_mode is None:
-            instrumentation_mode = self.instrumentation_mode or ""
-        if capture_args is None:
-            capture_args = self.capture_args or False
+        instrumentation_mode, capture_args, remote_tuning = (
+            self._resolve_compile_options(
+                instrumentation_mode, capture_args, remote_tuning
+            )
+        )
 
         # Determine example input
         if self.example_input is None:
@@ -263,7 +265,7 @@ class TorchProgram(DoccProgram):
             sdfg = self._sdfg
 
             lib_path = self.sdfg_pipe(
-                sdfg, output_folder, instrumentation_mode, capture_args
+                sdfg, output_folder, instrumentation_mode, capture_args, remote_tuning
             )
 
         # Prepend buffer info for any buffers that torch-mlir left as
@@ -490,6 +492,7 @@ def compile_torch(
     example_input,
     target: str = "none",
     category: str = "server",
+    remote_tuning: bool = False,
     force_rebuild: bool = False,
 ) -> CompiledSDFG:
     return TorchProgram(
@@ -497,6 +500,7 @@ def compile_torch(
         example_input=example_input,
         target=target,
         category=category,
+        remote_tuning=remote_tuning,
         force_rebuild=force_rebuild,
     )
 
@@ -505,15 +509,22 @@ def compile_torch(
 # torch.compile backend registration
 # ============================================================================
 
-def _docc_get_backend_options(options: None | dict[str, str]) -> tuple[str, str]:
+
+def _docc_get_backend_options(
+    options: None | dict[str, str | bool],
+) -> tuple[str, str, bool]:
     target = "none"
     category = "server"
+    remote_tuning = False
     if options:
         if "target" in options:
             target = options["target"]
         if "category" in options:
             category = options["category"]
-    return target, category
+        if "remote_tuning" in options:
+            remote_tuning = options["remote_tuning"]
+    return target, category, remote_tuning
+
 
 def _docc_dynamo_compiler(gm, example_inputs, backend_options):
     """Dynamic Compiler based on TorchProgram (inference only)."""
@@ -524,12 +535,13 @@ def _docc_dynamo_compiler(gm, example_inputs, backend_options):
     else:
         example_input = tuple(example_inputs)
 
-    target, category = _docc_get_backend_options(backend_options)
+    target, category, remote_tuning = _docc_get_backend_options(backend_options)
     program = TorchProgram(
         gm,
         example_input=example_input,
         target=target,
         category=category,
+        remote_tuning=remote_tuning,
     )
 
     def compiled_fn(*args):
@@ -541,7 +553,7 @@ def _docc_dynamo_compiler(gm, example_inputs, backend_options):
     return compiled_fn
 
 
-def _docc_aot_compiler_wrapper(target: str, category: str):
+def _docc_aot_compiler_wrapper(target: str, category: str, remote_tuning: bool):
     def _docc_aot_compiler(gm, example_inputs):
         """AOTAutograd Compiler based on TorchProgram (inference and training)."""
         from functorch.compile import make_boxed_func
@@ -558,6 +570,7 @@ def _docc_aot_compiler_wrapper(target: str, category: str):
             example_input=example_input,
             target=target,
             category=category,
+            remote_tuning=remote_tuning,
         )
 
         def compiled_fn(*args):
@@ -598,10 +611,10 @@ def _docc_backend(gm, example_inputs, *, options=None):
     if _needs_autograd(gm, example_inputs):
         from torch._dynamo.backends.common import aot_autograd
 
-        target, category = _docc_get_backend_options(options)
+        target, category, remote_tuning = _docc_get_backend_options(options)
         aot_backend = aot_autograd(
-            fw_compiler=_docc_aot_compiler_wrapper(target, category),
-            bw_compiler=_docc_aot_compiler_wrapper(target, category),
+            fw_compiler=_docc_aot_compiler_wrapper(target, category, remote_tuning),
+            bw_compiler=_docc_aot_compiler_wrapper(target, category, remote_tuning),
         )
         return aot_backend(gm, example_inputs)
     else:

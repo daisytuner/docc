@@ -161,36 +161,16 @@ class PythonProgram(DoccProgram):
         output_folder: Optional[str] = None,
         instrumentation_mode: Optional[str] = None,
         capture_args: Optional[bool] = None,
+        remote_tuning: Optional[bool] = None,
     ) -> CompiledSDFG:
         original_output_folder = output_folder
 
         # Resolve options
-        if instrumentation_mode is None:
-            instrumentation_mode = self.instrumentation_mode
-        if capture_args is None:
-            capture_args = self.capture_args
-
-        # Check environment variable DOCC_CI
-        docc_ci = os.environ.get("DOCC_CI", "")
-        if docc_ci:
-            if docc_ci == "regions":
-                if instrumentation_mode is None:
-                    instrumentation_mode = "ols"
-            elif docc_ci == "arg-capture":
-                if capture_args is None:
-                    capture_args = True
-            else:
-                # Full mode (or unknown value treated as full)
-                if instrumentation_mode is None:
-                    instrumentation_mode = "ols"
-                if capture_args is None:
-                    capture_args = True
-
-        # Defaults
-        if instrumentation_mode is None:
-            instrumentation_mode = ""
-        if capture_args is None:
-            capture_args = False
+        instrumentation_mode, capture_args, remote_tuning = (
+            self._resolve_compile_options(
+                instrumentation_mode, capture_args, remote_tuning
+            )
+        )
 
         # 1. Analyze arguments and shapes
         arg_types = []
@@ -266,7 +246,7 @@ class PythonProgram(DoccProgram):
         )
 
         lib_path = self.sdfg_pipe(
-            sdfg, output_folder, instrumentation_mode, capture_args
+            sdfg, output_folder, instrumentation_mode, capture_args, remote_tuning
         )
 
         # 4. Create CompiledSDFG

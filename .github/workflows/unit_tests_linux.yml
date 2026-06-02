@@ -283,6 +283,8 @@ jobs:
           ninja check-docc-mlir
 
       - name: Integration Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
         run: |
           pip install -r mlir/requirements.txt
 

@@ -94,12 +94,51 @@ class DoccProgram(ABC):
     def compile(self, *args: Any, output_folder: Optional[str] = None) -> CompiledSDFG:
         pass
 
+    def _resolve_compile_options(
+        self,
+        instrumentation_mode: Optional[str] = None,
+        capture_args: Optional[bool] = None,
+        remote_tuning: Optional[bool] = None,
+    ) -> tuple[str, bool, bool]:
+        """Resolve compile-time options, falling back to instance defaults and env vars."""
+        if instrumentation_mode is None:
+            instrumentation_mode = self.instrumentation_mode
+        if capture_args is None:
+            capture_args = self.capture_args
+        if remote_tuning is None:
+            remote_tuning = self.remote_tuning
+
+        # Check environment variable DOCC_CI
+        docc_ci = os.environ.get("DOCC_CI", "")
+        if docc_ci:
+            if docc_ci == "regions":
+                if instrumentation_mode is None:
+                    instrumentation_mode = "ols"
+            elif docc_ci == "arg-capture":
+                if capture_args is None:
+                    capture_args = True
+            else:
+                # Full mode (or unknown value treated as full)
+                if instrumentation_mode is None:
+                    instrumentation_mode = "ols"
+                if capture_args is None:
+                    capture_args = True
+
+        # Defaults
+        if instrumentation_mode is None:
+            instrumentation_mode = ""
+        if capture_args is None:
+            capture_args = False
+
+        return instrumentation_mode, capture_args, remote_tuning
+
     def sdfg_pipe(
         self,
         sdfg: StructuredSDFG,
         output_folder: Optional[str],
         instrumentation_mode: str,
         capture_args: bool,
+        remote_tuning: Optional[bool] = None,
     ) -> str:
 
         if self.debug_dump:
@@ -111,10 +150,13 @@ class DoccProgram(ABC):
 
         sdfg.validate()
 
+        if remote_tuning is None:
+            remote_tuning = self.remote_tuning
+
         target_options = TargetOptions()
         target_options.target = self.target
         target_options.category = self.category
-        target_options.remote_tuning = self.remote_tuning
+        target_options.remote_tuning = remote_tuning
 
         # Einsum detection
         sdfg.einsum()
@@ -152,9 +194,7 @@ class DoccProgram(ABC):
 
         custom_schedule_fn = get_target_schedule_fn(self.target)
         if custom_schedule_fn is not None:
-            custom_schedule_fn(
-                sdfg, self.category, {"remote_tuning": self.remote_tuning}
-            )
+            custom_schedule_fn(sdfg, self.category, {"remote_tuning": remote_tuning})
         else:
             sdfg.schedule(target_options)
 

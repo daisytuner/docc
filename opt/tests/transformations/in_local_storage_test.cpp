@@ -21,7 +21,102 @@
 using namespace sdfg;
 
 /**
- * Test: InLocalStorage on a scalar array (1D) with constant bound
+ * Test: InLocalStorage on a constant access
+ *
+ * Before:
+ *   for i = 0..4: C[i] += A[0]
+ *
+ * After:
+ *   A_local[0] = A[0]
+ *   for i = 0..4: C[i] += A_local[0]
+ */
+TEST(InLocalStorageTest, Constant) {
+    builder::StructuredSDFGBuilder builder("ils_constant_test", FunctionType_CPU);
+
+    // Create containers
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+
+    types::Scalar elem_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(elem_desc);
+    builder.add_container("A", ptr_desc, true);
+    builder.add_container("C", ptr_desc);
+
+    auto& root = builder.subject().root();
+
+    // Create loop: for i = 0..4
+    auto indvar = symbolic::symbol("i");
+    auto bound = symbolic::integer(4);
+    auto init = symbolic::integer(0);
+    auto condition = symbolic::Lt(indvar, bound);
+    auto update = symbolic::add(indvar, symbolic::integer(1));
+
+    auto& loop = builder.add_for(root, indvar, condition, init, update);
+    auto& body = loop.root();
+
+    // Add computation: C += A[i]
+    auto& block = builder.add_block(body);
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_in = builder.add_access(block, "C");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, c_in, tasklet, "_in1", {indvar}, ptr_desc);
+    builder.add_computational_memlet(block, a_in, tasklet, "_in2", {symbolic::zero()}, ptr_desc);
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {indvar}, ptr_desc);
+
+    auto structured_sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // Apply transformation
+    transformations::InLocalStorage transformation(loop, a_in);
+    EXPECT_TRUE(transformation.can_be_applied(builder_opt, am));
+    transformation.apply(builder_opt, am);
+
+    // Verify: local buffer was created
+    EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
+
+    // Verify: structure should now be [copy_block, main_loop]
+    auto& new_root = builder_opt.subject().root();
+    EXPECT_EQ(new_root.size(), 2);
+
+    // First element should be copy
+    auto* copy_block = dynamic_cast<structured_control_flow::Block*>(&new_root.at(0).first);
+    EXPECT_NE(copy_block, nullptr);
+
+    // Second element should be the main loop
+    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    EXPECT_NE(main_loop, nullptr);
+
+    // Verify copy reads from A, writes to A_local
+    bool reads_A = false;
+    bool writes_A_local = false;
+    for (auto* node : copy_block->dataflow().data_nodes()) {
+        if (node->data() == "A") reads_A = true;
+        if (node->data() == "__daisy_in_local_storage_A0") writes_A_local = true;
+    }
+    EXPECT_TRUE(reads_A);
+    EXPECT_TRUE(writes_A_local);
+
+    // Verify main loop uses local buffer
+    auto& main_body = main_loop->root();
+    EXPECT_EQ(main_body.size(), 1);
+    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    EXPECT_NE(main_block, nullptr);
+
+    bool uses_A_local = false;
+    bool uses_A_original = false;
+    for (auto* node : main_block->dataflow().data_nodes()) {
+        if (node->data() == "__daisy_in_local_storage_A0") uses_A_local = true;
+        if (node->data() == "A") uses_A_original = true;
+    }
+    EXPECT_TRUE(uses_A_local);
+    EXPECT_FALSE(uses_A_original); // Original A should be replaced
+}
+
+/**
+ * Test: InLocalStorage on a dynamic access
  *
  * Before:
  *   for i = 0..4: C += A[i]
@@ -30,8 +125,8 @@ using namespace sdfg;
  *   for i' = 0..4: A_local[i'] = A[i']
  *   for i = 0..4: C += A_local[i]
  */
-TEST(InLocalStorage, Scalar_ConstantBound) {
-    builder::StructuredSDFGBuilder builder("ils_scalar_test", FunctionType_CPU);
+TEST(InLocalStorageTest, Dynamic) {
+    builder::StructuredSDFGBuilder builder("ils_dynamic_test", FunctionType_CPU);
 
     // Create containers
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -128,7 +223,7 @@ TEST(InLocalStorage, Scalar_ConstantBound) {
  * InLocalStorage(loop, "C") should fail because C is written
  * InLocalStorage(loop, "A") should succeed because A is read-only
  */
-TEST(InLocalStorage, FailsOnWrittenContainer) {
+TEST(InLocalStorageTest, FailsOnWrittenContainer) {
     builder::StructuredSDFGBuilder builder("ils_rw_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -181,7 +276,7 @@ TEST(InLocalStorage, FailsOnWrittenContainer) {
  *
  * InLocalStorage(loop, "scalar_val") should fail because it's not an array
  */
-TEST(InLocalStorage, FailsOnScalar) {
+TEST(InLocalStorageTest, FailsOnScalar) {
     builder::StructuredSDFGBuilder builder("ils_scalar_fail_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -225,7 +320,7 @@ TEST(InLocalStorage, FailsOnScalar) {
 /**
  * Test: InLocalStorage should fail when access node is outside the loop
  */
-TEST(InLocalStorage, FailsOnAccessOutsideLoop) {
+TEST(InLocalStorageTest, FailsOnAccessOutsideLoop) {
     builder::StructuredSDFGBuilder builder("ils_outside_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -275,7 +370,7 @@ TEST(InLocalStorage, FailsOnAccessOutsideLoop) {
 /**
  * Test: InLocalStorage should fail when container is not used
  */
-TEST(InLocalStorage, FailsOnUnusedContainer) {
+TEST(InLocalStorageTest, FailsOnUnusedContainer) {
     builder::StructuredSDFGBuilder builder("ils_unused_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -326,7 +421,7 @@ TEST(InLocalStorage, FailsOnUnusedContainer) {
 /**
  * Test: JSON serialization round-trip
  */
-TEST(InLocalStorage, JsonSerialization) {
+TEST(InLocalStorageTest, JsonSerialization) {
     builder::StructuredSDFGBuilder builder("ils_json_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -399,7 +494,7 @@ TEST(InLocalStorage, JsonSerialization) {
  *
  * Buffer size: MC * NC (constant, known at compile time)
  */
-TEST(InLocalStorage, TiledAccess_2D) {
+TEST(InLocalStorageTest, TiledAccess_2D) {
     builder::StructuredSDFGBuilder builder("ils_2d_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -539,7 +634,7 @@ TEST(InLocalStorage, TiledAccess_2D) {
  *       for i = i_tile..min(i_tile+TILE, N):
  *           C += A_local[i - i_tile]
  */
-TEST(InLocalStorage, TiledAccess_1D) {
+TEST(InLocalStorageTest, TiledAccess_1D) {
     builder::StructuredSDFGBuilder builder("ils_tiled_1d_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -636,7 +731,7 @@ TEST(InLocalStorage, TiledAccess_1D) {
  *
  * Buffer size: MC * KC (constant, known at compile time)
  */
-TEST(InLocalStorage, TiledAccess_2D_Panel) {
+TEST(InLocalStorageTest, TiledAccess_2D_Panel) {
     builder::StructuredSDFGBuilder builder("ils_tiled_2d_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -784,7 +879,7 @@ TEST(InLocalStorage, TiledAccess_2D_Panel) {
  *   The stencil accesses i-1..i+IT (overapproximate of i range plus +/-1 halo)
  *   and j-1..j+JT, giving integer extents.
  */
-TEST(InLocalStorage, TiledStencil_2D_5Point) {
+TEST(InLocalStorageTest, TiledStencil_2D_5Point) {
     builder::StructuredSDFGBuilder builder("ils_tiled_stencil_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -931,7 +1026,7 @@ TEST(InLocalStorage, TiledStencil_2D_5Point) {
  * Setup: GPU Map X (i, 0..N) → For k = 0..K, accessing A[i*K + k]
  * Tile base depends on i (the only GPU dim), so no cooperative dim → rejected.
  */
-TEST(InLocalStorage, GPU_NoCoop_Rejected) {
+TEST(InLocalStorageTest, GPU_NoCoop_Rejected) {
     builder::StructuredSDFGBuilder builder("ils_gpu_nocoop", FunctionType_CPU);
     auto& seq = builder.subject().root();
 
@@ -1001,7 +1096,7 @@ TEST(InLocalStorage, GPU_NoCoop_Rejected) {
  * Tile bases = [i*16], extent = [16] (constant — no substitution needed here).
  * Y-dim (j) does NOT appear in base → cooperative.
  */
-TEST(InLocalStorage, GPU_Cooperative_FlatPointer) {
+TEST(InLocalStorageTest, GPU_Cooperative_FlatPointer) {
     builder::StructuredSDFGBuilder builder("ils_gpu_coop", FunctionType_CPU);
     auto& seq = builder.subject().root();
 
@@ -1132,7 +1227,7 @@ TEST(InLocalStorage, GPU_Cooperative_FlatPointer) {
  * Tile for A over For k: bases = [i*M], extents = [M]. M is symbolic.
  * After substitution: M→8, extent becomes 8 (integer). j-dim free → cooperative.
  */
-TEST(InLocalStorage, GPU_Cooperative_SymbolicBounds) {
+TEST(InLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     builder::StructuredSDFGBuilder builder("ils_gpu_symbolic", FunctionType_CPU);
     auto& seq = builder.subject().root();
 
@@ -1236,7 +1331,7 @@ TEST(InLocalStorage, GPU_Cooperative_SymbolicBounds) {
  *
  * Extent = K (symbolic, unresolvable) → rejected.
  */
-TEST(InLocalStorage, GPU_SymbolicExtent_Unresolvable_Rejected) {
+TEST(InLocalStorageTest, GPU_SymbolicExtent_Unresolvable_Rejected) {
     builder::StructuredSDFGBuilder builder("ils_gpu_unresolved", FunctionType_CPU);
     auto& seq = builder.subject().root();
 
@@ -1320,7 +1415,7 @@ TEST(InLocalStorage, GPU_SymbolicExtent_Unresolvable_Rejected) {
  * Tile bases = [0], extents = [N]. N is symbolic but resolvable to 32.
  * Neither i nor j appear in bases → both cooperative.
  */
-TEST(InLocalStorage, GPU_Cooperative_AllDimsFree) {
+TEST(InLocalStorageTest, GPU_Cooperative_AllDimsFree) {
     builder::StructuredSDFGBuilder builder("ils_gpu_allfree", FunctionType_CPU);
     auto& seq = builder.subject().root();
 
@@ -1412,7 +1507,7 @@ TEST(InLocalStorage, GPU_Cooperative_AllDimsFree) {
  * Setup: for k = 0..16: C += A[i*16 + k] (flat pointer access)
  * After: Map(0..16) copies A[i*16+d] → local[d], for loop uses local[k]
  */
-TEST(InLocalStorage, CPU_FlatPointer_Linearized) {
+TEST(InLocalStorageTest, CPU_FlatPointer_Linearized) {
     builder::StructuredSDFGBuilder builder("ils_cpu_flatptr", FunctionType_CPU);
     auto& root = builder.subject().root();
 
@@ -1510,7 +1605,7 @@ TEST(InLocalStorage, CPU_FlatPointer_Linearized) {
  *   - Leave A[j,k] access unchanged
  *   - After first ILS, second ILS on A[j,k] can be applied independently
  */
-TEST(InLocalStorage, TileGroups_TwoIndependentReads) {
+TEST(InLocalStorageTest, TileGroups_TwoIndependentReads) {
     builder::StructuredSDFGBuilder builder("ils_syr2k_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -1617,7 +1712,7 @@ TEST(InLocalStorage, TileGroups_TwoIndependentReads) {
  * After applying ILS on A[i,k], apply ILS on A[j,k] as a second transformation.
  * Both should succeed, creating two separate local buffers.
  */
-TEST(InLocalStorage, TileGroups_SequentialApplication) {
+TEST(InLocalStorageTest, TileGroups_SequentialApplication) {
     builder::StructuredSDFGBuilder builder("ils_syr2k_seq_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
