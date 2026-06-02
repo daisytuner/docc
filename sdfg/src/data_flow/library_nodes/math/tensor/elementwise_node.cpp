@@ -367,6 +367,18 @@ data_flow::PointerAccessType ElementWiseDataflowTensorNode::pointer_access_type(
     }
 }
 
+data_flow::AccessNode& ElementWiseDataflowTensorNode::create_tmp_access_node(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Block& block,
+    const std::string& prefix,
+    const types::IType& type
+) const {
+    auto cont = builder.find_new_name(prefix);
+    builder.add_container(cont, type);
+    auto& output_node_add = builder.add_access(block, cont);
+    return output_node_add;
+}
+
 nlohmann::json BaseElementWiseDataflowTensorNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const ElementWiseDataflowTensorNode& elem_node = static_cast<const ElementWiseDataflowTensorNode&>(library_node);
     nlohmann::json j;

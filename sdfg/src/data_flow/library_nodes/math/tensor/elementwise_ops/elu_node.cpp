@@ -43,14 +43,14 @@ ElementWiseDataflowTensorNode::ElementOutput EluNode::expand_operation_dataflow(
         math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::exp, input0.required_type);
     input0.consumer = &first_op;
     input0.input_conn_index = 0;
-    auto& output_node_exp = builder.add_access(block, builder.find_new_name("tmp_elu_exp_"));
+    auto& output_node_exp = create_tmp_access_node(builder, block, "tmp_elu_exp_", scalar_type);
     builder.add_computational_memlet(block, first_op, "_out", output_node_exp, {}, scalar_type);
     // 2. x - 1.0f
     auto& one_node = builder.add_constant(block, "1.0", scalar_type);
     auto& sub_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
     builder.add_computational_memlet(block, output_node_exp, sub_op, "_in1", {}, scalar_type);
     builder.add_computational_memlet(block, one_node, sub_op, "_in2", {}, scalar_type);
-    auto& output_node_sub = builder.add_access(block, builder.find_new_name("tmp_elu_sub_"));
+    auto& output_node_sub = create_tmp_access_node(builder, block, "tmp_elu_sub_", scalar_type);
     builder.add_computational_memlet(block, sub_op, "_out", output_node_sub, {}, scalar_type);
     // 3. alpha * x
     auto& last_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});

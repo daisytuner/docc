@@ -53,7 +53,7 @@ ElementWiseDataflowTensorNode::ElementOutput LeakyReLUNode::expand_operation_dat
     input0.consumer = &first_op;
     input0.input_conn_index = 0;
     builder.add_computational_memlet(block, zero_node, first_op, "_in2", {}, scalar_type);
-    auto& output_node_max = builder.add_access(block, builder.find_new_name("tmp_lkyrl_max_"));
+    auto& output_node_max = create_tmp_access_node(builder, block, "tmp_lkyrl_max_", scalar_type);
     builder.add_computational_memlet(block, first_op, "_out", output_node_max, {}, scalar_type);
     // alpha * x
     auto& mul_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});

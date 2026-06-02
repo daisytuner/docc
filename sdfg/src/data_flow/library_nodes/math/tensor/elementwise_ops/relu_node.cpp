@@ -41,7 +41,7 @@ ElementWiseDataflowTensorNode::ElementOutput ReLUNode::expand_operation_dataflow
     input.consumer = &libnode;
     input.input_conn_index = 0;
 
-    builder.add_computational_memlet(block, zero_node, libnode, "_in1", {}, zero_type);
+    builder.add_computational_memlet(block, zero_node, libnode, "_in2", {}, zero_type);
 
     return {.producer = &libnode, .output_conn_index = 0, .type = input.required_type};
 }

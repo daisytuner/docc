@@ -39,13 +39,13 @@ ElementWiseDataflowTensorNode::ElementOutput SigmoidNode::expand_operation_dataf
     auto& first_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_neg, "_out", {"_in"});
     input.consumer = &first_op;
     input.input_conn_index = 0;
-    auto& output_node_neg = builder.add_access(block, builder.find_new_name("tmp_sgmd_ng_"));
+    auto& output_node_neg = create_tmp_access_node(builder, block, "tmp_sgmd_ng_", scalar_type);
     builder.add_computational_memlet(block, first_op, "_out", output_node_neg, {}, scalar_type);
     // exp(x)
     auto& exp_op = builder.add_library_node<
         math::cmath::CMathNode>(block, block.debug_info(), cmath::CMathFunction::exp, input.required_type);
     builder.add_computational_memlet(block, output_node_neg, exp_op, "_in1", {}, scalar_type);
-    auto& output_node_exp = builder.add_access(block, builder.find_new_name("tmp_sgmd_exp_"));
+    auto& output_node_exp = create_tmp_access_node(builder, block, "tmp_sgmd_exp_", scalar_type);
     builder.add_computational_memlet(block, exp_op, "_out", output_node_exp, {}, scalar_type);
 
     // 1 + x
@@ -53,7 +53,7 @@ ElementWiseDataflowTensorNode::ElementOutput SigmoidNode::expand_operation_dataf
     auto& add_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
     builder.add_computational_memlet(block, one_node, add_op, "_in1", {}, scalar_type);
     builder.add_computational_memlet(block, output_node_exp, add_op, "_in2", {}, scalar_type);
-    auto& output_node_add = builder.add_access(block, builder.find_new_name("tmp_sgmd_add_"));
+    auto& output_node_add = create_tmp_access_node(builder, block, "tmp_sgmd_add_", scalar_type);
     builder.add_computational_memlet(block, add_op, "_out", output_node_add, {}, scalar_type);
     // 1.0 / x
     auto& last_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_div, "_out", {"_in1", "_in2"});

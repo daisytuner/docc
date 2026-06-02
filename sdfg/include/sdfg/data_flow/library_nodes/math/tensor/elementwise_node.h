@@ -209,6 +209,9 @@ public:
      */
     bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+
+protected:
     /**
      * Models the pure dataflow of the operation as applied to each element of the output as a function of the inputs.
      * Must fit into a single Dataflow block.
@@ -230,7 +233,12 @@ public:
         types::PrimitiveType expected_type
     ) = 0;
 
-    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+    data_flow::AccessNode& create_tmp_access_node(
+        builder::StructuredSDFGBuilder& builder,
+        structured_control_flow::Block& block,
+        const std::string& prefix,
+        const types::IType& type
+    ) const;
 };
 
 class BaseElementWiseDataflowTensorNodeSerializer : public serializer::LibraryNodeSerializer {

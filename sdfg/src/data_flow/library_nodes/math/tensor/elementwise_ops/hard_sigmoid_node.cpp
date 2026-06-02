@@ -56,7 +56,7 @@ ElementWiseDataflowTensorNode::ElementOutput HardSigmoidNode::expand_operation_d
     input0.input_conn_index = 1;
     input_beta.consumer = &first_op;
     input_beta.input_conn_index = 2;
-    auto& output_node_fma = builder.add_access(block, builder.find_new_name("tmp_hs_fma_"));
+    auto& output_node_fma = create_tmp_access_node(builder, block, "tmp_hs_fma_", scalar_type);
     builder.add_computational_memlet(block, first_op, "_out", output_node_fma, {}, scalar_type);
     // min(1, x)
     auto& one_node = builder.add_constant(block, "1.0f", scalar_type);
@@ -64,7 +64,7 @@ ElementWiseDataflowTensorNode::ElementOutput HardSigmoidNode::expand_operation_d
         math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::fmin, input0.required_type);
     builder.add_computational_memlet(block, output_node_fma, min_op, "_in1", {}, scalar_type);
     builder.add_computational_memlet(block, one_node, min_op, "_in2", {}, scalar_type);
-    auto& output_node_min = builder.add_access(block, builder.find_new_name("tmp_hs_min_"));
+    auto& output_node_min = create_tmp_access_node(builder, block, "tmp_hs_min_", scalar_type);
     builder.add_computational_memlet(block, min_op, "_out", output_node_min, {}, scalar_type);
 
     // max(0, x)
