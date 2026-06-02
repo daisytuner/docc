@@ -240,6 +240,7 @@ void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flo
         this->last_comp_name_ = id;
         return;
     }
+    const data_flow::LibraryNode* library_node = nullptr;
     this->last_comp_name_.clear();
     std::list<const data_flow::DataFlowNode*> nodes = dfg.topological_sort();
     for (const data_flow::DataFlowNode* node : nodes) {
@@ -269,9 +270,9 @@ void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flo
             if (this->sdfg_.is_transient(access_node->data())) this->stream_ << "style=\"dashed,filled\",";
             this->stream_ << "label=\"" << access_node->data() << "\"];" << std::endl;
             is_access_node = true;
-        } else if (const data_flow::LibraryNode* libnode = dynamic_cast<const data_flow::LibraryNode*>(node)) {
-            this->stream_ << nodeId << " [shape=doubleoctagon,label=\"" << libnode->toStr() << "\"];" << std::endl;
-            in_connectors = libnode->inputs();
+        } else if ((library_node = dynamic_cast<const data_flow::LibraryNode*>(node))) {
+            this->stream_ << nodeId << " [shape=doubleoctagon,label=\"" << library_node->toStr() << "\"];" << std::endl;
+            in_connectors = library_node->inputs();
         }
 
         std::unordered_set<std::string> unused_connectors(in_connectors.begin(), in_connectors.end());
@@ -280,7 +281,13 @@ void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flo
             auto& dst_conn = iedge.dst_conn();
             bool nonexistent_conn = false;
 
+            bool is_ptr = iedge.result_type(sdfg_)->is_pointer_like();
+            data_flow::PointerAccessType meta_data;
+
             if (!is_access_node) {
+                if (library_node && is_ptr) {
+                    meta_data = library_node->pointer_access_type(iedge);
+                }
                 auto it = unused_connectors.find(dst_conn);
                 if (it != unused_connectors.end()) {
                     unused_connectors.erase(it); // remove connector from in_connectors, so it is not used again
@@ -325,33 +332,71 @@ void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flo
                 this->stream_ << dst_conn;
             }
 
-            this->stream_ << " = ";
-
             if (srcIsVoid || srcIsDeref) { // subset applies to src, could be computational, reference or dereference
                                            // memlet
                 auto& srcVar = dynamic_cast<data_flow::AccessNode const&>(src).data();
                 bool subsetOnSrc = false;
                 if (srcIsVoid && dstIsRef) { // reference memlet / address-of / get-element-ptr equivalent
-                    this->stream_ << "&";
+                    this->stream_ << " = &";
                     subsetOnSrc = true;
                 } else if (srcIsVoid && dstIsDeref) { // Dereference memlet / load from address
-                    this->stream_ << "*";
+                    this->stream_ << " = *";
                     auto& subset = iedge.subset();
                     if (subset.size() != 1 && symbolic::eq(subset[0], symbolic::integer(0))) { // does not match memlet
                                                                                                // definition -> fallback
                         subsetOnSrc = true;
                     }
-                } else if (srcIsVoid) {
+                } else if (srcIsVoid && !iedge.subset().empty()) {
                     subsetOnSrc = true;
                 }
-                this->stream_ << srcVar;
                 if (subsetOnSrc) {
+                    this->stream_ << srcVar;
                     this->visualizeSubset(iedge.subset(), &iedge.base_type());
                 }
             } else {
-                this->stream_ << src_conn;
+                this->stream_ << " = " << src_conn;
             }
-            this->stream_ << "   \"];" << std::endl;
+
+            if (is_ptr && !is_access_node) {
+                this->stream_ << "   \\n";
+                this->stream_ << "    {";
+                bool is_rd = true;
+                bool is_wr = true;
+                bool is_leak = true;
+                if (meta_data) {
+                    if (meta_data->may_contain_reads()) {
+                        this->stream_ << "r";
+                    } else {
+                        is_rd = false;
+                    }
+                    if (meta_data->may_contain_writes()) {
+                        this->stream_ << "w";
+                    } else {
+                        is_wr = false;
+                    }
+                    if (meta_data->invalidated_after()) {
+                        this->stream_ << "I";
+                    } else if (!meta_data->no_capture()) {
+                        this->stream_ << "L";
+                    } else {
+                        is_leak = false;
+                    }
+                } else {
+                    this->stream_ << "#";
+                }
+                this->stream_ << "}   \"";
+                this->stream_ << ", style=\"";
+                if (is_leak) {
+                    this->stream_ << "bold,dashed\"";
+                } else if (is_wr) {
+                    this->stream_ << "dashed\", color=\"red\"";
+                } else {
+                    this->stream_ << "dashed\", color=\"green\"";
+                }
+            } else {
+                this->stream_ << "   \"";
+            }
+            this->stream_ << "];" << std::endl;
         }
 
         if (!node_will_show_literal_connectors) {
