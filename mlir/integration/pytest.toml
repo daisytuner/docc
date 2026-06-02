@@ -1,0 +1,8 @@
+[pytest]
+markers = [
+    "unmarked",
+    "slow",
+    "etsoc",
+    "tenstorrent",
+    "cuda"
+]
