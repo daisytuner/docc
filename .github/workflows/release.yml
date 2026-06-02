@@ -110,7 +110,7 @@ jobs:
           merge-multiple: true
 
       - uses: pypa/gh-action-pypi-publish@v1.10.0
-  
+
   packages-llvm:
     strategy:
       matrix:
@@ -122,7 +122,7 @@ jobs:
             upload-dist-version: 24.04
             runner: build-amd64-big
             architecture: x64
-            image: daisytuner/docc-build-env-llvm19-ubuntu-24.04:latest
+            image: daisytuner/docc-build-env-llvm19-ubuntu-24.04:latest-amd64
           - platform: ubuntu-24.04
             package-format: deb
             cpack-generator: DEB
@@ -130,7 +130,7 @@ jobs:
             upload-dist-version: 24.04
             runner: build-arm64-big
             architecture: arm64
-            image: daisytuner/docc-build-env-llvm19:latest-arm64
+            image: daisytuner/docc-build-env-llvm19-ubuntu-24.04:latest-arm64
           - platform: rhel-10
             package-format: rpm
             cpack-generator: RPM
@@ -139,7 +139,7 @@ jobs:
             upload-dist-platform-id: platform:el10
             runner: build-amd64-big
             architecture: x64
-            image: daisytuner/docc-build-env-llvm19-rhel-10:latest
+            image: daisytuner/docc-build-env-llvm19-rhel-10:latest-amd64
           - platform: debian-13
             package-format: deb
             cpack-generator: DEB
@@ -147,7 +147,7 @@ jobs:
             upload-dist-version: 13
             runner: build-amd64-big
             architecture: x64
-            image: daisytuner/docc-build-env-llvm19-debian-13:latest
+            image: daisytuner/docc-build-env-llvm19-debian-13:latest-amd64
 
     runs-on: ${{ matrix.runner }}
     container:
