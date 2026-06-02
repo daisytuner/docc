@@ -48,6 +48,7 @@ namespace blas {
  * - z: Complex double precision
  */
 enum BLAS_Precision {
+    invalid = 0,
     h = 'h',
     s = 's',
     d = 'd',

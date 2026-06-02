@@ -30,6 +30,7 @@ set(TEST_FILES
     transformations/offloading/cuda_stdlib_data_transfer_extraction_test.cpp
     transformations/offloading/rocm_stdlib_data_transfer_extraction_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
+    passes/offloading/cuda_library_node_expand_tests.cpp
     passes/offloading/rocm_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_rewriter_pass_test.cpp
     passes/offloading/rocm_library_node_rewriter_pass_test.cpp

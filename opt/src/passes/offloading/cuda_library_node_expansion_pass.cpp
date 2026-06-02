@@ -25,13 +25,11 @@ bool CudaExpansion::accept(structured_control_flow::Block& node) {
         if (lib_node_code == math::tensor::LibraryNodeType_BatchNorm) {
             auto& batchnorm_node = static_cast<math::tensor::BatchNormNode&>(*library_node);
             sdfg::offloading::CudaBatchNormExpander expander(batchnorm_node);
-            expander.expand(builder_, analysis_manager_);
-            made_changes = true;
+            made_changes |= expander.expand(builder_, analysis_manager_);
         } else if (lib_node_code == math::tensor::LibraryNodeType_Conv) {
             auto& conv_node = static_cast<math::tensor::ConvNode&>(*library_node);
             sdfg::offloading::CudaConvExpander expander(conv_node);
-            expander.expand(builder_, analysis_manager_);
-            made_changes = true;
+            made_changes |= expander.expand(builder_, analysis_manager_);
         } else {
             continue;
         }

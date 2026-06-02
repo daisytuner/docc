@@ -39,6 +39,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/spatial_tensor_node.h"
 #include "sdfg/serializer/json_serializer.h"
 
@@ -135,6 +136,10 @@ public:
 
     void validate(const Function& function) const override;
 
+    static blas::BLAS_Precision get_blas_precision(types::Scalar base_type);
+
+    symbolic::MultiExpression get_out_shape();
+
     /**
      * @brief Expand convolution into nested maps for n-dimensional convolution
      *
@@ -179,6 +184,25 @@ public:
     symbolic::Expression flop() const override;
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+
+    struct ConvExpandPrerequisits {
+        const data_flow::Memlet* iedge_X;
+        const data_flow::Memlet* iedge_W;
+        const data_flow::Memlet* iedge_B;
+        const data_flow::Memlet* iedge_Y;
+        const data_flow::AccessNode* access_X;
+        const data_flow::AccessNode* access_W;
+        const data_flow::AccessNode* access_B;
+        const data_flow::AccessNode* access_Y;
+        bool has_bias;
+        structured_control_flow::Block* block;
+        structured_control_flow::Sequence* block_parent;
+        size_t block_index;
+    };
+
+    bool check_expandable(
+        data_flow::DataFlowGraph& dfg, analysis::AnalysisManager& analysis_manager, ConvExpandPrerequisits& boundary
+    ) const;
 };
 
 /**
