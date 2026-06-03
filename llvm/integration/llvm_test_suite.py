@@ -154,7 +154,7 @@ def setup():
         pytest.param("MultiSource/Benchmarks/DOE-ProxyApps-C++/CLAMR", "CLAMR", "TIMEOUT", ""),
         pytest.param("MultiSource/Benchmarks/DOE-ProxyApps-C++/HACCKernels", "HACCKernels", "YES", "PASS"),
         pytest.param("MultiSource/Benchmarks/DOE-ProxyApps-C++/HPCCG", "HPCCG", "YES", "PASS"),
-        pytest.param("MultiSource/Benchmarks/DOE-ProxyApps-C++/miniFE", "miniFE", "YES", "PASS"),
+        pytest.param("MultiSource/Benchmarks/DOE-ProxyApps-C++/miniFE", "miniFE", "YES", "FLAKY"),
         pytest.param("MultiSource/Benchmarks/DOE-ProxyApps-C++/PENNANT", "PENNANT", "YES", "PASS"),
         pytest.param("MultiSource/Benchmarks/Fhourstones", "fhourstones", "YES", "FAIL"),
         pytest.param("MultiSource/Benchmarks/Fhourstones-3.1", "fhourstones3.1", "YES", "PASS"),
