@@ -213,6 +213,15 @@ public:
      * @return nullptr, if no viable standalone input could be found
      */
     const AccessNode* find_standalone_entry(const Memlet* input_edge) const;
+
+    /**
+     * Same as [find_standalone_entry] find an access node that is standalone, so that we can recreate the access node
+     * in a different place without impacting correctness, as long as we repreduce the same accesses via it.
+     *
+     * @param output_edge the output edge for which we want to find a standalone cut point
+     * @return nullptr, if no viable standalone output could be found
+     */
+    const AccessNode* find_standalone_exit(const Memlet* output_edge) const;
 };
 
 } // namespace data_flow

@@ -883,7 +883,19 @@ const AccessNode* DataFlowGraph::find_standalone_entry(const Memlet* input_edge)
     } else {
         return nullptr;
     }
-};
+}
+
+const AccessNode* DataFlowGraph::find_standalone_exit(const Memlet* output_edge) const {
+    if (!output_edge) {
+        return nullptr;
+    }
+    auto* access_node = dynamic_cast<const data_flow::AccessNode*>(&output_edge->dst());
+    if (access_node && out_degree(*access_node) == 0) {
+        return access_node;
+    } else {
+        return nullptr;
+    }
+}
 
 
 } // namespace data_flow
