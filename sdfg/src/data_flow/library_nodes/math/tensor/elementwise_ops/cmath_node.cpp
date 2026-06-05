@@ -130,16 +130,9 @@ std::unique_ptr<data_flow::DataFlowNode> CMathTensorNode::
 std::string CMathTensorNode::toStr() const {
     std::stringstream stream;
 
-    const auto& oedge = *this->get_parent().out_edges(*this).begin();
-    stream << this->output(0) << " = "
-           << cmath::get_cmath_intrinsic_name(this->cmath_function(), oedge.base_type().primitive_type()) << "(";
-    for (size_t i = 0; i < this->inputs().size(); i++) {
-        if (i > 0) {
-            stream << ", ";
-        }
-        stream << this->input(i);
-    }
-    stream << ")";
+    const auto* iedge = this->get_parent().in_edge_for_connector(*this, this->input(0));
+    stream << this->code().value() << "("
+           << cmath::get_cmath_intrinsic_name(this->cmath_function(), iedge->base_type().primitive_type()) << ")";
 
     return stream.str();
 }
