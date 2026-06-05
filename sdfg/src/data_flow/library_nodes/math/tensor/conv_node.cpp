@@ -44,6 +44,7 @@ ConvNode::ConvNode(
     const std::vector<symbolic::Expression>& dilations,
     symbolic::Expression output_channels,
     symbolic::Expression group,
+    bool with_bias,
     QuantizationType quantization,
     const data_flow::ImplementationType& impl_type
 )
@@ -54,7 +55,7 @@ ConvNode::ConvNode(
           parent,
           LibraryNodeType_Conv,
           {},
-          {"Y", "X", "W", "B"}, // X and W are required, B (bias) is optional
+          {"Y", "X", "W"}, // X and W are required, B (bias) is optional
           impl_type,
           quantization,
           shape,
@@ -63,7 +64,11 @@ ConvNode::ConvNode(
           pads,
           dilations
       ),
-      output_channels_(std::move(output_channels)), group_(std::move(group)) {}
+      output_channels_(std::move(output_channels)), group_(std::move(group)), with_bias_(with_bias) {
+    if (with_bias) {
+        inputs_.push_back("B");
+    }
+}
 
 void ConvNode::validate(const Function& function) const {
     TensorNode::validate(function);
@@ -178,10 +183,7 @@ symbolic::MultiExpression ConvNode::get_out_shape() {
     return out_shape;
 }
 
-bool ConvNode::has_bias() const {
-    auto* bias_edge = get_parent().in_edge_for_connector(*this, "B");
-    return bias_edge != nullptr;
-}
+bool ConvNode::has_bias() const { return with_bias_; }
 
 bool ConvNode::check_expandable(
     data_flow::DataFlowGraph& dfg, analysis::AnalysisManager& analysis_manager, ConvExpandPrerequisits& boundary
@@ -193,7 +195,7 @@ bool ConvNode::check_expandable(
     // Get edges
     boundary.iedge_X = dfg.in_edge_for_connector(*this, "X");
     boundary.iedge_W = dfg.in_edge_for_connector(*this, "W");
-    boundary.iedge_B = dfg.in_edge_for_connector(*this, "B");
+    boundary.iedge_B = with_bias_ ? dfg.in_edge_for_connector(*this, "B") : nullptr;
     boundary.iedge_Y = dfg.in_edge_for_connector(*this, "Y");
     if (!boundary.iedge_X || !boundary.iedge_W || !boundary.iedge_Y) {
         return false;
@@ -618,6 +620,7 @@ std::unique_ptr<data_flow::DataFlowNode> ConvNode::
         dilations_,
         output_channels_,
         group_,
+        with_bias_,
         fixed_quantization_,
         implementation_type_
     ));
@@ -671,6 +674,7 @@ nlohmann::json ConvNodeSerializer::serialize(const data_flow::LibraryNode& libra
     serializer::JSONSerializer serializer;
     j["output_channels"] = serializer.expression(conv_node.output_channels());
     j["group"] = serializer.expression(conv_node.group());
+    j["with_bias"] = conv_node.has_bias();
 
     fill_base_values(conv_node, j);
 
@@ -683,6 +687,12 @@ data_flow::LibraryNode& ConvNodeSerializer::deserialize(
     assert(j.contains("kernel_shape"));
 
     auto base = deserialize_base_values(j);
+
+    auto bias_it = j.find("with_bias");
+    bool with_bias = false;
+    if (bias_it != j.end()) {
+        with_bias = bias_it->get<bool>();
+    }
 
     symbolic::Expression output_channels = symbolic::one();
     if (j.contains("output_channels")) {
@@ -704,6 +714,7 @@ data_flow::LibraryNode& ConvNodeSerializer::deserialize(
         base.dilations,
         output_channels,
         group,
+        with_bias,
         base.quantization
     );
 }

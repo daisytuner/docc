@@ -99,7 +99,7 @@ TEST(CudaConvExpanderTest, DeclinesConv2D_GroupNotOne) {
         desc_tensor_output(desc, {symbolic::integer(1), symbolic::integer(4), symbolic::integer(8), symbolic::integer(8)});
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
-        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::integer(4), group
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::integer(4), group, false
     ));
 
     builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
@@ -158,7 +158,7 @@ TEST(CudaConvExpanderTest, DeclinesWhenNotExpandable_ExtraNodes) {
         desc_tensor_output(desc, {symbolic::integer(1), symbolic::integer(1), symbolic::integer(2), symbolic::integer(2)});
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
-        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group, false
     ));
 
     builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
@@ -204,7 +204,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv1D_Group1) {
     types::Tensor desc_tensor_output(desc, {symbolic::integer(1), symbolic::integer(1), symbolic::integer(10)});
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
-        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group, false
     ));
 
     builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());

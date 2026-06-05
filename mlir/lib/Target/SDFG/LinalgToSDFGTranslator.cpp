@@ -608,7 +608,7 @@ LogicalResult translateLinalgCustomConv2DNchwFchwOp(SDFGTranslator& translator, 
     auto& weights_access = builder.add_access(block, weights_container, deb_info);
     auto& result_access = builder.add_access(block, result_container, deb_info);
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::ConvNode>(
-        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group
+        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group, !!bias
     );
     builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
     builder.add_computational_memlet(block, weights_access, libnode, "W", {}, *weights_sdfg_tensor, deb_info);
@@ -1249,7 +1249,7 @@ LogicalResult translateLinalgDepthwiseConv2DNchwChwOp(SDFGTranslator& translator
     auto& builder = translator.builder();
     auto& block = builder.add_block(sequence, {}, deb_info);
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::ConvNode>(
-        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group
+        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group, false
     );
 
     // Build tensor types for memlets
@@ -1391,7 +1391,7 @@ LogicalResult translateLinalgConv2DNchwFchwOp(SDFGTranslator& translator, linalg
     auto& builder = translator.builder();
     auto& block = builder.add_block(sequence, {}, deb_info);
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::ConvNode>(
-        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group
+        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group, has_bias
     );
 
     // Build tensor types for memlets (all C-order after store_in_c_order)

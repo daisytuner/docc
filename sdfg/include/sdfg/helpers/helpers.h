@@ -26,6 +26,11 @@
     } while (0)
 #endif
 
+#define WARN_PRINTLN(msg)                           \
+    do {                                            \
+        std::cerr << "[WARN] " << msg << std::endl; \
+    } while (0)
+
 namespace sdfg {
 namespace helpers {
 

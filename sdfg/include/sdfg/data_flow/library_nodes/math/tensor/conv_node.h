@@ -90,6 +90,7 @@ class ConvNode : public SpatialTensorNode {
 protected:
     symbolic::Expression output_channels_; ///< Number of output channels (C_out)
     symbolic::Expression group_; ///< Number of groups for grouped convolution
+    bool with_bias_;
 
 public:
     /**
@@ -118,6 +119,7 @@ public:
         const std::vector<symbolic::Expression>& dilations,
         symbolic::Expression output_channels,
         symbolic::Expression group,
+        bool with_bias = false,
         QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );

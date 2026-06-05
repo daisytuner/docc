@@ -1096,7 +1096,7 @@ void PyStructuredSDFGBuilder::add_conv(
     auto group = parse_and_expand(group_str);
 
     auto& conv_node = builder_.add_library_node<sdfg::math::tensor::ConvNode>(
-        block, debug_info, shape, kernel_shape, strides, pads, dilations, output_channels, group
+        block, debug_info, shape, kernel_shape, strides, pads, dilations, output_channels, group, false
     );
 
     auto add_input = [&](const std::string& name, const std::string& conn) {

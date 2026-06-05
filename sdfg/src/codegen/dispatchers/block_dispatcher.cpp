@@ -368,6 +368,12 @@ void LibraryNodeDispatcher::
     auto in_edges = data_flow_graph_.in_edges_by_connector(node_);
     for (auto i = 0; i < input_count; ++i) {
         auto* iedge = in_edges.at(i);
+        if (!iedge) {
+            throw InvalidSDFGException(
+                "On libNode #" + std::to_string(node_.element_id()) + ", input " + std::to_string(i) + ":" +
+                node_.input(i) + " is unconnected!"
+            );
+        }
         auto expr = resolve_input_edge_to_expression(*iedge, this->function_, language_extension_);
         inputs.emplace_back(expr, *iedge, false);
     }

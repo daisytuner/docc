@@ -68,7 +68,7 @@ void TestConvNode(
     types::Tensor desc_tensor_weights(desc, kernel_shape); // C_out and C_in will be inferred
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
-        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, output_channels, group
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, output_channels, group, has_bias
     ));
 
     builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
@@ -368,8 +368,9 @@ TEST(ConvNodeTest, CloneNode) {
         symbolic::integer(1), symbolic::integer(1), symbolic::integer(10), symbolic::integer(10)
     };
 
-    auto& conv_node = builder.add_library_node<
-        math::tensor::ConvNode>(block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group);
+    auto& conv_node = builder.add_library_node<math::tensor::ConvNode>(
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group, false
+    );
 
     // Clone the node
     auto cloned = conv_node.clone(999, graph::Vertex(), block.dataflow());
@@ -424,7 +425,7 @@ TEST(ConvNodeTest, Conv2D_SimpleExpansion) {
         desc_tensor_output(desc, {symbolic::integer(1), symbolic::integer(1), symbolic::integer(2), symbolic::integer(2)});
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
-        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group, false
     ));
 
     builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
@@ -482,7 +483,7 @@ TEST(ConvNodeTest, Conv2D_ExpansionNotImplemented) {
     );
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
-        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group, false
     ));
 
     builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
@@ -527,7 +528,7 @@ TEST(ConvNodeTest, Conv1D_Expansion) {
     types::Tensor desc_tensor_weights(desc, {symbolic::integer(1), symbolic::integer(1), symbolic::integer(5)});
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
-        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group, false
     ));
 
     builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
@@ -587,7 +588,7 @@ TEST(ConvNodeTest, Conv3D_Expansion) {
     );
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
-        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group, false
     ));
 
     builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
@@ -641,7 +642,7 @@ TEST(ConvNodeTest, LinearizationTest) {
     );
 
     auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
-        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::one(), group, false
     ));
 
     builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
