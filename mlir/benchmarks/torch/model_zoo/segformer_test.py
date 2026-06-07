@@ -1,3 +1,4 @@
+import argparse
 import time
 
 import torch
@@ -15,13 +16,36 @@ os.environ["DOCC_PROFILE_COMPILE"] = "1"
 os.environ["DOCC_DEBUG"] = "dump"
 
 
+SEGFORMER_MODELS = {
+    "b0": "nvidia/segformer-b0-finetuned-cityscapes-1024-1024",
+    "b1": "nvidia/segformer-b1-finetuned-cityscapes-1024-1024",
+    "b2": "nvidia/segformer-b2-finetuned-cityscapes-1024-1024",
+    "b3": "nvidia/segformer-b3-finetuned-cityscapes-1024-1024",
+    "b4": "nvidia/segformer-b4-finetuned-cityscapes-1024-1024",
+    "b5": "nvidia/segformer-b5-finetuned-cityscapes-1024-1024",
+}
+
+
+def resolve_model_name(version, model):
+    if model:
+        return model
+    return SEGFORMER_MODELS[version]
+
+
+def get_test_model_name():
+    version = os.getenv("SEGFORMER_VERSION", "b0")
+    if version not in SEGFORMER_MODELS:
+        raise ValueError(
+            f"Unsupported SEGFORMER_VERSION '{version}'. "
+            f"Expected one of: {', '.join(SEGFORMER_MODELS.keys())}"
+        )
+    return resolve_model_name(version, None)
+
+
 def test_backend():
-    model = SegformerForSemanticSegmentation.from_pretrained(
-        "nvidia/segformer-b0-finetuned-cityscapes-1024-1024"
-    ).eval()
-    model_ref = SegformerForSemanticSegmentation.from_pretrained(
-        "nvidia/segformer-b0-finetuned-cityscapes-1024-1024"
-    ).eval()
+    model_name = get_test_model_name()
+    model = SegformerForSemanticSegmentation.from_pretrained(model_name).eval()
+    model_ref = SegformerForSemanticSegmentation.from_pretrained(model_name).eval()
     model_ref.load_state_dict(model.state_dict())
 
     example_input = torch.randn(1, 3, 512, 512)
@@ -60,12 +84,9 @@ def test_backend():
 
 @pytest.mark.skip("Skip")
 def test_compile():
-    model = SegformerForSemanticSegmentation.from_pretrained(
-        "nvidia/segformer-b0-finetuned-cityscapes-1024-1024"
-    ).eval()
-    model_ref = SegformerForSemanticSegmentation.from_pretrained(
-        "nvidia/segformer-b0-finetuned-cityscapes-1024-1024"
-    ).eval()
+    model_name = get_test_model_name()
+    model = SegformerForSemanticSegmentation.from_pretrained(model_name).eval()
+    model_ref = SegformerForSemanticSegmentation.from_pretrained(model_name).eval()
     model_ref.load_state_dict(model.state_dict())
 
     example_input = torch.randn(1, 3, 512, 512)
@@ -83,9 +104,7 @@ def test_compile():
     assert torch.allclose(res, res_ref.logits, rtol=1e-4)
 
 def find_used_dialects():
-    model = SegformerForSemanticSegmentation.from_pretrained(
-        "nvidia/segformer-b0-finetuned-cityscapes-1024-1024"
-    ).eval()
+    model = SegformerForSemanticSegmentation.from_pretrained(get_test_model_name()).eval()
 
     example_input = torch.randn(1, 3, 512, 512)
 
@@ -107,20 +126,32 @@ def find_used_dialects():
 
     # print(mlir_str)
 
-def benchmark_segformer(model_name):
+def benchmark_segformer(model_name, backend="torch", target="none", device="cpu"):
     model = SegformerForSemanticSegmentation.from_pretrained(
         model_name
     ).eval()
 
-    example_input = torch.randn(1, 3, 1024, 1024)
+    if device == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA requested but not available")
 
-    program = torch.compile(model)
+    if device == "cuda":
+        model = model.to("cuda")
+
+    example_input = torch.randn(1, 3, 1024, 1024, device=device)
+
+    compile_kwargs = {}
+    if backend == "docc":
+        compile_kwargs = {
+            "backend": "docc",
+            "options": {"target": target, "category": "server"},
+        }
+
+    program = torch.compile(model, **compile_kwargs)
     with torch.no_grad():
         # Warmup
         res = program(pixel_values=example_input)
 
         import time
-        import math
         from scipy import stats as scipy_stats
 
         times = []
@@ -153,11 +184,74 @@ def benchmark_segformer(model_name):
     print(f"Average inference time: {mean:.2f} ms (n={n})")
     print(f"95% CI: [{mean - half_width:.2f}, {mean + half_width:.2f}] ms  (±{half_width:.2f} ms)")
 
+
+def setup_segformer_benchmark(model_name):
+    model = SegformerForSemanticSegmentation.from_pretrained(model_name).eval()
+    example_input = torch.randn(1, 3, 512, 512)
+    return model, example_input
+
 if __name__ == "__main__":
-    # find_used_dialects()
-    find_used_dialects()
-    #benchmark_segformer("nvidia/segformer-b1-finetuned-cityscapes-1024-1024")
-    #benchmark_segformer("nvidia/segformer-b2-finetuned-cityscapes-1024-1024")
-    #benchmark_segformer("nvidia/segformer-b3-finetuned-cityscapes-1024-1024")
-    #benchmark_segformer("nvidia/segformer-b4-finetuned-cityscapes-1024-1024")
-    #benchmark_segformer("nvidia/segformer-b5-finetuned-cityscapes-1024-1024")
+    parser = argparse.ArgumentParser(description="segformer benchmark")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Optional Hugging Face model id to override --version",
+    )
+    parser.add_argument(
+        "--version",
+        type=str,
+        choices=list(SEGFORMER_MODELS.keys()),
+        default="b0",
+        help="SegFormer variant used when --model is not provided",
+    )
+    parser.add_argument(
+        "--action",
+        type=str,
+        choices=["dialects", "benchmark", "benchmark_segformer"],
+        default="benchmark",
+        help="Run dialect dump or harness benchmark",
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["torch", "docc"],
+        default="torch",
+        help="Backend for --action benchmark_segformer",
+    )
+    parser.add_argument(
+        "--target",
+        type=str,
+        default="none",
+        help="DOCC target for --action benchmark_segformer (e.g. none, openmp, cuda)",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        choices=["cpu", "cuda"],
+        default="cpu",
+        help="Tensor/model device for --action benchmark_segformer",
+    )
+    args, remaining = parser.parse_known_args()
+    model_name = resolve_model_name(args.version, args.model)
+
+    import sys
+
+    if args.action == "dialects":
+        find_used_dialects()
+    elif args.action == "benchmark_segformer":
+        benchmark_segformer(
+            model_name,
+            backend=args.backend,
+            target=args.target,
+            device=args.device,
+        )
+    else:
+        sys.argv = [sys.argv[0]] + remaining
+        from functools import partial
+        from benchmarks.harness import run_benchmark
+
+        run_benchmark(
+            partial(setup_segformer_benchmark, model_name),
+            f"segformer {model_name}",
+        )

@@ -13,6 +13,7 @@ Structure of SegFormer-b0:
     4x Linear projection + upsample to stage-0 resolution + concat + fuse Conv+BN + classifier Conv
 """
 
+import argparse
 import time
 
 import pytest
@@ -23,6 +24,14 @@ from transformers import SegformerForSemanticSegmentation
 import docc.torch
 
 MODEL_NAME = "nvidia/segformer-b0-finetuned-cityscapes-1024-1024"
+SEGFORMER_MODELS = {
+    "b0": "nvidia/segformer-b0-finetuned-cityscapes-1024-1024",
+    "b1": "nvidia/segformer-b1-finetuned-cityscapes-1024-1024",
+    "b2": "nvidia/segformer-b2-finetuned-cityscapes-1024-1024",
+    "b3": "nvidia/segformer-b3-finetuned-cityscapes-1024-1024",
+    "b4": "nvidia/segformer-b4-finetuned-cityscapes-1024-1024",
+    "b5": "nvidia/segformer-b5-finetuned-cityscapes-1024-1024",
+}
 INPUT_SHAPE = (1, 3, 512, 512)
 RTOL = 1e-2
 ATOL = 1e-4
@@ -87,6 +96,93 @@ def _compile(module: nn.Module) -> nn.Module:
         options={"target": "sequential", "category": "server"},
         dynamic=False,  # keep height/width as concrete ints, not SymInts
     )
+
+
+def _compile_for_backend(module: nn.Module, backend: str, target: str) -> nn.Module:
+    if backend == "docc":
+        return torch.compile(
+            module,
+            backend="docc",
+            options={"target": target, "category": "server"},
+            dynamic=False,
+        )
+    return torch.compile(module, dynamic=False)
+
+
+def _benchmark_module(label: str, module: nn.Module, inputs, backend: str, target: str, n_runs: int) -> None:
+    compiled = _compile_for_backend(module, backend, target)
+    with torch.no_grad():
+        compiled(*inputs)
+
+        times_ms = []
+        for _ in range(n_runs):
+            start = time.perf_counter()
+            compiled(*inputs)
+            end = time.perf_counter()
+            times_ms.append((end - start) * 1000.0)
+
+    mean_ms = sum(times_ms) / len(times_ms)
+    print(f"{label}: mean={mean_ms:.2f} ms over {n_runs} runs")
+
+
+def benchmark_layerwise(model_name: str, backend: str = "torch", target: str = "cuda", device: str = "cuda", n_runs: int = 10) -> None:
+    if device == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA requested but not available")
+
+    model = SegformerForSemanticSegmentation.from_pretrained(model_name).eval().to(device)
+    stage_modules = model.segformer.stages
+    decode_head = model.decode_head
+
+    x = torch.randn(*INPUT_SHAPE, device=device)
+
+    print(f"Layerwise benchmark model={model_name} backend={backend} target={target} device={device}")
+    with torch.no_grad():
+        stage_inputs = []
+        stage_outputs = []
+
+        for stage in stage_modules:
+            stage_inputs.append(x)
+            x = stage(x)
+            stage_outputs.append(x)
+
+        for i, stage in enumerate(stage_modules):
+            wrapper = EncoderStageWrapper(stage)
+            _benchmark_module(
+                f"EncoderStage{i}",
+                wrapper,
+                (stage_inputs[i],),
+                backend,
+                target,
+                n_runs,
+            )
+
+            blocks = getattr(stage, "layers", None) or getattr(stage, "blocks", None)
+            if blocks is None:
+                continue
+
+            hidden_states, height, width = stage.patch_embeddings(stage_inputs[i])
+            for j, block in enumerate(blocks):
+                block_input = hidden_states
+                block_wrapper = SingleBlockWrapper(block, height, width)
+                _benchmark_module(
+                    f"Stage{i}/Block{j}",
+                    block_wrapper,
+                    (block_input,),
+                    backend,
+                    target,
+                    n_runs,
+                )
+                hidden_states = block(hidden_states, height, width)[0]
+
+        decode_wrapper = DecodeHeadWrapper(decode_head)
+        _benchmark_module(
+            "DecodeHead",
+            decode_wrapper,
+            tuple(stage_outputs),
+            backend,
+            target,
+            n_runs,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -307,3 +403,48 @@ def test_end_to_end_composed(segformer_refs):
 
     ok = _print_diff(logits, refs["ref_logits"], "ComposedLogits")
     assert ok, "End-to-end composed output mismatch"
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="SegFormer layerwise benchmarks/tests helper")
+    parser.add_argument(
+        "--action",
+        type=str,
+        choices=["benchmark_layerwise"],
+        default="benchmark_layerwise",
+    )
+    parser.add_argument(
+        "--version",
+        type=str,
+        choices=list(SEGFORMER_MODELS.keys()),
+        default="b0",
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["torch", "docc"],
+        default="torch",
+    )
+    parser.add_argument(
+        "--target",
+        type=str,
+        default="cuda",
+        help="DOCC target when backend=docc",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        choices=["cpu", "cuda"],
+        default="cuda",
+    )
+    parser.add_argument("--n_runs", type=int, default=10)
+    args = parser.parse_args()
+
+    model_name = SEGFORMER_MODELS[args.version]
+    benchmark_layerwise(
+        model_name=model_name,
+        backend=args.backend,
+        target=args.target,
+        device=args.device,
+        n_runs=args.n_runs,
+    )

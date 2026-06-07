@@ -1,0 +1,40 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+parameters:
+  container: daisytuner/docc-build-env-llvm19-base:latest-amd64
+  timeout: 240
+  partitions:
+    - chamomile
+
+steps:
+  build: |
+    python3.11 -m venv venv
+    . venv/bin/activate
+
+    python -m pip install --upgrade pip
+    pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+    pip install numpy scipy transformers
+
+    pip install --no-build-isolation -e python/
+    pip install --no-build-isolation -e mlir/
+
+    pip install -r mlir/requirements.txt
+
+    # Warm start (DOCC benchmark, CUDA target)
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=cuda --device=cpu
+
+  run:
+
+    # model segformer b0 (DOCC CUDA target)
+
+    segformer_b0_docc_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=cuda --device=cpu
+      energy: true
+      env:
+        DOCC_CI: ""
+        DOCC_REUSE_BINARIES: 1
