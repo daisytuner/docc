@@ -41,7 +41,7 @@ def get_test_model_name():
         )
     return resolve_model_name(version, None)
 
-
+@pytest.mark.skipif(not os.environ.get("SLOW_TESTS", ""), reason="slow test")
 def test_backend():
     model_name = get_test_model_name()
     model = SegformerForSemanticSegmentation.from_pretrained(model_name).eval()
@@ -51,12 +51,12 @@ def test_backend():
     example_input = torch.randn(1, 3, 512, 512)
 
     start = time.perf_counter()
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(model, backend="docc", options={"target": "cuda", "category": "server"})
     end = time.perf_counter()
     print(f"compilation time: {(end - start) * 1000:.2f} ms")
 
     start = time.perf_counter()
-    ref_program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    ref_program = torch.compile(model, backend="docc", options={"target": "cuda", "category": "server"})
     end = time.perf_counter()
     print(f"ref compilation time: {(end - start) * 1000:.2f} ms")
 

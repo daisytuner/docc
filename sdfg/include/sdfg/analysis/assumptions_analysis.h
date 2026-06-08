@@ -70,8 +70,7 @@ public:
     // sibling_node. Call this after inserting nodes into a sequence to keep the
     // cached analysis valid without a full re-run.
     void register_node(
-        structured_control_flow::ControlFlowNode& new_node,
-        structured_control_flow::ControlFlowNode& sibling_node
+        structured_control_flow::ControlFlowNode& new_node, structured_control_flow::ControlFlowNode& sibling_node
     );
 
     const symbolic::SymbolSet& parameters();
