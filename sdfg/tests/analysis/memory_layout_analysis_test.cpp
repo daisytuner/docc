@@ -2206,3 +2206,314 @@ TEST(MemoryLayoutAnalysisTest, LU_BlockedFactorization_Diagnostic) {
     check_2d(a_S7t_in, "S7 trailing sub-in", i, symbolic::add(i, j20));
     check_2d(a_S7t_out, "S7 trailing sub-out", i, symbolic::add(i, j20));
 }
+
+// =====================================================================
+// Scope-generic API tests: tiles should also be queryable at non-loop
+// control-flow scopes (root Sequence, IfElse, While).
+// =====================================================================
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_RootSequence_SingleNestedLoop) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    auto& outer_loop =
+        builder.add_for(root, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+    auto& inner_loop =
+        builder
+            .add_for(outer_loop.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+
+    auto& block = builder.add_block(inner_loop.root());
+    auto& access_in = builder.add_access(block, "A");
+    auto& access_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto linearized = symbolic::add(symbolic::mul(i, M), j);
+    builder.add_computational_memlet(block, access_in, tasklet, "_in", {linearized});
+    builder.add_computational_memlet(block, tasklet, "_out", access_out, {linearized});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Outer-loop tile is the established reference.
+    auto* tile_outer = analysis.tile(outer_loop, "A");
+    ASSERT_NE(tile_outer, nullptr);
+
+    // Root sequence tile should exist (scope-generic API) and match the outer-loop tile,
+    // because the outer loop is the only direct child carrying A accesses.
+    auto* tile_root = analysis.tile(root, "A");
+    ASSERT_NE(tile_root, nullptr);
+
+    ASSERT_EQ(tile_root->min_subset.size(), tile_outer->min_subset.size());
+    for (size_t d = 0; d < tile_outer->min_subset.size(); ++d) {
+        EXPECT_TRUE(symbolic::eq(tile_root->min_subset.at(d), tile_outer->min_subset.at(d)));
+        EXPECT_TRUE(symbolic::eq(tile_root->max_subset.at(d), tile_outer->max_subset.at(d)));
+    }
+}
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_RootSequence_TwoSiblingLoops) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("i2", index_type);
+    builder.add_container("j2", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto i2 = symbolic::symbol("i2");
+    auto j2 = symbolic::symbol("j2");
+
+    // First nest: writes A[i*M + j] for i in [0, N), j in [0, M)
+    {
+        auto& loop_i =
+            builder.add_for(root, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+        auto& loop_j =
+            builder
+                .add_for(loop_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+        auto& block = builder.add_block(loop_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+        builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+    }
+    // Second nest: writes A[i2*M + j2] for i2 in [0, N), j2 in [0, M) (independent indvars)
+    {
+        auto& loop_i =
+            builder.add_for(root, i2, symbolic::Lt(i2, N), symbolic::integer(0), symbolic::add(i2, symbolic::one()));
+        auto& loop_j =
+            builder
+                .add_for(loop_i.root(), j2, symbolic::Lt(j2, M), symbolic::integer(0), symbolic::add(j2, symbolic::one()));
+        auto& block = builder.add_block(loop_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto idx = symbolic::add(symbolic::mul(i2, M), j2);
+        builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+        builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Root sequence tile should exist and union both child loop tiles. Each loop
+    // covers [0..N-1, 0..M-1], so the union is identical.
+    auto* tile_root = analysis.tile(root, "A");
+    ASSERT_NE(tile_root, nullptr);
+
+    ASSERT_EQ(tile_root->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_root->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_root->min_subset.at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_root->max_subset.at(0), symbolic::sub(N, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(tile_root->max_subset.at(1), symbolic::sub(M, symbolic::one())));
+}
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_IfElse_BothBranches) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("cond", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto cond = symbolic::symbol("cond");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    auto& if_else = builder.add_if_else(root);
+    auto& branch_true = builder.add_case(if_else, symbolic::Eq(cond, symbolic::zero()));
+    auto& branch_false = builder.add_case(if_else, symbolic::Ne(cond, symbolic::zero()));
+
+    auto build_nest = [&](structured_control_flow::Sequence& parent) {
+        auto& loop_i =
+            builder.add_for(parent, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+        auto& loop_j =
+            builder
+                .add_for(loop_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+        auto& block = builder.add_block(loop_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+        builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+        return &loop_i;
+    };
+
+    build_nest(branch_true);
+    build_nest(branch_false);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Each branch sequence has its own tile.
+    auto* tile_branch_true = analysis.tile(branch_true, "A");
+    ASSERT_NE(tile_branch_true, nullptr);
+    auto* tile_branch_false = analysis.tile(branch_false, "A");
+    ASSERT_NE(tile_branch_false, nullptr);
+
+    // The IfElse scope tile unions both branches; bounds match either branch (identical here).
+    auto* tile_ife = analysis.tile(if_else, "A");
+    ASSERT_NE(tile_ife, nullptr);
+
+    ASSERT_EQ(tile_ife->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_ife->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_ife->min_subset.at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_ife->max_subset.at(0), symbolic::sub(N, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(tile_ife->max_subset.at(1), symbolic::sub(M, symbolic::one())));
+
+    // Root sequence picks up the IfElse contribution.
+    auto* tile_root = analysis.tile(root, "A");
+    ASSERT_NE(tile_root, nullptr);
+    ASSERT_EQ(tile_root->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_root->min_subset.at(0), tile_ife->min_subset.at(0)));
+    EXPECT_TRUE(symbolic::eq(tile_root->max_subset.at(0), tile_ife->max_subset.at(0)));
+}
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_While_PassThrough) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    auto& while_loop = builder.add_while(root);
+
+    auto& loop_i =
+        builder
+            .add_for(while_loop.root(), i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+    auto& loop_j =
+        builder.add_for(loop_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+
+    auto& block = builder.add_block(loop_j.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto idx = symbolic::add(symbolic::mul(i, M), j);
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_body = analysis.tile(while_loop.root(), "A");
+    ASSERT_NE(tile_body, nullptr);
+
+    // While scope tile should equal its body sequence tile.
+    auto* tile_while = analysis.tile(while_loop, "A");
+    ASSERT_NE(tile_while, nullptr);
+
+    ASSERT_EQ(tile_while->min_subset.size(), tile_body->min_subset.size());
+    for (size_t d = 0; d < tile_body->min_subset.size(); ++d) {
+        EXPECT_TRUE(symbolic::eq(tile_while->min_subset.at(d), tile_body->min_subset.at(d)));
+        EXPECT_TRUE(symbolic::eq(tile_while->max_subset.at(d), tile_body->max_subset.at(d)));
+    }
+}
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_TileGroups_NonLoopScope) {
+    // Stencil-like pattern with constant-offset bases should produce a merged
+    // tile group not only at the loop level but also at the enclosing scope.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    auto& loop_i = builder.add_for(
+        root, i, symbolic::Lt(i, symbolic::sub(N, symbolic::one())), symbolic::one(), symbolic::add(i, symbolic::one())
+    );
+    auto& loop_j = builder.add_for(
+        loop_i.root(),
+        j,
+        symbolic::Lt(j, symbolic::sub(M, symbolic::one())),
+        symbolic::one(),
+        symbolic::add(j, symbolic::one())
+    );
+
+    // Two reads of A with constant-offset bases: A[i*M + j] and A[i*M + (j+1)]
+    auto& block = builder.add_block(loop_j.root());
+    auto& a_c = builder.add_access(block, "A");
+    auto& a_r = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_inc", "_inr"});
+    auto idx_c = symbolic::add(symbolic::mul(i, M), j);
+    auto idx_r = symbolic::add(symbolic::mul(i, M), symbolic::add(j, symbolic::one()));
+    builder.add_computational_memlet(block, a_c, tasklet, "_inc", {idx_c});
+    builder.add_computational_memlet(block, a_r, tasklet, "_inr", {idx_r});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx_c});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Loop-level groups: stencil bases merge into one group at the j-loop level.
+    auto* groups_j = analysis.tile_groups(loop_j, "A");
+    ASSERT_NE(groups_j, nullptr);
+
+    // The root sequence should also expose tile groups for A (propagated upward).
+    auto* groups_root = analysis.tile_groups(root, "A");
+    ASSERT_NE(groups_root, nullptr);
+    EXPECT_FALSE(groups_root->empty());
+}

@@ -3,7 +3,6 @@
 #include <map>
 #include <string>
 
-#include "sdfg/analysis/mem_access_range_analysis.h"
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/data_flow/access_node.h"
@@ -93,9 +92,6 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
         }
     }
 
-    // Criterion: arg ranges must be known
-    auto& mem_access_ranges = analysis_manager.get<analysis::MemAccessRanges>();
-
     if (!arguments_analysis.argument_size_known(analysis_manager, this->map_, allow_dynamic_sizes_)) {
         if (report_) report_->transform_impossible(this, "args not understood");
         DEBUG_PRINTLN("Cannot apply transform: argument sizes not known");
@@ -127,7 +123,6 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
     auto& locals = arguments_analysis.locals(analysis_manager, this->map_);
 
     // Infer subsets for arguments
-    auto& mem_access_ranges = analysis_manager.get<analysis::MemAccessRanges>();
     auto& argument_sizes = arguments_analysis.argument_sizes(analysis_manager, this->map_, allow_dynamic_sizes_);
 
     auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();

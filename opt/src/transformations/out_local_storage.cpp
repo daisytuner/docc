@@ -111,6 +111,12 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     if (extents.empty()) {
         return false;
     }
+    // Reject if any extent depends on an unbounded leading dimension (returned as null
+    // by extents_approx). Downstream code (substitution, stride computation) would
+    // dereference these.
+    for (auto& ext : extents) {
+        if (ext.is_null()) return false;
+    }
 
     // Store tile info (before substitution, bases/strides stay symbolic)
     tile_info_.dimensions = extents;

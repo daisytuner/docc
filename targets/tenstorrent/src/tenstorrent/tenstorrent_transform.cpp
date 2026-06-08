@@ -4,7 +4,6 @@
 
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
-#include "sdfg/analysis/mem_access_range_analysis.h"
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/analysis/users.h"
 
@@ -125,8 +124,6 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
             return {};
         }
     }
-
-    auto& mem_access_ranges = analysis_manager.get<analysis::MemAccessRanges>();
 
     if (!arguments_analysis.argument_size_known(analysis_manager, this->map_, allow_dynamic_sizes_)) {
         if (report_) report_->transform_impossible(this, "transfer args not sized");

@@ -20,25 +20,53 @@ namespace sdfg {
 namespace analysis {
 
 namespace {
-// Collect StructuredLoop nodes that are direct children of the given node,
-// stopping at loop boundaries (does not recurse into nested loops).
-void collect_direct_child_loops(
-    structured_control_flow::ControlFlowNode& node, std::set<const structured_control_flow::StructuredLoop*>& result
-) {
-    if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
-        result.insert(loop);
-        return;
+
+// Sentinel symbol stored in shape[0] of a MemoryLayout when the leading dimension's
+// extent is unknown (raw pointer accesses). The symbol never escapes the analysis:
+// any expression that mentions it must be reported to the caller as `SymEngine::null`
+// from the public size accessors (see `MemoryTile::extents()` etc.).
+constexpr const char* kUnboundedName = "__unbounded__";
+
+bool is_unbounded_dim(const symbolic::Expression& e) {
+    if (e.is_null()) return false;
+    if (!SymEngine::is_a<SymEngine::Symbol>(*e)) return false;
+    return SymEngine::down_cast<const SymEngine::Symbol&>(*e).get_name() == kUnboundedName;
+}
+
+bool depends_on_unbounded(const symbolic::Expression& e) {
+    if (e.is_null()) return false;
+    for (const auto& a : symbolic::atoms(e)) {
+        if (is_unbounded_dim(a)) return true;
     }
-    if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+    return false;
+}
+
+bool layout_has_unbounded_first_dim(const MemoryLayout& layout) {
+    const auto& shape = layout.shape();
+    return !shape.empty() && is_unbounded_dim(shape[0]);
+}
+
+// Collect immediate child scopes (Sequence/IfElse/While/StructuredLoop) of a given
+// scope that carry their own MemoryTile entries. Blocks are excluded because their
+// per-memlet info is held in `accesses_`, not in `tiles_`/`tile_groups_`.
+void collect_direct_child_scopes(
+    structured_control_flow::ControlFlowNode& scope, std::set<const structured_control_flow::ControlFlowNode*>& result
+) {
+    if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&scope)) {
+        result.insert(&loop->root());
+    } else if (auto* w = dynamic_cast<structured_control_flow::While*>(&scope)) {
+        result.insert(&w->root());
+    } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&scope)) {
         for (size_t i = 0; i < seq->size(); i++) {
-            collect_direct_child_loops(seq->at(i).first, result);
+            auto& child = seq->at(i).first;
+            if (!dynamic_cast<structured_control_flow::Block*>(&child)) {
+                result.insert(&child);
+            }
         }
-    } else if (auto* ife = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+    } else if (auto* ife = dynamic_cast<structured_control_flow::IfElse*>(&scope)) {
         for (size_t i = 0; i < ife->size(); i++) {
-            collect_direct_child_loops(ife->at(i).first, result);
+            result.insert(&ife->at(i).first);
         }
-    } else if (auto* w = dynamic_cast<structured_control_flow::While*>(&node)) {
-        collect_direct_child_loops(w->root(), result);
     }
 }
 } // namespace
@@ -54,6 +82,17 @@ void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
 
 void MemoryLayoutAnalysis::
     traverse(structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager) {
+    // Snapshot current memlets and tile keys before recursing into the scope's children
+    std::vector<const data_flow::Memlet*> memlets_before;
+    memlets_before.reserve(accesses_.size());
+    for (const auto& entry : accesses_) {
+        memlets_before.push_back(entry.first);
+    }
+    std::set<std::pair<const structured_control_flow::ControlFlowNode*, std::string>> tiles_before;
+    for (const auto& entry : tiles_) {
+        tiles_before.insert(entry.first);
+    }
+
     if (auto block = dynamic_cast<structured_control_flow::Block*>(&node)) {
         process_block(*block, analysis_manager);
     } else if (auto sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
@@ -67,25 +106,14 @@ void MemoryLayoutAnalysis::
     } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&node)) {
         traverse(while_stmt->root(), analysis_manager);
     } else if (auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
-        // Snapshot current memlets before traversing loop body
-        std::vector<const data_flow::Memlet*> memlets_before;
-        memlets_before.reserve(accesses_.size());
-        for (const auto& entry : accesses_) {
-            memlets_before.push_back(entry.first);
-        }
-
-        // Snapshot tile keys before traversal
-        std::set<std::pair<const structured_control_flow::StructuredLoop*, std::string>> tiles_before;
-        for (const auto& entry : tiles_) {
-            tiles_before.insert(entry.first);
-        }
-
         traverse(loop->root(), analysis_manager);
-
-        // Merge layouts for containers accessed within this loop
-        merge_loop_layouts(*loop, memlets_before, tiles_before, analysis_manager);
+    } else {
+        // Break, Continue, Return nodes don't contain blocks
+        return;
     }
-    // Break, Continue, Return nodes don't contain blocks
+
+    // Merge tiles for containers accessed within this scope
+    merge_scope_layouts(node, memlets_before, tiles_before, analysis_manager);
 }
 
 void MemoryLayoutAnalysis::
@@ -147,6 +175,38 @@ void MemoryLayoutAnalysis::
                 // For pointers, we attempt to delinearize the access pattern to infer the layout based
                 // on assumptions from loop bounds
                 auto* pointer_type = dynamic_cast<const types::Pointer*>(&memlet.base_type());
+
+                // Typed pointer to a (possibly multi-dim) fixed array of scalar,
+                // e.g. `float (*A)[M]`. The pointer adds one unbounded leading
+                // dimension; remaining dimensions come from the array shape. The
+                // subset is expected to be one index per dimension — no
+                // delinearization needed.
+                if (pointer_type->pointee_type().type_id() == types::TypeID::Array) {
+                    auto* array_type = dynamic_cast<const types::Array*>(&pointer_type->pointee_type());
+                    symbolic::MultiExpression array_shape = {array_type->num_elements()};
+                    while (array_type->element_type().type_id() == types::TypeID::Array) {
+                        array_type = dynamic_cast<const types::Array*>(&array_type->element_type());
+                        array_shape.push_back(array_type->num_elements());
+                    }
+                    if (array_type->element_type().type_id() != types::TypeID::Scalar) {
+                        continue; // Skip non-scalar leaf
+                    }
+                    if (subset.size() != array_shape.size() + 1) {
+                        continue; // Require one index per dimension (leading pointer + array dims)
+                    }
+
+                    symbolic::MultiExpression shape;
+                    shape.push_back(symbolic::symbol("__unbounded__"));
+                    for (const auto& dim : array_shape) {
+                        shape.push_back(dim);
+                    }
+
+                    MemoryLayout layout(shape);
+                    MemoryAccess layout_info{container_name, subset, layout, false};
+                    this->accesses_.emplace(&memlet, layout_info);
+                    continue;
+                }
+
                 if (pointer_type->pointee_type().type_id() != types::TypeID::Scalar) {
                     continue; // Skip non-scalar pointers
                 }
@@ -191,10 +251,10 @@ const MemoryAccess* MemoryLayoutAnalysis::access(const data_flow::Memlet& memlet
     return &layout_it->second;
 }
 
-void MemoryLayoutAnalysis::merge_loop_layouts(
-    structured_control_flow::StructuredLoop& loop,
+void MemoryLayoutAnalysis::merge_scope_layouts(
+    structured_control_flow::ControlFlowNode& scope,
     const std::vector<const data_flow::Memlet*>& memlets_before,
-    const std::set<std::pair<const structured_control_flow::StructuredLoop*, std::string>>& tiles_before,
+    const std::set<std::pair<const structured_control_flow::ControlFlowNode*, std::string>>& tiles_before,
     analysis::AnalysisManager& analysis_manager
 ) {
     // Convert memlets_before to a set for O(1) lookup
@@ -216,36 +276,66 @@ void MemoryLayoutAnalysis::merge_loop_layouts(
         });
     }
 
+    auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&scope);
+
     auto& assumptions_analysis = analysis_manager.get<AssumptionsAnalysis>();
-    // Use trivial bounds (type-derived, e.g. unsigned >= 0) so symbolic min/max
-    // over per-dimension index expressions can use parameter sign information.
-    auto& assumptions = assumptions_analysis.get(loop.root(), /*include_trivial_bounds=*/true);
-    // Start with SDFG-level parameters (read-only arguments like N, M)
-    // then add any additional constant symbols from loop assumptions
+    // For loops, query at the loop body so the induction variable's bounds are visible.
+    auto& assumption_node = loop ? static_cast<structured_control_flow::ControlFlowNode&>(loop->root()) : scope;
+    // Trivial-bounds view: includes type-derived defaults (e.g. Int32 ∈ [INT_MIN, INT_MAX]).
+    // Used as the assumption set passed to symbolic::minimum/maximum so that the
+    // resolver has sign information for parameters.
+    auto& assumptions = assumptions_analysis.get(assumption_node, /*include_trivial_bounds=*/true);
+    // Narrowing-only view: excludes type-derived defaults. A symbol that only
+    // appears here (or in neither) has at most its type's intrinsic range — any
+    // min/max resolution would collapse to INT_MIN/INT_MAX-style numerics, which
+    // is not a sound tile bound. We use this to decide whether to emit a tile.
+    auto& narrowing_assumptions = assumptions_analysis.get(assumption_node, /*include_trivial_bounds=*/false);
+    // Parameters of a scope can only be constant symbols (invariant within the
+    // scope). SDFG-level read-only arguments are constant by construction; for
+    // each scope-local entry, the constant() flag tells us whether the symbol
+    // can be treated opaquely by the min/max resolver.
     symbolic::SymbolSet parameters = assumptions_analysis.parameters();
     for (auto& entry : assumptions) {
-        if (symbolic::eq(entry.first, loop.indvar())) {
-            continue; // Skip induction variable itself
+        if (loop && symbolic::eq(entry.first, loop->indvar())) {
+            continue; // The induction variable is not a parameter of its own loop scope
         }
-
         if (entry.second.constant()) {
             parameters.insert(entry.first);
         }
     }
 
-    // Find direct child loops of this loop (not grandchildren)
-    std::set<const structured_control_flow::StructuredLoop*> direct_child_loops;
-    collect_direct_child_loops(loop.root(), direct_child_loops);
+    // Soundness check: every free (non-parameter) symbol in an index expression
+    // must have a narrowing assumption at this scope. Otherwise symbolic::minimum/
+    // maximum would fall back to the symbol's type-default range and produce
+    // bogus tile bounds (e.g. INT_MAX) that the rest of the pipeline would
+    // silently consume as truth.
+    auto has_narrowing = [&](const symbolic::Symbol& sym) -> bool {
+        auto it = narrowing_assumptions.find(sym);
+        if (it == narrowing_assumptions.end()) return false;
+        return !it->second.lower_bounds().empty() || !it->second.upper_bounds().empty();
+    };
+    auto bounds_are_sound = [&](const symbolic::Expression& expr) -> bool {
+        for (const auto& sym : symbolic::atoms(expr)) {
+            if (parameters.contains(sym)) continue;
+            if (loop && symbolic::eq(sym, loop->indvar())) continue;
+            if (!has_narrowing(sym)) return false;
+        }
+        return true;
+    };
+
+    // Find direct child scopes that may carry tiles for this scope
+    std::set<const structured_control_flow::ControlFlowNode*> direct_child_scopes;
+    collect_direct_child_scopes(scope, direct_child_scopes);
 
     for (auto& [container, memlets] : all_container_groups) {
         if (memlets.empty()) continue;
 
-        // Find inner tiles from direct child loops only
+        // Find inner tiles from direct child scopes only
         std::vector<const MemoryTile*> inner_tiles;
         for (auto& [key, tile] : tiles_) {
             if (tiles_before.count(key) > 0) continue;
             if (key.second != container) continue;
-            if (direct_child_loops.count(key.first) == 0) continue;
+            if (direct_child_scopes.count(key.first) == 0) continue;
             inner_tiles.push_back(&tile);
         }
 
@@ -271,14 +361,14 @@ void MemoryLayoutAnalysis::merge_loop_layouts(
                 }
             }
 
-            // Propagate tile groups from child loops upward using the same
+            // Propagate tile groups from child scopes upward using the same
             // base-partitioning logic: group inner groups by their min_subset
-            // base at this loop level, then merge each partition.
+            // base at this scope level, then merge each partition.
             std::vector<const MemoryTileGroup*> inner_groups;
             for (auto& [key, groups] : tile_groups_) {
                 if (tiles_before.count({key.first, key.second}) > 0) continue;
                 if (key.second != container) continue;
-                if (direct_child_loops.count(key.first) == 0) continue;
+                if (direct_child_scopes.count(key.first) == 0) continue;
                 for (const auto& g : groups) {
                     inner_groups.push_back(&g);
                 }
@@ -376,12 +466,14 @@ void MemoryLayoutAnalysis::merge_loop_layouts(
                         grp_memlets.insert(grp_memlets.end(), c->memlets.begin(), c->memlets.end());
                     }
 
-                    MemoryTile grp_tile{container, grp_min, grp_max, reference_layout, true};
+                    MemoryTile grp_tile{
+                        container, grp_min, grp_max, reference_layout, !layout_has_unbounded_first_dim(reference_layout)
+                    };
                     result_groups.push_back({grp_tile, std::move(grp_memlets)});
                 }
 
                 if (!result_groups.empty()) {
-                    tile_groups_.insert({{&loop, container}, std::move(result_groups)});
+                    tile_groups_.insert({{&scope, container}, std::move(result_groups)});
                 }
             }
         } else {
@@ -425,7 +517,7 @@ void MemoryLayoutAnalysis::merge_loop_layouts(
             if (!consistent) continue;
 
             // Compute tile groups for raw memlets
-            compute_tile_groups(loop, container, memlets, reference_layout, ndims, parameters, assumptions);
+            compute_tile_groups(scope, container, memlets, reference_layout, ndims, parameters, assumptions);
         }
 
         if (ndims == 0) continue;
@@ -441,6 +533,10 @@ void MemoryLayoutAnalysis::merge_loop_layouts(
 
             // Compute dim_min from min_indices
             for (const auto& idx : min_indices[d]) {
+                if (!bounds_are_sound(idx)) {
+                    all_bounded = false;
+                    break;
+                }
                 auto lb = symbolic::minimum(idx, parameters, assumptions, true);
                 if (lb.is_null()) {
                     lb = symbolic::minimum(idx, parameters, assumptions, false);
@@ -459,6 +555,10 @@ void MemoryLayoutAnalysis::merge_loop_layouts(
 
             // Compute dim_max from max_indices
             for (const auto& idx : max_indices[d]) {
+                if (!bounds_are_sound(idx)) {
+                    all_bounded = false;
+                    break;
+                }
                 auto ub = symbolic::maximum(idx, parameters, assumptions, true);
                 if (ub.is_null()) {
                     ub = symbolic::maximum(idx, parameters, assumptions, false);
@@ -481,15 +581,18 @@ void MemoryLayoutAnalysis::merge_loop_layouts(
 
         if (!all_bounded) continue;
 
-        // Store this loop's tile with the original memory layout
-        MemoryTile merged_tile{container, min_subset, max_subset, reference_layout, true};
-        tiles_.insert({{&loop, container}, merged_tile});
+        // Store this scope's tile with the original memory layout. `first_dim_bounded`
+        // mirrors the underlying layout: false whenever shape[0] is the unbounded sentinel.
+        MemoryTile merged_tile{
+            container, min_subset, max_subset, reference_layout, !layout_has_unbounded_first_dim(reference_layout)
+        };
+        tiles_.insert({{&scope, container}, merged_tile});
     }
 }
 
 const MemoryTile* MemoryLayoutAnalysis::
-    tile(const structured_control_flow::StructuredLoop& loop, const std::string& container) const {
-    auto key = std::make_pair(&loop, container);
+    tile(const structured_control_flow::ControlFlowNode& scope, const std::string& container) const {
+    auto key = std::make_pair(&scope, container);
     auto it = tiles_.find(key);
     if (it == tiles_.end()) {
         return nullptr;
@@ -498,7 +601,7 @@ const MemoryTile* MemoryLayoutAnalysis::
 }
 
 void MemoryLayoutAnalysis::compute_tile_groups(
-    structured_control_flow::StructuredLoop& loop,
+    structured_control_flow::ControlFlowNode& scope,
     const std::string& container,
     const std::vector<const data_flow::Memlet*>& memlets,
     const MemoryLayout& reference_layout,
@@ -648,18 +751,20 @@ void MemoryLayoutAnalysis::compute_tile_groups(
 
         if (!all_bounded) continue;
 
-        MemoryTile tile{container, min_subset, max_subset, reference_layout, true};
+        MemoryTile tile{
+            container, min_subset, max_subset, reference_layout, !layout_has_unbounded_first_dim(reference_layout)
+        };
         result_groups.push_back({tile, group.group_memlets});
     }
 
     if (!result_groups.empty()) {
-        tile_groups_.insert({{&loop, container}, std::move(result_groups)});
+        tile_groups_.insert({{&scope, container}, std::move(result_groups)});
     }
 }
 
 const std::vector<MemoryTileGroup>* MemoryLayoutAnalysis::
-    tile_groups(const structured_control_flow::StructuredLoop& loop, const std::string& container) const {
-    auto key = std::make_pair(&loop, container);
+    tile_groups(const structured_control_flow::ControlFlowNode& scope, const std::string& container) const {
+    auto key = std::make_pair(&scope, container);
     auto it = tile_groups_.find(key);
     if (it == tile_groups_.end()) {
         return nullptr;
@@ -668,7 +773,7 @@ const std::vector<MemoryTileGroup>* MemoryLayoutAnalysis::
 }
 
 const MemoryTileGroup* MemoryLayoutAnalysis::
-    tile_group_for(const structured_control_flow::StructuredLoop& loop, const data_flow::Memlet& memlet) const {
+    tile_group_for(const structured_control_flow::ControlFlowNode& scope, const data_flow::Memlet& memlet) const {
     // Find which container this memlet accesses
     auto acc_it = accesses_.find(&memlet);
     if (acc_it == accesses_.end()) {
@@ -676,7 +781,7 @@ const MemoryTileGroup* MemoryLayoutAnalysis::
     }
     auto& container = acc_it->second.container;
 
-    auto key = std::make_pair(&loop, container);
+    auto key = std::make_pair(&scope, container);
     auto groups_it = tile_groups_.find(key);
     if (groups_it == tile_groups_.end()) {
         return nullptr;
@@ -695,9 +800,17 @@ const MemoryTileGroup* MemoryLayoutAnalysis::
 symbolic::MultiExpression MemoryTile::extents() const {
     symbolic::MultiExpression result;
     for (size_t d = 0; d < min_subset.size(); ++d) {
-        result.push_back(symbolic::simplify(
-            symbolic::expand(symbolic::add(symbolic::sub(max_subset[d], min_subset[d]), symbolic::one()))
-        ));
+        auto ext =
+            symbolic::simplify(symbolic::expand(symbolic::add(symbolic::sub(max_subset[d], min_subset[d]), symbolic::one())
+            ));
+        // Defensive: subset values are always proven-bounded, so this should never trigger
+        // for row-major layouts. Guards future custom layouts whose subsets could pick up
+        // the unbounded sentinel.
+        if (depends_on_unbounded(ext)) {
+            result.push_back(SymEngine::null);
+        } else {
+            result.push_back(ext);
+        }
     }
     return result;
 }
@@ -705,9 +818,14 @@ symbolic::MultiExpression MemoryTile::extents() const {
 symbolic::MultiExpression MemoryTile::extents_approx() const {
     symbolic::MultiExpression result;
     for (size_t d = 0; d < min_subset.size(); ++d) {
-        result.push_back(symbolic::simplify(symbolic::expand(
+        auto ext = symbolic::simplify(symbolic::expand(
             symbolic::overapproximate(symbolic::add(symbolic::sub(max_subset[d], min_subset[d]), symbolic::one()))
-        )));
+        ));
+        if (depends_on_unbounded(ext)) {
+            result.push_back(SymEngine::null);
+        } else {
+            result.push_back(ext);
+        }
     }
     return result;
 }
@@ -720,7 +838,15 @@ std::pair<symbolic::Expression, symbolic::Expression> MemoryTile::contiguous_ran
         first = symbolic::add(first, symbolic::mul(strides[d], min_subset[d]));
         last = symbolic::add(last, symbolic::mul(strides[d], max_subset[d]));
     }
-    return {symbolic::simplify(symbolic::expand(first)), symbolic::simplify(symbolic::expand(last))};
+    first = symbolic::simplify(symbolic::expand(first));
+    last = symbolic::simplify(symbolic::expand(last));
+    // If either endpoint references the unbounded sentinel, the linear range is undefined
+    // (e.g. a non-row-major layout whose stride references shape[0]). Report as unknown
+    // rather than leaking the sentinel symbol to callers.
+    if (depends_on_unbounded(first) || depends_on_unbounded(last)) {
+        return {SymEngine::null, SymEngine::null};
+    }
+    return {first, last};
 }
 
 } // namespace analysis
