@@ -86,10 +86,10 @@ public:
         }
     }
 
-    // Invalidate all cached analyses except the listed types.
+    // Preserve only the listed analyses and invalidate all others.
     // Analyses not present in the cache are unaffected.
     template<class... Ts>
-    void invalidate_preserving() {
+    void preserve() {
         std::unordered_map<std::type_index, std::unique_ptr<Analysis>> kept;
         auto try_keep = [&](std::type_index type) {
             auto it = cache_.find(type);

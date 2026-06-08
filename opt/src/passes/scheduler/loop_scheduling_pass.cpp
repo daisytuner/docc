@@ -130,7 +130,7 @@ bool LoopSchedulingPass::run_pass_target(
     for (auto* loop : schedulable_loops) {
         scheduler->apply_schedule(builder, analysis_manager, *loop, offload_unknown_sizes_);
     }
-    analysis_manager.invalidate_all();
+    analysis_manager.preserve<sdfg::analysis::ArgumentsAnalysis>();
 
     // ===== Phase 4: Post-schedule =====
     scheduler->post_schedule(builder, analysis_manager, schedulable_loops);
