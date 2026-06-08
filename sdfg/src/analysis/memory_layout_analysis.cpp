@@ -218,7 +218,21 @@ void MemoryLayoutAnalysis::
 
                 auto result = symbolic::delinearize(linearized_expr, assumptions);
                 if (!result.success) {
-                    continue; // Delinearization failed, skip
+                    // Fallback: register the access as a 1D contiguous range over the
+                    // raw linearized address. We lose multi-dim layout info, but the
+                    // scope-level merge can still bound the access via BoundAnalysis,
+                    // which is enough for downstream consumers like ArgumentsAnalysis
+                    // to compute argument sizes. This recovers patterns where the
+                    // delinearizer rejects the access (e.g. halo offsets producing
+                    // negative constants inside a stride product, or non-strictly-
+                    // dominating strides) but the overall address range is still
+                    // soundly bounded by the enclosing loop assumptions.
+                    symbolic::MultiExpression shape;
+                    shape.push_back(symbolic::symbol("__unbounded__"));
+                    MemoryLayout layout(shape);
+                    MemoryAccess layout_info{container_name, {linearized_expr}, layout, false};
+                    this->accesses_.emplace(&memlet, layout_info);
+                    continue;
                 }
 
                 // Delinearization returns N indices but only N-1 dimensions (from stride division)
