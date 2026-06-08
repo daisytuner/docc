@@ -81,10 +81,16 @@ void register_rocm_plugin(plugins::Context& context) {
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<blas::GEMMNodeDispatcher_ROCMHandTuned>(
-                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::GEMMNode&>(node)
-            );
+           const data_flow::LibraryNode& node) -> std::unique_ptr<codegen::LibraryNodeDispatcher> {
+            auto& library_node = dynamic_cast<const math::blas::GEMMNode&>(node);
+            if (library_node.precision() != math::blas::BLAS_Precision::s) {
+                return std::make_unique<blas::GEMMNodeDispatcher_ROCMBLASWithoutTransfers>(
+                    language_extension, function, data_flow_graph, library_node
+                );
+            } else {
+                return std::make_unique<
+                    blas::GEMMNodeDispatcher_ROCMHandTuned>(language_extension, function, data_flow_graph, library_node);
+            }
         }
     );
 

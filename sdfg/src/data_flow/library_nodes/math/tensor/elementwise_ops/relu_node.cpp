@@ -16,44 +16,41 @@ ReLUNode::ReLUNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    const std::vector<symbolic::Expression>& shape
+    const std::vector<symbolic::Expression>& shape,
+    QuantizationType quantization,
+    const data_flow::ImplementationType& impl_type
 )
-    : ElementWiseUnaryNode(element_id, debug_info, vertex, parent, LibraryNodeType_ReLU, shape) {}
+    : ElementWiseDataflowTensorNode(
+          element_id, debug_info, vertex, parent, LibraryNodeType_ReLU, shape, "Y", {"X"}, quantization, impl_type
+      ) {}
 
-bool ReLUNode::expand_operation(
+ElementWiseDataflowTensorNode::ElementOutput ReLUNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Sequence& body,
-    const std::string& input_name,
-    const std::string& output_name,
-    const types::Tensor& input_type,
-    const types::Tensor& output_type,
-    const data_flow::Subset& subset
+    Block& block,
+    std::vector<ElementInput>& needed_inputs,
+    types::PrimitiveType expected_type
 ) {
-    // Add code
-    types::Scalar base_type(input_type.primitive_type());
-    types::Tensor scalar_tensor(base_type.primitive_type(), {});
+    auto& input = needed_inputs.at(0);
 
-    auto& code_block = builder.add_block(body);
-    auto& input_node_new = builder.add_access(code_block, input_name);
-    auto& output_node_new = builder.add_access(code_block, output_name);
-    auto& zero_node = builder.add_constant(code_block, "0.0", base_type);
+    types::Scalar zero_type(input.required_type);
+    auto& zero_node = builder.add_constant(block, "0.0", zero_type);
 
-    auto& tasklet = builder.add_library_node<math::cmath::CMathNode>(
-        code_block, code_block.debug_info(), cmath::CMathFunction::fmax, input_type.primitive_type()
-    );
+    auto& libnode =
+        builder.add_library_node<cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::fmax, input.required_type);
+    input.consumer = &libnode;
+    input.input_conn_index = 0;
 
-    builder.add_computational_memlet(code_block, zero_node, tasklet, "_in1", {}, scalar_tensor);
-    builder.add_computational_memlet(code_block, input_node_new, tasklet, "_in2", subset, input_type);
-    builder.add_computational_memlet(code_block, tasklet, "_out", output_node_new, subset, output_type);
+    builder.add_computational_memlet(block, zero_node, libnode, "_in2", {}, zero_type);
 
-    return true;
+    return {.producer = &libnode, .output_conn_index = 0, .type = input.required_type};
 }
 
 std::unique_ptr<data_flow::DataFlowNode> ReLUNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new ReLUNode(element_id, this->debug_info(), vertex, parent, this->shape_));
+    return std::unique_ptr<data_flow::DataFlowNode>(new ReLUNode(
+        element_id, this->debug_info(), vertex, parent, this->shape_, fixed_quantization_, implementation_type_
+    ));
 }
 
 } // namespace tensor

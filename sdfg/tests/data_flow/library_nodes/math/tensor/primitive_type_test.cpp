@@ -39,7 +39,7 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeInt32) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     // Should not throw and should validate successfully
     EXPECT_NO_THROW(node.validate(sdfg));
@@ -72,7 +72,7 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeFloat) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 
@@ -104,7 +104,7 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeDouble) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 
@@ -136,7 +136,7 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeUInt32) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 
@@ -166,7 +166,7 @@ TEST(TensorPrimitiveTypeTest, ExpNodeRejectsInt32) {
         );
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type, block.debug_info());
 
     // Should throw because ExpNode doesn't support integer types
     EXPECT_THROW(node.validate(sdfg), InvalidSDFGException);
@@ -200,7 +200,7 @@ TEST(TensorPrimitiveTypeTest, MixedTypesRejected) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_float, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_double, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_float, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_float, block.debug_info());
 
     // Should throw because types are mixed (Float and Double)
     EXPECT_THROW(node.validate(sdfg), InvalidSDFGException);
@@ -228,7 +228,7 @@ TEST(TensorPrimitiveTypeTest, AbsNodeInt32) {
         );
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 
@@ -260,7 +260,7 @@ TEST(TensorPrimitiveTypeTest, ReduceMaxInt64) {
                                                         math::tensor::MaxNode>(block, DebugInfo(), shape, axes, false));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type_input, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type_output, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_output, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 
@@ -292,7 +292,7 @@ TEST(TensorPrimitiveTypeTest, ReduceSumInt32) {
                                                         math::tensor::SumNode>(block, DebugInfo(), shape, axes, false));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type_input, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type_output, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_output, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 
@@ -327,7 +327,7 @@ TEST(TensorPrimitiveTypeTest, ScalarInputFloat) {
     // Connect scalar and pointer - should still validate
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type_A, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type_float, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type_float, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type_float, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 }
@@ -357,7 +357,7 @@ TEST(TensorPrimitiveTypeTest, AddNodeInt32GeneratesIntAddTasklet) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
@@ -402,7 +402,7 @@ TEST(TensorPrimitiveTypeTest, AddNodeFloatGeneratesFpAddTasklet) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
@@ -447,7 +447,7 @@ TEST(TensorPrimitiveTypeTest, DivNodeInt32GeneratesIntSdivTasklet) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
@@ -492,7 +492,7 @@ TEST(TensorPrimitiveTypeTest, DivNodeUInt32GeneratesIntUdivTasklet) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
@@ -536,7 +536,7 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeInt32GeneratesIntSmaxTasklet) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
@@ -580,7 +580,7 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeFloatGeneratesFmaxfIntrinsic) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
@@ -626,7 +626,7 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeDoubleGeneratesFmaxIntrinsic) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
@@ -670,7 +670,7 @@ TEST(TensorPrimitiveTypeTest, ExpNodeFloatGeneratesExpfIntrinsic) {
         );
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
@@ -717,7 +717,7 @@ TEST(TensorPrimitiveTypeTest, CastNodeInt32ToFloat) {
                                    math::tensor::CastNode>(block, DebugInfo(), shape, types::PrimitiveType::Float));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type_output, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_output, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 
@@ -773,7 +773,7 @@ TEST(TensorPrimitiveTypeTest, CastNodeFloatToInt32) {
                                    math::tensor::CastNode>(block, DebugInfo(), shape, types::PrimitiveType::Int32));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type_output, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_output, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 
@@ -829,7 +829,7 @@ TEST(TensorPrimitiveTypeTest, CastNodeFloatToDouble) {
                                    math::tensor::CastNode>(block, DebugInfo(), shape, types::PrimitiveType::Double));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type_output, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_output, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 
@@ -885,7 +885,7 @@ TEST(TensorPrimitiveTypeTest, CastNodeUInt32ToInt64) {
                                    math::tensor::CastNode>(block, DebugInfo(), shape, types::PrimitiveType::Int64));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type_output, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_output, block.debug_info());
 
     EXPECT_NO_THROW(node.validate(sdfg));
 

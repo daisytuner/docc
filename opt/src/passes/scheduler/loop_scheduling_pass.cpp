@@ -92,17 +92,13 @@ bool LoopSchedulingPass::run_pass_target(
                 break;
             }
             case SchedulerAction::CHILDREN: {
-                // Re-acquire analyses: find() may call cutout() which modifies
-                // the SDFG and invalidates all cached analyses.
-                auto& loop_analysis_fresh = analysis_manager.get<analysis::LoopAnalysis>();
-                auto& flop_analysis_fresh = analysis_manager.get<analysis::FlopAnalysis>();
-                auto children = loop_analysis_fresh.children(loop);
+                auto children = loop_analysis.children(loop);
                 for (auto& child : children) {
                     queue.push_front(child);
 
                     SchedulerLoopInfo info;
-                    info.loop_info = loop_analysis_fresh.loop_info(child);
-                    info.flop = flop_analysis_fresh.get(child);
+                    info.loop_info = loop_analysis.loop_info(child);
+                    info.flop = flop_analysis.get(child);
                     scheduling_info_map[child] = info;
                 }
                 break;

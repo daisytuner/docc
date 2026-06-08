@@ -1006,7 +1006,11 @@ void PyStructuredSDFGBuilder::add_elementwise_op(
     }
 
     auto& node_c = builder_.add_access(block, C, debug_info);
-    builder_.add_computational_memlet(block, *node, C_conn, node_c, {}, *C_memlet_type, debug_info);
+    if (is_scalar_op) {
+        builder_.add_computational_memlet(block, *node, C_conn, node_c, {}, *C_memlet_type, debug_info);
+    } else {
+        builder_.add_computational_memlet(block, node_c, *node, C_conn, {}, *C_memlet_type, debug_info);
+    }
 
     if (builder_.subject().exists(A)) {
         auto& node_in = builder_.add_access(block, A, debug_info);
@@ -1036,33 +1040,21 @@ void PyStructuredSDFGBuilder::add_elementwise_unary_op(
     auto& parent = current_sequence();
     auto& block = builder_.add_block(parent, {}, debug_info);
 
-    sdfg::math::tensor::ElementWiseUnaryNode* node = nullptr;
+    sdfg::data_flow::LibraryNode* node = nullptr;
     if (op_type == "abs") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseUnaryNode*>(&builder_.add_library_node<
-                                                        sdfg::math::tensor::AbsNode>(block, debug_info, C_type.shape())
-        );
+        node = &builder_.add_library_node<sdfg::math::tensor::AbsNode>(block, debug_info, C_type.shape());
     } else if (op_type == "sqrt") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseUnaryNode*>(&builder_.add_library_node<
-                                                        sdfg::math::tensor::SqrtNode>(block, debug_info, C_type.shape())
-        );
+        node = &builder_.add_library_node<sdfg::math::tensor::SqrtNode>(block, debug_info, C_type.shape());
     } else if (op_type == "tanh") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseUnaryNode*>(&builder_.add_library_node<
-                                                        sdfg::math::tensor::TanhNode>(block, debug_info, C_type.shape())
-        );
+        node = &builder_.add_library_node<sdfg::math::tensor::TanhNode>(block, debug_info, C_type.shape());
     } else if (op_type == "exp") {
-        node = static_cast<
-            sdfg::math::tensor::ElementWiseUnaryNode*>(&builder_.add_library_node<
-                                                        sdfg::math::tensor::ExpNode>(block, debug_info, C_type.shape())
-        );
+        node = &builder_.add_library_node<sdfg::math::tensor::ExpNode>(block, debug_info, C_type.shape());
     } else {
         throw std::runtime_error("Unsupported elementwise unary op: " + op_type);
     }
 
     auto& node_c = builder_.add_access(block, C, debug_info);
-    builder_.add_computational_memlet(block, *node, "Y", node_c, {}, C_type, debug_info);
+    builder_.add_computational_memlet(block, node_c, *node, "Y", {}, C_type, debug_info);
 
     if (builder_.subject().exists(A)) {
         auto& node_a = builder_.add_access(block, A, debug_info);
@@ -1104,7 +1096,7 @@ void PyStructuredSDFGBuilder::add_conv(
     auto group = parse_and_expand(group_str);
 
     auto& conv_node = builder_.add_library_node<sdfg::math::tensor::ConvNode>(
-        block, debug_info, shape, kernel_shape, strides, pads, dilations, output_channels, group
+        block, debug_info, shape, kernel_shape, strides, pads, dilations, output_channels, group, false
     );
 
     auto add_input = [&](const std::string& name, const std::string& conn) {
@@ -1143,7 +1135,7 @@ void PyStructuredSDFGBuilder::add_cast_op(
             .add_library_node<sdfg::math::tensor::CastNode>(block, debug_info, C_type.shape(), C_type.primitive_type());
 
     auto& node_c = builder_.add_access(block, C, debug_info);
-    builder_.add_computational_memlet(block, node, "Y", node_c, {}, C_type, debug_info);
+    builder_.add_computational_memlet(block, node_c, node, "Y", {}, C_type, debug_info);
 
     if (builder_.subject().exists(A)) {
         auto& node_in = builder_.add_access(block, A, debug_info);
@@ -1200,7 +1192,7 @@ void PyStructuredSDFGBuilder::add_reduce_op(
     auto& out_access = builder_.add_access(block, output, debug_info);
     builder_.add_computational_memlet(block, in_access, *node, "X", {}, input_type, debug_info);
 
-    builder_.add_computational_memlet(block, *node, "Y", out_access, {}, output_type, debug_info);
+    builder_.add_computational_memlet(block, out_access, *node, "Y", {}, output_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_einsum(

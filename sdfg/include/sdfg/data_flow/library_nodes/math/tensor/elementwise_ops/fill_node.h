@@ -8,38 +8,37 @@ namespace tensor {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_Fill("ml::Fill");
 
-class FillNode : public ElementWiseUnaryNode {
+class FillNode : public ElementWiseDataflowTensorNode {
 public:
     FillNode(
         size_t element_id,
         const DebugInfo& debug_info,
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
-        const std::vector<symbolic::Expression>& shape
+        const std::vector<symbolic::Expression>& shape,
+        QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
+        const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
-
-    bool expand_operation(
+    ElementOutput expand_operation_dataflow(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::Sequence& body,
-        const std::string& input_name,
-        const std::string& output_name,
-        const types::Tensor& input_type,
-        const types::Tensor& output_type,
-        const data_flow::Subset& subset
+        structured_control_flow::Block& block,
+        std::vector<ElementInput>& needed_inputs,
+        types ::PrimitiveType expected_type
     ) override;
 
     bool supports_integer_types() const override { return true; }
 
-    void validate(const Function& function) const override;
+    int tensor_input_count() const override { return 1; }
+
+    void validate_non_tensor_inputs(const data_flow::DataFlowGraph& grap) const override;
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 };
 
-typedef ElementWiseUnaryNodeSerializer<FillNode> FillNodeSerializer;
+typedef SimpleElementWiseDataflowTensorNodeSerializer<FillNode> FillNodeSerializer;
 
 
 } // namespace tensor

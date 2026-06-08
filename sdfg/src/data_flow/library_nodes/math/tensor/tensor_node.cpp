@@ -1,10 +1,21 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
+#include "daisy_rtl/primitive_types.h"
 #include "sdfg/types/tensor.h"
 
 namespace sdfg {
 namespace math {
 namespace tensor {
+
+types::PrimitiveType
+deserialize_quantization(const nlohmann::json& j, const std::string& field_name, types::PrimitiveType default_value) {
+    auto it = j.find(field_name);
+    QuantizationType quantization = default_value;
+    if (it != j.end()) {
+        quantization = it->get<types::PrimitiveType>();
+    }
+    return quantization;
+}
 
 TensorNode::TensorNode(
     size_t element_id,
@@ -14,7 +25,7 @@ TensorNode::TensorNode(
     const data_flow::LibraryNodeCode& code,
     const std::vector<std::string>& outputs,
     const std::vector<std::string>& inputs,
-    data_flow::ImplementationType impl_type
+    const data_flow::ImplementationType& impl_type
 )
     : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type, true) {}
 
@@ -86,6 +97,28 @@ data_flow::TaskletCode TensorNode::get_integer_minmax_tasklet(types::PrimitiveTy
         return is_signed ? data_flow::TaskletCode::int_smax : data_flow::TaskletCode::int_umax;
     } else {
         return is_signed ? data_flow::TaskletCode::int_smin : data_flow::TaskletCode::int_umin;
+    }
+}
+
+void TensorNode::validate_shape_matches(
+    const std::vector<symbolic::Expression>& required_shape, const TensorLayout& layout, const std::string& name
+) const {
+    if (layout.shape().size() != required_shape.size()) {
+        throw InvalidSDFGException(
+            "On libNode #" + std::to_string(element_id()) + ": " + name +
+            " tensor shape must match node shape dims: Given: " + std::to_string(layout.shape().size()) +
+            " Required: " + std::to_string(required_shape.size())
+        );
+    }
+    auto& given_shape = layout.shape();
+    for (size_t i = 0; i < required_shape.size(); ++i) {
+        if (!symbolic::eq(layout.shape().at(i), required_shape.at(i))) {
+            throw InvalidSDFGException(
+                "On libNode #" + std::to_string(element_id()) + ": " + name +
+                " tensor shape must match shape: Given: " + layout.shape().at(i)->__str__() +
+                " Expected shape: " + required_shape.at(i)->__str__()
+            );
+        }
     }
 }
 

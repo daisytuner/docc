@@ -20,7 +20,7 @@ ReduceNode::ReduceNode(
     const std::vector<int64_t>& axes,
     bool keepdims
 )
-    : TensorNode(element_id, debug_info, vertex, parent, code, {"Y"}, {"X"}, data_flow::ImplementationType_NONE),
+    : TensorNode(element_id, debug_info, vertex, parent, code, {}, {"Y", "X"}, data_flow::ImplementationType_NONE),
       shape_(shape), axes_(axes), keepdims_(keepdims) {}
 
 void ReduceNode::validate(const Function& function) const {
@@ -28,23 +28,9 @@ void ReduceNode::validate(const Function& function) const {
 
     auto& graph = this->get_parent();
 
-    auto& iedge = *graph.in_edges(*this).begin();
-    auto& tensor_input = static_cast<const types::Tensor&>(iedge.base_type());
-    if (tensor_input.shape().size() != this->shape_.size()) {
-        throw InvalidSDFGException(
-            "Library Node: Input tensor shape must match node shape. Input shape: " +
-            std::to_string(tensor_input.shape().size()) + " Node shape: " + std::to_string(this->shape_.size())
-        );
-    }
-    for (size_t i = 0; i < shape_.size(); ++i) {
-        if (!symbolic::eq(tensor_input.shape().at(i), shape_.at(i))) {
-            throw InvalidSDFGException(
-                "Library Node: Input tensor shape must match node shape. Input shape at dim " + std::to_string(i) +
-                ": " + tensor_input.shape().at(i)->__str__() + " Node shape at dim " + std::to_string(i) + ": " +
-                shape_.at(i)->__str__()
-            );
-        }
-    }
+    auto* iedge = graph.in_edge_for_connector(*this, inputs_.at(1));
+    auto& tensor_input = static_cast<const types::Tensor&>(iedge->base_type());
+    validate_shape_matches(shape_, tensor_input.layout(), "input");
 
     // Calculate expected output shape based on axes and keepdims
     std::vector<int64_t> sorted_axes = axes_;
@@ -82,24 +68,9 @@ void ReduceNode::validate(const Function& function) const {
         }
     }
 
-    auto& oedge = *graph.out_edges(*this).begin();
-    auto& tensor_output = static_cast<const types::Tensor&>(oedge.base_type());
-    if (tensor_output.shape().size() != expected_output_shape.size()) {
-        throw InvalidSDFGException(
-            "Library Node: Output tensor shape must match expected reduced shape. Output shape size: " +
-            std::to_string(tensor_output.shape().size()) +
-            " Expected shape size: " + std::to_string(expected_output_shape.size())
-        );
-    }
-    for (size_t i = 0; i < expected_output_shape.size(); ++i) {
-        if (!symbolic::eq(tensor_output.shape().at(i), expected_output_shape.at(i))) {
-            throw InvalidSDFGException(
-                "Library Node: Output tensor shape must match expected reduced shape. Output shape at dim " +
-                std::to_string(i) + ": " + tensor_output.shape().at(i)->__str__() + " Expected shape at dim " +
-                std::to_string(i) + ": " + expected_output_shape.at(i)->__str__()
-            );
-        }
-    }
+    auto* iedge_result = graph.in_edge_for_connector(*this, inputs_.at(0));
+    auto& tensor_output = static_cast<const types::Tensor&>(iedge_result->base_type());
+    validate_shape_matches(expected_output_shape, tensor_output.layout(), "output");
 }
 
 
@@ -119,66 +90,33 @@ void ReduceNode::replace(const symbolic::Expression old_expression, const symbol
     }
 }
 
-bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto& dataflow = this->get_parent();
-    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
-
-    if (dataflow.in_degree(*this) != 1 || dataflow.out_degree(*this) != 1) {
-        return false;
+data_flow::PointerAccessType ReduceNode::pointer_access_type(int input_idx) const {
+    if (input_idx == 0) {
+        return data_flow::PointerAccessMeta::create_full_write_only(symbolic::__nullptr__(), true);
+    } else if (input_idx == 1) {
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::__nullptr__(), true);
+    } else {
+        return TensorNode::pointer_access_type(input_idx);
     }
+}
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
-    int index = parent.index(block);
-    auto& transition = parent.at(index).second;
+bool ReduceNode::expand_inner(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::Block& block,
+    data_flow::DataFlowGraph& dataflow,
+    structured_control_flow::Sequence& parent,
+    Transition& transition,
+    const data_flow::Memlet* iedge_input,
+    const data_flow::Memlet* iedge_result,
+    const data_flow::AccessNode* input_node,
+    const data_flow::AccessNode* output_node,
+    const std::vector<symbolic::Expression>& output_shape,
+    const std::vector<int64_t>& sorted_axes
+) {
+    auto org_idx = parent.index(block);
 
-    auto& iedge = *dataflow.in_edges(*this).begin();
-    auto& oedge = *dataflow.out_edges(*this).begin();
-
-    auto& input_node = static_cast<data_flow::AccessNode&>(iedge.src());
-    auto& output_node = static_cast<data_flow::AccessNode&>(oedge.dst());
-
-    if (dataflow.in_degree(input_node) != 0 || dataflow.out_degree(output_node) != 0) {
-        return false;
-    }
-
-    // Calculate output shape
-    std::vector<symbolic::Expression> output_shape;
-    std::vector<int64_t> sorted_axes = axes_;
-    // Normalize negative axes
-    for (auto& axis : sorted_axes) {
-        if (axis < 0) {
-            axis = static_cast<int64_t>(shape_.size()) + axis;
-        }
-        // Validate axis is in bounds
-        if (axis < 0 || axis >= static_cast<int64_t>(shape_.size())) {
-            throw InvalidSDFGException(
-                "Library Node: Axis value out of bounds. Axis: " + std::to_string(axis) +
-                " Shape size: " + std::to_string(shape_.size())
-            );
-        }
-    }
-    std::sort(sorted_axes.begin(), sorted_axes.end());
-
-    for (size_t i = 0; i < shape_.size(); ++i) {
-        bool is_axis = false;
-        for (auto axis : sorted_axes) {
-            if (axis == (int64_t) i) {
-                is_axis = true;
-                break;
-            }
-        }
-
-        if (is_axis) {
-            if (keepdims_) {
-                output_shape.push_back(symbolic::one());
-            }
-        } else {
-            output_shape.push_back(shape_[i]);
-        }
-    }
-
-    sdfg::types::Scalar element_type(oedge.base_type().primitive_type());
+    sdfg::types::Scalar element_type(iedge_result->base_type().primitive_type());
     types::Tensor scalar_tensor(element_type.primitive_type(), {});
 
     // Add new sequence
@@ -221,12 +159,12 @@ bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         auto& const_node =
             builder
                 .add_constant(init_block, this->identity(element_type.primitive_type()), element_type, block.debug_info());
-        auto& out_access = builder.add_access(init_block, output_node.data(), block.debug_info());
+        auto& out_access = builder.add_access(init_block, output_node->data(), block.debug_info());
 
         builder
             .add_computational_memlet(init_block, const_node, init_tasklet, "_in", {}, scalar_tensor, block.debug_info());
         builder.add_computational_memlet(
-            init_block, init_tasklet, "_out", out_access, init_subset, oedge.base_type(), block.debug_info()
+            init_block, init_tasklet, "_out", out_access, init_subset, iedge_result->base_type(), block.debug_info()
         );
     }
 
@@ -323,25 +261,98 @@ bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             builder,
             analysis_manager,
             *last_scope,
-            input_node.data(),
-            output_node.data(),
-            static_cast<const types::Tensor&>(iedge.base_type()),
-            static_cast<const types::Tensor&>(oedge.base_type()),
+            input_node->data(),
+            output_node->data(),
+            static_cast<const types::Tensor&>(iedge_input->base_type()),
+            static_cast<const types::Tensor&>(iedge_result->base_type()),
             input_indices,
             output_indices
         );
     }
 
     // Clean up block
-    builder.remove_memlet(block, iedge);
-    builder.remove_memlet(block, oedge);
-    builder.remove_node(block, input_node);
-    builder.remove_node(block, output_node);
-    builder.remove_node(block, *this);
-    builder.remove_child(parent, index + 1);
-
+    builder.clear_code_node_legacy(block, *this);
+    // WARNING: this has been deallocated at this point!!
+    builder.remove_child(parent, org_idx + 1);
 
     return true;
+}
+
+bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    auto& dataflow = this->get_parent();
+    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
+
+    if (dataflow.in_degree(*this) != 2) {
+        return false;
+    }
+
+    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
+    int index = parent.index(block);
+    auto& transition = parent.at(index).second;
+
+    auto* iedge_input = dataflow.in_edge_for_connector(*this, inputs_.at(1));
+    auto* iedge_result = dataflow.in_edge_for_connector(*this, inputs_.at(0));
+
+
+    auto* input_node = dataflow.find_standalone_entry(iedge_input);
+    auto* output_node = dataflow.find_standalone_entry(iedge_result);
+
+    if (!input_node || !output_node) {
+        return false;
+    }
+
+    // Calculate output shape
+    std::vector<symbolic::Expression> output_shape;
+    std::vector<int64_t> sorted_axes = axes_;
+    // Normalize negative axes
+    for (auto& axis : sorted_axes) {
+        if (axis < 0) {
+            axis = static_cast<int64_t>(shape_.size()) + axis;
+        }
+        // Validate axis is in bounds
+        if (axis < 0 || axis >= static_cast<int64_t>(shape_.size())) {
+            throw InvalidSDFGException(
+                "Library Node: Axis value out of bounds. Axis: " + std::to_string(axis) +
+                " Shape size: " + std::to_string(shape_.size())
+            );
+        }
+    }
+    std::sort(sorted_axes.begin(), sorted_axes.end());
+
+    for (size_t i = 0; i < shape_.size(); ++i) {
+        bool is_axis = false;
+        for (auto axis : sorted_axes) {
+            if (axis == (int64_t) i) {
+                is_axis = true;
+                break;
+            }
+        }
+
+        if (is_axis) {
+            if (keepdims_) {
+                output_shape.push_back(symbolic::one());
+            }
+        } else {
+            output_shape.push_back(shape_[i]);
+        }
+    }
+
+
+    return expand_inner(
+        builder,
+        analysis_manager,
+        block,
+        dataflow,
+        parent,
+        transition,
+        iedge_input,
+        iedge_result,
+        input_node,
+        output_node,
+        output_shape,
+        sorted_axes
+    );
 }
 
 } // namespace tensor

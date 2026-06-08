@@ -65,6 +65,12 @@ nlohmann::json CutoutSerializer::serialize(
 
     j["arguments"] = nlohmann::json::array();
     for (const auto& argument : arguments) {
+        // Externals stay externals in the cutout (preserved below with their
+        // linkage). The argument/external sets must be disjoint, otherwise the
+        // deserializer throws "Container <name> already exists".
+        if (sdfg.is_external(argument.first)) {
+            continue;
+        }
         j["arguments"].push_back(argument.first);
         j["containers"][argument.first]["storage_type"]["allocation"] = 0;
         j["containers"][argument.first]["storage_type"]["deallocation"] = 0;

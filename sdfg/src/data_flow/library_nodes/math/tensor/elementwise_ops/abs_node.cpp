@@ -17,49 +17,42 @@ AbsNode::AbsNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    const std::vector<symbolic::Expression>& shape
+    const std::vector<symbolic::Expression>& shape,
+    QuantizationType quantization,
+    const data_flow::ImplementationType& impl_type
 )
-    : ElementWiseUnaryNode(element_id, debug_info, vertex, parent, LibraryNodeType_Abs, shape) {}
+    : ElementWiseDataflowTensorNode(
+          element_id, debug_info, vertex, parent, LibraryNodeType_Abs, shape, "Y", {"X"}, quantization, impl_type
+      ) {}
 
-bool AbsNode::expand_operation(
+ElementWiseDataflowTensorNode::ElementOutput AbsNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Sequence& body,
-    const std::string& input_name,
-    const std::string& output_name,
-    const types::Tensor& input_type,
-    const types::Tensor& output_type,
-    const data_flow::Subset& subset
+    Block& block,
+    std::vector<ElementInput>& needed_inputs,
+    types::PrimitiveType expected_type
 ) {
-    // Add code
-    auto& code_block = builder.add_block(body);
+    auto& input = needed_inputs.at(0);
 
-    auto& input_node_new = builder.add_access(code_block, input_name);
-    auto& output_node_new = builder.add_access(code_block, output_name);
-
-    bool is_int = types::is_integer(output_type.primitive_type());
-
-    if (is_int) {
-        // For integers, use the int_abs tasklet
-        auto& tasklet = builder.add_tasklet(code_block, data_flow::TaskletCode::int_abs, "_out", {"_in"});
-        builder.add_computational_memlet(code_block, input_node_new, tasklet, "_in", subset, input_type);
-        builder.add_computational_memlet(code_block, tasklet, "_out", output_node_new, subset, output_type);
+    if (types::is_integer(input.required_type)) {
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::int_abs, "_out", {"_in"});
+        input.consumer = &tasklet;
+        input.input_conn_index = 0;
+        return {.producer = &tasklet, .output_conn_index = 0, .type = input.required_type};
     } else {
-        // For floating-point, use the correct fabs intrinsic
-        auto& libnode = builder.add_library_node<math::cmath::CMathNode>(
-            code_block, body.debug_info(), cmath::CMathFunction::fabs, input_type.primitive_type()
-        );
-        builder.add_computational_memlet(code_block, input_node_new, libnode, "_in1", subset, input_type);
-        builder.add_computational_memlet(code_block, libnode, "_out", output_node_new, subset, output_type);
+        auto& libnode = builder.add_library_node<
+            math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::fabs, input.required_type);
+        input.consumer = &libnode;
+        input.input_conn_index = 0;
+        return {.producer = &libnode, .output_conn_index = 0, .type = input.required_type};
     }
-
-    return true;
 }
 
 std::unique_ptr<data_flow::DataFlowNode> AbsNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new AbsNode(element_id, this->debug_info(), vertex, parent, this->shape_));
+    return std::unique_ptr<data_flow::DataFlowNode>(new AbsNode(
+        element_id, this->debug_info(), vertex, parent, this->shape_, fixed_quantization_, implementation_type_
+    ));
 }
 
 } // namespace tensor

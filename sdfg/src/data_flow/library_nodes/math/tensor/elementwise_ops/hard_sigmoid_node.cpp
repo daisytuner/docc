@@ -16,67 +16,73 @@ HardSigmoidNode::HardSigmoidNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    const std::vector<symbolic::Expression>& shape
+    const std::vector<symbolic::Expression>& shape,
+    QuantizationType quantization,
+    const data_flow::ImplementationType& impl_type
 )
-    : ElementWiseUnaryNode(element_id, debug_info, vertex, parent, LibraryNodeType_HardSigmoid, shape) {
-    this->inputs_.push_back("alpha");
-    this->inputs_.push_back("beta");
-}
+    : ElementWiseDataflowTensorNode(
+          element_id,
+          debug_info,
+          vertex,
+          parent,
+          LibraryNodeType_HardSigmoid,
+          shape,
+          "X",
+          {"Y", "alpha", "beta"},
+          quantization,
+          impl_type
+      ) {}
 
-bool HardSigmoidNode::expand_operation(
+ElementWiseDataflowTensorNode::ElementOutput HardSigmoidNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Sequence& body,
-    const std::string& input_name,
-    const std::string& output_name,
-    const types::Tensor& input_type,
-    const types::Tensor& output_type,
-    const data_flow::Subset& subset
+    Block& block,
+    std::vector<ElementInput>& needed_inputs,
+    types::PrimitiveType expected_type
 ) {
-    // Add code
-    auto& code_block = builder.add_block(body);
-    auto& input_node = builder.add_access(code_block, input_name);
-    auto& output_node_fma = builder.add_access(code_block, output_name);
-    auto& output_node_min = builder.add_access(code_block, output_name);
-    auto& output_node_max = builder.add_access(code_block, output_name);
+    auto& input0 = needed_inputs.at(0);
+    auto& input_alpha = needed_inputs.at(1);
+    auto& input_beta = needed_inputs.at(2);
 
-    types::Tensor scalar_tensor(types::Scalar(output_type.primitive_type()), {});
+    types::Scalar scalar_type(input0.required_type);
+
+    throw std::runtime_error("Hardsigmoid: untested expand");
 
     // alpha * x + beta
-    {
-        auto& tasklet =
-            builder.add_tasklet(code_block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
-        builder.add_computational_memlet(code_block, input_node, tasklet, "_in1", subset, input_type);
-        builder.add_computational_memlet(code_block, tasklet, "_out", output_node_fma, subset, output_type);
-    }
+    auto& first_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+    input_alpha.consumer = &first_op;
+    input_alpha.input_conn_index = 0;
+    input0.consumer = &first_op;
+    input0.input_conn_index = 1;
+    input_beta.consumer = &first_op;
+    input_beta.input_conn_index = 2;
+    auto& output_node_fma = create_tmp_access_node(builder, block, "tmp_hs_fma_", scalar_type);
+    builder.add_computational_memlet(block, first_op, "_out", output_node_fma, {}, scalar_type);
     // min(1, x)
-    {
-        auto& one_node = builder.add_constant(code_block, "1.0f", types::Scalar(output_type.primitive_type()));
-        auto& tasklet = builder.add_library_node<math::cmath::CMathNode>(
-            code_block, code_block.debug_info(), cmath::CMathFunction::fmin, output_type.primitive_type()
-        );
-        builder.add_computational_memlet(code_block, output_node_fma, tasklet, "_in1", subset, output_type);
-        builder.add_computational_memlet(code_block, one_node, tasklet, "_in2", {}, scalar_tensor);
-        builder.add_computational_memlet(code_block, tasklet, "_out", output_node_min, subset, output_type);
-    }
-    // max(0, x)
-    {
-        auto& zero_node = builder.add_constant(code_block, "0.0f", types::Scalar(output_type.primitive_type()));
-        auto& tasklet = builder.add_library_node<math::cmath::CMathNode>(
-            code_block, code_block.debug_info(), cmath::CMathFunction::fmax, output_type.primitive_type()
-        );
-        builder.add_computational_memlet(code_block, output_node_min, tasklet, "_in1", subset, output_type);
-        builder.add_computational_memlet(code_block, zero_node, tasklet, "_in2", {}, scalar_tensor);
-        builder.add_computational_memlet(code_block, tasklet, "_out", output_node_max, subset, output_type);
-    }
+    auto& one_node = builder.add_constant(block, "1.0f", scalar_type);
+    auto& min_op = builder.add_library_node<
+        math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::fmin, input0.required_type);
+    builder.add_computational_memlet(block, output_node_fma, min_op, "_in1", {}, scalar_type);
+    builder.add_computational_memlet(block, one_node, min_op, "_in2", {}, scalar_type);
+    auto& output_node_min = create_tmp_access_node(builder, block, "tmp_hs_min_", scalar_type);
+    builder.add_computational_memlet(block, min_op, "_out", output_node_min, {}, scalar_type);
 
-    return true;
+    // max(0, x)
+    auto& zero_node = builder.add_constant(block, "0.0f", scalar_type);
+    auto& last_op = builder.add_library_node<
+        math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::fmax, input0.required_type);
+    builder.add_computational_memlet(block, output_node_min, last_op, "_in1", {}, scalar_type);
+    builder.add_computational_memlet(block, zero_node, last_op, "_in2", {}, scalar_type);
+
+    return {.producer = &last_op, .output_conn_index = 0, .type = input0.required_type};
 }
+
 
 std::unique_ptr<data_flow::DataFlowNode> HardSigmoidNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new HardSigmoidNode(element_id, this->debug_info(), vertex, parent, this->shape_));
+    return std::unique_ptr<data_flow::DataFlowNode>(new HardSigmoidNode(
+        element_id, this->debug_info(), vertex, parent, this->shape_, fixed_quantization_, implementation_type_
+    ));
 }
 
 } // namespace tensor

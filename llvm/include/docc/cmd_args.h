@@ -31,6 +31,8 @@ namespace args {
 
 extern llvm::cl::opt<bool> DOCC_DOT_DUMP_SCHEDULED;
 
+extern llvm::cl::opt<bool> DOCC_DUMP_SDFG;
+
 /**
  * Only needed in linker right now, only here so that it can pass arg-validation.
  */

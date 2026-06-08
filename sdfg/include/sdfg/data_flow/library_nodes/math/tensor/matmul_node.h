@@ -102,7 +102,8 @@ public:
         data_flow::DataFlowGraph& parent,
         const TensorLayout& layout_a,
         const TensorLayout& layout_b,
-        types::PrimitiveType quantization = QUANTIZATION_MATCH_INPUTS
+        QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
+        const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
     static auto constexpr Y_INPUT_IDX = 0;
@@ -122,24 +123,26 @@ public:
      */
     symbolic::Expression n() const;
 
+    QuantizationType quantization() const { return quantization(get_parent()); }
+
     /**
      * type of the math calculations. May be inferred or fixed.
      */
-    types::PrimitiveType quantization(const data_flow::DataFlowGraph& dataflow) const;
+    QuantizationType quantization(const data_flow::DataFlowGraph& dataflow) const;
 
     /**
      * Same result as quantization if it matches all the inputs. None if its impossible to use the same types
      * for input & output and math
      */
-    std::optional<types::PrimitiveType> uniform_quantization(const data_flow::DataFlowGraph& dataflow) const;
+    std::optional<QuantizationType> uniform_quantization(const data_flow::DataFlowGraph& dataflow) const;
 
     /**
      * configuration of the type for the math calculations, independent of current input types etc.
      * 'Void' indicates auto-inferring from inputs
      */
-    types::PrimitiveType fixed_quantization() const;
+    QuantizationType fixed_quantization() const;
 
-    void set_fixed_quantization(const types::PrimitiveType quant);
+    void set_fixed_quantization(const QuantizationType quant);
 
     const TensorLayout& layout_a() const;
 

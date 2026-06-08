@@ -63,7 +63,7 @@ entry:
         EXPECT_NE(free_node, nullptr);
 
         EXPECT_EQ(state.dataflow().in_degree(*free_node), 1);
-        EXPECT_EQ(state.dataflow().out_degree(*free_node), 1);
+        EXPECT_EQ(state.dataflow().out_degree(*free_node), 0);
 
         auto& iedge = *state.dataflow().in_edges(*free_node).begin();
         EXPECT_EQ(iedge.dst_conn(), "_ptr");
@@ -73,15 +73,6 @@ entry:
 
         auto& src = static_cast<const sdfg::data_flow::AccessNode&>(iedge.src());
         EXPECT_EQ(src.data(), "a");
-
-        auto& oedge = *state.dataflow().out_edges(*free_node).begin();
-        EXPECT_EQ(oedge.src_conn(), "_ptr");
-        EXPECT_EQ(oedge.dst_conn(), "void");
-        EXPECT_EQ(oedge.subset().size(), 0);
-        EXPECT_EQ(oedge.base_type(), sdfg::types::Pointer());
-
-        auto& dst = static_cast<const sdfg::data_flow::AccessNode&>(oedge.dst());
-        EXPECT_EQ(dst.data(), "a");
     }
     EXPECT_TRUE(found_free);
 }

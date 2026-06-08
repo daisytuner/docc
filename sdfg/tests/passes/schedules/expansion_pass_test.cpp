@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "sdfg/data_flow/library_nodes/math/math.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -34,19 +35,22 @@ TEST(ExpansionPassTest, MeanNode_2D) {
                                              math::tensor::MeanNode>(block, DebugInfo(), shape, axes, keepdims));
 
     builder.add_computational_memlet(block, a_node, mean_node, "X", {}, tensor_desc_input, block.debug_info());
-    builder.add_computational_memlet(block, mean_node, "Y", b_node, {}, tensor_desc_output, block.debug_info());
+    builder.add_computational_memlet(block, b_node, mean_node, "Y", {}, tensor_desc_output, block.debug_info());
+
+    dump_sdfg(builder.subject(), "0.init");
 
     // Check inputs and outputs
-    EXPECT_EQ(mean_node.inputs().size(), 1);
-    EXPECT_EQ(mean_node.inputs()[0], "X");
-    EXPECT_EQ(mean_node.outputs().size(), 1);
-    EXPECT_EQ(mean_node.outputs()[0], "Y");
+    EXPECT_EQ(mean_node.inputs().size(), 2);
+    EXPECT_EQ(mean_node.input(0), "Y");
+    EXPECT_EQ(mean_node.input(1), "X");
 
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::ExpansionPass expansion_pass;
     EXPECT_TRUE(expansion_pass.run(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.expanded");
 }
 
 TEST(ExpansionPassTest, StdNode_1D) {
@@ -77,9 +81,13 @@ TEST(ExpansionPassTest, StdNode_1D) {
                                             math::tensor::StdNode>(block, DebugInfo(), shape, axes, keepdims));
 
     builder.add_computational_memlet(block, a_node, std_node, "X", {}, tensor_desc_input, block.debug_info());
-    builder.add_computational_memlet(block, std_node, "Y", b_node, {}, tensor_desc_output, block.debug_info());
+    builder.add_computational_memlet(block, b_node, std_node, "Y", {}, tensor_desc_output, block.debug_info());
+
+    dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::ExpansionPass expansion_pass;
     EXPECT_TRUE(expansion_pass.run(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.expanded");
 }

@@ -91,7 +91,7 @@ public:
      *
      * @return true if this structure is pointer-like, false otherwise
      */
-    bool is_pointer_like() const;
+    bool is_pointer_like() const override;
 };
 
 /**

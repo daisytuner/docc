@@ -11,25 +11,24 @@ namespace tensor {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_Exp("ml::Exp");
 
-class ExpNode : public ElementWiseUnaryNode {
+class ExpNode : public ElementWiseDataflowTensorNode {
 public:
     ExpNode(
         size_t element_id,
         const DebugInfo& debug_info,
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
-        const std::vector<symbolic::Expression>& shape
+        const std::vector<symbolic::Expression>& shape,
+        QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
+        const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
-    bool expand_operation(
+    ElementOutput expand_operation_dataflow(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::Sequence& body,
-        const std::string& input_name,
-        const std::string& output_name,
-        const types::Tensor& input_type,
-        const types::Tensor& output_type,
-        const data_flow::Subset& subset
+        Block& block,
+        std::vector<ElementInput>& needed_inputs,
+        types::PrimitiveType expected_type
     ) override;
 
     bool supports_integer_types() const override { return false; }
@@ -38,7 +37,7 @@ public:
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 };
 
-typedef ElementWiseUnaryNodeSerializer<ExpNode> ExpNodeSerializer;
+typedef SimpleElementWiseDataflowTensorNodeSerializer<ExpNode> ExpNodeSerializer;
 
 } // namespace tensor
 } // namespace math

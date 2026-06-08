@@ -18,7 +18,7 @@ symbolic::MultiExpression Tensor::strides_from_shape(const symbolic::MultiExpres
 }
 
 Tensor::Tensor(const Scalar& element_type, const math::tensor::TensorLayout& layout)
-    : element_type_(std::unique_ptr<Scalar>(static_cast<Scalar*>(element_type.clone().release()))), layout_(layout) {};
+    : element_type_(std::unique_ptr<Scalar>(static_cast<Scalar*>(element_type.clone().release()))), layout_(layout) {}
 
 Tensor::Tensor(const Scalar& element_type, const symbolic::MultiExpression& shape)
     : Tensor(element_type, math::tensor::TensorLayout(shape)) {};
@@ -74,7 +74,7 @@ const symbolic::Expression& Tensor::offset() const { return this->layout_.offset
 
 symbolic::Expression Tensor::total_elements() const { return layout_.total_elements(); };
 
-bool Tensor::is_scalar() const { return this->layout_.shape().empty(); }
+bool Tensor::is_scalar() const { return layout_.is_scalar(); }
 
 TypeID Tensor::type_id() const { return TypeID::Tensor; };
 

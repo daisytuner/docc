@@ -90,6 +90,8 @@ public:
      */
     virtual bool is_symbol() const override;
 
+    bool is_pointer_like() const override { return true; }
+
     /**
      * @brief Checks if this pointer has a known pointee type
      * @return true if the pointee type is specified, false for opaque pointers

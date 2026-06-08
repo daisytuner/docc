@@ -4,6 +4,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/pooling_node.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -43,7 +44,7 @@ static math::tensor::PoolingNode& make_pooling_node(
     ));
 
     builder.add_computational_memlet(block, x_node, pool, "X", {}, x_tensor, block.debug_info());
-    builder.add_computational_memlet(block, pool, "Y", y_node, {}, y_tensor, block.debug_info());
+    builder.add_computational_memlet(block, y_node, pool, "Y", {}, y_tensor, block.debug_info());
 
     return pool;
 }
@@ -74,10 +75,10 @@ TEST(PoolingNodeTest, MaxPool_BasicProperties) {
     EXPECT_TRUE(symbolic::eq(pool.kernel_shape()[1], symbolic::integer(2)));
     EXPECT_EQ(pool.strides().size(), 2u);
     EXPECT_TRUE(symbolic::eq(pool.strides()[0], symbolic::integer(2)));
-    EXPECT_EQ(pool.inputs().size(), 1u);
-    EXPECT_EQ(pool.inputs()[0], "X");
-    EXPECT_EQ(pool.outputs().size(), 1u);
-    EXPECT_EQ(pool.outputs()[0], "Y");
+    EXPECT_EQ(pool.inputs().size(), 2u);
+    EXPECT_EQ(pool.input(0), "Y");
+    EXPECT_EQ(pool.input(1), "X");
+    EXPECT_EQ(pool.outputs().size(), 0u);
 
     EXPECT_NO_THROW(sdfg.validate());
 }
@@ -328,7 +329,7 @@ TEST(PoolingNodeTest, MaxPool_IntegerType_Expand_Succeeds) {
         std::vector<symbolic::Expression>{} // dilations
     ));
     builder.add_computational_memlet(block, x_node, pool, "X", {}, x_tensor, block.debug_info());
-    builder.add_computational_memlet(block, pool, "Y", y_node, {}, y_tensor, block.debug_info());
+    builder.add_computational_memlet(block, y_node, pool, "Y", {}, y_tensor, block.debug_info());
 
     sdfg.validate();
 
@@ -507,12 +508,16 @@ TEST(PoolingNodeTest, MaxPool1D_Expand_Succeeds) {
         std::vector<symbolic::Expression>{}
     ));
     builder.add_computational_memlet(block, x_node, pool, "X", {}, x_tensor, block.debug_info());
-    builder.add_computational_memlet(block, pool, "Y", y_node, {}, y_tensor, block.debug_info());
+    builder.add_computational_memlet(block, y_node, pool, "Y", {}, y_tensor, block.debug_info());
+
+    dump_sdfg(builder.subject(), "0.init");
 
     sdfg.validate();
 
     analysis::AnalysisManager am(sdfg);
     EXPECT_TRUE(pool.expand(builder, am));
+
+    dump_sdfg(builder.subject(), "1.expanded");
 
     EXPECT_GE(sdfg.root().size(), 1u);
 }

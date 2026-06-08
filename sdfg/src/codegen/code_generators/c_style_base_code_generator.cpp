@@ -92,6 +92,13 @@ bool CStyleBaseCodeGenerator::as_source(const std::filesystem::path& header_path
     for (auto& snippet : library_snippet_factory_->globals_snippets()) {
         ofs_source << snippet << std::endl;
     }
+    std::vector<std::string> includes;
+    for (auto* dep : library_snippet_factory_->get_used_lib_dependencies()) {
+        dep->enumerate_includes(includes);
+    }
+    for (auto& include : includes) {
+        ofs_source << "#include <" << include << ">" << std::endl;
+    }
     ofs_source << this->globals_stream_.str() << std::endl;
 
     append_function_source(ofs_source);

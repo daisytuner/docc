@@ -20,6 +20,9 @@ private:
     std::string last_comp_name_cluster_;
     bool show_block_ids = false;
 
+    virtual void visualizeSDFG(const SDFG& sdfg) override;
+
+    virtual void visualizeStructuredSDFG(const StructuredSDFG& sdfg) override;
     virtual void visualizeBlock(const StructuredSDFG& sdfg, const structured_control_flow::Block& block) override;
     virtual void visualizeSequence(const StructuredSDFG& sdfg, const structured_control_flow::Sequence& sequence)
         override;
@@ -33,13 +36,13 @@ private:
         override;
     virtual void visualizeMap(const StructuredSDFG& sdfg, const structured_control_flow::Map& map_node) override;
 
+    virtual void visualizeDataFlowGraph(const std::string& id, const data_flow::DataFlowGraph& dfg) override;
+
 public:
     using Visualizer::Visualizer;
 
-    virtual void visualize() override;
-
-    static void writeToFile(const StructuredSDFG& sdfg, const std::filesystem::path& file);
-    static void writeToFile(const StructuredSDFG& sdfg, const std::filesystem::path* file = nullptr);
+    static void writeToFile(const Function& sdfg, const std::filesystem::path& file);
+    static void writeToFile(const Function& sdfg, const std::filesystem::path* file = nullptr);
 };
 
 } // namespace visualizer

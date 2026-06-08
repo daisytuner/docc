@@ -129,36 +129,43 @@ ROCMDataOffloadingNodeDispatcher::ROCMDataOffloadingNodeDispatcher(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void ROCMDataOffloadingNodeDispatcher::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
     auto& offloading_node = static_cast<const ROCMDataOffloadingNode&>(this->node_);
 
-    stream << "hipError_t err;" << std::endl;
+    out.stream << "hipError_t err;" << std::endl;
+
+    std::string dev_ptr;
 
     if (offloading_node.is_alloc()) {
-        stream << "err = hipMalloc(&" << offloading_node.output(0) << ", "
-               << this->language_extension_.expression(offloading_node.size()) << ");" << std::endl;
-        rocm_error_checking(stream, this->language_extension_, "err");
+        auto& ptr = outputs.at(0);
+        pre_allocate_output(out, ptr, offloading_node.output(0));
+        out.stream << "err = hipMalloc(&" << *ptr.local_name << ", "
+                   << this->language_extension_.expression(offloading_node.size()) << ");" << std::endl;
+        rocm_error_checking(out.stream, this->language_extension_, "err");
+        dev_ptr = *ptr.local_name;
+    } else {
+        dev_ptr = inputs.at(offloading_node.dev_ptr_input_idx()).expr;
     }
 
     if (offloading_node.is_h2d()) {
-        stream << "err = hipMemcpy(" << offloading_node.output(0) << ", " << offloading_node.input(0) << ", "
-               << this->language_extension_.expression(offloading_node.size()) << ", hipMemcpyHostToDevice);"
-               << std::endl;
-        rocm_error_checking(stream, this->language_extension_, "err");
+        out.stream << "err = hipMemcpy(" << dev_ptr << ", " << inputs.at(offloading_node.host_ptr_input_idx()).expr
+                   << ", " << this->language_extension_.expression(offloading_node.size())
+                   << ", hipMemcpyHostToDevice);" << std::endl;
+        rocm_error_checking(out.stream, this->language_extension_, "err");
     } else if (offloading_node.is_d2h()) {
-        stream << "err = hipMemcpy(" << offloading_node.output(0) << ", " << offloading_node.input(0) << ", "
-               << this->language_extension_.expression(offloading_node.size()) << ", hipMemcpyDeviceToHost);"
-               << std::endl;
-        rocm_error_checking(stream, this->language_extension_, "err");
+        out.stream << "err = hipMemcpy(" << inputs.at(offloading_node.host_ptr_input_idx()).expr << ", " << dev_ptr
+                   << ", " << this->language_extension_.expression(offloading_node.size())
+                   << ", hipMemcpyHostToDevice);" << std::endl;
+        rocm_error_checking(out.stream, this->language_extension_, "err");
     }
 
     if (offloading_node.is_free()) {
-        stream << "err = hipFree(" << offloading_node.input(0) << ");" << std::endl;
-        rocm_error_checking(stream, this->language_extension_, "err");
+        out.stream << "err = hipFree(" << dev_ptr << ");" << std::endl;
+        rocm_error_checking(out.stream, this->language_extension_, "err");
     }
 }
 

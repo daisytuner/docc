@@ -62,13 +62,6 @@ llvm::cl::opt<bool> DOCC_LowerInvoke(
 
 llvm::cl::opt<bool> DOCC_Einsum("docc-einsum", llvm::cl::desc("Enables lifting Einstein notation."), llvm::cl::init(false));
 
-llvm::cl::opt<std::string> DOCC_DUMP_SDFG(
-    "docc-dump-sdfg",
-    llvm::cl::desc("Enables Output of sdfgs"),
-    llvm::cl::init("none"),
-    llvm::cl::value_desc("none|normalization")
-);
-
 static docc::analysis::AnalysisManager AM;
 
 #ifdef NDEBUG

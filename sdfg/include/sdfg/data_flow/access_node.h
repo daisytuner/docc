@@ -126,6 +126,8 @@ public:
      */
     const std::string& data() const;
 
+    virtual bool is_constant() const { return false; }
+
     /**
      * @brief Set the name of the data container
      * @param data New name for the data container
@@ -220,6 +222,8 @@ public:
     const types::IType& type() const;
 
     [[nodiscard]] bool side_effect() const override { return false; }
+
+    bool is_constant() const override { return true; }
 
     /**
      * @brief Validate the constant node

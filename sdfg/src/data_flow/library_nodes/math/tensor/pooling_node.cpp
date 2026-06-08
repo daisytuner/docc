@@ -4,6 +4,7 @@
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/spatial_tensor_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
@@ -22,12 +23,27 @@ PoolingNode::PoolingNode(
     const std::vector<symbolic::Expression>& kernel_shape,
     const std::vector<symbolic::Expression>& strides,
     const std::vector<symbolic::Expression>& pads,
-    const std::vector<symbolic::Expression>& dilations
+    const std::vector<symbolic::Expression>& dilations,
+    QuantizationType quantization,
+    const data_flow::ImplementationType& impl_type
 )
-    : TensorNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_Pooling, {"Y"}, {"X"}, data_flow::ImplementationType_NONE
+    : SpatialTensorNode(
+          element_id,
+          debug_info,
+          vertex,
+          parent,
+          LibraryNodeType_Pooling,
+          {},
+          {"Y", "X"},
+          impl_type,
+          quantization,
+          shape,
+          kernel_shape,
+          strides,
+          pads,
+          dilations
       ),
-      mode_(mode), shape_(shape), kernel_shape_(kernel_shape), strides_(strides), pads_(pads), dilations_(dilations) {}
+      mode_(mode) {}
 
 void PoolingNode::validate(const Function& function) const {
     TensorNode::validate(function);
@@ -63,26 +79,20 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
     auto primitive_type = this->primitive_type(dataflow);
     types::Scalar scalar_type(primitive_type);
 
-    auto in_edges = dataflow.in_edges(*this);
-    data_flow::Memlet* x_edge = nullptr;
-    auto in_edges_it = in_edges.begin();
-    while (in_edges_it != in_edges.end()) {
-        auto& edge = *in_edges_it;
-        if (edge.dst_conn() == "X") {
-            x_edge = &edge;
-        }
-        ++in_edges_it;
-    }
+    auto x_edge = dataflow.in_edge_for_connector(*this, "X");
     if (!x_edge) {
         return false;
     }
 
-    auto& y_edge = *dataflow.out_edges(*this).begin();
+    auto y_edge = dataflow.in_edge_for_connector(*this, "Y");
+    if (!y_edge) {
+        return false;
+    }
 
-    auto* x_node = static_cast<data_flow::AccessNode*>(&x_edge->src());
-    auto* y_node = static_cast<data_flow::AccessNode*>(&y_edge.dst());
+    auto* x_node = static_cast<const data_flow::AccessNode*>(&x_edge->src());
+    auto* y_node = static_cast<const data_flow::AccessNode*>(&y_edge->src());
 
-    if (!x_node || dataflow.in_degree(*x_node) != 0 || !y_node || dataflow.out_degree(*y_node) != 0) {
+    if (!x_node || !y_node) {
         return false;
     }
 
@@ -386,7 +396,7 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
             output_block, divisor_access, div_tasklet, "_in2", {}, scalar_type, block.debug_info()
         );
         builder.add_computational_memlet(
-            output_block, div_tasklet, "_out", y_access, y_subset, y_edge.base_type(), y_edge.debug_info()
+            output_block, div_tasklet, "_out", y_access, y_subset, y_edge->base_type(), y_edge->debug_info()
         );
     } else {
         // Max or Sum: just assign
@@ -396,73 +406,34 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
             output_block, accum_final, assign_tasklet, "_in", {}, scalar_type, block.debug_info()
         );
         builder.add_computational_memlet(
-            output_block, assign_tasklet, "_out", y_access, y_subset, y_edge.base_type(), y_edge.debug_info()
+            output_block, assign_tasklet, "_out", y_access, y_subset, y_edge->base_type(), y_edge->debug_info()
         );
     }
 
     // Clean up original block
-    builder.remove_memlet(block, *x_edge);
-    builder.remove_memlet(block, y_edge);
-    builder.remove_node(block, *x_node);
-    builder.remove_node(block, *y_node);
-    builder.remove_node(block, *this);
+    builder.clear_code_node_legacy(block, *this);
+    // WARNING: this has been deallocated at this point!!
+
     builder.remove_child(parent, index + 1);
 
     return true;
 }
 
-symbolic::SymbolSet PoolingNode::symbols() const {
-    symbolic::SymbolSet syms;
-    for (auto& expr : shape_) {
-        for (auto& atom : symbolic::atoms(expr)) {
-            syms.insert(atom);
-        }
-    }
-    for (auto& expr : kernel_shape_) {
-        for (auto& atom : symbolic::atoms(expr)) {
-            syms.insert(atom);
-        }
-    }
-    for (auto& expr : strides_) {
-        for (auto& atom : symbolic::atoms(expr)) {
-            syms.insert(atom);
-        }
-    }
-    for (auto& expr : pads_) {
-        for (auto& atom : symbolic::atoms(expr)) {
-            syms.insert(atom);
-        }
-    }
-    for (auto& expr : dilations_) {
-        for (auto& atom : symbolic::atoms(expr)) {
-            syms.insert(atom);
-        }
-    }
-    return syms;
-}
-
-void PoolingNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
-    for (auto& expr : shape_) {
-        expr = symbolic::subs(expr, old_expression, new_expression);
-    }
-    for (auto& expr : kernel_shape_) {
-        expr = symbolic::subs(expr, old_expression, new_expression);
-    }
-    for (auto& expr : strides_) {
-        expr = symbolic::subs(expr, old_expression, new_expression);
-    }
-    for (auto& expr : pads_) {
-        expr = symbolic::subs(expr, old_expression, new_expression);
-    }
-    for (auto& expr : dilations_) {
-        expr = symbolic::subs(expr, old_expression, new_expression);
-    }
-}
-
 std::unique_ptr<data_flow::DataFlowNode> PoolingNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(new PoolingNode(
-        element_id, this->debug_info(), vertex, parent, mode_, shape_, kernel_shape_, strides_, pads_, dilations_
+        element_id,
+        this->debug_info(),
+        vertex,
+        parent,
+        mode_,
+        shape_,
+        kernel_shape_,
+        strides_,
+        pads_,
+        dilations_,
+        fixed_quantization_,
+        implementation_type_
     ));
 }
 
@@ -485,59 +456,53 @@ PoolingMode PoolingNode::string_to_mode(const std::string& str) {
     throw InvalidSDFGException("Unknown pooling mode: " + str);
 }
 
+symbolic::Expression PoolingNode::flop() const {
+    // Total output elements: N * C * prod(output_spatial_dim(i))
+    auto output_elems = symbolic::mul(symbolic::mul(shape_[0], shape_[1]), output_spatial_volume());
+
+    // Each output element reduces a full kernel window.
+    auto kv = kernel_volume();
+
+    switch (mode_) {
+        case PoolingMode::Max:
+            // max pooling: (kv - 1) comparisons per output element
+            return symbolic::mul(output_elems, symbolic::sub(kv, symbolic::one()));
+        case PoolingMode::Sum:
+            // sum pooling: (kv - 1) additions per output element
+            return symbolic::mul(output_elems, symbolic::sub(kv, symbolic::one()));
+        case PoolingMode::Avg:
+            // avg pooling: (kv - 1) additions + 1 division per output element
+            return symbolic::mul(output_elems, kv);
+        default:
+            return symbolic::symbol("UnknownFlops_Pool_n" + std::to_string(element_id_));
+    }
+}
+
+data_flow::PointerAccessType PoolingNode::pointer_access_type(int input_idx) const {
+    if (input_idx == 0) {
+        return data_flow::PointerAccessMeta::create_full_write_only(symbolic::__nullptr__(), true);
+    } else if (input_idx == 1) {
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::__nullptr__(), true);
+    } else {
+        return TensorNode::pointer_access_type(input_idx);
+    }
+}
+
 std::string PoolingNode::toStr() const {
-    std::string result = "Pooling(mode=" + mode_to_string(mode_) + ", shape=[";
-    for (size_t i = 0; i < shape_.size(); ++i) {
-        if (i > 0) result += ", ";
-        result += shape_[i]->__str__();
-    }
-    result += "], kernel_shape=[";
-    for (size_t i = 0; i < kernel_shape_.size(); ++i) {
-        if (i > 0) result += ", ";
-        result += kernel_shape_[i]->__str__();
-    }
-    result += "], strides=[";
-    for (size_t i = 0; i < strides_.size(); ++i) {
-        if (i > 0) result += ", ";
-        result += strides_[i]->__str__();
-    }
-    result += "])";
-    return result;
+    std::stringstream ss;
+    ss << "Pooling(mode=" << mode_to_string(mode_) << ", ";
+    SpatialTensorNode::operator<<(ss);
+    ss << ")";
+    return ss.str();
 }
 
 nlohmann::json PoolingNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const PoolingNode& node = static_cast<const PoolingNode&>(library_node);
     nlohmann::json j;
 
-    j["code"] = node.code().value();
     j["mode"] = PoolingNode::mode_to_string(node.mode());
 
-    serializer::JSONSerializer serializer;
-
-    j["shape"] = nlohmann::json::array();
-    for (auto& dim : node.shape()) {
-        j["shape"].push_back(serializer.expression(dim));
-    }
-
-    j["kernel_shape"] = nlohmann::json::array();
-    for (auto& dim : node.kernel_shape()) {
-        j["kernel_shape"].push_back(serializer.expression(dim));
-    }
-
-    j["strides"] = nlohmann::json::array();
-    for (auto& stride : node.strides()) {
-        j["strides"].push_back(serializer.expression(stride));
-    }
-
-    j["pads"] = nlohmann::json::array();
-    for (auto& pad : node.pads()) {
-        j["pads"].push_back(serializer.expression(pad));
-    }
-
-    j["dilations"] = nlohmann::json::array();
-    for (auto& dilation : node.dilations()) {
-        j["dilations"].push_back(serializer.expression(dilation));
-    }
+    fill_base_values(node, j);
 
     return j;
 }
@@ -545,52 +510,23 @@ nlohmann::json PoolingNodeSerializer::serialize(const data_flow::LibraryNode& li
 data_flow::LibraryNode& PoolingNodeSerializer::deserialize(
     const nlohmann::json& j, builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& parent
 ) {
-    assert(j.contains("element_id"));
-    assert(j.contains("code"));
-    assert(j.contains("debug_info"));
     assert(j.contains("mode"));
-    assert(j.contains("kernel_shape"));
+
+    auto base = deserialize_base_values(j);
 
     auto mode = PoolingNode::string_to_mode(j["mode"].get<std::string>());
 
-    std::vector<symbolic::Expression> shape;
-    if (j.contains("shape")) {
-        for (const auto& dim : j["shape"]) {
-            shape.push_back(symbolic::parse(dim.get<std::string>()));
-        }
-    }
-
-    std::vector<symbolic::Expression> kernel_shape;
-    for (const auto& dim : j["kernel_shape"]) {
-        kernel_shape.push_back(symbolic::parse(dim.get<std::string>()));
-    }
-
-    std::vector<symbolic::Expression> strides;
-    if (j.contains("strides")) {
-        for (const auto& stride : j["strides"]) {
-            strides.push_back(symbolic::parse(stride.get<std::string>()));
-        }
-    }
-
-    std::vector<symbolic::Expression> pads;
-    if (j.contains("pads")) {
-        for (const auto& pad : j["pads"]) {
-            pads.push_back(symbolic::parse(pad.get<std::string>()));
-        }
-    }
-
-    std::vector<symbolic::Expression> dilations;
-    if (j.contains("dilations")) {
-        for (const auto& dilation : j["dilations"]) {
-            dilations.push_back(symbolic::parse(dilation.get<std::string>()));
-        }
-    }
-
-    sdfg::serializer::JSONSerializer serializer;
-    DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
-
-    return builder
-        .add_library_node<PoolingNode>(parent, debug_info, mode, shape, kernel_shape, strides, pads, dilations);
+    return builder.add_library_node<PoolingNode>(
+        parent,
+        base.debug_info,
+        mode,
+        base.shape,
+        base.kernel_shape,
+        base.strides,
+        base.pads,
+        base.dilations,
+        base.quantization
+    );
 }
 
 } // namespace tensor

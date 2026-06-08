@@ -3,6 +3,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/spatial_tensor_node.h"
 #include "sdfg/serializer/json_serializer.h"
 
 namespace sdfg {
@@ -39,14 +40,9 @@ enum class PoolingMode {
  * - Sum: Takes the sum of values in each window
  * - Avg: Takes the average (sum / window_size) of values in each window
  */
-class PoolingNode : public TensorNode {
+class PoolingNode : public SpatialTensorNode {
 protected:
     PoolingMode mode_;
-    std::vector<symbolic::Expression> shape_; ///< Input shape [N, C, D1, ..., Dn]
-    std::vector<symbolic::Expression> kernel_shape_; ///< Pooling window shape [k1, ..., kn]
-    std::vector<symbolic::Expression> strides_; ///< Stride along each spatial axis
-    std::vector<symbolic::Expression> pads_; ///< Padding (start and end for each axis)
-    std::vector<symbolic::Expression> dilations_; ///< Dilation along each spatial axis
 
 public:
     PoolingNode(
@@ -59,23 +55,16 @@ public:
         const std::vector<symbolic::Expression>& kernel_shape,
         const std::vector<symbolic::Expression>& strides,
         const std::vector<symbolic::Expression>& pads,
-        const std::vector<symbolic::Expression>& dilations
+        const std::vector<symbolic::Expression>& dilations,
+        QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
+        const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
     PoolingMode mode() const { return mode_; }
-    const std::vector<symbolic::Expression>& shape() const { return shape_; }
-    const std::vector<symbolic::Expression>& kernel_shape() const { return kernel_shape_; }
-    const std::vector<symbolic::Expression>& strides() const { return strides_; }
-    const std::vector<symbolic::Expression>& pads() const { return pads_; }
-    const std::vector<symbolic::Expression>& dilations() const { return dilations_; }
 
     void validate(const Function& function) const override;
 
     bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
-
-    symbolic::SymbolSet symbols() const override;
-
-    void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
     bool supports_integer_types() const override { return true; }
 
@@ -86,13 +75,17 @@ public:
 
     static std::string mode_to_string(PoolingMode mode);
     static PoolingMode string_to_mode(const std::string& str);
+
+    symbolic::Expression flop() const override;
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 };
 
 /**
  * @class PoolingNodeSerializer
  * @brief Serializer for PoolingNode
  */
-class PoolingNodeSerializer : public serializer::LibraryNodeSerializer {
+class PoolingNodeSerializer : public SpatialTensorNodeBaseSerializer {
 public:
     nlohmann::json serialize(const data_flow::LibraryNode& library_node) override;
 

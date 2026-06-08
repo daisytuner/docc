@@ -69,6 +69,8 @@ llvm::cl::opt<bool> DOCC_DOT_DUMP_SCHEDULED(
     "docc-dot-scheduled", llvm::cl::desc("Dumps the scheduled graph to a DOT file"), llvm::cl::init(false)
 );
 
+llvm::cl::opt<bool> DOCC_DUMP_SDFG("docc-dump-sdfg", llvm::cl::desc("Enables Output of sdfgs"), llvm::cl::init(false));
+
 llvm::cl::opt<std::string> DOCC_LINK_MODE(
     "docc-link", llvm::cl::desc("Sets special options for how to link. Experimental"), llvm::cl::init("")
 );

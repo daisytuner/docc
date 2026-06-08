@@ -121,6 +121,8 @@ public:
      */
     virtual bool may_contain_writes() const = 0;
 
+    virtual bool invalidated_after() const = 0;
+
     /**
      * Describes which elements are accessed (for example a function may only access the range of [ptr, ptr+8] bytes and
      * not touch or care about what comes after) Pointer access metadata only applies to the elements that are part of
@@ -167,6 +169,8 @@ public:
     bool may_contain_reads() const override { return true; }
     bool may_contain_writes() const override { return false; }
 
+    bool invalidated_after() const override { return false; }
+
     /**
      * Describes which elements behind the pointer are actually read
      */
@@ -205,6 +209,8 @@ public:
     bool may_contain_reads() const override { return false; }
     bool may_contain_writes() const override { return true; }
 
+    bool invalidated_after() const override { return false; }
+
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
     PointerAccessType clone() const override;
@@ -240,6 +246,8 @@ public:
 
     bool may_contain_writes() const override;
 
+    bool invalidated_after() const override { return false; }
+
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
     PointerAccessType clone() const override;
@@ -259,6 +267,8 @@ public:
 
     bool may_contain_reads() const override { return false; }
     bool may_contain_writes() const override { return false; }
+
+    bool invalidated_after() const override { return true; }
 
     MemoryAccessPatternType access_read_pattern() const override { return NoAccessPattern::instance(); }
     MemoryAccessPatternType access_write_pattern() const override { return NoAccessPattern::instance(); }

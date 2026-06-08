@@ -60,6 +60,8 @@ public:
      */
     virtual bool is_symbol() const override;
 
+    bool is_pointer_like() const override { return false; }
+
     /**
      * @brief Creates a copy of this scalar with signed integer type
      *

@@ -16,6 +16,7 @@
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/while.h"
+#include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 #include "symengine/basic.h"
@@ -147,23 +148,22 @@ std::string Visualizer::subsetRangeString(data_flow::Subset const& subset, int s
 }
 
 /// @brief If known, use the type to better visualize structures. Then track the type as far as it goes.
-void Visualizer::
-    visualizeSubset(Function const& function, data_flow::Subset const& sub, types::IType const* type, int subIdx) {
+void Visualizer::visualizeSubset(data_flow::Subset const& sub, types::IType const* type, int subIdx) {
     if (static_cast<int>(sub.size()) <= subIdx) {
         return;
     }
     if (auto structure_type = dynamic_cast<const types::Structure*>(type)) {
-        types::StructureDefinition const& definition = function.structure(structure_type->name());
+        types::StructureDefinition const& definition = this->sdfg_.structure(structure_type->name());
 
         auto& memberIdx = sub.at(subIdx);
         if (!memberIdx.is_null() && SymEngine::is_a<SymEngine::Integer>(*memberIdx)) {
             this->stream_ << ".member_" << this->expression(memberIdx->__str__());
             auto& member_type = definition.member_type(SymEngine::rcp_dynamic_cast<const SymEngine::Integer>(memberIdx)
             );
-            this->visualizeSubset(function, sub, &member_type, subIdx + 1);
+            this->visualizeSubset(sub, &member_type, subIdx + 1);
         } else {
             this->stream_ << ".member[" << subsetRangeString(sub, subIdx) << "]";
-            this->visualizeSubset(function, sub, nullptr, subIdx + 1);
+            this->visualizeSubset(sub, nullptr, subIdx + 1);
         }
     } else if (auto tensor_type = dynamic_cast<const types::Tensor*>(type)) {
         auto& shape = tensor_type->shape();
@@ -175,12 +175,12 @@ void Visualizer::
             ++i;
         }
         if (subIdx < sub.size()) {
-            this->visualizeSubset(function, sub, &tensor_type->element_type(), subIdx);
+            this->visualizeSubset(sub, &tensor_type->element_type(), subIdx);
         }
     } else if (auto array_type = dynamic_cast<const types::Array*>(type)) {
         this->stream_ << "[" << subsetRangeString(sub, subIdx) << "]";
         types::IType const& element_type = array_type->element_type();
-        this->visualizeSubset(function, sub, &element_type, subIdx + 1);
+        this->visualizeSubset(sub, &element_type, subIdx + 1);
     } else if (auto pointer_type = dynamic_cast<const types::Pointer*>(type)) {
         this->stream_ << "[" << subsetRangeString(sub, subIdx) << "]";
         const types::IType* pointee_type;
@@ -193,13 +193,23 @@ void Visualizer::
             }
             pointee_type = nullptr;
         }
-        this->visualizeSubset(function, sub, pointee_type, subIdx + 1);
+        this->visualizeSubset(sub, pointee_type, subIdx + 1);
     } else {
         if (type == nullptr) {
             this->stream_ << "(rogue)";
         }
         this->stream_ << "[" << subsetRangeString(sub, subIdx) << "]";
-        visualizeSubset(function, sub, nullptr, subIdx + 1);
+        visualizeSubset(sub, nullptr, subIdx + 1);
+    }
+}
+
+void Visualizer::visualize() {
+    if (const auto* unstructured_sdfg = dynamic_cast<const SDFG*>(&this->sdfg_)) {
+        this->visualizeSDFG(*unstructured_sdfg);
+    } else if (const auto* structured_sdfg = dynamic_cast<const StructuredSDFG*>(&this->sdfg_)) {
+        this->visualizeStructuredSDFG(*structured_sdfg);
+    } else {
+        throw InvalidSDFGException("Visualizer: Invalid SDFG type");
     }
 }
 

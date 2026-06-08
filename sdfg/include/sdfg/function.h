@@ -44,6 +44,8 @@ class Function {
     friend class sdfg::builder::FunctionBuilder;
     friend class sdfg::builder::StructuredSDFGBuilder;
 
+    types::Pointer opaque_pointer_;
+
 protected:
     size_t element_counter_;
 

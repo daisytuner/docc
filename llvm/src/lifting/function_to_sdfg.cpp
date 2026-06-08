@@ -25,6 +25,7 @@
 #include <sdfg/passes/symbolic/type_minimization.h>
 
 #include "docc/analysis/sdfg_registry.h"
+#include "docc/cmd_args.h"
 #include "docc/lifting/functions/function_lifting.h"
 #include "docc/lifting/lift_report.h"
 #include "docc/lifting/lifting.h"
@@ -140,9 +141,6 @@ std::vector<std::unique_ptr<sdfg::StructuredSDFG>> FunctionToSDFG::run() {
         } catch (NotImplementedException& e) {
             // Fallthrough
             LLVM_DEBUG_PRINTLN("NotImplementedException on '" << this->function_.getName() << "': " << e.what());
-        } catch (sdfg::InvalidSDFGException& e) {
-            // Fallthrough
-            LLVM_DEBUG_PRINTLN("InvalidSDFGException on '" << this->function_.getName() << "': " << e.what());
         }
     } else {
         if (res.second != nullptr) {
@@ -542,13 +540,17 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::apply(llvm::Region& region
     auto& TLI = this->FAM_.getResult<llvm::TargetLibraryAnalysis>(this->function_);
     Lifting lifting(TLI, *external_function, sdfg::FunctionType_CPU);
     std::unique_ptr<sdfg::SDFG> sdfg = lifting.run();
+    dump_sdfg(*sdfg, "0");
     sdfg->validate();
 
     sdfg::builder::SDFGBuilder builder_canon(sdfg);
     sdfg::passes::UnifyLoopExits unify_loop_exits_pass;
     unify_loop_exits_pass.run(builder_canon);
+    dump_sdfg(builder_canon.subject(), "1");
     unify_loop_exits_pass.run(builder_canon);
+    dump_sdfg(builder_canon.subject(), "2");
     unify_loop_exits_pass.run(builder_canon);
+    dump_sdfg(builder_canon.subject(), "3");
     sdfg = builder_canon.move();
 
     // Build StructuredSDFG
@@ -584,14 +586,18 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::apply() {
     auto& TLI = this->FAM_.getResult<llvm::TargetLibraryAnalysis>(this->function_);
     Lifting lifting(TLI, this->function_, sdfg::FunctionType_CPU);
     std::unique_ptr<sdfg::SDFG> sdfg = lifting.run();
+    dump_sdfg(*sdfg, "0");
     sdfg->validate();
 
     // Increase of graph complexity
     sdfg::builder::SDFGBuilder builder_canon(sdfg);
     sdfg::passes::UnifyLoopExits unify_loop_exits_pass;
     unify_loop_exits_pass.run(builder_canon);
+    dump_sdfg(builder_canon.subject(), "1");
     unify_loop_exits_pass.run(builder_canon);
+    dump_sdfg(builder_canon.subject(), "2");
     unify_loop_exits_pass.run(builder_canon);
+    dump_sdfg(builder_canon.subject(), "3");
     sdfg = builder_canon.move();
 
     // Build StructuredSDFG
@@ -675,7 +681,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
     sdfg::builder::StructuredSDFGBuilder builder_opt(sdfg);
     sdfg::analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
-    dump_sdfg(builder_opt.subject(), "0.init");
+    dump_structured_sdfg(builder_opt.subject(), "0.init");
 
     // Optimization Pipelines
     sdfg::passes::Pipeline dataflow_simplification = sdfg::passes::Pipeline::dataflow_simplification();
@@ -712,7 +718,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "1.dde");
+    dump_structured_sdfg(builder_opt.subject(), "1.dde");
 
     /***** Structured Loops *****/
 
@@ -729,7 +735,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
         symbolic_simplification.run(builder_opt, analysis_manager);
     }
 
-    dump_sdfg(builder_opt.subject(), "2.cae");
+    dump_structured_sdfg(builder_opt.subject(), "2.cae");
 
     // Convert loops into structured loops
     sdfg::passes::WhileToForConversion for_conversion_pass;
@@ -738,7 +744,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
     // Propagate for simpler indvar usage
     symbol_propagation_pass.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "4.symprop");
+    dump_structured_sdfg(builder_opt.subject(), "4.symprop");
 
     // Eliminate redundant branches
     {
@@ -750,7 +756,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
         } while (applies);
     }
 
-    dump_sdfg(builder_opt.subject(), "5.condelim");
+    dump_structured_sdfg(builder_opt.subject(), "5.condelim");
 
     // Normalize loop condition and update (run twice)
     sdfg::passes::normalization::LoopNormalFormPass loop_normalization_pass;
@@ -759,83 +765,94 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "6.loopnorm");
+    dump_structured_sdfg(builder_opt.subject(), "6.loopnorm");
 
     // Eliminate symbols correlated to loop iterators
     sdfg::passes::SymbolEvolution symbol_evolution_pass;
     symbol_evolution_pass.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "7.symbevo");
+    dump_structured_sdfg(builder_opt.subject(), "7.symbevo");
 
     // Dead code elimination
     symbol_propagation_pass.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "8.dde");
+    dump_structured_sdfg(builder_opt.subject(), "8.dde");
 
     /***** Data Parallelism *****/
 
     // Combine address calculations in memlets
     memlet_combine.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "9.memletcomb");
+    dump_structured_sdfg(builder_opt.subject(), "9.memletcomb");
 
     // Move code out of loops where possible
     sdfg::passes::Pipeline code_motion = sdfg::passes::code_motion();
     code_motion.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "10.codemotion");
+    dump_structured_sdfg(builder_opt.subject(), "10.codemotion");
 
     // Convert pointer-based iterators to indvar usage
     sdfg::passes::PointerEvolution pointer_evolution_pass;
     pointer_evolution_pass.run(builder_opt, analysis_manager);
     loop_normalization_pass.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "11.pointerevo");
+    dump_structured_sdfg(builder_opt.subject(), "11.pointerevo");
 
     // Convert lib-calls into managed memory
     sdfg::passes::Pipeline memory = sdfg::passes::Pipeline::memory();
     memory.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "12.memorymgmt");
+    dump_structured_sdfg(builder_opt.subject(), "12.memorymgmt");
 
     sdfg::passes::TypeMinimizationPass type_minimization_pass;
     type_minimization_pass.run(builder_opt, analysis_manager);
     type_minimization_pass.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "13.typemin");
+    dump_structured_sdfg(builder_opt.subject(), "13.typemin");
 
     // Dead code elimination
     symbol_propagation_pass.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "14.dde");
+    dump_structured_sdfg(builder_opt.subject(), "14.dde");
 
     // Convert for loops into maps
     sdfg::passes::For2MapPass map_conversion_pass;
     map_conversion_pass.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "15.for2map");
+    dump_structured_sdfg(builder_opt.subject(), "15.for2map");
 
     // Move code out of maps where possible
     code_motion.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "16.codemotion");
+    dump_structured_sdfg(builder_opt.subject(), "16.codemotion");
 
     // Dead code elimination
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
     dataflow_simplification.run(builder_opt, analysis_manager);
 
-    dump_sdfg(builder_opt.subject(), "17.dde");
+    dump_structured_sdfg(builder_opt.subject(), "17.dde");
 
     return builder_opt.move();
 }
 
-void FunctionToSDFG::dump_sdfg(const sdfg::StructuredSDFG& sdfg, const std::string& step) const {
-    if (dump_passes) {
+void FunctionToSDFG::dump_sdfg(const sdfg::SDFG& sdfg, const std::string& step) const {
+    if (args::DOCC_DUMP_SDFG) {
+        auto mod = function_.getParent();
+
+        auto out_dir = analysis::SDFGRegistry::docc_extract_dir(*mod);
+
+        std::filesystem::create_directories(out_dir);
+        sdfg::visualizer::DotVisualizer::writeToFile(sdfg, out_dir / (sdfg.name() + ".lifting." + step + ".dot"));
+    }
+}
+
+void FunctionToSDFG::dump_structured_sdfg(const sdfg::StructuredSDFG& sdfg, const std::string& step) const {
+    if (args::DOCC_DUMP_SDFG) {
         auto mod = function_.getParent();
 
         auto out_dir = analysis::SDFGRegistry::docc_extract_dir(*mod);

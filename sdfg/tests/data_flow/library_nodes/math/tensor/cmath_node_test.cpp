@@ -44,7 +44,7 @@ void TestCMathNode(math::cmath::CMathFunction function, std::vector<size_t> shap
     ASSERT_GE(function_arity, 1);
     ASSERT_LE(function_arity, 3);
 
-    std::vector<std::string> outputs, inputs;
+    std::vector<std::string> inputs;
     inputs.reserve(function_arity);
     switch (function_arity) {
         case 3:
@@ -57,7 +57,6 @@ void TestCMathNode(math::cmath::CMathFunction function, std::vector<size_t> shap
             builder.add_container("b", desc_ptr, true);
             builder.add_container("a", out_desc_ptr, true);
             inputs.push_back("_in1");
-            outputs.push_back("_out");
             break;
     }
 
@@ -71,7 +70,7 @@ void TestCMathNode(math::cmath::CMathFunction function, std::vector<size_t> shap
     types::Tensor out_tensor_type(out_desc_primitive, shape);
 
     auto& tensor_node = static_cast<math::tensor::CMathTensorNode&>(
-        builder.add_library_node<math::tensor::CMathTensorNode>(block, DebugInfo(), function, outputs, inputs, shape)
+        builder.add_library_node<math::tensor::CMathTensorNode>(block, DebugInfo(), function, "_dst", inputs, shape)
     );
 
     switch (function_arity) {
@@ -87,7 +86,7 @@ void TestCMathNode(math::cmath::CMathFunction function, std::vector<size_t> shap
             auto& b_node = builder.add_access(block, "b");
             builder.add_computational_memlet(block, b_node, tensor_node, "_in1", {}, tensor_type);
             auto& a_node = builder.add_access(block, "a");
-            builder.add_computational_memlet(block, tensor_node, "_out", a_node, {}, out_tensor_type);
+            builder.add_computational_memlet(block, a_node, tensor_node, "_dst", {}, out_tensor_type);
         }
     }
 

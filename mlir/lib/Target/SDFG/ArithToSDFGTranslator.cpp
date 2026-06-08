@@ -71,16 +71,11 @@ LogicalResult translateArithBinaryOp(SDFGTranslator& translator, Op* op) {
         auto& result_access = builder.add_access(block, result_container, deb_info);
         std::vector<::sdfg::symbolic::Expression> shape;
         auto& libnode = builder.add_library_node<::sdfg::math::tensor::TaskletTensorNode>(
-            block,
-            deb_info,
-            code,
-            std::vector<std::string>({"_out"}),
-            std::vector<std::string>({"_in1", "_in2"}),
-            sdfg_tensor->shape()
+            block, deb_info, code, "_out", std::vector<std::string>({"_in1", "_in2"}), sdfg_tensor->shape()
         );
         builder.add_computational_memlet(block, lhs_access, libnode, "_in1", {}, *sdfg_tensor, deb_info);
         builder.add_computational_memlet(block, rhs_access, libnode, "_in2", {}, *sdfg_tensor, deb_info);
-        builder.add_computational_memlet(block, libnode, "_out", result_access, {}, *sdfg_tensor, deb_info);
+        builder.add_computational_memlet(block, result_access, libnode, "_out", {}, *sdfg_tensor, deb_info);
     } else {
         return op->emitOpError("Unsupported type(s)");
     }

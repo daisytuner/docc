@@ -23,14 +23,17 @@ def test_cutout():
     builder.end_for()
     builder.end_for()
 
+    # Finalize the SDFG
+    sdfg = builder.move()
+
     # Get the outer loop
-    analysis = AnalysisManager(builder)
+    analysis = AnalysisManager(sdfg)
     loop_analysis = analysis.loop_analysis()
     j_loop = loop_analysis.find_loop_by_indvar("j")
     assert j_loop is not None
 
     # Create the cutout of the outer loop (includes inner loop)
-    cutout_sdfg = cutout(builder, analysis, j_loop)
+    cutout_sdfg = cutout(sdfg, analysis, j_loop)
 
     # Verify the cutout
     assert cutout_sdfg is not None

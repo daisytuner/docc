@@ -13,41 +13,42 @@ AddNode::AddNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    const std::vector<symbolic::Expression>& shape
+    const std::vector<symbolic::Expression>& shape,
+    QuantizationType quantization,
+    const data_flow::ImplementationType& impl_type
 )
-    : ElementWiseBinaryNode(element_id, debug_info, vertex, parent, LibraryNodeType_Add, shape) {}
+    : ElementWiseDataflowTensorNode(
+          element_id, debug_info, vertex, parent, LibraryNodeType_Add, shape, "C", {"A", "B"}, quantization, impl_type
+      ) {}
 
-bool AddNode::expand_operation(
+ElementWiseDataflowTensorNode::ElementOutput AddNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Sequence& body,
-    const std::string& input_name_a,
-    const std::string& input_name_b,
-    const std::string& output_name,
-    const types::Tensor& input_type_a,
-    const types::Tensor& input_type_b,
-    const types::Tensor& output_type,
-    const data_flow::Subset& subset
+    Block& block,
+    std::vector<ElementInput>& needed_inputs,
+    types::PrimitiveType expected_type
 ) {
-    auto& code_block = builder.add_block(body);
+    auto& input0 = needed_inputs.at(0);
 
-    bool is_int = types::is_integer(output_type.primitive_type());
-    data_flow::TaskletCode opcode = is_int ? data_flow::TaskletCode::int_add : data_flow::TaskletCode::fp_add;
-    auto& tasklet = builder.add_tasklet(code_block, opcode, "_out", {"_in1", "_in2"});
-
-    auto& output_node = builder.add_access(code_block, output_name);
-    builder.add_computational_memlet(code_block, tasklet, "_out", output_node, subset, output_type);
-
-    create_input_memlet(builder, "_in1", input_name_a, input_type_a, subset, code_block, tasklet);
-    create_input_memlet(builder, "_in2", input_name_b, input_type_b, subset, code_block, tasklet);
-
-    return true;
+    data_flow::TaskletCode opcode;
+    if (types::is_integer(input0.required_type)) {
+        opcode = data_flow::TaskletCode::int_add;
+    } else {
+        opcode = data_flow::TaskletCode::fp_add;
+    }
+    auto& tasklet = builder.add_tasklet(block, opcode, "_out", {"_in1", "_in2"});
+    input0.consumer = &tasklet;
+    input0.input_conn_index = 0;
+    needed_inputs.at(1).consumer = &tasklet;
+    needed_inputs.at(1).input_conn_index = 1;
+    return {.producer = &tasklet, .output_conn_index = 0, .type = input0.required_type};
 }
 
 std::unique_ptr<data_flow::DataFlowNode> AddNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new AddNode(element_id, this->debug_info(), vertex, parent, this->shape_));
+    return std::unique_ptr<data_flow::DataFlowNode>(new AddNode(
+        element_id, this->debug_info(), vertex, parent, this->shape_, fixed_quantization_, implementation_type_
+    ));
 }
 
 } // namespace tensor

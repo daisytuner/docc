@@ -412,9 +412,8 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         builder.add_container(local_name_, buffer_type);
 
         std::vector<symbolic::Symbol> copy_indvars;
-        structured_control_flow::Sequence* copy_scope = parent;
-        bool first_copy_loop = true;
-
+        structured_control_flow::Sequence* copy_scope =
+            &builder.add_sequence_before(*parent, loop_, {}, loop_.debug_info());
         for (size_t i = 0; i < varying_dims.size(); i++) {
             size_t d = varying_dims[i];
             auto indvar_name = builder.find_new_name("__daisy_ils_" + this->container_ + "_d" + std::to_string(d));
@@ -427,33 +426,17 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
             auto condition = symbolic::Lt(indvar, dim_sizes[i]);
             auto update = symbolic::add(indvar, symbolic::integer(1));
 
-            if (first_copy_loop) {
-                auto& copy_loop = builder.add_map_before(
-                    *copy_scope,
-                    loop_,
-                    indvar,
-                    condition,
-                    init,
-                    update,
-                    structured_control_flow::ScheduleType_Sequential::create(),
-                    {},
-                    loop_.debug_info()
-                );
-                copy_scope = &copy_loop.root();
-                first_copy_loop = false;
-            } else {
-                auto& copy_loop = builder.add_map(
-                    *copy_scope,
-                    indvar,
-                    condition,
-                    init,
-                    update,
-                    structured_control_flow::ScheduleType_Sequential::create(),
-                    {},
-                    loop_.debug_info()
-                );
-                copy_scope = &copy_loop.root();
-            }
+            auto& copy_loop = builder.add_map(
+                *copy_scope,
+                indvar,
+                condition,
+                init,
+                update,
+                structured_control_flow::ScheduleType_Sequential::create(),
+                {},
+                loop_.debug_info()
+            );
+            copy_scope = &copy_loop.root();
         }
 
         // Create copy block

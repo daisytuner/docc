@@ -10,6 +10,7 @@
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_sdfg.h"
+#include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
 namespace visualizer {
@@ -22,6 +23,85 @@ static std::string escapeDotId(const std::string& id, const std::string& prefix 
     return prefix + std::regex_replace(id, dotIdBadChars, "_");
 }
 
+void DotVisualizer::visualizeSDFG(const SDFG& sdfg) {
+    this->stream_.clear();
+    this->stream_ << "digraph SDFG {\n";
+    this->stream_.setIndent(4);
+    this->stream_ << "graph [compound=true];" << std::endl << "node [style=filled,fillcolor=white];" << std::endl;
+
+    // State identifier in DOT
+    std::unordered_map<size_t, std::string> node_ids;
+
+    // States as nodes
+    for (auto& state : sdfg.states()) {
+        auto id = escapeDotId(state.element_id(), "state_");
+        this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
+        this->stream_.setIndent(this->stream_.indent() + 4);
+        this->stream_ << "style=filled;fillcolor=white;color=black;label=\"State " << state.element_id() << "\";"
+                      << std::endl;
+        if (auto* return_state = dynamic_cast<const control_flow::ReturnState*>(&state)) {
+            this->stream_ << id << " [shape=cds,label=\" return " << return_state->data() << " \"];" << std::endl;
+        } else {
+            this->stream_ << id << " [shape=point,style=invis;label=\"\"];" << std::endl;
+            this->visualizeDataFlowGraph(id, state.dataflow());
+        }
+        this->stream_.setIndent(this->stream_.indent() - 4);
+        this->stream_ << "}" << std::endl;
+        node_ids.insert({state.element_id(), id});
+    }
+
+    // Edges
+    for (auto& edge : sdfg.edges()) {
+        auto& src_id = node_ids.at(edge.src().element_id());
+        auto& dst_id = node_ids.at(edge.dst().element_id());
+        this->stream_ << src_id << " -> " << dst_id << " [ltail=cluster_" << src_id << ",lhead=cluster_" << dst_id
+                      << ",label=\"";
+
+        // Condition
+        bool print_condition = !symbolic::eq(edge.condition(), symbolic::__true__());
+        if (print_condition) {
+            this->stream_ << edge.condition()->__str__();
+        }
+
+        // Assignments
+        if (!edge.assignments().empty()) {
+            if (print_condition) {
+                this->stream_ << ",\\n";
+            }
+            this->stream_ << "{";
+            bool first = true;
+            for (auto& [var, expr] : edge.assignments()) {
+                if (!first) {
+                    this->stream_ << "; ";
+                }
+                this->stream_ << var->get_name() << " = " << expr->__str__();
+                first = false;
+            }
+            this->stream_ << "}";
+        }
+        this->stream_ << "\"];" << std::endl;
+    }
+
+    this->stream_.setIndent(0);
+    this->stream_ << "}" << std::endl;
+}
+
+void DotVisualizer::visualizeStructuredSDFG(const StructuredSDFG& sdfg) {
+    this->stream_.clear();
+    this->stream_ << "digraph " << escapeDotId(sdfg.name()) << " {" << std::endl;
+    this->stream_.setIndent(4);
+    this->stream_ << "graph [compound=true];" << std::endl;
+    this->stream_ << "subgraph cluster_" << escapeDotId(sdfg.name()) << " {" << std::endl;
+    this->stream_.setIndent(8);
+    this->stream_ << "node [style=filled,fillcolor=white];" << std::endl
+                  << "style=filled;color=lightblue;label=\"\";" << std::endl;
+    this->visualizeSequence(sdfg, sdfg.root());
+    this->stream_.setIndent(4);
+    this->stream_ << "}" << std::endl;
+    this->stream_.setIndent(0);
+    this->stream_ << "}" << std::endl;
+}
+
 void DotVisualizer::visualizeBlock(const StructuredSDFG& sdfg, const structured_control_flow::Block& block) {
     auto id = escapeDotId(block.element_id(), "block_");
     this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
@@ -31,139 +111,7 @@ void DotVisualizer::visualizeBlock(const StructuredSDFG& sdfg, const structured_
         this->stream_ << "#" << block.element_id() << " ";
     }
     this->stream_ << "\";" << std::endl;
-    this->last_comp_name_cluster_ = "cluster_" + id;
-    if (block.dataflow().nodes().empty()) {
-        this->stream_ << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
-        this->stream_.setIndent(this->stream_.indent() - 4);
-        this->stream_ << "}" << std::endl;
-        this->last_comp_name_ = id;
-        return;
-    }
-    this->last_comp_name_.clear();
-    std::list<const data_flow::DataFlowNode*> nodes = block.dataflow().topological_sort();
-    for (const data_flow::DataFlowNode* node : nodes) {
-        std::vector<std::string> in_connectors;
-        bool is_access_node = false;
-        bool node_will_show_literal_connectors = false;
-        auto nodeId = escapeDotId(node->element_id(), "id");
-        if (this->last_comp_name_.empty()) this->last_comp_name_ = nodeId;
-        if (const data_flow::Tasklet* tasklet = dynamic_cast<const data_flow::Tasklet*>(node)) {
-            this->stream_ << nodeId << " [shape=octagon,label=\"" << tasklet->output() << " = ";
-            this->visualizeTasklet(*tasklet);
-            this->stream_ << "\"];" << std::endl;
-
-            in_connectors = tasklet->inputs();
-            node_will_show_literal_connectors = true;
-        } else if (const data_flow::ConstantNode* constant_node = dynamic_cast<const data_flow::ConstantNode*>(node)) {
-            this->stream_ << nodeId << " [";
-            this->stream_ << "penwidth=3.0,";
-            if (sdfg.is_transient(constant_node->data())) this->stream_ << "style=\"dashed,filled\",";
-            this->stream_ << "label=\"" << constant_node->data() << "\"];" << std::endl;
-            is_access_node = true;
-        } else if (const data_flow::AccessNode* access_node = dynamic_cast<const data_flow::AccessNode*>(node)) {
-            this->stream_ << nodeId << " [";
-            this->stream_ << "penwidth=3.0,";
-            if (sdfg.is_transient(access_node->data())) this->stream_ << "style=\"dashed,filled\",";
-            this->stream_ << "label=\"" << access_node->data() << "\"];" << std::endl;
-            is_access_node = true;
-        } else if (const data_flow::LibraryNode* libnode = dynamic_cast<const data_flow::LibraryNode*>(node)) {
-            this->stream_ << nodeId << " [shape=doubleoctagon,label=\"" << libnode->toStr() << "\"];" << std::endl;
-            in_connectors = libnode->inputs();
-        }
-
-        std::unordered_set<std::string> unused_connectors(in_connectors.begin(), in_connectors.end());
-        for (const data_flow::Memlet& iedge : block.dataflow().in_edges(*node)) {
-            auto& src = iedge.src();
-            auto& dst_conn = iedge.dst_conn();
-            bool nonexistent_conn = false;
-
-            if (!is_access_node) {
-                auto it = unused_connectors.find(dst_conn);
-                if (it != unused_connectors.end()) {
-                    unused_connectors.erase(it); // remove connector from in_connectors, so it is not used again
-                } else {
-                    nonexistent_conn = true;
-                }
-            }
-
-            this->stream_ << escapeDotId(src.element_id(), "id") << " -> " << nodeId << " [label=\"   ";
-            bool dstIsVoid = dst_conn == "void";
-            bool dstIsRef = dst_conn == "ref";
-            bool dstIsDeref = dst_conn == "deref";
-            auto& src_conn = iedge.src_conn();
-            bool srcIsVoid = src_conn == "void";
-            bool srcIsDeref = src_conn == "deref";
-
-            if (nonexistent_conn) {
-                this->stream_ << "!!"; // this should not happen, but if it does, we can still visualize the memlet
-            }
-
-            if (dstIsVoid || dstIsRef || dstIsDeref) { // subset applies to dst
-                auto& dstVar = dynamic_cast<data_flow::AccessNode const&>(iedge.dst()).data();
-                bool subsetOnDst = false;
-                if (srcIsDeref && dstIsVoid) { // Pure Store by Memlet definition (Dereference Memlet Store)
-                    auto& subset = iedge.subset();
-                    if (subset.size() == 1 && symbolic::eq(subset[0], symbolic::integer(0))) {
-                        this->stream_ << "*" << dstVar; // store to pointer without further address calc
-                    } else { // fallback, this should not be allowed to happen
-                        this->stream_ << dstVar; // use access node name instead of connector-name
-                        subsetOnDst = true;
-                    }
-                } else if (dstIsVoid) { // computational memlet / output from tasklet / memory store
-                    this->stream_ << dstVar; // use access node name instead of connector-name
-                    subsetOnDst = true;
-                } else {
-                    this->stream_ << dstVar; // use access node name instead of connector-name
-                }
-                if (subsetOnDst) {
-                    this->visualizeSubset(sdfg, iedge.subset(), &iedge.base_type());
-                }
-            } else { // dst is a tasklet/library node
-                this->stream_ << dst_conn;
-            }
-
-            this->stream_ << " = ";
-
-            if (srcIsVoid || srcIsDeref) { // subset applies to src, could be computational, reference or dereference
-                                           // memlet
-                auto& srcVar = dynamic_cast<data_flow::AccessNode const&>(src).data();
-                bool subsetOnSrc = false;
-                if (srcIsVoid && dstIsRef) { // reference memlet / address-of / get-element-ptr equivalent
-                    this->stream_ << "&";
-                    subsetOnSrc = true;
-                } else if (srcIsVoid && dstIsDeref) { // Dereference memlet / load from address
-                    this->stream_ << "*";
-                    auto& subset = iedge.subset();
-                    if (subset.size() != 1 && symbolic::eq(subset[0], symbolic::integer(0))) { // does not match memlet
-                                                                                               // definition -> fallback
-                        subsetOnSrc = true;
-                    }
-                } else if (srcIsVoid) {
-                    subsetOnSrc = true;
-                }
-                this->stream_ << srcVar;
-                if (subsetOnSrc) {
-                    this->visualizeSubset(sdfg, iedge.subset(), &iedge.base_type());
-                }
-            } else {
-                this->stream_ << src_conn;
-            }
-            this->stream_ << "   \"];" << std::endl;
-        }
-
-        if (!node_will_show_literal_connectors) {
-            for (uint64_t i = 0; i < in_connectors.size(); ++i) {
-                auto& in_conn = in_connectors[i];
-                auto it = unused_connectors.find(in_conn);
-                if (it != unused_connectors.end()) {
-                    auto literal_id = escapeDotId(node->element_id(), "id") + "_" + escapeDotId(i, "in");
-                    this->stream_ << literal_id << " [style=\"invis\", label=\"\"];" << std::endl;
-                    this->stream_ << literal_id << " -> " << nodeId << " [style=\"dotted\", label=\"" << i << ":"
-                                  << in_conn << "\"]" << ";" << std::endl;
-                }
-            }
-        }
-    }
+    this->visualizeDataFlowGraph(id, block.dataflow());
     this->stream_.setIndent(this->stream_.indent() - 4);
     this->stream_ << "}" << std::endl;
 }
@@ -285,27 +233,145 @@ void DotVisualizer::visualizeMap(const StructuredSDFG& sdfg, const structured_co
     this->last_comp_name_cluster_ = "cluster_" + id;
 }
 
-void DotVisualizer::visualize() {
-    this->stream_.clear();
-    this->stream_ << "digraph " << escapeDotId(this->sdfg_.name()) << " {" << std::endl;
-    this->stream_.setIndent(4);
-    this->stream_ << "graph [compound=true];" << std::endl;
-    this->stream_ << "subgraph cluster_" << escapeDotId(this->sdfg_.name()) << " {" << std::endl;
-    this->stream_.setIndent(8);
-    this->stream_ << "node [style=filled,fillcolor=white];" << std::endl
-                  << "style=filled;color=lightblue;label=\"\";" << std::endl;
-    this->visualizeSequence(this->sdfg_, this->sdfg_.root());
-    this->stream_.setIndent(4);
-    this->stream_ << "}" << std::endl;
-    this->stream_.setIndent(0);
-    this->stream_ << "}" << std::endl;
+void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flow::DataFlowGraph& dfg) {
+    this->last_comp_name_cluster_ = "cluster_" + id;
+    if (dfg.nodes().empty()) {
+        this->stream_ << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+        this->last_comp_name_ = id;
+        return;
+    }
+    this->last_comp_name_.clear();
+    std::list<const data_flow::DataFlowNode*> nodes = dfg.topological_sort();
+    for (const data_flow::DataFlowNode* node : nodes) {
+        std::vector<std::string> in_connectors;
+        bool is_access_node = false;
+        bool node_will_show_literal_connectors = false;
+        auto nodeId = escapeDotId(node->element_id(), "id");
+        if (this->last_comp_name_.empty()) {
+            this->last_comp_name_ = nodeId;
+        }
+        if (const data_flow::Tasklet* tasklet = dynamic_cast<const data_flow::Tasklet*>(node)) {
+            this->stream_ << nodeId << " [shape=octagon,label=\"" << tasklet->output() << " = ";
+            this->visualizeTasklet(*tasklet);
+            this->stream_ << "\"];" << std::endl;
+
+            in_connectors = tasklet->inputs();
+            node_will_show_literal_connectors = true;
+        } else if (const data_flow::ConstantNode* constant_node = dynamic_cast<const data_flow::ConstantNode*>(node)) {
+            this->stream_ << nodeId << " [";
+            this->stream_ << "penwidth=3.0,";
+            if (this->sdfg_.is_transient(constant_node->data())) this->stream_ << "style=\"dashed,filled\",";
+            this->stream_ << "label=\"" << constant_node->data() << "\"];" << std::endl;
+            is_access_node = true;
+        } else if (const data_flow::AccessNode* access_node = dynamic_cast<const data_flow::AccessNode*>(node)) {
+            this->stream_ << nodeId << " [";
+            this->stream_ << "penwidth=3.0,";
+            if (this->sdfg_.is_transient(access_node->data())) this->stream_ << "style=\"dashed,filled\",";
+            this->stream_ << "label=\"" << access_node->data() << "\"];" << std::endl;
+            is_access_node = true;
+        } else if (const data_flow::LibraryNode* libnode = dynamic_cast<const data_flow::LibraryNode*>(node)) {
+            this->stream_ << nodeId << " [shape=doubleoctagon,label=\"" << libnode->toStr() << "\"];" << std::endl;
+            in_connectors = libnode->inputs();
+        }
+
+        std::unordered_set<std::string> unused_connectors(in_connectors.begin(), in_connectors.end());
+        for (const data_flow::Memlet& iedge : dfg.in_edges(*node)) {
+            auto& src = iedge.src();
+            auto& dst_conn = iedge.dst_conn();
+            bool nonexistent_conn = false;
+
+            if (!is_access_node) {
+                auto it = unused_connectors.find(dst_conn);
+                if (it != unused_connectors.end()) {
+                    unused_connectors.erase(it); // remove connector from in_connectors, so it is not used again
+                } else {
+                    nonexistent_conn = true;
+                }
+            }
+
+            this->stream_ << escapeDotId(src.element_id(), "id") << " -> " << nodeId << " [label=\"   ";
+            bool dstIsVoid = dst_conn == "void";
+            bool dstIsRef = dst_conn == "ref";
+            bool dstIsDeref = dst_conn == "deref";
+            auto& src_conn = iedge.src_conn();
+            bool srcIsVoid = src_conn == "void";
+            bool srcIsDeref = src_conn == "deref";
+
+            if (nonexistent_conn) {
+                this->stream_ << "!!"; // this should not happen, but if it does, we can still visualize the memlet
+            }
+
+            if (dstIsVoid || dstIsRef || dstIsDeref) { // subset applies to dst
+                auto& dstVar = dynamic_cast<data_flow::AccessNode const&>(iedge.dst()).data();
+                bool subsetOnDst = false;
+                if (srcIsDeref && dstIsVoid) { // Pure Store by Memlet definition (Dereference Memlet Store)
+                    auto& subset = iedge.subset();
+                    if (subset.size() == 1 && symbolic::eq(subset[0], symbolic::integer(0))) {
+                        this->stream_ << "*" << dstVar; // store to pointer without further address calc
+                    } else { // fallback, this should not be allowed to happen
+                        this->stream_ << dstVar; // use access node name instead of connector-name
+                        subsetOnDst = true;
+                    }
+                } else if (dstIsVoid) { // computational memlet / output from tasklet / memory store
+                    this->stream_ << dstVar; // use access node name instead of connector-name
+                    subsetOnDst = true;
+                } else {
+                    this->stream_ << dstVar; // use access node name instead of connector-name
+                }
+                if (subsetOnDst) {
+                    this->visualizeSubset(iedge.subset(), &iedge.base_type());
+                }
+            } else { // dst is a tasklet/library node
+                this->stream_ << dst_conn;
+            }
+
+            this->stream_ << " = ";
+
+            if (srcIsVoid || srcIsDeref) { // subset applies to src, could be computational, reference or dereference
+                                           // memlet
+                auto& srcVar = dynamic_cast<data_flow::AccessNode const&>(src).data();
+                bool subsetOnSrc = false;
+                if (srcIsVoid && dstIsRef) { // reference memlet / address-of / get-element-ptr equivalent
+                    this->stream_ << "&";
+                    subsetOnSrc = true;
+                } else if (srcIsVoid && dstIsDeref) { // Dereference memlet / load from address
+                    this->stream_ << "*";
+                    auto& subset = iedge.subset();
+                    if (subset.size() != 1 && symbolic::eq(subset[0], symbolic::integer(0))) { // does not match memlet
+                                                                                               // definition -> fallback
+                        subsetOnSrc = true;
+                    }
+                } else if (srcIsVoid) {
+                    subsetOnSrc = true;
+                }
+                this->stream_ << srcVar;
+                if (subsetOnSrc) {
+                    this->visualizeSubset(iedge.subset(), &iedge.base_type());
+                }
+            } else {
+                this->stream_ << src_conn;
+            }
+            this->stream_ << "   \"];" << std::endl;
+        }
+
+        if (!node_will_show_literal_connectors) {
+            for (uint64_t i = 0; i < in_connectors.size(); ++i) {
+                auto& in_conn = in_connectors[i];
+                auto it = unused_connectors.find(in_conn);
+                if (it != unused_connectors.end()) {
+                    auto literal_id = escapeDotId(node->element_id(), "id") + "_" + escapeDotId(i, "in");
+                    this->stream_ << literal_id << " [style=\"invis\", label=\"\"];" << std::endl;
+                    this->stream_ << literal_id << " -> " << nodeId << " [style=\"dotted\", label=\"" << i << ":"
+                                  << in_conn << "\"]" << ";" << std::endl;
+                }
+            }
+        }
+    }
 }
 
-void DotVisualizer::writeToFile(const StructuredSDFG& sdfg, const std::filesystem::path& file) {
-    writeToFile(sdfg, &file);
-}
+void DotVisualizer::writeToFile(const Function& sdfg, const std::filesystem::path& file) { writeToFile(sdfg, &file); }
 
-void DotVisualizer::writeToFile(const StructuredSDFG& sdfg, const std::filesystem::path* file) {
+void DotVisualizer::writeToFile(const Function& sdfg, const std::filesystem::path* file) {
     DotVisualizer viz(sdfg);
     viz.visualize();
 

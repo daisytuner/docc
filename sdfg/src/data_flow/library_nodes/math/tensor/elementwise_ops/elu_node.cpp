@@ -16,87 +16,61 @@ EluNode::EluNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    const std::vector<symbolic::Expression>& shape
+    const std::vector<symbolic::Expression>& shape,
+    QuantizationType quantization,
+    const data_flow::ImplementationType& impl_type
 )
-    : ElementWiseUnaryNode(element_id, debug_info, vertex, parent, LibraryNodeType_Elu, shape) {
-    this->inputs_.push_back("alpha");
-}
+    : ElementWiseDataflowTensorNode(
+          element_id, debug_info, vertex, parent, LibraryNodeType_Elu, shape, "Y", {"X", "alpha"}, quantization, impl_type
+      ) {}
 
-bool EluNode::expand_operation(
+ElementWiseDataflowTensorNode::ElementOutput EluNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Sequence& body,
-    const std::string& input_name,
-    const std::string& output_name,
-    const types::Tensor& input_type,
-    const types::Tensor& output_type,
-    const data_flow::Subset& subset
+    Block& block,
+    std::vector<ElementInput>& needed_inputs,
+    types::PrimitiveType expected_type
 ) {
-    // Add code
-    auto& code_block = builder.add_block(body);
-    auto& input_node = builder.add_access(code_block, input_name);
-    auto& output_node_exp = builder.add_access(code_block, output_name);
-    auto& output_node_sub = builder.add_access(code_block, output_name);
-    auto& output_node_mul = builder.add_access(code_block, output_name);
+    auto& input0 = needed_inputs.at(0);
+    bool has_alpha_input = needed_inputs.size() > 1;
 
-    sdfg::types::Scalar element_type(output_type.primitive_type());
+    types::Scalar scalar_type(input0.required_type);
+
+    throw std::runtime_error("Elu: untested expand");
 
     // 1. exp(x)
-    {
-        auto& tasklet = builder.add_library_node<math::cmath::CMathNode>(
-            code_block, code_block.debug_info(), cmath::CMathFunction::exp, input_type.primitive_type()
-        );
-        builder.add_computational_memlet(code_block, input_node, tasklet, "_in1", subset, input_type);
-        builder.add_computational_memlet(code_block, tasklet, "_out", output_node_exp, subset, output_type);
-    }
+    auto& first_op = builder.add_library_node<
+        math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::exp, input0.required_type);
+    input0.consumer = &first_op;
+    input0.input_conn_index = 0;
+    auto& output_node_exp = create_tmp_access_node(builder, block, "tmp_elu_exp_", scalar_type);
+    builder.add_computational_memlet(block, first_op, "_out", output_node_exp, {}, scalar_type);
     // 2. x - 1.0f
-    {
-        auto& one_node = builder.add_constant(code_block, "1.0", element_type);
-        auto& tasklet = builder.add_tasklet(code_block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
-        builder.add_computational_memlet(code_block, output_node_exp, tasklet, "_in1", subset, output_type);
-        builder.add_computational_memlet(code_block, one_node, tasklet, "_in2", {}, element_type);
-        builder.add_computational_memlet(code_block, tasklet, "_out", output_node_sub, subset, output_type);
-    }
+    auto& one_node = builder.add_constant(block, "1.0", scalar_type);
+    auto& sub_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, output_node_exp, sub_op, "_in1", {}, scalar_type);
+    builder.add_computational_memlet(block, one_node, sub_op, "_in2", {}, scalar_type);
+    auto& output_node_sub = create_tmp_access_node(builder, block, "tmp_elu_sub_", scalar_type);
+    builder.add_computational_memlet(block, sub_op, "_out", output_node_sub, {}, scalar_type);
     // 3. alpha * x
-    {
-        auto& tasklet = builder.add_tasklet(code_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
-        builder.add_computational_memlet(code_block, output_node_sub, tasklet, "_in1", subset, output_type);
-        builder.add_computational_memlet(code_block, tasklet, "_out", output_node_mul, subset, output_type);
-
-        // Find alpha node
-        auto& graph = this->get_parent();
-        const data_flow::Memlet* alpha_memlet = nullptr;
-        for (auto& in_edge : graph.in_edges(*this)) {
-            if (in_edge.dst_conn() == "alpha") {
-                alpha_memlet = &in_edge;
-                break;
-            }
-        }
-
-        data_flow::AccessNode* alpha_node = nullptr;
-        if (alpha_memlet) {
-            auto& src = dynamic_cast<const data_flow::AccessNode&>(alpha_memlet->src());
-            if (auto const_node = dynamic_cast<const data_flow::ConstantNode*>(&src)) {
-                alpha_node = &builder.add_constant(code_block, const_node->data(), const_node->type());
-            } else {
-                alpha_node = &builder.add_access(code_block, src.data());
-            }
-            builder.add_computational_memlet(
-                code_block, *alpha_node, tasklet, "_in2", alpha_memlet->subset(), alpha_memlet->base_type()
-            );
-        } else {
-            alpha_node = &builder.add_constant(code_block, "1.0", element_type);
-            builder.add_computational_memlet(code_block, *alpha_node, tasklet, "_in2", {}, element_type);
-        }
+    auto& last_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, output_node_sub, last_op, "_in1", {}, scalar_type);
+    if (has_alpha_input) {
+        auto& alpha_input = needed_inputs.at(1);
+        alpha_input.consumer = &last_op;
+        alpha_input.input_conn_index = 1;
+    } else {
+        builder.add_computational_memlet(block, one_node, last_op, "_in2", {}, scalar_type);
     }
 
-    return true;
+    return {.producer = &last_op, .output_conn_index = 0, .type = input0.required_type};
 }
 
 std::unique_ptr<data_flow::DataFlowNode> EluNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new EluNode(element_id, this->debug_info(), vertex, parent, this->shape_));
+    return std::unique_ptr<data_flow::DataFlowNode>(new EluNode(
+        element_id, this->debug_info(), vertex, parent, this->shape_, fixed_quantization_, implementation_type_
+    ));
 }
 
 } // namespace tensor

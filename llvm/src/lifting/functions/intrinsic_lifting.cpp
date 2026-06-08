@@ -409,7 +409,7 @@ sdfg::control_flow::State& IntrinsicLifting::visit_memcpy(
     // Define library node
     auto& lib_node = this->builder_.add_library_node<sdfg::stdlib::MemcpyNode>(current_state, dbg_info, count_sym);
     this->builder_.add_computational_memlet(current_state, src_node, lib_node, "_src", {}, src_type, dbg_info);
-    this->builder_.add_computational_memlet(current_state, lib_node, "_dst", dst_node, {}, dst_type, dbg_info);
+    this->builder_.add_computational_memlet(current_state, dst_node, lib_node, "_dst", {}, dst_type, dbg_info);
 
     return current_state;
 }
@@ -456,7 +456,7 @@ sdfg::control_flow::State& IntrinsicLifting::visit_memmove(
     // Define library node
     auto& lib_node = this->builder_.add_library_node<sdfg::stdlib::MemmoveNode>(current_state, dbg_info, count_sym);
     this->builder_.add_computational_memlet(current_state, src_node, lib_node, "_src", {}, src_type, dbg_info);
-    this->builder_.add_computational_memlet(current_state, lib_node, "_dst", dst_node, {}, dst_type, dbg_info);
+    this->builder_.add_computational_memlet(current_state, dst_node, lib_node, "_dst", {}, dst_type, dbg_info);
 
     return current_state;
 }
@@ -506,7 +506,7 @@ sdfg::control_flow::State& IntrinsicLifting::visit_memset(
     // Define library node
     auto& lib_node =
         this->builder_.add_library_node<sdfg::stdlib::MemsetNode>(current_state, dbg_info, value_sym, num_sym);
-    this->builder_.add_computational_memlet(current_state, lib_node, "_ptr", ptr_node, {}, ptr_type, dbg_info);
+    this->builder_.add_computational_memlet(current_state, ptr_node, lib_node, "_ptr", {}, ptr_type, dbg_info);
 
     return current_state;
 }

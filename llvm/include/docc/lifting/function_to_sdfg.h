@@ -21,8 +21,6 @@ private:
 
     size_t sdfg_counter;
 
-    bool dump_passes = false;
-
     std::unique_ptr<llvm::Region> expand_region(std::unique_ptr<llvm::Region>& R);
 
     // Entire function
@@ -39,7 +37,9 @@ private:
 
     std::unique_ptr<sdfg::StructuredSDFG> simplify(std::unique_ptr<sdfg::StructuredSDFG>& sdfg);
 
-    void dump_sdfg(const sdfg::StructuredSDFG& sdfg, const std::string& step) const;
+    void dump_sdfg(const sdfg::SDFG& sdfg, const std::string& step) const;
+
+    void dump_structured_sdfg(const sdfg::StructuredSDFG& sdfg, const std::string& step) const;
 
 public:
     FunctionToSDFG(llvm::Function& function, llvm::FunctionAnalysisManager& FAM, bool apply_on_linkonce_odr);

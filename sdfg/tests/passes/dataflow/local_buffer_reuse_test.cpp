@@ -117,7 +117,8 @@ public:
             pads,
             dilations,
             output_channels,
-            group
+            group,
+            false
         );
 
         types::Tensor weights_type(
@@ -129,7 +130,7 @@ public:
 
         builder.add_computational_memlet(block, input_access, conv_node, "X", {}, tensor_type, DebugInfo());
         builder.add_computational_memlet(block, weights_access, conv_node, "W", {}, weights_type, DebugInfo());
-        builder.add_computational_memlet(block, conv_node, "Y", output_access, {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, output_access, conv_node, "Y", {}, tensor_type, DebugInfo());
 
         return block;
     }
@@ -228,7 +229,7 @@ public:
         );
 
         builder.add_computational_memlet(block, input_access, relu_node, "X", {}, tensor_type, DebugInfo());
-        builder.add_computational_memlet(block, relu_node, "Y", output_access, {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, output_access, relu_node, "Y", {}, tensor_type, DebugInfo());
 
         return block;
     }
@@ -331,7 +332,7 @@ public:
 
         builder.add_computational_memlet(block, input_access, conv_node, "X", {}, tensor_type, DebugInfo());
         builder.add_computational_memlet(block, weights_access, conv_node, "W", {}, weights_type, DebugInfo());
-        builder.add_computational_memlet(block, conv_node, "Y", output_access, {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, output_access, conv_node, "Y", {}, tensor_type, DebugInfo());
 
         return block;
     }
@@ -390,7 +391,7 @@ public:
         );
 
         builder.add_computational_memlet(block, input_access, relu_node, "X", {}, tensor_type, DebugInfo());
-        builder.add_computational_memlet(block, relu_node, "Y", output_access, {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, output_access, relu_node, "Y", {}, tensor_type, DebugInfo());
 
         return block;
     }
@@ -432,7 +433,7 @@ public:
 
         builder.add_computational_memlet(block, input_access, conv_node, "X", {}, tensor_type, DebugInfo());
         builder.add_computational_memlet(block, weights_access, conv_node, "W", {}, weights_type, DebugInfo());
-        builder.add_computational_memlet(block, conv_node, "Y", output_access, {}, tensor_type, DebugInfo());
+        builder.add_computational_memlet(block, output_access, conv_node, "Y", {}, tensor_type, DebugInfo());
 
         return block;
     }
@@ -674,19 +675,21 @@ TEST(LocalBufferReuseTest, Negative_WrongOutputConnection) {
         auto& root = setup.builder.subject().root();
         auto& block = setup.builder.add_block(root);
 
-        auto& input_access = setup.builder.add_access(block, "ref1");
-        auto& output_access = setup.builder.add_access(block, "ref1"); // Wrong: should be ref2
+        auto& inout_access = setup.builder.add_access(block, "ref1");
+        // Wrong: should be ref2
 
         auto& relu_node = setup.builder.add_library_node<math::tensor::ReLUNode>(
             block, DebugInfo(), std::vector<symbolic::Expression>(setup.tensor_shape.begin(), setup.tensor_shape.end())
         );
 
-        setup.builder.add_computational_memlet(block, input_access, relu_node, "X", {}, setup.tensor_type, DebugInfo());
-        setup.builder.add_computational_memlet(block, relu_node, "Y", output_access, {}, setup.tensor_type, DebugInfo());
+        setup.builder.add_computational_memlet(block, inout_access, relu_node, "X", {}, setup.tensor_type, DebugInfo());
+        setup.builder.add_computational_memlet(block, inout_access, relu_node, "Y", {}, setup.tensor_type, DebugInfo());
     }
 
     setup.add_free_block("ptr1");
     setup.add_free_block("ptr2");
+
+    dump_sdfg(setup.builder.subject(), "0.init");
 
     auto sdfg = setup.builder.move();
     size_t original_size = sdfg->root().size();
@@ -696,6 +699,8 @@ TEST(LocalBufferReuseTest, Negative_WrongOutputConnection) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
     passes::BatchNormReLUEliminationPass pass;
     bool applied = pass.run(builder_opt, analysis_manager);
+
+    dump_sdfg(builder_opt.subject(), "1.elim");
 
     EXPECT_FALSE(applied);
 

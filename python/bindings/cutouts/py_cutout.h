@@ -24,12 +24,10 @@ namespace py = pybind11;
  * @return A new PyStructuredSDFG containing the cutout
  */
 inline PyStructuredSDFG cutout(
-    PyStructuredSDFGBuilder& builder,
-    PyAnalysisManager& analysis_manager,
-    sdfg::structured_control_flow::ControlFlowNode& node
+    PyStructuredSDFG& sdfg, PyAnalysisManager& analysis_manager, sdfg::structured_control_flow::ControlFlowNode& node
 ) {
-    auto result = sdfg::util::cutout(builder.builder(), analysis_manager.manager(), node);
-    return PyStructuredSDFG::from_sdfg(builder.docc_context(), std::move(result));
+    auto result = sdfg::util::cutout(sdfg.sdfg(), analysis_manager.manager(), node);
+    return PyStructuredSDFG::from_sdfg(sdfg.docc_context(), std::move(result));
 }
 
 /**
@@ -39,7 +37,7 @@ inline void register_cutout(py::module& m) {
     m.def(
         "cutout",
         &cutout,
-        py::arg("builder"),
+        py::arg("sdfg"),
         py::arg("analysis_manager"),
         py::arg("node"),
         R"doc(
@@ -50,8 +48,7 @@ and creates a new standalone SDFG containing just that node with all
 necessary data dependencies resolved.
 
 Args:
-    builder: The StructuredSDFGBuilder to use for constructing the cutout SDFG.
-             This should be a fresh builder with only the name set.
+    sdfg: The StructuredSDFG to use for constructing the cutout SDFG.
     analysis_manager: The AnalysisManager for the source SDFG.
     node: The control flow node to extract (e.g., a For loop, Map, or While).
 
@@ -64,8 +61,7 @@ Example:
     >>> loop_analysis = analysis.loop_analysis()
     >>> loops = loop_analysis.loops()
     >>> # Create a cutout of the first loop
-    >>> builder = StructuredSDFGBuilder("cutout_sdfg")
-    >>> cutout_sdfg = cutout(builder, analysis, loops[0])
+    >>> cutout_sdfg = cutout(sdfg, analysis, loops[0])
 )doc"
     );
 }

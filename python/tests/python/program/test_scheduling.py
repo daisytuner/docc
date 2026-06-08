@@ -50,9 +50,7 @@ def test_scheduling_openmp():
     assert np.allclose(C, A + B)
 
 
-@pytest.mark.skipif(
-    sys.platform == "darwin", reason="Instrumentation not supported on macOS"
-)
+@pytest.mark.cuda()
 def test_scheduling_cuda():
     # Assuming CUDA is available and supported
     @native(target="cuda", category="server")
@@ -69,9 +67,7 @@ def test_scheduling_cuda():
     assert np.allclose(C, A + B)
 
 
-@pytest.mark.skipif(
-    sys.platform == "darwin", reason="Instrumentation not supported on macOS"
-)
+@pytest.mark.cuda()
 def test_scheduling_cuda_gemm():
     # Assuming CUDA is available and supported
     @native(target="cuda", category="server")
@@ -91,9 +87,7 @@ def test_scheduling_cuda_gemm():
     assert np.allclose(C, A @ B)
 
 
-@pytest.mark.skipif(
-    sys.platform == "darwin", reason="Instrumentation not supported on macOS"
-)
+@pytest.mark.cuda()
 def test_scheduling_cuda_dot():
     # Assuming CUDA is available and supported
     @native(target="cuda", category="server")

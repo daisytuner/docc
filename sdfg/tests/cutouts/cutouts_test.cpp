@@ -122,7 +122,7 @@ TEST_F(CutoutTest, TestCutoutInstrumentation) {
 
     EXPECT_TRUE(region_node != nullptr);
 
-    auto cutout_sdfg = sdfg::util::cutout(local_builder, analysis_manager, *region_node);
+    auto cutout_sdfg = sdfg::util::cutout(local_builder.subject(), analysis_manager, *region_node);
     EXPECT_TRUE(cutout_sdfg != nullptr);
 
     EXPECT_GE(cutout_sdfg->root().size(), 1u);
@@ -141,4 +141,57 @@ TEST_F(CutoutTest, TestCutoutInstrumentation) {
 
     EXPECT_TRUE(code_generator_opt.generate());
     EXPECT_TRUE(code_generator_opt.as_source("cutout_sdfg.h", "cutout_sdfg.cpp"));
+}
+
+// Regression: an external read inside a cutout used to be emitted both as an
+// `external` and as an `argument` of the cutout SDFG, causing the deserializer
+// to throw "Container <name> already exists".
+TEST(CutoutTest_External, ExternalAndArgumentDoNotCollide) {
+    builder::StructuredSDFGBuilder builder("cutout_external_test", FunctionType_CPU);
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+
+    // External, used inside the cutout region.
+    builder.add_external("ext_table", float_desc, LinkageType_External);
+
+    // Regular argument.
+    builder.add_container("C", float_desc, true);
+
+    // Loop induction variable + bound.
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+
+    auto& root = builder.subject().root();
+    auto& loop = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& ext_in = builder.add_access(block, "ext_table");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, ext_in, tasklet, "_in", {});
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {});
+
+    auto sdfg = builder.move();
+    auto local_builder = sdfg::builder::StructuredSDFGBuilder(sdfg);
+    sdfg::analysis::AnalysisManager analysis_manager(local_builder.subject());
+
+    auto& loop_analysis = analysis_manager.get<sdfg::analysis::LoopAnalysis>();
+    auto outermost_loops = loop_analysis.outermost_loops();
+    ASSERT_EQ(outermost_loops.size(), 1u);
+
+    std::unique_ptr<StructuredSDFG> cutout_sdfg;
+    ASSERT_NO_THROW(cutout_sdfg = sdfg::util::cutout(local_builder.subject(), analysis_manager, *outermost_loops[0]));
+    ASSERT_TRUE(cutout_sdfg != nullptr);
+
+    // External must remain external (with its linkage), not promoted to a
+    // function argument.
+    EXPECT_TRUE(cutout_sdfg->is_external("ext_table"));
+    EXPECT_FALSE(cutout_sdfg->is_argument("ext_table"));
 }

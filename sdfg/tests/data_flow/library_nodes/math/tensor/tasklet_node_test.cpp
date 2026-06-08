@@ -41,7 +41,7 @@ void TestTaskletNode(data_flow::TaskletCode code, std::vector<size_t> shape_dims
     ASSERT_GE(code_arity, 1);
     ASSERT_LE(code_arity, 3);
 
-    std::vector<std::string> outputs, inputs;
+    std::vector<std::string> inputs;
     inputs.reserve(code_arity);
     switch (code_arity) {
         case 3:
@@ -54,7 +54,6 @@ void TestTaskletNode(data_flow::TaskletCode code, std::vector<size_t> shape_dims
             builder.add_container("b", desc_ptr, true);
             builder.add_container("a", desc_ptr, true);
             inputs.push_back("_in1");
-            outputs.push_back("_out");
             break;
     }
 
@@ -67,7 +66,7 @@ void TestTaskletNode(data_flow::TaskletCode code, std::vector<size_t> shape_dims
     types::Tensor tensor_type(desc_primitive, shape);
 
     auto& tensor_node = static_cast<math::tensor::TaskletTensorNode&>(
-        builder.add_library_node<math::tensor::TaskletTensorNode>(block, DebugInfo(), code, outputs, inputs, shape)
+        builder.add_library_node<math::tensor::TaskletTensorNode>(block, DebugInfo(), code, "_out", inputs, shape)
     );
 
     switch (code_arity) {
@@ -83,7 +82,7 @@ void TestTaskletNode(data_flow::TaskletCode code, std::vector<size_t> shape_dims
             auto& b_node = builder.add_access(block, "b");
             builder.add_computational_memlet(block, b_node, tensor_node, "_in1", {}, tensor_type);
             auto& a_node = builder.add_access(block, "a");
-            builder.add_computational_memlet(block, tensor_node, "_out", a_node, {}, tensor_type);
+            builder.add_computational_memlet(block, a_node, tensor_node, "_out", {}, tensor_type);
         }
     }
 

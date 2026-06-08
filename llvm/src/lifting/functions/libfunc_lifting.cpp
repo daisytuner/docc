@@ -380,14 +380,12 @@ sdfg::control_flow::State& LibFuncLifting::visit_free(
     llvm::Value* pointer_operand = instruction->getArgOperand(0);
     std::string input = utils::find_const_name_to_sdfg_name(this->constants_mapping_, pointer_operand);
     auto& input_node = this->builder_.add_access(current_state, input, dbg_info);
-    auto& output_node = this->builder_.add_access(current_state, input, dbg_info);
 
     // Define library node
     auto& lib_node = this->builder_.add_library_node<sdfg::stdlib::FreeNode>(current_state, dbg_info);
 
     sdfg::types::Pointer opaque_ptr;
     this->builder_.add_computational_memlet(current_state, input_node, lib_node, "_ptr", {}, opaque_ptr, dbg_info);
-    this->builder_.add_computational_memlet(current_state, lib_node, "_ptr", output_node, {}, opaque_ptr, dbg_info);
 
     return current_state;
 }

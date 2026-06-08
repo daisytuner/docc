@@ -5,6 +5,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/std_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -36,13 +37,12 @@ TEST(ReduceTest, SumNode_1D) {
                                             math::tensor::SumNode>(block, DebugInfo(), shape, axes, keepdims));
 
     builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
-    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, b_node, sum_node, "Y", {}, output_tensor, block.debug_info());
 
     // Check inputs and outputs
-    EXPECT_EQ(sum_node.inputs().size(), 1);
-    EXPECT_EQ(sum_node.inputs()[0], "X");
-    EXPECT_EQ(sum_node.outputs().size(), 1);
-    EXPECT_EQ(sum_node.outputs()[0], "Y");
+    EXPECT_EQ(sum_node.inputs().size(), 2);
+    EXPECT_EQ(sum_node.input(1), "X");
+    EXPECT_EQ(sum_node.input(0), "Y");
 
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
@@ -157,7 +157,7 @@ TEST(ReduceTest, SumNode_2D) {
                                             math::tensor::SumNode>(block, DebugInfo(), shape, axes, keepdims));
 
     builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
-    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, b_node, sum_node, "Y", {}, output_tensor, block.debug_info());
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -223,7 +223,7 @@ TEST(ReduceTest, SumNode_2D_KeepDims) {
                                             math::tensor::SumNode>(block, DebugInfo(), shape, axes, keepdims));
 
     builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
-    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, b_node, sum_node, "Y", {}, output_tensor, block.debug_info());
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -291,7 +291,7 @@ TEST(ReduceTest, SumNode_3D_Reduce_0_2) {
                                             math::tensor::SumNode>(block, DebugInfo(), shape, axes, keepdims));
 
     builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
-    builder.add_computational_memlet(block, sum_node, "Y", b_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, b_node, sum_node, "Y", {}, output_tensor, block.debug_info());
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -362,19 +362,23 @@ TEST(ReduceTest, MeanNode_1D) {
                                              math::tensor::MeanNode>(block, DebugInfo(), shape, axes, keepdims));
 
     builder.add_computational_memlet(block, a_node, mean_node, "X", {}, input_tensor, block.debug_info());
-    builder.add_computational_memlet(block, mean_node, "Y", b_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, b_node, mean_node, "Y", {}, output_tensor, block.debug_info());
+
+    dump_sdfg(builder.subject(), "0.init");
 
     // Check inputs and outputs
-    EXPECT_EQ(mean_node.inputs().size(), 1);
-    EXPECT_EQ(mean_node.inputs()[0], "X");
-    EXPECT_EQ(mean_node.outputs().size(), 1);
-    EXPECT_EQ(mean_node.outputs()[0], "Y");
+    EXPECT_EQ(mean_node.inputs().size(), 2);
+    EXPECT_EQ(mean_node.input(1), "X");
+    EXPECT_EQ(mean_node.input(0), "Y");
+
 
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(mean_node.expand(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.expanded");
 
     EXPECT_EQ(sdfg.root().size(), 3);
     auto& sum_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(0).first);
@@ -391,7 +395,7 @@ TEST(ReduceTest, MeanNode_1D) {
     EXPECT_TRUE(symbolic::eq(count_expr, symbolic::integer(32)));
 
     auto& div_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(2).first);
-    EXPECT_EQ(div_block.dataflow().nodes().size(), 4);
+    EXPECT_EQ(div_block.dataflow().nodes().size(), 3);
     EXPECT_EQ(div_block.dataflow().edges().size(), 3);
     EXPECT_EQ(div_block.dataflow().library_nodes().size(), 1);
 }
@@ -424,13 +428,12 @@ TEST(ReduceTest, MeanNode_2D) {
                                              math::tensor::MeanNode>(block, DebugInfo(), shape, axes, keepdims));
 
     builder.add_computational_memlet(block, a_node, mean_node, "X", {}, input_tensor, block.debug_info());
-    builder.add_computational_memlet(block, mean_node, "Y", b_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, b_node, mean_node, "Y", {}, output_tensor, block.debug_info());
 
     // Check inputs and outputs
-    EXPECT_EQ(mean_node.inputs().size(), 1);
-    EXPECT_EQ(mean_node.inputs()[0], "X");
-    EXPECT_EQ(mean_node.outputs().size(), 1);
-    EXPECT_EQ(mean_node.outputs()[0], "Y");
+    EXPECT_EQ(mean_node.inputs().size(), 2);
+    EXPECT_EQ(mean_node.input(1), "X");
+    EXPECT_EQ(mean_node.input(0), "Y");
 
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
@@ -453,7 +456,7 @@ TEST(ReduceTest, MeanNode_2D) {
     EXPECT_TRUE(symbolic::eq(count_expr, symbolic::integer(16)));
 
     auto& div_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(2).first);
-    EXPECT_EQ(div_block.dataflow().nodes().size(), 4);
+    EXPECT_EQ(div_block.dataflow().nodes().size(), 3);
     EXPECT_EQ(div_block.dataflow().edges().size(), 3);
     EXPECT_EQ(div_block.dataflow().library_nodes().size(), 1);
 }
@@ -486,19 +489,22 @@ TEST(ReduceTest, StdNode_1D) {
                                             math::tensor::StdNode>(block, DebugInfo(), shape, axes, keepdims));
 
     builder.add_computational_memlet(block, a_node, std_node, "X", {}, input_tensor, block.debug_info());
-    builder.add_computational_memlet(block, std_node, "Y", b_node, {}, output_tensor, block.debug_info());
+    builder.add_computational_memlet(block, b_node, std_node, "Y", {}, output_tensor, block.debug_info());
+
+    dump_sdfg(builder.subject(), "0.init");
 
     // Check inputs and outputs
-    EXPECT_EQ(std_node.inputs().size(), 1);
-    EXPECT_EQ(std_node.inputs()[0], "X");
-    EXPECT_EQ(std_node.outputs().size(), 1);
-    EXPECT_EQ(std_node.outputs()[0], "Y");
+    EXPECT_EQ(std_node.inputs().size(), 2);
+    EXPECT_EQ(std_node.input(1), "X");
+    EXPECT_EQ(std_node.input(0), "Y");
 
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(std_node.expand(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.expanded");
 
     EXPECT_EQ(sdfg.root().size(), 7);
 

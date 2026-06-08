@@ -33,6 +33,7 @@ void docc::passes::PassReportCollector::transform_possible(const std::string& tr
 
 void docc::passes::PassReportCollector::transform_applied(const std::string& transform, nlohmann::json transform_info) {
     auto& holder = require_current_region().transform_results[transform];
+    holder.possible = true;
     holder.applied = true;
     holder.info = transform_info;
 }

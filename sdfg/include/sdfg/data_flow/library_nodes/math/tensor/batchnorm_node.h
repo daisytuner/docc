@@ -16,7 +16,7 @@ class BatchNormNode : public TensorNode {
      * Layout of input and normalized output
      */
     TensorLayout layout_;
-    types::PrimitiveType quantization_;
+    QuantizationType quantization_;
 
 public:
     BatchNormNode(
@@ -25,7 +25,7 @@ public:
         graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
         TensorLayout layout,
-        types::PrimitiveType quantization,
+        QuantizationType quantization,
         data_flow::ImplementationType impl_type = data_flow::ImplementationType_NONE
     );
 
@@ -36,9 +36,9 @@ public:
      */
     symbolic::Expression num_features() const { return layout_.shape().at(1); }
 
-    types::PrimitiveType quantization() const;
+    QuantizationType quantization() const;
 
-    void set_quantization(const types::PrimitiveType quant);
+    void set_quantization(const QuantizationType quant);
 
     symbolic::SymbolSet symbols() const override;
 
@@ -54,6 +54,8 @@ public:
     symbolic::Expression flop() const override;
 
     bool supports_integer_types() const override { return false; }
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 };
 
 class BatchNormNodeSerializer : public serializer::LibraryNodeSerializer {

@@ -21,8 +21,16 @@
 namespace sdfg {
 namespace math {
 namespace tensor {
+class TensorLayout;
 
-constexpr types::PrimitiveType QUANTIZATION_MATCH_INPUTS = types::PrimitiveType::Void;
+typedef types::PrimitiveType QuantizationType;
+constexpr QuantizationType QUANTIZATION_MATCH_INPUTS = types::PrimitiveType::Void;
+
+types::PrimitiveType deserialize_quantization(
+    const nlohmann::json& j,
+    const std::string& field_name,
+    types::PrimitiveType default_value = QUANTIZATION_MATCH_INPUTS
+);
 
 /**
  * @class TensorNode
@@ -57,7 +65,7 @@ public:
         const data_flow::LibraryNodeCode& code,
         const std::vector<std::string>& outputs,
         const std::vector<std::string>& inputs,
-        data_flow::ImplementationType impl_type
+        const data_flow::ImplementationType& impl_type
     );
 
     /**
@@ -109,6 +117,10 @@ protected:
      * @return The appropriate tasklet code
      */
     static data_flow::TaskletCode get_integer_minmax_tasklet(types::PrimitiveType prim_type, bool is_max);
+
+    void validate_shape_matches(
+        const std::vector<symbolic::Expression>& required_shape, const TensorLayout& layout, const std::string& name
+    ) const;
 };
 
 } // namespace tensor

@@ -6,7 +6,7 @@ on:
     - cron: '0 0 * * *'
 
 parameters:
-  container: daisytuner/docc-build-env-llvm19-base:latest-amd64
+  container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
   timeout: 150
   partitions:
     - chamomile

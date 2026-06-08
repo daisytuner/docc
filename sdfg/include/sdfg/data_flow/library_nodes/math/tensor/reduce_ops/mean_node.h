@@ -20,8 +20,6 @@ public:
         bool keepdims
     );
 
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
-
     bool expand_reduction(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
@@ -40,6 +38,22 @@ public:
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
+
+protected:
+    bool expand_inner(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Block& block,
+        data_flow::DataFlowGraph& dataflow,
+        structured_control_flow::Sequence& parent,
+        Transition& transition,
+        const data_flow::Memlet* iedge_input,
+        const data_flow::Memlet* iedge_result,
+        const data_flow::AccessNode* input_node,
+        const data_flow::AccessNode* output_node,
+        const std::vector<symbolic::Expression>& output_shape,
+        const std::vector<int64_t>& sorted_axes
+    ) override;
 };
 
 typedef ReduceNodeSerializer<MeanNode> MeanNodeSerializer;

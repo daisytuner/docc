@@ -16,39 +16,35 @@ SqrtNode::SqrtNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
-    const std::vector<symbolic::Expression>& shape
+    const std::vector<symbolic::Expression>& shape,
+    QuantizationType quantization,
+    const data_flow::ImplementationType& impl_type
 )
-    : ElementWiseUnaryNode(element_id, debug_info, vertex, parent, LibraryNodeType_Sqrt, shape) {}
+    : ElementWiseDataflowTensorNode(
+          element_id, debug_info, vertex, parent, LibraryNodeType_Sqrt, shape, "Y", {"X"}, quantization, impl_type
+      ) {}
 
-bool SqrtNode::expand_operation(
+ElementWiseDataflowTensorNode::ElementOutput SqrtNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Sequence& body,
-    const std::string& input_name,
-    const std::string& output_name,
-    const types::Tensor& input_type,
-    const types::Tensor& output_type,
-    const data_flow::Subset& subset
+    Block& block,
+    std::vector<ElementInput>& needed_inputs,
+    types::PrimitiveType expected_type
 ) {
-    // Add code
-    auto& code_block = builder.add_block(body);
-    auto& input_node = builder.add_access(code_block, input_name);
-    auto& output_node = builder.add_access(code_block, output_name);
+    auto& input = needed_inputs.at(0);
 
-    auto& tasklet = builder.add_library_node<math::cmath::CMathNode>(
-        code_block, code_block.debug_info(), cmath::CMathFunction::sqrt, input_type.primitive_type()
-    );
-
-    builder.add_computational_memlet(code_block, input_node, tasklet, "_in1", subset, input_type);
-    builder.add_computational_memlet(code_block, tasklet, "_out", output_node, subset, output_type);
-
-    return true;
+    auto& tasklet = builder.add_library_node<
+        math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::sqrt, input.required_type);
+    input.consumer = &tasklet;
+    input.input_conn_index = 0;
+    return {.producer = &tasklet, .output_conn_index = 0, .type = input.required_type};
 }
 
 std::unique_ptr<data_flow::DataFlowNode> SqrtNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new SqrtNode(element_id, this->debug_info(), vertex, parent, this->shape_));
+    return std::unique_ptr<data_flow::DataFlowNode>(new SqrtNode(
+        element_id, this->debug_info(), vertex, parent, this->shape_, fixed_quantization_, implementation_type_
+    ));
 }
 
 } // namespace tensor

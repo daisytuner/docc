@@ -39,6 +39,8 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/spatial_tensor_node.h"
 #include "sdfg/serializer/json_serializer.h"
 
 namespace sdfg {
@@ -84,15 +86,11 @@ inline data_flow::LibraryNodeCode LibraryNodeType_Conv("ml::Conv");
  * );
  * @endcode
  */
-class ConvNode : public TensorNode {
+class ConvNode : public SpatialTensorNode {
 protected:
-    std::vector<symbolic::Expression> shape_; ///< Input shape [N, C_in, D1, ..., Dn]
-    std::vector<symbolic::Expression> kernel_shape_; ///< Shape of convolution kernel
-    std::vector<symbolic::Expression> strides_; ///< Stride along each spatial axis
-    std::vector<symbolic::Expression> pads_; ///< Padding (start and end for each axis)
-    std::vector<symbolic::Expression> dilations_; ///< Dilation along each spatial axis
     symbolic::Expression output_channels_; ///< Number of output channels (C_out)
     symbolic::Expression group_; ///< Number of groups for grouped convolution
+    bool with_bias_;
 
 public:
     /**
@@ -120,39 +118,11 @@ public:
         const std::vector<symbolic::Expression>& pads,
         const std::vector<symbolic::Expression>& dilations,
         symbolic::Expression output_channels,
-        symbolic::Expression group
+        symbolic::Expression group,
+        bool with_bias = false,
+        QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
+        const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
-
-    /**
-     * @brief Get the input tensor shape
-     * @return Input shape vector
-     */
-    const std::vector<symbolic::Expression>& shape() const { return shape_; }
-
-
-    /**
-     * @brief Get the convolution kernel shape
-     * @return Kernel shape vector
-     */
-    const std::vector<symbolic::Expression>& kernel_shape() const { return kernel_shape_; }
-
-    /**
-     * @brief Get the stride values
-     * @return Stride vector
-     */
-    const std::vector<symbolic::Expression>& strides() const { return strides_; }
-
-    /**
-     * @brief Get the padding values
-     * @return Padding vector (start and end for each axis)
-     */
-    const std::vector<symbolic::Expression>& pads() const { return pads_; }
-
-    /**
-     * @brief Get the dilation values
-     * @return Dilation vector
-     */
-    const std::vector<symbolic::Expression>& dilations() const { return dilations_; }
 
     /**
      * @brief Get the output channels
@@ -167,6 +137,12 @@ public:
     symbolic::Expression group() const { return group_; }
 
     void validate(const Function& function) const override;
+
+    static blas::BLAS_Precision get_blas_precision(types::Scalar base_type);
+
+    symbolic::MultiExpression get_out_shape();
+
+    bool has_bias() const;
 
     /**
      * @brief Expand convolution into nested maps for n-dimensional convolution
@@ -197,13 +173,47 @@ public:
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 
     std::string toStr() const override;
+
+    /**
+     * @brief Total number of output elements: N * C_out * prod(output_spatial_dim(i))
+     */
+    symbolic::Expression num_output_elements() const;
+
+    /**
+     * @brief Number of multiply-accumulate iterations per output element:
+     *        (C_in / group) * prod(kernel_shape[i])
+     */
+    symbolic::Expression kernel_iteration_count() const;
+
+    symbolic::Expression flop() const override;
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+
+    struct ConvExpandPrerequisits {
+        const data_flow::Memlet* iedge_X;
+        const data_flow::Memlet* iedge_W;
+        const data_flow::Memlet* iedge_B;
+        const data_flow::Memlet* iedge_Y;
+        const data_flow::AccessNode* access_X;
+        const data_flow::AccessNode* access_W;
+        const data_flow::AccessNode* access_B;
+        const data_flow::AccessNode* access_Y;
+        bool has_bias;
+        structured_control_flow::Block* block;
+        structured_control_flow::Sequence* block_parent;
+        size_t block_index;
+    };
+
+    bool check_expandable(
+        data_flow::DataFlowGraph& dfg, analysis::AnalysisManager& analysis_manager, ConvExpandPrerequisits& boundary
+    ) const;
 };
 
 /**
  * @class ConvNodeSerializer
  * @brief Serializer for ConvNode
  */
-class ConvNodeSerializer : public serializer::LibraryNodeSerializer {
+class ConvNodeSerializer : public SpatialTensorNodeBaseSerializer {
 public:
     nlohmann::json serialize(const data_flow::LibraryNode& library_node) override;
 

@@ -476,8 +476,8 @@ public:
     void remove_node(structured_control_flow::Block& block, const data_flow::DataFlowNode& node);
 
     /**
-     * Removes an access node. To achieve this it will also remove its input and output edges and possibly the access
-     * nodes that they attach to
+     * Removes a code node and all its input and output edges. Will remove unused access nodes at the ends of those
+     * edges. Caller must ensure that targets of output edges remain valid with their input edges removed.
      */
     void clear_code_node_legacy(structured_control_flow::Block& block, const data_flow::CodeNode& node);
     /**

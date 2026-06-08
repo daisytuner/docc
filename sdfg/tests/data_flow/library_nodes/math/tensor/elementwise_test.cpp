@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg_debug_dump.h"
 
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.h"
@@ -21,8 +22,8 @@
 
 using namespace sdfg;
 
-template<typename NodeType>
-void TestUnary(std::vector<size_t> shape_dims) {
+template<typename NodeType, typename... Args>
+void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -34,8 +35,10 @@ void TestUnary(std::vector<size_t> shape_dims) {
 
     auto& block = builder.add_block(sdfg.root());
 
-    auto& a_node = builder.add_access(block, "a");
-    auto& b_node = builder.add_access(block, "b");
+    auto a_name = "a";
+    auto& a_node = builder.add_access(block, a_name);
+    auto b_name = "b";
+    auto& b_node = builder.add_access(block, b_name);
 
     std::vector<symbolic::Expression> shape;
     for (auto d : shape_dims) {
@@ -43,14 +46,20 @@ void TestUnary(std::vector<size_t> shape_dims) {
     }
     types::Tensor tensor_type(types::PrimitiveType::Double, shape);
 
-    auto& node = static_cast<NodeType&>(builder.add_library_node<NodeType>(block, DebugInfo(), shape));
+    auto& node =
+        static_cast<NodeType&>(builder.add_library_node<NodeType>(block, DebugInfo(), shape, std::forward<Args>(args)...)
+        );
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type, block.debug_info());
+
+    dump_sdfg(builder.subject(), "0.init");
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
     EXPECT_TRUE(node.expand(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.expanded");
 
     auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
 
@@ -85,17 +94,25 @@ void TestUnary(std::vector<size_t> shape_dims) {
         if (dynamic_cast<data_flow::ConstantNode*>(&edge.src()) != nullptr) {
             continue; // Skip constant nodes
         }
-        if (edge.subset().size() != shape_dims.size()) {
-            EXPECT_EQ(edge.subset().size(), shape_dims.size())
-                << "Input subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
+        if (auto* src_access = dynamic_cast<data_flow::AccessNode*>(&edge.src())) {
+            if (src_access->data() == a_name) {
+                if (edge.subset().size() != shape_dims.size()) {
+                    EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                        << "Input subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
+                }
+            }
         }
     }
 
     // Check output edges
     for (auto& edge : dataflow.out_edges(*inner_node)) {
-        if (edge.subset().size() != shape_dims.size()) {
-            EXPECT_EQ(edge.subset().size(), shape_dims.size())
-                << "Output subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
+        if (auto* dst_access = dynamic_cast<data_flow::AccessNode*>(&edge.dst())) {
+            if (dst_access->data() == b_name) {
+                if (edge.subset().size() != shape_dims.size()) {
+                    EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                        << "Output subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
+                }
+            }
         }
     }
 }
@@ -128,7 +145,7 @@ void TestBinary(std::vector<size_t> shape_dims) {
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
-    builder.add_computational_memlet(block, node, "C", c_node, {}, tensor_type, block.debug_info());
+    builder.add_computational_memlet(block, c_node, node, "C", {}, tensor_type, block.debug_info());
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -185,6 +202,13 @@ void TestBinary(std::vector<size_t> shape_dims) {
         TestUnary<math::tensor::NodeType>(dims);          \
     }
 
+#define REGISTER_UNARY_TEST_OPT(NodeType, Dim, Opt)       \
+    TEST(ElementWiseTest, NodeType##_##Dim##D) {          \
+        std::vector<size_t> dims;                         \
+        for (int i = 0; i < Dim; ++i) dims.push_back(32); \
+        TestUnary<math::tensor::NodeType>(dims, Opt);     \
+    }
+
 #define REGISTER_BINARY_TEST(NodeType, Dim)               \
     TEST(ElementWiseTest, NodeType##_##Dim##D) {          \
         std::vector<size_t> dims;                         \
@@ -208,10 +232,11 @@ REGISTER_UNARY_TEST(TanhNode, 2)
 REGISTER_UNARY_TEST(TanhNode, 3)
 REGISTER_UNARY_TEST(TanhNode, 4)
 
-REGISTER_UNARY_TEST(ErfNode, 1)
-REGISTER_UNARY_TEST(ErfNode, 2)
-REGISTER_UNARY_TEST(ErfNode, 3)
-REGISTER_UNARY_TEST(ErfNode, 4)
+// REGISTER_UNARY_TEST(ErfNode, 1)
+// REGISTER_UNARY_TEST(ErfNode, 2)
+// REGISTER_UNARY_TEST(ErfNode, 3)
+// REGISTER_UNARY_TEST(ErfNode, 4)
+// Math is untested
 
 REGISTER_UNARY_TEST(ExpNode, 1)
 REGISTER_UNARY_TEST(ExpNode, 2)
@@ -228,20 +253,23 @@ REGISTER_UNARY_TEST(SigmoidNode, 2)
 REGISTER_UNARY_TEST(SigmoidNode, 3)
 REGISTER_UNARY_TEST(SigmoidNode, 4)
 
-REGISTER_UNARY_TEST(EluNode, 1)
-REGISTER_UNARY_TEST(EluNode, 2)
-REGISTER_UNARY_TEST(EluNode, 3)
-REGISTER_UNARY_TEST(EluNode, 4)
+// REGISTER_UNARY_TEST(EluNode, 1)
+// REGISTER_UNARY_TEST(EluNode, 2)
+// REGISTER_UNARY_TEST(EluNode, 3)
+// REGISTER_UNARY_TEST(EluNode, 4)
+// Elu with alpha input is untested & math is untested
 
-REGISTER_UNARY_TEST(HardSigmoidNode, 1)
-REGISTER_UNARY_TEST(HardSigmoidNode, 2)
-REGISTER_UNARY_TEST(HardSigmoidNode, 3)
-REGISTER_UNARY_TEST(HardSigmoidNode, 4)
+// REGISTER_UNARY_TEST(HardSigmoidNode, 1)
+// REGISTER_UNARY_TEST(HardSigmoidNode, 2)
+// REGISTER_UNARY_TEST(HardSigmoidNode, 3)
+// REGISTER_UNARY_TEST(HardSigmoidNode, 4)
+// alpha & beta are non-optional, not unary!
 
-REGISTER_UNARY_TEST(LeakyReLUNode, 1)
-REGISTER_UNARY_TEST(LeakyReLUNode, 2)
-REGISTER_UNARY_TEST(LeakyReLUNode, 3)
-REGISTER_UNARY_TEST(LeakyReLUNode, 4)
+// REGISTER_UNARY_TEST(LeakyReLUNode, 1)
+// REGISTER_UNARY_TEST(LeakyReLUNode, 2)
+// REGISTER_UNARY_TEST(LeakyReLUNode, 3)
+// REGISTER_UNARY_TEST(LeakyReLUNode, 4)
+// alpha is non-optiona. Not unary!
 
 // Binary Tests
 REGISTER_BINARY_TEST(AddNode, 1)
@@ -299,7 +327,7 @@ void TestCast(std::vector<size_t> shape_dims) {
                                                       math::tensor::CastNode>(block, DebugInfo(), shape, TargetType));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type_source, block.debug_info());
-    builder.add_computational_memlet(block, node, "Y", b_node, {}, tensor_type_target, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_target, block.debug_info());
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);

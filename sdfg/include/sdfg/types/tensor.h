@@ -58,6 +58,8 @@ public:
 
     virtual bool is_symbol() const override;
 
+    bool is_pointer_like() const override { return true; }
+
     const Scalar& element_type() const;
 
     const math::tensor::TensorLayout& layout() const;
