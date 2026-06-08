@@ -23,52 +23,49 @@
 
 #pragma once
 
+#include "sdfg/data_flow/library_nodes/math/math_node.h"
 #include "sdfg/passes/pass.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
 
 namespace sdfg {
 namespace passes {
 
-/**
- * @class Expansion
- * @brief Visitor that expands library nodes into primitive operations
- *
- * The Expansion visitor traverses the SDFG and expands library nodes that
- * have ImplementationType_NONE. This allows high-level mathematical operations
- * to be transformed into lower-level constructs that can be optimized and
- * scheduled.
- */
-class Expansion : public visitor::StructuredSDFGVisitor {
+class MathExpansionPass;
+
+class MathExpansionVisitor : public visitor::ActualStructuredSDFGVisitor {
+    friend MathExpansionPass;
+
+private:
+    builder::StructuredSDFGBuilder& builder_;
+    analysis::AnalysisManager& analysis_manager_;
+
+    struct LibNodeContainer {
+        math::MathNode& node;
+        structured_control_flow::Block& block;
+    };
+
+    std::vector<LibNodeContainer> nodes_to_expand_;
+
 public:
     /**
      * @brief Construct the expansion visitor
      * @param builder SDFG builder for creating new nodes
      * @param analysis_manager Analysis manager for querying properties
      */
-    Expansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+    MathExpansionVisitor(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    /**
-     * @brief Get the pass name
-     * @return Name of the pass
-     */
-    static std::string name() { return "Expansion"; };
-
-    /**
-     * @brief Visit a block and attempt to expand its library nodes
-     * @param node Block to visit
-     * @return True if any expansion occurred
-     */
-    bool accept(structured_control_flow::Block& node) override;
+    bool visit(sdfg::structured_control_flow::Block& node) override;
 };
 
 /**
- * @typedef ExpansionPass
- * @brief Pass wrapper for the Expansion visitor
- *
- * This typedef creates a pass from the Expansion visitor, allowing it to be
- * used in the pass pipeline system.
+ * @class MathExpansionPass
+ * @brief Looks for and expands math-nodes that are not already mapped to a specific target
  */
-typedef VisitorPass<Expansion> ExpansionPass;
+class MathExpansionPass : public Pass {
+    std::string name() override { return "MathExpansion"; }
+
+    bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+};
 
 } // namespace passes
 } // namespace sdfg

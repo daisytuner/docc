@@ -173,13 +173,5 @@ Pipeline Pipeline::memory() {
     return p;
 };
 
-Pipeline Pipeline::expansion() {
-    Pipeline p("Expansion");
-
-    p.register_pass<ExpansionPass>();
-
-    return p;
-};
-
 } // namespace passes
 } // namespace sdfg

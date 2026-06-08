@@ -47,7 +47,7 @@ TEST(ExpansionPassTest, MeanNode_2D) {
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::ExpansionPass expansion_pass;
+    passes::MathExpansionPass expansion_pass;
     EXPECT_TRUE(expansion_pass.run(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.expanded");
@@ -86,7 +86,7 @@ TEST(ExpansionPassTest, StdNode_1D) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::ExpansionPass expansion_pass;
+    passes::MathExpansionPass expansion_pass;
     EXPECT_TRUE(expansion_pass.run(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.expanded");
