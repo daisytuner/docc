@@ -193,6 +193,8 @@ public:
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 
+    std::string toStr() const override;
+
 protected:
     virtual bool expand_inner(
         builder::StructuredSDFGBuilder& builder,

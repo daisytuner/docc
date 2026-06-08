@@ -105,6 +105,27 @@ data_flow::PointerAccessType ReduceNode::pointer_access_type(int input_idx) cons
     }
 }
 
+std::ostream& operator<<(std::ostream& os, const std::vector<int64_t>& list) {
+    os << "[";
+    for (size_t i = 0; i < list.size(); ++i) {
+        if (i > 0) os << ", ";
+        os << list[i];
+    }
+    os << "]";
+    return os;
+}
+
+std::string ReduceNode::toStr() const {
+    std::stringstream ss;
+    ss << this->code_.value();
+    ss << "(shape=";
+    TensorLayout::emit_symbolic_list(ss, shape_);
+    ss << ", axes=" << axes_;
+    ss << ", keep=" << this->keepdims_;
+    ss << ")";
+    return ss.str();
+}
+
 bool ReduceNode::expand_inner(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,

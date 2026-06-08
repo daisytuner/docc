@@ -117,18 +117,21 @@ TensorLayout TensorLayout::deserialize_from_json(const nlohmann::json& j) {
     return std::move(TensorLayout(shape, strides, offset));
 }
 
-std::ostream& operator<<(std::ostream& stream, const TensorLayout& layout) {
-    stream << "{shape[";
-    for (size_t i = 0; i < layout.shape().size(); ++i) {
+std::ostream& TensorLayout::emit_symbolic_list(std::ostream& stream, const symbolic::MultiExpression& list) {
+    stream << "[";
+    for (size_t i = 0; i < list.size(); ++i) {
         if (i > 0) stream << ", ";
-        stream << layout.shape().at(i)->__str__();
-    }
-    stream << "], strides=[";
-    for (size_t i = 0; i < layout.strides().size(); ++i) {
-        if (i > 0) stream << ", ";
-        stream << layout.strides().at(i)->__str__();
+        stream << list.at(i)->__str__();
     }
     stream << "]";
+    return stream;
+}
+
+std::ostream& operator<<(std::ostream& stream, const TensorLayout& layout) {
+    stream << "{shape=";
+    TensorLayout::emit_symbolic_list(stream, layout.shape());
+    stream << ", strides=";
+    TensorLayout::emit_symbolic_list(stream, layout.strides());
     if (SymEngine::neq(*layout.offset(), *symbolic::integer(0))) {
         stream << ", off=" << layout.offset()->__str__();
     }

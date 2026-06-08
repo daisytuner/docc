@@ -163,6 +163,8 @@ class DoccProgram(ABC):
         target_options.target = self.target
         target_options.category = self.category
         target_options.remote_tuning = remote_tuning
+        if self.debug_dump:
+            sdfg.set_output_dir(output_folder)
 
         # Einsum detection
         sdfg.einsum()
