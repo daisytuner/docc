@@ -33,7 +33,7 @@ def resolve_model_name(version, model):
 
 
 def get_test_model_name():
-    version = os.getenv("SEGFORMER_VERSION", "b0")
+    version = os.getenv("SEGFORMER_VERSION", "b2")
     if version not in SEGFORMER_MODELS:
         raise ValueError(
             f"Unsupported SEGFORMER_VERSION '{version}'. "
@@ -126,7 +126,7 @@ def find_used_dialects():
 
     # print(mlir_str)
 
-def benchmark_segformer(model_name, backend="torch", target="none", device="cpu"):
+def benchmark_segformer(model_name, backend="torch", target="none", device="cpu", remote_tuning=False):
     model = SegformerForSemanticSegmentation.from_pretrained(
         model_name
     ).eval()
@@ -143,7 +143,7 @@ def benchmark_segformer(model_name, backend="torch", target="none", device="cpu"
     if backend == "docc":
         compile_kwargs = {
             "backend": "docc",
-            "options": {"target": target, "category": "server"},
+            "options": {"target": target, "category": "server", "remote_tuning": remote_tuning},
         }
 
     program = torch.compile(model, **compile_kwargs)
@@ -181,6 +181,7 @@ def benchmark_segformer(model_name, backend="torch", target="none", device="cpu"
     sem = scipy_stats.sem(times)
     half_width = scipy_stats.t.ppf(0.975, df=n - 1) * sem
     print(f"Benchmarking {model_name}:")
+    print(f"Remote tuning: {remote_tuning}")
     print(f"Average inference time: {mean:.2f} ms (n={n})")
     print(f"95% CI: [{mean - half_width:.2f}, {mean + half_width:.2f}] ms  (±{half_width:.2f} ms)")
 
@@ -196,20 +197,27 @@ def profile_segformer(
     backend="torch",
     target="none",
     device="cpu",
+    input_device=None,
+    remote_tuning=False,
     n_runs=10,
     image_size=512,
     trace_prefix="segformer_trace",
 ):
     from segformer_profile import setup_segformer, run_torch_profile, run_docc_profile
 
-    model, model_input = setup_segformer(model_name, device, image_size)
+    model, model_input = setup_segformer(
+        model_name,
+        device,
+        image_size,
+        input_device=input_device,
+    )
     if backend == "torch":
         run_torch_profile(model, model_input, n_runs, trace_prefix)
     elif backend == "docc":
-        run_docc_profile(model, model_input, n_runs, target)
+        run_docc_profile(model, model_input, n_runs, target, remote_tuning, trace_prefix)
     elif backend == "both":
         run_torch_profile(model, model_input, n_runs, trace_prefix)
-        run_docc_profile(model, model_input, n_runs, target)
+        run_docc_profile(model, model_input, n_runs, target, remote_tuning, trace_prefix)
     else:
         raise ValueError(f"Unsupported backend '{backend}' for profiling")
 
@@ -249,11 +257,23 @@ if __name__ == "__main__":
         help="DOCC target for --action benchmark_segformer (e.g. none, openmp, cuda)",
     )
     parser.add_argument(
+        "--remote_tuning",
+        action="store_true",
+        help="Enable DOCC remote tuning during benchmark/profile compilation",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         choices=["cpu", "cuda"],
         default="cpu",
         help="Tensor/model device for --action benchmark_segformer/profile",
+    )
+    parser.add_argument(
+        "--input_device",
+        type=str,
+        choices=["cpu", "cuda"],
+        default=None,
+        help="Input tensor device for --action profile (defaults to --device)",
     )
     parser.add_argument(
         "--n_runs",
@@ -286,6 +306,7 @@ if __name__ == "__main__":
             backend=args.backend,
             target=args.target,
             device=args.device,
+            remote_tuning=args.remote_tuning,
         )
     elif args.action == "profile":
         profile_segformer(
@@ -293,6 +314,8 @@ if __name__ == "__main__":
             backend=args.backend,
             target=args.target,
             device=args.device,
+            input_device=args.input_device,
+            remote_tuning=args.remote_tuning,
             n_runs=args.n_runs,
             image_size=args.image_size,
             trace_prefix=args.trace_prefix,

@@ -8,6 +8,7 @@ def run_benchmark(setup_func, name):
     parser.add_argument("--docc", action="store_true")
     parser.add_argument("--torch", action="store_true")
     parser.add_argument("--target", type=str, default="none")
+    parser.add_argument("--remote_tuning", action="store_true")
     parser.add_argument("--n_runs", type=int, default=10)
     args = parser.parse_args()
 
@@ -26,7 +27,18 @@ def run_benchmark(setup_func, name):
         for _ in range(args.n_runs):
             start = time.time()
             with torch.no_grad():
-                program = torch.compile(model, backend="docc", options={"target": args.target, "category": "server"})
+                program = torch.compile(
+                    model,
+                    backend="docc",
+                    options={
+                        "target": args.target,
+                        "category": "server",
+                        "remote_tuning": args.remote_tuning,
+                    },
+                )
                 program(model_input)
             end = time.time()
-            print(f"{name} docc execution time: {end - start:.6f} seconds")
+            print(
+                f"{name} docc execution time: {end - start:.6f} seconds "
+                f"(remote_tuning={args.remote_tuning})"
+            )
