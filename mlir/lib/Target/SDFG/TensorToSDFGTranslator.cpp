@@ -64,13 +64,13 @@ LogicalResult translateTensorCollapseOp(SDFGTranslator& translator, tensor::Coll
     auto in_container = translator.get_or_create_container(input);
     auto out_container = translator.get_or_create_container(result);
 
-    translator.add_reference(in_container, out_container, deb_info);
-
     auto& in_tensor_info = translator.get_or_create_tensor_info(in_container, input_tensor_type);
     auto in_element_type = translator.convertType(input_tensor_type.getElementType());
     auto& in_scalar_type = static_cast<::sdfg::types::Scalar&>(*in_element_type);
     in_container = translator.store_in_c_order(in_container, in_tensor_info, in_scalar_type, deb_info);
     in_tensor_info = translator.get_or_create_tensor_info(in_container, input_tensor_type);
+
+    translator.add_reference(in_container, out_container, deb_info);
 
     auto new_shape = result_tensor_type.getShape();
     if (!in_tensor_info.is_reshape_valid(new_shape)) {
@@ -200,13 +200,13 @@ LogicalResult translateTensorExpandOp(SDFGTranslator& translator, tensor::Expand
     auto in_container = translator.get_or_create_container(input);
     auto out_container = translator.get_or_create_container(result);
 
-    translator.add_reference(in_container, out_container, deb_info);
-
     auto& in_tensor_info = translator.get_or_create_tensor_info(in_container, input_tensor_type);
     auto in_element_type = translator.convertType(input_tensor_type.getElementType());
     auto& in_scalar_type = static_cast<::sdfg::types::Scalar&>(*in_element_type);
     in_container = translator.store_in_c_order(in_container, in_tensor_info, in_scalar_type, deb_info);
     in_tensor_info = translator.get_or_create_tensor_info(in_container, input_tensor_type);
+
+    translator.add_reference(in_container, out_container, deb_info);
 
     auto new_shape = result_tensor_type.getShape();
     if (!in_tensor_info.is_reshape_valid(new_shape)) {

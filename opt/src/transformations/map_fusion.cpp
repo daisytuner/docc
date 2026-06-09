@@ -779,6 +779,8 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                 if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(copied)) {
                     if (access_node->data() == candidate.container) {
                         access_node->data(temp_name);
+                    } else if (access_node->data() == first_map_.indvar()->get_name()) {
+                        access_node->data(second_loop_.indvar()->get_name());
                     }
                 }
             }
@@ -971,6 +973,10 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                             if (consumer_dataflow.in_degree(node) == 0) {
                                 access_node->data(temp_name);
                             }
+                        }
+                        if (access_node->data() == second_loop_.indvar()->get_name() &&
+                            consumer_dataflow.in_degree(node) == 0) {
+                            access_node->data(first_map_.indvar()->get_name());
                         }
                     }
                 }

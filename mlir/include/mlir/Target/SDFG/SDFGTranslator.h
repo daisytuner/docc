@@ -61,6 +61,9 @@ public:
 
     /// Create SDFG tensor type
     std::unique_ptr<::sdfg::types::Tensor> get_sdfg_tensor(const ::sdfg::types::Scalar& element_type) const;
+
+    /// Return string representation of tensor info (for debug purposes)
+    std::string toStr() const;
 };
 
 class SDFGTranslator {

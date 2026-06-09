@@ -154,6 +154,26 @@ std::string TensorInfo::shape_str() const {
     return result;
 }
 
+std::string TensorInfo::toStr() const {
+    std::stringstream ss;
+    ss << "TensorInfo(shape=[";
+    for (size_t i = 0; i < this->shape_.size(); i++) {
+        if (i > 0) {
+            ss << ", ";
+        }
+        ss << std::to_string(this->shape_[i]);
+    }
+    ss << "], strides=[";
+    for (size_t i = 0; i < this->strides_.size(); i++) {
+        if (i > 0) {
+            ss << ", ";
+        }
+        ss << std::to_string(this->strides_[i]);
+    }
+    ss << "], offset=" << std::to_string(this->offset_) << ")";
+    return ss.str();
+}
+
 // ===----------------------------------------------------------------------===//
 // SDFGTranslator
 // ===----------------------------------------------------------------------===//

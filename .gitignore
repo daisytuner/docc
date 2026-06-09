@@ -10,6 +10,7 @@ _deps/
 build-*/
 pybuild/
 pybuild-*/
+__pycache__/
 .docc-*/
 test_outputs/
 
