@@ -31,6 +31,25 @@ Interval BoundAnalysis::visit(const Expression& expr, size_t depth) {
         return Interval::failure();
     }
 
+    // Cache lookup. The cache stores only fully-successful intervals (both
+    // endpoints non-null): such results were computed purely from assumption
+    // bounds and are context-free. Failures and one-sided intervals are not
+    // cached because they may have arisen from cycle detection in
+    // `visit_symbol` — a context-dependent state that must not be reused.
+    auto it = cache_.find(expr);
+    if (it != cache_.end()) {
+        return it->second;
+    }
+
+    Interval result = visit_uncached(expr, depth);
+
+    if (result.has_lower() && result.has_upper()) {
+        cache_.emplace(expr, result);
+    }
+    return result;
+}
+
+Interval BoundAnalysis::visit_uncached(const Expression& expr, size_t depth) {
     // Fail on NaN / Infty
     if (SymEngine::is_a<SymEngine::NaN>(*expr) || SymEngine::is_a<SymEngine::Infty>(*expr)) {
         return Interval::failure();
@@ -889,6 +908,143 @@ bool is_eq(
 ) {
     if (symbolic::eq(a, b)) return true;
     return is_ge(a, b, parameters, assumptions, tight) && is_ge(b, a, parameters, assumptions, tight);
+}
+
+// ============================================================================
+// BoundAnalysis-based overloads (cache-amortized)
+// ============================================================================
+//
+// These mirror the legacy `is_*` predicates but route every interval query
+// through the caller-supplied `BoundAnalysis`. Semantics match the legacy
+// versions when invoked with a `BoundAnalysis` constructed from the same
+// `(parameters, assumptions, tight)`; the only difference is that the
+// empty-parameter fallback (`try_lb({})`) is omitted, since callers that
+// want it can construct a second `BoundAnalysis` and call the predicate
+// twice.
+
+namespace {
+
+bool prove_ge_zero_ba(const Expression& diff, BoundAnalysis& ba, bool strict, int depth);
+
+bool descend_max_ba(const Expression& diff, BoundAnalysis& ba, bool strict, int depth) {
+    auto max_node = find_first_max(diff);
+    if (max_node.is_null()) return false;
+    auto max_op = SymEngine::rcp_static_cast<const SymEngine::Max>(max_node);
+    for (auto& arg : max_op->get_args()) {
+        Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(diff, max_node, arg)));
+        if (prove_ge_zero_ba(replaced, ba, strict, depth - 1)) return true;
+    }
+    return false;
+}
+
+bool descend_min_and_ba(const Expression& e, BoundAnalysis& ba, bool strict, int depth) {
+    auto min_node = find_first_min(e);
+    if (min_node.is_null()) return false;
+
+    bool ok = false;
+    if (e.get() == min_node.get()) {
+        ok = true;
+    } else if (SymEngine::is_a<SymEngine::Add>(*e)) {
+        for (const auto& term : e->get_args()) {
+            if (term.get() == min_node.get() || symbolic::eq(term, min_node)) {
+                ok = true;
+                break;
+            }
+        }
+    }
+    if (!ok) return false;
+
+    auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(min_node);
+    for (auto& arg : min_op->get_args()) {
+        Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(e, min_node, arg)));
+        if (!prove_ge_zero_ba(replaced, ba, strict, depth - 1)) return false;
+    }
+    return true;
+}
+
+bool prove_ge_zero_ba(const Expression& diff, BoundAnalysis& ba, bool strict, int depth) {
+    auto e = symbolic::expand(diff);
+
+    // Constant integer fast path.
+    if (SymEngine::is_a<SymEngine::Integer>(*e)) {
+        auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(e);
+        return strict ? i->is_positive() : !i->is_negative();
+    }
+
+    // Direct decidable check.
+    if (strict) {
+        if (symbolic::is_true(symbolic::Gt(e, symbolic::zero()))) return true;
+    } else {
+        if (symbolic::is_true(symbolic::Ge(e, symbolic::zero()))) return true;
+    }
+
+    // Interval check via the supplied BoundAnalysis.
+    auto lb = ba.lower_bound(e);
+    if (!lb.is_null() && !SymEngine::is_a<SymEngine::Infty>(*lb)) {
+        auto lb_s = symbolic::simplify(symbolic::expand(lb));
+        if (SymEngine::is_a<SymEngine::Integer>(*lb_s)) {
+            auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(lb_s);
+            if (strict ? i->is_positive() : !i->is_negative()) return true;
+        }
+        if (strict) {
+            if (symbolic::is_true(symbolic::Gt(lb_s, symbolic::zero()))) return true;
+        } else {
+            if (symbolic::is_true(symbolic::Ge(lb_s, symbolic::zero()))) return true;
+        }
+        if (depth > 0 && descend_max_ba(lb_s, ba, strict, depth - 1)) return true;
+        if (depth > 0 && descend_min_and_ba(lb_s, ba, strict, depth - 1)) return true;
+    }
+
+    if (depth <= 0) return false;
+
+    // Max descent on the original expression.
+    if (descend_max_ba(e, ba, strict, depth)) return true;
+
+    return false;
+}
+
+} // namespace
+
+bool is_nonneg(const Expression& expr, BoundAnalysis& ba) {
+    return prove_ge_zero_ba(expr, ba, /*strict=*/false, kProofDepthLimit);
+}
+
+bool is_positive(const Expression& expr, BoundAnalysis& ba) {
+    return prove_ge_zero_ba(expr, ba, /*strict=*/true, kProofDepthLimit);
+}
+
+bool is_nonpos(const Expression& expr, BoundAnalysis& ba) {
+    return is_nonneg(symbolic::mul(symbolic::integer(-1), expr), ba);
+}
+
+bool is_negative(const Expression& expr, BoundAnalysis& ba) {
+    return is_positive(symbolic::mul(symbolic::integer(-1), expr), ba);
+}
+
+bool is_ge(const Expression& a, const Expression& b, BoundAnalysis& ba) { return is_nonneg(symbolic::sub(a, b), ba); }
+
+bool is_gt(const Expression& a, const Expression& b, BoundAnalysis& ba) {
+    auto diff = symbolic::sub(a, b);
+    if (is_positive(diff, ba)) return true;
+    // Min descent on b: a > min(args) iff a > arg_i for some i.
+    auto min_node = find_first_min(b);
+    if (!min_node.is_null()) {
+        auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(min_node);
+        for (auto& arg : min_op->get_args()) {
+            Expression b_replaced = symbolic::simplify(symbolic::expand(symbolic::subs(b, min_node, arg)));
+            if (is_gt(a, b_replaced, ba)) return true;
+        }
+    }
+    return false;
+}
+
+bool is_le(const Expression& a, const Expression& b, BoundAnalysis& ba) { return is_ge(b, a, ba); }
+
+bool is_lt(const Expression& a, const Expression& b, BoundAnalysis& ba) { return is_gt(b, a, ba); }
+
+bool is_eq(const Expression& a, const Expression& b, BoundAnalysis& ba) {
+    if (symbolic::eq(a, b)) return true;
+    return is_ge(a, b, ba) && is_ge(b, a, ba);
 }
 
 } // namespace symbolic

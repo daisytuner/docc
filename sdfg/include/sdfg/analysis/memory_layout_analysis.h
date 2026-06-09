@@ -19,6 +19,7 @@
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
+#include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
@@ -100,8 +101,8 @@ private:
         const std::vector<const data_flow::Memlet*>& memlets,
         const MemoryLayout& reference_layout,
         size_t ndims,
-        const symbolic::SymbolSet& parameters,
-        const symbolic::Assumptions& assumptions
+        symbolic::BoundAnalysis& ba_tight,
+        symbolic::BoundAnalysis& ba_loose
     );
 
 protected:

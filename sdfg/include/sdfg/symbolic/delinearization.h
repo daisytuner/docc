@@ -3,6 +3,7 @@
 #include <isl/map.h>
 
 #include "sdfg/symbolic/assumptions.h"
+#include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
@@ -29,6 +30,15 @@ struct DelinearizeResult {
  * https://dl.acm.org/doi/10.1145/2751205.2751248
  */
 DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums);
+
+/**
+ * @brief Same as `delinearize`, but reuses a caller-supplied `AssumptionsBounds`.
+ *
+ * Construct one `AssumptionsBounds` per scope (per `Assumptions` reference) and
+ * pass it through repeated `delinearize` calls so the internal `BoundAnalysis`
+ * memoization amortizes across all of them.
+ */
+DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds);
 
 } // namespace symbolic
 } // namespace sdfg

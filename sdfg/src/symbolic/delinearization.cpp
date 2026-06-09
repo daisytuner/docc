@@ -158,6 +158,40 @@ bool decompose_by_stride(
             }
         }
 
+        // If the indvar-side index is an Add with constant (no-indvar) subterms,
+        // peel those subterms out and fold `stride * constant_part` into the
+        // global constant_offset. This keeps the per-group index expression
+        // non-negative when individual sub-additions are non-negative even
+        // though the unexpanded original (e.g. `224*(-3 + (i%7) + 2*j)`) has
+        // a negative constant inside the stride product. Without this step,
+        // delinearize's `is_nonneg(best_index, ...)` gate rejects valid
+        // accesses like im2col with halo offsets.
+        if (SymEngine::is_a<SymEngine::Add>(*index)) {
+            sym::Expression nonconstant = sym::zero();
+            sym::Expression constant_part = sym::zero();
+            for (const auto& sub : index->get_args()) {
+                bool sub_has_indvar = false;
+                for (auto& s : sym::atoms(sub)) {
+                    if (params.count(s) == 0) {
+                        sub_has_indvar = true;
+                        break;
+                    }
+                }
+                if (sub_has_indvar) {
+                    nonconstant = sym::add(nonconstant, sub);
+                } else {
+                    constant_part = sym::add(constant_part, sub);
+                }
+            }
+            if (!sym::eq(constant_part, sym::zero())) {
+                constant_offset = sym::add(constant_offset, sym::mul(stride, constant_part));
+                if (sym::eq(nonconstant, sym::zero())) {
+                    continue;
+                }
+                index = nonconstant;
+            }
+        }
+
         add_to_group(stride, index);
     }
     return true;
@@ -165,8 +199,16 @@ bool decompose_by_stride(
 
 } // namespace
 
-DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums) {
+DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds) {
     auto dim = expr;
+    const Assumptions& assums = bounds.assums();
+
+    // Hoisted BoundAnalysis references from the caller-supplied bundle: every
+    // internal lower/upper bound query in this function shares the bundle's
+    // memoization cache, which amortizes across all delinearize calls that
+    // pass the same `bounds`.
+    BoundAnalysis& ba_loose = bounds.loose();
+    BoundAnalysis& ba_tight = bounds.tight();
 
     // Partition atoms into indvars (non-constant in `assums`) and parameters
     // (constant or unknown).
@@ -206,7 +248,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
     // into the 3-dim shape `(_s0-2)^2*i + (_s0-2)*j + k`. Cases like
     // `j*N + j` (strides {N, 1}, both >= 1) remain unmerged as 2 dims.
     auto stride_is_free_standing = [&](const Expression& s) -> bool {
-        auto lb = minimum(s, {}, assums, false);
+        auto lb = ba_loose.lower_bound(s);
         if (lb == SymEngine::null) return false;
         return symbolic::is_true(symbolic::Ge(lb, symbolic::one()));
     };
@@ -272,8 +314,8 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
         for (size_t k = 0; k < groups.size(); ++k) {
             const auto& stride = groups[k].first;
             const auto& index = groups[k].second;
-            auto lb = minimum(stride, {}, assums, false);
-            auto ub = maximum(stride, {}, assums, false);
+            auto lb = ba_loose.lower_bound(stride);
+            auto ub = ba_loose.upper_bound(stride);
             size_t complexity = stride_complexity_score(stride);
             size_t atom_count = symbolic::atoms(stride).size();
 
@@ -318,7 +360,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
         }
 
         // Index must be nonnegative under assumptions.
-        if (!is_nonneg(best_index, {}, assums, false)) {
+        if (!is_nonneg(best_index, ba_loose)) {
             break;
         }
 
@@ -326,7 +368,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
         Expression stride = best_stride;
         auto stride_lb = best_lb;
         if (stride_lb == SymEngine::null) {
-            stride_lb = minimum(stride, {}, assums, false);
+            stride_lb = ba_loose.lower_bound(stride);
         }
         if (stride_lb.is_null()) {
             break;
@@ -341,7 +383,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
         remaining = symbolic::simplify(remaining);
 
         // Remaining must be nonnegative.
-        if (!is_nonneg(remaining, {}, assums, false)) {
+        if (!is_nonneg(remaining, ba_loose)) {
             break;
         }
 
@@ -393,15 +435,15 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
             // Min-aware `is_gt` API helper proves `stride > min(...)` by
             // proving `stride > a_i` for some Min arg.
             if (!stride_check_passed) {
-                if (is_gt(stride, r, {}, assums, false)) {
+                if (is_gt(stride, r, ba_loose)) {
                     stride_check_passed = true;
                 }
             }
         }
 
-        auto ub_remaining = stride_check_passed ? Expression(SymEngine::null) : maximum(remaining, {}, assums, true);
+        auto ub_remaining = stride_check_passed ? Expression(SymEngine::null) : ba_tight.upper_bound(remaining);
         if (!stride_check_passed && ub_remaining.is_null()) {
-            ub_remaining = maximum(remaining, {}, assums, false);
+            ub_remaining = ba_loose.upper_bound(remaining);
         }
 
         if (!stride_check_passed && ub_remaining != SymEngine::null) {
@@ -431,7 +473,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
             }
 
             if (!stride_check_passed) {
-                auto ub_stride = (best_ub == SymEngine::null) ? maximum(stride, {}, assums, false) : best_ub;
+                auto ub_stride = (best_ub == SymEngine::null) ? ba_loose.upper_bound(stride) : best_ub;
                 if (ub_stride != SymEngine::null) {
                     auto cond_stride = symbolic::Ge(ub_stride, ub_remaining);
                     if (symbolic::is_true(cond_stride)) {
@@ -485,6 +527,11 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
 
     result.success = true;
     return result;
+}
+
+DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums) {
+    AssumptionsBounds bounds(assums);
+    return delinearize(expr, bounds);
 }
 
 } // namespace symbolic

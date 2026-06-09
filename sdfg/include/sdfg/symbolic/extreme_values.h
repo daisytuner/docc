@@ -33,6 +33,8 @@
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 
+#include <unordered_map>
+
 namespace sdfg {
 namespace symbolic {
 
@@ -68,6 +70,14 @@ struct Interval {
  * BoundAnalysis walks the expression tree and computes both lower and upper bounds
  * simultaneously, using polynomial normalization and monotonicity analysis for
  * tight results.
+ *
+ * The instance is the unit of reuse: construct once with the parameter set and
+ * assumptions, then call `bound`/`lower_bound`/`upper_bound` for each expression.
+ * Results are memoized internally, so repeated queries for the same expression
+ * (or shared subterms across queries) return in O(1) hash lookup. The cache is
+ * sound under the fixed `(parameters, assumptions, tight)` triple this instance
+ * was constructed with; create a new instance to bound under different
+ * assumptions.
  */
 class BoundAnalysis {
 public:
@@ -93,7 +103,25 @@ private:
     // Cycle detection: symbols currently being bounded
     SymbolSet visiting_;
 
+    // Memoization cache for visit() results, keyed by canonical SymEngine
+    // hash+eq on the input expression. Only fully-successful intervals
+    // (both endpoints non-null) are cached: such results are derived purely
+    // from assumption bounds and are independent of the call context.
+    // Failures and one-sided intervals can arise from cycle detection in
+    // `visit_symbol`, whose state is context-dependent and must not be
+    // reused, so they are recomputed every time.
+    struct BasicHash {
+        size_t operator()(const Expression& e) const noexcept { return e->hash(); }
+    };
+    struct BasicEq {
+        bool operator()(const Expression& a, const Expression& b) const noexcept {
+            return a.get() == b.get() || SymEngine::eq(*a, *b);
+        }
+    };
+    std::unordered_map<Expression, Interval, BasicHash, BasicEq> cache_;
+
     Interval visit(const Expression& expr, size_t depth);
+    Interval visit_uncached(const Expression& expr, size_t depth);
 
     Interval visit_symbol(const SymEngine::RCP<const SymEngine::Symbol>& sym, size_t depth);
     Interval visit_function(const SymEngine::RCP<const SymEngine::FunctionSymbol>& func, size_t depth);
@@ -206,6 +234,79 @@ bool is_eq(
     const Assumptions& assumptions,
     bool tight = false
 );
+
+// ---- BoundAnalysis-based overloads (cache-amortized) ----
+//
+// These overloads route all internal interval queries through the supplied
+// `BoundAnalysis`, so the cache amortizes across many predicate calls under
+// the same `(parameters, assumptions, tight)` triple. They omit the empty-
+// parameter fallback that the legacy overloads perform when the caller's
+// parameter set is non-empty; this fallback is a no-op for callers that
+// already use empty parameters (e.g. `delinearize`) and matters only when
+// proving inequalities about parameters themselves.
+
+/** @brief Prove `expr >= 0` using a pre-built `BoundAnalysis`. */
+bool is_nonneg(const Expression& expr, BoundAnalysis& ba);
+
+/** @brief Prove `expr > 0` using a pre-built `BoundAnalysis`. */
+bool is_positive(const Expression& expr, BoundAnalysis& ba);
+
+/** @brief Prove `expr <= 0` using a pre-built `BoundAnalysis`. */
+bool is_nonpos(const Expression& expr, BoundAnalysis& ba);
+
+/** @brief Prove `expr < 0` using a pre-built `BoundAnalysis`. */
+bool is_negative(const Expression& expr, BoundAnalysis& ba);
+
+/** @brief Prove `a >= b` using a pre-built `BoundAnalysis`. */
+bool is_ge(const Expression& a, const Expression& b, BoundAnalysis& ba);
+
+/** @brief Prove `a > b` using a pre-built `BoundAnalysis`. */
+bool is_gt(const Expression& a, const Expression& b, BoundAnalysis& ba);
+
+/** @brief Prove `a <= b` using a pre-built `BoundAnalysis`. */
+bool is_le(const Expression& a, const Expression& b, BoundAnalysis& ba);
+
+/** @brief Prove `a < b` using a pre-built `BoundAnalysis`. */
+bool is_lt(const Expression& a, const Expression& b, BoundAnalysis& ba);
+
+/** @brief Prove `a == b` using a pre-built `BoundAnalysis`. */
+bool is_eq(const Expression& a, const Expression& b, BoundAnalysis& ba);
+
+/**
+ * @brief Bundles `Assumptions` with both the loose and tight `BoundAnalysis`
+ *        derived from them.
+ *
+ * Many symbolic operations (`delinearize`, `is_subset`, `is_disjoint`,
+ * `dependence_deltas`) issue many internal `minimum`/`maximum` queries against
+ * the same `Assumptions` while occasionally needing tight vs. loose bounds.
+ * Constructing one `AssumptionsBounds` per scope and threading it through these
+ * operations lets the `BoundAnalysis` memoization cache amortize across all of
+ * them — replacing N fresh `BoundAnalysis` constructions and N independent
+ * caches with a single pair per scope.
+ *
+ * The wrapper holds a reference to the underlying `Assumptions`, so callers
+ * must keep the `Assumptions` alive for the lifetime of the `AssumptionsBounds`.
+ */
+class AssumptionsBounds {
+public:
+    explicit AssumptionsBounds(const Assumptions& assums)
+        : assums_(assums), loose_(empty_params(), assums, /*tight=*/false),
+          tight_(empty_params(), assums, /*tight=*/true) {}
+
+    const Assumptions& assums() const { return assums_; }
+    BoundAnalysis& loose() { return loose_; }
+    BoundAnalysis& tight() { return tight_; }
+
+private:
+    static const SymbolSet& empty_params() {
+        static const SymbolSet kEmpty;
+        return kEmpty;
+    }
+
+    const Assumptions& assums_;
+    BoundAnalysis loose_;
+    BoundAnalysis tight_;
+};
 
 } // namespace symbolic
 } // namespace sdfg

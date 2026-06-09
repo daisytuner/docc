@@ -154,8 +154,6 @@ void ArgumentsAnalysis::collect_arg_sizes(
             }
             symbolic::Expression size = range.second;
             size = symbolic::add(size, symbolic::one()); // Inclusive range, so add 1
-            std::cout << "Contiguous range for " << argument << ": " << range.first->__str__() << " to "
-                      << range.second->__str__() << std::endl;
 
             auto base_type = type_analysis.get_outer_type(argument);
             auto elem_size = types::get_contiguous_element_size(*base_type, true);

@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "sdfg/symbolic/assumptions.h"
+#include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
@@ -104,6 +105,17 @@ DependenceDeltas dependence_deltas(
     const Symbol indvar,
     const Assumptions& assums1,
     const Assumptions& assums2
+);
+
+/**
+ * @brief Same as `dependence_deltas`, but reuses caller-supplied `AssumptionsBounds`.
+ */
+DependenceDeltas dependence_deltas(
+    const MultiExpression& expr1,
+    const MultiExpression& expr2,
+    const Symbol indvar,
+    sdfg::symbolic::AssumptionsBounds& bounds1,
+    sdfg::symbolic::AssumptionsBounds& bounds2
 );
 
 } // namespace maps

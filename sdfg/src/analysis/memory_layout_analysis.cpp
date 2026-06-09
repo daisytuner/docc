@@ -218,7 +218,21 @@ void MemoryLayoutAnalysis::
 
                 auto result = symbolic::delinearize(linearized_expr, assumptions);
                 if (!result.success) {
-                    continue; // Delinearization failed, skip
+                    // Fallback: register the access as a 1D contiguous range over the
+                    // raw linearized address. We lose multi-dim layout info, but the
+                    // scope-level merge can still bound the access via BoundAnalysis,
+                    // which is enough for downstream consumers like ArgumentsAnalysis
+                    // to compute argument sizes. This recovers patterns where the
+                    // delinearizer rejects the access (e.g. halo offsets producing
+                    // negative constants inside a stride product, or non-strictly-
+                    // dominating strides) but the overall address range is still
+                    // soundly bounded by the enclosing loop assumptions.
+                    symbolic::MultiExpression shape;
+                    shape.push_back(symbolic::symbol("__unbounded__"));
+                    MemoryLayout layout(shape);
+                    MemoryAccess layout_info{container_name, {linearized_expr}, layout, false};
+                    this->accesses_.emplace(&memlet, layout_info);
+                    continue;
                 }
 
                 // Delinearization returns N indices but only N-1 dimensions (from stride division)
@@ -323,6 +337,22 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         return true;
     };
 
+    // Per-scope BoundAnalysis pair (tight + loose-fallback). Both instances
+    // memoize their results, so repeated expressions and shared subterms
+    // across all per-element lower/upper queries below hit the cache.
+    symbolic::BoundAnalysis ba_tight(parameters, assumptions, true);
+    symbolic::BoundAnalysis ba_loose(parameters, assumptions, false);
+    auto bound_lb = [&](const symbolic::Expression& e) -> symbolic::Expression {
+        auto r = ba_tight.lower_bound(e);
+        if (r.is_null()) r = ba_loose.lower_bound(e);
+        return r;
+    };
+    auto bound_ub = [&](const symbolic::Expression& e) -> symbolic::Expression {
+        auto r = ba_tight.upper_bound(e);
+        if (r.is_null()) r = ba_loose.upper_bound(e);
+        return r;
+    };
+
     // Find direct child scopes that may carry tiles for this scope
     std::set<const structured_control_flow::ControlFlowNode*> direct_child_scopes;
     collect_direct_child_scopes(scope, direct_child_scopes);
@@ -330,13 +360,12 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
     for (auto& [container, memlets] : all_container_groups) {
         if (memlets.empty()) continue;
 
-        // Find inner tiles from direct child scopes only
         std::vector<const MemoryTile*> inner_tiles;
-        for (auto& [key, tile] : tiles_) {
-            if (tiles_before.count(key) > 0) continue;
-            if (key.second != container) continue;
-            if (direct_child_scopes.count(key.first) == 0) continue;
-            inner_tiles.push_back(&tile);
+        for (const auto* child : direct_child_scopes) {
+            auto it = tiles_.find({child, container});
+            if (it != tiles_.end()) {
+                inner_tiles.push_back(&it->second);
+            }
         }
 
         size_t ndims = 0;
@@ -364,12 +393,12 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
             // Propagate tile groups from child scopes upward using the same
             // base-partitioning logic: group inner groups by their min_subset
             // base at this scope level, then merge each partition.
+            // Same direct-lookup optimization as above for inner_tiles.
             std::vector<const MemoryTileGroup*> inner_groups;
-            for (auto& [key, groups] : tile_groups_) {
-                if (tiles_before.count({key.first, key.second}) > 0) continue;
-                if (key.second != container) continue;
-                if (direct_child_scopes.count(key.first) == 0) continue;
-                for (const auto& g : groups) {
+            for (const auto* child : direct_child_scopes) {
+                auto it = tile_groups_.find({child, container});
+                if (it == tile_groups_.end()) continue;
+                for (const auto& g : it->second) {
                     inner_groups.push_back(&g);
                 }
             }
@@ -389,10 +418,7 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                     data_flow::Subset base;
                     bool base_ok = true;
                     for (size_t d = 0; d < ndims; ++d) {
-                        auto lb = symbolic::minimum(ig->tile.min_subset[d], parameters, assumptions, true);
-                        if (lb.is_null()) {
-                            lb = symbolic::minimum(ig->tile.min_subset[d], parameters, assumptions, false);
-                        }
+                        auto lb = bound_lb(ig->tile.min_subset[d]);
                         if (lb.is_null()) {
                             base_ok = false;
                             break;
@@ -432,22 +458,15 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                     for (size_t d = 0; d < ndims; ++d) {
                         symbolic::Expression d_min = SymEngine::null;
                         symbolic::Expression d_max = SymEngine::null;
-
                         for (const auto* c : op.constituents) {
-                            // min from min_subset
-                            auto lb = symbolic::minimum(c->tile.min_subset[d], parameters, assumptions, true);
-                            if (lb.is_null())
-                                lb = symbolic::minimum(c->tile.min_subset[d], parameters, assumptions, false);
+                            auto lb = bound_lb(c->tile.min_subset[d]);
                             if (lb.is_null()) {
                                 grp_bounded = false;
                                 break;
                             }
                             d_min = d_min.is_null() ? lb : symbolic::min(d_min, lb);
 
-                            // max from max_subset
-                            auto ub = symbolic::maximum(c->tile.max_subset[d], parameters, assumptions, true);
-                            if (ub.is_null())
-                                ub = symbolic::maximum(c->tile.max_subset[d], parameters, assumptions, false);
+                            auto ub = bound_ub(c->tile.max_subset[d]);
                             if (ub.is_null()) {
                                 grp_bounded = false;
                                 break;
@@ -503,26 +522,37 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                 }
                 if (!consistent) break;
 
-                // Collect indices for each dimension
+                // Collect indices for each dimension. In the raw-access path,
+                // min and max indices are identical (both are `acc.subset[d]`),
+                // so we only populate `min_indices[d]` and leave `max_indices[d]`
+                // empty. The shared bound-resolution loop below detects this
+                // alias case and fuses the two passes into one walk, halving
+                // the soundness-check and outer-loop overhead.
                 if (acc.subset.size() != ndims) {
                     consistent = false;
                     break;
                 }
                 for (size_t d = 0; d < ndims; ++d) {
                     min_indices[d].push_back(acc.subset[d]);
-                    max_indices[d].push_back(acc.subset[d]);
                 }
             }
 
             if (!consistent) continue;
 
             // Compute tile groups for raw memlets
-            compute_tile_groups(scope, container, memlets, reference_layout, ndims, parameters, assumptions);
+            compute_tile_groups(scope, container, memlets, reference_layout, ndims, ba_tight, ba_loose);
         }
 
         if (ndims == 0) continue;
 
-        // Compute min/max bounds for each dimension
+        // Bound each candidate index individually via the reused BoundAnalysis
+        // (memoized across all per-dim queries below) and combine the per-index
+        // bounds into the dim's min/max via symbolic::min / symbolic::max.
+        //
+        // In the raw-access path, `max_indices[d]` is left empty as a signal
+        // that it would otherwise alias `min_indices[d]`. When detected, we
+        // fuse the two passes into a single walk so the soundness check and
+        // outer-loop bookkeeping run once per index instead of twice.
         data_flow::Subset min_subset;
         data_flow::Subset max_subset;
         bool all_bounded = true;
@@ -530,50 +560,47 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         for (size_t d = 0; d < ndims; ++d) {
             symbolic::Expression dim_min = SymEngine::null;
             symbolic::Expression dim_max = SymEngine::null;
+            const bool fused = max_indices[d].empty();
 
-            // Compute dim_min from min_indices
             for (const auto& idx : min_indices[d]) {
                 if (!bounds_are_sound(idx)) {
                     all_bounded = false;
                     break;
                 }
-                auto lb = symbolic::minimum(idx, parameters, assumptions, true);
-                if (lb.is_null()) {
-                    lb = symbolic::minimum(idx, parameters, assumptions, false);
-                }
+                auto lb = bound_lb(idx);
                 if (lb.is_null()) {
                     all_bounded = false;
                     break;
                 }
-                if (dim_min.is_null()) {
-                    dim_min = lb;
-                } else {
-                    dim_min = symbolic::min(dim_min, lb);
+                dim_min = dim_min.is_null() ? lb : symbolic::min(dim_min, lb);
+
+                if (fused) {
+                    // Soundness already checked above for the same idx.
+                    auto ub = bound_ub(idx);
+                    if (ub.is_null()) {
+                        all_bounded = false;
+                        break;
+                    }
+                    dim_max = dim_max.is_null() ? ub : symbolic::max(dim_max, ub);
                 }
             }
             if (!all_bounded) break;
 
-            // Compute dim_max from max_indices
-            for (const auto& idx : max_indices[d]) {
-                if (!bounds_are_sound(idx)) {
-                    all_bounded = false;
-                    break;
+            if (!fused) {
+                for (const auto& idx : max_indices[d]) {
+                    if (!bounds_are_sound(idx)) {
+                        all_bounded = false;
+                        break;
+                    }
+                    auto ub = bound_ub(idx);
+                    if (ub.is_null()) {
+                        all_bounded = false;
+                        break;
+                    }
+                    dim_max = dim_max.is_null() ? ub : symbolic::max(dim_max, ub);
                 }
-                auto ub = symbolic::maximum(idx, parameters, assumptions, true);
-                if (ub.is_null()) {
-                    ub = symbolic::maximum(idx, parameters, assumptions, false);
-                }
-                if (ub.is_null()) {
-                    all_bounded = false;
-                    break;
-                }
-                if (dim_max.is_null()) {
-                    dim_max = ub;
-                } else {
-                    dim_max = symbolic::max(dim_max, ub);
-                }
+                if (!all_bounded) break;
             }
-            if (!all_bounded) break;
 
             min_subset.push_back(symbolic::simplify(dim_min));
             max_subset.push_back(symbolic::simplify(dim_max));
@@ -606,9 +633,23 @@ void MemoryLayoutAnalysis::compute_tile_groups(
     const std::vector<const data_flow::Memlet*>& memlets,
     const MemoryLayout& reference_layout,
     size_t ndims,
-    const symbolic::SymbolSet& parameters,
-    const symbolic::Assumptions& assumptions
+    symbolic::BoundAnalysis& ba_tight,
+    symbolic::BoundAnalysis& ba_loose
 ) {
+    // Bound helpers reusing the caller's BoundAnalysis instances. These share
+    // their memoization cache with merge_scope_layouts for the same scope, so
+    // expressions bounded there hit instantly when re-encountered here.
+    auto bound_lb = [&](const symbolic::Expression& e) -> symbolic::Expression {
+        auto r = ba_tight.lower_bound(e);
+        if (r.is_null()) r = ba_loose.lower_bound(e);
+        return r;
+    };
+    auto bound_ub = [&](const symbolic::Expression& e) -> symbolic::Expression {
+        auto r = ba_tight.upper_bound(e);
+        if (r.is_null()) r = ba_loose.upper_bound(e);
+        return r;
+    };
+
     // For each memlet, compute per-dimension base (minimum of index expression)
     // Group memlets whose bases are symbolically equal in all dimensions
     struct GroupEntry {
@@ -626,10 +667,7 @@ void MemoryLayoutAnalysis::compute_tile_groups(
         data_flow::Subset base;
         bool base_ok = true;
         for (size_t d = 0; d < ndims; ++d) {
-            auto lb = symbolic::minimum(acc.subset[d], parameters, assumptions, true);
-            if (lb.is_null()) {
-                lb = symbolic::minimum(acc.subset[d], parameters, assumptions, false);
-            }
+            auto lb = bound_lb(acc.subset[d]);
             if (lb.is_null()) {
                 base_ok = false;
                 break;
@@ -712,10 +750,7 @@ void MemoryLayoutAnalysis::compute_tile_groups(
             symbolic::Expression dim_max = SymEngine::null;
 
             for (const auto& idx : min_indices[d]) {
-                auto lb = symbolic::minimum(idx, parameters, assumptions, true);
-                if (lb.is_null()) {
-                    lb = symbolic::minimum(idx, parameters, assumptions, false);
-                }
+                auto lb = bound_lb(idx);
                 if (lb.is_null()) {
                     all_bounded = false;
                     break;
@@ -729,10 +764,7 @@ void MemoryLayoutAnalysis::compute_tile_groups(
             if (!all_bounded) break;
 
             for (const auto& idx : max_indices[d]) {
-                auto ub = symbolic::maximum(idx, parameters, assumptions, true);
-                if (ub.is_null()) {
-                    ub = symbolic::maximum(idx, parameters, assumptions, false);
-                }
+                auto ub = bound_ub(idx);
                 if (ub.is_null()) {
                     all_bounded = false;
                     break;

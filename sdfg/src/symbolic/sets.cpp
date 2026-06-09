@@ -11,28 +11,21 @@
 namespace sdfg {
 namespace symbolic {
 
-bool is_subset(
-    const MultiExpression& expr1, const MultiExpression& expr2, const Assumptions& assums1, const Assumptions& assums2
+namespace {
+
+// Core ISL subset/disjoint kernel: takes already-delinearized expressions plus
+// the matching assumptions, builds the ISL sets and runs the query. Both
+// `is_subset` and `is_disjoint` share the entire ISL preamble (ctx, alignment,
+// param projection, range extraction); they only differ in the final ISL call.
+enum class SetQuery { Subset, Disjoint };
+
+bool run_isl_set_query(
+    const MultiExpression& expr1_delinearized,
+    const MultiExpression& expr2_delinearized,
+    const Assumptions& assums1,
+    const Assumptions& assums2,
+    SetQuery query
 ) {
-    if (expr1.size() == 0 && expr2.size() == 0) {
-        return true;
-    }
-
-    auto expr1_delinearized = expr1;
-    if (expr1.size() == 1) {
-        auto result = symbolic::delinearize(expr1.at(0), assums1);
-        if (result.success) {
-            expr1_delinearized = result.indices;
-        }
-    }
-    auto expr2_delinearized = expr2;
-    if (expr2.size() == 1) {
-        auto result = symbolic::delinearize(expr2.at(0), assums2);
-        if (result.success) {
-            expr2_delinearized = result.indices;
-        }
-    }
-
     std::string map_1_str = expression_to_map_str(expr1_delinearized, assums1);
     std::string map_2_str = expression_to_map_str(expr2_delinearized, assums2);
 
@@ -71,7 +64,15 @@ bool is_subset(
     isl_set* set_1 = isl_map_range(aligned_map_1);
     isl_set* set_2 = isl_map_range(aligned_map_2);
 
-    bool subset = isl_set_is_subset(set_1, set_2) == isl_bool_true;
+    bool result = false;
+    switch (query) {
+        case SetQuery::Subset:
+            result = isl_set_is_subset(set_1, set_2) == isl_bool_true;
+            break;
+        case SetQuery::Disjoint:
+            result = isl_set_is_disjoint(set_1, set_2) == isl_bool_true;
+            break;
+    }
 
     isl_map_free(aligned_map_1);
     isl_map_free(aligned_map_2);
@@ -80,72 +81,73 @@ bool is_subset(
     isl_space_free(params_map2);
     isl_ctx_free(ctx);
 
-    return subset;
+    return result;
 }
 
-bool is_disjoint(
-    const MultiExpression& expr1, const MultiExpression& expr2, const Assumptions& assums1, const Assumptions& assums2
+} // namespace
+
+bool is_subset(
+    const MultiExpression& expr1, const MultiExpression& expr2, AssumptionsBounds& bounds1, AssumptionsBounds& bounds2
 ) {
+    if (expr1.size() == 0 && expr2.size() == 0) {
+        return true;
+    }
+
     auto expr1_delinearized = expr1;
     if (expr1.size() == 1) {
-        auto result = symbolic::delinearize(expr1.at(0), assums1);
+        auto result = symbolic::delinearize(expr1.at(0), bounds1);
         if (result.success) {
             expr1_delinearized = result.indices;
         }
     }
     auto expr2_delinearized = expr2;
     if (expr2.size() == 1) {
-        auto result = symbolic::delinearize(expr2.at(0), assums2);
+        auto result = symbolic::delinearize(expr2.at(0), bounds2);
         if (result.success) {
             expr2_delinearized = result.indices;
         }
     }
 
-    std::string map_1_str = expression_to_map_str(expr1_delinearized, assums1);
-    std::string map_2_str = expression_to_map_str(expr2_delinearized, assums2);
+    return run_isl_set_query(expr1_delinearized, expr2_delinearized, bounds1.assums(), bounds2.assums(), SetQuery::Subset);
+}
 
-    isl_ctx* ctx = isl_ctx_alloc();
-    isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
+bool is_subset(
+    const MultiExpression& expr1, const MultiExpression& expr2, const Assumptions& assums1, const Assumptions& assums2
+) {
+    AssumptionsBounds b1(assums1);
+    AssumptionsBounds b2(assums2);
+    return is_subset(expr1, expr2, b1, b2);
+}
 
-    isl_map* map_1 = isl_map_read_from_str(ctx, map_1_str.c_str());
-    isl_map* map_2 = isl_map_read_from_str(ctx, map_2_str.c_str());
-    if (!map_1 || !map_2) {
-        if (map_1) isl_map_free(map_1);
-        if (map_2) isl_map_free(map_2);
-        isl_ctx_free(ctx);
-        return false;
+bool is_disjoint(
+    const MultiExpression& expr1, const MultiExpression& expr2, AssumptionsBounds& bounds1, AssumptionsBounds& bounds2
+) {
+    auto expr1_delinearized = expr1;
+    if (expr1.size() == 1) {
+        auto result = symbolic::delinearize(expr1.at(0), bounds1);
+        if (result.success) {
+            expr1_delinearized = result.indices;
+        }
+    }
+    auto expr2_delinearized = expr2;
+    if (expr2.size() == 1) {
+        auto result = symbolic::delinearize(expr2.at(0), bounds2);
+        if (result.success) {
+            expr2_delinearized = result.indices;
+        }
     }
 
-    isl_space* params_map1 = isl_space_params(isl_map_get_space(map_1));
-    isl_space* params_map2 = isl_space_params(isl_map_get_space(map_2));
+    return run_isl_set_query(
+        expr1_delinearized, expr2_delinearized, bounds1.assums(), bounds2.assums(), SetQuery::Disjoint
+    );
+}
 
-    // Align parameters carefully:
-    isl_space* unified_params = isl_space_align_params(isl_space_copy(params_map1), isl_space_copy(params_map2));
-
-    // Align maps to unified params:
-    isl_map* aligned_map_1 = isl_map_align_params(map_1, isl_space_copy(unified_params));
-    isl_map* aligned_map_2 = isl_map_align_params(map_2, isl_space_copy(unified_params));
-
-    // Remove parameters explicitly (project them out)
-    aligned_map_1 = isl_map_project_out(aligned_map_1, isl_dim_param, 0, isl_map_dim(aligned_map_1, isl_dim_param));
-    aligned_map_2 = isl_map_project_out(aligned_map_2, isl_dim_param, 0, isl_map_dim(aligned_map_2, isl_dim_param));
-
-    canonicalize_map_dims(aligned_map_1, "in_", "out_");
-    canonicalize_map_dims(aligned_map_2, "in_", "out_");
-
-    isl_set* set_1 = isl_map_range(aligned_map_1);
-    isl_set* set_2 = isl_map_range(aligned_map_2);
-
-    bool disjoint = isl_set_is_disjoint(set_1, set_2) == isl_bool_true;
-
-    isl_map_free(aligned_map_1);
-    isl_map_free(aligned_map_2);
-    isl_space_free(unified_params);
-    isl_space_free(params_map1);
-    isl_space_free(params_map2);
-    isl_ctx_free(ctx);
-
-    return disjoint;
+bool is_disjoint(
+    const MultiExpression& expr1, const MultiExpression& expr2, const Assumptions& assums1, const Assumptions& assums2
+) {
+    AssumptionsBounds b1(assums1);
+    AssumptionsBounds b2(assums2);
+    return is_disjoint(expr1, expr2, b1, b2);
 }
 
 } // namespace symbolic
