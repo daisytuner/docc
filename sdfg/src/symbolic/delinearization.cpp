@@ -158,40 +158,6 @@ bool decompose_by_stride(
             }
         }
 
-        // If the indvar-side index is an Add with constant (no-indvar) subterms,
-        // peel those subterms out and fold `stride * constant_part` into the
-        // global constant_offset. This keeps the per-group index expression
-        // non-negative when individual sub-additions are non-negative even
-        // though the unexpanded original (e.g. `224*(-3 + (i%7) + 2*j)`) has
-        // a negative constant inside the stride product. Without this step,
-        // delinearize's `is_nonneg(best_index, ...)` gate rejects valid
-        // accesses like im2col with halo offsets.
-        if (SymEngine::is_a<SymEngine::Add>(*index)) {
-            sym::Expression nonconstant = sym::zero();
-            sym::Expression constant_part = sym::zero();
-            for (const auto& sub : index->get_args()) {
-                bool sub_has_indvar = false;
-                for (auto& s : sym::atoms(sub)) {
-                    if (params.count(s) == 0) {
-                        sub_has_indvar = true;
-                        break;
-                    }
-                }
-                if (sub_has_indvar) {
-                    nonconstant = sym::add(nonconstant, sub);
-                } else {
-                    constant_part = sym::add(constant_part, sub);
-                }
-            }
-            if (!sym::eq(constant_part, sym::zero())) {
-                constant_offset = sym::add(constant_offset, sym::mul(stride, constant_part));
-                if (sym::eq(nonconstant, sym::zero())) {
-                    continue;
-                }
-                index = nonconstant;
-            }
-        }
-
         add_to_group(stride, index);
     }
     return true;
