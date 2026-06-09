@@ -190,6 +190,29 @@ def setup_segformer_benchmark(model_name):
     example_input = torch.randn(1, 3, 512, 512)
     return model, example_input
 
+
+def profile_segformer(
+    model_name,
+    backend="torch",
+    target="none",
+    device="cpu",
+    n_runs=10,
+    image_size=512,
+    trace_prefix="segformer_trace",
+):
+    from segformer_profile import setup_segformer, run_torch_profile, run_docc_profile
+
+    model, model_input = setup_segformer(model_name, device, image_size)
+    if backend == "torch":
+        run_torch_profile(model, model_input, n_runs, trace_prefix)
+    elif backend == "docc":
+        run_docc_profile(model, model_input, n_runs, target)
+    elif backend == "both":
+        run_torch_profile(model, model_input, n_runs, trace_prefix)
+        run_docc_profile(model, model_input, n_runs, target)
+    else:
+        raise ValueError(f"Unsupported backend '{backend}' for profiling")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="segformer benchmark")
     parser.add_argument(
@@ -208,16 +231,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--action",
         type=str,
-        choices=["dialects", "benchmark", "benchmark_segformer"],
+        choices=["dialects", "benchmark", "benchmark_segformer", "profile"],
         default="benchmark",
         help="Run dialect dump or harness benchmark",
     )
     parser.add_argument(
         "--backend",
         type=str,
-        choices=["torch", "docc"],
+        choices=["torch", "docc", "both"],
         default="torch",
-        help="Backend for --action benchmark_segformer",
+        help="Backend for --action benchmark_segformer/profile",
     )
     parser.add_argument(
         "--target",
@@ -230,7 +253,25 @@ if __name__ == "__main__":
         type=str,
         choices=["cpu", "cuda"],
         default="cpu",
-        help="Tensor/model device for --action benchmark_segformer",
+        help="Tensor/model device for --action benchmark_segformer/profile",
+    )
+    parser.add_argument(
+        "--n_runs",
+        type=int,
+        default=10,
+        help="Number of runs for --action profile",
+    )
+    parser.add_argument(
+        "--image_size",
+        type=int,
+        default=512,
+        help="Input image size for --action profile",
+    )
+    parser.add_argument(
+        "--trace_prefix",
+        type=str,
+        default="segformer_trace",
+        help="Trace file prefix for --action profile torch runs",
     )
     args, remaining = parser.parse_known_args()
     model_name = resolve_model_name(args.version, args.model)
@@ -245,6 +286,16 @@ if __name__ == "__main__":
             backend=args.backend,
             target=args.target,
             device=args.device,
+        )
+    elif args.action == "profile":
+        profile_segformer(
+            model_name,
+            backend=args.backend,
+            target=args.target,
+            device=args.device,
+            n_runs=args.n_runs,
+            image_size=args.image_size,
+            trace_prefix=args.trace_prefix,
         )
     else:
         sys.argv = [sys.argv[0]] + remaining
