@@ -2,6 +2,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -398,6 +399,253 @@ TEST(CUBLASDataTransferExtractionTest, GemmSerialization) {
     EXPECT_EQ(j["transformation_type"], "CUBLASDataTransferExtraction");
     EXPECT_TRUE(j.contains("subgraph"));
     EXPECT_EQ(j["subgraph"]["0"]["element_id"], gemm_node.element_id());
+
+    auto deserialized = cuda::CUBLASDataTransferExtraction::from_json(builder, j);
+    EXPECT_EQ(deserialized.name(), "CUBLASDataTransferExtraction");
+}
+
+TEST(CUBLASDataTransferExtractionTest, BatchedGemmCanBeApplied) {
+    builder::StructuredSDFGBuilder builder("sdfg_batched_gemm", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    int dim_batch = 4;
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Array arr_a_type(desc, symbolic::integer(dim_batch * dim_i * dim_k));
+    types::Array arr_b_type(desc, symbolic::integer(dim_batch * dim_k * dim_j));
+    types::Array arr_c_type(desc, symbolic::integer(dim_batch * dim_i * dim_j));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("arr_c", arr_c_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& a_node = builder.add_access(block, "arr_a");
+    auto& b_node = builder.add_access(block, "arr_b");
+    auto& c_node = builder.add_access(block, "arr_c");
+    auto& alpha_node = builder.add_constant(block, "1.0", desc);
+    auto& beta_node = builder.add_constant(block, "0.0", desc);
+
+    auto& batched_gemm_node =
+        static_cast<math::blas::BatchedGEMMNode&>(builder.add_library_node<math::blas::BatchedGEMMNode>(
+            block,
+            DebugInfo(),
+            cuda::ImplementationType_CUDAWithTransfers,
+            math::blas::BLAS_Precision::s,
+            math::blas::BLAS_Layout::RowMajor,
+            math::blas::BLAS_Transpose::No,
+            math::blas::BLAS_Transpose::No,
+            symbolic::integer(dim_batch),
+            symbolic::integer(dim_i),
+            symbolic::integer(dim_j),
+            symbolic::integer(dim_k),
+            symbolic::integer(dim_k),
+            symbolic::integer(dim_j),
+            symbolic::integer(dim_j),
+            symbolic::integer(dim_i * dim_k),
+            symbolic::integer(dim_k * dim_j),
+            symbolic::integer(dim_i * dim_j)
+        ));
+
+    builder.add_computational_memlet(block, a_node, batched_gemm_node, "__A", {symbolic::zero()}, arr_a_type);
+    builder.add_computational_memlet(block, b_node, batched_gemm_node, "__B", {symbolic::zero()}, arr_b_type);
+    builder.add_computational_memlet(block, c_node, batched_gemm_node, "__C", {symbolic::zero()}, arr_c_type);
+    builder.add_computational_memlet(block, alpha_node, batched_gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, batched_gemm_node, "__beta", {}, desc);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+
+    cuda::CUBLASDataTransferExtraction expansion(batched_gemm_node);
+    EXPECT_TRUE(expansion.can_be_applied(builder, analysis_manager));
+}
+
+TEST(CUBLASDataTransferExtractionTest, BatchedGemmApply) {
+    builder::StructuredSDFGBuilder builder("sdfg_batched_gemm", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    int dim_batch = 4;
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Array arr_a_type(desc, symbolic::integer(dim_batch * dim_i * dim_k));
+    types::Array arr_b_type(desc, symbolic::integer(dim_batch * dim_k * dim_j));
+    types::Array arr_c_type(desc, symbolic::integer(dim_batch * dim_i * dim_j));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("arr_c", arr_c_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& a_node = builder.add_access(block, "arr_a");
+    auto& b_node = builder.add_access(block, "arr_b");
+    auto& c_node = builder.add_access(block, "arr_c");
+    auto& alpha_node = builder.add_constant(block, "1.0", desc);
+    auto& beta_node = builder.add_constant(block, "0.0", desc);
+
+    auto& batched_gemm_node =
+        static_cast<math::blas::BatchedGEMMNode&>(builder.add_library_node<math::blas::BatchedGEMMNode>(
+            block,
+            DebugInfo(),
+            cuda::ImplementationType_CUDAWithTransfers,
+            math::blas::BLAS_Precision::s,
+            math::blas::BLAS_Layout::RowMajor,
+            math::blas::BLAS_Transpose::No,
+            math::blas::BLAS_Transpose::No,
+            symbolic::integer(dim_batch),
+            symbolic::integer(dim_i),
+            symbolic::integer(dim_j),
+            symbolic::integer(dim_k),
+            symbolic::integer(dim_k),
+            symbolic::integer(dim_j),
+            symbolic::integer(dim_j),
+            symbolic::integer(dim_i * dim_k),
+            symbolic::integer(dim_k * dim_j),
+            symbolic::integer(dim_i * dim_j)
+        ));
+
+    builder.add_computational_memlet(block, a_node, batched_gemm_node, "__A", {symbolic::zero()}, arr_a_type);
+    builder.add_computational_memlet(block, b_node, batched_gemm_node, "__B", {symbolic::zero()}, arr_b_type);
+    builder.add_computational_memlet(block, c_node, batched_gemm_node, "__C", {symbolic::zero()}, arr_c_type);
+    builder.add_computational_memlet(block, alpha_node, batched_gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, batched_gemm_node, "__beta", {}, desc);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+
+    cuda::CUBLASDataTransferExtraction expansion(batched_gemm_node);
+    ASSERT_TRUE(expansion.can_be_applied(builder, analysis_manager));
+    expansion.apply(builder, analysis_manager);
+
+    // After apply: implementation type should be WithoutTransfers
+    EXPECT_EQ(batched_gemm_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());
+
+    // The root sequence should now have 7 blocks:
+    // copy_A_to_device, copy_B_to_device, copy_C_to_device, blas_block,
+    // copy_C_from_device, dealloc_A, dealloc_B
+    EXPECT_EQ(sdfg.root().size(), 7);
+}
+
+TEST(CUBLASDataTransferExtractionTest, BatchedGemmWrongImplType) {
+    builder::StructuredSDFGBuilder builder("sdfg_batched_gemm", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    int dim_batch = 4;
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Array arr_a_type(desc, symbolic::integer(dim_batch * dim_i * dim_k));
+    types::Array arr_b_type(desc, symbolic::integer(dim_batch * dim_k * dim_j));
+    types::Array arr_c_type(desc, symbolic::integer(dim_batch * dim_i * dim_j));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("arr_c", arr_c_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& a_node = builder.add_access(block, "arr_a");
+    auto& b_node = builder.add_access(block, "arr_b");
+    auto& c_node = builder.add_access(block, "arr_c");
+    auto& alpha_node = builder.add_constant(block, "1.0", desc);
+    auto& beta_node = builder.add_constant(block, "0.0", desc);
+
+    auto& batched_gemm_node =
+        static_cast<math::blas::BatchedGEMMNode&>(builder.add_library_node<math::blas::BatchedGEMMNode>(
+            block,
+            DebugInfo(),
+            cuda::ImplementationType_CUDAWithoutTransfers,
+            math::blas::BLAS_Precision::s,
+            math::blas::BLAS_Layout::RowMajor,
+            math::blas::BLAS_Transpose::No,
+            math::blas::BLAS_Transpose::No,
+            symbolic::integer(dim_batch),
+            symbolic::integer(dim_i),
+            symbolic::integer(dim_j),
+            symbolic::integer(dim_k),
+            symbolic::integer(dim_k),
+            symbolic::integer(dim_j),
+            symbolic::integer(dim_j),
+            symbolic::integer(dim_i * dim_k),
+            symbolic::integer(dim_k * dim_j),
+            symbolic::integer(dim_i * dim_j)
+        ));
+
+    builder.add_computational_memlet(block, a_node, batched_gemm_node, "__A", {symbolic::zero()}, arr_a_type);
+    builder.add_computational_memlet(block, b_node, batched_gemm_node, "__B", {symbolic::zero()}, arr_b_type);
+    builder.add_computational_memlet(block, c_node, batched_gemm_node, "__C", {symbolic::zero()}, arr_c_type);
+    builder.add_computational_memlet(block, alpha_node, batched_gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, batched_gemm_node, "__beta", {}, desc);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+
+    cuda::CUBLASDataTransferExtraction expansion(batched_gemm_node);
+    EXPECT_FALSE(expansion.can_be_applied(builder, analysis_manager));
+}
+
+TEST(CUBLASDataTransferExtractionTest, BatchedGemmSerialization) {
+    builder::StructuredSDFGBuilder builder("sdfg_batched_gemm", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Array arr_a_type(desc, symbolic::integer(1200));
+    types::Array arr_b_type(desc, symbolic::integer(2400));
+    types::Array arr_c_type(desc, symbolic::integer(800));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("arr_c", arr_c_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& a_node = builder.add_access(block, "arr_a");
+    auto& b_node = builder.add_access(block, "arr_b");
+    auto& c_node = builder.add_access(block, "arr_c");
+    auto& alpha_node = builder.add_constant(block, "1.0", desc);
+    auto& beta_node = builder.add_constant(block, "0.0", desc);
+
+    auto& batched_gemm_node =
+        static_cast<math::blas::BatchedGEMMNode&>(builder.add_library_node<math::blas::BatchedGEMMNode>(
+            block,
+            DebugInfo(),
+            cuda::ImplementationType_CUDAWithTransfers,
+            math::blas::BLAS_Precision::s,
+            math::blas::BLAS_Layout::RowMajor,
+            math::blas::BLAS_Transpose::No,
+            math::blas::BLAS_Transpose::No,
+            symbolic::integer(4),
+            symbolic::integer(10),
+            symbolic::integer(20),
+            symbolic::integer(30),
+            symbolic::integer(30),
+            symbolic::integer(20),
+            symbolic::integer(20),
+            symbolic::integer(300),
+            symbolic::integer(600),
+            symbolic::integer(200)
+        ));
+
+    builder.add_computational_memlet(block, a_node, batched_gemm_node, "__A", {symbolic::zero()}, arr_a_type);
+    builder.add_computational_memlet(block, b_node, batched_gemm_node, "__B", {symbolic::zero()}, arr_b_type);
+    builder.add_computational_memlet(block, c_node, batched_gemm_node, "__C", {symbolic::zero()}, arr_c_type);
+    builder.add_computational_memlet(block, alpha_node, batched_gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, batched_gemm_node, "__beta", {}, desc);
+
+    cuda::CUBLASDataTransferExtraction expansion(batched_gemm_node);
+
+    nlohmann::json j;
+    expansion.to_json(j);
+
+    EXPECT_EQ(j["transformation_type"], "CUBLASDataTransferExtraction");
+    EXPECT_TRUE(j.contains("subgraph"));
+    EXPECT_EQ(j["subgraph"]["0"]["element_id"], batched_gemm_node.element_id());
 
     auto deserialized = cuda::CUBLASDataTransferExtraction::from_json(builder, j);
     EXPECT_EQ(deserialized.name(), "CUBLASDataTransferExtraction");

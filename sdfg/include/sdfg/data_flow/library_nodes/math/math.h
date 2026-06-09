@@ -6,6 +6,7 @@
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 
 // BLAS
+#include "sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"

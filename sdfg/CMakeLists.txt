@@ -82,6 +82,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/load_const_node.cpp
     src/data_flow/library_nodes/metadata_node.cpp
     src/data_flow/library_nodes/math/math_node.cpp
+    src/data_flow/library_nodes/math/blas/batched_gemm_node.cpp
     src/data_flow/library_nodes/math/blas/blas_node.cpp
     src/data_flow/library_nodes/math/blas/dot_node.cpp
     src/data_flow/library_nodes/math/blas/gemm_node.cpp

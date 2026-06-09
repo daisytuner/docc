@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/passes/pass.h"
@@ -21,6 +22,10 @@ private:
 
     std::optional<data_flow::ImplementationType>
     try_cublas_gemm_node_implementation(const math::blas::GEMMNode& gemm_node, types::PrimitiveType data_type);
+
+    std::optional<data_flow::ImplementationType> try_cublas_batched_gemm_node_implementation(
+        const math::blas::BatchedGEMMNode& batched_gemm_node, types::PrimitiveType data_type
+    );
 
     std::optional<data_flow::ImplementationType> try_memset_implementation(const stdlib::MemsetNode& memset_node);
 };

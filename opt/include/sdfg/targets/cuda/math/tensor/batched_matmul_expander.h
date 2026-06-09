@@ -1,0 +1,23 @@
+#pragma once
+
+#include "sdfg/analysis/analysis.h"
+#include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
+#include "sdfg/targets/offloading/target_expansion.h"
+
+namespace sdfg {
+namespace offloading {
+
+class CudaBatchedMatMulExpander : public TargetLibNodeExpander {
+private:
+    math::tensor::MatMulNode& node_;
+
+public:
+    CudaBatchedMatMulExpander(math::tensor::MatMulNode& library_node)
+        : TargetLibNodeExpander(library_node), node_(library_node) {};
+    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+};
+
+} // namespace offloading
+} // namespace sdfg

@@ -1376,6 +1376,10 @@ void register_default_serializers() {
         .register_library_node_serializer(math::blas::LibraryNodeType_GEMM.value(), []() {
             return std::make_unique<math::blas::GEMMNodeSerializer>();
         });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::blas::LibraryNodeType_BatchedGEMM.value(), []() {
+            return std::make_unique<math::blas::BatchedGEMMNodeSerializer>();
+        });
 
     // Tensor
 
