@@ -13,13 +13,12 @@ namespace passes {
 TypeMinimization::TypeMinimization(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {};
 
-bool TypeMinimization::
-    is_safe_trunc(symbolic::Expression expr, symbolic::BoundAnalysis& ba_tight, symbolic::BoundAnalysis& ba_loose) {
+bool TypeMinimization::is_safe_trunc(symbolic::Expression expr, const symbolic::Assumptions& assumptions) {
     size_t output_bitwidth = 32;
     int64_t output_min_value_signed = 0;
     int64_t output_max_value_signed = (1ULL << (output_bitwidth - 1)) - 1;
 
-    auto mini = ba_tight.lower_bound(expr);
+    auto mini = symbolic::minimum(expr, {}, assumptions, true);
     if (mini.is_null()) {
         return false;
     }
@@ -28,7 +27,7 @@ bool TypeMinimization::
         return false;
     }
 
-    auto maxi = ba_loose.upper_bound(expr);
+    auto maxi = symbolic::maximum(expr, {}, assumptions, false);
     if (maxi.is_null()) {
         return false;
     }
@@ -46,13 +45,6 @@ bool TypeMinimization::accept(structured_control_flow::Block& block) {
     auto& assumptions_analysis = this->analysis_manager_.get<analysis::AssumptionsAnalysis>();
     auto& block_assumptions = assumptions_analysis.get(block, true);
 
-    // One BoundAnalysis pair for the whole block: every is_safe_trunc call here
-    // shares the same empty parameter set and the same assumptions, so the
-    // internal cache amortizes across all truncs in the block.
-    static const symbolic::SymbolSet no_params;
-    symbolic::BoundAnalysis ba_tight(no_params, block_assumptions, true);
-    symbolic::BoundAnalysis ba_loose(no_params, block_assumptions, false);
-
     symbolic::ExpressionMap replacements;
     for (auto& edge : dfg.edges()) {
         auto& subset = edge.subset();
@@ -67,7 +59,7 @@ bool TypeMinimization::accept(structured_control_flow::Block& block) {
                     continue;
                 }
                 auto arg = trunc_func->get_args()[0];
-                if (!this->is_safe_trunc(arg, ba_tight, ba_loose)) {
+                if (!this->is_safe_trunc(arg, block_assumptions)) {
                     continue;
                 }
 
@@ -101,10 +93,6 @@ bool TypeMinimization::accept(structured_control_flow::For& loop) {
     auto& assumptions_analysis = this->analysis_manager_.get<analysis::AssumptionsAnalysis>();
     auto& block_assumptions = assumptions_analysis.get(loop, true);
 
-    static const symbolic::SymbolSet no_params;
-    symbolic::BoundAnalysis ba_tight(no_params, block_assumptions, true);
-    symbolic::BoundAnalysis ba_loose(no_params, block_assumptions, false);
-
     symbolic::ExpressionMap replacements;
     auto truncs = symbolic::find<SymEngine::FunctionSymbol>(loop.condition());
     for (auto& trunc : truncs) {
@@ -116,7 +104,7 @@ bool TypeMinimization::accept(structured_control_flow::For& loop) {
             continue;
         }
         auto arg = trunc_func->get_args()[0];
-        if (!this->is_safe_trunc(arg, ba_tight, ba_loose)) {
+        if (!this->is_safe_trunc(arg, block_assumptions)) {
             continue;
         }
 

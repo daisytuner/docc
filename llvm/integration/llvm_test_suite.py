@@ -123,12 +123,12 @@ def setup():
 # Each test is listed in the parameters
 # Options for compiles:
 #   YES = The test compiles
-#   TIMEOUT = The compilation timeouts (6 min)
+#   TIMEOUT = The compilation timeouts (5 min)
 #   OUT_OF_MEMORY = The compiler's memory usage crashes the system
 #   SEGFAULT = The compiler segfaults
 # Options for executes:
 #   PASS = The test execution passes
-#   TIMEOUT = The test execution timeouts (6 min)
+#   TIMEOUT = The test execution timeouts (5 min)
 #   FAIL = The test execution fails because the result is wrong or the application crashes
 #   FLAKY = The test execution sometimes passes, sometimes fails
 @pytest.mark.parametrize(
@@ -1087,7 +1087,7 @@ def test(setup, path, name, compiles, executes):
     )
     try:
         timeout = False
-        stdout, stderr = make_process.communicate(timeout=360)
+        stdout, stderr = make_process.communicate(timeout=300)
     except (
         subprocess.TimeoutExpired
     ):  # must catch this otherwise subprocess is not killed
@@ -1119,7 +1119,7 @@ def test(setup, path, name, compiles, executes):
     )
     try:
         timeout = False
-        stdout, stderr = lit_process.communicate(timeout=360)
+        stdout, stderr = lit_process.communicate(timeout=300)
     except (
         subprocess.TimeoutExpired
     ):  # must catch this otherwise subprocess is not killed

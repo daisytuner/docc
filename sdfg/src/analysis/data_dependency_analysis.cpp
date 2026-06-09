@@ -728,16 +728,11 @@ bool DataDependencyAnalysis::
     auto current_scope = Users::scope(&current);
     auto& current_assumptions = assumptions_analysis.get(*current_scope, true);
 
-    // One AssumptionsBounds per side, shared across the whole subset-pair scan.
-    // The original used `previous_assumptions, previous_assumptions` (both
-    // sides of `is_subset`), so we only need one bounds object here.
-    symbolic::AssumptionsBounds previous_bounds(previous_assumptions);
-
     // Check if previous subset is subset of any current subset
     for (auto& previous_subset : previous_subsets) {
         bool found = false;
         for (auto& current_subset : current_subsets) {
-            if (symbolic::is_subset(previous_subset, current_subset, previous_bounds, previous_bounds)) {
+            if (symbolic::is_subset(previous_subset, current_subset, previous_assumptions, previous_assumptions)) {
                 found = true;
                 break;
             }
@@ -797,7 +792,6 @@ bool DataDependencyAnalysis::fully_covered(
 
     auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
     auto& current_assumptions = assumptions_analysis.get(*Users::scope(&current), true);
-    symbolic::AssumptionsBounds current_bounds(current_assumptions);
 
     // Each read subset must be contained in some single open writer's subset.
     for (auto& read_subset : current_subsets) {
@@ -807,9 +801,8 @@ bool DataDependencyAnalysis::fully_covered(
             if (w->container() != current.container()) continue;
             if (this->is_undefined_user(*w)) continue;
             auto& w_assumptions = assumptions_analysis.get(*Users::scope(w), true);
-            symbolic::AssumptionsBounds w_bounds(w_assumptions);
             for (auto& w_subset : w->subsets()) {
-                if (symbolic::is_subset(read_subset, w_subset, current_bounds, w_bounds)) {
+                if (symbolic::is_subset(read_subset, w_subset, current_assumptions, w_assumptions)) {
                     covered = true;
                     break;
                 }
@@ -851,14 +844,11 @@ bool DataDependencyAnalysis::intersects(User& previous, User& current, analysis:
     auto current_scope = Users::scope(&current);
     auto& current_assumptions = assumptions_analysis.get(*current_scope, true);
 
-    symbolic::AssumptionsBounds previous_bounds(previous_assumptions);
-    symbolic::AssumptionsBounds current_bounds(current_assumptions);
-
     // Check if any current subset intersects with any previous subset
     bool found = false;
     for (auto& current_subset : current_subsets) {
         for (auto& previous_subset : previous_subsets) {
-            if (!symbolic::is_disjoint(current_subset, previous_subset, current_bounds, previous_bounds)) {
+            if (!symbolic::is_disjoint(current_subset, previous_subset, current_assumptions, previous_assumptions)) {
                 found = true;
                 break;
             }
@@ -909,16 +899,13 @@ bool DataDependencyAnalysis::
     auto& previous_assumptions = assumptions_analysis.get(*previous_scope, true);
     auto& current_assumptions = assumptions_analysis.get(*current_scope, true);
 
-    symbolic::AssumptionsBounds previous_bounds(previous_assumptions);
-    symbolic::AssumptionsBounds current_bounds(current_assumptions);
-
     auto& previous_memlets = previous.subsets();
     auto& current_memlets = current.subsets();
 
     for (auto& subset_ : previous_memlets) {
         bool overwritten = false;
         for (auto& subset : current_memlets) {
-            if (symbolic::is_subset(subset_, subset, previous_bounds, current_bounds)) {
+            if (symbolic::is_subset(subset_, subset, previous_assumptions, current_assumptions)) {
                 overwritten = true;
                 break;
             }
@@ -957,16 +944,13 @@ bool DataDependencyAnalysis::depends(analysis::AnalysisManager& analysis_manager
     auto& previous_assumptions = assumptions_analysis.get(*previous_scope, true);
     auto& current_assumptions = assumptions_analysis.get(*current_scope, true);
 
-    symbolic::AssumptionsBounds previous_bounds(previous_assumptions);
-    symbolic::AssumptionsBounds current_bounds(current_assumptions);
-
     auto& previous_memlets = previous.subsets();
     auto& current_memlets = current.subsets();
 
     bool intersect_any = false;
     for (auto& current_subset : current_memlets) {
         for (auto& previous_subset : previous_memlets) {
-            if (!symbolic::is_disjoint(current_subset, previous_subset, current_bounds, previous_bounds)) {
+            if (!symbolic::is_disjoint(current_subset, previous_subset, current_assumptions, previous_assumptions)) {
                 intersect_any = true;
                 break;
             }
