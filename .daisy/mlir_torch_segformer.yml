@@ -26,8 +26,8 @@ steps:
     pip install -r mlir/requirements.txt
 
     # Warm start (DOCC benchmark, CUDA target)
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=cuda --device=cpu
-    DOCC_CI=1 venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=sequential --device=cpu
+    DOCC_CI="" venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=cuda --device=cpu
+    DOCC_CI=1 __DAISY_CAPTURE_STRATEGY_DEFAULT=once venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=sequential --device=cpu
 
   run:
 
@@ -36,6 +36,7 @@ steps:
       energy: true
       env:
         DOCC_REUSE_BINARIES: 1
+        __DAISY_CAPTURE_STRATEGY_DEFAULT: once
 
     segformer_b0_docc_cuda:
       command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=cuda --device=cpu
