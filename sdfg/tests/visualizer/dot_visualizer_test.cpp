@@ -509,7 +509,8 @@ TEST(DotVisualizerTest, test_while) {
     exp << "}" << std::endl
         << escapeDotId(cont1.element_id(), "cont_") << " [shape=cds,label=\" continue  \"];" << std::endl
         << escapeDotId(block1.element_id(), "block_") << " -> " << escapeDotId(cont1.element_id(), "cont_")
-        << " [ltail=\"cluster_" << escapeDotId(block1.element_id(), "block_") << "\",minlen=3];" << std::endl;
+        << " [ltail=\"cluster_" << escapeDotId(block1.element_id(), "block_") << "\",minlen=3,label=\"{i = 10}\"];"
+        << std::endl;
     exp.setIndent(16);
     exp << "}" << std::endl << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_1 {" << std::endl;
     exp.setIndent(20);
@@ -522,7 +523,8 @@ TEST(DotVisualizerTest, test_while) {
     exp << "}" << std::endl
         << escapeDotId(break1.element_id(), "break_") << " [shape=cds,label=\" break  \"];" << std::endl
         << escapeDotId(block2.element_id(), "block_") << " -> " << escapeDotId(break1.element_id(), "break_")
-        << " [ltail=\"cluster_" << escapeDotId(block2.element_id(), "block_") << "\",minlen=3];" << std::endl;
+        << " [ltail=\"cluster_" << escapeDotId(block2.element_id(), "block_") << "\",minlen=3,label=\"{i = 0}\"];"
+        << std::endl;
     exp.setIndent(16);
     exp << "}" << std::endl;
     exp.setIndent(12);

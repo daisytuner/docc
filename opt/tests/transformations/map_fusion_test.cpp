@@ -1893,6 +1893,123 @@ TEST(MapFusionTest, UseOfIndvar) {
     EXPECT_EQ(j_access->data(), "j");
 }
 
+TEST(MapFusionTest, UseOfIndvar_Shifted) {
+    // Pattern: First map uses the indvar
+    // Map 1: T[i] = i                     for i in 0:N:1
+    // Map 2: A[j] = T[j - 1] * 2.0        for j in 1:(N+1):1
+    // After fusion: A[j] = (j - 1) * 2.0  for j in 1:(N+1):1
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    // Add containers
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Array array_desc_1(float_desc, {symbolic::symbol("N")});
+    types::Array array_desc_2(float_desc, {symbolic::add(symbolic::symbol("N"), symbolic::one())});
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    builder.add_container("A", array_desc_2, true);
+    builder.add_container("T", array_desc_1);
+
+    // Define first map: T[i] = i
+    auto indvar1 = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        indvar1,
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& body1 = map1.root();
+
+    auto& block1 = builder.add_block(body1);
+    auto& i_in = builder.add_access(block1, "i");
+    auto& t_out = builder.add_access(block1, "T");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block1, i_in, tasklet1, "_in", {});
+    builder.add_computational_memlet(block1, tasklet1, "_out", t_out, {symbolic::symbol("i")}, array_desc_1);
+
+    // Define second map: A[j] = T[j - 1] * 2.0
+    auto indvar2 = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        root,
+        indvar2,
+        symbolic::Lt(symbolic::symbol("j"), symbolic::add(symbolic::symbol("N"), symbolic::one())),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& body2 = map2.root();
+
+    auto& block2 = builder.add_block(body2);
+    auto& t_in = builder.add_access(block2, "T");
+    auto& two_node = builder.add_constant(block2, "2.0", float_desc);
+    auto& a_out = builder.add_access(block2, "A");
+    auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(
+        block2, t_in, tasklet2, "_in1", {symbolic::sub(symbolic::symbol("j"), symbolic::one())}, array_desc_2
+    );
+    builder.add_computational_memlet(block2, two_node, tasklet2, "_in2", {});
+    builder.add_computational_memlet(block2, tasklet2, "_out", a_out, {symbolic::symbol("j")}, array_desc_2);
+
+    dump_sdfg(builder.subject(), "0.before");
+
+    // Analyze and apply transformation
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(map1, map2);
+
+    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.after");
+
+    // Verify transformation results
+    auto& new_sdfg = builder.subject();
+
+    // Both maps should still exist
+    EXPECT_EQ(new_sdfg.root().size(), 2);
+
+    // The second map should now have 3 blocks in its body (empty + producer + consumer)
+    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
+    EXPECT_NE(new_map2, nullptr);
+    EXPECT_EQ(new_map2->root().size(), 3) << "Second loop should now have 3 blocks (empty + producer + consumer)";
+
+    // First block is the empty block
+    auto* empty_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
+    ASSERT_NE(empty_block, nullptr);
+
+    // Second block is the new producer block
+    auto* producer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(1).first);
+    ASSERT_NE(producer_block, nullptr);
+
+    // Third block is the original consumer block
+    auto* consumer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(2).first);
+    EXPECT_NE(consumer_block, nullptr);
+
+    // Check that there is an assignment with {some_tmp = j - 1}
+    ASSERT_EQ(new_map2->root().at(0).second.assignments().size(), 1) << "There must be exactly one assignment";
+    auto [sym, expr] = *new_map2->root().at(0).second.assignments().begin();
+    ASSERT_TRUE(symbolic::eq(expr, symbolic::sub(symbolic::symbol("j"), symbolic::one())))
+        << expr->__str__() << " must be equal to j - 1";
+
+    // Check that the access node was changed from i to some_tmp
+    ASSERT_EQ(producer_block->dataflow().tasklets().size(), 1);
+    auto* producer_tasklet = *producer_block->dataflow().tasklets().begin();
+    ASSERT_NE(producer_tasklet, nullptr);
+    auto* iedge = producer_block->dataflow().in_edge_for_connector(*producer_tasklet, "_in");
+    ASSERT_NE(iedge, nullptr);
+    auto* j_access = producer_block->dataflow().find_standalone_entry(iedge);
+    ASSERT_NE(j_access, nullptr);
+    EXPECT_EQ(j_access->data(), sym->get_name());
+}
+
 // ============================================================================
 // Multi-dimensional (2D) tests
 // ============================================================================

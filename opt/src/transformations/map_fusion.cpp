@@ -769,6 +769,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             auto& first_child = consumer_body_->at(0).first;
             control_flow::Assignments empty_assignments;
             auto& new_block = builder.add_block_before(*consumer_body_, first_child, empty_assignments);
+            structured_control_flow::Block* empty_block = nullptr;
 
             // Deep copy all nodes from producer block to new block
             std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
@@ -780,7 +781,38 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                     if (access_node->data() == candidate.container) {
                         access_node->data(temp_name);
                     } else if (access_node->data() == first_map_.indvar()->get_name()) {
-                        access_node->data(second_loop_.indvar()->get_name());
+                        // Determine the new expression for the index variable of the first map
+                        symbolic::Expression new_expr = SymEngine::null;
+                        for (auto& c : fusion_candidates_) {
+                            for (auto& [sym, expr] : c.index_mappings) {
+                                if (symbolic::eq(sym, first_map_.indvar())) {
+                                    new_expr = expr;
+                                    break;
+                                }
+                            }
+                            if (!new_expr.is_null()) {
+                                break;
+                            }
+                        }
+
+                        if (new_expr.is_null() || symbolic::eq(new_expr, second_loop_.indvar())) {
+                            // Simple case: The new expression is simply the index variable of the second loop
+                            access_node->data(second_loop_.indvar()->get_name());
+                        } else {
+                            // Complex case: Add an empty block before the new block (if necessary) and store the
+                            // shifted index into a new temporary variable with an assignment. Then, replace the index
+                            // variable with the new temporary variable
+                            if (!empty_block) {
+                                empty_block = &builder.add_block_before(*consumer_body_, new_block, empty_assignments);
+                            }
+                            auto new_index_name = builder.find_new_name();
+                            builder
+                                .add_container(new_index_name, builder.subject().type(second_loop_.indvar()->get_name()));
+                            consumer_body_->at(0)
+                                .second.assignments()
+                                .insert({symbolic::symbol(new_index_name), new_expr});
+                            access_node->data(new_index_name);
+                        }
                     } else if (first_dataflow.in_degree(node) > 0 && first_dataflow.out_degree(node) > 0 &&
                                dynamic_cast<const types::Scalar*>(&sdfg.type(access_node->data())) != nullptr) {
                         // SSA Dataflow required to check for non-local use of the access node's container.
@@ -972,6 +1004,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
 
                 // Insert a new block after the last inserted block in the producer's body
                 auto& new_block = builder.add_block_after(*producer_body_, *last_inserted, empty_assignments);
+                structured_control_flow::Block* empty_block = nullptr;
 
                 // Deep copy all nodes from consumer block
                 std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
@@ -1001,7 +1034,40 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                         }
                         if (access_node->data() == second_loop_.indvar()->get_name() &&
                             consumer_dataflow.in_degree(node) == 0) {
-                            access_node->data(first_map_.indvar()->get_name());
+                            // Determine the new expression for the index variable of the second loop
+                            symbolic::Expression new_expr = SymEngine::null;
+                            for (auto& c : fusion_candidates_) {
+                                for (auto& [sym, expr] : c.index_mappings) {
+                                    if (symbolic::eq(sym, second_loop_.indvar())) {
+                                        new_expr = expr;
+                                        break;
+                                    }
+                                }
+                                if (!new_expr.is_null()) {
+                                    break;
+                                }
+                            }
+
+                            if (new_expr.is_null() || symbolic::eq(new_expr, first_map_.indvar())) {
+                                // Simple case: The new expression is simply the index variable of the first map
+                                access_node->data(first_map_.indvar()->get_name());
+                            } else {
+                                // Complex case: Add an empty block before the new block (if necessary) and store the
+                                // shifted index into a new temporary variable with an assignment. Then, replace the
+                                // index variable with the new temporary variable
+                                if (!empty_block) {
+                                    empty_block =
+                                        &builder.add_block_before(*producer_body_, new_block, empty_assignments);
+                                }
+                                auto new_index_name = builder.find_new_name();
+                                builder.add_container(
+                                    new_index_name, builder.subject().type(first_map_.indvar()->get_name())
+                                );
+                                producer_body_->at(0)
+                                    .second.assignments()
+                                    .insert({symbolic::symbol(new_index_name), new_expr});
+                                access_node->data(new_index_name);
+                            }
                         }
                     }
                 }
