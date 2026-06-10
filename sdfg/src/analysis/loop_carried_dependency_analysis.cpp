@@ -100,6 +100,7 @@ symbolic::maps::DependenceDeltas pair_deltas(
     User& previous,
     User& current,
     analysis::AnalysisManager& analysis_manager,
+    AssumptionsAnalysis& assumptions_analysis,
     structured_control_flow::StructuredLoop& loop
 ) {
     symbolic::maps::DependenceDeltas empty_result{true, "", {}};
@@ -125,7 +126,6 @@ symbolic::maps::DependenceDeltas pair_deltas(
     auto previous_subsets = collect_subsets(previous, mla);
     auto current_subsets = collect_subsets(current, mla);
 
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
     auto previous_scope = Users::scope(&previous);
     auto previous_assumptions = assumptions_analysis.get(*previous_scope, true);
     auto current_scope = Users::scope(&current);
@@ -268,6 +268,14 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
     dependencies_.clear();
     pairs_.clear();
 
+    // Build a fresh branch-condition-aware assumptions analysis. The
+    // manager-cached `AssumptionsAnalysis` deliberately skips IfElse-branch
+    // refinement to stay cheap; LCDA needs the refined coupled constraints
+    // so that `dependence_deltas`'s ISL formulation can prove halo-style
+    // patterns are non-loop-carried.
+    detailed_assumptions_ = std::make_unique<AssumptionsAnalysis>(this->sdfg_, /*with_branch_conditions=*/true);
+    detailed_assumptions_->run(analysis_manager);
+
     // Drive entirely from DDA's reaching-definitions scaffold:
     //   - DDA computes per-loop boundary snapshots (upward-exposed reads,
     //     escaping definitions) — its primary job.
@@ -326,7 +334,7 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                 if (write->container() != read->container()) {
                     continue;
                 }
-                auto deltas = pair_deltas(this->sdfg_, *write, *read, analysis_manager, *loop);
+                auto deltas = pair_deltas(this->sdfg_, *write, *read, analysis_manager, *detailed_assumptions_, *loop);
                 if (deltas.empty) continue;
                 pair_list.push_back(LoopCarriedDependencyPair{write, read, LOOP_CARRIED_DEPENDENCY_READ_WRITE, deltas});
                 auto it = deps.find(read->container());
@@ -347,7 +355,7 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                 if (w1->container() != w2->container()) {
                     continue;
                 }
-                auto deltas = pair_deltas(this->sdfg_, *w1, *w2, analysis_manager, *loop);
+                auto deltas = pair_deltas(this->sdfg_, *w1, *w2, analysis_manager, *detailed_assumptions_, *loop);
                 if (deltas.empty) continue;
                 pair_list.push_back(LoopCarriedDependencyPair{w1, w2, LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, deltas});
                 if (deps.find(w1->container()) == deps.end()) {

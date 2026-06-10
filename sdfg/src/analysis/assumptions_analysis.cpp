@@ -227,6 +227,11 @@ AssumptionsAnalysis::AssumptionsAnalysis(StructuredSDFG& sdfg)
 
       };
 
+AssumptionsAnalysis::AssumptionsAnalysis(StructuredSDFG& sdfg, bool with_branch_conditions)
+    : Analysis(sdfg), with_branch_conditions_(with_branch_conditions) {
+
+      };
+
 void AssumptionsAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     this->assumptions_.clear();
     this->assumptions_with_trivial_.clear();
@@ -274,6 +279,22 @@ void AssumptionsAnalysis::traverse(
             this->traverse(sequence_stmt->at(i).first, outer_assumptions, outer_assumptions_with_trivial);
         }
     } else if (auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(&current)) {
+        if (!with_branch_conditions_) {
+            // Cheap path: don't refine branch assumptions from the case
+            // conditions. Recurse into each branch sequence inheriting the
+            // outer scope's assumptions verbatim. CNF normalization plus
+            // coupled-constraint extraction (the expensive part) is skipped
+            // entirely.
+            for (size_t i = 0; i < if_else_stmt->size(); i++) {
+                auto& branch_seq = if_else_stmt->at(i).first;
+                this->traverse(
+                    const_cast<structured_control_flow::Sequence&>(branch_seq),
+                    outer_assumptions,
+                    outer_assumptions_with_trivial
+                );
+            }
+            return;
+        }
         for (size_t i = 0; i < if_else_stmt->size(); i++) {
             auto& branch_seq = if_else_stmt->at(i).first;
             const auto& condition = if_else_stmt->at(i).second;

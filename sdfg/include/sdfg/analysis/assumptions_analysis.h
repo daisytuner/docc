@@ -31,6 +31,16 @@ private:
 
     analysis::Users* users_analysis_;
 
+    // When false (default), IfElse branch conditions are not refined into
+    // per-branch assumption bounds / coupled constraints. The branch bodies
+    // simply inherit the outer scope's assumptions. This shortcut keeps the
+    // overall analysis pipeline cheap; analyses that need the precise
+    // branch-refined bounds (`MemoryLayoutAnalysis`,
+    // `LoopCarriedDependencyAnalysis`, detailed
+    // `DataDependencyAnalysis`) construct their own instance with this
+    // flag set to true rather than going through `AnalysisManager`.
+    bool with_branch_conditions_ = false;
+
     void traverse(
         structured_control_flow::ControlFlowNode& current,
         const symbolic::Assumptions& outer_assumptions,
@@ -58,11 +68,19 @@ private:
 
     void determine_parameters(analysis::AnalysisManager& analysis_manager);
 
-protected:
-    void run(analysis::AnalysisManager& analysis_manager) override;
-
 public:
     AssumptionsAnalysis(StructuredSDFG& sdfg);
+
+    // Opt-in constructor used by analyses that require branch-refined
+    // assumption propagation (see `with_branch_conditions_`). Not invoked
+    // by `AnalysisManager`, which always calls the single-arg constructor.
+    AssumptionsAnalysis(StructuredSDFG& sdfg, bool with_branch_conditions);
+
+    // Public so analyses that own a manually-constructed instance (DDA in
+    // detailed mode, LCDA, MLA) can drive `run()` themselves. The shared
+    // `AnalysisManager` cache uses the friend declaration on the base
+    // `Analysis` class as before.
+    void run(analysis::AnalysisManager& analysis_manager) override;
 
     const symbolic::Assumptions& get(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds = false);
 

@@ -362,7 +362,8 @@ TEST(AssumptionsAnalysisTest, IfElse_BranchConditionPropagated) {
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
 
     auto& i_assumptions = assumptions.at(i);
@@ -415,7 +416,8 @@ TEST(AssumptionsAnalysisTest, IfElse_DisjunctionNotPropagated) {
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
 
     auto& i_assumptions = assumptions.at(i);
@@ -453,7 +455,8 @@ TEST(AssumptionsAnalysisTest, IfElse_NegatedConjunctionNotPropagated) {
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
 
     auto& i_assumptions = assumptions.at(i);
@@ -509,7 +512,8 @@ TEST(AssumptionsAnalysisTest, IfElse_Coupled_LessEqual_RegistersConstraintOnBoth
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
 
     auto& i_assum = assumptions.at(i);
@@ -560,7 +564,8 @@ TEST(AssumptionsAnalysisTest, IfElse_Coupled_GreaterEqual_RegistersConstraintOnB
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
 
     auto& i_assum = assumptions.at(i);
@@ -602,7 +607,8 @@ TEST(AssumptionsAnalysisTest, IfElse_Coupled_Conjunction_RegistersBothConstraint
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
 
     auto& i_assum = assumptions.at(i);
@@ -645,7 +651,8 @@ TEST(AssumptionsAnalysisTest, IfElse_Coupled_Equality_RegistersTwoConstraints) {
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
 
     auto& i_assum = assumptions.at(i);
@@ -689,7 +696,8 @@ TEST(AssumptionsAnalysisTest, IfElse_Coupled_StrictLess_TightensByOne) {
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
 
     auto& i_assum = assumptions.at(i);
@@ -728,7 +736,8 @@ TEST(AssumptionsAnalysisTest, IfElse_Coupled_ConstraintsPropagateIntoChildScope)
     auto& nested_block = builder.add_block(taken);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& nested_assumptions = analysis.get(nested_block);
 
     auto& i_assum = nested_assumptions.at(i);
@@ -763,7 +772,8 @@ TEST(AssumptionsAnalysisTest, IfElse_SingleIndvar_DoesNotEmitConstraint) {
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
     auto& i_assum = assumptions.at(i);
 
@@ -810,7 +820,8 @@ TEST(AssumptionsAnalysisTest, IfElse_Coupled_NonAffine_Rejected) {
     auto& taken = builder.add_case(ife, cond);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    analysis::AssumptionsAnalysis analysis(sdfg, /*with_branch_conditions=*/true);
+    analysis.run(analysis_manager);
     auto& assumptions = analysis.get(taken);
 
     EXPECT_TRUE(assumptions.at(i).constraints().empty())

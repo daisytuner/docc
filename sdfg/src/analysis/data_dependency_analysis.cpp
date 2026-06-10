@@ -25,10 +25,27 @@ DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg) : Analysis(
 DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node)
     : Analysis(sdfg), node_(node) {};
 
+AssumptionsAnalysis& DataDependencyAnalysis::ensure_detailed_assumptions(analysis::AnalysisManager& analysis_manager) {
+    if (!detailed_assumptions_) {
+        detailed_assumptions_ = std::make_unique<AssumptionsAnalysis>(sdfg_, /*with_branch_conditions=*/true);
+        detailed_assumptions_->run(analysis_manager);
+    }
+    return *detailed_assumptions_;
+}
+
 void DataDependencyAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     results_.clear();
     undefined_users_.clear();
     loop_boundaries_.clear();
+
+    // Reset the detailed assumptions-analysis cache. It will be lazily
+    // (re)constructed by `ensure_detailed_assumptions()` on first symbolic
+    // subset/disjointness query - which only happens when `detailed_` is
+    // set. The cheap, branch-condition-less manager-cached instance is
+    // insufficient for those queries because halo-style IfElse guards
+    // (e.g. `2*wout + kw < 226`) only register their coupled constraints
+    // in the detailed form.
+    detailed_assumptions_.reset();
 
     std::unordered_set<User*> undefined;
     std::unordered_map<User*, std::unordered_set<User*>> open_definitions;
@@ -720,7 +737,7 @@ bool DataDependencyAnalysis::
         return false;
     }
 
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& assumptions_analysis = this->ensure_detailed_assumptions(analysis_manager);
     auto& previous_subsets = previous.subsets();
     auto& current_subsets = current.subsets();
     auto previous_scope = Users::scope(&previous);
@@ -795,7 +812,7 @@ bool DataDependencyAnalysis::fully_covered(
         return false;
     }
 
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& assumptions_analysis = this->ensure_detailed_assumptions(analysis_manager);
     auto& current_assumptions = assumptions_analysis.get(*Users::scope(&current), true);
     symbolic::AssumptionsBounds current_bounds(current_assumptions);
 
@@ -845,7 +862,7 @@ bool DataDependencyAnalysis::intersects(User& previous, User& current, analysis:
     auto& previous_subsets = previous.subsets();
     auto& current_subsets = current.subsets();
 
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& assumptions_analysis = this->ensure_detailed_assumptions(analysis_manager);
     auto previous_scope = Users::scope(&previous);
     auto& previous_assumptions = assumptions_analysis.get(*previous_scope, true);
     auto current_scope = Users::scope(&current);
@@ -903,7 +920,7 @@ bool DataDependencyAnalysis::
     }
 
     // Collect memlets and assumptions
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& assumptions_analysis = this->ensure_detailed_assumptions(analysis_manager);
     auto previous_scope = Users::scope(&previous);
     auto current_scope = Users::scope(&current);
     auto& previous_assumptions = assumptions_analysis.get(*previous_scope, true);
@@ -951,7 +968,7 @@ bool DataDependencyAnalysis::depends(analysis::AnalysisManager& analysis_manager
         return true;
     }
 
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& assumptions_analysis = this->ensure_detailed_assumptions(analysis_manager);
     auto previous_scope = Users::scope(&previous);
     auto current_scope = Users::scope(&current);
     auto& previous_assumptions = assumptions_analysis.get(*previous_scope, true);

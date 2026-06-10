@@ -78,6 +78,15 @@ void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     accesses_.clear();
     tiles_.clear();
     tile_groups_.clear();
+
+    // Build a fresh branch-condition-aware assumptions analysis on every
+    // run. The manager-cached `AssumptionsAnalysis` deliberately skips
+    // IfElse-branch refinement; MLA's per-scope delinearization / bound
+    // queries below need the refined coupled constraints (e.g. halo
+    // guards).
+    detailed_assumptions_ = std::make_unique<AssumptionsAnalysis>(sdfg_, /*with_branch_conditions=*/true);
+    detailed_assumptions_->run(analysis_manager);
+
     traverse(sdfg_.root(), analysis_manager);
 }
 
@@ -119,7 +128,7 @@ void MemoryLayoutAnalysis::
 
 void MemoryLayoutAnalysis::
     process_block(structured_control_flow::Block& block, analysis::AnalysisManager& analysis_manager) {
-    auto& assumptions_analysis = analysis_manager.get<AssumptionsAnalysis>();
+    auto& assumptions_analysis = *this->detailed_assumptions_;
     // Use trivial bounds (type-derived, e.g. unsigned >= 0) so delinearization
     // can soundly discharge non-negativity proof obligations on parameters.
     auto& assumptions = assumptions_analysis.get(block, /*include_trivial_bounds=*/true);
@@ -279,7 +288,7 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
 
     auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&scope);
 
-    auto& assumptions_analysis = analysis_manager.get<AssumptionsAnalysis>();
+    auto& assumptions_analysis = *this->detailed_assumptions_;
     // For loops, query at the loop body so the induction variable's bounds are visible.
     auto& assumption_node = loop ? static_cast<structured_control_flow::ControlFlowNode&>(loop->root()) : scope;
     // Trivial-bounds view: includes type-derived defaults (e.g. Int32 ∈ [INT_MIN, INT_MAX]).

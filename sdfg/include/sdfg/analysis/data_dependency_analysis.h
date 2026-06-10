@@ -56,6 +56,21 @@ private:
     // precise boundary information it requires.
     bool detailed_ = false;
 
+    // Per-run detailed `AssumptionsAnalysis` instance. Lazily constructed
+    // by `ensure_detailed_assumptions()` on first use, with
+    // `with_branch_conditions=true` so that IfElse-guard refinements (e.g.
+    // coupled constraints emitted by halo guards) reach the symbolic subset
+    // queries below. Bypasses `AnalysisManager` because the manager-cached
+    // `AssumptionsAnalysis` intentionally uses the cheaper, branch-
+    // condition-less form. Lazy init also handles direct `visit_*` entry
+    // points (e.g. tests) that don't go through `run()`.
+    std::unique_ptr<AssumptionsAnalysis> detailed_assumptions_;
+
+    // Returns the per-instance detailed assumptions analysis, constructing
+    // and `run()`ing it on first call. Must only be invoked behind a
+    // `detailed_` guard at the call site.
+    AssumptionsAnalysis& ensure_detailed_assumptions(analysis::AnalysisManager& analysis_manager);
+
     bool supersedes_restrictive(User& previous, User& current, analysis::AnalysisManager& analysis_manager);
 
     bool intersects(User& previous, User& current, analysis::AnalysisManager& analysis_manager);

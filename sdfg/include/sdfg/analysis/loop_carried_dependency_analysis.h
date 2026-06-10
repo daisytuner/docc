@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
+#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -77,6 +78,12 @@ private:
     // runs in conservative mode for performance.
     std::unique_ptr<DataDependencyAnalysis> detailed_dda_;
     DataDependencyAnalysis& detailed_dda();
+
+    // Owned, branch-condition-aware `AssumptionsAnalysis` instance constructed
+    // manually for the same reason: the cheaper, manager-cached AA does not
+    // refine assumptions across IfElse branches (needed for halo-style
+    // coupled constraints).
+    std::unique_ptr<AssumptionsAnalysis> detailed_assumptions_;
 
     void analyze_loop(analysis::AnalysisManager& analysis_manager, structured_control_flow::StructuredLoop& loop);
 
