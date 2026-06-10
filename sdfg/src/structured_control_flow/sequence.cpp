@@ -107,8 +107,8 @@ void Transition::replace(const symbolic::Expression old_expression, const symbol
     }
 };
 
-Sequence::Sequence(size_t element_id, const DebugInfo& debug_info)
-    : ControlFlowNode(element_id, debug_info) {
+Sequence::Sequence(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent)
+    : ControlFlowNode(element_id, debug_info, parent) {
 
       };
 

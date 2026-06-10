@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/code_node.h"
@@ -102,8 +101,7 @@ bool EinsumPromotion::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // Get & check sequence
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(block));
+    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
     if (!sequence) {
         return false;
     }
@@ -112,7 +110,7 @@ bool EinsumPromotion::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // Get loop
-    auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(scope_analysis.parent_scope(sequence));
+    auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(sequence->get_parent());
     if (!loop) {
         return false;
     }
@@ -203,10 +201,9 @@ void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     assert(block);
 
     // Get sequence and loop
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(block));
+    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
     assert(sequence);
-    auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(scope_analysis.parent_scope(sequence));
+    auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(sequence->get_parent());
     assert(loop);
 
     // Get new dimension data from loop
@@ -217,7 +214,7 @@ void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     assert(!bound.is_null());
 
     // Get the parent node of the loop
-    auto* loop_parent = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(loop));
+    auto* loop_parent = dynamic_cast<structured_control_flow::Sequence*>(loop->get_parent());
     assert(loop_parent);
 
     // Add a new block after the loop

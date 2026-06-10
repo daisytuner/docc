@@ -13,7 +13,6 @@
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/memory_layout_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/memlet.h"
@@ -246,9 +245,7 @@ void merge_deltas(LoopCarriedDependencyInfo& info, const symbolic::maps::Depende
     isl_ctx_free(ctx);
 }
 
-bool user_in_subtree(
-    User& user, const structured_control_flow::ControlFlowNode& subtree, analysis::ScopeAnalysis& scope_analysis
-) {
+bool user_in_subtree(User& user, const structured_control_flow::ControlFlowNode& subtree) {
     if (user.element() == nullptr) {
         return false;
     }
@@ -257,7 +254,7 @@ bool user_in_subtree(
         if (scope == &subtree) {
             return true;
         }
-        scope = scope_analysis.parent_scope(scope);
+        scope = scope->get_parent();
     }
     return false;
 }
@@ -282,7 +279,6 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
     auto& dda = detailed_dda();
     dda.run(analysis_manager);
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
 
     for (auto* loop_node : loop_analysis.loops()) {
         auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop_node);
@@ -298,7 +294,7 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                 in_scope = true;
                 break;
             }
-            cur = scope_analysis.parent_scope(cur);
+            cur = cur->get_parent();
         }
         if (!in_scope) {
             continue;
@@ -387,13 +383,12 @@ std::vector<const LoopCarriedDependencyPair*> LoopCarriedDependencyAnalysis::pai
     if (it == pairs_.end()) {
         return result;
     }
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
 
     for (auto& pair : it->second) {
-        bool wa = user_in_subtree(*pair.writer, subtree_a, scope_analysis);
-        bool wb = user_in_subtree(*pair.writer, subtree_b, scope_analysis);
-        bool ra = user_in_subtree(*pair.reader, subtree_a, scope_analysis);
-        bool rb = user_in_subtree(*pair.reader, subtree_b, scope_analysis);
+        bool wa = user_in_subtree(*pair.writer, subtree_a);
+        bool wb = user_in_subtree(*pair.writer, subtree_b);
+        bool ra = user_in_subtree(*pair.reader, subtree_a);
+        bool rb = user_in_subtree(*pair.reader, subtree_b);
 
         if ((wa && rb) || (wb && ra)) {
             result.push_back(&pair);

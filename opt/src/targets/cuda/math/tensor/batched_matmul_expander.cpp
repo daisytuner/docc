@@ -88,8 +88,7 @@ bool CudaBatchedMatMulExpander::
         return false;
     }
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
     int index = parent.index(block);
     auto& transition = parent.at(index).second;
 

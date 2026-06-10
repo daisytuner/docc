@@ -6,7 +6,6 @@
 
 #include "docc/utils.h"
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -38,7 +37,6 @@ bool ArgumentExpansionPass::expand_arguments(
     const std::string& target
 ) {
     auto& users_analysis = analysis_manager.get<sdfg::analysis::Users>();
-    auto& scope_analysis = analysis_manager.get<sdfg::analysis::ScopeAnalysis>();
 
     // find all call nodes that reference the candidate SDFG
     for (auto& user : users_analysis.uses(callee_name)) {
@@ -116,7 +114,7 @@ bool ArgumentExpansionPass::expand_arguments(
             builder.add_container(buffer_name, buffer_type, false, false);
         }
 
-        auto& parent = static_cast<sdfg::structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
+        auto& parent = static_cast<sdfg::structured_control_flow::Sequence&>(*block.get_parent());
         auto& temporary_parent = builder.add_sequence_after(parent, block);
 
         // Define copy-in and allocation operations

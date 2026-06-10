@@ -3,8 +3,6 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 
-#include "sdfg/analysis/scope_analysis.h"
-
 namespace sdfg {
 namespace math {
 namespace tensor {

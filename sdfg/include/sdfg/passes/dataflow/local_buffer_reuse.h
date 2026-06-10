@@ -5,7 +5,6 @@
 #include <typeinfo>
 #include <vector>
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
@@ -257,12 +256,12 @@ private:
     }
 
     // Remove free block for a malloc container
-    bool remove_free_block(structured_control_flow::Block* free_blk, analysis::ScopeAnalysis& scope_analysis) {
+    bool remove_free_block(structured_control_flow::Block* free_blk) {
         if (free_blk == nullptr) {
             return false;
         }
 
-        auto parent_scope = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(free_blk));
+        auto parent_scope = dynamic_cast<structured_control_flow::Sequence*>(free_blk->get_parent());
         if (parent_scope == nullptr) {
             return false;
         }
@@ -282,7 +281,6 @@ public:
         bool applied = false;
 
         auto& users_analysis = this->analysis_manager_.get<analysis::Users>();
-        auto& scope_analysis = this->analysis_manager_.get<analysis::ScopeAnalysis>();
 
         // Each pattern needs N * 3 blocks: (malloc, ref, lib) for each of N lib nodes
         constexpr int pattern_size = N * 3;
@@ -322,8 +320,7 @@ public:
                     all_constraints_met = false;
                     break;
                 }
-                auto parent_scope =
-                    dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(free_blk));
+                auto parent_scope = dynamic_cast<structured_control_flow::Sequence*>(free_blk->get_parent());
                 if (parent_scope == nullptr) {
                     all_constraints_met = false;
                     break;
@@ -355,7 +352,7 @@ public:
                 builder_.remove_child(node, malloc_idx);
 
                 // Remove the free block for this malloc container
-                remove_free_block(free_blocks[k - 1], scope_analysis);
+                remove_free_block(free_blocks[k - 1]);
 
                 DEBUG_PRINTLN(
                     "Eliminated tensor with containers " << malloc_containers[0] << " and " << malloc_containers[k]

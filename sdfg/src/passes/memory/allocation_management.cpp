@@ -1,7 +1,6 @@
 #include "sdfg/passes/memory/allocation_management.h"
 
 #include "sdfg/analysis/dominance_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 
 #include "sdfg/data_flow/library_nodes/stdlib/stdlib.h"
@@ -54,8 +53,7 @@ bool AllocationManagement::can_be_applied_allocation(data_flow::DataFlowGraph& g
 
     // Limitations
     auto& block = static_cast<structured_control_flow::Block&>(*graph.get_parent());
-    auto& scope_analysis = this->analysis_manager_.get<analysis::ScopeAnalysis>();
-    if (scope_analysis.parent_scope(&block) != &sdfg.root()) {
+    if (block.get_parent() != &sdfg.root()) {
         return false;
     }
 
@@ -146,8 +144,7 @@ bool AllocationManagement::
 
     // Limitations
     auto& block = static_cast<structured_control_flow::Block&>(*graph.get_parent());
-    auto& scope_analysis = this->analysis_manager_.get<analysis::ScopeAnalysis>();
-    if (scope_analysis.parent_scope(&block) != &sdfg.root()) {
+    if (block.get_parent() != &sdfg.root()) {
         return false;
     }
 

@@ -3,7 +3,6 @@
 #include <map>
 #include <string>
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -125,8 +124,7 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
     // Infer subsets for arguments
     auto& argument_sizes = arguments_analysis.argument_sizes(analysis_manager, this->map_, allow_dynamic_sizes_);
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto parent_scope = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(&this->map_));
+    auto parent_scope = static_cast<structured_control_flow::Sequence*>(this->map_.get_parent());
 
     std::string container_prefix = copy_prefix() + std::to_string(parent_scope->element_id()) + "_";
 

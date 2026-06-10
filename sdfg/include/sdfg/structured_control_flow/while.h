@@ -40,7 +40,9 @@ class While : public ControlFlowNode {
 private:
     std::unique_ptr<Sequence> root_;
 
-    While(size_t element_id, const DebugInfo& debug_info);
+    While(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent);
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = 2;
 
 public:
     While(const While& node) = delete;
@@ -81,7 +83,9 @@ class Break : public ControlFlowNode {
     friend class sdfg::builder::StructuredSDFGBuilder;
 
 private:
-    Break(size_t element_id, const DebugInfo& debug_info);
+    Break(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent);
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
     void validate(const Function& function) const override;
@@ -103,7 +107,9 @@ class Continue : public ControlFlowNode {
     friend class sdfg::builder::StructuredSDFGBuilder;
 
 private:
-    Continue(size_t element_id, const DebugInfo& debug_info);
+    Continue(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent);
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
     void validate(const Function& function) const override;

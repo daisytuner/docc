@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -36,8 +35,7 @@ BlockHoisting::BlockHoisting(builder::StructuredSDFGBuilder& builder, analysis::
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {};
 
 bool BlockHoisting::accept(structured_control_flow::Map& map_stmt) {
-    auto& scope_analysis = analysis_manager_.get<analysis::ScopeAnalysis>();
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&map_stmt));
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*map_stmt.get_parent());
 
     bool applied = false;
     applied |= this->map_invariant_front(parent, map_stmt);
@@ -52,8 +50,7 @@ bool BlockHoisting::accept(structured_control_flow::IfElse& if_else) {
         return false;
     }
 
-    auto& scope_analysis = analysis_manager_.get<analysis::ScopeAnalysis>();
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&if_else));
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*if_else.get_parent());
 
     bool applied = false;
     applied |= this->if_else_invariant_front(parent, if_else);

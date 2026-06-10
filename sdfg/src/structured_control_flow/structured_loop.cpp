@@ -9,13 +9,15 @@ namespace structured_control_flow {
 StructuredLoop::StructuredLoop(
     size_t element_id,
     const DebugInfo& debug_info,
+    ControlFlowNode* parent,
     symbolic::Symbol indvar,
     symbolic::Expression init,
     symbolic::Expression update,
     symbolic::Condition condition
 )
-    : ControlFlowNode(element_id, debug_info), indvar_(indvar), init_(init), update_(update), condition_(condition) {
-    this->root_ = std::unique_ptr<Sequence>(new Sequence(++element_id, debug_info));
+    : ControlFlowNode(element_id, debug_info, parent), indvar_(indvar), init_(init), update_(update),
+      condition_(condition) {
+    this->root_ = std::unique_ptr<Sequence>(new Sequence(++element_id, debug_info, this));
 }
 
 void StructuredLoop::validate(const Function& function) const {

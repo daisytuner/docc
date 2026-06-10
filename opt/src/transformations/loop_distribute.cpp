@@ -2,7 +2,6 @@
 
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/analysis/loop_carried_dependency_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 
@@ -22,18 +21,14 @@ namespace {
 
 // Walk parent_scope chain from `user`'s scope up; return true if `subtree` is
 // reached. Mirrors LoopCarriedDependencyAnalysis::pairs_between's containment.
-bool user_in_subtree(
-    analysis::User* user,
-    const structured_control_flow::ControlFlowNode& subtree,
-    analysis::ScopeAnalysis& scope_analysis
-) {
+bool user_in_subtree(analysis::User* user, const structured_control_flow::ControlFlowNode& subtree) {
     if (user->element() == nullptr) {
         return false;
     }
     auto* scope = analysis::Users::scope(user);
     while (scope != nullptr) {
         if (scope == &subtree) return true;
-        scope = scope_analysis.parent_scope(scope);
+        scope = scope->get_parent();
     }
     return false;
 }
@@ -92,7 +87,6 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     //     A cross-group RAW would force the reader to see a different write
     //     after the groups are serialized.
     auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
     if (!lcd.available(this->loop_)) {
         return false;
     }
@@ -103,7 +97,7 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     // there into its destination group: 0 = prefix, 1 = center, 2 = suffix.
     auto piece_of = [&](analysis::User* u) -> size_t {
         for (size_t i = 0; i < body.size(); i++) {
-            if (user_in_subtree(u, body.at(i).first, scope_analysis)) {
+            if (user_in_subtree(u, body.at(i).first)) {
                 return i;
             }
         }
@@ -214,8 +208,7 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     auto update = this->loop_.update();
     auto init = this->loop_.init();
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto parent = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(&this->loop_));
+    auto parent = static_cast<structured_control_flow::Sequence*>(this->loop_.get_parent());
 
     structured_control_flow::ScheduleType schedule_type = structured_control_flow::ScheduleType_Sequential::create();
     if (auto map_stmt = dynamic_cast<structured_control_flow::Map*>(&this->loop_)) {

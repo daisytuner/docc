@@ -5,7 +5,6 @@
 #include <tuple>
 #include <vector>
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -124,8 +123,7 @@ std::tuple<symbolic::Symbol, symbolic::Symbol, symbolic::Symbol> KernelLocalStor
 
 std::tuple<bool, bool, bool> KernelLocalStorage::
     available_dims(std::vector<symbolic::Expression> subsets, analysis::AnalysisManager& analysis_manager) {
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto ancestors = scope_analysis.ancestor_scopes(&loop_);
+    auto ancestors = ControlFlowNode::parent_chain(loop_);
 
     symbolic::Integer iteration_count = get_iteration_count(loop_);
 
@@ -213,8 +211,7 @@ bool KernelLocalStorage::is_candidate(
         return false;
     }
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto ancestors = scope_analysis.ancestor_scopes(&loop);
+    auto ancestors = ControlFlowNode::parent_chain(loop);
 
     // Criterion: Must not be a GPU map itself
     if (auto loop_map = dynamic_cast<structured_control_flow::Map*>(&loop)) {
@@ -348,8 +345,7 @@ bool KernelLocalStorage::
         return false;
     }
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto ancestors = scope_analysis.ancestor_scopes(&loop_);
+    auto ancestors = ControlFlowNode::parent_chain(loop_);
 
     // Criterion: Iteration count is known and an Integer
     symbolic::Integer iteration_count = get_iteration_count(loop_);
@@ -380,8 +376,7 @@ bool KernelLocalStorage::
 void KernelLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto ancestors = scope_analysis.ancestor_scopes(&loop_);
+    auto ancestors = ControlFlowNode::parent_chain(loop_);
 
     auto& users = analysis_manager.get<analysis::Users>();
 
@@ -435,7 +430,7 @@ void KernelLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis
     auto [x_dim_size, y_dim_size, z_dim_size] = dim_size(ancestors);
     auto [x_dim_indvar, y_dim_indvar, z_dim_indvar] = dim_indvars(ancestors);
 
-    auto parent = scope_analysis.parent_scope(&loop_);
+    auto parent = loop_.get_parent();
     auto parent_seq = static_cast<structured_control_flow::Sequence*>(parent);
     auto& seq = builder.add_sequence_before(*parent_seq, loop_, {}, loop_.debug_info());
 

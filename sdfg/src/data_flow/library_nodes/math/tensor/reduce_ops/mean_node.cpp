@@ -1,6 +1,5 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.h"
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h"

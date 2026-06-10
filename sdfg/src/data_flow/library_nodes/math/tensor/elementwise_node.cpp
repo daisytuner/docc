@@ -5,8 +5,6 @@
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/types/type.h"
 
-#include "sdfg/analysis/scope_analysis.h"
-
 namespace sdfg {
 namespace math {
 namespace tensor {
@@ -320,8 +318,7 @@ bool ElementWiseDataflowTensorNode::
         return false;
     }
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&org_block));
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*org_block.get_parent());
     int index = parent.index(org_block);
     auto& transition = parent.at(index).second;
 

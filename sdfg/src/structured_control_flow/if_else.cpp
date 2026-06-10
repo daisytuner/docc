@@ -6,10 +6,8 @@
 namespace sdfg {
 namespace structured_control_flow {
 
-IfElse::IfElse(size_t element_id, const DebugInfo& debug_info)
-    : ControlFlowNode(element_id, debug_info) {
-
-      };
+IfElse::IfElse(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent)
+    : ControlFlowNode(element_id, debug_info, parent) {}
 
 void IfElse::validate(const Function& function) const {
     for (auto& entry : this->cases_) {

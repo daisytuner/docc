@@ -15,6 +15,8 @@ protected:
 
     size_t new_element_id() const;
 
+    size_t new_element_id_batch(size_t batch) const;
+
 public:
     virtual ~FunctionBuilder() = default;
 

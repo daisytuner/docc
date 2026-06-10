@@ -41,18 +41,26 @@ class ControlFlowNode : public Element {
     friend class builder::StructuredSDFGBuilder;
 
 protected:
+    ControlFlowNode* parent_;
+
     /**
-     * @brief Protected constructor for control flow nodes
+     * @brief Protected constructor for control flow nodes with parent
      * @param element_id Unique identifier for this element
      * @param debug_info Debug information for this node
+     * @param parent The parent ControlFlowNode
      */
-    ControlFlowNode(size_t element_id, const DebugInfo& debug_info);
+    ControlFlowNode(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent);
 
 public:
     virtual ~ControlFlowNode() = default;
 
+    ControlFlowNode* get_parent();
+    const ControlFlowNode* get_parent() const;
+
     ControlFlowNode(const ControlFlowNode& node) = delete;
     ControlFlowNode& operator=(const ControlFlowNode&) = delete;
+
+    static std::vector<ControlFlowNode*> parent_chain(ControlFlowNode& child);
 };
 
 } // namespace structured_control_flow

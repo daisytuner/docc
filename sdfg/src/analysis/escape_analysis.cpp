@@ -24,12 +24,13 @@ bool is_loop(structured_control_flow::ControlFlowNode* node) {
            dynamic_cast<structured_control_flow::While*>(node) != nullptr;
 }
 
-structured_control_flow::ControlFlowNode*
-find_containing_loop(structured_control_flow::Block* block, ScopeAnalysis& scope_analysis) {
-    auto ancestors = scope_analysis.ancestor_scopes(block);
-    for (auto* ancestor : ancestors) {
+structured_control_flow::ControlFlowNode* find_containing_loop(structured_control_flow::Block* block) {
+    auto ancestor = block->get_parent();
+    while (ancestor) {
         if (is_loop(ancestor)) {
             return ancestor;
+        } else {
+            ancestor = ancestor->get_parent();
         }
     }
     return nullptr;
@@ -79,7 +80,6 @@ EscapeAnalysis::EscapeAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {}
 void EscapeAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = this->sdfg_;
     auto& users = analysis_manager.get<Users>();
-    auto& scope_analysis = analysis_manager.get<ScopeAnalysis>();
 
     // Step 1: Find all malloc allocations
     MallocFinder malloc_finder;
@@ -125,7 +125,7 @@ void EscapeAnalysis::run(analysis::AnalysisManager& analysis_manager) {
         // Step 4: For non-escaping allocations, find the last use
         if (!container_escapes) {
             auto* malloc_block = malloc_blocks_[container];
-            auto* containing_loop = find_containing_loop(malloc_block, scope_analysis);
+            auto* containing_loop = find_containing_loop(malloc_block);
 
             User* last = nullptr;
 
@@ -164,7 +164,7 @@ void EscapeAnalysis::run(analysis::AnalysisManager& analysis_manager) {
                         use_block = dynamic_cast<structured_control_flow::Block*>(lib->get_parent().get_parent());
                     }
                     if (use_block) {
-                        auto* use_loop = find_containing_loop(use_block, scope_analysis);
+                        auto* use_loop = find_containing_loop(use_block);
                         if (use_loop && !outermost_use_loop) {
                             outermost_use_loop = use_loop;
                         }
@@ -183,7 +183,7 @@ void EscapeAnalysis::run(analysis::AnalysisManager& analysis_manager) {
                             use_block = dynamic_cast<structured_control_flow::Block*>(lib->get_parent().get_parent());
                         }
                         if (use_block) {
-                            auto* use_loop = find_containing_loop(use_block, scope_analysis);
+                            auto* use_loop = find_containing_loop(use_block);
                             // If this use is not inside the loop, it could be the last use
                             if (!use_loop) {
                                 auto uses_after = users.all_uses_after(*use);
@@ -203,7 +203,7 @@ void EscapeAnalysis::run(analysis::AnalysisManager& analysis_manager) {
                                                                                                   .get_parent());
                                         }
                                         if (after_block) {
-                                            auto* after_loop = find_containing_loop(after_block, scope_analysis);
+                                            auto* after_loop = find_containing_loop(after_block);
                                             if (!after_loop) {
                                                 is_last = false;
                                                 break;

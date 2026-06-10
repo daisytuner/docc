@@ -1,6 +1,5 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/transpose_node.h"
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 
 namespace sdfg {
@@ -102,8 +101,7 @@ bool TransposeNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
         return false;
     }
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
     int index = parent.index(block);
     auto& transition = parent.at(index).second;
 

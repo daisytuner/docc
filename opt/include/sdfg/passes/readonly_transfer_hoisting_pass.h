@@ -49,13 +49,12 @@ private:
     );
 
     std::pair<structured_control_flow::Sequence*, size_t> correct_location(
-        analysis::ScopeAnalysis& scope_analysis,
         structured_control_flow::Sequence* sequence,
         size_t index,
         const std::vector<std::pair<structured_control_flow::Sequence*, size_t>>& parents
     );
-    std::vector<std::pair<structured_control_flow::Sequence*, size_t>>
-    get_parents(analysis::ScopeAnalysis& scope_analysis, structured_control_flow::Block* block);
+    std::vector<std::pair<structured_control_flow::Sequence*, size_t>> get_parents(structured_control_flow::Block* block
+    );
 
 public:
     virtual std::string name() override;

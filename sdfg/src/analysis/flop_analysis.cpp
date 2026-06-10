@@ -231,8 +231,7 @@ symbolic::Expression FlopAnalysis::
         return SymEngine::null;
     }
 
-    auto& scope_analysis = analysis_manager.get<ScopeAnalysis>();
-    structured_control_flow::ControlFlowNode* parent = scope_analysis.parent_scope(&loop);
+    structured_control_flow::ControlFlowNode* parent = loop.get_parent();
     if (!parent) {
         throw InvalidSDFGException("FlopAnalysis: Could not find parent scope of structured loop");
     }

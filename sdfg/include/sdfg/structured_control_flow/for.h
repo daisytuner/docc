@@ -46,10 +46,13 @@ class For : public StructuredLoop {
 private:
     For(size_t element_id,
         const DebugInfo& debug_info,
+        ControlFlowNode* parent,
         symbolic::Symbol indvar,
         symbolic::Expression init,
         symbolic::Expression update,
         symbolic::Condition condition);
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = StructuredLoop::REQUIRED_ELEMENT_IDS;
 
 public:
     For(const For& node) = delete;

@@ -14,6 +14,20 @@ from docc.sdfg import (
 class TestBlock:
     """Test suite for Block properties."""
 
+    def test_block_parent(self):
+        """Test that block has the correct parent"""
+        builder = StructuredSDFGBuilder("test_sdfg")
+
+        block_ptr = builder.add_block()
+
+        sdfg = builder.move()
+        block = sdfg.root.child(0)
+
+        assert sdfg.root.parent is None
+
+        parent = block.parent
+        assert parent is sdfg.root
+
     def test_dataflow_property(self):
         """Test that dataflow property returns the DataFlowGraph."""
         builder = StructuredSDFGBuilder("test_sdfg")
@@ -28,6 +42,9 @@ class TestBlock:
         # Block should have a dataflow property
         dataflow = block.dataflow
         assert dataflow is not None
+
+        parent = block.parent
+        assert parent is sdfg.root
 
         # The dataflow graph should contain the access node we added
         nodes = list(dataflow.nodes)

@@ -7,6 +7,9 @@
 namespace sdfg {
 namespace analysis {
 
+/**
+ * @deprecated SDFG Elements now have all a parent
+ */
 class ScopeAnalysis : public Analysis {
 private:
     std::unordered_map<const structured_control_flow::ControlFlowNode*, structured_control_flow::ControlFlowNode*>

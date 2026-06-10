@@ -142,8 +142,7 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     // GPU shared memory: resolve symbolic extents using GPU block sizes and
     // require at least one cooperative dimension
     if (storage_type_.is_nv_shared()) {
-        auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-        auto ancestors = scope_analysis.ancestor_scopes(&loop_);
+        auto ancestors = ControlFlowNode::parent_chain(loop_);
 
         // Build substitution map: symbolic GPU map bounds → integer block sizes
         // E.g., Map condition "i < N" with block_size=32 → N=32
@@ -222,9 +221,8 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
 
 void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
 
-    auto parent_node = scope_analysis.parent_scope(&loop_);
+    auto parent_node = loop_.get_parent();
     auto parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);
     if (!parent) {
         throw InvalidSDFGException("InLocalStorage: Parent of loop must be a Sequence!");
@@ -302,7 +300,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         // ============================================================
         // GPU COOPERATIVE PATH
         // ============================================================
-        auto ancestors = scope_analysis.ancestor_scopes(&loop_);
+        auto ancestors = ControlFlowNode::parent_chain(loop_);
 
         // Collect cooperative GPU dimensions (indvar not in tile bases)
         struct CoopDim {

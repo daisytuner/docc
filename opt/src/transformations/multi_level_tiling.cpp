@@ -1,6 +1,5 @@
 #include "sdfg/transformations/multi_level_tiling.h"
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -46,8 +45,7 @@ void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::
     auto middle_condition = symbolic::subs(inner.condition(), inner_indvar2, middle_indvar);
     auto middle_update = symbolic::add(middle_indvar, symbolic::integer(this->tile_size_2_));
 
-    auto& scope_analysis2 = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto parent2 = static_cast<structured_control_flow::Sequence*>(scope_analysis2.parent_scope(&inner));
+    auto parent2 = static_cast<structured_control_flow::Sequence*>(inner.get_parent());
     size_t index2 = parent2->index(inner);
     auto& transition2 = parent2->at(index2).second;
 

@@ -139,7 +139,9 @@ private:
     std::vector<std::unique_ptr<ControlFlowNode>> children_;
     std::vector<std::unique_ptr<Transition>> transitions_;
 
-    Sequence(size_t element_id, const DebugInfo& debug_info);
+    Sequence(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent);
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
     Sequence(const Sequence& node) = delete;

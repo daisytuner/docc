@@ -56,11 +56,14 @@ protected:
     StructuredLoop(
         size_t element_id,
         const DebugInfo& debug_info,
+        ControlFlowNode* parent,
         symbolic::Symbol indvar,
         symbolic::Expression init,
         symbolic::Expression update,
         symbolic::Condition condition
     );
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = 2;
 
 public:
     virtual ~StructuredLoop() = default;

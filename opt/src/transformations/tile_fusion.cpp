@@ -10,7 +10,6 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/memory_layout_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/data_flow_graph.h"
@@ -172,7 +171,6 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     radius_ = 0;
 
     // Get analyses upfront
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
@@ -180,8 +178,8 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     // ==========================================================================
     // Criterion 1: Both maps are in the same parent sequence, consecutive
     // ==========================================================================
-    auto* first_parent = scope_analysis.parent_scope(&first_map_);
-    auto* second_parent = scope_analysis.parent_scope(&second_map_);
+    auto* first_parent = first_map_.get_parent();
+    auto* second_parent = second_map_.get_parent();
     if (first_parent == nullptr || second_parent == nullptr) {
         return false;
     }
@@ -590,11 +588,10 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
 
 void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
     auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
 
     // Get parent sequence
-    auto* parent = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(&first_map_));
+    auto* parent = static_cast<structured_control_flow::Sequence*>(first_map_.get_parent());
     size_t first_index = parent->index(first_map_);
 
     // Extract tile loop properties from first map (representative)

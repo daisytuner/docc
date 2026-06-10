@@ -19,7 +19,6 @@
 #include "py_escape_analysis.h"
 #include "py_flop_analysis.h"
 #include "py_loop_analysis.h"
-#include "py_scope_analysis.h"
 #include "py_type_analysis.h"
 #include "py_users.h"
 
@@ -44,7 +43,6 @@ private:
     std::optional<PyEscapeAnalysis> escape_analysis_;
     std::optional<PyFlopAnalysis> flop_analysis_;
     std::optional<PyLoopAnalysis> loop_analysis_;
-    std::optional<PyScopeAnalysis> scope_analysis_;
     std::optional<PyTypeAnalysis> type_analysis_;
     std::optional<PyUsers> users_;
 
@@ -66,7 +64,6 @@ public:
         escape_analysis_.reset();
         flop_analysis_.reset();
         loop_analysis_.reset();
-        scope_analysis_.reset();
         type_analysis_.reset();
         users_.reset();
 
@@ -120,13 +117,6 @@ public:
             loop_analysis_.emplace(*manager_);
         }
         return *loop_analysis_;
-    }
-
-    PyScopeAnalysis& scope_analysis() {
-        if (!scope_analysis_) {
-            scope_analysis_.emplace(*manager_);
-        }
-        return *scope_analysis_;
     }
 
     PyTypeAnalysis& type_analysis() {
@@ -196,12 +186,6 @@ inline void register_analysis(py::module& m) {
             "Get the LoopAnalysis"
         )
         .def(
-            "scope_analysis",
-            &PyAnalysisManager::scope_analysis,
-            py::return_value_policy::reference_internal,
-            "Get the ScopeAnalysis"
-        )
-        .def(
             "type_analysis",
             &PyAnalysisManager::type_analysis,
             py::return_value_policy::reference_internal,
@@ -216,10 +200,6 @@ inline void register_analysis(py::module& m) {
 
     py::class_<PyAssumptionsAnalysis>(m, "AssumptionsAnalysis").def("__repr__", [](const PyAssumptionsAnalysis&) {
         return "<AssumptionsAnalysis>";
-    });
-
-    py::class_<PyScopeAnalysis>(m, "ScopeAnalysis").def("__repr__", [](const PyScopeAnalysis&) {
-        return "<ScopeAnalysis>";
     });
 
     py::class_<PyControlFlowAnalysis>(m, "ControlFlowAnalysis").def("__repr__", [](const PyControlFlowAnalysis&) {

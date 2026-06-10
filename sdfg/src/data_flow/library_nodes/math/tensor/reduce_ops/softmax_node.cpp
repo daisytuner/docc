@@ -1,5 +1,4 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.h"
@@ -43,9 +42,7 @@ bool SoftmaxNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         return false;
     }
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
-    int index = parent.index(block);
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
 
     auto& in_edge = *dataflow.in_edges(*this).begin();
     auto& out_edge = *dataflow.out_edges(*this).begin();

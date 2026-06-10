@@ -1,6 +1,5 @@
 #include "sdfg/transformations/loop_peeling.h"
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/structured_control_flow/for.h"
@@ -242,8 +241,7 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
     }
 
     // Get parent scope of the outermost loop
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto parent = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(&loop_));
+    auto parent = static_cast<structured_control_flow::Sequence*>(loop_.get_parent());
 
     // Create IfElse before the outermost loop
     auto& if_else = builder.add_if_else_before(*parent, loop_, {}, loop_.debug_info());

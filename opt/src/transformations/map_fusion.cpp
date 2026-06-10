@@ -342,9 +342,8 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     }
 
     // Criterion: Get parent scope and verify both loops are sequential children
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto* first_parent = scope_analysis.parent_scope(&first_map_);
-    auto* second_parent = scope_analysis.parent_scope(&second_loop_);
+    auto* first_parent = first_map_.get_parent();
+    auto* second_parent = second_loop_.get_parent();
     if (first_parent == nullptr || second_parent == nullptr) {
         return false;
     }
@@ -1041,8 +1040,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         }
 
         // Remove the consumer loop
-        auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-        auto* parent = scope_analysis.parent_scope(&second_loop_);
+        auto* parent = second_loop_.get_parent();
         auto* parent_seq = dynamic_cast<structured_control_flow::Sequence*>(parent);
         if (parent_seq != nullptr) {
             int idx = parent_seq->index(second_loop_);

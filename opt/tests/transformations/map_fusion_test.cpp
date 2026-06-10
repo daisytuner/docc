@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "sdfg_debug_dump.h"
+
 using namespace sdfg;
 
 TEST(MapFusionTest, ProducerConsumer_1D) {
@@ -70,12 +72,16 @@ TEST(MapFusionTest, ProducerConsumer_1D) {
     builder.add_computational_memlet(block2, two_node, tasklet2, "_in2", {});
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
 
+    dump_sdfg(builder.subject(), "0.init");
+
     // Analyze and apply transformation
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1, map2);
 
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.fused");
 
     // Verify transformation results
     auto& new_sdfg = builder.subject();
@@ -1871,6 +1877,8 @@ TEST(MapFusionTest, Domain_2D_IdenticalDomain) {
         block2, tasklet2, "_out", b_out, {symbolic::symbol("k"), symbolic::symbol("l")}, array_2d
     );
 
+    dump_sdfg(builder.subject(), "0.init");
+
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1_outer, map2_outer);
 
@@ -2601,6 +2609,8 @@ TEST(MapFusionTest, Pattern2_NonPerfectlyNestedProducer) {
         cons_block, assign_tasklet, "_out", c_write, {symbolic::symbol("k"), symbolic::symbol("l")}, array_2d
     );
 
+    dump_sdfg(builder.subject(), "0.init");
+
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1_outer, map2_outer);
 
@@ -2608,6 +2618,8 @@ TEST(MapFusionTest, Pattern2_NonPerfectlyNestedProducer) {
         << "Pattern 2: non-perfectly-nested producer with perfectly-nested consumer should be fusible";
 
     transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.fused");
 
     // After fusion (ConsumerIntoProducer):
     // The producer's inner map body should now have 3 blocks:
@@ -2756,6 +2768,8 @@ TEST(MapFusionTest, Pattern2_Reverse_NonPerfectlyNestedConsumer) {
         cons_block, mul_tasklet, "_out", c_write, {symbolic::symbol("k"), symbolic::symbol("l")}, array_2d
     );
 
+    dump_sdfg(builder.subject(), "0.init");
+
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1_outer, map2_outer);
 
@@ -2763,6 +2777,8 @@ TEST(MapFusionTest, Pattern2_Reverse_NonPerfectlyNestedConsumer) {
         << "Reverse Pattern 2: perfectly-nested producer with non-perfectly-nested consumer should be fusible";
 
     transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.fused");
 
     // After fusion (ProducerIntoConsumer):
     // The consumer's inner map body should now have 2 blocks:
@@ -2903,6 +2919,8 @@ TEST(MapFusionTest, BothNonPerfectlyNested_Rejected) {
     builder.add_computational_memlet(
         cons_block, mul2, "_out", c_write, {symbolic::symbol("k"), symbolic::symbol("l")}, array_2d
     );
+
+    dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1_outer, map2_outer);
@@ -3078,6 +3096,8 @@ TEST(MapFusionTest, ScenarioA_ProducerReadsWritesT) {
     builder.add_computational_memlet(block2, two_const, mul_tasklet, "_in2", {});
     builder.add_computational_memlet(block2, mul_tasklet, "_out", c_write, {symbolic::symbol("k")}, array_desc);
 
+    dump_sdfg(builder.subject(), "0.init");
+
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1, map2);
 
@@ -3085,6 +3105,8 @@ TEST(MapFusionTest, ScenarioA_ProducerReadsWritesT) {
         << "Scenario A: producer reads+writes T, consumer reads T — should be fusible via ConsumerIntoProducer";
 
     transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.fused");
 
     // After ConsumerIntoProducer fusion:
     // map1.root() should have 3 blocks: modified producer + writeback + inlined consumer
@@ -3205,6 +3227,8 @@ TEST(MapFusionTest, ScenarioB_ConsumerReadsWritesT) {
     builder.add_computational_memlet(block2, b_read, mul_tasklet, "_in2", {symbolic::symbol("k")}, array_desc);
     builder.add_computational_memlet(block2, mul_tasklet, "_out", t_write_cons, {symbolic::symbol("k")}, array_desc);
 
+    dump_sdfg(builder.subject(), "0.init");
+
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1, map2);
 
@@ -3212,6 +3236,8 @@ TEST(MapFusionTest, ScenarioB_ConsumerReadsWritesT) {
         << "Scenario B: producer writes T, consumer reads+writes T — should be fusible";
 
     transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.fused");
 
     // Producer only writes T (no read AccessNode in the dataflow), so direction stays
     // ProducerIntoConsumer. The inlined producer copy in the consumer body reads A (not T),
@@ -3313,6 +3339,8 @@ TEST(MapFusionTest, ScenarioC_BothReadWriteT) {
     builder.add_computational_memlet(block2, b_read, mul_tasklet, "_in2", {symbolic::symbol("k")}, array_desc);
     builder.add_computational_memlet(block2, mul_tasklet, "_out", t_write_cons, {symbolic::symbol("k")}, array_desc);
 
+    dump_sdfg(builder.subject(), "0.init");
+
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1, map2);
 
@@ -3320,6 +3348,8 @@ TEST(MapFusionTest, ScenarioC_BothReadWriteT) {
         << "Scenario C: both read+write T — should be fusible via forced ConsumerIntoProducer";
 
     transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.fused");
 
     // ConsumerIntoProducer: map1 should have 3 blocks
     EXPECT_EQ(map1.root().size(), 3)
