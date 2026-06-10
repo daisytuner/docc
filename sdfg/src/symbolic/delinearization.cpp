@@ -301,10 +301,17 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
                     if (!better && atom_count > max_atom_count) {
                         better = true;
                     }
-                    // Final deterministic tie-break (lexicographic on index expr's string form
-                    // to give iteration-order-independent results).
                     if (!better && atom_count == max_atom_count) {
-                        if (SymEngine::str(*index) > SymEngine::str(*best_index)) {
+                        // Only break ties lexicographically when strides are truly
+                        // indistinguishable: skip if the current best is strictly
+                        // larger by lb/ub. Without this guard the lex tiebreak can
+                        // overwrite an objectively larger stride (e.g. 7 vs 1) with
+                        // a smaller one purely because of index-name ordering,
+                        // breaking the dominance-order peel.
+                        bool best_strictly_better =
+                            (lb != SymEngine::null && best_lb != SymEngine::null && provably_gt(best_lb, lb)) ||
+                            (ub != SymEngine::null && best_ub != SymEngine::null && provably_gt(best_ub, ub));
+                        if (!best_strictly_better && SymEngine::str(*index) > SymEngine::str(*best_index)) {
                             better = true;
                         }
                     }
