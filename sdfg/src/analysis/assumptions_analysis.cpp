@@ -113,6 +113,26 @@ void extract_bound_from_literal(
             } else {
                 branch_assumptions[target].add_upper_bound(b);
             }
+            // Refine the tight bound slot when the branch literal strictly
+            // narrows the outer-scope tight bound.
+            auto outer_it = outer_assumptions.find(target);
+            if (outer_it == outer_assumptions.end()) return true;
+            if (!SymEngine::is_a<SymEngine::Integer>(*b)) return true;
+            if (lower) {
+                auto cur = branch_assumptions[target].tight_lower_bound();
+                if (cur.is_null()) cur = outer_it->second.tight_lower_bound();
+                if (cur.is_null() || !SymEngine::is_a<SymEngine::Integer>(*cur)) return true;
+                auto refined = symbolic::max(cur, b);
+                if (!SymEngine::is_a<SymEngine::Integer>(*refined)) return true;
+                branch_assumptions[target].tight_lower_bound(refined);
+            } else {
+                auto cur = branch_assumptions[target].tight_upper_bound();
+                if (cur.is_null()) cur = outer_it->second.tight_upper_bound();
+                if (cur.is_null() || !SymEngine::is_a<SymEngine::Integer>(*cur)) return true;
+                auto refined = symbolic::min(cur, b);
+                if (!SymEngine::is_a<SymEngine::Integer>(*refined)) return true;
+                branch_assumptions[target].tight_upper_bound(refined);
+            }
             return true;
         };
 

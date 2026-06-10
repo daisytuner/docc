@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "sdfg/analysis/assumptions_analysis.h"
+#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/if_else.h"
@@ -290,14 +291,57 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
     // min/max resolution would collapse to INT_MIN/INT_MAX-style numerics, which
     // is not a sound tile bound. We use this to decide whether to emit a tile.
     auto& narrowing_assumptions = assumptions_analysis.get(assumption_node, /*include_trivial_bounds=*/false);
-    // Parameters of a scope can only be constant symbols (invariant within the
-    // scope). SDFG-level read-only arguments are constant by construction; for
-    // each scope-local entry, the constant() flag tells us whether the symbol
-    // can be treated opaquely by the min/max resolver.
+    // Parameters of a scope are constant symbols that the min/max resolver
+    // should treat as opaque (BoundAnalysis short-circuits them to
+    // `Interval::exact(sym)`). SDFG-level read-only arguments are constant by
+    // construction; for each scope-local entry, the `constant()` flag tells us
+    // whether the symbol is invariant within the scope.
+    //
+    // Loop induction variables are marked `constant()` by AssumptionsAnalysis
+    // (they're frozen within one iteration). The decision of *which* indvars
+    // to keep bounded vs. opaque at the current scope governs when each
+    // ancestor loop's range is unfolded into the tile, and crucially when
+    // branch-refined bounds (set by AssumptionsAnalysis on IfElse case
+    // sequences) become visible:
+    //
+    //   * Loop body (`scope == loop->root()`): exclude only the directly
+    //     surrounding loop's indvar. Outer ancestor indvars stay opaque so
+    //     they are unfolded one level at a time by their own loop's
+    //     `merge_scope_layouts` — this is what lets Linearized_2D-style
+    //     tiles propagate as `[i, 0]..[i, M-1]` through the inner loop and
+    //     get the proper outer-loop range only at the outer-loop merge.
+    //
+    //   * Other scopes (IfElse case body, plain Sequence): exclude *all*
+    //     enclosing loops' indvars. At these scopes, branch refinements may
+    //     have tightened ancestor indvars' AA bounds (e.g. `i ∈ [1, 8]`
+    //     inside a guarded case), and those refinements only live on this
+    //     scope's AssumptionsAnalysis entry — once a tile bubbles up past
+    //     the IfElse, the refined bounds are no longer reachable. By
+    //     unfolding ancestor indvars here, the tile gets baked with the
+    //     tightest visible facts before merging upward.
+    symbolic::SymbolSet excluded_indvars;
+    auto& scope_analysis = analysis_manager.get<ScopeAnalysis>();
+    const bool scope_is_loop_body = !loop && [&]() {
+        auto* parent = scope_analysis.parent_scope(&scope);
+        auto* parent_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(parent);
+        return parent_loop && &parent_loop->root() == &scope;
+    }();
+    if (loop) {
+        excluded_indvars.insert(loop->indvar());
+    } else if (scope_is_loop_body) {
+        auto* parent_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(scope_analysis.parent_scope(&scope));
+        excluded_indvars.insert(parent_loop->indvar());
+    } else {
+        for (auto* cur = scope_analysis.parent_scope(&scope); cur; cur = scope_analysis.parent_scope(cur)) {
+            if (auto* l = dynamic_cast<structured_control_flow::StructuredLoop*>(cur)) {
+                excluded_indvars.insert(l->indvar());
+            }
+        }
+    }
     symbolic::SymbolSet parameters = assumptions_analysis.parameters();
     for (auto& entry : assumptions) {
-        if (loop && symbolic::eq(entry.first, loop->indvar())) {
-            continue; // The induction variable is not a parameter of its own loop scope
+        if (excluded_indvars.contains(entry.first)) {
+            continue; // unfolded via AA bounds, not treated as opaque
         }
         if (entry.second.constant()) {
             parameters.insert(entry.first);
@@ -317,7 +361,7 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
     auto bounds_are_sound = [&](const symbolic::Expression& expr) -> bool {
         for (const auto& sym : symbolic::atoms(expr)) {
             if (parameters.contains(sym)) continue;
-            if (loop && symbolic::eq(sym, loop->indvar())) continue;
+            if (excluded_indvars.contains(sym)) continue;
             if (!has_narrowing(sym)) return false;
         }
         return true;
