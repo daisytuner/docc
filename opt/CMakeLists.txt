@@ -40,10 +40,12 @@ set(SOURCE_FILES
     src/passes/scheduler/loop_scheduling_pass.cpp
     src/passes/scheduler/omp_scheduler.cpp
     src/passes/scheduler/scheduler_registry.cpp
+    src/targets/cuda/blas/batched_gemm.cpp
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp
     src/targets/cuda/cuda.cpp
+    src/targets/cuda/math/tensor/batched_matmul_expander.cpp
     src/targets/cuda/math/tensor/batchnorm_expander.cpp
     src/targets/cuda/math/tensor/conv_expander.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp

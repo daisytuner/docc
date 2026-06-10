@@ -153,15 +153,17 @@ symbolic::maps::DependenceDeltas pair_deltas(
     }
 
     // Collect deltas across all subset pairs and union them.
+    symbolic::AssumptionsBounds previous_bounds(previous_assumptions);
+    symbolic::AssumptionsBounds current_bounds(current_assumptions);
+
     isl_ctx* union_ctx = nullptr;
     isl_set* accumulated = nullptr;
     std::vector<std::string> result_dimensions;
 
     for (auto& previous_subset : previous_subsets) {
         for (auto& current_subset : current_subsets) {
-            auto deltas = symbolic::maps::dependence_deltas(
-                previous_subset, current_subset, loop.indvar(), previous_assumptions, current_assumptions
-            );
+            auto deltas = symbolic::maps::
+                dependence_deltas(previous_subset, current_subset, loop.indvar(), previous_bounds, current_bounds);
             if (deltas.empty) {
                 continue;
             }

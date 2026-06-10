@@ -126,14 +126,11 @@ TEST(ArgumentsAnalysisTest, Block_Arguments_Arrays) {
     EXPECT_TRUE(locals.contains("t1"));
     EXPECT_TRUE(locals.contains("i"));
 
-    EXPECT_TRUE(analysis.argument_size_known(analysis_manager, block, false));
-    auto arg_sizes = analysis.argument_sizes(analysis_manager, block, false);
-    EXPECT_EQ(arg_sizes.size(), 1);
-    EXPECT_TRUE(arg_sizes.contains("arg1"));
-    EXPECT_TRUE(symbolic::
-                    eq(arg_sizes.at("arg1"),
-                       symbolic::mul(symbolic::integer(4), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))))
-    );
+    // The index `i` is a local Int32 with no narrowing assumption at the Block
+    // scope, so the memory-layout analysis soundly refuses to bound the access
+    // (its only bounds would be the type-default INT_MIN..INT_MAX). The argument
+    // size is therefore unknown.
+    EXPECT_FALSE(analysis.argument_size_known(analysis_manager, block, false));
 }
 
 TEST(ArgumentsAnalysisTest, Block_Arguments_Pointers) {
@@ -175,14 +172,10 @@ TEST(ArgumentsAnalysisTest, Block_Arguments_Pointers) {
     EXPECT_TRUE(locals.contains("t1"));
     EXPECT_TRUE(locals.contains("i"));
 
-    EXPECT_TRUE(analysis.argument_size_known(analysis_manager, block, false));
-    auto arg_sizes = analysis.argument_sizes(analysis_manager, block, false);
-    EXPECT_EQ(arg_sizes.size(), 1);
-    EXPECT_TRUE(arg_sizes.contains("arg1"));
-    EXPECT_TRUE(symbolic::
-                    eq(arg_sizes.at("arg1"),
-                       symbolic::mul(symbolic::integer(4), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))))
-    );
+    // Same as Block_Arguments_Arrays: `i` is a free local Int32 with only
+    // type-default bounds, so the tile is correctly not produced and the
+    // argument size is unknown.
+    EXPECT_FALSE(analysis.argument_size_known(analysis_manager, block, false));
 }
 
 TEST(ArgumentsAnalysisTest, Sequence_Blocks) {

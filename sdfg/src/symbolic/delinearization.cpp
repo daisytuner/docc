@@ -165,8 +165,16 @@ bool decompose_by_stride(
 
 } // namespace
 
-DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums) {
+DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds) {
     auto dim = expr;
+    const Assumptions& assums = bounds.assums();
+
+    // Hoisted BoundAnalysis references from the caller-supplied bundle: every
+    // internal lower/upper bound query in this function shares the bundle's
+    // memoization cache, which amortizes across all delinearize calls that
+    // pass the same `bounds`.
+    BoundAnalysis& ba_loose = bounds.loose();
+    BoundAnalysis& ba_tight = bounds.tight();
 
     // Partition atoms into indvars (non-constant in `assums`) and parameters
     // (constant or unknown).
@@ -206,7 +214,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
     // into the 3-dim shape `(_s0-2)^2*i + (_s0-2)*j + k`. Cases like
     // `j*N + j` (strides {N, 1}, both >= 1) remain unmerged as 2 dims.
     auto stride_is_free_standing = [&](const Expression& s) -> bool {
-        auto lb = minimum(s, {}, assums, false);
+        auto lb = ba_loose.lower_bound(s);
         if (lb == SymEngine::null) return false;
         return symbolic::is_true(symbolic::Ge(lb, symbolic::one()));
     };
@@ -272,8 +280,8 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
         for (size_t k = 0; k < groups.size(); ++k) {
             const auto& stride = groups[k].first;
             const auto& index = groups[k].second;
-            auto lb = minimum(stride, {}, assums, false);
-            auto ub = maximum(stride, {}, assums, false);
+            auto lb = ba_loose.lower_bound(stride);
+            auto ub = ba_loose.upper_bound(stride);
             size_t complexity = stride_complexity_score(stride);
             size_t atom_count = symbolic::atoms(stride).size();
 
@@ -293,10 +301,17 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
                     if (!better && atom_count > max_atom_count) {
                         better = true;
                     }
-                    // Final deterministic tie-break (lexicographic on index expr's string form
-                    // to give iteration-order-independent results).
                     if (!better && atom_count == max_atom_count) {
-                        if (SymEngine::str(*index) > SymEngine::str(*best_index)) {
+                        // Only break ties lexicographically when strides are truly
+                        // indistinguishable: skip if the current best is strictly
+                        // larger by lb/ub. Without this guard the lex tiebreak can
+                        // overwrite an objectively larger stride (e.g. 7 vs 1) with
+                        // a smaller one purely because of index-name ordering,
+                        // breaking the dominance-order peel.
+                        bool best_strictly_better =
+                            (lb != SymEngine::null && best_lb != SymEngine::null && provably_gt(best_lb, lb)) ||
+                            (ub != SymEngine::null && best_ub != SymEngine::null && provably_gt(best_ub, ub));
+                        if (!best_strictly_better && SymEngine::str(*index) > SymEngine::str(*best_index)) {
                             better = true;
                         }
                     }
@@ -318,7 +333,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
         }
 
         // Index must be nonnegative under assumptions.
-        if (!is_nonneg(best_index, {}, assums, false)) {
+        if (!is_nonneg(best_index, ba_loose)) {
             break;
         }
 
@@ -326,7 +341,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
         Expression stride = best_stride;
         auto stride_lb = best_lb;
         if (stride_lb == SymEngine::null) {
-            stride_lb = minimum(stride, {}, assums, false);
+            stride_lb = ba_loose.lower_bound(stride);
         }
         if (stride_lb.is_null()) {
             break;
@@ -341,7 +356,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
         remaining = symbolic::simplify(remaining);
 
         // Remaining must be nonnegative.
-        if (!is_nonneg(remaining, {}, assums, false)) {
+        if (!is_nonneg(remaining, ba_loose)) {
             break;
         }
 
@@ -393,15 +408,15 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
             // Min-aware `is_gt` API helper proves `stride > min(...)` by
             // proving `stride > a_i` for some Min arg.
             if (!stride_check_passed) {
-                if (is_gt(stride, r, {}, assums, false)) {
+                if (is_gt(stride, r, ba_loose)) {
                     stride_check_passed = true;
                 }
             }
         }
 
-        auto ub_remaining = stride_check_passed ? Expression(SymEngine::null) : maximum(remaining, {}, assums, true);
+        auto ub_remaining = stride_check_passed ? Expression(SymEngine::null) : ba_tight.upper_bound(remaining);
         if (!stride_check_passed && ub_remaining.is_null()) {
-            ub_remaining = maximum(remaining, {}, assums, false);
+            ub_remaining = ba_loose.upper_bound(remaining);
         }
 
         if (!stride_check_passed && ub_remaining != SymEngine::null) {
@@ -431,7 +446,7 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
             }
 
             if (!stride_check_passed) {
-                auto ub_stride = (best_ub == SymEngine::null) ? maximum(stride, {}, assums, false) : best_ub;
+                auto ub_stride = (best_ub == SymEngine::null) ? ba_loose.upper_bound(stride) : best_ub;
                 if (ub_stride != SymEngine::null) {
                     auto cond_stride = symbolic::Ge(ub_stride, ub_remaining);
                     if (symbolic::is_true(cond_stride)) {
@@ -485,6 +500,11 @@ DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums)
 
     result.success = true;
     return result;
+}
+
+DelinearizeResult delinearize(const Expression& expr, const Assumptions& assums) {
+    AssumptionsBounds bounds(assums);
+    return delinearize(expr, bounds);
 }
 
 } // namespace symbolic

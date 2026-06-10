@@ -46,6 +46,7 @@
 #include <vector>
 
 #include "sdfg/symbolic/assumptions.h"
+#include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
@@ -65,6 +66,17 @@ bool is_subset(
 );
 
 /**
+ * @brief Same as `is_subset`, but reuses caller-supplied `AssumptionsBounds`.
+ *
+ * Constructing one `AssumptionsBounds` per scope and threading it through many
+ * subset queries amortizes the internal `delinearize` bound-analysis cache
+ * across all of them.
+ */
+bool is_subset(
+    const MultiExpression& expr1, const MultiExpression& expr2, AssumptionsBounds& bounds1, AssumptionsBounds& bounds2
+);
+
+/**
  * @brief Interprets the expressions as integer sets and checks if expr1 is disjoint from expr2.
  *
  * @param expr1 The first expression to check.
@@ -75,6 +87,13 @@ bool is_subset(
  */
 bool is_disjoint(
     const MultiExpression& expr1, const MultiExpression& expr2, const Assumptions& assums1, const Assumptions& assums2
+);
+
+/**
+ * @brief Same as `is_disjoint`, but reuses caller-supplied `AssumptionsBounds`.
+ */
+bool is_disjoint(
+    const MultiExpression& expr1, const MultiExpression& expr2, AssumptionsBounds& bounds1, AssumptionsBounds& bounds2
 );
 
 } // namespace symbolic

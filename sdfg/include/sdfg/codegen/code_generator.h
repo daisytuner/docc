@@ -5,7 +5,6 @@
 #include <utility>
 
 #include "code_snippet_factory.h"
-#include "sdfg/analysis/mem_access_range_analysis.h"
 #include "sdfg/codegen/instrumentation/arg_capture_plan.h"
 #include "sdfg/codegen/instrumentation/instrumentation_plan.h"
 #include "sdfg/codegen/utils.h"

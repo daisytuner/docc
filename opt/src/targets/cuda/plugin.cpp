@@ -88,6 +88,31 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
 
+    // BatchedGEMM - CUBLAS with data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::blas::LibraryNodeType_BatchedGEMM.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<blas::BatchedGEMMNodeDispatcher_CUBLASWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::BatchedGEMMNode&>(node)
+            );
+        }
+    );
+    // BatchedGEMM - CUBLAS without data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::blas::LibraryNodeType_BatchedGEMM.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<blas::BatchedGEMMNodeDispatcher_CUBLASWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::BatchedGEMMNode&>(node)
+            );
+        }
+    );
+
 
     // Memset - CUDA with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(

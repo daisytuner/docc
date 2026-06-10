@@ -10,12 +10,165 @@
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/assumptions.h"
+#include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg {
 namespace analysis {
+
+namespace {
+
+// Add per-symbol bounds derived from a single atomic relation
+// (`LessThan` / `StrictLessThan` / `Equality`) into `branch_assumptions`.
+// All other clause shapes (logical connectives, `Unequality`, custom
+// booleans...) are silently skipped: the caller is responsible for
+// pre-normalizing via CNF and only invoking this on the literals of
+// single-literal conjuncts.
+//
+// Only symbols already known to `outer_assumptions` get bounds (scope
+// hygiene — don't introduce alien symbols into the branch state).
+void extract_bound_from_literal(
+    const symbolic::Condition& cond,
+    const symbolic::Assumptions& outer_assumptions,
+    symbolic::Assumptions& branch_assumptions
+) {
+    // Normalize to `delta OP K` where `delta = lhs - rhs`. SymEngine collapses
+    // `Gt` and `Ge` into swapped `StrictLessThan` / `LessThan`, so we only
+    // need to recognise the three canonical relational classes (same
+    // approach as opt/src/transformations/loop_condition_normalize.cpp and
+    // sdfglib-auto/.../feature_extractor.cpp::visit_condition).
+    symbolic::Expression delta;
+    symbolic::Expression K_le = SymEngine::null; // threshold for `delta <= K_le`
+    symbolic::Expression K_ge = SymEngine::null; // threshold for `delta >= K_ge`
+
+    if (SymEngine::is_a<SymEngine::LessThan>(*cond)) {
+        // a <= b -> delta <= 0.
+        auto rel = SymEngine::rcp_static_cast<const SymEngine::LessThan>(cond);
+        delta = symbolic::sub(rel->get_arg1(), rel->get_arg2());
+        K_le = symbolic::zero();
+    } else if (SymEngine::is_a<SymEngine::StrictLessThan>(*cond)) {
+        // a < b on the integer domain -> delta <= -1.
+        auto rel = SymEngine::rcp_static_cast<const SymEngine::StrictLessThan>(cond);
+        delta = symbolic::sub(rel->get_arg1(), rel->get_arg2());
+        K_le = symbolic::integer(-1);
+    } else if (SymEngine::is_a<SymEngine::Equality>(*cond)) {
+        // a == b -> delta both <= 0 and >= 0.
+        auto rel = SymEngine::rcp_static_cast<const SymEngine::Equality>(cond);
+        delta = symbolic::sub(rel->get_arg1(), rel->get_arg2());
+        K_le = symbolic::zero();
+        K_ge = symbolic::zero();
+    } else {
+        return;
+    }
+
+    // Only emit bounds for literals that constrain a single induction
+    // variable, where every other symbol in the bound expression is
+    // provably constant within the scope.
+    //
+    // Rationale:
+    //   * Target must be an indvar (identified by `Assumption::map()`
+    //     being non-null). We only narrow loop variables — narrowing a
+    //     non-indvar local variable would require knowing it isn't
+    //     reassigned inside the branch, which is out of scope here.
+    //   * Every other symbol in `delta` must be marked `constant()` by
+    //     `AssumptionsAnalysis` (SDFG-level parameters and outer-loop
+    //     indvars qualify; locally-written variables do NOT). If a
+    //     non-constant symbol appears, the bound would be invalidated
+    //     by writes deeper in the body.
+    //   * Symbols not in `outer_assumptions` are treated as unknown —
+    //     skip rather than emit an unverified bound.
+    //   * Coupling two indvars (e.g. `kh >= 3 - 2*hout` from im2col's
+    //     `2*hout + kh - 3 >= 0`) is rejected because the RHS contains
+    //     a non-constant symbol; this also avoids the BoundAnalysis
+    //     blow-up observed in `CudaTransformIm2colTest.ExplicitSixDimMap`.
+    symbolic::Symbol target = SymEngine::null;
+    for (const auto& sym : symbolic::atoms(delta)) {
+        auto it = outer_assumptions.find(sym);
+        if (it == outer_assumptions.end()) return;
+        bool is_indvar = !it->second.map().is_null();
+        if (is_indvar) {
+            if (!target.is_null()) return; // two indvars — refuse
+            target = sym;
+        } else if (!it->second.constant()) {
+            return; // non-constant local — would be invalidated by body writes
+        }
+    }
+    if (target.is_null()) return;
+
+    auto neg_delta = symbolic::expand(symbolic::mul(symbolic::integer(-1), delta));
+
+    auto try_emit = [&](const symbolic::Expression& K, bool is_lower) {
+        if (K.is_null()) return;
+        auto neg_K = symbolic::expand(symbolic::mul(symbolic::integer(-1), K));
+
+        auto add_bound = [&](const symbolic::Expression& b, bool lower) {
+            if (b.is_null()) return false;
+            for (const auto& a : symbolic::atoms(b)) {
+                if (symbolic::eq(a, target)) return false;
+            }
+            if (lower) {
+                branch_assumptions[target].add_lower_bound(b);
+            } else {
+                branch_assumptions[target].add_upper_bound(b);
+            }
+            return true;
+        };
+
+        if (auto b = symbolic::solve_affine_bound(delta, target, K, is_lower); !b.is_null()) {
+            add_bound(b, is_lower);
+            return;
+        }
+        if (auto b = symbolic::solve_affine_bound(neg_delta, target, neg_K, !is_lower); !b.is_null()) {
+            add_bound(b, !is_lower);
+        }
+    };
+
+    try_emit(K_le, /*is_lower=*/false);
+    try_emit(K_ge, /*is_lower=*/true);
+}
+
+// Add per-symbol bounds derived from an IfElse branch condition into
+// `branch_assumptions`. Uses CNF normalization to handle arbitrary boolean
+// structure (And / Or / Not / nested / De Morgan) uniformly: after CNF the
+// condition is `clause_1 AND clause_2 AND ... AND clause_n` where each
+// clause is a disjunction (OR) of literals. Only **single-literal** clauses
+// are sound to translate into per-symbol bounds — a multi-literal
+// disjunctive clause `(L1 OR L2)` does not constrain any one symbol.
+//
+// CNF conversion can fail on shapes outside its supported grammar
+// (CNFException). On failure we silently emit no bounds; the analysis stays
+// sound, just conservative.
+void extract_assumptions_from_condition(
+    const symbolic::Condition& cond,
+    const symbolic::Assumptions& outer_assumptions,
+    symbolic::Assumptions& branch_assumptions
+) {
+    symbolic::CNF cnf;
+    try {
+        cnf = symbolic::conjunctive_normal_form(cond);
+    } catch (const symbolic::CNFException&) {
+        return;
+    }
+    for (const auto& clause : cnf) {
+        if (clause.size() != 1) continue; // disjunctive — not soundly splittable
+        extract_bound_from_literal(clause.front(), outer_assumptions, branch_assumptions);
+    }
+}
+
+// Ensure `branch_assumptions[sym]` exists for every symbol that
+// `extract_assumptions_from_condition` will add a bound for, so the per-symbol
+// `Assumption` object is created with the right symbol identity.
+void ensure_assumption_entries(const symbolic::Condition& cond, symbolic::Assumptions& branch_assumptions) {
+    for (const auto& sym : symbolic::atoms(cond)) {
+        if (branch_assumptions.find(sym) == branch_assumptions.end()) {
+            branch_assumptions.insert({sym, symbolic::Assumption(sym)});
+        }
+    }
+}
+
+} // namespace
 
 AssumptionsAnalysis::AssumptionsAnalysis(StructuredSDFG& sdfg)
     : Analysis(sdfg) {
@@ -70,7 +223,31 @@ void AssumptionsAnalysis::traverse(
         }
     } else if (auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(&current)) {
         for (size_t i = 0; i < if_else_stmt->size(); i++) {
-            this->traverse(if_else_stmt->at(i).first, outer_assumptions, outer_assumptions_with_trivial);
+            auto& branch_seq = if_else_stmt->at(i).first;
+            const auto& condition = if_else_stmt->at(i).second;
+
+            // Build per-branch assumption deltas from the case condition.
+            // Conjunctive structure is split into independent constraints;
+            // disjunctions / negations contribute nothing (see
+            // extract_assumptions_from_condition).
+            symbolic::Assumptions branch_assumptions;
+            ensure_assumption_entries(condition, branch_assumptions);
+            extract_assumptions_from_condition(condition, outer_assumptions, branch_assumptions);
+
+            // Same propagation pattern as traverse_structured_loop: install
+            // the merged set for the branch sequence, then recurse with the
+            // installed scope as the new outer scope.
+            this->propagate(
+                const_cast<structured_control_flow::Sequence&>(branch_seq),
+                branch_assumptions,
+                outer_assumptions,
+                outer_assumptions_with_trivial
+            );
+            this->traverse(
+                const_cast<structured_control_flow::Sequence&>(branch_seq),
+                this->assumptions_[&branch_seq],
+                this->assumptions_with_trivial_[&branch_seq]
+            );
         }
     } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&current)) {
         this->traverse(while_stmt->root(), outer_assumptions, outer_assumptions_with_trivial);

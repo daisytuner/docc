@@ -1,6 +1,8 @@
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/batchnorm_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
+#include "sdfg/targets/cuda/math/tensor/batched_matmul_expander.h"
 #include "sdfg/targets/cuda/math/tensor/batchnorm_expander.h"
 #include "sdfg/targets/cuda/math/tensor/conv_expander.h"
 
@@ -29,6 +31,10 @@ bool CudaExpansion::accept(structured_control_flow::Block& node) {
         } else if (lib_node_code == math::tensor::LibraryNodeType_Conv) {
             auto& conv_node = static_cast<math::tensor::ConvNode&>(*library_node);
             sdfg::offloading::CudaConvExpander expander(conv_node);
+            made_changes |= expander.expand(builder_, analysis_manager_);
+        } else if (lib_node_code == math::tensor::LibraryNodeType_MatMul) {
+            auto& matmul_node = static_cast<math::tensor::MatMulNode&>(*library_node);
+            sdfg::offloading::CudaBatchedMatMulExpander expander(matmul_node);
             made_changes |= expander.expand(builder_, analysis_manager_);
         } else {
             continue;

@@ -10,6 +10,7 @@
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
@@ -210,6 +211,8 @@ bool CUBLASDataTransferExtraction::
         return true;
     } else if (dynamic_cast<math::blas::GEMMNode*>(&this->blas_node_)) {
         return true;
+    } else if (dynamic_cast<math::blas::BatchedGEMMNode*>(&this->blas_node_)) {
+        return true;
     } else {
         return false;
     }
@@ -283,6 +286,35 @@ void CUBLASDataTransferExtraction::
         auto a_size = symbolic::mul(symbolic::mul(gemm_node->m(), gemm_node->k()), elem_size);
         auto b_size = symbolic::mul(symbolic::mul(gemm_node->k(), gemm_node->n()), elem_size);
         auto c_size = symbolic::mul(symbolic::mul(gemm_node->m(), gemm_node->n()), elem_size);
+
+        auto dA = this->create_device_container(builder, type, a_size);
+        auto dB = this->create_device_container(builder, type, b_size);
+        auto dC = this->create_device_container(builder, type, c_size);
+
+        this->create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__A").data(), dA, a_size, type
+        );
+        this->create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__B").data(), dB, b_size, type
+        );
+        auto c_container = in_access.at("__C").data();
+        this->create_copy_to_device_with_allocation(builder, *sequence, *block, c_container, dC, c_size, type);
+
+        this->create_copy_from_device_with_deallocation(builder, *sequence, *block, c_container, dC, c_size, type);
+        this->create_deallocate(builder, *sequence, *block, dA, type);
+        this->create_deallocate(builder, *sequence, *block, dB, type);
+
+        in_access.at("__A").data(dA);
+        in_access.at("__B").data(dB);
+        in_access.at("__C").data(dC);
+    } else if (auto* batched_gemm_node = dynamic_cast<math::blas::BatchedGEMMNode*>(&this->blas_node_)) {
+        auto elem_size = types::get_contiguous_element_size(type, true);
+        auto a_size =
+            symbolic::mul(symbolic::mul(batched_gemm_node->batch_count(), batched_gemm_node->stride_a()), elem_size);
+        auto b_size =
+            symbolic::mul(symbolic::mul(batched_gemm_node->batch_count(), batched_gemm_node->stride_b()), elem_size);
+        auto c_size =
+            symbolic::mul(symbolic::mul(batched_gemm_node->batch_count(), batched_gemm_node->stride_c()), elem_size);
 
         auto dA = this->create_device_container(builder, type, a_size);
         auto dB = this->create_device_container(builder, type, b_size);

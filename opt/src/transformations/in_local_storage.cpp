@@ -83,6 +83,15 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
 
         auto extents = candidate->tile.extents_approx();
         if (extents.empty()) continue;
+        // Reject candidates with any unbounded-dependent extent (returned as null).
+        bool has_null = false;
+        for (auto& ext : extents) {
+            if (ext.is_null()) {
+                has_null = true;
+                break;
+            }
+        }
+        if (has_null) continue;
 
         if (storage_type_.is_nv_shared()) {
             // GPU path: accept first valid group (substitution happens later)
@@ -117,6 +126,11 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     auto extents = tile.extents_approx();
     if (extents.empty()) {
         return false;
+    }
+    // Defensive: candidate filtering above already rejects unbounded-dependent extents,
+    // but guard here too since downstream code dereferences these expressions.
+    for (auto& ext : extents) {
+        if (ext.is_null()) return false;
     }
 
     // Store tile info (before substitution, bases/strides stay symbolic)

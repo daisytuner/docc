@@ -1,9 +1,10 @@
 #include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
-#include <iostream>
 #include <optional>
 
+#include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
+#include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 
@@ -16,8 +17,13 @@ std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::
         if (lib_node.code() == math::blas::LibraryNodeType_GEMM.value()) {
             auto& gemm_node = static_cast<const math::blas::GEMMNode&>(lib_node);
             return try_cublas_gemm_node_implementation(gemm_node, data_type);
+        } else if (lib_node.code() == math::blas::LibraryNodeType_BatchedGEMM.value()) {
+            return cuda::ImplementationType_CUDAWithTransfers;
         } else if (lib_node.code() == math::blas::LibraryNodeType_DOT.value()) {
             return cuda::ImplementationType_CUDAWithTransfers;
+        } else if (lib_node.code() == math::blas::LibraryNodeType_BatchedGEMM.value()) {
+            auto& batched_gemm_node = static_cast<const math::blas::BatchedGEMMNode&>(lib_node);
+            return try_cublas_batched_gemm_node_implementation(batched_gemm_node, data_type);
         } else {
             return std::nullopt;
         }
@@ -38,6 +44,20 @@ std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::
 
 std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::
     try_memset_implementation(const ::sdfg::stdlib::MemsetNode& memset_node) {
+    return cuda::ImplementationType_CUDAWithTransfers;
+}
+
+std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::try_cublas_batched_gemm_node_implementation(
+    const math::blas::BatchedGEMMNode& batched_gemm_node, types::PrimitiveType data_type
+) {
+    // Heuristic: Avoid using CUBLAS for very small matrix multiplications
+    auto m = batched_gemm_node.m();
+    auto n = batched_gemm_node.n();
+    auto k = batched_gemm_node.k();
+    auto size = symbolic::mul(symbolic::mul(m, n), k);
+    if (symbolic::eq(size, symbolic::one())) {
+        return std::nullopt;
+    }
     return cuda::ImplementationType_CUDAWithTransfers;
 }
 

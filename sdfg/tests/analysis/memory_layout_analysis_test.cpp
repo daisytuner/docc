@@ -2206,3 +2206,967 @@ TEST(MemoryLayoutAnalysisTest, LU_BlockedFactorization_Diagnostic) {
     check_2d(a_S7t_in, "S7 trailing sub-in", i, symbolic::add(i, j20));
     check_2d(a_S7t_out, "S7 trailing sub-out", i, symbolic::add(i, j20));
 }
+
+// =====================================================================
+// Scope-generic API tests: tiles should also be queryable at non-loop
+// control-flow scopes (root Sequence, IfElse, While).
+// =====================================================================
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_RootSequence_SingleNestedLoop) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    auto& outer_loop =
+        builder.add_for(root, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+    auto& inner_loop =
+        builder
+            .add_for(outer_loop.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+
+    auto& block = builder.add_block(inner_loop.root());
+    auto& access_in = builder.add_access(block, "A");
+    auto& access_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto linearized = symbolic::add(symbolic::mul(i, M), j);
+    builder.add_computational_memlet(block, access_in, tasklet, "_in", {linearized});
+    builder.add_computational_memlet(block, tasklet, "_out", access_out, {linearized});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Outer-loop tile is the established reference.
+    auto* tile_outer = analysis.tile(outer_loop, "A");
+    ASSERT_NE(tile_outer, nullptr);
+
+    // Root sequence tile should exist (scope-generic API) and match the outer-loop tile,
+    // because the outer loop is the only direct child carrying A accesses.
+    auto* tile_root = analysis.tile(root, "A");
+    ASSERT_NE(tile_root, nullptr);
+
+    ASSERT_EQ(tile_root->min_subset.size(), tile_outer->min_subset.size());
+    for (size_t d = 0; d < tile_outer->min_subset.size(); ++d) {
+        EXPECT_TRUE(symbolic::eq(tile_root->min_subset.at(d), tile_outer->min_subset.at(d)));
+        EXPECT_TRUE(symbolic::eq(tile_root->max_subset.at(d), tile_outer->max_subset.at(d)));
+    }
+}
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_RootSequence_TwoSiblingLoops) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("i2", index_type);
+    builder.add_container("j2", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto i2 = symbolic::symbol("i2");
+    auto j2 = symbolic::symbol("j2");
+
+    // First nest: writes A[i*M + j] for i in [0, N), j in [0, M)
+    {
+        auto& loop_i =
+            builder.add_for(root, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+        auto& loop_j =
+            builder
+                .add_for(loop_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+        auto& block = builder.add_block(loop_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+        builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+    }
+    // Second nest: writes A[i2*M + j2] for i2 in [0, N), j2 in [0, M) (independent indvars)
+    {
+        auto& loop_i =
+            builder.add_for(root, i2, symbolic::Lt(i2, N), symbolic::integer(0), symbolic::add(i2, symbolic::one()));
+        auto& loop_j =
+            builder
+                .add_for(loop_i.root(), j2, symbolic::Lt(j2, M), symbolic::integer(0), symbolic::add(j2, symbolic::one()));
+        auto& block = builder.add_block(loop_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto idx = symbolic::add(symbolic::mul(i2, M), j2);
+        builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+        builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Root sequence tile should exist and union both child loop tiles. Each loop
+    // covers [0..N-1, 0..M-1], so the union is identical.
+    auto* tile_root = analysis.tile(root, "A");
+    ASSERT_NE(tile_root, nullptr);
+
+    ASSERT_EQ(tile_root->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_root->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_root->min_subset.at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_root->max_subset.at(0), symbolic::sub(N, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(tile_root->max_subset.at(1), symbolic::sub(M, symbolic::one())));
+}
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_IfElse_BothBranches) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("cond", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto cond = symbolic::symbol("cond");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    auto& if_else = builder.add_if_else(root);
+    auto& branch_true = builder.add_case(if_else, symbolic::Eq(cond, symbolic::zero()));
+    auto& branch_false = builder.add_case(if_else, symbolic::Ne(cond, symbolic::zero()));
+
+    auto build_nest = [&](structured_control_flow::Sequence& parent) {
+        auto& loop_i =
+            builder.add_for(parent, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+        auto& loop_j =
+            builder
+                .add_for(loop_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+        auto& block = builder.add_block(loop_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+        builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+        return &loop_i;
+    };
+
+    build_nest(branch_true);
+    build_nest(branch_false);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Each branch sequence has its own tile.
+    auto* tile_branch_true = analysis.tile(branch_true, "A");
+    ASSERT_NE(tile_branch_true, nullptr);
+    auto* tile_branch_false = analysis.tile(branch_false, "A");
+    ASSERT_NE(tile_branch_false, nullptr);
+
+    // The IfElse scope tile unions both branches; bounds match either branch (identical here).
+    auto* tile_ife = analysis.tile(if_else, "A");
+    ASSERT_NE(tile_ife, nullptr);
+
+    ASSERT_EQ(tile_ife->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_ife->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_ife->min_subset.at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_ife->max_subset.at(0), symbolic::sub(N, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(tile_ife->max_subset.at(1), symbolic::sub(M, symbolic::one())));
+
+    // Root sequence picks up the IfElse contribution.
+    auto* tile_root = analysis.tile(root, "A");
+    ASSERT_NE(tile_root, nullptr);
+    ASSERT_EQ(tile_root->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_root->min_subset.at(0), tile_ife->min_subset.at(0)));
+    EXPECT_TRUE(symbolic::eq(tile_root->max_subset.at(0), tile_ife->max_subset.at(0)));
+}
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_While_PassThrough) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    auto& while_loop = builder.add_while(root);
+
+    auto& loop_i =
+        builder
+            .add_for(while_loop.root(), i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+    auto& loop_j =
+        builder.add_for(loop_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+
+    auto& block = builder.add_block(loop_j.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto idx = symbolic::add(symbolic::mul(i, M), j);
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_body = analysis.tile(while_loop.root(), "A");
+    ASSERT_NE(tile_body, nullptr);
+
+    // While scope tile should equal its body sequence tile.
+    auto* tile_while = analysis.tile(while_loop, "A");
+    ASSERT_NE(tile_while, nullptr);
+
+    ASSERT_EQ(tile_while->min_subset.size(), tile_body->min_subset.size());
+    for (size_t d = 0; d < tile_body->min_subset.size(); ++d) {
+        EXPECT_TRUE(symbolic::eq(tile_while->min_subset.at(d), tile_body->min_subset.at(d)));
+        EXPECT_TRUE(symbolic::eq(tile_while->max_subset.at(d), tile_body->max_subset.at(d)));
+    }
+}
+
+TEST(MemoryLayoutAnalysisTest, ScopeAPI_TileGroups_NonLoopScope) {
+    // Stencil-like pattern with constant-offset bases should produce a merged
+    // tile group not only at the loop level but also at the enclosing scope.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("N", index_type, true);
+    builder.add_container("M", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    auto& loop_i = builder.add_for(
+        root, i, symbolic::Lt(i, symbolic::sub(N, symbolic::one())), symbolic::one(), symbolic::add(i, symbolic::one())
+    );
+    auto& loop_j = builder.add_for(
+        loop_i.root(),
+        j,
+        symbolic::Lt(j, symbolic::sub(M, symbolic::one())),
+        symbolic::one(),
+        symbolic::add(j, symbolic::one())
+    );
+
+    // Two reads of A with constant-offset bases: A[i*M + j] and A[i*M + (j+1)]
+    auto& block = builder.add_block(loop_j.root());
+    auto& a_c = builder.add_access(block, "A");
+    auto& a_r = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_inc", "_inr"});
+    auto idx_c = symbolic::add(symbolic::mul(i, M), j);
+    auto idx_r = symbolic::add(symbolic::mul(i, M), symbolic::add(j, symbolic::one()));
+    builder.add_computational_memlet(block, a_c, tasklet, "_inc", {idx_c});
+    builder.add_computational_memlet(block, a_r, tasklet, "_inr", {idx_r});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx_c});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Loop-level groups: stencil bases merge into one group at the j-loop level.
+    auto* groups_j = analysis.tile_groups(loop_j, "A");
+    ASSERT_NE(groups_j, nullptr);
+
+    // The root sequence should also expose tile groups for A (propagated upward).
+    auto* groups_root = analysis.tile_groups(root, "A");
+    ASSERT_NE(groups_root, nullptr);
+    EXPECT_FALSE(groups_root->empty());
+}
+
+// -----------------------------------------------------------------------------
+// Regression tests targeting the ResNet im2col offload regression.
+//
+// The failing kernel is a 2D collapsed map writing `_patches0` from `_1`. The
+// subscripts involve `i % C` and `i / C` of plain (constant-bound) indvars,
+// and the dataflow lives inside an `IfElse` with branch-disjoint reads. The
+// tests below isolate the smallest MLA patterns that should still produce a
+// tile bound (`tile(map, container)` and `contiguous_range()`); each one will
+// expose a separate gap if MLA regresses again.
+// -----------------------------------------------------------------------------
+
+TEST(MemoryLayoutAnalysisTest, Regression_Im2col_ModSubscript) {
+    // for i in [0, 1024): A[i % 16] -- pointer access with a single mod.
+    // Outer tile for A should be bounded by [0, 15].
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(1024)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto& block = builder.add_block(map.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto idx = symbolic::mod(i, symbolic::integer(16));
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_map = analysis.tile(map, "A");
+    ASSERT_NE(tile_map, nullptr) << "MLA could not bound A[i % 16] over the map scope.";
+    auto range = tile_map->contiguous_range();
+    EXPECT_FALSE(range.first.is_null());
+    EXPECT_FALSE(range.second.is_null());
+}
+
+TEST(MemoryLayoutAnalysisTest, Regression_Im2col_DivSubscript) {
+    // for i in [0, 1024): A[i / 16] -- single floor-div subscript.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(1024)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto& block = builder.add_block(map.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto idx = symbolic::div(i, symbolic::integer(16));
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_map = analysis.tile(map, "A");
+    ASSERT_NE(tile_map, nullptr) << "MLA could not bound A[i / 16] over the map scope.";
+    auto range = tile_map->contiguous_range();
+    EXPECT_FALSE(range.first.is_null());
+    EXPECT_FALSE(range.second.is_null());
+}
+
+TEST(MemoryLayoutAnalysisTest, Regression_Im2col_MixedModDivStrided) {
+    // for i in [0, 401408): for j in [0, 147):
+    //     A[150528*(i/12544) + 50176*(j/49) + 224*((i/112)%112) + (i%112)]
+    // -- mod/div linear combination, the form produced by collapsing four
+    // outer loops to one in resnet's im2col.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto N = symbolic::integer(401408);
+    auto M = symbolic::integer(147);
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto& block = builder.add_block(inner.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto idx = symbolic::
+        add(symbolic::
+                add(symbolic::mul(symbolic::integer(150528), symbolic::div(i, symbolic::integer(12544))),
+                    symbolic::mul(symbolic::integer(50176), symbolic::div(j, symbolic::integer(49)))),
+            symbolic::
+                add(symbolic::
+                        mul(symbolic::integer(224),
+                            symbolic::mod(symbolic::div(i, symbolic::integer(112)), symbolic::integer(112))),
+                    symbolic::mod(i, symbolic::integer(112))));
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_outer = analysis.tile(outer, "A");
+    ASSERT_NE(tile_outer, nullptr) << "MLA could not bound the collapsed im2col-style mod/div access at the outer map.";
+    auto range = tile_outer->contiguous_range();
+    EXPECT_FALSE(range.first.is_null());
+    EXPECT_FALSE(range.second.is_null());
+}
+
+TEST(MemoryLayoutAnalysisTest, Regression_Im2col_AccessInsideIfElse) {
+    // for i in [0, 1024): if (i < 16) A[i] = 0;
+    // The map body contains an IfElse rather than a Block; the pointer access
+    // lives inside one branch only.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(1024)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto& ife = builder.add_if_else(map.root());
+    auto& taken = builder.add_case(ife, symbolic::Lt(i, symbolic::integer(16)));
+    auto& not_taken = builder.add_case(ife, symbolic::Ge(i, symbolic::integer(16)));
+    auto& block = builder.add_block(taken);
+    auto& constant = builder.add_constant(block, "0.0f", scalar_type);
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, constant, tasklet, "_in", {}, scalar_type);
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {i});
+    // Suppress unused-variable warning for the empty else case.
+    (void) not_taken;
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_map = analysis.tile(map, "A");
+    ASSERT_NE(tile_map, nullptr) << "MLA returns nullptr when the only access to A lives in one IfElse branch.";
+    auto range = tile_map->contiguous_range();
+    EXPECT_FALSE(range.first.is_null());
+    EXPECT_FALSE(range.second.is_null());
+}
+
+TEST(MemoryLayoutAnalysisTest, Regression_Im2col_TwoArgsIfElseBranchAsymmetric) {
+    // Map body is an IfElse with two cases, both writing to `_patches`:
+    //   if  (i < 16): _patches[i] = _1[i];   (reads _1)
+    //   if  (i >= 16): _patches[i] = 0.0f;   (does NOT read _1)
+    // This mirrors the resnet asymmetry: one container is accessed in both
+    // branches, another in only one. MLA must still bound both at the map.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("_1", pointer_type, true);
+    builder.add_container("_patches", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(1024)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto& ife = builder.add_if_else(map.root());
+    auto& taken = builder.add_case(ife, symbolic::Lt(i, symbolic::integer(16)));
+    auto& not_taken = builder.add_case(ife, symbolic::Ge(i, symbolic::integer(16)));
+
+    {
+        auto& block = builder.add_block(taken);
+        auto& in_node = builder.add_access(block, "_1");
+        auto& out_node = builder.add_access(block, "_patches");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, in_node, tasklet, "_in", {i});
+        builder.add_computational_memlet(block, tasklet, "_out", out_node, {i});
+    }
+    {
+        auto& block = builder.add_block(not_taken);
+        auto& constant = builder.add_constant(block, "0.0f", scalar_type);
+        auto& out_node = builder.add_access(block, "_patches");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, constant, tasklet, "_in", {}, scalar_type);
+        builder.add_computational_memlet(block, tasklet, "_out", out_node, {i});
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_in = analysis.tile(map, "_1");
+    ASSERT_NE(tile_in, nullptr) << "MLA could not bound _1 (one-branch read) at the map scope.";
+    auto range_in = tile_in->contiguous_range();
+    EXPECT_FALSE(range_in.first.is_null());
+    EXPECT_FALSE(range_in.second.is_null());
+
+    auto* tile_out = analysis.tile(map, "_patches");
+    ASSERT_NE(tile_out, nullptr) << "MLA could not bound _patches (both-branch write) at the map scope.";
+    auto range_out = tile_out->contiguous_range();
+    EXPECT_FALSE(range_out.first.is_null());
+    EXPECT_FALSE(range_out.second.is_null());
+}
+
+TEST(MemoryLayoutAnalysisTest, Regression_Im2col_NegativeOffsetSubscript) {
+    // Map body has an IfElse guarding a negative-offset read:
+    //   if (i >= 3 && i < 224 + 3): _patches[i-3] = _1[i-3];
+    // A common simplification result of im2col padding logic. The subscript
+    // (i - 3) reaches -2..-1 at the loop's lower bound when the guard is
+    // ignored. MLA's BoundAnalysis must respect the loop range and yield a
+    // sound [-3, last] tile, not give up because of the negative offset.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("_1", pointer_type, true);
+    builder.add_container("_patches", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(230)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto& ife = builder.add_if_else(map.root());
+    auto& taken =
+        builder
+            .add_case(ife, symbolic::And(symbolic::Ge(i, symbolic::integer(3)), symbolic::Lt(i, symbolic::integer(227))));
+    auto& not_taken =
+        builder
+            .add_case(ife, symbolic::Or(symbolic::Lt(i, symbolic::integer(3)), symbolic::Ge(i, symbolic::integer(227))));
+
+    auto idx = symbolic::sub(i, symbolic::integer(3));
+    {
+        auto& block = builder.add_block(taken);
+        auto& in_node = builder.add_access(block, "_1");
+        auto& out_node = builder.add_access(block, "_patches");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, in_node, tasklet, "_in", {idx});
+        builder.add_computational_memlet(block, tasklet, "_out", out_node, {idx});
+    }
+    {
+        auto& block = builder.add_block(not_taken);
+        auto& constant = builder.add_constant(block, "0.0f", scalar_type);
+        auto& out_node = builder.add_access(block, "_patches");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, constant, tasklet, "_in", {}, scalar_type);
+        builder.add_computational_memlet(block, tasklet, "_out", out_node, {idx});
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_in = analysis.tile(map, "_1");
+    ASSERT_NE(tile_in, nullptr) << "MLA returned nullptr for _1 with negative-offset (i-3) subscript inside IfElse.";
+    auto range_in = tile_in->contiguous_range();
+    EXPECT_FALSE(range_in.first.is_null());
+    EXPECT_FALSE(range_in.second.is_null());
+
+    auto* tile_out = analysis.tile(map, "_patches");
+    ASSERT_NE(tile_out, nullptr)
+        << "MLA returned nullptr for _patches with negative-offset (i-3) subscript inside IfElse.";
+    auto range_out = tile_out->contiguous_range();
+    EXPECT_FALSE(range_out.first.is_null());
+    EXPECT_FALSE(range_out.second.is_null());
+}
+
+TEST(MemoryLayoutAnalysisTest, Regression_Im2col_ResNetFullPattern) {
+    // Faithful reproduction of the resnet kernel that stopped offloading:
+    //   for n0 in [0, 401408):
+    //     for c0 in [0, 147):
+    //       if  (in-bounds for _1 read): _patches0[Pn0c0] = _1[In0c0]
+    //       elif (out-of-bounds):        _patches0[Pn0c0] = 0
+    // where In0c0 / Pn0c0 are the mod/div linear combos from the failing
+    // kernel. Both _1 and _patches0 must be bounded at the outer map.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("_n0_collapsed0", index_type);
+    builder.add_container("_c0_collapsed0", index_type);
+    builder.add_container("_1", pointer_type, true);
+    builder.add_container("_patches0", pointer_type, true);
+
+    auto n0 = symbolic::symbol("_n0_collapsed0");
+    auto c0 = symbolic::symbol("_c0_collapsed0");
+    auto i7 = symbolic::integer(7);
+    auto i112 = symbolic::integer(112);
+    auto i49 = symbolic::integer(49);
+    auto i12544 = symbolic::integer(12544);
+    auto i224 = symbolic::integer(224);
+    auto i147 = symbolic::integer(147);
+    auto i16464 = symbolic::integer(16464);
+    auto i50176 = symbolic::integer(50176);
+    auto i150528 = symbolic::integer(150528);
+    auto i1843968 = symbolic::integer(1843968);
+    auto i_neg3 = symbolic::integer(-3);
+    auto i2 = symbolic::integer(2);
+
+    auto& outer = builder.add_map(
+        root,
+        n0,
+        symbolic::Lt(n0, symbolic::integer(401408)),
+        symbolic::zero(),
+        symbolic::add(n0, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto& inner = builder.add_map(
+        outer.root(),
+        c0,
+        symbolic::Lt(c0, i147),
+        symbolic::zero(),
+        symbolic::add(c0, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto kh_mod = symbolic::mod(symbolic::div(c0, i7), i7);
+    auto kw_mod = symbolic::mod(c0, i7);
+    auto hout_mod = symbolic::mod(symbolic::div(n0, i112), i112);
+    auto wout_mod = symbolic::mod(n0, i112);
+    auto c_div = symbolic::div(c0, i49);
+    auto n_div = symbolic::div(n0, i12544);
+
+    // h_in = -3 + ((c0/7)%7) + 2*((n0/112)%112)
+    auto h_in = symbolic::add(i_neg3, symbolic::add(kh_mod, symbolic::mul(i2, hout_mod)));
+    // w_in = -3 + (c0%7) + 2*(n0%112)
+    auto w_in = symbolic::add(i_neg3, symbolic::add(kw_mod, symbolic::mul(i2, wout_mod)));
+
+    auto cond_in = symbolic::
+        And(symbolic::And(symbolic::Ge(w_in, symbolic::zero()), symbolic::Ge(h_in, symbolic::zero())),
+            symbolic::And(symbolic::Lt(w_in, i224), symbolic::Lt(h_in, i224)));
+    auto cond_out = symbolic::
+        Or(symbolic::Or(symbolic::Ge(w_in, i224), symbolic::Ge(h_in, i224)),
+           symbolic::Or(symbolic::Lt(w_in, symbolic::zero()), symbolic::Lt(h_in, symbolic::zero())));
+
+    auto& ife = builder.add_if_else(inner.root());
+    auto& case_in = builder.add_case(ife, cond_in);
+    auto& case_out = builder.add_case(ife, cond_out);
+
+    // patches index: 49*(c0/49) + 1843968*(n0/12544) + (c0%7) + 147*(n0%112)
+    //                + 7*((c0/7)%7) + 16464*((n0/112)%112)
+    auto out_idx = symbolic::
+        add(symbolic::
+                add(symbolic::add(symbolic::mul(i49, c_div), symbolic::mul(i1843968, n_div)),
+                    symbolic::add(kw_mod, symbolic::mul(i147, wout_mod))),
+            symbolic::add(symbolic::mul(i7, kh_mod), symbolic::mul(i16464, hout_mod)));
+    // _1 index: -3 + 224*h_in + 50176*c_div + 150528*n_div + (c0%7) + 2*(n0%112)
+    auto in_idx = symbolic::
+        add(i_neg3,
+            symbolic::
+                add(symbolic::add(symbolic::mul(i224, h_in), symbolic::mul(i50176, c_div)),
+                    symbolic::add(symbolic::mul(i150528, n_div), symbolic::add(kw_mod, symbolic::mul(i2, wout_mod)))));
+
+    {
+        auto& block = builder.add_block(case_in);
+        auto& in_node = builder.add_access(block, "_1");
+        auto& out_node = builder.add_access(block, "_patches0");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, in_node, tasklet, "_in", {in_idx});
+        builder.add_computational_memlet(block, tasklet, "_out", out_node, {out_idx});
+    }
+    {
+        auto& block = builder.add_block(case_out);
+        auto& constant = builder.add_constant(block, "0.0f", scalar_type);
+        auto& out_node = builder.add_access(block, "_patches0");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, constant, tasklet, "_in", {}, scalar_type);
+        builder.add_computational_memlet(block, tasklet, "_out", out_node, {out_idx});
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // CURRENT BEHAVIOR (conservative, intentional):
+    //   _1's linearized index `-3 + 224*h_in + ...` provably reaches negative
+    //   addresses in the abstract iteration domain (`h_in` has min -3). The
+    //   real kernel only loads when the surrounding IfElse guard
+    //   `h_in >= 0 && w_in >= 0 && ...` is true.
+    //
+    //   AssumptionsAnalysis DOES propagate this guard into the taken
+    //   Sequence (CNF-based extraction in assumptions_analysis.cpp). What is
+    //   still missing is MLA-side IfElse-awareness: when merging per-block
+    //   tiles up to the outer-loop scope, MLA computes extents over the full
+    //   iteration domain (including the case_out arm where the memlet is
+    //   absent). The delinearizer's `is_nonneg` gate therefore still sees a
+    //   subscript that can be negative at outer scope, and refuses.
+    //
+    //   This is the sound answer for MLA's contract (used by tile_fusion,
+    //   in/out_local_storage, loop_carried_dependency). The argument-sizing
+    //   path falls back to a direct min/max bound in ArgumentsAnalysis.
+    //
+    //   TODO: when MLA gains IfElse-aware tile aggregation, flip these to
+    //   ASSERT_NE(...) and check the contiguous range.
+    auto* tile_1 = analysis.tile(outer, "_1");
+    EXPECT_EQ(tile_1, nullptr) << "Expected MLA to refuse to bound _1 because the IfElse halo guard "
+                                  "is not yet propagated as an assumption (see assumptions_analysis.cpp).";
+
+    // _patches0 has only non-negative indices and IS delinearizable.
+    auto* tile_p = analysis.tile(outer, "_patches0");
+    ASSERT_NE(tile_p, nullptr) << "MLA could not bound _patches0 at the outer collapsed map (resnet im2col pattern).";
+    auto rp = tile_p->contiguous_range();
+    EXPECT_FALSE(rp.first.is_null());
+    EXPECT_FALSE(rp.second.is_null());
+}
+
+// MINIMAL reproduction of the delinearization bug found while debugging
+// Regression_Im2col_ResNetFullPattern. The kernel feeds `A[224*(-3 + (i%7) +
+// 2*j) + (i%7)]` over `(i,j) in [0,7) x [0,112)` to MLA. Without expansion of
+// the parameter*indvar product, `decompose_by_stride` produces a group whose
+// index is `-3 + (i%7) + 2*j`, which can take the value -3. The non-negativity
+// gate in `delinearize` then rejects the access and no tile is built.
+TEST(MemoryLayoutAnalysisTest, Regression_Im2col_NegativeConstInsideStrideProduct) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i_sym = symbolic::symbol("i");
+    auto j_sym = symbolic::symbol("j");
+
+    auto& outer = builder.add_map(
+        root,
+        i_sym,
+        symbolic::Lt(i_sym, symbolic::integer(7)),
+        symbolic::zero(),
+        symbolic::add(i_sym, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto& inner = builder.add_map(
+        outer.root(),
+        j_sym,
+        symbolic::Lt(j_sym, symbolic::integer(112)),
+        symbolic::zero(),
+        symbolic::add(j_sym, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    // idx = 224 * (-3 + (i%7) + 2*j) + (i%7)
+    auto idx = symbolic::add(
+        symbolic::mul(
+            symbolic::integer(224),
+            symbolic::add(
+                symbolic::integer(-3),
+                symbolic::add(symbolic::mod(i_sym, symbolic::integer(7)), symbolic::mul(symbolic::integer(2), j_sym))
+            )
+        ),
+        symbolic::mod(i_sym, symbolic::integer(7))
+    );
+
+    auto& block = builder.add_block(inner.root());
+    auto& a_node = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, a_node, tasklet, "_in", {idx});
+    auto& sink = builder.add_access(block, "A");
+    builder.add_computational_memlet(block, tasklet, "_out", sink, {idx});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // CURRENT BEHAVIOR (conservative, intentional):
+    //   `decompose_by_stride` produces a group with stride=224 and index
+    //   `-3 + (i%7) + 2*j`. That index provably reaches -3, so the peel-loop's
+    //   non-negativity gate in delinearize() correctly refuses to peel.
+    //
+    //   The expression genuinely addresses negative offsets (`224*-3 = -672`)
+    //   in the abstract iteration domain. The full resnet kernel guards this
+    //   access with an IfElse halo check; that guard is not visible to
+    //   AssumptionsAnalysis today, so the delinearizer must reject.
+    //
+    //   Refusing to delinearize here is the sound answer for MLA. The size
+    //   needed for argument allocation is computed directly from min/max in
+    //   ArgumentsAnalysis's fallback path.
+    //
+    //   TODO: with IfElse-aware AssumptionsAnalysis (or after lifting the
+    //   pure-constant -3 into the layout offset AND teaching
+    //   MemoryTile::contiguous_range to clamp negative endpoints), this can
+    //   become ASSERT_NE(tile, nullptr).
+    auto* tile = analysis.tile(outer, "A");
+    EXPECT_EQ(tile, nullptr) << "Expected MLA to refuse: index `-3 + (i%7) + 2*j` provably reaches -3.";
+}
+
+// Minimal 2-D linearized halo whose subscript is provably non-negative ONLY
+// under the surrounding IfElse guard:
+//   for i in [0, 7):
+//     for j in [0, 7):
+//       if (i >= 3 && j >= 3):  A[7*(i - 3) + (j - 3)] = ...
+//
+// AssumptionsAnalysis DOES propagate `i>=3 && j>=3` into the taken Sequence
+// (CNF-based extraction). What is still missing is MLA-side: when
+// aggregating tiles up to the outer-loop scope, MLA computes extents over
+// the *full* outer iteration domain (where the guard does not hold) and
+// rightly refuses because `7*(i-3) + (j-3)` reaches -24. This test pins the
+// conservative refusal.
+//
+// TODO: once MLA gains IfElse-aware tile aggregation, flip the expectation
+// to ASSERT_NE(tile, nullptr) and check that dims={7} indices={i-3, j-3}.
+TEST(MemoryLayoutAnalysisTest, Regression_Halo2D_GuardedByIfElse) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto three = symbolic::integer(3);
+    auto seven = symbolic::integer(7);
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, seven),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, seven),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto& ife = builder.add_if_else(inner.root());
+    auto cond_in = symbolic::And(symbolic::Ge(i, three), symbolic::Ge(j, three));
+    auto& taken = builder.add_case(ife, cond_in);
+
+    // Linearized 2-D address: 7*(i-3) + (j-3)
+    auto idx = symbolic::add(symbolic::mul(seven, symbolic::sub(i, three)), symbolic::sub(j, three));
+
+    {
+        auto& block = builder.add_block(taken);
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+        builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // MLA recovers the 2-D layout `7*(i-3) + (j-3)` -> indices (i-3, j-3) with
+    // extents (7, 7). The branch guard `i>=3 && j>=3` is propagated by
+    // AssumptionsAnalysis into the taken Sequence so block-scope delinearization
+    // succeeds. Tile aggregation at the outer scope conservatively widens the
+    // bounding box back to the full outer-loop domain `i,j ∈ [0,7)` — yielding
+    // extents=[7,7] (vs. the tighter [4,4] that the actual access set occupies).
+    // This is a sound over-approximation; tightening would require IfElse-aware
+    // tile aggregation in merge_scope_layouts.
+    auto* tile = analysis.tile(outer, "A");
+    ASSERT_NE(tile, nullptr);
+    auto ext = tile->extents();
+    ASSERT_EQ(ext.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(ext[0], symbolic::integer(7)));
+    EXPECT_TRUE(symbolic::eq(ext[1], symbolic::integer(7)));
+}

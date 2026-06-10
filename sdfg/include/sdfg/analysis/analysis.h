@@ -81,6 +81,24 @@ public:
         }
     }
 
+    // Preserve only the listed analyses and invalidate all others.
+    // Analyses not present in the cache are unaffected.
+    template<class... Ts>
+    void preserve() {
+        std::unordered_map<std::type_index, std::unique_ptr<Analysis>> kept;
+        auto try_keep = [&](std::type_index type) {
+            auto it = cache_.find(type);
+            if (it != cache_.end()) {
+                kept.emplace(type, std::move(it->second));
+            }
+        };
+        (try_keep(std::type_index(typeid(Ts))), ...);
+        cache_.clear();
+        for (auto& [type, analysis] : kept) {
+            cache_.emplace(type, std::move(analysis));
+        }
+    }
+
     void invalidate_all();
 };
 

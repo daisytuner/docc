@@ -1,5 +1,5 @@
 #include "sdfg/analysis/arguments_analysis.h"
-#include "sdfg/analysis/mem_access_range_analysis.h"
+#include "sdfg/analysis/memory_layout_analysis.h"
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/codegen/utils.h"
@@ -94,18 +94,14 @@ void ArgumentsAnalysis::collect_arg_sizes(
     bool allow_dynamic_sizes_,
     bool do_not_throw
 ) {
-    std::unordered_set<std::string> internal_vars;
     argument_sizes_.insert({&node, {}});
     argument_element_sizes_.insert({&node, {}});
 
-    auto& mem_access_ranges = analysis_manager.get<analysis::MemAccessRanges>();
+    auto& memory_layout_analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
     auto& users = analysis_manager.get<analysis::Users>();
 
     auto arguments = this->arguments(analysis_manager, node);
     auto locals = this->locals(analysis_manager, node);
-
-    internal_vars.insert(locals.begin(), locals.end());
-    std::ranges::for_each(arguments, [&internal_vars](const auto& pair) { internal_vars.insert(pair.first); });
 
     analysis::TypeAnalysis type_analysis(sdfg_, &node, analysis_manager);
 
@@ -135,37 +131,32 @@ void ArgumentsAnalysis::collect_arg_sizes(
                 continue;
             }
 
-            auto range = mem_access_ranges.get(argument, node, internal_vars);
-            if (range == nullptr) {
+            auto tile = memory_layout_analysis.tile(node, argument);
+            if (tile == nullptr) {
                 if (do_not_throw) {
                     known_sizes_.insert({&node, false});
                     return;
                 } else {
-                    throw std::runtime_error("Range not found for " + argument);
+                    throw std::runtime_error("Tile not found for " + argument);
                 }
             }
+            auto range = tile->contiguous_range();
+            // contiguous_range returns {null, null} when the tile's extent would depend on
+            // an unbounded leading dimension; treat that as "size unknown" rather than
+            // dereferencing a null expression.
+            if (range.first.is_null() || range.second.is_null()) {
+                if (do_not_throw) {
+                    known_sizes_.insert({&node, false});
+                    return;
+                } else {
+                    throw std::runtime_error("Tile size unknown (unbounded dimension) for " + argument);
+                }
+            }
+            symbolic::Expression size = range.second;
+            size = symbolic::add(size, symbolic::one()); // Inclusive range, so add 1
 
             auto base_type = type_analysis.get_outer_type(argument);
             auto elem_size = types::get_contiguous_element_size(*base_type, true);
-            if (range->is_undefined()) {
-                if (!allow_dynamic_sizes_) {
-                    if (do_not_throw) {
-                        known_sizes_.insert({&node, false});
-                        return;
-                    } else {
-                        throw std::runtime_error("Argument " + argument + " has undefined range");
-                    }
-                }
-                DEBUG_PRINTLN("Argument " << argument << " has undefined range, using malloc_usable_size");
-                argument_sizes_.at(&node).insert({argument, symbolic::malloc_usable_size(symbolic::symbol(argument))});
-                argument_element_sizes_.at(&node).insert({argument, elem_size});
-                continue;
-            }
-
-            symbolic::Expression size = symbolic::one();
-            if (!range->dims().empty()) {
-                size = symbolic::add(range->dims().at(0).second, symbolic::one());
-            }
 
             bool is_nested_type = true;
             auto peeled_type = types::peel_to_next_element(*base_type);

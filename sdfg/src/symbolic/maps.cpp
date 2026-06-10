@@ -84,9 +84,12 @@ DependenceDeltas compute_deltas_isl(
     const MultiExpression& expr1,
     const MultiExpression& expr2,
     const Symbol indvar,
-    const Assumptions& assums1,
-    const Assumptions& assums2
+    AssumptionsBounds& bounds1,
+    AssumptionsBounds& bounds2
 ) {
+    const Assumptions& assums1 = bounds1.assums();
+    const Assumptions& assums2 = bounds2.assums();
+
     if (expr1.size() != expr2.size()) {
         return DependenceDeltas{false, "", {}};
     }
@@ -97,14 +100,14 @@ DependenceDeltas compute_deltas_isl(
     // Transform both expressions into two maps with separate dimensions
     auto expr1_delinearized = expr1;
     if (expr1.size() == 1) {
-        auto result = symbolic::delinearize(expr1.at(0), assums1);
+        auto result = symbolic::delinearize(expr1.at(0), bounds1);
         if (result.success) {
             expr1_delinearized = result.indices;
         }
     }
     auto expr2_delinearized = expr2;
     if (expr2.size() == 1) {
-        auto result = symbolic::delinearize(expr2.at(0), assums2);
+        auto result = symbolic::delinearize(expr2.at(0), bounds2);
         if (result.success) {
             expr2_delinearized = result.indices;
         }
@@ -348,13 +351,25 @@ DependenceDeltas dependence_deltas(
     const MultiExpression& expr1,
     const MultiExpression& expr2,
     const Symbol indvar,
+    AssumptionsBounds& bounds1,
+    AssumptionsBounds& bounds2
+) {
+    if (is_disjoint_monotonic(expr1, expr2, indvar, bounds1.assums(), bounds2.assums())) {
+        return DependenceDeltas{true, "", {}};
+    }
+    return compute_deltas_isl(expr1, expr2, indvar, bounds1, bounds2);
+}
+
+DependenceDeltas dependence_deltas(
+    const MultiExpression& expr1,
+    const MultiExpression& expr2,
+    const Symbol indvar,
     const Assumptions& assums1,
     const Assumptions& assums2
 ) {
-    if (is_disjoint_monotonic(expr1, expr2, indvar, assums1, assums2)) {
-        return DependenceDeltas{true, "", {}};
-    }
-    return compute_deltas_isl(expr1, expr2, indvar, assums1, assums2);
+    AssumptionsBounds b1(assums1);
+    AssumptionsBounds b2(assums2);
+    return dependence_deltas(expr1, expr2, indvar, b1, b2);
 }
 
 } // namespace maps
