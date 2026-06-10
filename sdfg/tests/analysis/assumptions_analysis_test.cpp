@@ -327,3 +327,143 @@ TEST(AssumptionsAnalysisTest, For_2D) {
     );
     EXPECT_TRUE(symbolic::eq(j_assumptions.tight_upper_bound(), symbolic::sub(symbolic::symbol("N"), symbolic::one())));
 }
+
+// AssumptionsAnalysis propagates IfElse branch conditions into the body
+// scope. Inside
+//   for i in [0, N):
+//     if (i >= 3 && i < N - 3): /* body */
+// the body scope's assumption for `i` should add `i >= 3` and `i <= N - 4`
+// (integer-domain conversion of `i < N - 3`) to the loop-derived bounds.
+//
+// Implementation: extract_assumptions_from_condition normalizes the
+// condition to CNF (handling And/Or/Not/De Morgan uniformly), then for
+// each single-literal conjunct emits per-symbol bounds via
+// solve_affine_bound. Multi-literal (disjunctive) conjuncts are skipped
+// because they do not soundly constrain a single symbol.
+TEST(AssumptionsAnalysisTest, IfElse_BranchConditionPropagated) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar n_type(types::PrimitiveType::Int64);
+    builder.add_container("N", n_type, true);
+    builder.add_container("i", n_type);
+
+    auto N = symbolic::symbol("N");
+    auto i = symbolic::symbol("i");
+    auto three = symbolic::integer(3);
+    auto four = symbolic::integer(4);
+
+    // for i in [0, N): if (i >= 3 && i < N - 3) { /* taken */ }
+    auto& loop = builder.add_for(root, i, symbolic::Lt(i, N), symbolic::zero(), symbolic::add(i, symbolic::one()));
+    auto& ife = builder.add_if_else(loop.root());
+    auto cond = symbolic::And(symbolic::Ge(i, three), symbolic::Lt(i, symbolic::sub(N, three)));
+    auto& taken = builder.add_case(ife, cond);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& assumptions = analysis.get(taken);
+
+    auto& i_assumptions = assumptions.at(i);
+
+    // Loop-derived bounds are present (0 and N-1). The branch-derived bounds
+    // (3 and N-4) are added alongside them. tight_lower_bound/tight_upper_bound
+    // picks one bound from each set without resolving the "tightest" across
+    // symbolic candidates — we just assert both old and new are in the set.
+    bool has_three_lb = false;
+    bool has_zero_lb = false;
+    for (const auto& lb : i_assumptions.lower_bounds()) {
+        if (symbolic::eq(lb, three)) has_three_lb = true;
+        if (symbolic::eq(lb, symbolic::zero())) has_zero_lb = true;
+    }
+    EXPECT_TRUE(has_zero_lb) << "Loop-derived lower bound `0` should still be present.";
+    EXPECT_TRUE(has_three_lb) << "Branch condition `i >= 3` should add `3` as a lower bound of `i`.";
+
+    bool has_N_minus_4_ub = false;
+    bool has_N_minus_1_ub = false;
+    auto N_minus_4 = symbolic::sub(N, four);
+    auto N_minus_1 = symbolic::sub(N, symbolic::one());
+    for (const auto& ub : i_assumptions.upper_bounds()) {
+        if (symbolic::eq(ub, N_minus_4)) has_N_minus_4_ub = true;
+        if (symbolic::eq(ub, N_minus_1)) has_N_minus_1_ub = true;
+    }
+    EXPECT_TRUE(has_N_minus_1_ub) << "Loop-derived upper bound `N - 1` should still be present.";
+    EXPECT_TRUE(has_N_minus_4_ub)
+        << "Branch condition `i < N - 3` (integer domain) should add `N - 4` as an upper bound of `i`.";
+}
+
+// CNF coverage: a disjunctive guard does NOT yield per-symbol bounds, since
+// `(i >= 5 OR i < 0)` does not soundly constrain `i`.
+TEST(AssumptionsAnalysisTest, IfElse_DisjunctionNotPropagated) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar n_type(types::PrimitiveType::Int64);
+    builder.add_container("N", n_type, true);
+    builder.add_container("i", n_type);
+
+    auto N = symbolic::symbol("N");
+    auto i = symbolic::symbol("i");
+
+    // for i in [0, N): if (i >= 5 || i < 0) { /* taken */ }
+    auto& loop = builder.add_for(root, i, symbolic::Lt(i, N), symbolic::zero(), symbolic::add(i, symbolic::one()));
+    auto& ife = builder.add_if_else(loop.root());
+    auto cond = symbolic::Or(symbolic::Ge(i, symbolic::integer(5)), symbolic::Lt(i, symbolic::zero()));
+    auto& taken = builder.add_case(ife, cond);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& assumptions = analysis.get(taken);
+
+    auto& i_assumptions = assumptions.at(i);
+
+    // Only the loop-derived bounds remain — the disjunctive guard
+    // (5 OR negative) is correctly skipped because no single conjunct
+    // narrows `i`.
+    for (const auto& lb : i_assumptions.lower_bounds()) {
+        EXPECT_FALSE(symbolic::eq(lb, symbolic::integer(5)))
+            << "Disjunctive guard `i >= 5 || i < 0` unsoundly tightened the lower bound of `i`.";
+    }
+}
+
+// CNF coverage: a negated conjunction `!(i >= 3 && i < N - 3)` expands by
+// De Morgan to `(i < 3 OR i >= N - 3)` — a single disjunctive clause that
+// must NOT be split into bounds.
+TEST(AssumptionsAnalysisTest, IfElse_NegatedConjunctionNotPropagated) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar n_type(types::PrimitiveType::Int64);
+    builder.add_container("N", n_type, true);
+    builder.add_container("i", n_type);
+
+    auto N = symbolic::symbol("N");
+    auto i = symbolic::symbol("i");
+    auto three = symbolic::integer(3);
+
+    auto& loop = builder.add_for(root, i, symbolic::Lt(i, N), symbolic::zero(), symbolic::add(i, symbolic::one()));
+    auto& ife = builder.add_if_else(loop.root());
+    auto inner_cond = symbolic::And(symbolic::Ge(i, three), symbolic::Lt(i, symbolic::sub(N, three)));
+    auto cond = symbolic::Not(inner_cond);
+    auto& taken = builder.add_case(ife, cond);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& assumptions = analysis.get(taken);
+
+    auto& i_assumptions = assumptions.at(i);
+
+    // Negation distributes to a disjunction — no per-symbol bound is sound.
+    for (const auto& lb : i_assumptions.lower_bounds()) {
+        EXPECT_FALSE(symbolic::eq(lb, three)) << "Negated conjunction unsoundly tightened `i`'s lower bound.";
+    }
+    for (const auto& ub : i_assumptions.upper_bounds()) {
+        EXPECT_FALSE(symbolic::eq(ub, symbolic::sub(N, symbolic::integer(4))))
+            << "Negated conjunction unsoundly tightened `i`'s upper bound.";
+    }
+}

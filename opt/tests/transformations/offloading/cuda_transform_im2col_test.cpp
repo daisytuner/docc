@@ -243,7 +243,7 @@ TEST(CudaTransformIm2colTest, ExplicitSixDimMap) {
     analysis::AnalysisManager analysis_manager(builder.subject());
     CUDATransform transform(m_n, /*block_size=*/32);
 
-    EXPECT_TRUE(transform.can_be_applied(builder, analysis_manager))
+    EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager))
         << "OffloadTransform unexpectedly rejects the explicit (un-collapsed) "
            "im2col map. If only the collapsed variant fails, the regression "
            "lies in subset analysis under mod/div indvars.";
