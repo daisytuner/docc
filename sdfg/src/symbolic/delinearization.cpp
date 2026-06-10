@@ -314,6 +314,11 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
     Expression remaining = symbolic::sub(dim, offset);
 
     while (!groups.empty()) {
+        // Snapshot `remaining` so that the on-failure merge fallback below
+        // can backtrack the peel-attempt's subtraction and retry with a
+        // different group decomposition.
+        Expression saved_remaining = remaining;
+
         // Pick the group with the strongest stride using:
         // 1) provable bound dominance, 2) multiplicity-aware complexity,
         // 3) atom-count fallback. Same heuristic as before but keyed on
@@ -502,6 +507,51 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
                         stride_check_passed = true;
                     }
                 }
+            }
+        }
+
+        // Offset-aware fallback: the actual value contributing below `stride`
+        // after this peel is `remaining + r`, where `(q, r) = polynomial_div(
+        // offset, stride)` absorbs the floor/truncated quotient into the new
+        // index.
+        if (!stride_check_passed) {
+            auto [q_pre, r_pre] = polynomial_div(offset, stride);
+            auto access = symbolic::expand(symbolic::add(remaining, r_pre));
+            if (is_nonneg(access, ba_loose) && is_gt(stride, access, ba_loose)) {
+                stride_check_passed = true;
+            }
+        }
+
+        // Sub-dominant fallback: if the stride check still fails AND there is
+        // a strictly smaller integer-stride sibling whose stride divides
+        // `best.stride`, merge `best` into the sibling: the sibling becomes
+        //   (sibling.stride, (best.stride / sibling.stride) * best.index + sibling.index).
+        if (!stride_check_passed) {
+            int merge_target = -1;
+            long long merge_factor = 0;
+            if (SymEngine::is_a<SymEngine::Integer>(*best_stride)) {
+                long long b_stride = SymEngine::rcp_static_cast<const SymEngine::Integer>(best_stride)->as_int();
+                for (size_t k = 0; k < groups.size(); ++k) {
+                    if (static_cast<int>(k) == best_idx) continue;
+                    const auto& other = groups[k];
+                    if (!SymEngine::is_a<SymEngine::Integer>(*other.first)) continue;
+                    long long o_stride = SymEngine::rcp_static_cast<const SymEngine::Integer>(other.first)->as_int();
+                    if (o_stride <= 0 || o_stride >= b_stride) continue;
+                    if (b_stride % o_stride != 0) continue;
+                    if (symbolic::eq(other.second, best_index)) continue;
+                    merge_target = static_cast<int>(k);
+                    merge_factor = b_stride / o_stride;
+                    break;
+                }
+            }
+            if (merge_target >= 0) {
+                Expression merged_index = symbolic::expand(symbolic::add(
+                    symbolic::mul(symbolic::integer(merge_factor), best_index), groups[merge_target].second
+                ));
+                groups[merge_target].second = merged_index;
+                groups.erase(groups.begin() + best_idx);
+                remaining = saved_remaining; // undo peel mutation
+                continue;
             }
         }
 

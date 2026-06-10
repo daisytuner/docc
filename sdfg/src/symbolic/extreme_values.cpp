@@ -826,80 +826,102 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
     }
     if (cands.empty()) return Interval::failure();
 
-    // Greedy peel in one direction. `direction = +1` projects toward an
-    // upper bound (each constraint `c <= 0` is scaled by a non-negative
-    // lambda); `direction = -1` projects toward a lower bound (using `-c
-    // >= 0`, scaled by non-negative mu; we negate the residual sign so the
-    // same loop computes both directions).
+    // Greedy peel in one direction, with partial-peel fallback. `direction
+    // = +1` projects toward an upper bound (each constraint `c <= 0` is
+    // scaled by a non-negative lambda); `direction = -1` projects toward a
+    // lower bound (using `-c >= 0`, scaled by non-negative mu). The same
+    // loop computes both directions by negating the residual sign.
+    //
+    // After the loop, ANY leftover residual is bounded per-symbol and added
+    // back: `expr <= K_now + sum(residual_now[i] * gens[i])` (for
+    // direction=+1). This recovers the partial benefit even when the sum
+    // has free terms (`c` in im2col) that no registered constraint mentions.
+    // If residual fully cancels, the per-symbol fallback contributes 0 and
+    // the returned bound is just `K_now`.
+    //
+    // Returns an expression `E` such that `direction * expr <= E`. For
+    // direction=+1 the caller uses `E.upper` as `expr`'s upper bound; for
+    // direction=-1 it negates `E` and uses `(-E).lower` as `expr`'s lower
+    // bound.
     auto try_direction = [&](int direction) -> Expression {
         std::vector<long long> residual = sum_g;
         for (auto& v : residual) v *= direction;
-        // K accumulates `direction * sum_const - sum(lambda_i * c_i.const_part)`.
-        // For the upper bound: `expr = K + sum(lambda_i * c_i) <= K`.
-        // For the lower bound: `expr = -(K - sum(mu_i * c_i)) >= -K_lower`.
-        // We compute `direction * K` here and flip at the end.
-        Expression accumulated_const = sum_const; // sign-flipped per direction below
+        Expression accumulated_const = sum_const;
         if (direction < 0) accumulated_const = symbolic::mul(symbolic::integer(-1), accumulated_const);
 
         for (int iter = 0; iter < 32; ++iter) {
-            // Find the first generator with non-zero residual coefficient.
-            size_t pick = gens.size();
-            for (size_t i = 0; i < gens.size(); ++i) {
-                if (residual[i] != 0) {
-                    pick = i;
+            // Walk all generators; apply the first (generator, constraint)
+            // pair that makes non-overshooting progress. This is critical
+            // when the sum mixes constraint-capable terms (`hout`, `kh`)
+            // with free terms (`c`) - picking the first non-zero residual
+            // would otherwise bail immediately on the free term.
+            bool advanced = false;
+            for (size_t pick = 0; pick < gens.size() && !advanced; ++pick) {
+                if (residual[pick] == 0) continue;
+                long long need = residual[pick];
+                for (const auto& c : cands) {
+                    long long cc = c.g_coeffs[pick];
+                    if (cc == 0) continue;
+                    if (need % cc != 0) continue;
+                    long long lambda = need / cc;
+                    if (lambda <= 0) continue;
+
+                    // Tentatively subtract `lambda * c` from the residual.
+                    std::vector<long long> r_new = residual;
+                    bool overshoot = false;
+                    for (size_t i = 0; i < gens.size(); ++i) {
+                        long long sub = lambda * c.g_coeffs[i];
+                        long long old_val = r_new[i];
+                        long long new_val = old_val - sub;
+                        // Don't allow a coefficient to grow in absolute value:
+                        // greedy must always move toward zero.
+                        if (old_val == 0) {
+                            if (new_val != 0) {
+                                overshoot = true;
+                                break;
+                            }
+                        } else {
+                            long long abs_old = old_val < 0 ? -old_val : old_val;
+                            long long abs_new = new_val < 0 ? -new_val : new_val;
+                            if (abs_new > abs_old) {
+                                overshoot = true;
+                                break;
+                            }
+                        }
+                        r_new[i] = new_val;
+                    }
+                    if (overshoot) continue;
+
+                    residual = std::move(r_new);
+                    accumulated_const =
+                        symbolic::sub(accumulated_const, symbolic::mul(symbolic::integer(lambda), c.const_part));
+                    advanced = true;
                     break;
                 }
             }
-            if (pick == gens.size()) {
-                // All residuals zero - we've cancelled the sum against a
-                // non-negative combination of constraints.
-                return accumulated_const;
-            }
-
-            long long need = residual[pick];
-            bool advanced = false;
-            for (const auto& c : cands) {
-                long long cc = c.g_coeffs[pick];
-                if (cc == 0) continue;
-                if (need % cc != 0) continue;
-                long long lambda = need / cc;
-                if (lambda <= 0) continue;
-
-                // Tentatively subtract `lambda * c` from the residual.
-                std::vector<long long> r_new = residual;
-                bool overshoot = false;
-                for (size_t i = 0; i < gens.size(); ++i) {
-                    long long sub = lambda * c.g_coeffs[i];
-                    long long old_val = r_new[i];
-                    long long new_val = old_val - sub;
-                    // Don't allow a coefficient to grow in absolute value:
-                    // greedy must always move toward zero.
-                    if (old_val == 0) {
-                        if (new_val != 0) {
-                            overshoot = true;
-                            break;
-                        }
-                    } else {
-                        long long abs_old = old_val < 0 ? -old_val : old_val;
-                        long long abs_new = new_val < 0 ? -new_val : new_val;
-                        if (abs_new > abs_old) {
-                            overshoot = true;
-                            break;
-                        }
-                    }
-                    r_new[i] = new_val;
-                }
-                if (overshoot) continue;
-
-                residual = std::move(r_new);
-                accumulated_const =
-                    symbolic::sub(accumulated_const, symbolic::mul(symbolic::integer(lambda), c.const_part));
-                advanced = true;
-                break;
-            }
-            if (!advanced) return Expression(SymEngine::null);
+            if (!advanced) break;
         }
-        return Expression(SymEngine::null);
+
+        // Build the partial bound: `K + sum(residual[i] * gens[i])`. For
+        // each leftover term, substitute the generator with its per-symbol
+        // upper/lower bound (sign of `residual[i]` picks which). Using
+        // `visit_symbol` (NOT `visit`) avoids re-entering `visit_add` and
+        // therefore this helper, keeping the recursion bounded.
+        Expression bound = accumulated_const;
+        for (size_t i = 0; i < gens.size(); ++i) {
+            if (residual[i] == 0) continue;
+            auto sym_iv = visit(gens[i], depth + 1);
+            Expression chosen;
+            if (residual[i] > 0) {
+                if (!sym_iv.has_upper()) return Expression(SymEngine::null);
+                chosen = sym_iv.upper;
+            } else {
+                if (!sym_iv.has_lower()) return Expression(SymEngine::null);
+                chosen = sym_iv.lower;
+            }
+            bound = symbolic::add(bound, symbolic::mul(symbolic::integer(residual[i]), chosen));
+        }
+        return bound;
     };
 
     Expression upper_k = try_direction(+1);

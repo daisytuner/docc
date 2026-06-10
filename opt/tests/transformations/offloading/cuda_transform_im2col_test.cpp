@@ -3,9 +3,9 @@
 //
 // The map writes a `_patches` buffer from an input image `_1` and previously
 // (commit prior to the regression observed in resnet `__docc_GraphModule.cpp`)
-// was offloaded to a single CUDA kernel. It is now left as a host-side double
-// loop with an additional H2D copy of the produced `_patches`, doubling the
-// end-to-end runtime.
+// was offloaded to a single CUDA kernel. It is now correctly offloaded again
+// thanks to the coupled-constraint upper bound, offset-aware delinearize
+// stride check, and the sub-dominant stride merge in `delinearize`.
 //
 // Two tests:
 //   * `CollapsedTwoDimMap` - exact shape produced by the optimizer: two maps
@@ -157,11 +157,10 @@ TEST(CudaTransformIm2colTest, CollapsedTwoDimMap) {
     analysis::AnalysisManager analysis_manager(builder.subject());
     CUDATransform transform(outer_map, /*block_size=*/32);
 
-    // Regression: this expects `false`; the failing main branch returns `true`
-    // and the offload pipeline keeps the map on the host.
-    EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager))
-        << "OffloadTransform regressed on collapsed im2col map: the outer map "
-           "is no longer recognised as offloadable.";
+    // The outer map of the collapsed im2col pattern must be recognised as
+    // offloadable to a single CUDA kernel.
+    EXPECT_TRUE(transform.can_be_applied(builder, analysis_manager))
+        << "OffloadTransform should accept the collapsed im2col map.";
 }
 
 TEST(CudaTransformIm2colTest, ExplicitSixDimMap) {
@@ -243,10 +242,8 @@ TEST(CudaTransformIm2colTest, ExplicitSixDimMap) {
     analysis::AnalysisManager analysis_manager(builder.subject());
     CUDATransform transform(m_n, /*block_size=*/32);
 
-    EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager))
-        << "OffloadTransform unexpectedly rejects the explicit (un-collapsed) "
-           "im2col map. If only the collapsed variant fails, the regression "
-           "lies in subset analysis under mod/div indvars.";
+    EXPECT_TRUE(transform.can_be_applied(builder, analysis_manager))
+        << "OffloadTransform should accept the explicit (un-collapsed) im2col map.";
 }
 
 } // namespace sdfg::cuda

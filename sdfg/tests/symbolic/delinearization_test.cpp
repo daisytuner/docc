@@ -949,3 +949,102 @@ TEST(DelinearizeTest, Halo3D_RequiresCoupledConstraints) {
     EXPECT_TRUE(symbolic::eq(result.dimensions.at(0), symbolic::integer(N)));
     EXPECT_TRUE(symbolic::eq(result.dimensions.at(1), symbolic::integer(N)));
 }
+
+// ---------------------------------------------------------------------------
+// im2col: ResNet's first 7x7 stride-2 conv lowering. The input access into the
+// 4D image `_1[n][c][h][w]` (linearized) is:
+//
+//   in_idx = -3 + 224*(-3 + ((c0/7)%7) + 2*((n0/112)%112))
+//          + 50176*(c0/49) + 150528*(n0/12544) + (c0%7) + 2*(n0%112)
+//
+// Or, in the un-collapsed 6D form:
+//
+//   in_idx = 150528*n + 50176*c + 224*(2*hout + kh - 3) + (2*wout + kw - 3)
+//
+// Both forms must delinearize to the 4D shape (?, Cin, Hin, Hin). The halo
+// guard `0 <= h_in < Hin` and `0 <= w_in < Hin` is registered as constraints
+// on (hout, kh) and (wout, kw) respectively.
+// ---------------------------------------------------------------------------
+TEST(DelinearizeTest, Im2colExplicit6D_RequiresOffsetAwareStrideCheck) {
+    types::Scalar desc(types::PrimitiveType::Int64);
+
+    constexpr long long kN = 32;
+    constexpr long long kCin = 3;
+    constexpr long long kHin = 224;
+    constexpr long long kHout = 112;
+    constexpr long long kKh = 7;
+
+    auto make_iv = [&](const std::string& name, long long ub) {
+        auto s = symbolic::symbol(name);
+        auto a = symbolic::Assumption::create(s, desc);
+        a.add_lower_bound(symbolic::zero());
+        a.add_upper_bound(symbolic::integer(ub - 1));
+        a.map(symbolic::add(s, symbolic::one()));
+        return std::make_pair(s, a);
+    };
+
+    auto [n, an] = make_iv("n", kN);
+    auto [c, ac] = make_iv("c", kCin);
+    auto [hout, ahout] = make_iv("hout", kHout);
+    auto [wout, awout] = make_iv("wout", kHout);
+    auto [kh, akh] = make_iv("kh", kKh);
+    auto [kw, akw] = make_iv("kw", kKh);
+
+    // In-bounds guard literals:
+    //   h_in = 2*hout + kh - 3  in [0, Hin-1]
+    //   w_in = 2*wout + kw - 3  in [0, Hin-1]
+    // Upper-bound literals canonicalised to `delta <= 0`:
+    //   2*hout + kh - 3 - (Hin - 1) <= 0  ->  2*hout + kh - (Hin + 2) <= 0
+    //   2*wout + kw - (Hin + 2) <= 0
+    auto c_h_ub = symbolic::
+        expand(symbolic::sub(symbolic::add(symbolic::mul(symbolic::integer(2), hout), kh), symbolic::integer(kHin + 2))
+        );
+    auto c_w_ub = symbolic::
+        expand(symbolic::sub(symbolic::add(symbolic::mul(symbolic::integer(2), wout), kw), symbolic::integer(kHin + 2))
+        );
+    // Lower-bound literals (`delta <= 0` form of `h_in >= 0`):
+    //   -(2*hout + kh - 3) <= 0  ->  -2*hout - kh + 3 <= 0
+    auto c_h_lb =
+        symbolic::expand(symbolic::sub(symbolic::integer(3), symbolic::add(symbolic::mul(symbolic::integer(2), hout), kh))
+        );
+    auto c_w_lb =
+        symbolic::expand(symbolic::sub(symbolic::integer(3), symbolic::add(symbolic::mul(symbolic::integer(2), wout), kw))
+        );
+    ahout.add_constraint(c_h_ub);
+    akh.add_constraint(c_h_ub);
+    awout.add_constraint(c_w_ub);
+    akw.add_constraint(c_w_ub);
+    ahout.add_constraint(c_h_lb);
+    akh.add_constraint(c_h_lb);
+    awout.add_constraint(c_w_lb);
+    akw.add_constraint(c_w_lb);
+
+    symbolic::Assumptions assums;
+    assums.insert({n, an});
+    assums.insert({c, ac});
+    assums.insert({hout, ahout});
+    assums.insert({wout, awout});
+    assums.insert({kh, akh});
+    assums.insert({kw, akw});
+
+    // in_idx = 150528*n + 50176*c + 224*(2*hout + kh - 3) + (2*wout + kw - 3)
+    auto h_in = symbolic::sub(symbolic::add(symbolic::mul(symbolic::integer(2), hout), kh), symbolic::integer(kKh / 2));
+    auto w_in = symbolic::sub(symbolic::add(symbolic::mul(symbolic::integer(2), wout), kw), symbolic::integer(kKh / 2));
+    auto expr = symbolic::
+        add(symbolic::
+                add(symbolic::
+                        add(symbolic::mul(symbolic::integer(kN * kCin * kHin * kHin / kN), n),
+                            symbolic::mul(symbolic::integer(kHin * kHin), c)),
+                    symbolic::mul(symbolic::integer(kHin), h_in)),
+            w_in);
+
+    auto result = symbolic::delinearize(expr, assums);
+
+    ASSERT_TRUE(result.success);
+    // Expected 4D shape: (?, Cin, Hin, Hin)
+    ASSERT_EQ(result.indices.size(), 4u);
+    ASSERT_EQ(result.dimensions.size(), 3u);
+    EXPECT_TRUE(symbolic::eq(result.dimensions.at(0), symbolic::integer(kCin)));
+    EXPECT_TRUE(symbolic::eq(result.dimensions.at(1), symbolic::integer(kHin)));
+    EXPECT_TRUE(symbolic::eq(result.dimensions.at(2), symbolic::integer(kHin)));
+}
