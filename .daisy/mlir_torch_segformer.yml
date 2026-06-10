@@ -27,10 +27,15 @@ steps:
 
     # Warm start (DOCC benchmark, CUDA target)
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=cuda --device=cpu
+    DOCC_CI=1 venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=sequential --device=cpu
 
   run:
 
-    # model segformer b0 (DOCC CUDA target)
+    segformer_b0_docc_sequential:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=sequential --device=cpu
+      energy: true
+      env:
+        DOCC_REUSE_BINARIES: 1
 
     segformer_b0_docc_cuda:
       command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=cuda --device=cpu
