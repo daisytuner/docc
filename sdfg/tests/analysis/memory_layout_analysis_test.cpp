@@ -1419,6 +1419,528 @@ TEST(MemoryLayoutAnalysisTest, Halo_2D) {
     EXPECT_TRUE(symbolic::eq(ext[1], symbolic::integer(8)));
 }
 
+TEST(MemoryLayoutAnalysisTest, Halo_2D_Circle) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto j = symbolic::symbol("j");
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(20)),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    // Coupled diagonal-band guard: start <= i + j <= end with start=5, end=15.
+    // Iteration domain becomes a band in the (i, j) plane:
+    //   {(i, j) : 0 <= i <= 9, 0 <= j <= 19, 5 <= i+j <= 15}.
+    // Per-axis bounding box of the band:
+    //   i ranges over [0, 9]  (at i=0 the band gives j in [5,15] which is non-empty;
+    //                          at i=9 the band gives j in [0, 6])
+    //   j ranges over [0, 15] (at j=0 the band gives i in [5, 9]; at j=15 the
+    //                          band gives i in [0, 0]; j>15 forces i<0)
+    auto sum = symbolic::add(i, j);
+    auto cond_in = symbolic::And(symbolic::Ge(sum, symbolic::integer(5)), symbolic::Le(sum, symbolic::integer(15)));
+    auto& ife = builder.add_if_else(inner.root());
+    auto& taken = builder.add_case(ife, cond_in);
+
+    {
+        auto& block = builder.add_block(taken);
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            block, a_in, tasklet, "_in", {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+        builder.add_computational_memlet(
+            block, tasklet, "_out", a_out, {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile = analysis.tile(outer, "A");
+    ASSERT_NE(tile, nullptr);
+    auto ext = tile->extents();
+    ASSERT_EQ(ext.size(), 2u);
+    // Per-axis bounding box of the diagonal band {(i,j) : 5 <= i+j <= 15}
+    // intersected with the rectangular iteration domain [0,9] x [0,19].
+    EXPECT_TRUE(symbolic::eq(ext[0], symbolic::integer(10)));
+    EXPECT_TRUE(symbolic::eq(ext[1], symbolic::integer(16)));
+}
+
+// Skewed band guard with negative-coefficient projection: |j - i| <= 3.
+// Iteration domain {(i,j) : 0 <= i <= 9, 0 <= j <= 19, -3 <= j - i <= 3}.
+// Per-axis bounding box:
+//   i in [0, 9]  — band is wider than the i-range at every j, so unchanged.
+//   j in [0, 12] — at i=9 the band gives j in [6, 12]; j > 12 forces i > 9.
+// This exercises the negation path in BoundAnalysis: the constraint
+// `j - i - 3 <= 0` has coefficient +1 on j (direct upper-bound projection)
+// but coefficient -1 on i (negation required for lower-bound projection).
+TEST(MemoryLayoutAnalysisTest, Halo_2D_Skewed_NegativeCoeff) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto j = symbolic::symbol("j");
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(20)),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto diff = symbolic::sub(j, i);
+    auto cond_in = symbolic::And(symbolic::Ge(diff, symbolic::integer(-3)), symbolic::Le(diff, symbolic::integer(3)));
+    auto& ife = builder.add_if_else(inner.root());
+    auto& taken = builder.add_case(ife, cond_in);
+
+    {
+        auto& block = builder.add_block(taken);
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            block, a_in, tasklet, "_in", {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+        builder.add_computational_memlet(
+            block, tasklet, "_out", a_out, {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile = analysis.tile(outer, "A");
+    ASSERT_NE(tile, nullptr);
+    auto ext = tile->extents();
+    ASSERT_EQ(ext.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(ext[0], symbolic::integer(10)));
+    EXPECT_TRUE(symbolic::eq(ext[1], symbolic::integer(13)));
+}
+
+// Same shape as Halo_2D_Circle but using strict inequalities `i+j < 16` and
+// `i+j > 4` instead of `i+j <= 15` and `i+j >= 5`. AssumptionsAnalysis
+// normalizes strict integer inequalities by adjusting the constant by 1, so
+// the registered constraints — and thus the resolved extents — match the
+// non-strict case exactly: [10, 16].
+TEST(MemoryLayoutAnalysisTest, Halo_2D_StrictInequality) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto j = symbolic::symbol("j");
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(20)),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto sum = symbolic::add(i, j);
+    auto cond_in = symbolic::And(symbolic::Gt(sum, symbolic::integer(4)), symbolic::Lt(sum, symbolic::integer(16)));
+    auto& ife = builder.add_if_else(inner.root());
+    auto& taken = builder.add_case(ife, cond_in);
+
+    {
+        auto& block = builder.add_block(taken);
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            block, a_in, tasklet, "_in", {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+        builder.add_computational_memlet(
+            block, tasklet, "_out", a_out, {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile = analysis.tile(outer, "A");
+    ASSERT_NE(tile, nullptr);
+    auto ext = tile->extents();
+    ASSERT_EQ(ext.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(ext[0], symbolic::integer(10)));
+    EXPECT_TRUE(symbolic::eq(ext[1], symbolic::integer(16)));
+}
+
+// Three-indvar coupled constraint i + j + k <= 12 over i,j,k in [0, 5].
+// Iteration domain: {(i,j,k) : 0 <= i,j,k <= 5, i+j+k <= 12}.
+// Per-axis bounding box:
+//   i in [0, 5]: at i=5 the constraint gives j+k <= 7, which is satisfiable
+//                in [0,5]^2; at i=0 trivially satisfiable.
+//   j in [0, 5]: by symmetry, [0, 5].
+//   k in [0, 5]: by symmetry, [0, 5].
+// The constraint upper of 12 = 5+5+2, so no axis is tightened below 5.
+// However the projection still has to *succeed* — when bounding `k`, the
+// residue `12 - i - j` must be evaluated by BoundAnalysis, which involves
+// projecting the per-symbol bounds of `i` and `j` (both opaque indvars in
+// the case scope) onto an interval. Asserts the test exercises 3-symbol
+// residue projection without regressing on the bounding box.
+TEST(MemoryLayoutAnalysisTest, Halo_3D_Coupled) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("k", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(6)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto j = symbolic::symbol("j");
+    auto& middle = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(6)),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto k = symbolic::symbol("k");
+    auto& inner = builder.add_map(
+        middle.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(6)),
+        symbolic::zero(),
+        symbolic::add(k, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    // Coupled three-indvar guard.
+    auto sum = symbolic::add(symbolic::add(i, j), k);
+    auto cond_in = symbolic::Le(sum, symbolic::integer(12));
+    auto& ife = builder.add_if_else(inner.root());
+    auto& taken = builder.add_case(ife, cond_in);
+
+    // Access A[i*36 + j*6 + k] - delinearizes to shape [?, 6, 6].
+    auto idx =
+        symbolic::add(symbolic::add(symbolic::mul(i, symbolic::integer(36)), symbolic::mul(j, symbolic::integer(6))), k);
+
+    {
+        auto& block = builder.add_block(taken);
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, a_in, tasklet, "_in", {idx});
+        builder.add_computational_memlet(block, tasklet, "_out", a_out, {idx});
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile = analysis.tile(outer, "A");
+    ASSERT_NE(tile, nullptr);
+    auto ext = tile->extents();
+    ASSERT_EQ(ext.size(), 3u);
+    EXPECT_TRUE(symbolic::eq(ext[0], symbolic::integer(6)));
+    EXPECT_TRUE(symbolic::eq(ext[1], symbolic::integer(6)));
+    EXPECT_TRUE(symbolic::eq(ext[2], symbolic::integer(6)));
+}
+
+// Single-sided coupled guard: i + j >= 5, no upper bound on the sum.
+// Iteration domain: {(i,j) : 0 <= i <= 9, 0 <= j <= 19, i+j >= 5}.
+// Per-axis bounding box stays full [0, 9] x [0, 19] because:
+//   For i: lower-bound projection of `5 - i - j <= 0` yields `i >= 5 - j`.
+//          At j_upper = 19, `5 - j` = -14, so max(0, -14) = 0. Upper unchanged.
+//   For j: symmetric. Lower = max(0, 5 - 9) = 0. Upper = 19.
+// Confirms a one-sided constraint does not over-tighten: the constraint
+// projection mechanism intersects with existing per-symbol bounds and so is
+// a no-op when the projected residue is weaker than the per-symbol bound.
+TEST(MemoryLayoutAnalysisTest, Halo_2D_LowerOnly) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto j = symbolic::symbol("j");
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(20)),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto sum = symbolic::add(i, j);
+    auto cond_in = symbolic::Ge(sum, symbolic::integer(5));
+    auto& ife = builder.add_if_else(inner.root());
+    auto& taken = builder.add_case(ife, cond_in);
+
+    {
+        auto& block = builder.add_block(taken);
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            block, a_in, tasklet, "_in", {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+        builder.add_computational_memlet(
+            block, tasklet, "_out", a_out, {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile = analysis.tile(outer, "A");
+    ASSERT_NE(tile, nullptr);
+    auto ext = tile->extents();
+    ASSERT_EQ(ext.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(ext[0], symbolic::integer(10)));
+    EXPECT_TRUE(symbolic::eq(ext[1], symbolic::integer(20)));
+}
+
+// IfElse with two cases representing two disjoint coupled bands:
+//   case 0: i + j <= 5 (lower-left triangle within iteration domain)
+//   case 1: i + j >= 14 (upper-right triangle within iteration domain)
+// Iteration domain: [0, 9] x [0, 9]. Each case yields its own per-axis box:
+//   case 0: i in [0, 5], j in [0, 5]   (at i=5: j in [0, 0]; at j=5: i in [0, 0])
+//   case 1: i in [5, 9], j in [5, 9]   (at i=5: j in [9, 9]; at j=5: i in [9, 9])
+// MLA merges branches at the IfElse scope as a bounding-box union, so the
+// outer-loop tile should cover i in [0, 9], j in [0, 9] — extents [10, 10].
+TEST(MemoryLayoutAnalysisTest, Halo_2D_MultipleCases) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto j = symbolic::symbol("j");
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto sum = symbolic::add(i, j);
+    auto cond_low = symbolic::Le(sum, symbolic::integer(5));
+    auto cond_high = symbolic::Ge(sum, symbolic::integer(14));
+    auto& ife = builder.add_if_else(inner.root());
+    auto& case_low = builder.add_case(ife, cond_low);
+    auto& case_high = builder.add_case(ife, cond_high);
+
+    auto make_access = [&](structured_control_flow::Sequence& seq) {
+        auto& block = builder.add_block(seq);
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            block, a_in, tasklet, "_in", {symbolic::add(symbolic::mul(i, symbolic::integer(10)), j)}
+        );
+        builder.add_computational_memlet(
+            block, tasklet, "_out", a_out, {symbolic::add(symbolic::mul(i, symbolic::integer(10)), j)}
+        );
+    };
+    make_access(case_low);
+    make_access(case_high);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile = analysis.tile(outer, "A");
+    ASSERT_NE(tile, nullptr);
+    auto ext = tile->extents();
+    ASSERT_EQ(ext.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(ext[0], symbolic::integer(10)));
+    EXPECT_TRUE(symbolic::eq(ext[1], symbolic::integer(10)));
+}
+
+// Per-inner-iteration tile for Halo_2D_Circle: query the inner-loop scope.
+// At the inner loop scope, only `j` is excluded as the loop's own indvar; `i`
+// is opaque (treated as a parameter — "frozen within one inner iteration").
+// The coupled constraint `i + j <= 15` projects `j <= 15 - i`, and the
+// per-symbol upper of j (= 19) is intersected: `min(19, 15 - i) = 15 - i`.
+// Lower symmetrically: `max(0, 5 - i)`. After delinearization (shape [?, 20]),
+// dim 1 extent = `(15 - i) - max(0, 5 - i) + 1`. We assert the symbolic
+// form is non-null and finite — the per-iter tile is intentionally
+// `i`-dependent here, so we check the bounding-box presence rather than
+// equality with a constant.
+TEST(MemoryLayoutAnalysisTest, Halo_2D_InnerScopeTile) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Float);
+    types::Pointer pointer_type(scalar_type);
+    builder.add_container("i", index_type);
+    builder.add_container("j", index_type);
+    builder.add_container("A", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto j = symbolic::symbol("j");
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(20)),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto sum = symbolic::add(i, j);
+    auto cond_in = symbolic::And(symbolic::Ge(sum, symbolic::integer(5)), symbolic::Le(sum, symbolic::integer(15)));
+    auto& ife = builder.add_if_else(inner.root());
+    auto& taken = builder.add_case(ife, cond_in);
+
+    {
+        auto& block = builder.add_block(taken);
+        auto& a_in = builder.add_access(block, "A");
+        auto& a_out = builder.add_access(block, "A");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            block, a_in, tasklet, "_in", {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+        builder.add_computational_memlet(
+            block, tasklet, "_out", a_out, {symbolic::add(symbolic::mul(i, symbolic::integer(20)), j)}
+        );
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Inner-loop tile: per outer-iteration, the access touches a row segment
+    // that depends on i. Confirm a tile exists with 2 dims, and that the
+    // outer-loop tile (which fully unfolds i) gives the expected [10, 16].
+    auto* inner_tile = analysis.tile(inner, "A");
+    ASSERT_NE(inner_tile, nullptr);
+    auto inner_ext = inner_tile->extents();
+    ASSERT_EQ(inner_ext.size(), 2u);
+    EXPECT_FALSE(inner_ext[0].is_null());
+    EXPECT_FALSE(inner_ext[1].is_null());
+
+    auto* outer_tile = analysis.tile(outer, "A");
+    ASSERT_NE(outer_tile, nullptr);
+    auto outer_ext = outer_tile->extents();
+    ASSERT_EQ(outer_ext.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(outer_ext[0], symbolic::integer(10)));
+    EXPECT_TRUE(symbolic::eq(outer_ext[1], symbolic::integer(16)));
+}
+
 // Test tile groups: SYR2K-style access pattern A[i,k] + A[j,k]
 // Two memlets to the same container with different row indices should produce two groups
 TEST(MemoryLayoutAnalysisTest, TileGroups_TwoIndependentAccesses) {

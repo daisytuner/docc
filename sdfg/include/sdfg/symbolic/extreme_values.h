@@ -103,6 +103,16 @@ private:
     // Cycle detection: symbols currently being bounded
     SymbolSet visiting_;
 
+    // Monotonic counter incremented every time the cycle guard in
+    // `visit_symbol` fires (a symbol's resolution was abandoned because
+    // we were already bounding it). Used by `visit()` to detect that a
+    // subtree's result was influenced by the current `visiting_` state —
+    // such context-tainted results must not be cached, because the same
+    // expression evaluated outside the cycle could yield a tighter bound
+    // (e.g. via coupled-constraint projection). Compared at entry vs.
+    // exit of `visit_uncached`; if it grew, the result is tainted.
+    size_t cycle_hits_ = 0;
+
     // Memoization cache for visit() results, keyed by canonical SymEngine
     // hash+eq on the input expression. Only fully-successful intervals
     // (both endpoints non-null) are cached: such results are derived purely
@@ -135,6 +145,25 @@ private:
     Interval visit_add_affine(const AffineCoeffs& coeffs, const SymbolVec& gens, size_t depth);
     Interval visit_add_polynomial(const Polynomial& poly, const SymbolVec& gens, size_t depth);
     Interval visit_add_argwise(const SymEngine::vec_basic& args, size_t depth);
+
+    // Tightens an affine-sum interval by projecting coupled constraints onto
+    // the SUM as a single linear functional. Per-symbol projection (already
+    // done in `visit_symbol`) loses coupling: bounding `x + y` with the
+    // constraint `x + y <= K` registered on both symbols would sum the
+    // per-symbol upper bounds `x <= K - y` and `y <= K - x`, each resolved
+    // independently down to `K`, yielding `2*K` instead of `K`.
+    //
+    // This helper looks for a non-negative integer linear combination of
+    // registered constraints whose generator coefficients match those of the
+    // input sum exactly. When such a combination exists, every term in the
+    // sum cancels against the constraint combination, leaving a parameter-
+    // only residue that is the tightening bound. Greedy per-generator search
+    // is sufficient for the common patterns (single halo-guard constraint,
+    // block-diagonal multi-axis stencil guards).
+    //
+    // Returns a (possibly partially-null) `Interval` to be intersected with
+    // the result of the regular per-term bounding flow.
+    Interval visit_add_coupled_constraints(const AffineCoeffs& coeffs, const SymbolVec& gens, size_t depth);
 };
 
 // ---- Backward-compatible free functions ----

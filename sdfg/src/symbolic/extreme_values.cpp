@@ -32,18 +32,24 @@ Interval BoundAnalysis::visit(const Expression& expr, size_t depth) {
     }
 
     // Cache lookup. The cache stores only fully-successful intervals (both
-    // endpoints non-null): such results were computed purely from assumption
-    // bounds and are context-free. Failures and one-sided intervals are not
-    // cached because they may have arisen from cycle detection in
-    // `visit_symbol` — a context-dependent state that must not be reused.
+    // endpoints non-null) AND that were produced without triggering the
+    // `visit_symbol` cycle guard anywhere in the subtree. A cycle hit during
+    // resolution means the intermediate result depended on the current
+    // `visiting_` state — for example, `visit_symbol(j)` called nested under
+    // `visit_symbol(i)` may fail to project a coupled constraint because the
+    // residue references `i` (which is already in `visiting_`) and returns the
+    // un-tightened per-symbol bound. Caching that value would prevent a later
+    // top-level call for `j` (with empty `visiting_`) from doing the
+    // projection successfully.
     auto it = cache_.find(expr);
     if (it != cache_.end()) {
         return it->second;
     }
 
+    size_t cycle_hits_before = cycle_hits_;
     Interval result = visit_uncached(expr, depth);
 
-    if (result.has_lower() && result.has_upper()) {
+    if (result.has_lower() && result.has_upper() && cycle_hits_ == cycle_hits_before) {
         cache_.emplace(expr, result);
     }
     return result;
@@ -114,6 +120,7 @@ Interval BoundAnalysis::visit_uncached(const Expression& expr, size_t depth) {
 Interval BoundAnalysis::visit_symbol(const SymEngine::RCP<const SymEngine::Symbol>& sym, size_t depth) {
     // Cycle detection: if we're already computing bounds for this symbol, break the cycle
     if (visiting_.count(sym)) {
+        ++cycle_hits_;
         return Interval::failure();
     }
     visiting_.insert(sym);
@@ -169,6 +176,48 @@ Interval BoundAnalysis::visit_symbol(const SymEngine::RCP<const SymEngine::Symbo
         // Fall back to tight_upper_bound
         if (ub.is_null() && !assum.tight_upper_bound().is_null()) {
             ub = assum.tight_upper_bound();
+        }
+    }
+
+    // Project per-symbol bounds out of coupled affine constraints. Applies
+    // in both tight and loose modes — the projection only ever intersects
+    // (min for upper, max for lower) with the existing per-symbol bound, so
+    // it can only tighten and is sound in either mode.
+    //
+    // Each constraint `c <= 0` involving `sym` and other symbols can be
+    // rearranged via affine inversion into `sym <= U(other syms)` (when
+    // the coefficient on `sym` is positive) or `sym >= L(other syms)`
+    // (when negative). The residue `U` / `L` is then bounded recursively
+    // by the same `BoundAnalysis`; the cycle guard already prevents
+    // re-entry on `sym`, so any constraint whose residue ultimately
+    // depends on `sym` itself collapses to failure rather than tightening
+    // — this is the soundness fence against the "j <= 15-i, i <= 15-j"
+    // mutual-dependency case that motivated refusing such literals in
+    // `extract_bound_from_literal` historically. The cycle guard also bumps
+    // `cycle_hits_`, which prevents `visit()` from caching the un-tightened
+    // result so a later top-level query for the same symbol (without the
+    // cycle context) can re-run the projection successfully.
+    //
+    // Sign handling: `solve_affine_bound` only inverts positive
+    // coefficients. For negative coefficients, negate the constraint and
+    // flip the inequality direction.
+    for (const auto& c : assum.constraints()) {
+        // Upper-bound projection (positive coeff): solve `c <= 0` for sym
+        if (auto u_residue = symbolic::solve_affine_bound(c, sym, symbolic::zero(), /*is_lower_bound=*/false);
+            !u_residue.is_null()) {
+            auto u_iv = visit(u_residue, depth + 1);
+            if (!u_iv.upper.is_null()) {
+                ub = ub.is_null() ? u_iv.upper : symbolic::min(ub, u_iv.upper);
+            }
+        }
+        // Lower-bound projection (negative coeff): solve `-c >= 0` for sym
+        auto neg_c = symbolic::expand(symbolic::mul(symbolic::integer(-1), c));
+        if (auto l_residue = symbolic::solve_affine_bound(neg_c, sym, symbolic::zero(), /*is_lower_bound=*/true);
+            !l_residue.is_null()) {
+            auto l_iv = visit(l_residue, depth + 1);
+            if (!l_iv.lower.is_null()) {
+                lb = lb.is_null() ? l_iv.lower : symbolic::max(lb, l_iv.lower);
+            }
         }
     }
 
@@ -446,6 +495,24 @@ Interval BoundAnalysis::visit_add(const SymEngine::RCP<const SymEngine::Add>& ad
             auto coeffs = affine_coefficients(poly);
             if (!coeffs.empty()) {
                 auto result = visit_add_affine(coeffs, gens, depth);
+
+                // Tighten via coupled-constraint projection: per-symbol
+                // bounding (inside `visit_add_affine`) sums independent
+                // per-generator bounds and so loses the coupling expressed
+                // by registered constraints like `x + kx <= N - 1`. The
+                // helper looks for a non-negative integer combination of
+                // constraints whose generator coefficients match the sum's,
+                // yielding a tighter bound on the whole expression.
+                if (gens.size() >= 2) {
+                    auto coupled = visit_add_coupled_constraints(coeffs, gens, depth);
+                    if (coupled.has_upper()) {
+                        result.upper = result.has_upper() ? symbolic::min(result.upper, coupled.upper) : coupled.upper;
+                    }
+                    if (coupled.has_lower()) {
+                        result.lower = result.has_lower() ? symbolic::max(result.lower, coupled.lower) : coupled.lower;
+                    }
+                }
+
                 if (result.has_lower() || result.has_upper()) {
                     return result;
                 }
@@ -646,6 +713,214 @@ Interval BoundAnalysis::visit_add_argwise(const SymEngine::vec_basic& args, size
     }
 
     return {lb_valid ? lb_sum : SymEngine::null, ub_valid ? ub_sum : SymEngine::null};
+}
+
+// ============================================================================
+// Coupled-constraint projection helper for affine sums
+// ============================================================================
+
+namespace {
+
+// Extract the integer coefficient of `gen` from an `AffineCoeffs` map.
+// Returns true on success. Non-integer coefficients are rejected (the
+// helper deliberately stays in the integer regime).
+bool integer_coeff(const AffineCoeffs& coeffs, const Symbol& gen, long long& out) {
+    auto it = coeffs.find(gen);
+    if (it == coeffs.end()) {
+        out = 0;
+        return true;
+    }
+    if (!SymEngine::is_a<SymEngine::Integer>(*it->second)) {
+        return false;
+    }
+    out = SymEngine::rcp_static_cast<const SymEngine::Integer>(it->second)->as_int();
+    return true;
+}
+
+// Convert a registered constraint expression into its affine decomposition
+// over the given generator vector. Returns false if the constraint is not
+// purely affine with integer generator coefficients (the helper only
+// reasons in the integer regime).
+//
+// The constant-part expression is returned via `out_const` and may still
+// contain parameters (constant assumption symbols, array dimensions, ...).
+bool decompose_constraint(
+    const Expression& constraint, const SymbolVec& gens, std::vector<long long>& out_g_coeffs, Expression& out_const
+) {
+    SymbolVec gens_copy = gens;
+    auto poly = polynomial(constraint, gens_copy);
+    if (poly.is_null()) return false;
+    auto coeffs = affine_coefficients(poly);
+    if (coeffs.empty()) return false;
+
+    out_g_coeffs.assign(gens.size(), 0);
+    out_const = symbolic::zero();
+
+    auto constant_sym = symbolic::symbol("__daisy_constant__");
+    for (const auto& [sym, coeff] : coeffs) {
+        if (symbolic::eq(sym, constant_sym)) {
+            out_const = coeff;
+            continue;
+        }
+        if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) return false;
+        long long v = SymEngine::rcp_static_cast<const SymEngine::Integer>(coeff)->as_int();
+        if (v == 0) continue;
+        // Locate this symbol in `gens`.
+        bool found = false;
+        for (size_t i = 0; i < gens.size(); ++i) {
+            if (symbolic::eq(gens[i], sym)) {
+                out_g_coeffs[i] = v;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            // Constraint mentions a generator outside the target sum's
+            // generator set. We can't cancel that contribution, so this
+            // constraint cannot participate.
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs, const SymbolVec& gens, size_t depth) {
+    if (gens.empty()) return Interval::failure();
+
+    auto constant_sym = symbolic::symbol("__daisy_constant__");
+
+    // Materialize the sum's generator coefficients and constant part.
+    std::vector<long long> sum_g(gens.size(), 0);
+    Expression sum_const = symbolic::zero();
+    for (size_t i = 0; i < gens.size(); ++i) {
+        long long c = 0;
+        if (!integer_coeff(coeffs, gens[i], c)) return Interval::failure();
+        sum_g[i] = c;
+    }
+    {
+        auto it = coeffs.find(constant_sym);
+        if (it != coeffs.end()) sum_const = it->second;
+    }
+
+    // Collect candidate constraints from every generator's assumption,
+    // deduplicating by SymEngine equality.
+    struct Candidate {
+        Expression expr;
+        std::vector<long long> g_coeffs;
+        Expression const_part;
+    };
+    std::vector<Candidate> cands;
+    ExpressionSet seen;
+    for (const auto& g : gens) {
+        auto a_it = assumptions_.find(g);
+        if (a_it == assumptions_.end()) continue;
+        for (const auto& c : a_it->second.constraints()) {
+            if (!seen.insert(c).second) continue;
+            Candidate cand;
+            cand.expr = c;
+            if (!decompose_constraint(c, gens, cand.g_coeffs, cand.const_part)) continue;
+            cands.push_back(std::move(cand));
+        }
+    }
+    if (cands.empty()) return Interval::failure();
+
+    // Greedy peel in one direction. `direction = +1` projects toward an
+    // upper bound (each constraint `c <= 0` is scaled by a non-negative
+    // lambda); `direction = -1` projects toward a lower bound (using `-c
+    // >= 0`, scaled by non-negative mu; we negate the residual sign so the
+    // same loop computes both directions).
+    auto try_direction = [&](int direction) -> Expression {
+        std::vector<long long> residual = sum_g;
+        for (auto& v : residual) v *= direction;
+        // K accumulates `direction * sum_const - sum(lambda_i * c_i.const_part)`.
+        // For the upper bound: `expr = K + sum(lambda_i * c_i) <= K`.
+        // For the lower bound: `expr = -(K - sum(mu_i * c_i)) >= -K_lower`.
+        // We compute `direction * K` here and flip at the end.
+        Expression accumulated_const = sum_const; // sign-flipped per direction below
+        if (direction < 0) accumulated_const = symbolic::mul(symbolic::integer(-1), accumulated_const);
+
+        for (int iter = 0; iter < 32; ++iter) {
+            // Find the first generator with non-zero residual coefficient.
+            size_t pick = gens.size();
+            for (size_t i = 0; i < gens.size(); ++i) {
+                if (residual[i] != 0) {
+                    pick = i;
+                    break;
+                }
+            }
+            if (pick == gens.size()) {
+                // All residuals zero - we've cancelled the sum against a
+                // non-negative combination of constraints.
+                return accumulated_const;
+            }
+
+            long long need = residual[pick];
+            bool advanced = false;
+            for (const auto& c : cands) {
+                long long cc = c.g_coeffs[pick];
+                if (cc == 0) continue;
+                if (need % cc != 0) continue;
+                long long lambda = need / cc;
+                if (lambda <= 0) continue;
+
+                // Tentatively subtract `lambda * c` from the residual.
+                std::vector<long long> r_new = residual;
+                bool overshoot = false;
+                for (size_t i = 0; i < gens.size(); ++i) {
+                    long long sub = lambda * c.g_coeffs[i];
+                    long long old_val = r_new[i];
+                    long long new_val = old_val - sub;
+                    // Don't allow a coefficient to grow in absolute value:
+                    // greedy must always move toward zero.
+                    if (old_val == 0) {
+                        if (new_val != 0) {
+                            overshoot = true;
+                            break;
+                        }
+                    } else {
+                        long long abs_old = old_val < 0 ? -old_val : old_val;
+                        long long abs_new = new_val < 0 ? -new_val : new_val;
+                        if (abs_new > abs_old) {
+                            overshoot = true;
+                            break;
+                        }
+                    }
+                    r_new[i] = new_val;
+                }
+                if (overshoot) continue;
+
+                residual = std::move(r_new);
+                accumulated_const =
+                    symbolic::sub(accumulated_const, symbolic::mul(symbolic::integer(lambda), c.const_part));
+                advanced = true;
+                break;
+            }
+            if (!advanced) return Expression(SymEngine::null);
+        }
+        return Expression(SymEngine::null);
+    };
+
+    Expression upper_k = try_direction(+1);
+    Expression lower_k = try_direction(-1);
+
+    Expression ub = SymEngine::null;
+    if (!upper_k.is_null()) {
+        // `K` may still mention parameters - resolve via the regular flow.
+        auto k_iv = visit(symbolic::expand(upper_k), depth + 1);
+        if (k_iv.has_upper()) ub = k_iv.upper;
+    }
+    Expression lb = SymEngine::null;
+    if (!lower_k.is_null()) {
+        // For the lower bound: `-residual = expr - sum(mu_i * c_i)`, so
+        // `expr = -K_lower + sum(mu_i * (-c_i)) >= -K_lower`. Negate.
+        auto neg_k = symbolic::mul(symbolic::integer(-1), lower_k);
+        auto k_iv = visit(symbolic::expand(neg_k), depth + 1);
+        if (k_iv.has_lower()) lb = k_iv.lower;
+    }
+
+    return {lb, ub};
 }
 
 // ============================================================================

@@ -816,3 +816,136 @@ TEST(DelinearizeTest, ExpandedSquaredSymbolicStride3D) {
     EXPECT_TRUE(symbolic::eq(result.dimensions.at(0), stride_mid));
     EXPECT_TRUE(symbolic::eq(result.dimensions.at(1), stride_mid));
 }
+
+// ---------------------------------------------------------------------------
+// Halo / stencil delinearization that requires coupled-constraint reasoning.
+//
+// Pattern: a stencil access `A[x + kx][y + ky]` lowered to the linearized
+// form `N*(x + kx) + (y + ky)`. With per-indvar bounds alone:
+//
+//     x, y in [0, N-1]   ;   kx, ky in [0, K-1]
+//
+// the loose upper bound on the inner residue `y + ky` is `(N-1) + (K-1)
+// = N + K - 2`, which is >= N (the outer stride) whenever K >= 2. So the
+// peel cannot prove the stride dominates and delinearize aborts -- even
+// though the access is in fact a clean 2D access into an N x N array,
+// because the stencil is guarded by `0 <= x + kx < N` and likewise for y.
+//
+// The guard's CNF literal `x + kx + 1 - N <= 0` (etc.) is registered by
+// `AssumptionsAnalysis` as a *constraint* on every generator it mentions
+// (`Assumption::constraints()`). The delinearize residue check goes
+// through `BoundAnalysis`, which projects each constraint onto one symbol
+// at a time -- losing the coupling needed to bound the SUM `y + ky` by
+// `N - 1`.
+//
+// These tests pin down the gap and the fix: with the coupled-constraint
+// upper bound applied to the residue sum, delinearize cleanly recovers
+// the natural 2D / 3D shape.
+// ---------------------------------------------------------------------------
+TEST(DelinearizeTest, Halo2D_RequiresCoupledConstraint) {
+    types::Scalar desc(types::PrimitiveType::Int64);
+
+    constexpr long long N = 5;
+    constexpr long long K = 3;
+
+    auto make_iv = [&](const std::string& name, long long ub) {
+        auto s = symbolic::symbol(name);
+        auto a = symbolic::Assumption::create(s, desc);
+        a.add_lower_bound(symbolic::zero());
+        a.add_upper_bound(symbolic::integer(ub - 1));
+        a.map(symbolic::add(s, symbolic::one()));
+        return std::make_pair(s, a);
+    };
+
+    auto [x, ax] = make_iv("x", N);
+    auto [y, ay] = make_iv("y", N);
+    auto [kx, akx] = make_iv("kx", K);
+    auto [ky, aky] = make_iv("ky", K);
+
+    // In-bounds guard literals (canonical `delta <= 0`):
+    //   x + kx <= N - 1  ->  x + kx - (N-1) <= 0
+    //   y + ky <= N - 1  ->  y + ky - (N-1) <= 0
+    auto c_x = symbolic::expand(symbolic::sub(symbolic::add(x, kx), symbolic::integer(N - 1)));
+    auto c_y = symbolic::expand(symbolic::sub(symbolic::add(y, ky), symbolic::integer(N - 1)));
+    ax.add_constraint(c_x);
+    akx.add_constraint(c_x);
+    ay.add_constraint(c_y);
+    aky.add_constraint(c_y);
+
+    symbolic::Assumptions assums;
+    assums.insert({x, ax});
+    assums.insert({y, ay});
+    assums.insert({kx, akx});
+    assums.insert({ky, aky});
+
+    // expr = N*(x + kx) + (y + ky)  =  N*x + N*kx + y + ky
+    auto expr = symbolic::add(symbolic::mul(symbolic::integer(N), symbolic::add(x, kx)), symbolic::add(y, ky));
+
+    auto result = symbolic::delinearize(expr, assums);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.indices.size(), 2u);
+    ASSERT_EQ(result.dimensions.size(), 1u);
+    EXPECT_TRUE(symbolic::eq(result.indices.at(0), symbolic::add(x, kx)));
+    EXPECT_TRUE(symbolic::eq(result.indices.at(1), symbolic::add(y, ky)));
+    EXPECT_TRUE(symbolic::eq(result.dimensions.at(0), symbolic::integer(N)));
+}
+
+TEST(DelinearizeTest, Halo3D_RequiresCoupledConstraints) {
+    types::Scalar desc(types::PrimitiveType::Int64);
+
+    constexpr long long N = 5;
+    constexpr long long K = 3;
+    constexpr long long N2 = N * N;
+
+    auto make_iv = [&](const std::string& name, long long ub) {
+        auto s = symbolic::symbol(name);
+        auto a = symbolic::Assumption::create(s, desc);
+        a.add_lower_bound(symbolic::zero());
+        a.add_upper_bound(symbolic::integer(ub - 1));
+        a.map(symbolic::add(s, symbolic::one()));
+        return std::make_pair(s, a);
+    };
+
+    auto [x, ax] = make_iv("x", N);
+    auto [y, ay] = make_iv("y", N);
+    auto [z, az] = make_iv("z", N);
+    auto [kx, akx] = make_iv("kx", K);
+    auto [ky, aky] = make_iv("ky", K);
+    auto [kz, akz] = make_iv("kz", K);
+
+    // Three guard literals, one per axis.
+    auto c_x = symbolic::expand(symbolic::sub(symbolic::add(x, kx), symbolic::integer(N - 1)));
+    auto c_y = symbolic::expand(symbolic::sub(symbolic::add(y, ky), symbolic::integer(N - 1)));
+    auto c_z = symbolic::expand(symbolic::sub(symbolic::add(z, kz), symbolic::integer(N - 1)));
+    ax.add_constraint(c_x);
+    akx.add_constraint(c_x);
+    ay.add_constraint(c_y);
+    aky.add_constraint(c_y);
+    az.add_constraint(c_z);
+    akz.add_constraint(c_z);
+
+    symbolic::Assumptions assums;
+    assums.insert({x, ax});
+    assums.insert({y, ay});
+    assums.insert({z, az});
+    assums.insert({kx, akx});
+    assums.insert({ky, aky});
+    assums.insert({kz, akz});
+
+    // expr = N^2 * (x+kx) + N * (y+ky) + (z+kz)
+    auto expr = symbolic::
+        add(symbolic::mul(symbolic::integer(N2), symbolic::add(x, kx)),
+            symbolic::add(symbolic::mul(symbolic::integer(N), symbolic::add(y, ky)), symbolic::add(z, kz)));
+
+    auto result = symbolic::delinearize(expr, assums);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.indices.size(), 3u);
+    ASSERT_EQ(result.dimensions.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(result.indices.at(0), symbolic::add(x, kx)));
+    EXPECT_TRUE(symbolic::eq(result.indices.at(1), symbolic::add(y, ky)));
+    EXPECT_TRUE(symbolic::eq(result.indices.at(2), symbolic::add(z, kz)));
+    EXPECT_TRUE(symbolic::eq(result.dimensions.at(0), symbolic::integer(N)));
+    EXPECT_TRUE(symbolic::eq(result.dimensions.at(1), symbolic::integer(N)));
+}

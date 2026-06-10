@@ -1,5 +1,7 @@
 #include "sdfg/symbolic/delinearization.h"
 
+#include <algorithm>
+
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/polynomials.h"
@@ -202,6 +204,53 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
     }
     if (groups.empty()) {
         // Only a constant offset -> not a real access; fall through as 1D.
+        return {MultiExpression{dim}, MultiExpression{}, true};
+    }
+
+    // Step 1a: Normalize each group's index by extracting params-only addends
+    // into the global offset. SymEngine canonicalizes `224 * (2*hout + kh - 3)`
+    // into a single Mul `(224, -3+2*hout+kh)` whose index `-3+2*hout+kh` is
+    // negative in the lower corner — `is_nonneg` then refuses to peel it.
+    // Splitting `-3` off into `offset += 224 * -3` leaves index `2*hout + kh`
+    // which IS provably non-negative.
+    //
+    // Soundness: `stride * (idx_part + const_part) == stride * idx_part +
+    // stride * const_part`, and addends that touch no indvar are constants
+    // relative to the access pattern and naturally belong in the offset.
+    for (auto& [stride, index] : groups) {
+        if (!SymEngine::is_a<SymEngine::Add>(*index)) continue;
+        Expression idx_part = symbolic::zero();
+        Expression const_part = symbolic::zero();
+        for (const auto& addend : index->get_args()) {
+            bool has_indvar = false;
+            for (const auto& s : symbolic::atoms(addend)) {
+                if (params_set.count(s) == 0) {
+                    has_indvar = true;
+                    break;
+                }
+            }
+            if (has_indvar) {
+                idx_part = symbolic::eq(idx_part, symbolic::zero()) ? Expression(addend)
+                                                                    : symbolic::add(idx_part, addend);
+            } else {
+                const_part = symbolic::eq(const_part, symbolic::zero()) ? Expression(addend)
+                                                                        : symbolic::add(const_part, addend);
+            }
+        }
+        if (!symbolic::eq(const_part, symbolic::zero())) {
+            offset = symbolic::add(offset, symbolic::mul(stride, const_part));
+            index = idx_part;
+        }
+    }
+    // Drop groups whose index collapsed to zero (purely-constant contribution
+    // already accounted for in the offset).
+    groups.erase(
+        std::remove_if(
+            groups.begin(), groups.end(), [](const auto& g) { return symbolic::eq(g.second, symbolic::zero()); }
+        ),
+        groups.end()
+    );
+    if (groups.empty()) {
         return {MultiExpression{dim}, MultiExpression{}, true};
     }
 
