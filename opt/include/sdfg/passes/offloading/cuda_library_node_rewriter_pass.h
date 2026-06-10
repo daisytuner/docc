@@ -2,6 +2,7 @@
 
 #include "sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/passes/pass.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
@@ -28,6 +29,8 @@ private:
     );
 
     std::optional<data_flow::ImplementationType> try_memset_implementation(const stdlib::MemsetNode& memset_node);
+
+    std::optional<data_flow::ImplementationType> try_memcpy_implementation(const stdlib::MemcpyNode& memcpy_node);
 };
 
 typedef passes::VisitorPass<CudaLibraryNodeRewriter> CudaLibraryNodeRewriterPass;

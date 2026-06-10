@@ -8,6 +8,7 @@
 #include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -52,7 +53,7 @@ void CUDAStdlibDataTransferExtraction::create_allocate(
         offloading::BufferLifecycle::ALLOC,
         type,
         type,
-        this->memset_node_.debug_info(),
+        this->lib_node_.debug_info(),
         size,
         symbolic::zero()
     );
@@ -75,7 +76,7 @@ void CUDAStdlibDataTransferExtraction::create_deallocate(
         offloading::BufferLifecycle::FREE,
         type,
         type,
-        this->memset_node_.debug_info(),
+        this->lib_node_.debug_info(),
         SymEngine::null,
         symbolic::zero()
     );
@@ -100,36 +101,68 @@ void CUDAStdlibDataTransferExtraction::create_copy_from_device_with_deallocation
         offloading::BufferLifecycle::FREE,
         type,
         type,
-        this->memset_node_.debug_info(),
+        this->lib_node_.debug_info(),
         size,
         symbolic::zero()
     );
 }
 
-CUDAStdlibDataTransferExtraction::CUDAStdlibDataTransferExtraction(::sdfg::stdlib::MemsetNode& memset_node)
-    : memset_node_(memset_node) {}
+void CUDAStdlibDataTransferExtraction::create_copy_to_device_with_allocation(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& host_container,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type
+) {
+    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    offloading::add_offloading_node<CUDADataOffloadingNode>(
+        builder,
+        copy_block,
+        host_container,
+        device_container,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::ALLOC,
+        type,
+        type,
+        this->lib_node_.debug_info(),
+        size,
+        symbolic::zero()
+    );
+}
+
+CUDAStdlibDataTransferExtraction::CUDAStdlibDataTransferExtraction(data_flow::LibraryNode& lib_node)
+    : lib_node_(lib_node) {}
 
 std::string CUDAStdlibDataTransferExtraction::name() const { return "CUDAStdlibDataTransferExtraction"; }
 
 bool CUDAStdlibDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    if (this->memset_node_.implementation_type().value() != cuda::ImplementationType_CUDAWithTransfers.value()) {
+    if (this->lib_node_.implementation_type().value() != cuda::ImplementationType_CUDAWithTransfers.value()) {
         return false;
     }
 
-    // Restrict to memset nodes in their own block
-    auto& dfg = this->memset_node_.get_parent();
-    if (dfg.nodes().size() != dfg.in_degree(this->memset_node_) + dfg.out_degree(this->memset_node_) + 1) {
+    // Restrict to nodes in their own block
+    auto& dfg = this->lib_node_.get_parent();
+    if (dfg.nodes().size() != dfg.in_degree(this->lib_node_) + dfg.out_degree(this->lib_node_) + 1) {
         return false;
     }
 
-    return true;
+    // Supported stdlib nodes
+    if (dynamic_cast<stdlib::MemsetNode*>(&this->lib_node_)) {
+        return true;
+    } else if (dynamic_cast<stdlib::MemcpyNode*>(&this->lib_node_)) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 void CUDAStdlibDataTransferExtraction::
     apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get data flow graph and block
-    auto& dfg = this->memset_node_.get_parent();
+    auto& dfg = this->lib_node_.get_parent();
     auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
@@ -138,8 +171,27 @@ void CUDAStdlibDataTransferExtraction::
     auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(block));
     assert(sequence);
 
+    if (dynamic_cast<stdlib::MemsetNode*>(&this->lib_node_)) {
+        this->apply_memset(builder, analysis_manager, dfg, *sequence, *block);
+    } else if (dynamic_cast<stdlib::MemcpyNode*>(&this->lib_node_)) {
+        this->apply_memcpy(builder, analysis_manager, dfg, *sequence, *block);
+    }
+
+    // Change the implementation type to without transfers
+    this->lib_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
+}
+
+void CUDAStdlibDataTransferExtraction::apply_memset(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    data_flow::DataFlowGraph& dfg,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block
+) {
+    auto& memset_node = static_cast<stdlib::MemsetNode&>(this->lib_node_);
+
     // Capture output accesses
-    auto ptr_edge = dfg.in_edge_for_connector(this->memset_node_, "_ptr");
+    auto ptr_edge = dfg.in_edge_for_connector(memset_node, "_ptr");
     auto& host_access_node =
         const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(ptr_edge->src()));
     auto& host_container_name = host_access_node.data();
@@ -148,26 +200,58 @@ void CUDAStdlibDataTransferExtraction::
     auto& host_type = builder.subject().type(host_container_name);
     auto& type = static_cast<const types::Pointer&>(host_type);
 
-    auto ptr_size = this->memset_node_.num();
+    auto ptr_size = memset_node.num();
     auto dPtr = this->create_device_container(builder, type, ptr_size);
 
     // Allocate device buffer
-    this->create_allocate(builder, *sequence, *block, dPtr, ptr_size, type);
+    this->create_allocate(builder, sequence, block, dPtr, ptr_size, type);
 
     // Copy from device to host and deallocate
-    this->create_copy_from_device_with_deallocation(builder, *sequence, *block, host_container_name, dPtr, ptr_size, type);
+    this->create_copy_from_device_with_deallocation(builder, sequence, block, host_container_name, dPtr, ptr_size, type);
 
     // Redirect output to device container
     host_access_node.data(dPtr);
+}
 
-    // Change the implementation type to without transfers
-    this->memset_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
+void CUDAStdlibDataTransferExtraction::apply_memcpy(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    data_flow::DataFlowGraph& dfg,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block
+) {
+    auto& memcpy_node = static_cast<stdlib::MemcpyNode&>(this->lib_node_);
+    auto ptr_size = memcpy_node.count();
+
+    // Handle _src (read) - need H2D transfer
+    auto src_edge = dfg.in_edge_for_connector(memcpy_node, "_src");
+    auto& src_access_node = const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(src_edge->src()
+    ));
+    auto& src_container_name = src_access_node.data();
+    auto& src_type = static_cast<const types::Pointer&>(builder.subject().type(src_container_name));
+
+    auto dSrc = this->create_device_container(builder, src_type, ptr_size);
+    this->create_copy_to_device_with_allocation(builder, sequence, block, src_container_name, dSrc, ptr_size, src_type);
+    this->create_deallocate(builder, sequence, block, dSrc, src_type);
+    src_access_node.data(dSrc);
+
+    // Handle _dst (write) - need D2H transfer
+    auto dst_edge = dfg.in_edge_for_connector(memcpy_node, "_dst");
+    auto& dst_access_node = const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(dst_edge->src()
+    ));
+    auto& dst_container_name = dst_access_node.data();
+    auto& dst_type = static_cast<const types::Pointer&>(builder.subject().type(dst_container_name));
+
+    auto dDst = this->create_device_container(builder, dst_type, ptr_size);
+    this->create_allocate(builder, sequence, block, dDst, ptr_size, dst_type);
+    this->create_copy_from_device_with_deallocation(builder, sequence, block, dst_container_name, dDst, ptr_size, dst_type);
+    dst_access_node.data(dDst);
 }
 
 void CUDAStdlibDataTransferExtraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
-    j["subgraph"] = {{"0", {{"element_id", this->memset_node_.element_id()}, {"type", "unknown"}}}};
-    j["memset_node_element_id"] = this->memset_node_.element_id();
+    j["subgraph"] = {{"0", {{"element_id", this->lib_node_.element_id()}, {"type", "unknown"}}}};
+    j["lib_node_element_id"] = this->lib_node_.element_id();
 }
 
 } // namespace cuda

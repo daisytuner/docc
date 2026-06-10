@@ -11,33 +11,33 @@ MemsetNodeDispatcher_CUDAWithTransfers::MemsetNodeDispatcher_CUDAWithTransfers(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void MemsetNodeDispatcher_CUDAWithTransfers::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void MemsetNodeDispatcher_CUDAWithTransfers::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
     auto& node = static_cast<const sdfg::stdlib::MemsetNode&>(node_);
 
-    library_snippet_factory.add_global("#include <cuda.h>");
+    out.library_snippet_factory.add_global("#include <cuda.h>");
 
-    stream << "cudaError_t err_cuda;" << std::endl;
+    out.stream << "cudaError_t err_cuda;" << std::endl;
 
     std::string num_expr = language_extension_.expression(node.num());
 
-    stream << "void *d_ptr;" << std::endl;
-    stream << "err_cuda = cudaMalloc(&d_ptr, " << num_expr << ");" << std::endl;
-    cuda_error_checking(stream, language_extension_, "err_cuda");
+    out.stream << "void *d_ptr;" << std::endl;
+    out.stream << "err_cuda = cudaMalloc(&d_ptr, " << num_expr << ");" << std::endl;
+    cuda_error_checking(out.stream, language_extension_, "err_cuda");
 
-    stream << "err_cuda = cudaMemset(d_ptr, " << language_extension_.expression(node.value()) << ", " << num_expr
-           << ");" << std::endl;
-    cuda_error_checking(stream, language_extension_, "err_cuda");
+    out.stream << "err_cuda = cudaMemset(d_ptr, " << language_extension_.expression(node.value()) << ", " << num_expr
+               << ");" << std::endl;
+    cuda_error_checking(out.stream, language_extension_, "err_cuda");
 
-    stream << "err_cuda = cudaMemcpy(" << node.outputs().at(0) << ", d_ptr, " << num_expr
-           << ", cudaMemcpyDeviceToHost);" << std::endl;
-    cuda_error_checking(stream, language_extension_, "err_cuda");
+    out.stream << "err_cuda = cudaMemcpy(" << inputs.at(0).expr << ", d_ptr, " << num_expr
+               << ", cudaMemcpyDeviceToHost);" << std::endl;
+    cuda_error_checking(out.stream, language_extension_, "err_cuda");
 
-    stream << "err_cuda = cudaFree(d_ptr);" << std::endl;
-    cuda_error_checking(stream, language_extension_, "err_cuda");
+    out.stream << "err_cuda = cudaFree(d_ptr);" << std::endl;
+    cuda_error_checking(out.stream, language_extension_, "err_cuda");
 }
 
 MemsetNodeDispatcher_CUDAWithoutTransfers::MemsetNodeDispatcher_CUDAWithoutTransfers(
