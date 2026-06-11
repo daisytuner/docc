@@ -61,12 +61,7 @@ def kernel(in_field, out_field, coeff):
 @pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
 @pytest.mark.parametrize(
     "target",
-    [
-        # "none",
-        # "sequential",
-        # "openmp",
-        # "cuda"
-    ],
+    ["none", "sequential", "openmp", "cuda"],
 )
 def test_hdiff(target):
     if target == "none":
@@ -90,12 +85,11 @@ def test_hdiff(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CUDA": 36,
-                "SEQUENTIAL": 21,
-                "FOR": 63,
-                "MAP": 57,
-                "CUDAOffloading": 80,
-                "Malloc": 20,
+                "CUDA": 6,
+                "SEQUENTIAL": 14,
+                "FOR": 20,
+                "CUDAOffloading": 14,
+                "MAP": 20,
             }
         )
     else:  # rocm

@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <set>
+
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -1033,6 +1035,127 @@ TEST(MapFusionTest, Domain_Stencil1D) {
     // Current implementation only handles single read per container
     // We find the first read and use that - should still be applicable for one of them
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+}
+
+TEST(MapFusionTest, Domain_Stencil1D_SharedAccessNode) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Array array_desc(float_desc, {symbolic::add(symbolic::symbol("N"), symbolic::integer(1))});
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("A", array_desc, true);
+    builder.add_container("T", array_desc);
+    builder.add_container("B", array_desc, true);
+
+    // Map 1: T[i] = A[i] + 1.0  for i in 0:N+1:1
+    auto indvar1 = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        indvar1,
+        symbolic::Lt(symbolic::symbol("i"), symbolic::add(symbolic::symbol("N"), symbolic::integer(1))),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& block1 = builder.add_block(map1.root());
+    auto& a_in = builder.add_access(block1, "A");
+    auto& one_node = builder.add_constant(block1, "1.0", float_desc);
+    auto& t_out = builder.add_access(block1, "T");
+    auto& add1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block1, a_in, add1, "_in1", {symbolic::symbol("i")}, array_desc);
+    builder.add_computational_memlet(block1, one_node, add1, "_in2", {});
+    builder.add_computational_memlet(block1, add1, "_out", t_out, {symbolic::symbol("i")}, array_desc);
+
+    // Map 2: B[j] = T[j+1] - T[j]  for j in 0:N:1
+    // Crucially, both reads come from the SAME access node `t_in`.
+    auto indvar2 = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        root,
+        indvar2,
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& block2 = builder.add_block(map2.root());
+    auto& t_in = builder.add_access(block2, "T");
+    auto& b_out = builder.add_access(block2, "B");
+    auto& sub2 = builder.add_tasklet(block2, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(
+        block2, t_in, sub2, "_in1", {symbolic::add(symbolic::symbol("j"), symbolic::integer(1))}, array_desc
+    );
+    builder.add_computational_memlet(block2, t_in, sub2, "_in2", {symbolic::symbol("j")}, array_desc);
+    builder.add_computational_memlet(block2, sub2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(map1, map2);
+
+    ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+
+    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
+    ASSERT_TRUE(new_map2 != nullptr);
+
+    // After fusion, the consumer body must contain (at least) the two producer
+    // blocks (one per unique consumer subset) followed by the original consumer
+    // block.  Locate the consumer block (the only one with a write to "B").
+    structured_control_flow::Block* consumer_block = nullptr;
+    for (size_t i = 0; i < new_map2->root().size(); ++i) {
+        auto* b = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(i).first);
+        if (b == nullptr) continue;
+        for (auto& node : b->dataflow().nodes()) {
+            auto* an = dynamic_cast<data_flow::AccessNode*>(&node);
+            if (an != nullptr && an->data() == "B" && b->dataflow().in_degree(*an) > 0) {
+                consumer_block = b;
+                break;
+            }
+        }
+        if (consumer_block != nullptr) break;
+    }
+    ASSERT_TRUE(consumer_block != nullptr) << "Consumer block (writing B) not found after fusion";
+
+    // Inspect the input memlets of the subtraction tasklet in the consumer block.
+    // They must come from access nodes with DIFFERENT container names — i.e.
+    // each read of T must have been rewired to its own `_fused_tmp` scalar.
+    auto& dataflow = consumer_block->dataflow();
+    data_flow::Tasklet* sub_tasklet = nullptr;
+    for (auto& node : dataflow.nodes()) {
+        auto* t = dynamic_cast<data_flow::Tasklet*>(&node);
+        if (t != nullptr && t->code() == data_flow::TaskletCode::fp_sub) {
+            sub_tasklet = t;
+            break;
+        }
+    }
+    ASSERT_TRUE(sub_tasklet != nullptr) << "Subtraction tasklet missing from consumer block";
+
+    std::string in1_source;
+    std::string in2_source;
+    for (auto& edge : dataflow.in_edges(*sub_tasklet)) {
+        auto* src = dynamic_cast<data_flow::AccessNode*>(&edge.src());
+        ASSERT_TRUE(src != nullptr) << "Input of subtraction must come from an AccessNode";
+        if (edge.dst_conn() == "_in1") {
+            in1_source = src->data();
+        } else if (edge.dst_conn() == "_in2") {
+            in2_source = src->data();
+        }
+    }
+
+    EXPECT_FALSE(in1_source.empty());
+    EXPECT_FALSE(in2_source.empty());
+    EXPECT_NE(in1_source, in2_source)
+        << "Both consumer reads were rewired to the same scalar (" << in1_source
+        << "). After fusion the stencil expression T[j+1] - T[j] would always evaluate to 0.";
+
+    // The shared original container "T" must no longer feed the subtraction.
+    EXPECT_NE(in1_source, std::string("T"));
+    EXPECT_NE(in2_source, std::string("T"));
 }
 
 TEST(MapFusionTest, Domain_SecondMapStrided) {
