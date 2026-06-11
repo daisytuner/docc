@@ -25,10 +25,22 @@ steps:
 
     pip install -r mlir/requirements.txt
 
+    # Override CPU torch with CUDA wheels for torch GPU benchmarks
+    pip install --upgrade --extra-index-url https://download.pytorch.org/whl/cu126 torch==2.10.0+cu126 torchvision==0.25.0+cu126
+
+    # Warm start (Torch benchmark on CUDA)
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b2 --backend=torch --device=cuda
+
     # Warm start (DOCC benchmark, CUDA target)
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b2 --backend=docc --target=cuda --device=cpu
 
   run:
+
+    # model segformer b2 (Torch CUDA)
+
+    segformer_b2_torch_cuda:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b2 --backend=torch --device=cuda
+      energy: true
 
     # model segformer b2 (DOCC CUDA target)
 
