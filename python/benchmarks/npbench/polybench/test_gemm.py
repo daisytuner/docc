@@ -30,7 +30,7 @@ def kernel(alpha, beta, C, A, B):
         "none",
         "sequential",
         "openmp",
-        # "cuda"
+        "cuda",
         # "rocm"
     ],
 )
