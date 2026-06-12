@@ -36,8 +36,9 @@ def kernel(TSTEPS, N, A):
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_seidel_2d(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4}, non_critical=True
@@ -54,8 +55,10 @@ def test_seidel_2d(target):
         verifier = SDFGVerification(
             verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4}, non_critical=True
         )
-    else:  # rocm
-        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4})
+    elif target == "rocm":
+        verifier = SDFGVerification(
+            verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4}, non_critical=True
+        )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
 

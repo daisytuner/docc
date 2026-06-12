@@ -108,7 +108,7 @@ def test_gramschmidt(target):
                 "Malloc": 2,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,

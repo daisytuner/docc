@@ -24,7 +24,7 @@ def kernel(alpha, beta, A, B, x):
     return alpha * A @ x + beta * B @ x
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_gesummv(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -72,7 +72,7 @@ def test_gesummv(target):
                 "Malloc": 4,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "Free": 4,

@@ -23,8 +23,9 @@ def kernel(A, x):
     return (A @ x) @ A
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_atax(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={
@@ -75,7 +76,7 @@ def test_atax(target):
                 "Malloc": 2,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 1,

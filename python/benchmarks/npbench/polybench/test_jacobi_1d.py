@@ -25,7 +25,7 @@ def kernel(TSTEPS, A, B):
 
 
 @pytest.mark.skip(reason="Numerical validation")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_jacobi_1d(target):
     if target == "none":
         verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 2, "FOR": 3})
@@ -39,7 +39,7 @@ def test_jacobi_1d(target):
         verifier = SDFGVerification(
             verification={"CUDA": 2, "MAP": 2, "CUDAOffloading": 8, "FOR": 3}
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={"ROCM": 2, "MAP": 2, "ROCMOffloading": 8, "FOR": 3}
         )

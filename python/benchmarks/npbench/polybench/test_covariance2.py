@@ -22,7 +22,7 @@ def kernel(M, float_n, data):
 
 
 @pytest.mark.skip("np.cov not yet supported")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_covariance2(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -76,7 +76,7 @@ def test_covariance2(target):
                 "DOT": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 0,

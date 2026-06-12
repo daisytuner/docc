@@ -26,7 +26,7 @@ def kernel(x1, x2, y_1, y_2, A):
     x2 += y_2 @ A
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_mvt(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -80,7 +80,7 @@ def test_mvt(target):
                 "DOT": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 0,

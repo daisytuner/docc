@@ -71,8 +71,18 @@ def kernel(TSTEPS, N, u):
     return u
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "none",
+        "sequential",
+        "openmp",
+        "cuda",
+        # "rocm"
+    ],
+)
 def test_adi(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={
@@ -117,10 +127,10 @@ def test_adi(target):
                 "Malloc": 11,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "Free": 5,
+                "Free": 3,
                 "ROCM": 2,
                 "ROCMOffloading": 4,
                 "MAP": 24,

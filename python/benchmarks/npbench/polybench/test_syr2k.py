@@ -28,8 +28,9 @@ def kernel(alpha, beta, C, A, B):
             )
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_syr2k(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={"Malloc": 3, "MAP": 5, "SEQUENTIAL": 5, "FOR": 7},
@@ -70,7 +71,7 @@ def test_syr2k(target):
             },
             non_critical=True,
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "Malloc": 3,
@@ -79,7 +80,8 @@ def test_syr2k(target):
                 "FOR": 8,
                 "MAP": 6,
                 "ROCMOffloading": 2,
-            }
+            },
+            non_critical=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

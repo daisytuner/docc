@@ -10,6 +10,8 @@ on:
     - cron: "0 4 * * *"
 
 jobs:
+  ##### CORE #####
+
   cpp-tests-linux:
     runs-on:
       group: dahlia
@@ -139,84 +141,87 @@ jobs:
           cd "$GITHUB_WORKSPACE/build"
           ./rpc/tests/sdfgrpc_daisytuner_rpc_test
 
-  python-tests-linux:
+  ##### FRONTENDS #####
+
+  llvm-tests-linux:
     runs-on:
       group: dahlia
-      labels: cuda
+      labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
-      options: >-
-        --cap-add=PERFMON
-        --gpus=all
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+      image: daisytuner/docc-build-env-llvm19-base:latest-amd64
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Create virtual environment
-        run: |
-          python -m venv .venv
-          echo "$PWD/.venv/bin" >> $GITHUB_PATH
-
       - name: Mark GitHub Actions workdir as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes
 
       - name: Formatting
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-19 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
-          black --check python/docc/ python/tests/
+          clang-format-19 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
 
       - name: Build
         run: |
-          # scikit sets this internally to find pybind, so cannot override via -Ccmake
-          export CMAKE_PREFIX_PATH=/opt/et
-
-          pip install --no-build-isolation \
-            -Ccmake.build-type=Debug \
-            -Ccmake.define.DOCC_BUILD_TARGET_ET=ON \
-            -v -e python/
+          mkdir build
+          cd build
+          cmake -G Ninja \
+            -DCMAKE_C_COMPILER=clang-19 \
+            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DSDFG_ENABLE_COVERAGE=ON \
+            -DLLVM_BUILD_FRONTEND=ON \
+            -DLLVM_BUILD_TESTS=ON \
+            -DINSTALL_GTEST=OFF \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+            ..
+          ninja -j$(nproc)
+          cpack -G DEB
+          apt-get install -y ./docc-llvm*.deb
 
       - name: Unit Tests
-        env:
-          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
         run: |
-          nvidia-smi
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          cd build
+          LLVM_PROFILE_FILE="docc_llvm_pass_test.profraw" ./llvm/tests/docc_llvm_pass_test
 
-          coverage run --source=python/docc -m pytest -v python/tests -m "unmarked or cuda or etsoc"
-          coverage xml
-
-      - name: Integration Tests
-        run: |
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-
-          pytest -v python/benchmarks/
+          # Run coverage
+          llvm-profdata-19 merge -sparse docc_llvm_pass_test.profraw -o default.profdata
+          cd ../
+          llvm-cov-19 export ./build/llvm/tests/docc_llvm_pass_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
+          lcov --ignore-errors unused --extract build/coverage_full.lcov '*/llvm/src/*' '*/llvm/include/*' --output-file build/coverage.lcov
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2
         with:
-          flag-name: python-${{ matrix.python-version }}
+          flag-name: llvm
           parallel: true
-          format: cobertura
-          file: coverage.xml
+          format: lcov
+          file: build/coverage.lcov
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup virtual environment
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
+          python -m pip install --upgrade pip
+          pip install pytest==7.1.3 pytest-parallel lit
+
+      - name: Integration Tests
+        run: |
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
+
+          cd llvm/integration
+          pytest -v llvm_test_suite.py
 
   mlir-tests-linux:
     runs-on:
@@ -300,6 +305,234 @@ jobs:
       #     cd mlir/benchmarks/torch/model_zoo/
       #     python fasterrcnn_resnet50.py
 
+  python-tests-linux:
+    runs-on:
+      group: dahlia
+      labels: Linux
+    container:
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
+      options: >-
+        --cap-add=PERFMON
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          pip install numpy scipy ml_dtypes
+
+      - name: Formatting
+        shell: bash
+        run: |
+          shopt -s globstar
+          clang-format-19 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
+          black --check python/docc/ python/tests/
+
+      - name: Build
+        run: |
+          # scikit sets this internally to find pybind, so cannot override via -Ccmake
+          export CMAKE_PREFIX_PATH=/opt/et
+
+          pip install --no-build-isolation \
+            -Ccmake.build-type=Debug \
+            -Ccmake.define.DOCC_BUILD_TARGET_ET=ON \
+            -v -e python/
+
+      - name: Unit Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+        run: |
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+          coverage run --source=python/docc -m pytest -v python/tests -m "unmarked or etsoc"
+          coverage xml
+
+      - name: Integration Tests
+        run: |
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+          pytest -v python/benchmarks/ -k none
+          pytest -v python/benchmarks/ -k sequential
+          pytest -v python/benchmarks/ -k openmp
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          flag-name: python-${{ matrix.python-version }}
+          parallel: true
+          format: cobertura
+          file: coverage.xml
+
+  ##### TARGETS #####
+
+  cuda-tests-linux:
+    runs-on:
+      group: dahlia
+      labels: cuda
+    container:
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
+      options: >-
+        --cap-add=PERFMON
+        --gpus=all
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          pip install numpy scipy ml_dtypes
+          pip install -r mlir/requirements.txt
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja \
+            -DCMAKE_C_COMPILER=clang-19 \
+            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DPYTHON_BUILD_FRONTEND=ON \
+            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
+            -DMLIR_BUILD_FRONTEND=ON \
+            -DMLIR_BUILD_BINDINGS=ON \
+            -DMLIR_BUILD_TESTS=ON \
+            -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
+            -DINSTALL_GTEST=OFF \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+            ..
+          ninja -j$(nproc)
+
+      - name: Python & MLIR Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+        run: |
+          nvidia-smi
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+          pytest -v python/tests -m "cuda"
+          pytest -v python/benchmarks/ -k cuda
+          # pytest -v mlir/integration -m "cuda"
+
+  rocm-tests-linux:
+    runs-on:
+      group: dahlia
+      labels: rocm
+    container:
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
+      options: >-
+        --cap-add=PERFMON
+        --device /dev/kfd
+        --device /dev/dri
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          pip install numpy scipy ml_dtypes
+          pip install -r mlir/requirements.txt
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja \
+            -DCMAKE_C_COMPILER=clang-19 \
+            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DPYTHON_BUILD_FRONTEND=ON \
+            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
+            -DMLIR_BUILD_FRONTEND=ON \
+            -DMLIR_BUILD_BINDINGS=ON \
+            -DMLIR_BUILD_TESTS=ON \
+            -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
+            -DINSTALL_GTEST=OFF \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+            ..
+          ninja -j$(nproc)
+
+      - name: Python & MLIR Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+        run: |
+          rocm-smi
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+          # pytest -v python/tests -m "rocm" enable with first test. Empty tests yield != 0 exit code
+          pytest -v python/benchmarks/ -k rocm
+          # pytest -v mlir/integration -m "rocm"
+
   tenstorrent-tests-linux:
     runs-on:
       group: dahlia
@@ -366,86 +599,6 @@ jobs:
           DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
         run: |
           pytest -v python/tests mlir/integration -m "tenstorrent"
-
-  llvm-tests-linux:
-    runs-on:
-      group: dahlia
-      labels: Linux
-    container:
-      image: daisytuner/docc-build-env-llvm19-base:latest-amd64
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-19 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
-
-      - name: Build
-        run: |
-          mkdir build
-          cd build
-          cmake -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DSDFG_ENABLE_COVERAGE=ON \
-            -DLLVM_BUILD_FRONTEND=ON \
-            -DLLVM_BUILD_TESTS=ON \
-            -DINSTALL_GTEST=OFF \
-            -DBUILD_TESTS:BOOL=OFF \
-            -DBUILD_BENCHMARKS:BOOL=OFF \
-            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
-            ..
-          ninja -j$(nproc)
-          cpack -G DEB
-          apt-get install -y ./docc-llvm*.deb
-
-      - name: Unit Tests
-        run: |
-          cd build
-          LLVM_PROFILE_FILE="docc_llvm_pass_test.profraw" ./llvm/tests/docc_llvm_pass_test
-
-          # Run coverage
-          llvm-profdata-19 merge -sparse docc_llvm_pass_test.profraw -o default.profdata
-          cd ../
-          llvm-cov-19 export ./build/llvm/tests/docc_llvm_pass_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
-          lcov --ignore-errors unused --extract build/coverage_full.lcov '*/llvm/src/*' '*/llvm/include/*' --output-file build/coverage.lcov
-
-      - name: Coveralls
-        uses: coverallsapp/github-action@v2
-        with:
-          flag-name: llvm
-          parallel: true
-          format: lcov
-          file: build/coverage.lcov
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Setup virtual environment
-        run: |
-          python -m venv .venv
-          echo "$PWD/.venv/bin" >> $GITHUB_PATH
-
-          python -m pip install --upgrade pip
-          pip install pytest==7.1.3 pytest-parallel lit
-
-      - name: Integration Tests
-        run: |
-          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
-
-          cd llvm/integration
-          pytest -v llvm_test_suite.py
 
   finish:
     needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux]

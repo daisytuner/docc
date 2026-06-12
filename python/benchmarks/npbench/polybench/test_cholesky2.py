@@ -28,7 +28,7 @@ def kernel(A):
 
 
 @pytest.mark.skip("lingalg.cholesky not yet supported")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_cholesky2(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -82,7 +82,7 @@ def test_cholesky2(target):
                 "DOT": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 0,

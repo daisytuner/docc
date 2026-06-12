@@ -30,7 +30,7 @@ def kernel(TSTEPS, A, B):
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_jacobi_2d(target):
     if target == "none":
         verifier = SDFGVerification(verification={"MAP": 4, "SEQUENTIAL": 4, "FOR": 5})
@@ -46,15 +46,9 @@ def test_jacobi_2d(target):
         verifier = SDFGVerification(
             verification={"CUDA": 4, "MAP": 4, "CUDAOffloading": 8, "FOR": 5}
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
-            verification={
-                "ROCM": 24,
-                "MAP": 24,
-                "ROCMOffloading": 40,
-                "FOR": 25,
-                "Malloc": 0,
-            }
+            verification={"ROCM": 4, "MAP": 4, "ROCMOffloading": 8, "FOR": 5}
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

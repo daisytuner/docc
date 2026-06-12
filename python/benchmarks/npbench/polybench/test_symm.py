@@ -88,7 +88,7 @@ def test_symm(target):
                 "GEMM": 1,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 7,

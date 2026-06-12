@@ -27,7 +27,7 @@ def kernel(alpha, beta, A, B, C, D):
     D[:] = alpha * A @ B @ C + beta * D
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_k2mm(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -78,7 +78,7 @@ def test_k2mm(target):
                 "DOT": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 2,
