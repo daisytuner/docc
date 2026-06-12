@@ -157,49 +157,19 @@ void ArgumentsAnalysis::collect_arg_sizes(
 
             auto base_type = type_analysis.get_outer_type(argument);
             auto elem_size = types::get_contiguous_element_size(*base_type, true);
-
-            bool is_nested_type = true;
-            auto peeled_type = types::peel_to_next_element(*base_type);
-            while (is_nested_type) {
-                if (peeled_type == nullptr) {
-                    if (do_not_throw) {
-                        known_sizes_.insert({&node, false});
-                        return;
-                    } else {
-                        throw std::runtime_error("Could not infer type for argument: " + argument);
-                    }
-                }
-                if (peeled_type->type_id() == types::TypeID::Array) {
-                    auto array_type = dynamic_cast<const types::Array*>(peeled_type);
-                    size = symbolic::mul(size, array_type->num_elements());
-                    peeled_type = &array_type->element_type();
-                } else if (peeled_type->type_id() == types::TypeID::Pointer) {
-                    if (do_not_throw) {
-                        known_sizes_.insert({&node, false});
-                        return;
-                    } else {
-                        throw std::runtime_error("Non-contiguous pointer type: " + argument);
-                    }
-                } else {
-                    is_nested_type = false;
-                }
-            }
-
-
-            size = symbolic::mul(size, elem_size);
-
-            DEBUG_PRINTLN("Size of " << argument << " is " << size->__str__());
-            if (size.is_null()) {
+            if (elem_size.is_null()) {
                 if (do_not_throw) {
                     known_sizes_.insert({&node, false});
                     return;
                 } else {
-                    throw std::runtime_error("Cannot figure out access size of " + argument);
+                    throw std::runtime_error("Could not determine element size for " + argument);
                 }
-            } else {
-                argument_sizes_.at(&node).insert({argument, size});
-                argument_element_sizes_.at(&node).insert({argument, elem_size});
             }
+            size = symbolic::mul(size, elem_size);
+            DEBUG_PRINTLN("Size of " << argument << " is " << size->__str__());
+
+            argument_sizes_.at(&node).insert({argument, size});
+            argument_element_sizes_.at(&node).insert({argument, elem_size});
         } else {
             auto type = type_analysis.get_outer_type(argument);
             if (type == nullptr) {

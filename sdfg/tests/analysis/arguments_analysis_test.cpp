@@ -303,34 +303,50 @@ TEST(ArgumentsAnalysisTest, Loop_Array) {
     EXPECT_TRUE(symbolic::eq(arg_sizes.at("arg1"), symbolic::mul(symbolic::symbol("N"), symbolic::integer(4))));
 }
 
-TEST(ArgumentsAnalysisTest, Map_Array) {
+TEST(ArgumentsAnalysisTest, Map_2d_Array_Polybench) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     // Add containers
     types::Scalar float_type(types::PrimitiveType::Float);
+    types::Array array_type(float_type, {symbolic::symbol("M")});
+    types::Pointer pointer_type(array_type);
+    builder.add_container("arg1", pointer_type, true);
+    builder.add_container("t1", pointer_type);
+
     types::Scalar n_type(types::PrimitiveType::Int32);
-    types::Array array_type(float_type, {symbolic::symbol("N")});
-    builder.add_container("arg1", array_type, true);
-    builder.add_container("t1", array_type);
     builder.add_container("i", n_type);
-    builder.add_container("N", n_type);
+    builder.add_container("j", n_type);
+    builder.add_container("N", n_type, true);
+    builder.add_container("M", n_type, true);
 
     // Add block
     auto& root = builder.subject().root();
 
     auto init = symbolic::integer(0);
-    auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N"));
-    auto increment = symbolic::add(symbolic::symbol("i"), symbolic::integer(1));
+    auto condition_outer = symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N"));
+    auto increment_outer = symbolic::add(symbolic::symbol("i"), symbolic::integer(1));
 
-    auto& loop =
-        builder.add_map(root, symbolic::symbol("i"), condition, init, increment, ScheduleType_Sequential::create());
-    auto& block = builder.add_block(loop.root());
+    auto& loop = builder.add_map(
+        root, symbolic::symbol("i"), condition_outer, init, increment_outer, ScheduleType_Sequential::create()
+    );
+
+    auto condition_inner = symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("M"));
+    auto increment_inner = symbolic::add(symbolic::symbol("j"), symbolic::integer(1));
+    auto& loop_inner = builder.add_map(
+        loop.root(), symbolic::symbol("j"), condition_inner, init, increment_inner, ScheduleType_Sequential::create()
+    );
+
+    auto& block = builder.add_block(loop_inner.root());
 
     auto& access_in = builder.add_access(block, "arg1");
     auto& access_out = builder.add_access(block, "t1");
     auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-    builder.add_computational_memlet(block, access_in, tasklet, "_in", {symbolic::symbol("i")});
-    builder.add_computational_memlet(block, tasklet, "_out", access_out, {symbolic::symbol("i")});
+    builder.add_computational_memlet(
+        block, access_in, tasklet, "_in", {symbolic::symbol("i"), symbolic::symbol("j")}, pointer_type
+    );
+    builder.add_computational_memlet(
+        block, tasklet, "_out", access_out, {symbolic::symbol("i"), symbolic::symbol("j")}, pointer_type
+    );
 
     auto& sdfg = builder.subject();
 
@@ -342,21 +358,32 @@ TEST(ArgumentsAnalysisTest, Map_Array) {
     EXPECT_TRUE(analysis.inferred_types(analysis_manager, loop));
 
     auto arguments = analysis.arguments(analysis_manager, loop);
-    EXPECT_EQ(arguments.size(), 1);
+    EXPECT_EQ(arguments.size(), 3);
     EXPECT_TRUE(arguments.contains("arg1"));
+    EXPECT_TRUE(arguments.contains("N"));
+    EXPECT_TRUE(arguments.contains("M"));
     EXPECT_TRUE(arguments.at("arg1").is_input);
+    EXPECT_TRUE(arguments.at("N").is_input);
+    EXPECT_TRUE(arguments.at("M").is_input);
 
     auto locals = analysis.locals(analysis_manager, loop);
     EXPECT_EQ(locals.size(), 3);
     EXPECT_TRUE(locals.contains("t1"));
     EXPECT_TRUE(locals.contains("i"));
-    EXPECT_TRUE(locals.contains("N"));
+    EXPECT_TRUE(locals.contains("j"));
 
     EXPECT_TRUE(analysis.argument_size_known(analysis_manager, loop, false));
     auto arg_sizes = analysis.argument_sizes(analysis_manager, loop, false);
-    EXPECT_EQ(arg_sizes.size(), 1);
+    EXPECT_EQ(arg_sizes.size(), 3);
     EXPECT_TRUE(arg_sizes.contains("arg1"));
-    EXPECT_TRUE(symbolic::eq(arg_sizes.at("arg1"), symbolic::mul(symbolic::symbol("N"), symbolic::integer(4))));
+    EXPECT_TRUE(symbolic::
+                    eq(arg_sizes.at("arg1"),
+                       symbolic::mul(symbolic::mul(symbolic::symbol("N"), symbolic::symbol("M")), symbolic::integer(4)))
+    );
+    EXPECT_TRUE(arg_sizes.contains("N"));
+    EXPECT_TRUE(symbolic::eq(arg_sizes.at("N"), symbolic::integer(4)));
+    EXPECT_TRUE(arg_sizes.contains("M"));
+    EXPECT_TRUE(symbolic::eq(arg_sizes.at("M"), symbolic::integer(4)));
 }
 
 TEST(ArgumentsAnalysisTest, Loop_Pointer) {
