@@ -207,8 +207,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     }
 
     // Get type information
-    auto& type = sdfg.type(this->container_);
-    types::Scalar scalar_type(type.primitive_type());
+    auto* memlet = *group_memlets_.begin();
+    types::Scalar scalar_type(memlet->base_type().primitive_type());
     types::Pointer pointer_type(scalar_type);
 
     // Create local buffer name
@@ -233,7 +233,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             auto& init_src = builder.add_access(init_block, this->container_);
             auto& init_dst = builder.add_access(init_block, local_name_);
             auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "_out", {"_in"});
-            builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", first_subset, type);
+            builder
+                .add_computational_memlet(init_block, init_src, init_tasklet, "_in", first_subset, memlet->base_type());
             builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, {}, scalar_type);
         }
 
@@ -244,7 +245,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             auto& wb_dst = builder.add_access(wb_block, this->container_);
             auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
             builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", {}, scalar_type);
-            builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, first_subset, type);
+            builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, first_subset, memlet->base_type());
         }
 
         // Rewrite body accesses to use scalar local

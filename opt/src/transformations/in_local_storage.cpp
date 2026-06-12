@@ -229,8 +229,8 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     }
 
     // Get type information
-    auto& type = sdfg.type(this->container_);
-    types::Scalar scalar_type(type.primitive_type());
+    auto* memlet = *group_memlets_.begin();
+    types::Scalar scalar_type(memlet->base_type().primitive_type());
     types::Pointer pointer_type(scalar_type);
 
     // Create local buffer name
