@@ -529,9 +529,9 @@ jobs:
           rocm-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          pytest -v python/tests -m "rocm"
+          # pytest -v python/tests -m "rocm" enable with first test. Empty tests yield != 0 exit code
           pytest -v python/benchmarks/ -k rocm
-          pytest -v mlir/integration -m "rocm"
+          # pytest -v mlir/integration -m "rocm"
 
   tenstorrent-tests-linux:
     runs-on:
