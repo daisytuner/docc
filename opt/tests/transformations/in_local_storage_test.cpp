@@ -17,6 +17,7 @@
 #include "sdfg/transformations/utils.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
+#include "sdfg/types/utils.h"
 
 using namespace sdfg;
 
@@ -213,6 +214,95 @@ TEST(InLocalStorageTest, Dynamic) {
     }
     EXPECT_TRUE(uses_A_local);
     EXPECT_FALSE(uses_A_original); // Original A should be replaced
+}
+
+TEST(InLocalStorageTest, PolyBench_Array_2D) {
+    builder::StructuredSDFGBuilder builder("ols_flat_2d", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Array array_desc(elem_desc, symbolic::integer(4));
+    types::Array array_desc_2d(array_desc, symbolic::integer(8));
+    types::Pointer ptr_desc(array_desc_2d);
+    builder.add_container("A", ptr_desc, true);
+    builder.add_container("C", ptr_desc);
+
+    auto& root = builder.subject().root();
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    // Outer loop: for i = 0..4
+    auto& outer_loop = builder.add_for(
+        root, i, symbolic::Lt(i, symbolic::integer(4)), symbolic::integer(0), symbolic::add(i, symbolic::integer(1))
+    );
+
+    // Inner loop: for j = 0..8
+    auto& inner_loop = builder.add_for(
+        outer_loop.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1))
+    );
+
+    // C[0][i][j] += A[0][i][j]
+    auto& block = builder.add_block(inner_loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_in = builder.add_access(block, "C");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, c_in, tasklet, "_in1", {symbolic::integer(0), i, j}, ptr_desc);
+    builder.add_computational_memlet(block, a_in, tasklet, "_in2", {symbolic::integer(0), i, j}, ptr_desc);
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::integer(0), i, j}, ptr_desc);
+
+    auto structured_sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    transformations::InLocalStorage transformation(outer_loop, a_in);
+    EXPECT_TRUE(transformation.can_be_applied(builder_opt, am));
+    transformation.apply(builder_opt, am);
+    builder_opt.subject().validate();
+
+    // Verify local buffer was created
+    EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
+
+    // Structure: [init_loop(s), outer_loop]
+    auto& new_root = builder_opt.subject().root();
+    EXPECT_EQ(new_root.size(), 2);
+
+    // Init should be a for loop (first dimension)
+    auto* init_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    EXPECT_NE(init_loop, nullptr);
+    // Should iterate 0..4 (first dim extent)
+    EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(init_loop->condition(), symbolic::Lt(init_loop->indvar(), symbolic::integer(4))));
+
+    // Init loop should contain nested loop for second dimension
+    auto& init_body = init_loop->root();
+    EXPECT_EQ(init_body.size(), 1);
+    auto* inner_init = dynamic_cast<structured_control_flow::Map*>(&init_body.at(0).first);
+    EXPECT_NE(inner_init, nullptr);
+    EXPECT_TRUE(symbolic::eq(inner_init->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(inner_init->condition(), symbolic::Lt(inner_init->indvar(), symbolic::integer(8))));
+
+    // check that accesses got converted into linearized accesses
+    auto* inner_init_body = dynamic_cast<structured_control_flow::Block*>(&inner_init->root().at(0).first);
+    EXPECT_NE(inner_init_body, nullptr);
+    for (auto& edge : inner_init_body->dataflow().edges()) {
+        auto inferred_type = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
+        EXPECT_EQ(inferred_type->type_id(), types::TypeID::Scalar);
+        EXPECT_EQ(edge.base_type().primitive_type(), types::PrimitiveType::Double);
+    }
+
+    // Compute loop preserved
+    auto* compute_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    EXPECT_NE(compute_loop, nullptr);
 }
 
 /**
@@ -1804,4 +1894,112 @@ TEST(InLocalStorageTest, TileGroups_SequentialApplication) {
     // j_loop body should have: [copy_map_1, copy_map_2, k_loop]
     auto& j_body = j_loop.root();
     EXPECT_EQ(j_body.size(), 3u);
+}
+
+/**
+ * Regression: PolyBench-style MATMUL tiled with OPAQUE container pointer.
+ *
+ * Mirrors the matmul kernel coming from the autotuner — see the matching
+ * `OutLocalStorageTest.OpaquePointer_PolybenchMatmul_Tiled` for full context.
+ *
+ * Validates that InLocalStorage on `A` produces:
+ *   - a fully-typed Array<double> local buffer (not opaque),
+ *   - rewritten memlets that infer to Scalar(Double),
+ *   - copy loops only over the *varying* dimensions of the [1,4,4] tile.
+ */
+TEST(InLocalStorageTest, OpaquePointer_PolybenchMatmul_Tiled) {
+    builder::StructuredSDFGBuilder builder("ils_matmul_opaque", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    for (auto* n : {"i", "j", "k", "i_tile", "j_tile", "k_tile"}) {
+        builder.add_container(n, sym_desc);
+    }
+
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("B", opaque_desc, true);
+    builder.add_container("C", opaque_desc, true);
+
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Array inner(elem_desc, symbolic::integer(64));
+    types::Array outer(inner, symbolic::integer(64));
+    types::Pointer nested_ptr(outer);
+
+    auto& root = builder.subject().root();
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto i_tile = symbolic::symbol("i_tile");
+    auto j_tile = symbolic::symbol("j_tile");
+    auto k_tile = symbolic::symbol("k_tile");
+    auto T = symbolic::integer(4);
+    auto N = symbolic::integer(64);
+
+    auto& i_tile_loop =
+        builder.add_for(root, i_tile, symbolic::Lt(i_tile, N), symbolic::integer(0), symbolic::add(i_tile, T));
+    auto& j_tile_loop =
+        builder
+            .add_for(i_tile_loop.root(), j_tile, symbolic::Lt(j_tile, N), symbolic::integer(0), symbolic::add(j_tile, T));
+    auto& k_tile_loop =
+        builder
+            .add_for(j_tile_loop.root(), k_tile, symbolic::Lt(k_tile, N), symbolic::integer(0), symbolic::add(k_tile, T));
+
+    auto& i_loop =
+        builder
+            .add_for(k_tile_loop.root(), i, symbolic::Lt(i, T), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+    auto& j_loop =
+        builder.add_for(i_loop.root(), j, symbolic::Lt(j, T), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+    auto& k_loop =
+        builder.add_for(j_loop.root(), k, symbolic::Lt(k, T), symbolic::integer(0), symbolic::add(k, symbolic::one()));
+
+    auto ii = symbolic::add(i, i_tile);
+    auto jj = symbolic::add(j, j_tile);
+    auto kk = symbolic::add(k, k_tile);
+
+    auto& block = builder.add_block(k_loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& b_in = builder.add_access(block, "B");
+    auto& c_in = builder.add_access(block, "C");
+    auto& c_out = builder.add_access(block, "C");
+    auto& fma = builder.add_tasklet(block, data_flow::TaskletCode::fp_fma, "_out", {"_a", "_b", "_c"});
+    builder.add_computational_memlet(block, a_in, fma, "_a", {symbolic::integer(0), ii, kk}, nested_ptr);
+    builder.add_computational_memlet(block, b_in, fma, "_b", {symbolic::integer(0), kk, jj}, nested_ptr);
+    builder.add_computational_memlet(block, c_in, fma, "_c", {symbolic::integer(0), ii, jj}, nested_ptr);
+    builder.add_computational_memlet(block, fma, "_out", c_out, {symbolic::integer(0), ii, jj}, nested_ptr);
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    transformations::InLocalStorage ils(i_loop, a_in);
+    ASSERT_TRUE(ils.can_be_applied(builder_opt, am));
+    ils.apply(builder_opt, am);
+
+    EXPECT_NO_THROW(builder_opt.subject().validate());
+
+    ASSERT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
+    auto& buffer_type = builder_opt.subject().type("__daisy_in_local_storage_A0");
+    EXPECT_EQ(buffer_type.type_id(), types::TypeID::Array);
+    EXPECT_EQ(buffer_type.primitive_type(), types::PrimitiveType::Double);
+
+    // All rewritten reads on the local buffer must produce Scalar(Double).
+    std::function<void(structured_control_flow::ControlFlowNode&)> check;
+    check = [&](structured_control_flow::ControlFlowNode& node) {
+        if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&node)) {
+            for (auto& edge : blk->dataflow().edges()) {
+                auto* src = dynamic_cast<data_flow::AccessNode*>(&edge.src());
+                if (src && src->data() == "__daisy_in_local_storage_A0") {
+                    auto t = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
+                    EXPECT_EQ(t->type_id(), types::TypeID::Scalar);
+                    EXPECT_EQ(t->primitive_type(), types::PrimitiveType::Double);
+                }
+            }
+        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+            for (size_t i = 0; i < seq->size(); i++) check(seq->at(i).first);
+        } else if (auto* lp = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+            check(lp->root());
+        }
+    };
+    check(k_tile_loop.root());
 }

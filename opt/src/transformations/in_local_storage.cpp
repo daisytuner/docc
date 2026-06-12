@@ -47,8 +47,8 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
 
     auto& type = sdfg.type(this->container_);
 
-    // Criterion: Container must be Array or Pointer (not Scalar)
-    if (type.type_id() != types::TypeID::Pointer && type.type_id() != types::TypeID::Array) {
+    // Criterion: Container must be Pointer (not Scalar)
+    if (type.type_id() != types::TypeID::Pointer) {
         return false;
     }
 
@@ -229,8 +229,9 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     }
 
     // Get type information
-    auto& type = sdfg.type(this->container_);
-    types::Scalar scalar_type(type.primitive_type());
+    auto* memlet = *group_memlets_.begin();
+    types::Scalar scalar_type(memlet->base_type().primitive_type());
+    types::Pointer pointer_type(scalar_type);
 
     // Create local buffer name
     local_name_ = builder.find_new_name("__daisy_in_local_storage_" + this->container_);
@@ -270,7 +271,6 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     };
 
     // Helper: build source subset (base[d] + copy_indvar[d]) for original container
-    bool is_pointer = (type.type_id() == types::TypeID::Pointer);
     auto build_original_subset = [&](const std::vector<symbolic::Expression>& copy_indices) -> data_flow::Subset {
         std::vector<symbolic::Expression> full_indices;
         size_t var_idx = 0;
@@ -282,15 +282,11 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
             }
         }
 
-        if (is_pointer) {
-            symbolic::Expression linear = tile_info_.offset;
-            for (size_t d = 0; d < full_indices.size(); d++) {
-                linear = symbolic::add(linear, symbolic::mul(tile_info_.strides.at(d), full_indices.at(d)));
-            }
-            return {linear};
-        } else {
-            return data_flow::Subset(full_indices.begin(), full_indices.end());
+        symbolic::Expression linear = tile_info_.offset;
+        for (size_t d = 0; d < full_indices.size(); d++) {
+            linear = symbolic::add(linear, symbolic::mul(tile_info_.strides.at(d), full_indices.at(d)));
         }
+        return {linear};
     };
 
     // ==================================================================
@@ -409,7 +405,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         auto copy_src_subset = build_original_subset(copy_indices);
         data_flow::Subset copy_dst_subset = {idx_var};
 
-        builder.add_computational_memlet(copy_block, copy_src, copy_tasklet, "_in", copy_src_subset, type);
+        builder.add_computational_memlet(copy_block, copy_src, copy_tasklet, "_in", copy_src_subset, pointer_type);
         builder.add_computational_memlet(copy_block, copy_tasklet, "_out", copy_dst, copy_dst_subset, buffer_type);
 
         // 3. Barrier after copy
@@ -461,7 +457,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         auto copy_src_subset = build_original_subset(copy_exprs);
         data_flow::Subset copy_dst_subset = {linearize(copy_indvars)};
 
-        builder.add_computational_memlet(copy_block, copy_src, copy_tasklet, "_in", copy_src_subset, type);
+        builder.add_computational_memlet(copy_block, copy_src, copy_tasklet, "_in", copy_src_subset, pointer_type);
         types::Array buffer_type_ref(storage_type_, 0, {}, scalar_type, total_size);
         builder.add_computational_memlet(copy_block, copy_tasklet, "_out", copy_dst, copy_dst_subset, buffer_type_ref);
     }

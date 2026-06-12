@@ -67,7 +67,7 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // For Array/Pointer types: use MemoryLayoutAnalysis tile group API
-    if (type.type_id() != types::TypeID::Pointer && type.type_id() != types::TypeID::Array) {
+    if (type.type_id() != types::TypeID::Pointer) {
         return false;
     }
 
@@ -206,9 +206,25 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         throw InvalidSDFGException("OutLocalStorage: Parent of loop must be a Sequence!");
     }
 
-    // Get type information
-    auto& type = sdfg.type(this->container_);
-    types::Scalar scalar_type(type.primitive_type());
+    // Get type information.
+    //
+    // For the array path we derive the element type from a representative memlet
+    // (`group_memlets_` is populated by `can_be_applied`).  This handles the case
+    // where the container has an *opaque* pointer type (`Pointer()` with no
+    // pointee) but the memlets carry a more specific base type.
+    //
+    // For the scalar path `can_be_applied` returns early without populating
+    // `group_memlets_`, so we must fall back to the container's declared type —
+    // which by construction is `Scalar` on this path.
+    types::Scalar scalar_type = [&]() {
+        if (tile_info_.dimensions.empty()) {
+            auto& type = sdfg.type(this->container_);
+            return types::Scalar(type.primitive_type());
+        }
+        auto* memlet = *group_memlets_.begin();
+        return types::Scalar(memlet->base_type().primitive_type());
+    }();
+    types::Pointer pointer_type(scalar_type);
 
     // Create local buffer name
     local_name_ = builder.find_new_name("__daisy_out_local_storage_" + this->container_);
@@ -226,13 +242,18 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         auto first_access = accesses.at(0);
         auto first_subset = first_access->subsets().at(0);
 
+        // The scalar copy-in/copy-out memlets reference the *original* container,
+        // so they keep its declared base type.  `sdfg.type()` is the canonical
+        // source — the per-memlet base_type may not exist on the scalar path.
+        auto& container_type = sdfg.type(this->container_);
+
         // Init block (copy from container to local) - before loop
         if (tile_info_.has_read) {
             auto& init_block = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
             auto& init_src = builder.add_access(init_block, this->container_);
             auto& init_dst = builder.add_access(init_block, local_name_);
             auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "_out", {"_in"});
-            builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", first_subset, type);
+            builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", first_subset, container_type);
             builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, {}, scalar_type);
         }
 
@@ -243,7 +264,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             auto& wb_dst = builder.add_access(wb_block, this->container_);
             auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
             builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", {}, scalar_type);
-            builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, first_subset, type);
+            builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, first_subset, container_type);
         }
 
         // Rewrite body accesses to use scalar local
@@ -270,9 +291,25 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     // ARRAY PATH: tile_info_.dimensions is non-empty
     // ========================================================================
     else {
+        // Collect varying dimensions (extent > 1) and compute buffer layout.
+        // Extent-1 dimensions are degenerate (no loop is needed) and must be
+        // skipped when sizing the buffer, when creating copy indvars, and when
+        // linearizing into the local buffer.  The bookkeeping must match what
+        // `build_original_subset` expects (it indexes copy_indices by varying
+        // dimension only).
+        std::vector<size_t> varying_dims;
+        std::vector<symbolic::Expression> dim_sizes;
+        for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
+            auto& dim_size = tile_info_.dimensions.at(d);
+            if (!symbolic::eq(dim_size, symbolic::integer(1))) {
+                varying_dims.push_back(d);
+                dim_sizes.push_back(dim_size);
+            }
+        }
+
         // Compute total buffer size
         symbolic::Expression total_size = symbolic::integer(1);
-        for (auto& ds : tile_info_.dimensions) {
+        for (auto& ds : dim_sizes) {
             total_size = symbolic::mul(total_size, ds);
         }
 
@@ -286,7 +323,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             symbolic::Expression stride = symbolic::integer(1);
             for (int i = indices.size() - 1; i >= 0; i--) {
                 linear_idx = symbolic::add(linear_idx, symbolic::mul(indices[i], stride));
-                stride = symbolic::mul(stride, tile_info_.dimensions[i]);
+                stride = symbolic::mul(stride, dim_sizes[i]);
             }
             return linear_idx;
         };
@@ -298,7 +335,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         };
 
         // Helper: build source subset (base[d] + copy_indvar[d]) for original container
-        bool is_pointer = (type.type_id() == types::TypeID::Pointer);
         auto build_original_subset = [&](const std::vector<symbolic::Expression>& copy_indices) -> data_flow::Subset {
             std::vector<symbolic::Expression> full_indices;
             size_t var_idx = 0;
@@ -310,15 +346,11 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 }
             }
 
-            if (is_pointer) {
-                symbolic::Expression linear = tile_info_.offset;
-                for (size_t d = 0; d < full_indices.size(); d++) {
-                    linear = symbolic::add(linear, symbolic::mul(tile_info_.strides.at(d), full_indices.at(d)));
-                }
-                return {linear};
-            } else {
-                return data_flow::Subset(full_indices.begin(), full_indices.end());
+            symbolic::Expression linear = tile_info_.offset;
+            for (size_t d = 0; d < full_indices.size(); d++) {
+                linear = symbolic::add(linear, symbolic::mul(tile_info_.strides.at(d), full_indices.at(d)));
             }
+            return {linear};
         };
 
         if (storage_type_.is_nv_shared()) {
@@ -400,14 +432,14 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 auto& init_dst = builder.add_access(init_block, local_name_);
                 auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "_out", {"_in"});
 
-                // Decompose idx_var into per-dim indices
+                // Decompose idx_var into per-dim indices over varying dims only
                 std::vector<symbolic::Expression> init_indices;
                 symbolic::Expression remainder = idx_var;
-                for (size_t i = 0; i < tile_info_.dimensions.size(); i++) {
-                    if (i < tile_info_.dimensions.size() - 1) {
+                for (size_t i = 0; i < dim_sizes.size(); i++) {
+                    if (i < dim_sizes.size() - 1) {
                         symbolic::Expression divisor = symbolic::integer(1);
-                        for (size_t j = i + 1; j < tile_info_.dimensions.size(); j++) {
-                            divisor = symbolic::mul(divisor, tile_info_.dimensions[j]);
+                        for (size_t j = i + 1; j < dim_sizes.size(); j++) {
+                            divisor = symbolic::mul(divisor, dim_sizes[j]);
                         }
                         init_indices.push_back(symbolic::div(remainder, divisor));
                         remainder = symbolic::mod(remainder, divisor);
@@ -417,7 +449,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 }
 
                 auto init_src_subset = build_original_subset(init_indices);
-                builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, type);
+                builder
+                    .add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, pointer_type);
                 builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, {idx_var}, buffer_type);
 
                 // Barrier after init
@@ -454,14 +487,14 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 auto& wb_dst = builder.add_access(wb_block, this->container_);
                 auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
 
-                // Decompose idx_var into per-dim indices
+                // Decompose idx_var into per-dim indices over varying dims only
                 std::vector<symbolic::Expression> wb_indices;
                 symbolic::Expression remainder = idx_var;
-                for (size_t i = 0; i < tile_info_.dimensions.size(); i++) {
-                    if (i < tile_info_.dimensions.size() - 1) {
+                for (size_t i = 0; i < dim_sizes.size(); i++) {
+                    if (i < dim_sizes.size() - 1) {
                         symbolic::Expression divisor = symbolic::integer(1);
-                        for (size_t j = i + 1; j < tile_info_.dimensions.size(); j++) {
-                            divisor = symbolic::mul(divisor, tile_info_.dimensions[j]);
+                        for (size_t j = i + 1; j < dim_sizes.size(); j++) {
+                            divisor = symbolic::mul(divisor, dim_sizes[j]);
                         }
                         wb_indices.push_back(symbolic::div(remainder, divisor));
                         remainder = symbolic::mod(remainder, divisor);
@@ -472,7 +505,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
                 auto wb_dst_subset = build_original_subset(wb_indices);
                 builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", {idx_var}, buffer_type);
-                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, type);
+                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
 
                 // Barrier after writeback
                 auto& barrier_block4 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
@@ -487,8 +520,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 structured_control_flow::Sequence* init_scope = parent;
                 bool first_init_loop = true;
 
-                for (size_t i = 0; i < tile_info_.dimensions.size(); i++) {
-                    size_t d = i;
+                for (size_t i = 0; i < varying_dims.size(); i++) {
+                    size_t d = varying_dims[i];
                     auto indvar_name =
                         builder.find_new_name("__daisy_ols_init_" + this->container_ + "_d" + std::to_string(d));
                     types::Scalar indvar_type(types::PrimitiveType::UInt64);
@@ -497,7 +530,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                     init_indvars.push_back(indvar);
 
                     auto init = symbolic::integer(0);
-                    auto condition = symbolic::Lt(indvar, tile_info_.dimensions[i]);
+                    auto condition = symbolic::Lt(indvar, dim_sizes[i]);
                     auto update = symbolic::add(indvar, symbolic::integer(1));
 
                     if (first_init_loop) {
@@ -539,7 +572,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 auto init_src_subset = build_original_subset(init_exprs);
                 data_flow::Subset init_dst_subset = {linearize(init_indvars)};
 
-                builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, type);
+                builder
+                    .add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, pointer_type);
                 builder
                     .add_computational_memlet(init_block, init_tasklet, "_out", init_dst, init_dst_subset, buffer_type);
             }
@@ -550,8 +584,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 structured_control_flow::Sequence* wb_scope = parent;
                 bool first_wb_loop = true;
 
-                for (size_t i = 0; i < tile_info_.dimensions.size(); i++) {
-                    size_t d = i;
+                for (size_t i = 0; i < varying_dims.size(); i++) {
+                    size_t d = varying_dims[i];
                     auto indvar_name =
                         builder.find_new_name("__daisy_ols_wb_" + this->container_ + "_d" + std::to_string(d));
                     types::Scalar indvar_type(types::PrimitiveType::UInt64);
@@ -560,7 +594,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                     wb_indvars.push_back(indvar);
 
                     auto init = symbolic::integer(0);
-                    auto condition = symbolic::Lt(indvar, tile_info_.dimensions[i]);
+                    auto condition = symbolic::Lt(indvar, dim_sizes[i]);
                     auto update = symbolic::add(indvar, symbolic::integer(1));
 
                     if (first_wb_loop) {
@@ -603,7 +637,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 auto wb_dst_subset = build_original_subset(wb_exprs);
 
                 builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", wb_src_subset, buffer_type);
-                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, type);
+                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
             }
         }
 
@@ -617,13 +651,29 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         rewrite_accesses = [&](structured_control_flow::ControlFlowNode& node) {
             if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
                 auto& dfg = block->dataflow();
-                for (auto* access : dfg.data_nodes()) {
-                    if (access->data() != this->container_) continue;
-                    bool all_rewritten = true;
-                    // Rewrite outgoing memlets (reads from this access node)
+
+                // Collect access nodes to process (avoid iterator invalidation when splitting)
+                std::vector<data_flow::AccessNode*> access_nodes;
+                for (auto* access_node : dfg.data_nodes()) {
+                    if (access_node->data() == this->container_) {
+                        access_nodes.push_back(access_node);
+                    }
+                }
+
+                for (auto* access : access_nodes) {
+                    // Classify memlets: group vs non-group
+                    struct MemletRewrite {
+                        data_flow::Memlet* memlet;
+                        data_flow::Subset local_subset;
+                        bool is_outgoing;
+                    };
+                    std::vector<MemletRewrite> group_rewrites;
+                    bool all_in_group = true;
+
+                    // Outgoing memlets (reads from this access node)
                     for (auto& memlet : dfg.out_edges(*access)) {
                         if (group_memlets_.count(&memlet) == 0) {
-                            all_rewritten = false;
+                            all_in_group = false;
                             continue;
                         }
                         auto* acc = mla.access(memlet);
@@ -635,14 +685,19 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                                 }
                             }
                             symbolic::Expression linear_idx = linearize_exprs(local_indices);
-                            memlet.set_subset({linear_idx});
-                            memlet.set_base_type(buffer_type);
+                            group_rewrites.push_back({&memlet, {linear_idx}, true});
+                        } else {
+                            // Memlet is claimed by the group but we cannot rewrite it (no
+                            // delinearized access info). Leaving it as the original container
+                            // would create a half-renamed access node. Bail out of renaming
+                            // to keep the SDFG consistent.
+                            all_in_group = false;
                         }
                     }
-                    // Rewrite incoming memlets (writes to this access node)
+                    // Incoming memlets (writes to this access node)
                     for (auto& memlet : dfg.in_edges(*access)) {
                         if (group_memlets_.count(&memlet) == 0) {
-                            all_rewritten = false;
+                            all_in_group = false;
                             continue;
                         }
                         auto* acc = mla.access(memlet);
@@ -654,13 +709,43 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                                 }
                             }
                             symbolic::Expression linear_idx = linearize_exprs(local_indices);
-                            memlet.set_subset({linear_idx});
-                            memlet.set_base_type(buffer_type);
+                            group_rewrites.push_back({&memlet, {linear_idx}, false});
+                        } else {
+                            all_in_group = false;
                         }
                     }
-                    // Rename the access node only if all its memlets belong to our group
-                    if (all_rewritten) {
+
+                    if (group_rewrites.empty()) continue;
+
+                    if (all_in_group) {
+                        // Simple case: all memlets in group → rewrite in-place and rename
+                        for (auto& rw : group_rewrites) {
+                            rw.memlet->set_subset(rw.local_subset);
+                            rw.memlet->set_base_type(buffer_type);
+                        }
                         access->data(local_name_);
+                    } else {
+                        // Mixed case: split — create new local access node, redirect group memlets
+                        auto& local_access = builder.add_access(*block, local_name_);
+                        for (auto& rw : group_rewrites) {
+                            if (rw.is_outgoing) {
+                                // outgoing: access→tasklet  →  local_access→tasklet
+                                auto& dst_node = rw.memlet->dst();
+                                auto dst_conn = rw.memlet->dst_conn();
+                                builder.remove_memlet(*block, *rw.memlet);
+                                builder.add_memlet(
+                                    *block, local_access, "void", dst_node, dst_conn, rw.local_subset, buffer_type, {}
+                                );
+                            } else {
+                                // incoming: tasklet→access  →  tasklet→local_access
+                                auto& src_node = rw.memlet->src();
+                                auto src_conn = rw.memlet->src_conn();
+                                builder.remove_memlet(*block, *rw.memlet);
+                                builder.add_memlet(
+                                    *block, src_node, src_conn, local_access, "void", rw.local_subset, buffer_type, {}
+                                );
+                            }
+                        }
                     }
                 }
             } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
