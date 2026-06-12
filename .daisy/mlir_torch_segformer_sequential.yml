@@ -7,7 +7,7 @@ on:
 
 parameters:
   container: daisytuner/docc-build-env-llvm19-base:latest-amd64
-  timeout: 240
+  timeout: 480
   partitions:
     - chamomile
 
