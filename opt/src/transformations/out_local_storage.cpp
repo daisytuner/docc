@@ -67,7 +67,7 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // For Array/Pointer types: use MemoryLayoutAnalysis tile group API
-    if (type.type_id() != types::TypeID::Pointer && type.type_id() != types::TypeID::Array) {
+    if (type.type_id() != types::TypeID::Pointer) {
         return false;
     }
 
@@ -209,6 +209,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     // Get type information
     auto& type = sdfg.type(this->container_);
     types::Scalar scalar_type(type.primitive_type());
+    types::Pointer pointer_type(scalar_type);
 
     // Create local buffer name
     local_name_ = builder.find_new_name("__daisy_out_local_storage_" + this->container_);
@@ -298,7 +299,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         };
 
         // Helper: build source subset (base[d] + copy_indvar[d]) for original container
-        bool is_pointer = (type.type_id() == types::TypeID::Pointer);
         auto build_original_subset = [&](const std::vector<symbolic::Expression>& copy_indices) -> data_flow::Subset {
             std::vector<symbolic::Expression> full_indices;
             size_t var_idx = 0;
@@ -310,15 +310,11 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 }
             }
 
-            if (is_pointer) {
-                symbolic::Expression linear = tile_info_.offset;
-                for (size_t d = 0; d < full_indices.size(); d++) {
-                    linear = symbolic::add(linear, symbolic::mul(tile_info_.strides.at(d), full_indices.at(d)));
-                }
-                return {linear};
-            } else {
-                return data_flow::Subset(full_indices.begin(), full_indices.end());
+            symbolic::Expression linear = tile_info_.offset;
+            for (size_t d = 0; d < full_indices.size(); d++) {
+                linear = symbolic::add(linear, symbolic::mul(tile_info_.strides.at(d), full_indices.at(d)));
             }
+            return {linear};
         };
 
         if (storage_type_.is_nv_shared()) {
@@ -417,7 +413,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 }
 
                 auto init_src_subset = build_original_subset(init_indices);
-                builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, type);
+                builder
+                    .add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, pointer_type);
                 builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, {idx_var}, buffer_type);
 
                 // Barrier after init
@@ -472,7 +469,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
                 auto wb_dst_subset = build_original_subset(wb_indices);
                 builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", {idx_var}, buffer_type);
-                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, type);
+                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
 
                 // Barrier after writeback
                 auto& barrier_block4 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
@@ -539,7 +536,8 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 auto init_src_subset = build_original_subset(init_exprs);
                 data_flow::Subset init_dst_subset = {linearize(init_indvars)};
 
-                builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, type);
+                builder
+                    .add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, pointer_type);
                 builder
                     .add_computational_memlet(init_block, init_tasklet, "_out", init_dst, init_dst_subset, buffer_type);
             }
@@ -603,7 +601,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 auto wb_dst_subset = build_original_subset(wb_exprs);
 
                 builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", wb_src_subset, buffer_type);
-                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, type);
+                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
             }
         }
 

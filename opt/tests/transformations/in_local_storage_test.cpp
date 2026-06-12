@@ -17,6 +17,7 @@
 #include "sdfg/transformations/utils.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
+#include "sdfg/types/utils.h"
 
 using namespace sdfg;
 
@@ -213,6 +214,95 @@ TEST(InLocalStorageTest, Dynamic) {
     }
     EXPECT_TRUE(uses_A_local);
     EXPECT_FALSE(uses_A_original); // Original A should be replaced
+}
+
+TEST(InLocalStorageTest, PolyBench_Array_2D) {
+    builder::StructuredSDFGBuilder builder("ols_flat_2d", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Array array_desc(elem_desc, symbolic::integer(4));
+    types::Array array_desc_2d(array_desc, symbolic::integer(8));
+    types::Pointer ptr_desc(array_desc_2d);
+    builder.add_container("A", ptr_desc, true);
+    builder.add_container("C", ptr_desc);
+
+    auto& root = builder.subject().root();
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+
+    // Outer loop: for i = 0..4
+    auto& outer_loop = builder.add_for(
+        root, i, symbolic::Lt(i, symbolic::integer(4)), symbolic::integer(0), symbolic::add(i, symbolic::integer(1))
+    );
+
+    // Inner loop: for j = 0..8
+    auto& inner_loop = builder.add_for(
+        outer_loop.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1))
+    );
+
+    // C[0][i][j] += A[0][i][j]
+    auto& block = builder.add_block(inner_loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_in = builder.add_access(block, "C");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, c_in, tasklet, "_in1", {symbolic::integer(0), i, j}, ptr_desc);
+    builder.add_computational_memlet(block, a_in, tasklet, "_in2", {symbolic::integer(0), i, j}, ptr_desc);
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::integer(0), i, j}, ptr_desc);
+
+    auto structured_sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    transformations::InLocalStorage transformation(outer_loop, a_in);
+    EXPECT_TRUE(transformation.can_be_applied(builder_opt, am));
+    transformation.apply(builder_opt, am);
+    builder_opt.subject().validate();
+
+    // Verify local buffer was created
+    EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
+
+    // Structure: [init_loop(s), outer_loop]
+    auto& new_root = builder_opt.subject().root();
+    EXPECT_EQ(new_root.size(), 2);
+
+    // Init should be a for loop (first dimension)
+    auto* init_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    EXPECT_NE(init_loop, nullptr);
+    // Should iterate 0..4 (first dim extent)
+    EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(init_loop->condition(), symbolic::Lt(init_loop->indvar(), symbolic::integer(4))));
+
+    // Init loop should contain nested loop for second dimension
+    auto& init_body = init_loop->root();
+    EXPECT_EQ(init_body.size(), 1);
+    auto* inner_init = dynamic_cast<structured_control_flow::Map*>(&init_body.at(0).first);
+    EXPECT_NE(inner_init, nullptr);
+    EXPECT_TRUE(symbolic::eq(inner_init->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(inner_init->condition(), symbolic::Lt(inner_init->indvar(), symbolic::integer(8))));
+
+    // check that accesses got converted into linearized accesses
+    auto* inner_init_body = dynamic_cast<structured_control_flow::Block*>(&inner_init->root().at(0).first);
+    EXPECT_NE(inner_init_body, nullptr);
+    for (auto& edge : inner_init_body->dataflow().edges()) {
+        auto inferred_type = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
+        EXPECT_EQ(inferred_type->type_id(), types::TypeID::Scalar);
+        EXPECT_EQ(edge.base_type().primitive_type(), types::PrimitiveType::Double);
+    }
+
+    // Compute loop preserved
+    auto* compute_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    EXPECT_NE(compute_loop, nullptr);
 }
 
 /**
