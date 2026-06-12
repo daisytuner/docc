@@ -651,10 +651,10 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 
     auto limit_depth = 0;
     // if (first_loop_info.max_depth < second_loop_info.max_depth) {
-    //     limit_depth = first_loop_info.max_depth;
+    // limit_depth = first_loop_info.max_depth;
     //     loop_analysis.loop_tree_paths(&first_map_);
     //     second_loop_info.is_perfectly_parallel = true; //TODO prove!
-    //     second_loop_info.max_depth = limit_depth;
+    // second_loop_info.max_depth = limit_depth;
     //     second_loop_info.is_perfectly_nested = true; // TODO prove
     // }
 
@@ -675,6 +675,27 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     } else {
         // Reverse Pattern 2: Producer perfectly nested, consumer non-perfectly-nested
         direction_ = FusionDirection::ProducerIntoConsumer;
+    }
+
+    // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
+    // ProducerIntoConsumer: both sides must be all-parallel. The producer is replicated at
+    // each consumer site — it must be reorderable. The consumer must also be all-parallel
+    // because a sequential (For) loop would re-execute the inlined producer on every
+    // iteration (e.g. init T=0 fused into For(k){T+=A[k]} re-initializes each k).
+    // ConsumerIntoProducer: only the consumer (inlined side) must be all-parallel.
+    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+        if (!first_loop_info.is_perfectly_parallel) {
+            return false;
+        } else if (!second_loop_info.is_perfectly_parallel) {
+            if (second_loop_info.is_perfectly_nested) { // we can check if the innermost loop is non parallel, but the
+                                                        // outers are
+            }
+            return false;
+        }
+    } else {
+        if (!second_loop_info.is_perfectly_parallel) {
+            return false;
+        }
     }
 
     // Locate producer write point
@@ -775,22 +796,6 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             return false;
         }
         if (first_inputs.contains(name) && arg.is_output && !is_fusion) {
-            return false;
-        }
-    }
-
-    // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
-    // ProducerIntoConsumer: both sides must be all-parallel. The producer is replicated at
-    // each consumer site — it must be reorderable. The consumer must also be all-parallel
-    // because a sequential (For) loop would re-execute the inlined producer on every
-    // iteration (e.g. init T=0 fused into For(k){T+=A[k]} re-initializes each k).
-    // ConsumerIntoProducer: only the consumer (inlined side) must be all-parallel.
-    if (direction_ == FusionDirection::ProducerIntoConsumer) {
-        if (!first_loop_info.is_perfectly_parallel || !second_loop_info.is_perfectly_parallel) {
-            return false;
-        }
-    } else {
-        if (!second_loop_info.is_perfectly_parallel) {
             return false;
         }
     }

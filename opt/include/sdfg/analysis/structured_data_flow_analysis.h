@@ -56,7 +56,7 @@ struct DataFlowState {
     virtual bool update_forward_exposed(const T& forward_exposed) = 0;
 };
 
-typedef size_t ElementId;
+using ElementId = sdfg::ElementId;
 
 template<typename T, typename I>
 struct ElementIdMapDataFlowState : public DataFlowState<std::unordered_map<ElementId, T>> {

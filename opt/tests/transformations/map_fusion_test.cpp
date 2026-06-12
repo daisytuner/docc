@@ -3841,11 +3841,7 @@ TEST(MapFusionTest, InitPlusReduction_Rejected) {
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1_outer, map2_outer);
 
-    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
-
-    transformation.apply(builder, analysis_manager);
-
-    dump_sdfg(builder.subject(), "1.fused");
+    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
 TEST(MapFusionTest, ConsumerHasMoreDimensions) {
