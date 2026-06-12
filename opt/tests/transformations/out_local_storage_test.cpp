@@ -2133,3 +2133,171 @@ TEST(OutLocalStorageTest, TileGroups_SYR2K_Accumulator) {
     EXPECT_TRUE(found_a);
     EXPECT_TRUE(found_b);
 }
+
+/**
+ * Regression: PolyBench-style MATMUL tiled with OPAQUE container pointer.
+ *
+ * Mirrors the actual matmul kernel coming out of the autotuner:
+ *   - Container C is declared with opaque `Pointer()` type (no pointee), but
+ *     each memlet carries a fully-typed `Pointer(Array<64>(Array<64>(Double)))`
+ *     base type and accesses C via `[0][i][j]` (3-dim subset, first dim const).
+ *   - The compute loop is tiled (i_tile, j_tile, k_tile) at step 4. Applying
+ *     OutLocalStorage at the i_loop level produces a tile of extent [1,4,4]
+ *     (the leading dimension is degenerate).
+ *
+ * Two bugs were fixed here:
+ *  1. After rewrite the memlet base_type used to become an opaque `Pointer()`
+ *     copied from the container, causing the result type to resolve to `Void`
+ *     and later `validate()` to throw
+ *     "Floating point operation with integer input type: Scalar(Void)".
+ *  2. The CPU init/writeback loops were built over *all* tile dimensions
+ *     (including the extent-1 leading dim) instead of only the varying ones,
+ *     so `build_original_subset` consumed copy indvars at wrong positions and
+ *     emitted a writeback that copied the wrong column of C.
+ */
+TEST(OutLocalStorageTest, OpaquePointer_PolybenchMatmul_Tiled) {
+    builder::StructuredSDFGBuilder builder("ols_matmul_opaque", FunctionType_CPU);
+
+    // Symbols
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    for (auto* n : {"i", "j", "k", "i_tile", "j_tile", "k_tile"}) {
+        builder.add_container(n, sym_desc);
+    }
+
+    // Containers: A, B, C are declared as OPAQUE pointers (no pointee), exactly
+    // like what the SDFG loader emits for `extern "C" void f(void*, void*, void*)`.
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("B", opaque_desc, true);
+    builder.add_container("C", opaque_desc, true);
+
+    // The per-memlet base type is the *true* nested-array pointer (PolyBench
+    // style): `double (*)[64][64]`.
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Array inner(elem_desc, symbolic::integer(64));
+    types::Array outer(inner, symbolic::integer(64));
+    types::Pointer nested_ptr(outer);
+
+    auto& root = builder.subject().root();
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto i_tile = symbolic::symbol("i_tile");
+    auto j_tile = symbolic::symbol("j_tile");
+    auto k_tile = symbolic::symbol("k_tile");
+    auto T = symbolic::integer(4);
+    auto N = symbolic::integer(64);
+
+    // Tile loops (step 4, bound 64)
+    auto& i_tile_loop =
+        builder.add_for(root, i_tile, symbolic::Lt(i_tile, N), symbolic::integer(0), symbolic::add(i_tile, T));
+    auto& j_tile_loop =
+        builder
+            .add_for(i_tile_loop.root(), j_tile, symbolic::Lt(j_tile, N), symbolic::integer(0), symbolic::add(j_tile, T));
+    auto& k_tile_loop =
+        builder
+            .add_for(j_tile_loop.root(), k_tile, symbolic::Lt(k_tile, N), symbolic::integer(0), symbolic::add(k_tile, T));
+
+    // Inner loops (i, j, k) over the 4-wide tile
+    auto& i_loop =
+        builder
+            .add_for(k_tile_loop.root(), i, symbolic::Lt(i, T), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+    auto& j_loop =
+        builder.add_for(i_loop.root(), j, symbolic::Lt(j, T), symbolic::integer(0), symbolic::add(j, symbolic::one()));
+    auto& k_loop =
+        builder.add_for(j_loop.root(), k, symbolic::Lt(k, T), symbolic::integer(0), symbolic::add(k, symbolic::one()));
+
+    // FMA: C[0][i+i_tile][j+j_tile] += A[0][i+i_tile][k+k_tile] * B[0][k+k_tile][j+j_tile]
+    auto ii = symbolic::add(i, i_tile);
+    auto jj = symbolic::add(j, j_tile);
+    auto kk = symbolic::add(k, k_tile);
+
+    auto& block = builder.add_block(k_loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& b_in = builder.add_access(block, "B");
+    auto& c_in = builder.add_access(block, "C");
+    auto& c_out = builder.add_access(block, "C");
+    auto& fma = builder.add_tasklet(block, data_flow::TaskletCode::fp_fma, "_out", {"_a", "_b", "_c"});
+    builder.add_computational_memlet(block, a_in, fma, "_a", {symbolic::integer(0), ii, kk}, nested_ptr);
+    builder.add_computational_memlet(block, b_in, fma, "_b", {symbolic::integer(0), kk, jj}, nested_ptr);
+    builder.add_computational_memlet(block, c_in, fma, "_c", {symbolic::integer(0), ii, jj}, nested_ptr);
+    builder.add_computational_memlet(block, fma, "_out", c_out, {symbolic::integer(0), ii, jj}, nested_ptr);
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    transformations::OutLocalStorage ols(i_loop, c_in);
+    ASSERT_TRUE(ols.can_be_applied(builder_opt, am));
+    ols.apply(builder_opt, am);
+
+    // The SDFG must still validate (this is what threw "Scalar(Void)" before).
+    EXPECT_NO_THROW(builder_opt.subject().validate());
+
+    // Local buffer exists.
+    ASSERT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
+
+    // The local buffer must be a fully-typed Array of doubles (not opaque).
+    auto& buffer_type = builder_opt.subject().type("__daisy_out_local_storage_C0");
+    EXPECT_EQ(buffer_type.type_id(), types::TypeID::Array);
+    EXPECT_EQ(buffer_type.primitive_type(), types::PrimitiveType::Double);
+
+    // All rewritten memlets on the local buffer must produce a Scalar(Double)
+    // result type. Previously the rewrite copied the container's opaque
+    // `Pointer()` into the memlet base_type → result type was Void.
+    auto& k_tile_body = k_tile_loop.root();
+    std::function<void(structured_control_flow::ControlFlowNode&)> check;
+    check = [&](structured_control_flow::ControlFlowNode& node) {
+        if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&node)) {
+            for (auto& edge : blk->dataflow().edges()) {
+                if (edge.src_conn() == "void") {
+                    auto* dst = dynamic_cast<data_flow::AccessNode*>(&edge.src());
+                    if (dst && dst->data() == "__daisy_out_local_storage_C0") {
+                        auto t = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
+                        EXPECT_EQ(t->type_id(), types::TypeID::Scalar);
+                        EXPECT_EQ(t->primitive_type(), types::PrimitiveType::Double);
+                    }
+                }
+                if (edge.dst_conn() == "void") {
+                    auto* dst = dynamic_cast<data_flow::AccessNode*>(&edge.dst());
+                    if (dst && dst->data() == "__daisy_out_local_storage_C0") {
+                        auto t = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
+                        EXPECT_EQ(t->type_id(), types::TypeID::Scalar);
+                        EXPECT_EQ(t->primitive_type(), types::PrimitiveType::Double);
+                    }
+                }
+            }
+        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+            for (size_t i = 0; i < seq->size(); i++) check(seq->at(i).first);
+        } else if (auto* lp = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+            check(lp->root());
+        }
+    };
+    check(k_tile_body);
+
+    // Structure: k_tile body = [init_loops, i_loop, writeback_loops]
+    EXPECT_EQ(k_tile_body.size(), 3u);
+
+    // Writeback subset must reference *only* the writeback's own indvars — must
+    // not contain `k` (the previous bug used the wrong indvar at position 0 of
+    // build_original_subset because the extent-1 dim was not skipped, so the
+    // writeback wrote into the wrong column of C, indexed by [..][i_tile][k_tile + ...]).
+    auto* wb_outer = dynamic_cast<structured_control_flow::Map*>(&k_tile_body.at(2).first);
+    ASSERT_NE(wb_outer, nullptr);
+    auto* wb_inner = dynamic_cast<structured_control_flow::Map*>(&wb_outer->root().at(0).first);
+    ASSERT_NE(wb_inner, nullptr);
+    auto* wb_block = dynamic_cast<structured_control_flow::Block*>(&wb_inner->root().at(0).first);
+    ASSERT_NE(wb_block, nullptr);
+    for (auto& edge : wb_block->dataflow().edges()) {
+        if (auto* dst = dynamic_cast<data_flow::AccessNode*>(&edge.dst())) {
+            if (dst->data() == "C") {
+                for (auto& dim : edge.subset()) {
+                    EXPECT_FALSE(symbolic::uses(dim, k))
+                        << "Writeback dst subset must not reference compute-loop indvar k";
+                    EXPECT_FALSE(symbolic::uses(dim, k_tile)) << "Writeback dst subset must not reference k_tile";
+                }
+            }
+        }
+    }
+}
