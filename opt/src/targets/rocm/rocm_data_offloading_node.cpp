@@ -159,7 +159,7 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
     } else if (offloading_node.is_d2h()) {
         out.stream << "err = hipMemcpy(" << inputs.at(offloading_node.host_ptr_input_idx()).expr << ", " << dev_ptr
                    << ", " << this->language_extension_.expression(offloading_node.size())
-                   << ", hipMemcpyHostToDevice);" << std::endl;
+                   << ", hipMemcpyDeviceToHost);" << std::endl;
         rocm_error_checking(out.stream, this->language_extension_, "err");
     }
 
