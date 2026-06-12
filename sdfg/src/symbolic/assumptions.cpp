@@ -8,20 +8,20 @@ namespace symbolic {
 
 Assumption::Assumption()
     : symbol_(symbolic::symbol("")), lower_bounds_(), upper_bounds_(), tight_lower_bound_(SymEngine::null),
-      tight_upper_bound_(SymEngine::null), constant_(false), map_(SymEngine::null) {
+      tight_upper_bound_(SymEngine::null), constraints_(), constant_(false), map_(SymEngine::null) {
 
       };
 
 Assumption::Assumption(const Symbol symbol)
     : symbol_(symbol), lower_bounds_(), upper_bounds_(), tight_lower_bound_(SymEngine::null),
-      tight_upper_bound_(SymEngine::null), constant_(false), map_(SymEngine::null) {
+      tight_upper_bound_(SymEngine::null), constraints_(), constant_(false), map_(SymEngine::null) {
 
       };
 
 Assumption::Assumption(const Assumption& a)
     : symbol_(a.symbol_), lower_bounds_(a.lower_bounds_), upper_bounds_(a.upper_bounds_),
-      tight_lower_bound_(a.tight_lower_bound_), tight_upper_bound_(a.tight_upper_bound_), constant_(a.constant_),
-      map_(a.map_) {
+      tight_lower_bound_(a.tight_lower_bound_), tight_upper_bound_(a.tight_upper_bound_), constraints_(a.constraints_),
+      constant_(a.constant_), map_(a.map_) {
 
       };
 
@@ -31,6 +31,7 @@ Assumption& Assumption::operator=(const Assumption& a) {
     this->upper_bounds_ = a.upper_bounds_;
     this->tight_lower_bound_ = a.tight_lower_bound_;
     this->tight_upper_bound_ = a.tight_upper_bound_;
+    this->constraints_ = a.constraints_;
     this->constant_ = a.constant_;
     this->map_ = a.map_;
     return *this;
@@ -62,6 +63,14 @@ void Assumption::tight_lower_bound(const Expression tight_lb) { this->tight_lowe
 const Expression Assumption::tight_upper_bound() const { return this->tight_upper_bound_; }
 
 void Assumption::tight_upper_bound(const Expression tight_ub) { this->tight_upper_bound_ = tight_ub; }
+
+const ExpressionSet& Assumption::constraints() const { return this->constraints_; }
+
+void Assumption::add_constraint(const Expression c) { this->constraints_.insert(c); }
+
+bool Assumption::contains_constraint(const Expression c) { return this->constraints_.contains(c); }
+
+bool Assumption::remove_constraint(const Expression c) { return this->constraints_.erase(c) > 0; }
 
 bool Assumption::constant() const { return constant_; };
 

@@ -7,9 +7,9 @@ def test_analysis_manager():
 
     analysis = AnalysisManager(sdfg)
 
-    scope_analysis = analysis.scope_analysis()
-    scope_analysis2 = analysis.scope_analysis()
-    assert scope_analysis is scope_analysis2
+    analysis1 = analysis.arguments_analysis()
+    analysis2 = analysis.arguments_analysis()
+    assert analysis1 is analysis2
 
 
 def test_arguments_analysis():
@@ -80,16 +80,6 @@ def test_loop_analysis():
     loop_analysis = analysis.loop_analysis()
 
     assert str(loop_analysis) == "<LoopAnalysis>"
-
-
-def test_scope_analysis():
-    builder = StructuredSDFGBuilder("sdfg")
-    sdfg = builder.move()
-
-    analysis = AnalysisManager(sdfg)
-    scope_analysis = analysis.scope_analysis()
-
-    assert str(scope_analysis) == "<ScopeAnalysis>"
 
 
 def test_type_analysis():

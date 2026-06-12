@@ -22,6 +22,12 @@ void register_control_flow(py::module& m) {
         .def_property_readonly(
             "debug_info", &ControlFlowNode::debug_info, py::return_value_policy::reference, "Get the debug information"
         )
+        .def_property_readonly(
+            "parent",
+            static_cast<ControlFlowNode* (ControlFlowNode::*) ()>(&ControlFlowNode::get_parent),
+            py::return_value_policy::reference,
+            "Get the parent node if any"
+        )
         .def("__repr__", [](const ControlFlowNode& node) {
             std::ostringstream oss;
             oss << "<ControlFlowNode id=" << node.element_id() << ">";

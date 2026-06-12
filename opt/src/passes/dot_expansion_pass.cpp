@@ -1,6 +1,5 @@
 #include "sdfg/passes/dot_expansion_pass.h"
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -22,7 +21,6 @@ bool DotExpansion::visit() {
 bool DotExpansion::accept(structured_control_flow::Block& block) {
     bool expanded = false;
 
-    auto& scope_analysis = analysis_manager_.get<analysis::ScopeAnalysis>();
     for (auto lib_node : block.dataflow().library_nodes()) {
         if (lib_node->code() == math::blas::LibraryNodeType_DOT) {
             auto dot_node = static_cast<math::blas::DotNode*>(lib_node);

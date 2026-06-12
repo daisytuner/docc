@@ -409,8 +409,7 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 };
 
 void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto& outer_scope = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&outer_loop_));
+    auto& outer_scope = static_cast<structured_control_flow::Sequence&>(*outer_loop_.get_parent());
     auto& inner_scope = outer_loop_.root();
 
     int index = outer_scope.index(this->outer_loop_);

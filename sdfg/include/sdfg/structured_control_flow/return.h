@@ -36,9 +36,17 @@ private:
     std::string data_;
     std::unique_ptr<types::IType> type_;
 
-    Return(size_t element_id, const DebugInfo& debug_info, const std::string& data);
+    Return(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent, const std::string& data);
 
-    Return(size_t element_id, const DebugInfo& debug_info, const std::string& constant, const types::IType& type);
+    Return(
+        size_t element_id,
+        const DebugInfo& debug_info,
+        ControlFlowNode* parent,
+        const std::string& constant,
+        const types::IType& type
+    );
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
     Return(const Return& Return) = delete;

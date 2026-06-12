@@ -3,8 +3,6 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 
-#include "sdfg/analysis/scope_analysis.h"
-
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/types/type.h"
 

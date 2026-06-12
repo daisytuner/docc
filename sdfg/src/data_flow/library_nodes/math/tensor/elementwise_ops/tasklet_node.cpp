@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/data_flow_graph.h"

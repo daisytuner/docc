@@ -160,9 +160,8 @@ bool For2MapPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::An
 
     // Convert marked for loops
     bool applied = false;
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
     for (auto& for_stmt : map_queue) {
-        auto parent = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(for_stmt));
+        auto parent = static_cast<structured_control_flow::Sequence*>(for_stmt->get_parent());
         builder.convert_for(*parent, *for_stmt);
         applied = true;
     }

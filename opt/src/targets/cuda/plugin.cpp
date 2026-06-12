@@ -140,6 +140,32 @@ void register_cuda_plugin(plugins::Context& context) {
     );
 
 
+    // Memcpy - CUDA with data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        sdfg::stdlib::LibraryNodeType_Memcpy.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<cuda::stdlib::MemcpyNodeDispatcher_CUDAWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemcpyNode&>(node)
+            );
+        }
+    );
+    // Memcpy - CUDA without data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        sdfg::stdlib::LibraryNodeType_Memcpy.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<cuda::stdlib::MemcpyNodeDispatcher_CUDAWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemcpyNode&>(node)
+            );
+        }
+    );
+
+
     context.scheduler_registry
         .register_loop_scheduler<passes::scheduler::CUDAScheduler>(passes::scheduler::CUDAScheduler::target());
 }

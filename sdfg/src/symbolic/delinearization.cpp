@@ -1,5 +1,7 @@
 #include "sdfg/symbolic/delinearization.h"
 
+#include <algorithm>
+
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/polynomials.h"
@@ -205,6 +207,53 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
         return {MultiExpression{dim}, MultiExpression{}, true};
     }
 
+    // Step 1a: Normalize each group's index by extracting params-only addends
+    // into the global offset. SymEngine canonicalizes `224 * (2*hout + kh - 3)`
+    // into a single Mul `(224, -3+2*hout+kh)` whose index `-3+2*hout+kh` is
+    // negative in the lower corner — `is_nonneg` then refuses to peel it.
+    // Splitting `-3` off into `offset += 224 * -3` leaves index `2*hout + kh`
+    // which IS provably non-negative.
+    //
+    // Soundness: `stride * (idx_part + const_part) == stride * idx_part +
+    // stride * const_part`, and addends that touch no indvar are constants
+    // relative to the access pattern and naturally belong in the offset.
+    for (auto& [stride, index] : groups) {
+        if (!SymEngine::is_a<SymEngine::Add>(*index)) continue;
+        Expression idx_part = symbolic::zero();
+        Expression const_part = symbolic::zero();
+        for (const auto& addend : index->get_args()) {
+            bool has_indvar = false;
+            for (const auto& s : symbolic::atoms(addend)) {
+                if (params_set.count(s) == 0) {
+                    has_indvar = true;
+                    break;
+                }
+            }
+            if (has_indvar) {
+                idx_part = symbolic::eq(idx_part, symbolic::zero()) ? Expression(addend)
+                                                                    : symbolic::add(idx_part, addend);
+            } else {
+                const_part = symbolic::eq(const_part, symbolic::zero()) ? Expression(addend)
+                                                                        : symbolic::add(const_part, addend);
+            }
+        }
+        if (!symbolic::eq(const_part, symbolic::zero())) {
+            offset = symbolic::add(offset, symbolic::mul(stride, const_part));
+            index = idx_part;
+        }
+    }
+    // Drop groups whose index collapsed to zero (purely-constant contribution
+    // already accounted for in the offset).
+    groups.erase(
+        std::remove_if(
+            groups.begin(), groups.end(), [](const auto& g) { return symbolic::eq(g.second, symbolic::zero()); }
+        ),
+        groups.end()
+    );
+    if (groups.empty()) {
+        return {MultiExpression{dim}, MultiExpression{}, true};
+    }
+
     // Step 1b: Merge sibling groups sharing an index when at least one of them
     // has a stride that cannot stand alone as a leading dimension stride
     // (i.e. its provable lower bound is not >= 1, including symbolic strides
@@ -265,6 +314,11 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
     Expression remaining = symbolic::sub(dim, offset);
 
     while (!groups.empty()) {
+        // Snapshot `remaining` so that the on-failure merge fallback below
+        // can backtrack the peel-attempt's subtraction and retry with a
+        // different group decomposition.
+        Expression saved_remaining = remaining;
+
         // Pick the group with the strongest stride using:
         // 1) provable bound dominance, 2) multiplicity-aware complexity,
         // 3) atom-count fallback. Same heuristic as before but keyed on
@@ -453,6 +507,51 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
                         stride_check_passed = true;
                     }
                 }
+            }
+        }
+
+        // Offset-aware fallback: the actual value contributing below `stride`
+        // after this peel is `remaining + r`, where `(q, r) = polynomial_div(
+        // offset, stride)` absorbs the floor/truncated quotient into the new
+        // index.
+        if (!stride_check_passed) {
+            auto [q_pre, r_pre] = polynomial_div(offset, stride);
+            auto access = symbolic::expand(symbolic::add(remaining, r_pre));
+            if (is_nonneg(access, ba_loose) && is_gt(stride, access, ba_loose)) {
+                stride_check_passed = true;
+            }
+        }
+
+        // Sub-dominant fallback: if the stride check still fails AND there is
+        // a strictly smaller integer-stride sibling whose stride divides
+        // `best.stride`, merge `best` into the sibling: the sibling becomes
+        //   (sibling.stride, (best.stride / sibling.stride) * best.index + sibling.index).
+        if (!stride_check_passed) {
+            int merge_target = -1;
+            long long merge_factor = 0;
+            if (SymEngine::is_a<SymEngine::Integer>(*best_stride)) {
+                long long b_stride = SymEngine::rcp_static_cast<const SymEngine::Integer>(best_stride)->as_int();
+                for (size_t k = 0; k < groups.size(); ++k) {
+                    if (static_cast<int>(k) == best_idx) continue;
+                    const auto& other = groups[k];
+                    if (!SymEngine::is_a<SymEngine::Integer>(*other.first)) continue;
+                    long long o_stride = SymEngine::rcp_static_cast<const SymEngine::Integer>(other.first)->as_int();
+                    if (o_stride <= 0 || o_stride >= b_stride) continue;
+                    if (b_stride % o_stride != 0) continue;
+                    if (symbolic::eq(other.second, best_index)) continue;
+                    merge_target = static_cast<int>(k);
+                    merge_factor = b_stride / o_stride;
+                    break;
+                }
+            }
+            if (merge_target >= 0) {
+                Expression merged_index = symbolic::expand(symbolic::add(
+                    symbolic::mul(symbolic::integer(merge_factor), best_index), groups[merge_target].second
+                ));
+                groups[merge_target].second = merged_index;
+                groups.erase(groups.begin() + best_idx);
+                remaining = saved_remaining; // undo peel mutation
+                continue;
             }
         }
 

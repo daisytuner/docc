@@ -63,70 +63,122 @@ void extract_bound_from_literal(
         return;
     }
 
-    // Only emit bounds for literals that constrain a single induction
-    // variable, where every other symbol in the bound expression is
-    // provably constant within the scope.
+    // Collect indvars and validate other symbols.
     //
     // Rationale:
-    //   * Target must be an indvar (identified by `Assumption::map()`
-    //     being non-null). We only narrow loop variables — narrowing a
-    //     non-indvar local variable would require knowing it isn't
-    //     reassigned inside the branch, which is out of scope here.
-    //   * Every other symbol in `delta` must be marked `constant()` by
-    //     `AssumptionsAnalysis` (SDFG-level parameters and outer-loop
-    //     indvars qualify; locally-written variables do NOT). If a
-    //     non-constant symbol appears, the bound would be invalidated
-    //     by writes deeper in the body.
-    //   * Symbols not in `outer_assumptions` are treated as unknown —
-    //     skip rather than emit an unverified bound.
-    //   * Coupling two indvars (e.g. `kh >= 3 - 2*hout` from im2col's
-    //     `2*hout + kh - 3 >= 0`) is rejected because the RHS contains
-    //     a non-constant symbol; this also avoids the BoundAnalysis
-    //     blow-up observed in `CudaTransformIm2colTest.ExplicitSixDimMap`.
-    symbolic::Symbol target = SymEngine::null;
+    //   * Target indvars are identified by `Assumption::map()` being non-null.
+    //     We narrow only loop variables — narrowing a non-indvar local would
+    //     require knowing it isn't reassigned inside the branch, which is out
+    //     of scope here.
+    //   * Every non-indvar symbol must be marked `constant()` by
+    //     `AssumptionsAnalysis` (SDFG-level parameters and outer-loop indvars
+    //     not active in this scope qualify; locally-written variables do NOT).
+    //     If a non-constant symbol appears, the bound would be invalidated by
+    //     writes deeper in the body.
+    //   * Symbols not in `outer_assumptions` are treated as unknown — skip
+    //     rather than emit an unverified bound.
+    std::vector<symbolic::Symbol> indvar_targets;
     for (const auto& sym : symbolic::atoms(delta)) {
         auto it = outer_assumptions.find(sym);
         if (it == outer_assumptions.end()) return;
         bool is_indvar = !it->second.map().is_null();
         if (is_indvar) {
-            if (!target.is_null()) return; // two indvars — refuse
-            target = sym;
+            indvar_targets.push_back(sym);
         } else if (!it->second.constant()) {
             return; // non-constant local — would be invalidated by body writes
         }
     }
-    if (target.is_null()) return;
+    if (indvar_targets.empty()) return;
 
-    auto neg_delta = symbolic::expand(symbolic::mul(symbolic::integer(-1), delta));
+    if (indvar_targets.size() == 1) {
+        // Single-indvar path: emit a per-symbol list bound (and possibly
+        // refine the tight slot). Cheapest path; no BoundAnalysis cycle risk
+        // because the bound expression mentions only constants and other
+        // constant-marked symbols.
+        symbolic::Symbol target = indvar_targets.front();
+        auto neg_delta = symbolic::expand(symbolic::mul(symbolic::integer(-1), delta));
 
-    auto try_emit = [&](const symbolic::Expression& K, bool is_lower) {
-        if (K.is_null()) return;
-        auto neg_K = symbolic::expand(symbolic::mul(symbolic::integer(-1), K));
+        auto try_emit = [&](const symbolic::Expression& K, bool is_lower) {
+            if (K.is_null()) return;
+            auto neg_K = symbolic::expand(symbolic::mul(symbolic::integer(-1), K));
 
-        auto add_bound = [&](const symbolic::Expression& b, bool lower) {
-            if (b.is_null()) return false;
-            for (const auto& a : symbolic::atoms(b)) {
-                if (symbolic::eq(a, target)) return false;
+            auto add_bound = [&](const symbolic::Expression& b, bool lower) {
+                if (b.is_null()) return false;
+                for (const auto& a : symbolic::atoms(b)) {
+                    if (symbolic::eq(a, target)) return false;
+                }
+                if (lower) {
+                    branch_assumptions[target].add_lower_bound(b);
+                } else {
+                    branch_assumptions[target].add_upper_bound(b);
+                }
+                // Refine the tight bound slot when the branch literal strictly
+                // narrows the outer-scope tight bound.
+                auto outer_it = outer_assumptions.find(target);
+                if (outer_it == outer_assumptions.end()) return true;
+                if (!SymEngine::is_a<SymEngine::Integer>(*b)) return true;
+                if (lower) {
+                    auto cur = branch_assumptions[target].tight_lower_bound();
+                    if (cur.is_null()) cur = outer_it->second.tight_lower_bound();
+                    if (cur.is_null() || !SymEngine::is_a<SymEngine::Integer>(*cur)) return true;
+                    auto refined = symbolic::max(cur, b);
+                    if (!SymEngine::is_a<SymEngine::Integer>(*refined)) return true;
+                    branch_assumptions[target].tight_lower_bound(refined);
+                } else {
+                    auto cur = branch_assumptions[target].tight_upper_bound();
+                    if (cur.is_null()) cur = outer_it->second.tight_upper_bound();
+                    if (cur.is_null() || !SymEngine::is_a<SymEngine::Integer>(*cur)) return true;
+                    auto refined = symbolic::min(cur, b);
+                    if (!SymEngine::is_a<SymEngine::Integer>(*refined)) return true;
+                    branch_assumptions[target].tight_upper_bound(refined);
+                }
+                return true;
+            };
+
+            if (auto b = symbolic::solve_affine_bound(delta, target, K, is_lower); !b.is_null()) {
+                add_bound(b, is_lower);
+                return;
             }
-            if (lower) {
-                branch_assumptions[target].add_lower_bound(b);
-            } else {
-                branch_assumptions[target].add_upper_bound(b);
+            if (auto b = symbolic::solve_affine_bound(neg_delta, target, neg_K, !is_lower); !b.is_null()) {
+                add_bound(b, !is_lower);
             }
-            return true;
         };
 
-        if (auto b = symbolic::solve_affine_bound(delta, target, K, is_lower); !b.is_null()) {
-            add_bound(b, is_lower);
-            return;
-        }
-        if (auto b = symbolic::solve_affine_bound(neg_delta, target, neg_K, !is_lower); !b.is_null()) {
-            add_bound(b, !is_lower);
+        try_emit(K_le, /*is_lower=*/false);
+        try_emit(K_ge, /*is_lower=*/true);
+        return;
+    }
+
+    // Multi-indvar path: register the literal as a *constraint* on every
+    // involved indvar's `Assumption::constraints()` set. Canonical form is
+    // `expr <= 0` (so equality `delta == 0` produces two constraints,
+    // `delta` and `-delta`).
+    //
+    // We require `delta` to be affine in every indvar — i.e. each indvar
+    // appears with an integer coefficient — so `BoundAnalysis` can later
+    // project the constraint onto a single variable via affine inversion.
+    // Constants and `constant()` symbols stay opaque in the residue.
+    for (const auto& sym : indvar_targets) {
+        auto decomp = symbolic::affine_decomposition(delta, sym);
+        if (!decomp.success) return;
+        if (!SymEngine::is_a<SymEngine::Integer>(*decomp.coeff)) return;
+    }
+
+    auto register_constraint = [&](const symbolic::Expression& c) {
+        auto canonical = symbolic::expand(c);
+        for (const auto& sym : indvar_targets) {
+            branch_assumptions[sym].add_constraint(canonical);
         }
     };
 
-    try_emit(K_le, /*is_lower=*/false);
-    try_emit(K_ge, /*is_lower=*/true);
+    if (!K_le.is_null()) {
+        // delta <= K_le  <=>  delta - K_le <= 0
+        register_constraint(symbolic::sub(delta, K_le));
+    }
+    if (!K_ge.is_null()) {
+        // delta >= K_ge  <=>  K_ge - delta <= 0
+        register_constraint(symbolic::sub(K_ge, delta));
+    }
 }
 
 // Add per-symbol bounds derived from an IfElse branch condition into
@@ -172,6 +224,11 @@ void ensure_assumption_entries(const symbolic::Condition& cond, symbolic::Assump
 
 AssumptionsAnalysis::AssumptionsAnalysis(StructuredSDFG& sdfg)
     : Analysis(sdfg) {
+
+      };
+
+AssumptionsAnalysis::AssumptionsAnalysis(StructuredSDFG& sdfg, bool with_branch_conditions)
+    : Analysis(sdfg), with_branch_conditions_(with_branch_conditions) {
 
       };
 
@@ -222,6 +279,22 @@ void AssumptionsAnalysis::traverse(
             this->traverse(sequence_stmt->at(i).first, outer_assumptions, outer_assumptions_with_trivial);
         }
     } else if (auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(&current)) {
+        if (!with_branch_conditions_) {
+            // Cheap path: don't refine branch assumptions from the case
+            // conditions. Recurse into each branch sequence inheriting the
+            // outer scope's assumptions verbatim. CNF normalization plus
+            // coupled-constraint extraction (the expensive part) is skipped
+            // entirely.
+            for (size_t i = 0; i < if_else_stmt->size(); i++) {
+                auto& branch_seq = if_else_stmt->at(i).first;
+                this->traverse(
+                    const_cast<structured_control_flow::Sequence&>(branch_seq),
+                    outer_assumptions,
+                    outer_assumptions_with_trivial
+                );
+            }
+            return;
+        }
         for (size_t i = 0; i < if_else_stmt->size(); i++) {
             auto& branch_seq = if_else_stmt->at(i).first;
             const auto& condition = if_else_stmt->at(i).second;
@@ -408,6 +481,11 @@ void AssumptionsAnalysis::propagate(
             lower_assum.add_lower_bound(lb);
         }
 
+        // Add to set of constraints
+        for (auto& c : entry.second.constraints()) {
+            lower_assum.add_constraint(c);
+        }
+
         // Set tight bounds
         if (lower_assum.tight_upper_bound().is_null()) {
             lower_assum.tight_upper_bound(entry.second.tight_upper_bound());
@@ -444,6 +522,11 @@ void AssumptionsAnalysis::propagate(
         }
         for (auto lb : entry.second.lower_bounds()) {
             lower_assum.add_lower_bound(lb);
+        }
+
+        // Add to set of constraints
+        for (auto& c : entry.second.constraints()) {
+            lower_assum.add_constraint(c);
         }
 
         // Set tight bounds

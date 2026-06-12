@@ -342,9 +342,8 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     }
 
     // Criterion: Get parent scope and verify both loops are sequential children
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto* first_parent = scope_analysis.parent_scope(&first_map_);
-    auto* second_parent = scope_analysis.parent_scope(&second_loop_);
+    auto* first_parent = first_map_.get_parent();
+    auto* second_parent = second_loop_.get_parent();
     if (first_parent == nullptr || second_parent == nullptr) {
         return false;
     }
@@ -769,6 +768,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             auto& first_child = consumer_body_->at(0).first;
             control_flow::Assignments empty_assignments;
             auto& new_block = builder.add_block_before(*consumer_body_, first_child, empty_assignments);
+            structured_control_flow::Block* empty_block = nullptr;
 
             // Deep copy all nodes from producer block to new block
             std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
@@ -779,6 +779,39 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                 if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(copied)) {
                     if (access_node->data() == candidate.container) {
                         access_node->data(temp_name);
+                    } else if (access_node->data() == first_map_.indvar()->get_name()) {
+                        // Determine the new expression for the index variable of the first map
+                        symbolic::Expression new_expr = SymEngine::null;
+                        for (auto& c : fusion_candidates_) {
+                            for (auto& [sym, expr] : c.index_mappings) {
+                                if (symbolic::eq(sym, first_map_.indvar())) {
+                                    new_expr = expr;
+                                    break;
+                                }
+                            }
+                            if (!new_expr.is_null()) {
+                                break;
+                            }
+                        }
+
+                        if (new_expr.is_null() || symbolic::eq(new_expr, second_loop_.indvar())) {
+                            // Simple case: The new expression is simply the index variable of the second loop
+                            access_node->data(second_loop_.indvar()->get_name());
+                        } else {
+                            // Complex case: Add an empty block before the new block (if necessary) and store the
+                            // shifted index into a new temporary variable with an assignment. Then, replace the index
+                            // variable with the new temporary variable
+                            if (!empty_block) {
+                                empty_block = &builder.add_block_before(*consumer_body_, new_block, empty_assignments);
+                            }
+                            auto new_index_name = builder.find_new_name();
+                            builder
+                                .add_container(new_index_name, builder.subject().type(second_loop_.indvar()->get_name()));
+                            consumer_body_->at(0)
+                                .second.assignments()
+                                .insert({symbolic::symbol(new_index_name), new_expr});
+                            access_node->data(new_index_name);
+                        }
                     } else if (first_dataflow.in_degree(node) > 0 && first_dataflow.out_degree(node) > 0 &&
                                dynamic_cast<const types::Scalar*>(&sdfg.type(access_node->data())) != nullptr) {
                         // SSA Dataflow required to check for non-local use of the access node's container.
@@ -843,32 +876,38 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
 
             auto& dataflow = block->dataflow();
 
+            // Snapshot access nodes before mutation: adding new access nodes below
+            // would rehash dataflow.nodes_ and invalidate the range iterator.
+            std::vector<data_flow::AccessNode*> access_nodes;
             for (auto& node : dataflow.nodes()) {
-                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-                if (access == nullptr || dataflow.out_degree(*access) == 0) {
-                    continue;
+                auto* an = dynamic_cast<data_flow::AccessNode*>(&node);
+                if (an != nullptr && dataflow.out_degree(*an) > 0) {
+                    access_nodes.push_back(an);
                 }
+            }
 
+            for (auto* access : access_nodes) {
                 std::string original_container = access->data();
 
+                // Match each out-edge against a fusion candidate.
+                struct Match {
+                    data_flow::Memlet* memlet;
+                    size_t cand_idx;
+                };
+                std::vector<Match> matches;
                 for (auto& memlet : dataflow.out_edges(*access)) {
                     if (memlet.type() != data_flow::MemletType::Computational) {
                         continue;
                     }
-
                     const auto& memlet_subset = memlet.subset();
-
                     for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
                         auto& candidate = fusion_candidates_[cand_idx];
-
                         if (original_container != candidate.container) {
                             continue;
                         }
-
                         if (memlet_subset.size() != candidate.consumer_subset.size()) {
                             continue;
                         }
-
                         bool subset_matches = true;
                         for (size_t d = 0; d < memlet_subset.size(); ++d) {
                             if (!symbolic::eq(memlet_subset[d], candidate.consumer_subset[d])) {
@@ -876,25 +915,93 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                                 break;
                             }
                         }
-
-                        if (!subset_matches) {
-                            continue;
+                        if (subset_matches) {
+                            matches.push_back({&memlet, cand_idx});
+                            break;
                         }
+                    }
+                }
+                if (matches.empty()) {
+                    continue;
+                }
 
-                        const auto& temp_name = candidate_temps[cand_idx];
-                        auto& temp_type = sdfg.type(temp_name);
+                // Group matches by candidate index.
+                std::unordered_set<size_t> distinct_cands;
+                for (auto& m : matches) {
+                    distinct_cands.insert(m.cand_idx);
+                }
 
-                        access->data(temp_name);
+                if (distinct_cands.size() == 1) {
+                    // Fast path: all matched out-edges resolve to the same candidate.
+                    // Mutate the shared access node in place — this preserves the
+                    // existing semantics for the single-read-per-container case.
+                    size_t cand_idx = *distinct_cands.begin();
+                    const auto& temp_name = candidate_temps[cand_idx];
+                    auto& temp_type = sdfg.type(temp_name);
 
-                        memlet.set_subset({});
-                        memlet.set_base_type(temp_type);
+                    access->data(temp_name);
 
-                        for (auto& in_edge : dataflow.in_edges(*access)) {
-                            in_edge.set_subset({});
-                            in_edge.set_base_type(temp_type);
+                    for (auto& m : matches) {
+                        m.memlet->set_subset({});
+                        m.memlet->set_base_type(temp_type);
+                    }
+
+                    for (auto& in_edge : dataflow.in_edges(*access)) {
+                        in_edge.set_subset({});
+                        in_edge.set_base_type(temp_type);
+                    }
+                } else {
+                    // Stencil-like case: a single access node feeds reads at
+                    // multiple distinct subsets (e.g. T[j-1] and T[j+1] sharing
+                    // one AccessNode). Each must be rewired to its own
+                    // candidate-specific temp scalar — otherwise mutating
+                    // `access->data()` once per candidate makes all reads
+                    // collapse onto the last temp, e.g. T[j+1]-T[j] becomes
+                    // tmp-tmp == 0.
+                    //
+                    // Fix: for each distinct candidate, create one fresh
+                    // AccessNode for its temp scalar and redirect the matched
+                    // edges from the shared access node to the fresh nodes.
+                    struct PendingRedirect {
+                        data_flow::DataFlowNode* dst;
+                        std::string src_conn;
+                        std::string dst_conn;
+                        DebugInfo debug_info;
+                        size_t cand_idx;
+                        const data_flow::Memlet* memlet_to_remove;
+                    };
+                    std::vector<PendingRedirect> pending;
+                    pending.reserve(matches.size());
+                    for (auto& m : matches) {
+                        pending.push_back(
+                            {&m.memlet->dst(),
+                             m.memlet->src_conn(),
+                             m.memlet->dst_conn(),
+                             m.memlet->debug_info(),
+                             m.cand_idx,
+                             m.memlet}
+                        );
+                    }
+
+                    std::unordered_map<size_t, data_flow::AccessNode*> per_cand_node;
+                    for (auto& p : pending) {
+                        auto it = per_cand_node.find(p.cand_idx);
+                        if (it == per_cand_node.end()) {
+                            auto& fresh = builder.add_access(*block, candidate_temps[p.cand_idx]);
+                            it = per_cand_node.emplace(p.cand_idx, &fresh).first;
                         }
+                        auto& temp_type = sdfg.type(candidate_temps[p.cand_idx]);
+                        builder.remove_memlet(*block, *p.memlet_to_remove);
+                        builder
+                            .add_memlet(*block, *it->second, p.src_conn, *p.dst, p.dst_conn, {}, temp_type, p.debug_info);
+                    }
 
-                        break;
+                    // If the original shared access node now has no edges at all
+                    // it is dangling and should be removed. Keep it if it still
+                    // has out-edges (unmatched reads of the original container)
+                    // or in-edges (writes to the original container).
+                    if (dataflow.out_degree(*access) == 0 && dataflow.in_degree(*access) == 0) {
+                        builder.remove_node(*block, *access);
                     }
                 }
             }
@@ -970,6 +1077,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
 
                 // Insert a new block after the last inserted block in the producer's body
                 auto& new_block = builder.add_block_after(*producer_body_, *last_inserted, empty_assignments);
+                structured_control_flow::Block* empty_block = nullptr;
 
                 // Deep copy all nodes from consumer block
                 std::unordered_map<const data_flow::DataFlowNode*, data_flow::DataFlowNode*> node_mapping;
@@ -996,6 +1104,43 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                                 intermediate_renames[access_node->data()] = fresh;
                             }
                             access_node->data(intermediate_renames[access_node->data()]);
+                        }
+                        if (access_node->data() == second_loop_.indvar()->get_name() &&
+                            consumer_dataflow.in_degree(node) == 0) {
+                            // Determine the new expression for the index variable of the second loop
+                            symbolic::Expression new_expr = SymEngine::null;
+                            for (auto& c : fusion_candidates_) {
+                                for (auto& [sym, expr] : c.index_mappings) {
+                                    if (symbolic::eq(sym, second_loop_.indvar())) {
+                                        new_expr = expr;
+                                        break;
+                                    }
+                                }
+                                if (!new_expr.is_null()) {
+                                    break;
+                                }
+                            }
+
+                            if (new_expr.is_null() || symbolic::eq(new_expr, first_map_.indvar())) {
+                                // Simple case: The new expression is simply the index variable of the first map
+                                access_node->data(first_map_.indvar()->get_name());
+                            } else {
+                                // Complex case: Add an empty block before the new block (if necessary) and store the
+                                // shifted index into a new temporary variable with an assignment. Then, replace the
+                                // index variable with the new temporary variable
+                                if (!empty_block) {
+                                    empty_block =
+                                        &builder.add_block_before(*producer_body_, new_block, empty_assignments);
+                                }
+                                auto new_index_name = builder.find_new_name();
+                                builder.add_container(
+                                    new_index_name, builder.subject().type(first_map_.indvar()->get_name())
+                                );
+                                producer_body_->at(0)
+                                    .second.assignments()
+                                    .insert({symbolic::symbol(new_index_name), new_expr});
+                                access_node->data(new_index_name);
+                            }
                         }
                     }
                 }
@@ -1041,8 +1186,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         }
 
         // Remove the consumer loop
-        auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-        auto* parent = scope_analysis.parent_scope(&second_loop_);
+        auto* parent = second_loop_.get_parent();
         auto* parent_seq = dynamic_cast<structured_control_flow::Sequence*>(parent);
         if (parent_seq != nullptr) {
             int idx = parent_seq->index(second_loop_);

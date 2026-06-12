@@ -34,7 +34,7 @@ def kernel(x):
         "none",
         "sequential",
         "openmp",
-        # "cuda"
+        "cuda",
         # "rocm"
     ],
 )
@@ -76,11 +76,11 @@ def test_softmax(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CMath": 2,
-                "SEQUENTIAL": 35,
-                "FOR": 40,
-                "MAP": 35,
-                "Malloc": 7,
+                "SEQUENTIAL": 6,
+                "FOR": 14,
+                "MAP": 12,
+                "CUDA": 6,
+                "CUDAOffloading": 7,
             }
         )
     else:  # rocm

@@ -42,7 +42,7 @@ def kernel(alpha, beta, C, A, B):
         "none",
         "sequential",
         "openmp",
-        # "cuda"
+        "cuda",
         # "rocm"
     ],
 )
@@ -80,14 +80,12 @@ def test_symm(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 7,
-                "MAP": 5,
-                "SEQUENTIAL": 0,
-                "CUDA": 5,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
+                "FOR": 11,
+                "MAP": 9,
+                "SEQUENTIAL": 5,
+                "CUDA": 4,
+                "CUDAOffloading": 4,
                 "GEMM": 1,
-                "DOT": 0,
             }
         )
     else:  # rocm

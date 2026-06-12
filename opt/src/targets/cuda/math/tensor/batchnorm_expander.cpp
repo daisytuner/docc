@@ -1,5 +1,4 @@
 #include "sdfg/targets/cuda/math/tensor/batchnorm_expander.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_expansion_utils.h"
@@ -30,8 +29,7 @@ bool CudaBatchNormExpander::expand_batch_norm(
     auto& dataflow = node.get_parent();
     auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*scope_analysis.parent_scope(&block));
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
     int index = parent.index(block);
     auto& transition = parent.at(index).second;
 

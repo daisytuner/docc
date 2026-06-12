@@ -127,11 +127,14 @@ private:
 
     Map(size_t element_id,
         const DebugInfo& debug_info,
+        ControlFlowNode* parent,
         symbolic::Symbol indvar,
         symbolic::Expression init,
         symbolic::Expression update,
         symbolic::Condition condition,
         const ScheduleType& schedule_type);
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = StructuredLoop::REQUIRED_ELEMENT_IDS;
 
 public:
     Map(const Map& node) = delete;

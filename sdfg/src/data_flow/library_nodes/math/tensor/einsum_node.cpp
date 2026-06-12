@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/data_flow_graph.h"
@@ -150,8 +149,7 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     }
 
     // Get parent sequence
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(block));
+    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
     if (!sequence) {
         return false;
     }

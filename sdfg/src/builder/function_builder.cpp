@@ -55,6 +55,14 @@ void check_name(const std::string& name) {
 
 size_t FunctionBuilder::new_element_id() const { return ++this->function().element_counter_; };
 
+size_t FunctionBuilder::new_element_id_batch(size_t batch) const {
+    auto& count = this->function().element_counter_;
+    auto prev = count;
+    count += batch;
+
+    return prev + 1;
+}
+
 void FunctionBuilder::set_element_counter(size_t element_counter) {
     this->function().element_counter_ = element_counter;
 };

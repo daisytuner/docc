@@ -50,7 +50,9 @@ private:
     std::vector<std::unique_ptr<Sequence>> cases_;
     std::vector<symbolic::Condition> conditions_;
 
-    IfElse(size_t element_id, const DebugInfo& debug_info);
+    IfElse(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent);
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
     IfElse(const IfElse& node) = delete;

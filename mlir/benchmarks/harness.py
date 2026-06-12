@@ -3,6 +3,7 @@ import torch
 import time
 import docc.torch
 
+
 def run_benchmark(setup_func, name):
     parser = argparse.ArgumentParser()
     parser.add_argument("--docc", action="store_true")
@@ -19,10 +20,13 @@ def run_benchmark(setup_func, name):
             start = time.time()
             with torch.no_grad():
                 program = torch.compile(model)
-                program(model_input)
+                if type(model_input) == tuple:
+                    program(*model_input)
+                else:
+                    program(model_input)
             end = time.time()
             print(f"{name} torch execution time: {end - start:.6f} seconds")
-    
+
     if args.docc:
         for _ in range(args.n_runs):
             start = time.time()
@@ -36,7 +40,10 @@ def run_benchmark(setup_func, name):
                         "remote_tuning": args.remote_tuning,
                     },
                 )
-                program(model_input)
+                if type(model_input) == tuple:
+                    program(*model_input)
+                else:
+                    program(model_input)
             end = time.time()
             print(
                 f"{name} docc execution time: {end - start:.6f} seconds "

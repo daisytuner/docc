@@ -90,6 +90,21 @@ class TestStructuredLoop:
         assert isinstance(body, Sequence)
         assert body.size == 1
 
+    def test_loop_parent(self):
+        """Test parent references of structured loop"""
+        builder = StructuredSDFGBuilder("test_sdfg")
+
+        builder.begin_for("i", "0", "10", "1")
+        builder.add_block()
+        builder.end_for()
+
+        sdfg = builder.move()
+        for_node = sdfg.root.child(0)
+
+        assert for_node.parent is sdfg.root
+        assert for_node.body.parent is for_node
+        assert for_node.body.child(0).parent is for_node.body
+
 
 class TestFor:
     """Test suite for For loop properties."""

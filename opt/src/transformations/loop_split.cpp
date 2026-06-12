@@ -46,8 +46,7 @@ void LoopSplit::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     auto bound = loop_.canonical_bound();
 
     // Get parent scope
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto parent = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(&loop_));
+    auto parent = static_cast<structured_control_flow::Sequence*>(loop_.get_parent());
 
     // Create the first loop (before the original): for (i = init; i < split_point && original_cond; i++)
     //

@@ -59,6 +59,7 @@ private:
     ExpressionSet upper_bounds_;
     Expression tight_lower_bound_;
     Expression tight_upper_bound_;
+    ExpressionSet constraints_;
     bool constant_;
     Expression map_;
 
@@ -192,6 +193,42 @@ public:
      * than upper bound constraints.
      */
     void tight_upper_bound(const Expression tight_ub);
+
+    /**
+     * @brief Gets the constraints registered on this symbol
+     * @return Set of constraint expressions, each with implicit `<= 0` semantics
+     *
+     * A constraint is an affine expression involving this symbol together with
+     * other symbols (e.g. `i + j - 15` to express `i + j <= 15`). The same
+     * constraint expression is registered under each non-constant symbol it
+     * mentions, so consumers holding any one of those symbols can find the
+     * coupling fact via `constraints()`.
+     *
+     * Equality `a = b` is represented as two constraints: `a - b` and `b - a`.
+     */
+    const ExpressionSet& constraints() const;
+
+    /**
+     * @brief Adds a constraint involving this symbol
+     * @param c Expression with implicit `<= 0` semantics
+     *
+     * The expression must mention this symbol (otherwise it does not constrain
+     * it) and should be affine in every non-constant symbol it mentions, so
+     * that downstream consumers can project it onto a single variable when
+     * needed.
+     */
+    void add_constraint(const Expression c);
+
+    /**
+     * @brief Checks if a specific constraint is present
+     */
+    bool contains_constraint(const Expression c);
+
+    /**
+     * @brief Removes a constraint
+     * @return true if the constraint was found and removed
+     */
+    bool remove_constraint(const Expression c);
 
     /**
      * @brief Checks if the symbol is constant

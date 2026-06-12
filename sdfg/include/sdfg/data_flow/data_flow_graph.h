@@ -39,6 +39,8 @@ private:
 
 public:
     DataFlowGraph() = default;
+    DataFlowGraph(Element* parent);
+
     ~DataFlowGraph() = default;
 
     DataFlowGraph(const DataFlowGraph& graph) = delete;

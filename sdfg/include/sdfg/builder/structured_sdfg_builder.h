@@ -66,6 +66,45 @@ private:
 
     void add_dataflow(const data_flow::DataFlowGraph& from, Block& to);
 
+    static constexpr int32_t INSERT_AT_END = -10;
+
+    template<typename T, typename... Args>
+    std::pair<T&, Transition&> insert_node_internal(
+        Sequence& parent,
+        int32_t insert_idx,
+        const sdfg::control_flow::Assignments& assignments,
+        const DebugInfo& debug_info,
+        Args&&... args
+    ) {
+        auto child = std::unique_ptr<
+            T>(new T(this->new_element_id_batch(T::REQUIRED_ELEMENT_IDS), debug_info, &parent, std::forward<Args>(args)...)
+        );
+        auto& new_child = *child;
+
+        auto transition =
+            std::unique_ptr<Transition>(new Transition(this->new_element_id(), debug_info, parent, assignments));
+        auto& new_transition = *transition;
+
+        if (insert_idx == INSERT_AT_END) {
+            parent.children_.push_back(std::move(child));
+            parent.transitions_.push_back(std::move(transition));
+        } else {
+            parent.children_.insert(parent.children_.begin() + insert_idx, std::move(child));
+
+            parent.transitions_.insert(parent.transitions_.begin() + insert_idx, std::move(transition));
+        }
+
+        return {new_child, new_transition};
+    }
+
+    std::pair<Block&, Transition&> insert_block_internal(
+        Sequence& parent,
+        int32_t insert_idx,
+        const data_flow::DataFlowGraph* import_from,
+        const sdfg::control_flow::Assignments& assignments,
+        const DebugInfo& debug_info
+    );
+
 protected:
     Function& function() const override;
 
@@ -145,6 +184,9 @@ public:
         const DebugInfo& debug_info = DebugInfo()
     );
 
+    /**
+     * @param data_flow_graph copies the contents of this into the new block
+     **/
     Block& add_block(
         Sequence& parent,
         const data_flow::DataFlowGraph& data_flow_graph,
@@ -357,9 +399,6 @@ public:
     );
 
     void update_schedule_type(Map& map, const ScheduleType& schedule_type);
-
-    [[deprecated("use ScopeAnalysis instead")]]
-    Sequence& parent(const ControlFlowNode& node);
 
     /***** Section: Dataflow Graph *****/
 

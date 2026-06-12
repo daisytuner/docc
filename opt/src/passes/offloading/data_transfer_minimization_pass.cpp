@@ -7,7 +7,6 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/data_transfer_elimination_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/code_node.h"
@@ -414,9 +413,8 @@ bool DataTransferMinimizationLegacy::check_container_dependency(
     const std::string& copy_in_container
 ) {
     // Simplification: Assume blocks are in the same sequence
-    auto& scope_analysis = this->analysis_manager_.get<analysis::ScopeAnalysis>();
-    auto* copy_out_block_parent = scope_analysis.parent_scope(copy_out_block);
-    auto* copy_in_block_parent = scope_analysis.parent_scope(copy_in_block);
+    auto* copy_out_block_parent = copy_out_block->get_parent();
+    auto* copy_in_block_parent = copy_in_block->get_parent();
     auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(copy_out_block_parent);
     if (copy_out_block_parent != copy_in_block_parent || !sequence) {
         return false;

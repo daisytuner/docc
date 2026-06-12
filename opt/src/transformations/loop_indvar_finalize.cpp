@@ -2,7 +2,6 @@
 
 #include <stdexcept>
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -44,8 +43,7 @@ void LoopIndvarFinalize::apply(builder::StructuredSDFGBuilder& builder, analysis
     // (when bound <= 0, the loop body is skipped and indvar stays at 0)
     auto closed_form = symbolic::simplify(symbolic::max(symbolic::zero(), loop_.num_iterations()));
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto parent_node = scope_analysis.parent_scope(&loop_);
+    auto parent_node = loop_.get_parent();
     auto* parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);
 
     // Add block with closed-form assignment right after the loop

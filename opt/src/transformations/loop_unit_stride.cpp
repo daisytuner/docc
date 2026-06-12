@@ -121,9 +121,7 @@ void LoopUnitStride::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 
     // Reconstruct original indvar value after loop exit
     // After loop, indvar holds transformed final value; we restore: indvar = |stride| * indvar
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto parent_node = scope_analysis.parent_scope(&loop_);
-    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);
+    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(loop_.get_parent());
     if (parent) {
         builder.add_block_after(*parent, loop_, {{indvar, strided_expr}}, loop_.debug_info());
     }

@@ -19,6 +19,8 @@
 namespace sdfg {
 namespace data_flow {
 
+DataFlowGraph::DataFlowGraph(Element* parent) : parent_(parent) {}
+
 void DataFlowGraph::validate(const Function& function) const {
     for (auto& node : this->nodes_) {
         node.second->validate(function);

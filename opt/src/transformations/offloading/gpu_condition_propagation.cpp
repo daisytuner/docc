@@ -1,6 +1,5 @@
 #include "sdfg/transformations/offloading/gpu_condition_propagation.h"
 #include <vector>
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/element.h"
@@ -46,13 +45,12 @@ void GPUConditionPropagation::apply(builder::StructuredSDFGBuilder& builder, ana
     nodes_to_visit.push_back(&map_.root());
     BarrierFinder barrier_finder(builder, analysis_manager);
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
     auto& users = analysis_manager.get<analysis::Users>();
 
     while (!nodes_to_visit.empty()) {
         auto current_node = nodes_to_visit.back();
         nodes_to_visit.pop_back();
-        auto parent_scope = scope_analysis.parent_scope(current_node);
+        auto parent_scope = current_node->get_parent();
         auto parent_sequence = dynamic_cast<structured_control_flow::Sequence*>(parent_scope);
         analysis::UsersView current_users(users, *current_node);
         auto uses = current_users.uses(map_.indvar()->get_name());

@@ -3,14 +3,13 @@
 #include <cassert>
 #include <utility>
 
-#include "../../../../sdfg/include/sdfg/targets/offloading/data_offloading_node.h"
 #include "docc/target/tenstorrent/plugin.h"
 #include "docc/target/tenstorrent/tenstorrent_offloading_node.h"
 #include "docc/target/tenstorrent/tenstorrent_transfer_arg.h"
 #include "sdfg/analysis/arguments_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/offloading/data_offloading_node.h"
 
 #include "sdfg/optimization_report/pass_report_consumer.h"
 #include "symengine/symengine_rcp.h"
@@ -69,8 +68,7 @@ structured_control_flow::Sequence& TenstorrentOffloadingExpansion::require_paren
     if (parent_scope_) {
         return *parent_scope_;
     } else {
-        auto& scope_analysis = analysis_mgr_.get<analysis::ScopeAnalysis>();
-        auto* parent_scope = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(&scope_));
+        auto* parent_scope = static_cast<structured_control_flow::Sequence*>(scope_.get_parent());
         parent_scope_ = parent_scope;
         return *parent_scope;
     }

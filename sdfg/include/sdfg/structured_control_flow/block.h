@@ -44,7 +44,9 @@ class Block : public ControlFlowNode {
 private:
     std::unique_ptr<data_flow::DataFlowGraph> dataflow_;
 
-    Block(size_t element_id, const DebugInfo& debug_info);
+    Block(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent);
+
+    static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
     Block(const Block& block) = delete;

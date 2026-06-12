@@ -128,8 +128,20 @@ void DotVisualizer::visualizeSequence(const StructuredSDFG& sdfg, const structur
             if (!last_comp_name_cluster_tmp.empty()) this->stream_ << "ltail=\"" << last_comp_name_cluster_tmp << "\",";
             if (!this->last_comp_name_cluster_.empty())
                 this->stream_ << "lhead=\"" << this->last_comp_name_cluster_ << "\",";
-            this->stream_ << "minlen=3]"
-                          << ";" << std::endl;
+            this->stream_ << "minlen=3";
+            if (!sequence.at(i - 1).second.empty()) {
+                this->stream_ << ",label=\"{";
+                bool comma_sep = false;
+                for (auto& [sym, expr] : sequence.at(i - 1).second.assignments()) {
+                    if (comma_sep) {
+                        this->stream_ << ",";
+                        comma_sep = true;
+                    }
+                    this->stream_ << sym->get_name() << " = " << expr->__str__();
+                }
+                this->stream_ << "}\"";
+            }
+            this->stream_ << "];" << std::endl;
         }
         last_comp_name_tmp = this->last_comp_name_;
         last_comp_name_cluster_tmp = this->last_comp_name_cluster_;

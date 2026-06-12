@@ -9,7 +9,6 @@
 #include <variant>
 
 #include "sdfg/analysis/loop_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/cutouts/cutouts.h"
 #include "sdfg/optimization_report/pass_report_consumer.h"
@@ -41,7 +40,6 @@ std::string RPCNodeTransform::get_node_id_str() const { return std::to_string(th
 
 bool RPCNodeTransform::
     can_be_applied(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager) {
-
     // Get loop info
 
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
@@ -57,9 +55,7 @@ bool RPCNodeTransform::
     // Re-check for side effects with fresh loop info
     if (loop_info.has_side_effects) {
         if (report_) {
-            report_->transform_impossible(
-                this->name(), "Loopnest side effects (" + get_node_id_str() + ")"
-            );
+            report_->transform_impossible(this->name(), "Loopnest side effects (" + get_node_id_str() + ")");
         }
         return false;
     }
@@ -69,11 +65,7 @@ bool RPCNodeTransform::
 
     // Loop info is only used for information on the loop structure
     auto opt_resp = query_rpc_server(
-        {.sdfg = *loop_sdfg,
-         .category = this->category_,
-         .target = this->target_,
-         .loop_info = loop_info},
-        rpc_context_
+        {.sdfg = *loop_sdfg, .category = this->category_, .target = this->target_, .loop_info = loop_info}, rpc_context_
     );
 
     // In case query was successful, store response
@@ -81,8 +73,8 @@ bool RPCNodeTransform::
         this->opt_resp_ = std::move(std::get<std::unique_ptr<passes::rpc::RpcOptResponse>>(opt_resp));
     }
 
-    bool can_apply = this->opt_resp_ != nullptr && (this->opt_resp_->sdfg_result.has_value() ||
-                                                    this->opt_resp_->local_replay.has_value());
+    bool can_apply = this->opt_resp_ != nullptr &&
+                     (this->opt_resp_->sdfg_result.has_value() || this->opt_resp_->local_replay.has_value());
 
     if (report_) {
         if (!can_apply) {
@@ -95,9 +87,7 @@ bool RPCNodeTransform::
             report_->transform_impossible(
                 this->name(), "No opt. SDFG received (" + get_node_id_str() + ", " + error_msg + ")"
             );
-        }
-        else
-        {
+        } else {
             nlohmann::json j;
             this->to_json(j);
             report_->transform_applied(this->name(), j);
@@ -108,7 +98,6 @@ bool RPCNodeTransform::
 
 std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeTransform::
     query_rpc_server(passes::rpc::RpcOptRequest request, sdfg::passes::rpc::RpcContext& context) {
-
     CURL* curl_handle = curl_easy_init();
     if (!curl_handle) {
         std::cerr << "[ERROR] Could not initialize CURL!" << std::endl;
@@ -130,10 +119,12 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
     nlohmann::json sdfg_json = serializer.serialize(request.sdfg);
 
     // Construct query payload
-    nlohmann::json payload = {{"sdfg", sdfg_json},
-                              {"category", request.category},
-                              {"target", request.target},
-                              {"loop_info", analysis::loop_info_to_json(request.loop_info)}};
+    nlohmann::json payload = {
+        {"sdfg", sdfg_json},
+        {"category", request.category},
+        {"target", request.target},
+        {"loop_info", analysis::loop_info_to_json(request.loop_info)}
+    };
     std::string payload_str = payload.dump();
 
     // Send query
@@ -147,8 +138,9 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
     return std::move(rpc_response);
 }
 
-std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeTransform::parse_rpc_response(HttpResult result) {
-
+std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeTransform::parse_rpc_response(HttpResult
+                                                                                                                 result
+) {
     // Check for HTTP errors first (including authentication issues)
     if (!result.error_message.empty()) {
         std::cerr << result.error_message << std::endl;
@@ -158,8 +150,8 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
     auto rpc_response = std::make_unique<passes::rpc::RpcOptResponse>();
 
     try {
-            // Parse response
-    nlohmann::json parsed;
+        // Parse response
+        nlohmann::json parsed;
         try {
             parsed = nlohmann::json::parse(result.body);
         } catch (const std::exception& e) {
@@ -169,8 +161,8 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
 
         auto json_error = parsed.find("error");
         if (json_error != parsed.end()) {
-                DEBUG_PRINTLN("[ERROR] RPC optimization query returned error: " << json_error->get<std::string>());
-                return {json_error->get<std::string>()};
+            DEBUG_PRINTLN("[ERROR] RPC optimization query returned error: " << json_error->get<std::string>());
+            return {json_error->get<std::string>()};
         }
 
         auto json_sdfg_result = parsed.find("sdfg_result");
@@ -224,8 +216,7 @@ void RPCNodeTransform::
     int element_id = this->node_.element_id();
 
     if (opt.sdfg_result.has_value()) {
-        auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-        auto parent_scope = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(&this->node_));
+        auto parent_scope = static_cast<structured_control_flow::Sequence*>(this->node_.get_parent());
         size_t index = parent_scope->index(this->node_);
 
         // this consumes the SDFG result
@@ -267,8 +258,8 @@ void RPCNodeTransform::
 
     if (opt.local_replay.has_value()) {
         auto recipe = opt.local_replay.value();
-        std::cout << "Applied RPC optimization sequence with speedup " << opt.metadata.speedup << " and vector distance "
-        << opt.metadata.vector_distance << ":\n";
+        std::cout << "Applied RPC optimization sequence with speedup " << opt.metadata.speedup
+                  << " and vector distance " << opt.metadata.vector_distance << ":\n";
 
         if (dump_steps_) {
             print_transformation_sequence(recipe.sequence);
@@ -276,7 +267,7 @@ void RPCNodeTransform::
 
     } else {
         std::cout << "RPC: Applied plain SDFG with speedup " << opt.metadata.speedup << " and vector distance "
-        << opt.metadata.vector_distance << "\n";
+                  << opt.metadata.vector_distance << "\n";
     }
 }
 

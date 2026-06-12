@@ -552,6 +552,7 @@ translateLinalgCustomBatchNorm2DNchw(SDFGTranslator& translator, linalg::custom:
 
 LogicalResult translateLinalgCustomConv2DNchwFchwOp(SDFGTranslator& translator, linalg::custom::Conv2DNchwFchwOp* conv_op) {
     auto input = conv_op->getInput();
+    auto input_type = input.getType();
     auto weights = conv_op->getWeights();
     auto bias = conv_op->getBias();
     auto output = conv_op->getOutput();
@@ -564,8 +565,8 @@ LogicalResult translateLinalgCustomConv2DNchwFchwOp(SDFGTranslator& translator, 
     auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
-    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input.getType());
-    auto input_element_type = translator.convertType(input.getType().getElementType());
+    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input_type);
+    auto input_element_type = translator.convertType(input_type.getElementType());
     auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input_element_type)
     );
 
@@ -582,7 +583,7 @@ LogicalResult translateLinalgCustomConv2DNchwFchwOp(SDFGTranslator& translator, 
     translator.add_reference(output_container, result_container, deb_info);
 
     ::sdfg::symbolic::MultiExpression shape;
-    for (int64_t dim : input.getType().getShape()) {
+    for (int64_t dim : input_type.getShape()) {
         shape.push_back(::sdfg::symbolic::integer(dim));
     }
     ::sdfg::symbolic::MultiExpression kernel_shape;
@@ -631,6 +632,7 @@ LogicalResult translateLinalgCustomConv2DNchwFchwOp(SDFGTranslator& translator, 
 
 LogicalResult translateLinalgCustomPoolingNchwOp(SDFGTranslator& translator, linalg::custom::PoolingNchwOp* pooling_op) {
     auto input = pooling_op->getInput();
+    auto input_type = input.getType();
     auto output = pooling_op->getOutput();
     auto result = pooling_op->getResult();
     auto deb_info = translator.get_debug_info(pooling_op->getOperationName(), pooling_op->getLoc());
@@ -640,8 +642,8 @@ LogicalResult translateLinalgCustomPoolingNchwOp(SDFGTranslator& translator, lin
     auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
-    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input.getType());
-    auto input_element_type = translator.convertType(input.getType().getElementType());
+    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input_type);
+    auto input_element_type = translator.convertType(input_type.getElementType());
     auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input_element_type)
     );
 
@@ -662,7 +664,7 @@ LogicalResult translateLinalgCustomPoolingNchwOp(SDFGTranslator& translator, lin
             break;
     }
     ::sdfg::symbolic::MultiExpression shape;
-    for (int64_t dim : input.getType().getShape()) {
+    for (int64_t dim : input_type.getShape()) {
         shape.push_back(::sdfg::symbolic::integer(dim));
     }
     ::sdfg::symbolic::MultiExpression kernel_shape;
@@ -1158,6 +1160,17 @@ LogicalResult translateLinalgDepthwiseConv2DNchwChwOp(SDFGTranslator& translator
     auto weight = op->getInputs()[1]; // W: [C, kH, kW]
     auto output = op->getOutputs()[0];
     auto result = op->getResult(0); // Y: [N, C, H_out, W_out]
+
+    // Check if the outs operand comes from a broadcast (bias pattern).
+    // In linalg, conv accumulates into outs. If outs = broadcast(bias), we connect
+    // the original bias tensor to the ConvNode's "B" connector, since the ConvNode
+    // initializes its internal accumulator to 0 and adds bias separately.
+    Value bias_value;
+    bool has_bias = false;
+    if (auto broadcast_op = dyn_cast_or_null<linalg::BroadcastOp>(output.getDefiningOp())) {
+        bias_value = broadcast_op.getInput();
+        has_bias = true;
+    }
     auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
     auto output_container = translator.get_or_copy_output_container(output, deb_info);
@@ -1249,7 +1262,7 @@ LogicalResult translateLinalgDepthwiseConv2DNchwChwOp(SDFGTranslator& translator
     auto& builder = translator.builder();
     auto& block = builder.add_block(sequence, {}, deb_info);
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::ConvNode>(
-        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group, false
+        block, deb_info, shape, kernel_shape, strides, pads, dilations, output_channels, group, has_bias
     );
 
     // Build tensor types for memlets
@@ -1281,6 +1294,24 @@ LogicalResult translateLinalgDepthwiseConv2DNchwChwOp(SDFGTranslator& translator
 
     builder.add_computational_memlet(block, x_access, libnode, "X", {}, input_tensor_type, deb_info);
     builder.add_computational_memlet(block, w_access, libnode, "W", {}, weight_tensor_type, deb_info);
+
+    // Connect bias to ConvNode "B" connector if outs came from a broadcast
+    if (has_bias) {
+        auto bias_container = translator.get_or_create_container(bias_value);
+        auto& b_access = builder.add_access(block, bias_container, deb_info);
+
+        auto bias_ranked_type = dyn_cast_or_null<RankedTensorType>(bias_value.getType());
+        auto& bias_tensor_info = translator.get_or_create_tensor_info(bias_container, bias_ranked_type);
+
+        ::sdfg::symbolic::MultiExpression bias_shape;
+        for (auto entry : bias_tensor_info.shape()) {
+            bias_shape.push_back(::sdfg::symbolic::integer(entry));
+        }
+        ::sdfg::types::Tensor bias_tensor_type(primitive, bias_shape);
+
+        builder.add_computational_memlet(block, b_access, libnode, "B", {}, bias_tensor_type, deb_info);
+    }
+
     builder.add_computational_memlet(block, y_access, libnode, "Y", {}, output_tensor_type, deb_info);
 
     return success();

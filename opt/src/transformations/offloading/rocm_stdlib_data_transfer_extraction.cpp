@@ -5,7 +5,6 @@
 #include <unordered_map>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
@@ -134,8 +133,7 @@ void ROCMStdlibDataTransferExtraction::
     assert(block);
 
     // Get sequence
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(block));
+    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
     assert(sequence);
 
     // Capture output accesses

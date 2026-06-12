@@ -1,7 +1,6 @@
 #include "sdfg/passes/gemm_expansion_pass.h"
 #include <ostream>
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
@@ -26,7 +25,6 @@ bool GemmExpansion::visit() {
 bool GemmExpansion::accept(structured_control_flow::Block& block) {
     bool expanded = false;
 
-    auto& scope_analysis = analysis_manager_.get<analysis::ScopeAnalysis>();
     for (auto lib_node : block.dataflow().library_nodes()) {
         if (lib_node->code() == math::blas::LibraryNodeType_GEMM) {
             auto gemm_node = static_cast<math::blas::GEMMNode*>(lib_node);

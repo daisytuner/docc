@@ -5,7 +5,6 @@
 #include <string>
 
 #include "sdfg/analysis/memory_layout_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -127,8 +126,7 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     // GPU shared memory: resolve symbolic extents using GPU block sizes and
     // require at least one cooperative dimension
     if (storage_type_.is_nv_shared()) {
-        auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-        auto ancestors = scope_analysis.ancestor_scopes(&loop_);
+        auto ancestors = ControlFlowNode::parent_chain(loop_);
 
         // Build substitution map: symbolic GPU map bounds → integer block sizes
         for (auto* node : ancestors) {
@@ -201,9 +199,8 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
     auto& users = analysis_manager.get<analysis::Users>();
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
 
-    auto parent_node = scope_analysis.parent_scope(&loop_);
+    auto parent_node = loop_.get_parent();
     auto parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);
     if (!parent) {
         throw InvalidSDFGException("OutLocalStorage: Parent of loop must be a Sequence!");
@@ -328,7 +325,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             // ============================================================
             // GPU COOPERATIVE PATH
             // ============================================================
-            auto ancestors = scope_analysis.ancestor_scopes(&loop_);
+            auto ancestors = ControlFlowNode::parent_chain(loop_);
 
             // Collect cooperative GPU dimensions
             struct CoopDim {

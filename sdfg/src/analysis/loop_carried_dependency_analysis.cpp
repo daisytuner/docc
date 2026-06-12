@@ -13,7 +13,6 @@
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/memory_layout_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/memlet.h"
@@ -100,6 +99,7 @@ symbolic::maps::DependenceDeltas pair_deltas(
     User& previous,
     User& current,
     analysis::AnalysisManager& analysis_manager,
+    AssumptionsAnalysis& assumptions_analysis,
     structured_control_flow::StructuredLoop& loop
 ) {
     symbolic::maps::DependenceDeltas empty_result{true, "", {}};
@@ -125,7 +125,6 @@ symbolic::maps::DependenceDeltas pair_deltas(
     auto previous_subsets = collect_subsets(previous, mla);
     auto current_subsets = collect_subsets(current, mla);
 
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
     auto previous_scope = Users::scope(&previous);
     auto previous_assumptions = assumptions_analysis.get(*previous_scope, true);
     auto current_scope = Users::scope(&current);
@@ -244,9 +243,7 @@ void merge_deltas(LoopCarriedDependencyInfo& info, const symbolic::maps::Depende
     isl_ctx_free(ctx);
 }
 
-bool user_in_subtree(
-    User& user, const structured_control_flow::ControlFlowNode& subtree, analysis::ScopeAnalysis& scope_analysis
-) {
+bool user_in_subtree(User& user, const structured_control_flow::ControlFlowNode& subtree) {
     if (user.element() == nullptr) {
         return false;
     }
@@ -255,7 +252,7 @@ bool user_in_subtree(
         if (scope == &subtree) {
             return true;
         }
-        scope = scope_analysis.parent_scope(scope);
+        scope = scope->get_parent();
     }
     return false;
 }
@@ -265,6 +262,14 @@ bool user_in_subtree(
 void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     dependencies_.clear();
     pairs_.clear();
+
+    // Build a fresh branch-condition-aware assumptions analysis. The
+    // manager-cached `AssumptionsAnalysis` deliberately skips IfElse-branch
+    // refinement to stay cheap; LCDA needs the refined coupled constraints
+    // so that `dependence_deltas`'s ISL formulation can prove halo-style
+    // patterns are non-loop-carried.
+    detailed_assumptions_ = std::make_unique<AssumptionsAnalysis>(this->sdfg_, /*with_branch_conditions=*/true);
+    detailed_assumptions_->run(analysis_manager);
 
     // Drive entirely from DDA's reaching-definitions scaffold:
     //   - DDA computes per-loop boundary snapshots (upward-exposed reads,
@@ -280,7 +285,6 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
     auto& dda = detailed_dda();
     dda.run(analysis_manager);
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
 
     for (auto* loop_node : loop_analysis.loops()) {
         auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop_node);
@@ -296,7 +300,7 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                 in_scope = true;
                 break;
             }
-            cur = scope_analysis.parent_scope(cur);
+            cur = cur->get_parent();
         }
         if (!in_scope) {
             continue;
@@ -324,7 +328,7 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                 if (write->container() != read->container()) {
                     continue;
                 }
-                auto deltas = pair_deltas(this->sdfg_, *write, *read, analysis_manager, *loop);
+                auto deltas = pair_deltas(this->sdfg_, *write, *read, analysis_manager, *detailed_assumptions_, *loop);
                 if (deltas.empty) continue;
                 pair_list.push_back(LoopCarriedDependencyPair{write, read, LOOP_CARRIED_DEPENDENCY_READ_WRITE, deltas});
                 auto it = deps.find(read->container());
@@ -345,7 +349,7 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                 if (w1->container() != w2->container()) {
                     continue;
                 }
-                auto deltas = pair_deltas(this->sdfg_, *w1, *w2, analysis_manager, *loop);
+                auto deltas = pair_deltas(this->sdfg_, *w1, *w2, analysis_manager, *detailed_assumptions_, *loop);
                 if (deltas.empty) continue;
                 pair_list.push_back(LoopCarriedDependencyPair{w1, w2, LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, deltas});
                 if (deps.find(w1->container()) == deps.end()) {
@@ -385,13 +389,12 @@ std::vector<const LoopCarriedDependencyPair*> LoopCarriedDependencyAnalysis::pai
     if (it == pairs_.end()) {
         return result;
     }
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
 
     for (auto& pair : it->second) {
-        bool wa = user_in_subtree(*pair.writer, subtree_a, scope_analysis);
-        bool wb = user_in_subtree(*pair.writer, subtree_b, scope_analysis);
-        bool ra = user_in_subtree(*pair.reader, subtree_a, scope_analysis);
-        bool rb = user_in_subtree(*pair.reader, subtree_b, scope_analysis);
+        bool wa = user_in_subtree(*pair.writer, subtree_a);
+        bool wb = user_in_subtree(*pair.writer, subtree_b);
+        bool ra = user_in_subtree(*pair.reader, subtree_a);
+        bool rb = user_in_subtree(*pair.reader, subtree_b);
 
         if ((wa && rb) || (wb && ra)) {
             result.push_back(&pair);

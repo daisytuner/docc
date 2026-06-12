@@ -88,7 +88,7 @@ def kernel(alpha, imgIn):
         "none",
         "sequential",
         "openmp",
-        # "cuda"
+        # "cuda",
         # "rocm"
     ],
 )

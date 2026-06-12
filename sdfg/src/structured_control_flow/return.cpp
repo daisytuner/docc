@@ -6,11 +6,17 @@
 namespace sdfg {
 namespace structured_control_flow {
 
-Return::Return(size_t element_id, const DebugInfo& debug_info, const std::string& data)
-    : ControlFlowNode(element_id, debug_info), data_(data), type_(nullptr) {}
+Return::Return(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent, const std::string& data)
+    : ControlFlowNode(element_id, debug_info, parent), data_(data), type_(nullptr) {}
 
-Return::Return(size_t element_id, const DebugInfo& debug_info, const std::string& data, const types::IType& type)
-    : ControlFlowNode(element_id, debug_info), data_(data), type_(type.clone()) {}
+Return::Return(
+    size_t element_id,
+    const DebugInfo& debug_info,
+    ControlFlowNode* parent,
+    const std::string& data,
+    const types::IType& type
+)
+    : ControlFlowNode(element_id, debug_info, parent), data_(data), type_(type.clone()) {}
 
 
 const std::string& Return::data() const { return data_; }

@@ -47,6 +47,9 @@ class Function {
     types::Pointer opaque_pointer_;
 
 protected:
+    /**
+     * Last used element id
+     */
     size_t element_counter_;
 
     // Name
@@ -91,6 +94,9 @@ public:
 
     const types::IType& return_type() const;
 
+    /**
+     * The last used element ID
+     */
     size_t element_counter() const;
 
     /**

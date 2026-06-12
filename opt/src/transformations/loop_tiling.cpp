@@ -1,6 +1,5 @@
 #include "sdfg/transformations/loop_tiling.h"
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -24,8 +23,7 @@ bool LoopTiling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
 void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto parent = static_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(&loop_));
+    auto parent = static_cast<structured_control_flow::Sequence*>(loop_.get_parent());
     size_t index = parent->index(loop_);
     auto& transition = parent->at(index).second;
 

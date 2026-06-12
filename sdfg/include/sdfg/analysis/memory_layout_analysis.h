@@ -16,6 +16,7 @@
 #include <string>
 
 #include "sdfg/analysis/analysis.h"
+#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
@@ -83,6 +84,13 @@ private:
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, MemoryTile> tiles_;
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, std::vector<MemoryTileGroup>>
         tile_groups_;
+
+    // Owned, branch-condition-aware `AssumptionsAnalysis` instance. The
+    // manager-cached AA is kept cheap and does NOT refine branch
+    // assumptions; MLA's per-scope tile inference must see the refined
+    // halo-style coupled constraints emitted at IfElse guards, so it owns
+    // its own instance rebuilt on every `run()`.
+    std::unique_ptr<AssumptionsAnalysis> detailed_assumptions_;
 
     void traverse(structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager);
 

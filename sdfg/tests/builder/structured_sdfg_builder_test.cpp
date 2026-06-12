@@ -18,6 +18,7 @@ TEST(StructuredSDFGBuilderTest, Empty) {
 
     EXPECT_EQ(sdfg->name(), "sdfg_1");
     EXPECT_EQ(sdfg->root().size(), 0);
+    EXPECT_EQ(sdfg->root().get_parent(), nullptr);
 }
 
 TEST(StructuredSDFGBuilderTest, AddBlock) {
@@ -28,10 +29,12 @@ TEST(StructuredSDFGBuilderTest, AddBlock) {
 
     auto& root = builder.subject().root();
     EXPECT_EQ(root.element_id(), 0);
+    EXPECT_EQ(root.get_parent(), nullptr);
 
     auto& block = builder.add_block(root, control_flow::Assignments{{symbolic::symbol("N"), SymEngine::integer(10)}});
     EXPECT_EQ(block.element_id(), 1);
     EXPECT_EQ(root.at(0).second.element_id(), 2);
+    EXPECT_EQ(block.get_parent(), &root);
 
     auto sdfg = builder.move();
 
@@ -41,6 +44,7 @@ TEST(StructuredSDFGBuilderTest, AddBlock) {
     auto child = sdfg->root().at(0);
     EXPECT_EQ(&child.first, &block);
     EXPECT_EQ(child.second.size(), 1);
+    EXPECT_EQ(child.first.get_parent(), &sdfg->root());
 }
 
 TEST(StructuredSDFGBuilderTest, AddBlockBefore) {
@@ -56,10 +60,12 @@ TEST(StructuredSDFGBuilderTest, AddBlockBefore) {
         builder.add_block(root, control_flow::Assignments{{symbolic::symbol("N"), SymEngine::integer(10)}});
     EXPECT_EQ(block_base.element_id(), 1);
     EXPECT_EQ(root.at(0).second.element_id(), 2);
+    EXPECT_EQ(block_base.get_parent(), &root);
 
     auto& block = builder.add_block_before(root, block_base, {}, {});
     EXPECT_EQ(block.element_id(), 3);
     EXPECT_EQ(root.at(0).second.element_id(), 4);
+    EXPECT_EQ(block.get_parent(), &root);
 
     auto sdfg = builder.move();
 
@@ -84,15 +90,18 @@ TEST(StructuredSDFGBuilderTest, AddBlockAfter) {
         builder.add_block(root, control_flow::Assignments{{symbolic::symbol("N"), SymEngine::integer(10)}});
     EXPECT_EQ(block_base.element_id(), 1);
     EXPECT_EQ(root.at(0).second.element_id(), 2);
+    EXPECT_EQ(block_base.get_parent(), &root);
 
     auto& block_base2 =
         builder.add_block(root, control_flow::Assignments{{symbolic::symbol("N"), SymEngine::integer(10)}});
     EXPECT_EQ(block_base2.element_id(), 3);
     EXPECT_EQ(root.at(1).second.element_id(), 4);
+    EXPECT_EQ(block_base2.get_parent(), &root);
 
     auto& block = builder.add_block_after(root, block_base, {}, {});
     EXPECT_EQ(block.element_id(), 5);
     EXPECT_EQ(root.at(1).second.element_id(), 6);
+    EXPECT_EQ(block.get_parent(), &root);
 
     auto sdfg = builder.move();
 
@@ -116,6 +125,7 @@ TEST(StructuredSDFGBuilderTest, AddLibraryNode) {
     auto& block = builder.add_block(root, control_flow::Assignments{{symbolic::symbol("N"), SymEngine::integer(10)}});
     EXPECT_EQ(block.element_id(), 1);
     EXPECT_EQ(root.at(0).second.element_id(), 2);
+    EXPECT_EQ(block.get_parent(), &root);
 
     auto& lib_node = builder.add_library_node<data_flow::BarrierLocalNode>(block, DebugInfo());
     EXPECT_EQ(lib_node.element_id(), 3);
@@ -145,12 +155,15 @@ TEST(StructuredSDFGBuilderTest, AddIfElse) {
     auto& if_else = builder.add_if_else(root);
     EXPECT_EQ(if_else.element_id(), 1);
     EXPECT_EQ(root.at(0).second.element_id(), 2);
+    EXPECT_EQ(if_else.get_parent(), &root);
 
     auto& true_case = builder.add_case(if_else, symbolic::__true__());
     EXPECT_EQ(true_case.element_id(), 3);
+    EXPECT_EQ(true_case.get_parent(), &if_else);
 
     auto& false_case = builder.add_case(if_else, symbolic::__false__());
     EXPECT_EQ(false_case.element_id(), 4);
+    EXPECT_EQ(false_case.get_parent(), &if_else);
 
     auto sdfg = builder.move();
 
@@ -204,9 +217,12 @@ TEST(StructuredSDFGBuilderTest, addWhile) {
     EXPECT_EQ(scope.element_id(), 1);
     EXPECT_EQ(scope.root().element_id(), 2);
     EXPECT_EQ(root.at(0).second.element_id(), 3);
+    EXPECT_EQ(scope.get_parent(), &root);
+    EXPECT_EQ(scope.root().get_parent(), &scope);
 
     auto& body = builder.add_block(scope.root());
     EXPECT_EQ(body.element_id(), 4);
+    EXPECT_EQ(body.get_parent(), &scope.root());
 
     auto& break_state = builder.add_break(scope.root());
     EXPECT_EQ(break_state.element_id(), 6);
@@ -239,9 +255,12 @@ TEST(StructuredSDFGBuilderTest, addFor) {
     EXPECT_EQ(scope.element_id(), 1);
     EXPECT_EQ(scope.root().element_id(), 2);
     EXPECT_EQ(root.at(0).second.element_id(), 3);
+    EXPECT_EQ(scope.get_parent(), &root);
+    EXPECT_EQ(scope.root().get_parent(), &scope);
 
     auto& body = builder.add_block(scope.root());
     EXPECT_EQ(body.element_id(), 4);
+    EXPECT_EQ(body.get_parent(), &scope.root());
 
     auto sdfg = builder.move();
 
@@ -272,9 +291,12 @@ TEST(StructuredSDFGBuilderTest, addFor_Transition) {
     EXPECT_EQ(scope.element_id(), 1);
     EXPECT_EQ(scope.root().element_id(), 2);
     EXPECT_EQ(root.at(0).second.element_id(), 3);
+    EXPECT_EQ(scope.get_parent(), &root);
+    EXPECT_EQ(scope.root().get_parent(), &scope);
 
     auto& body = builder.add_block(scope.root());
     EXPECT_EQ(body.element_id(), 4);
+    EXPECT_EQ(body.get_parent(), &scope.root());
 
     auto sdfg = builder.move();
 
@@ -304,9 +326,12 @@ TEST(StructuredSDFGBuilderTest, addMap) {
     EXPECT_EQ(scope.element_id(), 1);
     EXPECT_EQ(scope.root().element_id(), 2);
     EXPECT_EQ(root.at(0).second.element_id(), 3);
+    EXPECT_EQ(scope.get_parent(), &root);
+    EXPECT_EQ(scope.root().get_parent(), &scope);
 
     auto& body = builder.add_block(scope.root());
     EXPECT_EQ(body.element_id(), 4);
+    EXPECT_EQ(body.get_parent(), &scope.root());
 
     auto sdfg = builder.move();
 
@@ -342,9 +367,12 @@ TEST(StructuredSDFGBuilderTest, addMap_Transition) {
     EXPECT_EQ(scope.element_id(), 1);
     EXPECT_EQ(scope.root().element_id(), 2);
     EXPECT_EQ(root.at(0).second.element_id(), 3);
+    EXPECT_EQ(scope.get_parent(), &root);
+    EXPECT_EQ(scope.root().get_parent(), &scope);
 
     auto& body = builder.add_block(scope.root());
     EXPECT_EQ(body.element_id(), 4);
+    EXPECT_EQ(body.get_parent(), &scope.root());
 
     auto sdfg = builder.move();
 
@@ -419,6 +447,7 @@ TEST(StructuredSDFGBuilderTest, addForAfter) {
     EXPECT_EQ(&child.first, &scope);
     EXPECT_EQ(scope.root().size(), 1);
 }
+
 
 TEST(StructuredSDFGBuilderTest, FindElementById_Root) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
@@ -616,4 +645,84 @@ TEST(StructuredSDFGBuilderTest, ClearNode_Leaves_Required_Out_Edges) {
 
     auto& dflow = block.dataflow();
     EXPECT_EQ(dflow.out_degree(black_fun), 2);
+}
+
+TEST(StructuredSDFGBuilderTest, MoveChild) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    auto& root = builder.subject().root();
+    auto& if_else = builder.add_if_else(root);
+    auto& case_true = builder.add_case(if_else, symbolic::__true__());
+
+    auto& source_block1 = builder.add_block(root);
+    auto& source_block2 = builder.add_block(root);
+
+    EXPECT_EQ(root.size(), 3);
+    EXPECT_EQ(source_block1.get_parent(), &root);
+    EXPECT_EQ(source_block2.get_parent(), &root);
+    EXPECT_EQ(case_true.size(), 0);
+
+    // move source_block1 to target_seq at the end
+    builder.move_child(root, 1, case_true);
+
+    EXPECT_EQ(root.size(), 2);
+    EXPECT_EQ(if_else.size(), 1);
+    EXPECT_EQ(if_else.at(0).first.size(), 1);
+    EXPECT_EQ(if_else.at(0).first.at(0).first.element_id(), source_block1.element_id());
+    EXPECT_EQ(source_block1.get_parent(), &case_true);
+
+    // move source_block2 to target_seq at specific index
+    builder.move_child(root, 1, case_true, 0);
+
+    EXPECT_EQ(root.size(), 1);
+    EXPECT_EQ(if_else.size(), 1);
+    EXPECT_EQ(if_else.at(0).first.size(), 2);
+    EXPECT_EQ(if_else.at(0).first.at(0).first.element_id(), source_block2.element_id());
+    EXPECT_EQ(source_block2.get_parent(), &case_true);
+    EXPECT_EQ(if_else.at(0).first.at(1).first.element_id(), source_block1.element_id());
+    EXPECT_EQ(source_block1.get_parent(), &case_true);
+}
+
+TEST(StructuredSDFGBuilderTest, MoveChildren) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    auto& root = builder.subject().root();
+    auto& if_else1 = builder.add_if_else(root);
+    auto& if_true1 = builder.add_case(if_else1, symbolic::__true__());
+    auto& target_block = builder.add_block(if_true1);
+
+    auto& if_else2 = builder.add_if_else(root);
+    auto& if_true2 = builder.add_case(if_else2, symbolic::__true__());
+    auto& source_block1 = builder.add_block(if_true2);
+    auto& source_block2 = builder.add_block(if_true2);
+
+    EXPECT_EQ(if_true2.size(), 2);
+    EXPECT_EQ(if_true1.size(), 1);
+    EXPECT_EQ(source_block1.get_parent(), &if_true2);
+    EXPECT_EQ(source_block2.get_parent(), &if_true2);
+
+    // move all children from if_true2 to if_true1 at the end
+    builder.move_children(if_true2, if_true1);
+
+    EXPECT_EQ(if_true2.size(), 0);
+    EXPECT_EQ(if_true1.size(), 3);
+    EXPECT_EQ(if_true1.at(0).first.element_id(), target_block.element_id());
+    EXPECT_EQ(if_true1.at(1).first.element_id(), source_block1.element_id());
+    EXPECT_EQ(if_true1.at(2).first.element_id(), source_block2.element_id());
+    EXPECT_EQ(source_block1.get_parent(), &if_true1);
+    EXPECT_EQ(source_block2.get_parent(), &if_true1);
+
+    // move all children from target_seq to source_seq at index 0
+    auto& source_block3 = builder.add_block(if_true2);
+    builder.move_children(if_true1, if_true2, 0);
+
+    EXPECT_EQ(if_true1.size(), 0);
+    EXPECT_EQ(if_true2.size(), 4);
+    EXPECT_EQ(if_true2.at(0).first.element_id(), target_block.element_id());
+    EXPECT_EQ(if_true2.at(1).first.element_id(), source_block1.element_id());
+    EXPECT_EQ(if_true2.at(2).first.element_id(), source_block2.element_id());
+    EXPECT_EQ(if_true2.at(3).first.element_id(), source_block3.element_id());
+    EXPECT_EQ(target_block.get_parent(), &if_true2);
+    EXPECT_EQ(source_block1.get_parent(), &if_true2);
+    EXPECT_EQ(source_block2.get_parent(), &if_true2);
 }

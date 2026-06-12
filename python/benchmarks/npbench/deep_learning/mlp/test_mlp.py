@@ -57,7 +57,7 @@ def kernel(input, w1, b1, w2, b2, w3, b3):
         "none",
         "sequential",
         "openmp",
-        # "cuda"
+        "cuda",
         # "rocm"
     ],
 )
@@ -101,16 +101,7 @@ def test_mlp(target):
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "VECTORIZE": 8,
-                "CMath": 4,
-                "CPU_PARALLEL": 13,
-                "SEQUENTIAL": 3,
-                "FOR": 26,
-                "MAP": 24,
-                "GEMM": 3,
-                "Malloc": 13,
-            }
+            verification={"CUDA": 18, "FOR": 20, "MAP": 18, "CUDAOffloading": 38}
         )
     else:  # rocm
         verifier = SDFGVerification(

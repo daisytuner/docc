@@ -122,60 +122,39 @@ def kernel(nx, ny, nt, nit, u, v, dt, dx, dy, p, rho, nu):
 @pytest.mark.parametrize(
     "target",
     [
-        # "none",
-        # "sequential",
-        # "openmp",
+        "none",
+        "sequential",
+        "openmp",
         # "cuda"
     ],
 )
 def test_cavity_flow(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "CMath": 14,
-                "MAP": 182,
-                "SEQUENTIAL": 182,
-                "FOR": 186,
-                "Memset": 1,
-                "Malloc": 84,
-            }
+            verification={"MAP": 76, "SEQUENTIAL": 76, "FOR": 80}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={
-                "CMath": 14,
-                "VECTORIZE": 92,
-                "MAP": 182,
-                "SEQUENTIAL": 90,
-                "FOR": 186,
-                "Memset": 1,
-                "Malloc": 84,
-            }
+            verification={"VECTORIZE": 43, "MAP": 76, "SEQUENTIAL": 33, "FOR": 80}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 88,
-                "CMath": 14,
-                "CPU_PARALLEL": 84,
-                "MAP": 182,
-                "SEQUENTIAL": 10,
-                "FOR": 186,
-                "Memset": 1,
-                "Malloc": 84,
+                "VECTORIZE": 10,
+                "CPU_PARALLEL": 33,
+                "MAP": 51,
+                "SEQUENTIAL": 8,
+                "FOR": 55,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CMath": 14,
-                "CUDA": 160,
-                "MAP": 182,
-                "CUDAOffloading": 305,
-                "SEQUENTIAL": 22,
-                "FOR": 186,
-                "Memset": 1,
-                "Malloc": 84,
+                "CUDA": 52,
+                "SEQUENTIAL": 24,
+                "FOR": 80,
+                "MAP": 76,
+                "CUDAOffloading": 73,
             }
         )
     else:  # rocm

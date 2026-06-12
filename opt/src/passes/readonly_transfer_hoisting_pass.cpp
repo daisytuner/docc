@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -53,7 +52,6 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, const std::string& container
 ) {
     auto& users = analysis_manager.get<analysis::Users>();
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
 
     // Skip containers with views
     if (users.views(container).size() > 0) {
@@ -88,7 +86,7 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
         return {nullptr, 0};
     }
 
-    auto* block_parent = scope_analysis.parent_scope(block);
+    auto* block_parent = block->get_parent();
     if (!block_parent) {
         return {nullptr, 0};
     }
@@ -129,7 +127,6 @@ bool ReadonlyTransferHoistingPass::move_readonly_transfer(
     std::set<size_t>& visisted
 ) {
     auto& users = analysis_manager.get<analysis::Users>();
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
 
     // Check that every read belongs to an offloading node
     auto reads = users.reads(container);
@@ -180,7 +177,7 @@ bool ReadonlyTransferHoistingPass::move_readonly_transfer(
             continue;
         }
 
-        auto* block_parent = scope_analysis.parent_scope(block);
+        auto* block_parent = block->get_parent();
         if (!block_parent) {
             return false;
         }
@@ -234,7 +231,7 @@ bool ReadonlyTransferHoistingPass::move_readonly_transfer(
         );
     }
 
-    auto* free_block_parent = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(free_block));
+    auto* free_block_parent = dynamic_cast<structured_control_flow::Sequence*>(free_block->get_parent());
     if (!free_block_parent) {
         throw InvalidSDFGException(
             "ReadonlyTransferHoistingPass: Cannot get the parent sequence of block with matching free"
@@ -300,9 +297,8 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
     structured_control_flow::Block* block,
     offloading::DataOffloadingNode* offloading_node
 ) {
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    auto parents = this->get_parents(scope_analysis, block);
-    auto [result_sequence, result_index] = this->correct_location(scope_analysis, sequence, index, parents);
+    auto parents = this->get_parents(block);
+    auto [result_sequence, result_index] = this->correct_location(sequence, index, parents);
     if (!result_sequence) {
         return {nullptr, 0};
     }
@@ -335,8 +331,7 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
             return {nullptr, 0};
         }
 
-        auto [corrected_sequence, corrected_index] =
-            this->correct_location(scope_analysis, new_sequence, new_index, parents);
+        auto [corrected_sequence, corrected_index] = this->correct_location(new_sequence, new_index, parents);
         if (!corrected_sequence) {
             return {nullptr, 0};
         }
@@ -378,7 +373,6 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
 }
 
 std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPass::correct_location(
-    analysis::ScopeAnalysis& scope_analysis,
     structured_control_flow::Sequence* sequence,
     size_t index,
     const std::vector<std::pair<structured_control_flow::Sequence*, size_t>>& parents
@@ -409,23 +403,23 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
             }
         }
         current = current_parent;
-        current_parent = scope_analysis.parent_scope(current_parent);
+        current_parent = current_parent->get_parent();
     }
 
     return {nullptr, 0};
 }
 
 std::vector<std::pair<structured_control_flow::Sequence*, size_t>> ReadonlyTransferHoistingPass::
-    get_parents(analysis::ScopeAnalysis& scope_analysis, structured_control_flow::Block* block) {
+    get_parents(structured_control_flow::Block* block) {
     std::vector<std::pair<structured_control_flow::Sequence*, size_t>> parents;
     structured_control_flow::ControlFlowNode* current = block;
-    structured_control_flow::ControlFlowNode* current_parent = scope_analysis.parent_scope(block);
+    structured_control_flow::ControlFlowNode* current_parent = block->get_parent();
     while (current_parent != nullptr) {
         if (auto* current_sequence = dynamic_cast<structured_control_flow::Sequence*>(current_parent)) {
             parents.push_back({current_sequence, current_sequence->index(*current)});
         }
         current = current_parent;
-        current_parent = scope_analysis.parent_scope(current_parent);
+        current_parent = current_parent->get_parent();
     }
     return parents;
 }

@@ -21,7 +21,6 @@ std::unique_ptr<StructuredSDFG> cutout(
 
     structured_control_flow::Sequence* sequence;
     sdfg::analysis::AnalysisManager local_analysis_manager(builder.subject());
-    auto& scope_analysis = local_analysis_manager.get<analysis::ScopeAnalysis>();
 
     structured_control_flow::Sequence* parent_scope = nullptr;
     structured_control_flow::Sequence* new_scope = nullptr;
@@ -29,7 +28,7 @@ std::unique_ptr<StructuredSDFG> cutout(
     auto copied_node =
         static_cast<structured_control_flow::ControlFlowNode*>(builder.find_element_by_id(node.element_id()));
     assert(copied_node != nullptr);
-    auto parent_element = scope_analysis.parent_scope(copied_node);
+    auto parent_element = copied_node->get_parent();
     assert(parent_element != nullptr);
     parent_scope = static_cast<structured_control_flow::Sequence*>(parent_element);
     assert(parent_scope != nullptr);

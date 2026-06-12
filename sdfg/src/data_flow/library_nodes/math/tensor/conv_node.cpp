@@ -23,7 +23,6 @@
 #include "sdfg/types/tensor.h"
 #include "sdfg/types/type.h"
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "symengine/integer.h"
 #include "symengine/symengine_rcp.h"
@@ -218,9 +217,7 @@ bool ConvNode::check_expandable(
         return false;
     }
 
-    auto& scope_analysis = analysis_manager.get<analysis::ScopeAnalysis>();
-    boundary.block_parent = dynamic_cast<structured_control_flow::Sequence*>(scope_analysis.parent_scope(boundary.block)
-    );
+    boundary.block_parent = dynamic_cast<structured_control_flow::Sequence*>(boundary.block->get_parent());
     if (!boundary.block_parent) {
         return false;
     }
