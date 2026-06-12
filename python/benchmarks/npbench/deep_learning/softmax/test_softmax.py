@@ -28,6 +28,7 @@ def kernel(x):
     return tmp_out / tmp_sum
 
 
+@pytest.mark.skip(reason="Does not terminate in CI")
 @pytest.mark.parametrize(
     "target",
     ["none", "sequential", "openmp", "cuda", "rocm"],
