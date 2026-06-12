@@ -33,7 +33,7 @@ def kernel(alpha, beta, A, u1, v1, u2, v2, w, x, y, z):
     w += alpha * A @ x
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_gemver(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -64,7 +64,7 @@ def test_gemver(target):
                 "GEMM": 4,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 3,

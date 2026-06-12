@@ -74,7 +74,7 @@ def test_trmm(target):
                 "GEMM": 1,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 4,

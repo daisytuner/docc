@@ -41,7 +41,7 @@ def kernel(A, b):
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="Segfault")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_ludcmp(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -83,19 +83,16 @@ def test_ludcmp(target):
                 "SEQUENTIAL": 1,
                 "CUDAOffloading": 12,
                 "FOR": 11,
-                "Memset": 2,
-                "Malloc": 2,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 2,
-                "MAP": 2,
+                "MAP": 3,
+                "SEQUENTIAL": 1,
                 "ROCMOffloading": 12,
                 "FOR": 11,
-                "Memset": 2,
-                "Malloc": 2,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

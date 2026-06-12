@@ -32,7 +32,7 @@ def kernel(M, float_n, data):
 
 
 @pytest.mark.skip(reason="sdfg does not validate")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_correlation(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -87,7 +87,7 @@ def test_correlation(target):
                 "Malloc": 7,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,

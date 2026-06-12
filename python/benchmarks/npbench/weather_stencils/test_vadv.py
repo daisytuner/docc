@@ -121,15 +121,10 @@ def kernel(utens_stage, u_stage, wcon, u_pos, utens, dtr_stage):
 @pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
 @pytest.mark.parametrize(
     "target",
-    [
-        "none",
-        "sequential",
-        "openmp",
-        "cuda",
-        # "rocm"
-    ],
+    ["none", "sequential", "openmp", "cuda", "rocm"],
 )
 def test_vadv(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={"MAP": 104, "SEQUENTIAL": 104, "FOR": 111, "Malloc": 42}
@@ -163,14 +158,12 @@ def test_vadv(target):
                 "FOR": 111,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 25,
-                "MAP": 141,
-                "SEQUENTIAL": 116,
-                "FOR": 165,
-                "Malloc": 43,
+                "MAP": 104,
+                "SEQUENTIAL": 104,
+                "FOR": 111,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

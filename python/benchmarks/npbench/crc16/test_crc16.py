@@ -43,16 +43,19 @@ def kernel(data, poly):
 
 @pytest.mark.parametrize(
     "target",
-    ["none", "sequential", "openmp", "cuda"],
+    ["none", "sequential", "openmp", "cuda", "rocm"],
 )
 def test_crc16(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(verification={"FOR": 2})
     elif target == "sequential":
         verifier = SDFGVerification(verification={"FOR": 2})
     elif target == "openmp":
         verifier = SDFGVerification(verification={"FOR": 2})
-    else:  # cuda / rocm
+    elif target == "cuda":
+        verifier = SDFGVerification(verification={"FOR": 2})
+    elif target == "rocm":
         verifier = SDFGVerification(verification={"FOR": 2})
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

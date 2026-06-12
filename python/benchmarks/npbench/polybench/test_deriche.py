@@ -140,7 +140,7 @@ def test_deriche(target):
                 "DOT": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 0,

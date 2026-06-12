@@ -84,7 +84,7 @@ def test_cholesky(target):
                 "CMath": 2,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 4,

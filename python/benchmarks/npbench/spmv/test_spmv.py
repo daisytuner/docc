@@ -45,15 +45,10 @@ def kernel(A_row, A_col, A_val, x):
 
 @pytest.mark.parametrize(
     "target",
-    [
-        "none",
-        "sequential",
-        "openmp",
-        "cuda",
-        # "rocm"
-    ],
+    ["none", "sequential", "openmp", "cuda", "rocm"],
 )
 def test_spmv(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={"DOT": 0, "MAP": 4, "SEQUENTIAL": 4, "FOR": 6, "Malloc": 4}
@@ -89,18 +84,14 @@ def test_spmv(target):
                 "FOR": 6,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "CMath": 14,
-                "ROCM": 12,
-                "MAP": 18,
-                "ROCMOffloading": 34,
-                "Memcpy": 4,
-                "SEQUENTIAL": 6,
-                "FOR": 22,
-                "Memset": 1,
-                "Malloc": 8,
+                "ROCM": 1,
+                "MAP": 4,
+                "ROCMOffloading": 4,
+                "SEQUENTIAL": 3,
+                "FOR": 6,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

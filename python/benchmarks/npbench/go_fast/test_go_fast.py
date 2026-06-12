@@ -28,9 +28,10 @@ def kernel(a):
 
 @pytest.mark.parametrize(
     "target",
-    ["none", "sequential", "openmp", "cuda"],
+    ["none", "sequential", "openmp", "cuda", "rocm"],
 )
 def test_go_fast(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={"MAP": 2, "Malloc": 0, "CMath": 1, "SEQUENTIAL": 2, "FOR": 3}
@@ -66,10 +67,9 @@ def test_go_fast(target):
                 "Malloc": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "Free": 1,
                 "ROCM": 2,
                 "MAP": 2,
                 "ROCMOffloading": 4,

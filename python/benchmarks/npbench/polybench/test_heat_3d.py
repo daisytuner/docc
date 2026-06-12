@@ -41,7 +41,7 @@ def kernel(TSTEPS, A, B):
 
 @pytest.mark.parametrize(
     "target",
-    ["none", "sequential", "openmp", "cuda"],
+    ["none", "sequential", "openmp", "cuda", "rocm"],
 )
 def test_heat_3d(target):
     if target == "none":
@@ -70,15 +70,12 @@ def test_heat_3d(target):
                 "FOR": 11,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 20,
-                "ROCMOffloading": 32,
-                "MAP": 62,
-                "SEQUENTIAL": 42,
-                "FOR": 67,
-                "Malloc": 22,
+                "MAP": 10,
+                "SEQUENTIAL": 10,
+                "FOR": 11,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

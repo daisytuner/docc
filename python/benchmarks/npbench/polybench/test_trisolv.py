@@ -24,7 +24,7 @@ def kernel(L, x, b):
         x[i] = (b[i] - L[i, :i] @ x[:i]) / L[i, i]
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_trisolv(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -78,7 +78,7 @@ def test_trisolv(target):
                 "DOT": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 2,

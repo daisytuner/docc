@@ -20,8 +20,9 @@ def kernel(path):
         path[:] = np.minimum(path[:], np.add.outer(path[:, k], path[k, :]))
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_floyd_warshall(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={"MAP": 4, "Malloc": 1, "SEQUENTIAL": 4, "FOR": 5}
@@ -55,14 +56,14 @@ def test_floyd_warshall(target):
                 "Malloc": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 6,
-                "MAP": 6,
-                "ROCMOffloading": 12,
-                "FOR": 7,
-                "Malloc": 2,
+                "ROCM": 4,
+                "MAP": 4,
+                "ROCMOffloading": 6,
+                "FOR": 5,
+                "Malloc": 0,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
