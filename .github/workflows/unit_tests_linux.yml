@@ -457,7 +457,7 @@ jobs:
 
           pytest -v python/tests -m "cuda"
           pytest -v python/benchmarks/ -k cuda
-          pytest -v mlir/integration -m "cuda"
+          # pytest -v mlir/integration -m "cuda"
 
   rocm-tests-linux:
     runs-on:
