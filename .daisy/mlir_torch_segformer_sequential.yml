@@ -7,7 +7,7 @@ on:
 
 parameters:
   container: daisytuner/docc-build-env-llvm19-base:latest-amd64
-  timeout: 480
+  timeout: 720
   partitions:
     - chamomile
 
@@ -26,7 +26,7 @@ steps:
     pip install -r mlir/requirements.txt
 
     # Warm start (DOCC benchmark, sequential target)
-    DOCC_CI=1 venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=sequential --device=cpu
+    __DAISY_CAPTURE_STRATEGY_DEFAULT=once DOCC_CI=1 venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer_test.py --action=benchmark_segformer --version=b0 --backend=docc --target=sequential --device=cpu
 
   run:
 
@@ -37,3 +37,4 @@ steps:
       energy: true
       env:
         DOCC_REUSE_BINARIES: 1
+        __DAISY_CAPTURE_STRATEGY_DEFAULT: once

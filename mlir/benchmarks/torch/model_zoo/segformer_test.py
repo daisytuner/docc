@@ -11,9 +11,9 @@ from torch_mlir import fx
 import docc.torch
 
 import os
-os.environ["DOCC_STATISTICS"] = "1"
-os.environ["DOCC_PROFILE_COMPILE"] = "1"
-os.environ["DOCC_DEBUG"] = "dump"
+#os.environ["DOCC_STATISTICS"] = "1"
+#os.environ["DOCC_PROFILE_COMPILE"] = "1"
+#os.environ["DOCC_DEBUG"] = "dump"
 
 
 SEGFORMER_MODELS = {
@@ -155,8 +155,8 @@ def benchmark_segformer(model_name, backend="torch", target="none", device="cpu"
         from scipy import stats as scipy_stats
 
         times = []
-        min_samples = 5
-        max_samples = 500
+        min_samples = 1
+        max_samples = 5
         target_rel_ci = 0.01  # stop when 95% CI half-width < 1% of mean
 
         while len(times) < max_samples:
