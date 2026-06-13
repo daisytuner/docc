@@ -13,7 +13,6 @@
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/transformations/replayer.h"
 #include "sdfg/transformations/transformation.h"
-#include "sdfg/transformations/utils.h"
 #include "sdfg/util/utils_curl.h"
 
 namespace sdfg {
