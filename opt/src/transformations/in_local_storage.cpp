@@ -40,14 +40,11 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
 
     tile_info_ = TileInfo{};
 
-    // Criterion: Container must exist
+    // Criterion: Container must exist and is pointer
     if (!sdfg.exists(this->container_)) {
         return false;
     }
-
     auto& type = sdfg.type(this->container_);
-
-    // Criterion: Container must be Pointer (not Scalar)
     if (type.type_id() != types::TypeID::Pointer) {
         return false;
     }
@@ -68,21 +65,19 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
 
     // Find a representative memlet from the access node to identify its group.
-    // An access node may have multiple out-edges belonging to different tile
-    // groups (e.g., A[i,k] and A[j,k]).  We iterate all out-edges and select
-    // the first one whose tile group has provably integer extents (i.e., can
-    // actually be applied).  This avoids picking a group with symbolic extents
-    // when another group on the same node would succeed.
-    // For GPU shared memory, extents may be symbolic until GPU block size
-    // substitution, so we accept the first valid group unconditionally.
     const analysis::MemoryTileGroup* group = nullptr;
     auto& dfg = access_node_.get_parent();
     for (auto& memlet : dfg.out_edges(access_node_)) {
         auto* candidate = mla.tile_group_for(loop_, memlet);
-        if (!candidate) continue;
+        if (!candidate) {
+            continue;
+        }
 
         auto extents = candidate->tile.extents_approx();
-        if (extents.empty()) continue;
+        if (extents.empty()) {
+            continue;
+        }
+
         // Reject candidates with any unbounded-dependent extent (returned as null).
         bool has_null = false;
         for (auto& ext : extents) {
@@ -91,10 +86,12 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
                 break;
             }
         }
-        if (has_null) continue;
+        if (has_null) {
+            continue;
+        }
 
+        // GPU path: accept first valid group (substitution happens later)
         if (storage_type_.is_nv_shared()) {
-            // GPU path: accept first valid group (substitution happens later)
             group = candidate;
             break;
         }
@@ -117,21 +114,11 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     }
 
     auto& tile = group->tile;
+    auto extents = tile.extents_approx();
 
     // Store group memlets for use in apply()
     group_memlets_.clear();
     group_memlets_.insert(group->memlets.begin(), group->memlets.end());
-
-    // Get overapproximated extents (integer upper bounds)
-    auto extents = tile.extents_approx();
-    if (extents.empty()) {
-        return false;
-    }
-    // Defensive: candidate filtering above already rejects unbounded-dependent extents,
-    // but guard here too since downstream code dereferences these expressions.
-    for (auto& ext : extents) {
-        if (ext.is_null()) return false;
-    }
 
     // Store tile info (before substitution, bases/strides stay symbolic)
     tile_info_.dimensions = extents;
@@ -207,13 +194,6 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         if (!has_cooperative_dim) {
             return false;
         }
-    } else {
-        // CPU path: All extents must be provably integer
-        for (auto& ext : tile_info_.dimensions) {
-            if (!SymEngine::is_a<SymEngine::Integer>(*ext)) {
-                return false;
-            }
-        }
     }
 
     return true;
@@ -228,7 +208,10 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         throw InvalidSDFGException("InLocalStorage: Parent of loop must be a Sequence!");
     }
 
-    // Get type information
+    // We replace all relevant memlets with flat local indices
+    // Thus, we now use a flat pointer to index into container
+    // Remark: sdfg.type may return an opaque pointer, so use
+    //         memlet instead
     auto* memlet = *group_memlets_.begin();
     types::Scalar scalar_type(memlet->base_type().primitive_type());
     types::Pointer pointer_type(scalar_type);

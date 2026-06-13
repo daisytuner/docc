@@ -16,18 +16,8 @@ namespace transformations {
  * @brief In-loop local storage transformation for read-only data
  *
  * This transformation creates a local buffer for read-only array data accessed
- * within a loop. It copies the accessed tile into a contiguous buffer before
- * the loop, then redirects all reads to the local buffer.
- *
- * This is the read-only counterpart to OutLocalStorage. While OutLocalStorage
- * handles write/read-write containers, InLocalStorage handles pure inputs.
- *
- * Uses MemoryLayoutAnalysis tile API to compute bounding-box extents for the
- * accessed region, supporting:
- * - Constant index access (e.g. A[5]) → tile extent {1}
- * - Loop-dependent access (e.g. A[i]) → tile extent from loop bounds
- * - Delinearized Pointer access (e.g. A[i*K+j]) → multi-dim tile extents
- * - Non-identical subsets across uses (bounding box union)
+ * within a loop. It copies the accessed subset (tile) into a contiguous buffer
+ * before the loop, then redirects all reads to the local buffer.
  *
  * @note The container must be read-only within the loop scope (no writes)
  * @note All tile extents must resolve to integer constants
@@ -78,7 +68,7 @@ public:
      * @brief Check if this transformation can be applied
      *
      * Criteria:
-     * - Container exists and is an array/pointer type
+     * - Container exists and is pointer type
      * - Container is read-only within the loop (no writes)
      * - MemoryLayoutAnalysis provides a tile with integer extents
      *
