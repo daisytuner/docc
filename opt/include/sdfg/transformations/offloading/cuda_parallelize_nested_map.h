@@ -7,6 +7,18 @@
 namespace sdfg {
 namespace transformations {
 
+/**
+ * @brief Assigns a nested sequential map to the next available CUDA grid dimension.
+ *
+ * This transformation does not perform blocking or tiling on its own. It expects
+ * the scheduler to have already identified a suitable nested map within an existing
+ * CUDA-scheduled map. The transformation simply promotes the map's schedule from
+ * sequential to CUDA, assigning the next available dimension (X->Y or Y->Z).
+ *
+ * The resulting grid dimension is validated against CUDA hardware limits:
+ * Y and Z dimensions are limited to 65535 blocks. If the grid would exceed this
+ * limit, the transformation is rejected (can_be_applied returns false).
+ */
 class CUDAParallelizeNestedMap : public Transformation {
     structured_control_flow::Map& loop_;
     size_t block_size_;

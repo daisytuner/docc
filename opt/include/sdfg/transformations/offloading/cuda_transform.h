@@ -6,6 +6,18 @@
 namespace sdfg {
 namespace cuda {
 
+/**
+ * @brief Offloads a top-level map to a CUDA kernel (X grid dimension).
+ *
+ * This transformation does not perform blocking or tiling on its own. It expects
+ * the scheduler to have already identified a suitable map for GPU offloading.
+ * The transformation assigns the map to the CUDA X grid dimension and handles
+ * data transfers between host and device.
+ *
+ * The resulting grid X-dimension is validated against CUDA hardware limits
+ * (2^31 - 1 blocks). If the grid would exceed this limit, the transformation
+ * is rejected (can_be_applied returns false).
+ */
 class CUDATransform : public transformations::OffloadTransform {
 public:
     explicit CUDATransform(structured_control_flow::Map& map, int block_size = 32, bool allow_dynamic_sizes = false)
