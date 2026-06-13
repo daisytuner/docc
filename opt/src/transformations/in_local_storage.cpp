@@ -47,6 +47,18 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         return false;
     }
 
+    // Criterion: Container must be used in the loop body
+    auto& users = analysis_manager.get<analysis::Users>();
+    analysis::UsersView body_users(users, body);
+    if (body_users.uses(this->container_).empty()) {
+        return false;
+    }
+
+    // Criterion: Container must be read-only within the loop (no writes)
+    if (!body_users.writes(this->container_).empty()) {
+        return false;
+    }
+
     // Use MemoryLayoutAnalysis tile group API
     // Find a representative memlet from the access node to identify its group.
     auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();

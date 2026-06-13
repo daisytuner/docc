@@ -742,6 +742,52 @@ TEST(InLocalStorageTest, Map_Array) {
 }
 
 /**
+ * Test: InLocalStorage should fail on containers that are written
+ *
+ * for i = 0..N: A[i] = A[i]
+ *
+ * InLocalStorage(loop, "A") should fail because A is written
+ */
+TEST(InLocalStorageTest, FailsOnWrittenContainer) {
+    builder::StructuredSDFGBuilder builder("ils_rw_test", FunctionType_CPU);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+
+    types::Scalar elem_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(elem_desc);
+    builder.add_container("A", ptr_desc, true); // read-write
+
+    auto& root = builder.subject().root();
+
+    auto indvar = symbolic::symbol("i");
+    auto& loop = builder.add_for(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::integer(4)),
+        symbolic::integer(0),
+        symbolic::add(indvar, symbolic::integer(1))
+    );
+
+    // A[i] = A[i]
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in1"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in1", {indvar}, ptr_desc);
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, ptr_desc);
+
+    auto structured_sdfg = builder.move();
+
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // InLocalStorage should FAIL on A since it's written
+    transformations::InLocalStorage ils_a(loop, a_in);
+    EXPECT_FALSE(ils_a.can_be_applied(builder_opt, am));
+}
+
+/**
  * Test: InLocalStorage should fail when access node is outside the loop
  */
 TEST(InLocalStorageTest, FailsOnAccessOutsideLoop) {
