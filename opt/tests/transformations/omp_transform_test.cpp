@@ -98,7 +98,7 @@ TEST(OMPTransformTest, MapWithParallelSchedule) {
 }
 
 
-TEST(OMPTransform, Serialization) {
+TEST(OMPTransformTest, Serialization) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -141,7 +141,7 @@ TEST(OMPTransform, Serialization) {
     EXPECT_EQ(j["subgraph"]["0"]["type"], "map");
 }
 
-TEST(OMPTransform, Deserialization) {
+TEST(OMPTransformTest, Deserialization) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -175,4 +175,13 @@ TEST(OMPTransform, Deserialization) {
         auto deserialized = transformations::OMPTransform::from_json(builder, j);
         EXPECT_EQ(deserialized.name(), "OMPTransform");
     });
+
+    EXPECT_THROW(
+        {
+            nlohmann::json invalid_j = j;
+            invalid_j["subgraph"]["0"]["element_id"] = 9999; // Non-existent ID
+            transformations::OMPTransform::from_json(builder, invalid_j);
+        },
+        transformations::InvalidTransformationDescriptionException
+    );
 }
