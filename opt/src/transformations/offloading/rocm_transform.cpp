@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include "sdfg/structured_control_flow/block.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 #include "sdfg/transformations/transformation.h"
 #include "symengine/symengine_rcp.h"
@@ -11,6 +12,28 @@ namespace sdfg {
 namespace rocm {
 
 std::string ROCMTransform::name() const { return "ROCMTransform"; }
+
+bool ROCMTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (!OffloadTransform::can_be_applied(builder, analysis_manager)) {
+        return false;
+    }
+
+    // Condition: Resulting ROCm grid X-dimension must not exceed hardware limits.
+    // X grid dimension is limited to 2^31 - 1.
+    auto num_iters = this->map_.num_iterations();
+    if (!num_iters.is_null() && SymEngine::is_a<SymEngine::Integer>(*num_iters)) {
+        int64_t iters = SymEngine::down_cast<const SymEngine::Integer&>(*num_iters).as_int();
+        int64_t block = static_cast<int64_t>(block_size_);
+        int64_t grid_size = (iters + block - 1) / block;
+
+        constexpr int64_t max_grid_dim_x = 2147483647; // 2^31 - 1
+        if (grid_size > max_grid_dim_x) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 void ROCMTransform::add_device_buffer(
     builder::StructuredSDFGBuilder& builder,

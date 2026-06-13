@@ -13,6 +13,8 @@ public:
 
     std::string name() const override;
 
+    bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
     void to_json(nlohmann::json& j) const override;
 
     static CUDATransform from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
