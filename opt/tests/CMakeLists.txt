@@ -63,6 +63,7 @@ set(TEST_FILES
     transformations/out_local_storage_test.cpp
     transformations/in_local_storage_test.cpp
     transformations/recorder_test.cpp
+    transformations/vectorize_transform_test.cpp
     transformations/optimizations/diamond_tiling_test.cpp
     transformations/optimizations/blocking_test.cpp
     transformations/transformation_serialization_test.cpp
