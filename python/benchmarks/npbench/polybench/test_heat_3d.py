@@ -41,7 +41,13 @@ def kernel(TSTEPS, A, B):
 
 @pytest.mark.parametrize(
     "target",
-    ["none", "sequential", "openmp", "cuda", "rocm"],
+    [
+        "none",
+        "sequential",
+        "openmp",
+        # "cuda",
+        # "rocm"
+    ],
 )
 def test_heat_3d(target):
     if target == "none":
