@@ -39,12 +39,14 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 
     tile_info_ = TileInfo{};
 
-    // Criterion: Container must exist
+    // Criterion: Container must exist and is pointer
     if (!sdfg.exists(this->container_)) {
         return false;
     }
-
     auto& type = sdfg.type(this->container_);
+    if (type.type_id() != types::TypeID::Pointer) {
+        return false;
+    }
 
     // Criterion: Container must be used in the loop body
     auto& users = analysis_manager.get<analysis::Users>();
@@ -60,16 +62,6 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 
     // Determine if container is also read (read-write vs write-only)
     tile_info_.has_read = !body_users.reads(this->container_).empty();
-
-    // Handle scalar containers: no tile needed, dimensions stay empty
-    if (type.type_id() == types::TypeID::Scalar) {
-        return true;
-    }
-
-    // For Array/Pointer types: use MemoryLayoutAnalysis tile group API
-    if (type.type_id() != types::TypeID::Pointer) {
-        return false;
-    }
 
     auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
 
@@ -110,11 +102,10 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     if (extents.empty()) {
         return false;
     }
-    // Reject if any extent depends on an unbounded leading dimension (returned as null
-    // by extents_approx). Downstream code (substitution, stride computation) would
-    // dereference these.
     for (auto& ext : extents) {
-        if (ext.is_null()) return false;
+        if (ext.is_null()) {
+            return false;
+        }
     }
 
     // Store tile info (before substitution, bases/strides stay symbolic)
@@ -207,561 +198,447 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     }
 
     // Get type information.
-    //
-    // For the array path we derive the element type from a representative memlet
-    // (`group_memlets_` is populated by `can_be_applied`).  This handles the case
-    // where the container has an *opaque* pointer type (`Pointer()` with no
-    // pointee) but the memlets carry a more specific base type.
-    //
-    // For the scalar path `can_be_applied` returns early without populating
-    // `group_memlets_`, so we must fall back to the container's declared type —
-    // which by construction is `Scalar` on this path.
-    types::Scalar scalar_type = [&]() {
-        if (tile_info_.dimensions.empty()) {
-            auto& type = sdfg.type(this->container_);
-            return types::Scalar(type.primitive_type());
-        }
-        auto* memlet = *group_memlets_.begin();
-        return types::Scalar(memlet->base_type().primitive_type());
-    }();
+    auto* memlet = *group_memlets_.begin();
+    types::Scalar scalar_type(memlet->base_type().primitive_type());
     types::Pointer pointer_type(scalar_type);
 
     // Create local buffer name
     local_name_ = builder.find_new_name("__daisy_out_local_storage_" + this->container_);
 
-    // ========================================================================
-    // SCALAR PATH: tile_info_.dimensions is empty
-    // ========================================================================
-    if (tile_info_.dimensions.empty()) {
-        // Create scalar local buffer
-        builder.add_container(local_name_, scalar_type);
 
-        // Get the access subset from the first user (all scalar, so empty subset)
-        analysis::UsersView body_users(users, loop_.root());
-        auto accesses = body_users.uses(this->container_);
-        auto first_access = accesses.at(0);
-        auto first_subset = first_access->subsets().at(0);
+    // Collect varying dimensions (extent > 1) and compute buffer layout.
+    // Extent-1 dimensions are degenerate (no loop is needed) and must be
+    // skipped when sizing the buffer, when creating copy indvars, and when
+    // linearizing into the local buffer.  The bookkeeping must match what
+    // `build_original_subset` expects (it indexes copy_indices by varying
+    // dimension only).
+    std::vector<size_t> varying_dims;
+    std::vector<symbolic::Expression> dim_sizes;
+    for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
+        auto& dim_size = tile_info_.dimensions.at(d);
+        if (!symbolic::eq(dim_size, symbolic::integer(1))) {
+            varying_dims.push_back(d);
+            dim_sizes.push_back(dim_size);
+        }
+    }
 
-        // The scalar copy-in/copy-out memlets reference the *original* container,
-        // so they keep its declared base type.  `sdfg.type()` is the canonical
-        // source — the per-memlet base_type may not exist on the scalar path.
-        auto& container_type = sdfg.type(this->container_);
+    // Compute total buffer size
+    symbolic::Expression total_size = symbolic::integer(1);
+    for (auto& ds : dim_sizes) {
+        total_size = symbolic::mul(total_size, ds);
+    }
 
-        // Init block (copy from container to local) - before loop
+    // Create the local buffer with specified storage type
+    types::Array buffer_type(storage_type_, 0, {}, scalar_type, total_size);
+    builder.add_container(local_name_, buffer_type);
+
+    // Helper: build linearized local index from per-dimension expressions
+    auto linearize_exprs = [&](const std::vector<symbolic::Expression>& indices) -> symbolic::Expression {
+        symbolic::Expression linear_idx = symbolic::integer(0);
+        symbolic::Expression stride = symbolic::integer(1);
+        for (int i = indices.size() - 1; i >= 0; i--) {
+            linear_idx = symbolic::add(linear_idx, symbolic::mul(indices[i], stride));
+            stride = symbolic::mul(stride, dim_sizes[i]);
+        }
+        return linear_idx;
+    };
+
+    // Helper: build linearized local index from per-dimension indvars (symbols)
+    auto linearize = [&](const std::vector<symbolic::Symbol>& indvars) -> symbolic::Expression {
+        std::vector<symbolic::Expression> exprs(indvars.begin(), indvars.end());
+        return linearize_exprs(exprs);
+    };
+
+    // Helper: build source subset (base[d] + copy_indvar[d]) for original container
+    auto build_original_subset = [&](const std::vector<symbolic::Expression>& copy_indices) -> data_flow::Subset {
+        std::vector<symbolic::Expression> full_indices;
+        size_t var_idx = 0;
+        for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
+            if (!symbolic::eq(tile_info_.dimensions.at(d), symbolic::integer(1))) {
+                full_indices.push_back(symbolic::add(tile_info_.bases.at(d), copy_indices.at(var_idx++)));
+            } else {
+                full_indices.push_back(tile_info_.bases.at(d));
+            }
+        }
+
+        symbolic::Expression linear = tile_info_.offset;
+        for (size_t d = 0; d < full_indices.size(); d++) {
+            linear = symbolic::add(linear, symbolic::mul(tile_info_.strides.at(d), full_indices.at(d)));
+        }
+        return {linear};
+    };
+
+    if (storage_type_.is_nv_shared()) {
+        // ============================================================
+        // GPU COOPERATIVE PATH
+        // ============================================================
+        auto ancestors = ControlFlowNode::parent_chain(loop_);
+
+        // Collect cooperative GPU dimensions
+        struct CoopDim {
+            symbolic::Symbol indvar;
+            symbolic::Integer block_size;
+            gpu::GPUDimension dimension;
+        };
+        std::vector<CoopDim> coop_dims;
+
+        for (auto* node : ancestors) {
+            if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+                if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
+                    continue;
+                }
+                bool appears_in_bases = false;
+                for (auto& base : tile_info_.bases) {
+                    if (symbolic::uses(base, ancestor_map->indvar())) {
+                        appears_in_bases = true;
+                        break;
+                    }
+                }
+                if (!appears_in_bases) {
+                    coop_dims.push_back(
+                        {ancestor_map->indvar(),
+                         gpu::gpu_block_size(ancestor_map->schedule_type()),
+                         gpu::gpu_dimension(ancestor_map->schedule_type())}
+                    );
+                }
+            }
+        }
+
+        // Compute total cooperative thread count
+        symbolic::Expression total_coop_threads = symbolic::integer(1);
+        for (auto& cd : coop_dims) {
+            total_coop_threads = symbolic::mul(total_coop_threads, cd.block_size);
+        }
+
+        // Flatten cooperative thread index
+        symbolic::Expression coop_flat = symbolic::integer(0);
+        symbolic::Expression coop_stride = symbolic::integer(1);
+        for (int i = coop_dims.size() - 1; i >= 0; i--) {
+            coop_flat = symbolic::add(coop_flat, symbolic::mul(coop_dims[i].indvar, coop_stride));
+            coop_stride = symbolic::mul(coop_stride, coop_dims[i].block_size);
+        }
+
+        // INIT: barrier → cooperative copy-in → barrier (if has_read)
         if (tile_info_.has_read) {
-            auto& init_block = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
+            // Barrier before init
+            auto& barrier_block1 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
+            builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block1, {});
+
+            // Cooperative copy-in loop
+            auto idx_name = builder.find_new_name("__daisy_ols_coop_init_" + this->container_);
+            types::Scalar idx_type(types::PrimitiveType::UInt64);
+            builder.add_container(idx_name, idx_type);
+            auto idx_var = symbolic::symbol(idx_name);
+
+            auto& init_loop = builder.add_map_before(
+                *parent,
+                loop_,
+                idx_var,
+                symbolic::Lt(idx_var, total_size),
+                coop_flat,
+                symbolic::add(idx_var, total_coop_threads),
+                structured_control_flow::ScheduleType_Sequential::create(),
+                {},
+                loop_.debug_info()
+            );
+
+            auto& init_block = builder.add_block(init_loop.root());
             auto& init_src = builder.add_access(init_block, this->container_);
             auto& init_dst = builder.add_access(init_block, local_name_);
             auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "_out", {"_in"});
-            builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", first_subset, container_type);
-            builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, {}, scalar_type);
+
+            // Decompose idx_var into per-dim indices over varying dims only
+            std::vector<symbolic::Expression> init_indices;
+            symbolic::Expression remainder = idx_var;
+            for (size_t i = 0; i < dim_sizes.size(); i++) {
+                if (i < dim_sizes.size() - 1) {
+                    symbolic::Expression divisor = symbolic::integer(1);
+                    for (size_t j = i + 1; j < dim_sizes.size(); j++) {
+                        divisor = symbolic::mul(divisor, dim_sizes[j]);
+                    }
+                    init_indices.push_back(symbolic::div(remainder, divisor));
+                    remainder = symbolic::mod(remainder, divisor);
+                } else {
+                    init_indices.push_back(remainder);
+                }
+            }
+
+            auto init_src_subset = build_original_subset(init_indices);
+            builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, pointer_type);
+            builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, {idx_var}, buffer_type);
+
+            // Barrier after init
+            auto& barrier_block2 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
+            builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block2, {});
         }
 
-        // Writeback block (copy from local to container) - after loop
+        // WRITEBACK: barrier → cooperative copy-out → barrier
         {
-            auto& wb_block = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
+            // Barrier before writeback
+            auto& barrier_block3 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
+            builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block3, {});
+
+            // Cooperative writeback loop
+            auto idx_name = builder.find_new_name("__daisy_ols_coop_wb_" + this->container_);
+            types::Scalar idx_type(types::PrimitiveType::UInt64);
+            builder.add_container(idx_name, idx_type);
+            auto idx_var = symbolic::symbol(idx_name);
+
+            auto& wb_loop = builder.add_map_after(
+                *parent,
+                loop_,
+                idx_var,
+                symbolic::Lt(idx_var, total_size),
+                coop_flat,
+                symbolic::add(idx_var, total_coop_threads),
+                structured_control_flow::ScheduleType_Sequential::create(),
+                {},
+                loop_.debug_info()
+            );
+
+            auto& wb_block = builder.add_block(wb_loop.root());
             auto& wb_src = builder.add_access(wb_block, local_name_);
             auto& wb_dst = builder.add_access(wb_block, this->container_);
             auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
-            builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", {}, scalar_type);
-            builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, first_subset, container_type);
-        }
 
-        // Rewrite body accesses to use scalar local
-        for (auto* user : body_users.uses(this->container_)) {
-            auto element = user->element();
-            if (auto access = dynamic_cast<data_flow::AccessNode*>(element)) {
-                for (auto& iedge : access->get_parent().in_edges(*access)) {
-                    auto memlet = &iedge;
-                    memlet->set_subset({});
-                    memlet->set_base_type(scalar_type);
-                }
-                for (auto& oedge : access->get_parent().out_edges(*access)) {
-                    auto memlet = &oedge;
-                    memlet->set_subset({});
-                    memlet->set_base_type(scalar_type);
-                }
-            }
-        }
-
-        // Replace container name in the loop body
-        loop_.replace(symbolic::symbol(this->container_), symbolic::symbol(local_name_));
-    }
-    // ========================================================================
-    // ARRAY PATH: tile_info_.dimensions is non-empty
-    // ========================================================================
-    else {
-        // Collect varying dimensions (extent > 1) and compute buffer layout.
-        // Extent-1 dimensions are degenerate (no loop is needed) and must be
-        // skipped when sizing the buffer, when creating copy indvars, and when
-        // linearizing into the local buffer.  The bookkeeping must match what
-        // `build_original_subset` expects (it indexes copy_indices by varying
-        // dimension only).
-        std::vector<size_t> varying_dims;
-        std::vector<symbolic::Expression> dim_sizes;
-        for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
-            auto& dim_size = tile_info_.dimensions.at(d);
-            if (!symbolic::eq(dim_size, symbolic::integer(1))) {
-                varying_dims.push_back(d);
-                dim_sizes.push_back(dim_size);
-            }
-        }
-
-        // Compute total buffer size
-        symbolic::Expression total_size = symbolic::integer(1);
-        for (auto& ds : dim_sizes) {
-            total_size = symbolic::mul(total_size, ds);
-        }
-
-        // Create the local buffer with specified storage type
-        types::Array buffer_type(storage_type_, 0, {}, scalar_type, total_size);
-        builder.add_container(local_name_, buffer_type);
-
-        // Helper: build linearized local index from per-dimension expressions
-        auto linearize_exprs = [&](const std::vector<symbolic::Expression>& indices) -> symbolic::Expression {
-            symbolic::Expression linear_idx = symbolic::integer(0);
-            symbolic::Expression stride = symbolic::integer(1);
-            for (int i = indices.size() - 1; i >= 0; i--) {
-                linear_idx = symbolic::add(linear_idx, symbolic::mul(indices[i], stride));
-                stride = symbolic::mul(stride, dim_sizes[i]);
-            }
-            return linear_idx;
-        };
-
-        // Helper: build linearized local index from per-dimension indvars (symbols)
-        auto linearize = [&](const std::vector<symbolic::Symbol>& indvars) -> symbolic::Expression {
-            std::vector<symbolic::Expression> exprs(indvars.begin(), indvars.end());
-            return linearize_exprs(exprs);
-        };
-
-        // Helper: build source subset (base[d] + copy_indvar[d]) for original container
-        auto build_original_subset = [&](const std::vector<symbolic::Expression>& copy_indices) -> data_flow::Subset {
-            std::vector<symbolic::Expression> full_indices;
-            size_t var_idx = 0;
-            for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
-                if (!symbolic::eq(tile_info_.dimensions.at(d), symbolic::integer(1))) {
-                    full_indices.push_back(symbolic::add(tile_info_.bases.at(d), copy_indices.at(var_idx++)));
+            // Decompose idx_var into per-dim indices over varying dims only
+            std::vector<symbolic::Expression> wb_indices;
+            symbolic::Expression remainder = idx_var;
+            for (size_t i = 0; i < dim_sizes.size(); i++) {
+                if (i < dim_sizes.size() - 1) {
+                    symbolic::Expression divisor = symbolic::integer(1);
+                    for (size_t j = i + 1; j < dim_sizes.size(); j++) {
+                        divisor = symbolic::mul(divisor, dim_sizes[j]);
+                    }
+                    wb_indices.push_back(symbolic::div(remainder, divisor));
+                    remainder = symbolic::mod(remainder, divisor);
                 } else {
-                    full_indices.push_back(tile_info_.bases.at(d));
+                    wb_indices.push_back(remainder);
                 }
             }
 
-            symbolic::Expression linear = tile_info_.offset;
-            for (size_t d = 0; d < full_indices.size(); d++) {
-                linear = symbolic::add(linear, symbolic::mul(tile_info_.strides.at(d), full_indices.at(d)));
+            auto wb_dst_subset = build_original_subset(wb_indices);
+            builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", {idx_var}, buffer_type);
+            builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
+
+            // Barrier after writeback
+            auto& barrier_block4 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
+            builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block4, {});
+        }
+    } else {
+        // ============================================================
+        // CPU SEQUENTIAL PATH
+        // ============================================================
+        if (tile_info_.has_read) {
+            std::vector<symbolic::Symbol> init_indvars;
+            structured_control_flow::Sequence* init_scope =
+                &builder.add_sequence_before(*parent, loop_, {}, loop_.debug_info());
+            for (size_t i = 0; i < varying_dims.size(); i++) {
+                size_t d = varying_dims[i];
+                auto indvar_name =
+                    builder.find_new_name("__daisy_ols_init_" + this->container_ + "_d" + std::to_string(d));
+                types::Scalar indvar_type(types::PrimitiveType::UInt64);
+                builder.add_container(indvar_name, indvar_type);
+                auto indvar = symbolic::symbol(indvar_name);
+                init_indvars.push_back(indvar);
+
+                auto init = symbolic::integer(0);
+                auto condition = symbolic::Lt(indvar, dim_sizes[i]);
+                auto update = symbolic::add(indvar, symbolic::integer(1));
+
+                auto& init_loop = builder.add_map(
+                    *init_scope,
+                    indvar,
+                    condition,
+                    init,
+                    update,
+                    structured_control_flow::ScheduleType_Sequential::create(),
+                    {},
+                    loop_.debug_info()
+                );
+                init_scope = &init_loop.root();
             }
-            return {linear};
-        };
 
-        if (storage_type_.is_nv_shared()) {
-            // ============================================================
-            // GPU COOPERATIVE PATH
-            // ============================================================
-            auto ancestors = ControlFlowNode::parent_chain(loop_);
+            // Create init copy block
+            auto& init_block = builder.add_block(*init_scope);
+            auto& init_src = builder.add_access(init_block, this->container_);
+            auto& init_dst = builder.add_access(init_block, local_name_);
+            auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "_out", {"_in"});
 
-            // Collect cooperative GPU dimensions
-            struct CoopDim {
-                symbolic::Symbol indvar;
-                symbolic::Integer block_size;
-                gpu::GPUDimension dimension;
-            };
-            std::vector<CoopDim> coop_dims;
+            std::vector<symbolic::Expression> init_exprs(init_indvars.begin(), init_indvars.end());
+            auto init_src_subset = build_original_subset(init_exprs);
+            data_flow::Subset init_dst_subset = {linearize(init_indvars)};
 
-            for (auto* node : ancestors) {
-                if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
-                    if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
+            builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, pointer_type);
+            builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, init_dst_subset, buffer_type);
+        }
+
+        // Writeback Maps
+        {
+            std::vector<symbolic::Symbol> wb_indvars;
+            structured_control_flow::Sequence* wb_scope =
+                &builder.add_sequence_after(*parent, loop_, {}, loop_.debug_info());
+            for (size_t i = 0; i < varying_dims.size(); i++) {
+                size_t d = varying_dims[i];
+                auto indvar_name =
+                    builder.find_new_name("__daisy_ols_wb_" + this->container_ + "_d" + std::to_string(d));
+                types::Scalar indvar_type(types::PrimitiveType::UInt64);
+                builder.add_container(indvar_name, indvar_type);
+                auto indvar = symbolic::symbol(indvar_name);
+                wb_indvars.push_back(indvar);
+
+                auto init = symbolic::integer(0);
+                auto condition = symbolic::Lt(indvar, dim_sizes[i]);
+                auto update = symbolic::add(indvar, symbolic::integer(1));
+
+                auto& wb_loop = builder.add_map(
+                    *wb_scope,
+                    indvar,
+                    condition,
+                    init,
+                    update,
+                    structured_control_flow::ScheduleType_Sequential::create(),
+                    {},
+                    loop_.debug_info()
+                );
+                wb_scope = &wb_loop.root();
+            }
+
+            // Create writeback copy block
+            auto& wb_block = builder.add_block(*wb_scope);
+            auto& wb_src = builder.add_access(wb_block, local_name_);
+            auto& wb_dst = builder.add_access(wb_block, this->container_);
+            auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+
+            std::vector<symbolic::Expression> wb_exprs(wb_indvars.begin(), wb_indvars.end());
+            data_flow::Subset wb_src_subset = {linearize(wb_indvars)};
+            auto wb_dst_subset = build_original_subset(wb_exprs);
+
+            builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", wb_src_subset, buffer_type);
+            builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
+        }
+    }
+
+    // ==================================================================
+    // Update accesses in the main loop to use the local buffer
+    // ==================================================================
+    auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Recursive helper to traverse all blocks in the loop body
+    std::function<void(structured_control_flow::ControlFlowNode&)> rewrite_accesses;
+    rewrite_accesses = [&](structured_control_flow::ControlFlowNode& node) {
+        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+            auto& dfg = block->dataflow();
+
+            // Collect access nodes to process (avoid iterator invalidation when splitting)
+            std::vector<data_flow::AccessNode*> access_nodes;
+            for (auto* access_node : dfg.data_nodes()) {
+                if (access_node->data() == this->container_) {
+                    access_nodes.push_back(access_node);
+                }
+            }
+
+            for (auto* access : access_nodes) {
+                // Classify memlets: group vs non-group
+                struct MemletRewrite {
+                    data_flow::Memlet* memlet;
+                    data_flow::Subset local_subset;
+                    bool is_outgoing;
+                };
+                std::vector<MemletRewrite> group_rewrites;
+                bool all_in_group = true;
+
+                // Outgoing memlets (reads from this access node)
+                for (auto& memlet : dfg.out_edges(*access)) {
+                    if (group_memlets_.count(&memlet) == 0) {
+                        all_in_group = false;
                         continue;
                     }
-                    bool appears_in_bases = false;
-                    for (auto& base : tile_info_.bases) {
-                        if (symbolic::uses(base, ancestor_map->indvar())) {
-                            appears_in_bases = true;
-                            break;
+                    auto* acc = mla.access(memlet);
+                    if (acc && acc->subset.size() == tile_info_.dimensions.size()) {
+                        std::vector<symbolic::Expression> local_indices;
+                        for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
+                            if (!symbolic::eq(tile_info_.dimensions.at(d), symbolic::integer(1))) {
+                                local_indices.push_back(symbolic::sub(acc->subset.at(d), tile_info_.bases.at(d)));
+                            }
+                        }
+                        symbolic::Expression linear_idx = linearize_exprs(local_indices);
+                        group_rewrites.push_back({&memlet, {linear_idx}, true});
+                    } else {
+                        // Memlet is claimed by the group but we cannot rewrite it (no
+                        // delinearized access info). Leaving it as the original container
+                        // would create a half-renamed access node. Bail out of renaming
+                        // to keep the SDFG consistent.
+                        all_in_group = false;
+                    }
+                }
+                // Incoming memlets (writes to this access node)
+                for (auto& memlet : dfg.in_edges(*access)) {
+                    if (group_memlets_.count(&memlet) == 0) {
+                        all_in_group = false;
+                        continue;
+                    }
+                    auto* acc = mla.access(memlet);
+                    if (acc && acc->subset.size() == tile_info_.dimensions.size()) {
+                        std::vector<symbolic::Expression> local_indices;
+                        for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
+                            if (!symbolic::eq(tile_info_.dimensions.at(d), symbolic::integer(1))) {
+                                local_indices.push_back(symbolic::sub(acc->subset.at(d), tile_info_.bases.at(d)));
+                            }
+                        }
+                        symbolic::Expression linear_idx = linearize_exprs(local_indices);
+                        group_rewrites.push_back({&memlet, {linear_idx}, false});
+                    } else {
+                        all_in_group = false;
+                    }
+                }
+
+                if (group_rewrites.empty()) continue;
+
+                if (all_in_group) {
+                    // Simple case: all memlets in group → rewrite in-place and rename
+                    for (auto& rw : group_rewrites) {
+                        rw.memlet->set_subset(rw.local_subset);
+                        rw.memlet->set_base_type(buffer_type);
+                    }
+                    access->data(local_name_);
+                } else {
+                    // Mixed case: split — create new local access node, redirect group memlets
+                    auto& local_access = builder.add_access(*block, local_name_);
+                    for (auto& rw : group_rewrites) {
+                        if (rw.is_outgoing) {
+                            // outgoing: access→tasklet  →  local_access→tasklet
+                            auto& dst_node = rw.memlet->dst();
+                            auto dst_conn = rw.memlet->dst_conn();
+                            builder.remove_memlet(*block, *rw.memlet);
+                            builder.add_memlet(
+                                *block, local_access, "void", dst_node, dst_conn, rw.local_subset, buffer_type, {}
+                            );
+                        } else {
+                            // incoming: tasklet→access  →  tasklet→local_access
+                            auto& src_node = rw.memlet->src();
+                            auto src_conn = rw.memlet->src_conn();
+                            builder.remove_memlet(*block, *rw.memlet);
+                            builder.add_memlet(
+                                *block, src_node, src_conn, local_access, "void", rw.local_subset, buffer_type, {}
+                            );
                         }
                     }
-                    if (!appears_in_bases) {
-                        coop_dims.push_back(
-                            {ancestor_map->indvar(),
-                             gpu::gpu_block_size(ancestor_map->schedule_type()),
-                             gpu::gpu_dimension(ancestor_map->schedule_type())}
-                        );
-                    }
                 }
             }
-
-            // Compute total cooperative thread count
-            symbolic::Expression total_coop_threads = symbolic::integer(1);
-            for (auto& cd : coop_dims) {
-                total_coop_threads = symbolic::mul(total_coop_threads, cd.block_size);
+        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+            for (size_t i = 0; i < seq->size(); i++) {
+                rewrite_accesses(seq->at(i).first);
             }
-
-            // Flatten cooperative thread index
-            symbolic::Expression coop_flat = symbolic::integer(0);
-            symbolic::Expression coop_stride = symbolic::integer(1);
-            for (int i = coop_dims.size() - 1; i >= 0; i--) {
-                coop_flat = symbolic::add(coop_flat, symbolic::mul(coop_dims[i].indvar, coop_stride));
-                coop_stride = symbolic::mul(coop_stride, coop_dims[i].block_size);
-            }
-
-            // INIT: barrier → cooperative copy-in → barrier (if has_read)
-            if (tile_info_.has_read) {
-                // Barrier before init
-                auto& barrier_block1 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
-                builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block1, {});
-
-                // Cooperative copy-in loop
-                auto idx_name = builder.find_new_name("__daisy_ols_coop_init_" + this->container_);
-                types::Scalar idx_type(types::PrimitiveType::UInt64);
-                builder.add_container(idx_name, idx_type);
-                auto idx_var = symbolic::symbol(idx_name);
-
-                auto& init_loop = builder.add_map_before(
-                    *parent,
-                    loop_,
-                    idx_var,
-                    symbolic::Lt(idx_var, total_size),
-                    coop_flat,
-                    symbolic::add(idx_var, total_coop_threads),
-                    structured_control_flow::ScheduleType_Sequential::create(),
-                    {},
-                    loop_.debug_info()
-                );
-
-                auto& init_block = builder.add_block(init_loop.root());
-                auto& init_src = builder.add_access(init_block, this->container_);
-                auto& init_dst = builder.add_access(init_block, local_name_);
-                auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "_out", {"_in"});
-
-                // Decompose idx_var into per-dim indices over varying dims only
-                std::vector<symbolic::Expression> init_indices;
-                symbolic::Expression remainder = idx_var;
-                for (size_t i = 0; i < dim_sizes.size(); i++) {
-                    if (i < dim_sizes.size() - 1) {
-                        symbolic::Expression divisor = symbolic::integer(1);
-                        for (size_t j = i + 1; j < dim_sizes.size(); j++) {
-                            divisor = symbolic::mul(divisor, dim_sizes[j]);
-                        }
-                        init_indices.push_back(symbolic::div(remainder, divisor));
-                        remainder = symbolic::mod(remainder, divisor);
-                    } else {
-                        init_indices.push_back(remainder);
-                    }
-                }
-
-                auto init_src_subset = build_original_subset(init_indices);
-                builder
-                    .add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, pointer_type);
-                builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, {idx_var}, buffer_type);
-
-                // Barrier after init
-                auto& barrier_block2 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
-                builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block2, {});
-            }
-
-            // WRITEBACK: barrier → cooperative copy-out → barrier
-            {
-                // Barrier before writeback
-                auto& barrier_block3 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
-                builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block3, {});
-
-                // Cooperative writeback loop
-                auto idx_name = builder.find_new_name("__daisy_ols_coop_wb_" + this->container_);
-                types::Scalar idx_type(types::PrimitiveType::UInt64);
-                builder.add_container(idx_name, idx_type);
-                auto idx_var = symbolic::symbol(idx_name);
-
-                auto& wb_loop = builder.add_map_after(
-                    *parent,
-                    loop_,
-                    idx_var,
-                    symbolic::Lt(idx_var, total_size),
-                    coop_flat,
-                    symbolic::add(idx_var, total_coop_threads),
-                    structured_control_flow::ScheduleType_Sequential::create(),
-                    {},
-                    loop_.debug_info()
-                );
-
-                auto& wb_block = builder.add_block(wb_loop.root());
-                auto& wb_src = builder.add_access(wb_block, local_name_);
-                auto& wb_dst = builder.add_access(wb_block, this->container_);
-                auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
-
-                // Decompose idx_var into per-dim indices over varying dims only
-                std::vector<symbolic::Expression> wb_indices;
-                symbolic::Expression remainder = idx_var;
-                for (size_t i = 0; i < dim_sizes.size(); i++) {
-                    if (i < dim_sizes.size() - 1) {
-                        symbolic::Expression divisor = symbolic::integer(1);
-                        for (size_t j = i + 1; j < dim_sizes.size(); j++) {
-                            divisor = symbolic::mul(divisor, dim_sizes[j]);
-                        }
-                        wb_indices.push_back(symbolic::div(remainder, divisor));
-                        remainder = symbolic::mod(remainder, divisor);
-                    } else {
-                        wb_indices.push_back(remainder);
-                    }
-                }
-
-                auto wb_dst_subset = build_original_subset(wb_indices);
-                builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", {idx_var}, buffer_type);
-                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
-
-                // Barrier after writeback
-                auto& barrier_block4 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
-                builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block4, {});
-            }
-        } else {
-            // ============================================================
-            // CPU SEQUENTIAL PATH
-            // ============================================================
-            if (tile_info_.has_read) {
-                std::vector<symbolic::Symbol> init_indvars;
-                structured_control_flow::Sequence* init_scope = parent;
-                bool first_init_loop = true;
-
-                for (size_t i = 0; i < varying_dims.size(); i++) {
-                    size_t d = varying_dims[i];
-                    auto indvar_name =
-                        builder.find_new_name("__daisy_ols_init_" + this->container_ + "_d" + std::to_string(d));
-                    types::Scalar indvar_type(types::PrimitiveType::UInt64);
-                    builder.add_container(indvar_name, indvar_type);
-                    auto indvar = symbolic::symbol(indvar_name);
-                    init_indvars.push_back(indvar);
-
-                    auto init = symbolic::integer(0);
-                    auto condition = symbolic::Lt(indvar, dim_sizes[i]);
-                    auto update = symbolic::add(indvar, symbolic::integer(1));
-
-                    if (first_init_loop) {
-                        auto& init_loop = builder.add_map_before(
-                            *init_scope,
-                            loop_,
-                            indvar,
-                            condition,
-                            init,
-                            update,
-                            structured_control_flow::ScheduleType_Sequential::create(),
-                            {},
-                            loop_.debug_info()
-                        );
-                        init_scope = &init_loop.root();
-                        first_init_loop = false;
-                    } else {
-                        auto& init_loop = builder.add_map(
-                            *init_scope,
-                            indvar,
-                            condition,
-                            init,
-                            update,
-                            structured_control_flow::ScheduleType_Sequential::create(),
-                            {},
-                            loop_.debug_info()
-                        );
-                        init_scope = &init_loop.root();
-                    }
-                }
-
-                // Create init copy block
-                auto& init_block = builder.add_block(*init_scope);
-                auto& init_src = builder.add_access(init_block, this->container_);
-                auto& init_dst = builder.add_access(init_block, local_name_);
-                auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "_out", {"_in"});
-
-                std::vector<symbolic::Expression> init_exprs(init_indvars.begin(), init_indvars.end());
-                auto init_src_subset = build_original_subset(init_exprs);
-                data_flow::Subset init_dst_subset = {linearize(init_indvars)};
-
-                builder
-                    .add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, pointer_type);
-                builder
-                    .add_computational_memlet(init_block, init_tasklet, "_out", init_dst, init_dst_subset, buffer_type);
-            }
-
-            // Writeback Maps
-            {
-                std::vector<symbolic::Symbol> wb_indvars;
-                structured_control_flow::Sequence* wb_scope = parent;
-                bool first_wb_loop = true;
-
-                for (size_t i = 0; i < varying_dims.size(); i++) {
-                    size_t d = varying_dims[i];
-                    auto indvar_name =
-                        builder.find_new_name("__daisy_ols_wb_" + this->container_ + "_d" + std::to_string(d));
-                    types::Scalar indvar_type(types::PrimitiveType::UInt64);
-                    builder.add_container(indvar_name, indvar_type);
-                    auto indvar = symbolic::symbol(indvar_name);
-                    wb_indvars.push_back(indvar);
-
-                    auto init = symbolic::integer(0);
-                    auto condition = symbolic::Lt(indvar, dim_sizes[i]);
-                    auto update = symbolic::add(indvar, symbolic::integer(1));
-
-                    if (first_wb_loop) {
-                        auto& wb_loop = builder.add_map_after(
-                            *wb_scope,
-                            loop_,
-                            indvar,
-                            condition,
-                            init,
-                            update,
-                            structured_control_flow::ScheduleType_Sequential::create(),
-                            {},
-                            loop_.debug_info()
-                        );
-                        wb_scope = &wb_loop.root();
-                        first_wb_loop = false;
-                    } else {
-                        auto& wb_loop = builder.add_map(
-                            *wb_scope,
-                            indvar,
-                            condition,
-                            init,
-                            update,
-                            structured_control_flow::ScheduleType_Sequential::create(),
-                            {},
-                            loop_.debug_info()
-                        );
-                        wb_scope = &wb_loop.root();
-                    }
-                }
-
-                // Create writeback copy block
-                auto& wb_block = builder.add_block(*wb_scope);
-                auto& wb_src = builder.add_access(wb_block, local_name_);
-                auto& wb_dst = builder.add_access(wb_block, this->container_);
-                auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
-
-                std::vector<symbolic::Expression> wb_exprs(wb_indvars.begin(), wb_indvars.end());
-                data_flow::Subset wb_src_subset = {linearize(wb_indvars)};
-                auto wb_dst_subset = build_original_subset(wb_exprs);
-
-                builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", wb_src_subset, buffer_type);
-                builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
+        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+            rewrite_accesses(loop->root());
+        } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+            for (size_t i = 0; i < if_else->size(); i++) {
+                rewrite_accesses(if_else->at(i).first);
             }
         }
-
-        // ==================================================================
-        // Update accesses in the main loop to use the local buffer
-        // ==================================================================
-        auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
-
-        // Recursive helper to traverse all blocks in the loop body
-        std::function<void(structured_control_flow::ControlFlowNode&)> rewrite_accesses;
-        rewrite_accesses = [&](structured_control_flow::ControlFlowNode& node) {
-            if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
-                auto& dfg = block->dataflow();
-
-                // Collect access nodes to process (avoid iterator invalidation when splitting)
-                std::vector<data_flow::AccessNode*> access_nodes;
-                for (auto* access_node : dfg.data_nodes()) {
-                    if (access_node->data() == this->container_) {
-                        access_nodes.push_back(access_node);
-                    }
-                }
-
-                for (auto* access : access_nodes) {
-                    // Classify memlets: group vs non-group
-                    struct MemletRewrite {
-                        data_flow::Memlet* memlet;
-                        data_flow::Subset local_subset;
-                        bool is_outgoing;
-                    };
-                    std::vector<MemletRewrite> group_rewrites;
-                    bool all_in_group = true;
-
-                    // Outgoing memlets (reads from this access node)
-                    for (auto& memlet : dfg.out_edges(*access)) {
-                        if (group_memlets_.count(&memlet) == 0) {
-                            all_in_group = false;
-                            continue;
-                        }
-                        auto* acc = mla.access(memlet);
-                        if (acc && acc->subset.size() == tile_info_.dimensions.size()) {
-                            std::vector<symbolic::Expression> local_indices;
-                            for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
-                                if (!symbolic::eq(tile_info_.dimensions.at(d), symbolic::integer(1))) {
-                                    local_indices.push_back(symbolic::sub(acc->subset.at(d), tile_info_.bases.at(d)));
-                                }
-                            }
-                            symbolic::Expression linear_idx = linearize_exprs(local_indices);
-                            group_rewrites.push_back({&memlet, {linear_idx}, true});
-                        } else {
-                            // Memlet is claimed by the group but we cannot rewrite it (no
-                            // delinearized access info). Leaving it as the original container
-                            // would create a half-renamed access node. Bail out of renaming
-                            // to keep the SDFG consistent.
-                            all_in_group = false;
-                        }
-                    }
-                    // Incoming memlets (writes to this access node)
-                    for (auto& memlet : dfg.in_edges(*access)) {
-                        if (group_memlets_.count(&memlet) == 0) {
-                            all_in_group = false;
-                            continue;
-                        }
-                        auto* acc = mla.access(memlet);
-                        if (acc && acc->subset.size() == tile_info_.dimensions.size()) {
-                            std::vector<symbolic::Expression> local_indices;
-                            for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
-                                if (!symbolic::eq(tile_info_.dimensions.at(d), symbolic::integer(1))) {
-                                    local_indices.push_back(symbolic::sub(acc->subset.at(d), tile_info_.bases.at(d)));
-                                }
-                            }
-                            symbolic::Expression linear_idx = linearize_exprs(local_indices);
-                            group_rewrites.push_back({&memlet, {linear_idx}, false});
-                        } else {
-                            all_in_group = false;
-                        }
-                    }
-
-                    if (group_rewrites.empty()) continue;
-
-                    if (all_in_group) {
-                        // Simple case: all memlets in group → rewrite in-place and rename
-                        for (auto& rw : group_rewrites) {
-                            rw.memlet->set_subset(rw.local_subset);
-                            rw.memlet->set_base_type(buffer_type);
-                        }
-                        access->data(local_name_);
-                    } else {
-                        // Mixed case: split — create new local access node, redirect group memlets
-                        auto& local_access = builder.add_access(*block, local_name_);
-                        for (auto& rw : group_rewrites) {
-                            if (rw.is_outgoing) {
-                                // outgoing: access→tasklet  →  local_access→tasklet
-                                auto& dst_node = rw.memlet->dst();
-                                auto dst_conn = rw.memlet->dst_conn();
-                                builder.remove_memlet(*block, *rw.memlet);
-                                builder.add_memlet(
-                                    *block, local_access, "void", dst_node, dst_conn, rw.local_subset, buffer_type, {}
-                                );
-                            } else {
-                                // incoming: tasklet→access  →  tasklet→local_access
-                                auto& src_node = rw.memlet->src();
-                                auto src_conn = rw.memlet->src_conn();
-                                builder.remove_memlet(*block, *rw.memlet);
-                                builder.add_memlet(
-                                    *block, src_node, src_conn, local_access, "void", rw.local_subset, buffer_type, {}
-                                );
-                            }
-                        }
-                    }
-                }
-            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
-                for (size_t i = 0; i < seq->size(); i++) {
-                    rewrite_accesses(seq->at(i).first);
-                }
-            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
-                rewrite_accesses(loop->root());
-            } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
-                for (size_t i = 0; i < if_else->size(); i++) {
-                    rewrite_accesses(if_else->at(i).first);
-                }
-            }
-        };
-        rewrite_accesses(loop_.root());
-    }
+    };
+    rewrite_accesses(loop_.root());
 
     // Cleanup
     analysis_manager.invalidate_all();
