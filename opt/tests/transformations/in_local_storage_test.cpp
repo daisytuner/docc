@@ -7,6 +7,8 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
+#include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
+#include "sdfg/passes/structured_control_flow/sequence_fusion.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -21,111 +23,17 @@
 using namespace sdfg;
 
 /**
- * Test: InLocalStorage on a constant access
- *
- * Before:
- *   for i = 0..4: C[i] += A[0]
- *
- * After:
- *   A_local[0] = A[0]
- *   for i = 0..4: C[i] += A_local[0]
- */
-TEST(InLocalStorageTest, Constant) {
-    builder::StructuredSDFGBuilder builder("ils_constant_test", FunctionType_CPU);
-
-    // Create containers
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
-    builder.add_container("i", sym_desc);
-
-    types::Scalar elem_desc(types::PrimitiveType::Float);
-    types::Pointer ptr_desc(elem_desc);
-    builder.add_container("A", ptr_desc, true);
-    builder.add_container("C", ptr_desc);
-
-    auto& root = builder.subject().root();
-
-    // Create loop: for i = 0..4
-    auto indvar = symbolic::symbol("i");
-    auto bound = symbolic::integer(4);
-    auto init = symbolic::integer(0);
-    auto condition = symbolic::Lt(indvar, bound);
-    auto update = symbolic::add(indvar, symbolic::integer(1));
-
-    auto& loop = builder.add_for(root, indvar, condition, init, update);
-    auto& body = loop.root();
-
-    // Add computation: C += A[i]
-    auto& block = builder.add_block(body);
-    auto& a_in = builder.add_access(block, "A");
-    auto& c_in = builder.add_access(block, "C");
-    auto& c_out = builder.add_access(block, "C");
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block, c_in, tasklet, "_in1", {indvar}, ptr_desc);
-    builder.add_computational_memlet(block, a_in, tasklet, "_in2", {symbolic::zero()}, ptr_desc);
-    builder.add_computational_memlet(block, tasklet, "_out", c_out, {indvar}, ptr_desc);
-
-    auto structured_sdfg = builder.move();
-
-    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
-    analysis::AnalysisManager am(builder_opt.subject());
-
-    // Apply transformation
-    transformations::InLocalStorage transformation(loop, a_in);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, am));
-    transformation.apply(builder_opt, am);
-
-    // Verify: local buffer was created
-    EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
-
-    // Verify: structure should now be [copy_block, main_loop]
-    auto& new_root = builder_opt.subject().root();
-    EXPECT_EQ(new_root.size(), 2);
-
-    // First element should be copy
-    auto* copy_block = dynamic_cast<structured_control_flow::Block*>(&new_root.at(0).first);
-    EXPECT_NE(copy_block, nullptr);
-
-    // Second element should be the main loop
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
-    EXPECT_NE(main_loop, nullptr);
-
-    // Verify copy reads from A, writes to A_local
-    bool reads_A = false;
-    bool writes_A_local = false;
-    for (auto* node : copy_block->dataflow().data_nodes()) {
-        if (node->data() == "A") reads_A = true;
-        if (node->data() == "__daisy_in_local_storage_A0") writes_A_local = true;
-    }
-    EXPECT_TRUE(reads_A);
-    EXPECT_TRUE(writes_A_local);
-
-    // Verify main loop uses local buffer
-    auto& main_body = main_loop->root();
-    EXPECT_EQ(main_body.size(), 1);
-    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
-    EXPECT_NE(main_block, nullptr);
-
-    bool uses_A_local = false;
-    bool uses_A_original = false;
-    for (auto* node : main_block->dataflow().data_nodes()) {
-        if (node->data() == "__daisy_in_local_storage_A0") uses_A_local = true;
-        if (node->data() == "A") uses_A_original = true;
-    }
-    EXPECT_TRUE(uses_A_local);
-    EXPECT_FALSE(uses_A_original); // Original A should be replaced
-}
-
-/**
  * Test: InLocalStorage on a dynamic access
  *
  * Before:
  *   for i = 0..4: C += A[i]
  *
  * After:
+ *   A_local[4]
  *   for i' = 0..4: A_local[i'] = A[i']
  *   for i = 0..4: C += A_local[i]
  */
-TEST(InLocalStorageTest, Dynamic) {
+TEST(InLocalStorageTest, For_Array) {
     builder::StructuredSDFGBuilder builder("ils_dynamic_test", FunctionType_CPU);
 
     // Create containers
@@ -134,8 +42,9 @@ TEST(InLocalStorageTest, Dynamic) {
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
     types::Pointer a_desc(elem_desc);
-    builder.add_container("A", a_desc, true); // read-only input
-    builder.add_container("C", elem_desc); // accumulator
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("C", elem_desc);
 
     auto& root = builder.subject().root();
 
@@ -159,45 +68,76 @@ TEST(InLocalStorageTest, Dynamic) {
     builder.add_computational_memlet(block, a_in, tasklet, "_in2", {indvar}, a_desc);
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {}, elem_desc);
 
-    auto structured_sdfg = builder.move();
-
-    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
-    analysis::AnalysisManager am(builder_opt.subject());
-
     // Apply transformation
+    analysis::AnalysisManager am(builder.subject());
     transformations::InLocalStorage transformation(loop, a_in);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, am));
-    transformation.apply(builder_opt, am);
+    EXPECT_TRUE(transformation.can_be_applied(builder, am));
+    transformation.apply(builder, am);
+
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder, am);
+        applies |= sf_pass.run(builder, am);
+    } while (applies);
 
     // Verify: local buffer was created
-    EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
+    EXPECT_TRUE(builder.subject().exists("__daisy_in_local_storage_A0"));
+    types::Array array_desc(elem_desc, symbolic::integer(4));
+    EXPECT_TRUE(builder.subject().type("__daisy_in_local_storage_A0") == array_desc);
 
     // Verify: structure should now be [copy_loop, main_loop]
-    auto& new_root = builder_opt.subject().root();
+    auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
     // First element should be copy loop
     auto* copy_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
     EXPECT_NE(copy_loop, nullptr);
+    EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), symbolic::integer(4))));
+    EXPECT_TRUE(symbolic::eq(copy_loop->update(), symbolic::add(copy_loop->indvar(), symbolic::integer(1))));
 
-    // Second element should be the main loop
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
-    EXPECT_NE(main_loop, nullptr);
-
-    // Verify copy loop reads from A, writes to A_local
     auto& copy_body = copy_loop->root();
     EXPECT_EQ(copy_body.size(), 1);
     auto* copy_block = dynamic_cast<structured_control_flow::Block*>(&copy_body.at(0).first);
     EXPECT_NE(copy_block, nullptr);
 
+    EXPECT_EQ(copy_block->dataflow().nodes().size(), 3);
+    EXPECT_EQ(copy_block->dataflow().edges().size(), 2);
     bool reads_A = false;
     bool writes_A_local = false;
     for (auto* node : copy_block->dataflow().data_nodes()) {
-        if (node->data() == "A") reads_A = true;
-        if (node->data() == "__daisy_in_local_storage_A0") writes_A_local = true;
+        if (node->data() == "A") {
+            reads_A = true;
+            EXPECT_EQ(copy_block->dataflow().out_degree(*node), 1);
+            EXPECT_EQ(copy_block->dataflow().in_degree(*node), 0);
+
+            auto& oedge = *copy_block->dataflow().out_edges(*node).begin();
+            EXPECT_TRUE(oedge.base_type() == a_desc);
+            EXPECT_EQ(oedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), copy_loop->indvar()));
+        } else if (node->data() == "__daisy_in_local_storage_A0") {
+            writes_A_local = true;
+            EXPECT_EQ(copy_block->dataflow().in_degree(*node), 1);
+            EXPECT_EQ(copy_block->dataflow().out_degree(*node), 0);
+
+            auto& iedge = *copy_block->dataflow().in_edges(*node).begin();
+            EXPECT_TRUE(iedge.base_type() == array_desc);
+            EXPECT_EQ(iedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), copy_loop->indvar()));
+        }
     }
     EXPECT_TRUE(reads_A);
     EXPECT_TRUE(writes_A_local);
+
+    // Second element should be the main loop
+    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    EXPECT_NE(main_loop, nullptr);
+
 
     // Verify main loop uses local buffer
     auto& main_body = main_loop->root();
@@ -205,17 +145,30 @@ TEST(InLocalStorageTest, Dynamic) {
     auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
     EXPECT_NE(main_block, nullptr);
 
+    EXPECT_EQ(main_block->dataflow().nodes().size(), 4);
+    EXPECT_EQ(main_block->dataflow().edges().size(), 3);
     bool uses_A_local = false;
     bool uses_A_original = false;
     for (auto* node : main_block->dataflow().data_nodes()) {
-        if (node->data() == "__daisy_in_local_storage_A0") uses_A_local = true;
-        if (node->data() == "A") uses_A_original = true;
+        if (node->data() == "__daisy_in_local_storage_A0") {
+            uses_A_local = true;
+            EXPECT_EQ(main_block->dataflow().in_degree(*node), 0);
+            EXPECT_EQ(main_block->dataflow().out_degree(*node), 1);
+
+            auto& oedge = *main_block->dataflow().out_edges(*node).begin();
+            EXPECT_TRUE(oedge.base_type() == array_desc);
+            EXPECT_EQ(oedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), main_loop->indvar()));
+        }
+        if (node->data() == "A") {
+            uses_A_original = true;
+        }
     }
     EXPECT_TRUE(uses_A_local);
-    EXPECT_FALSE(uses_A_original); // Original A should be replaced
+    EXPECT_FALSE(uses_A_original);
 }
 
-TEST(InLocalStorageTest, PolyBench_Array_2D) {
+TEST(InLocalStorageTest, For_Array_PolyBench) {
     builder::StructuredSDFGBuilder builder("ols_flat_2d", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
@@ -223,11 +176,13 @@ TEST(InLocalStorageTest, PolyBench_Array_2D) {
     builder.add_container("j", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
-    types::Array array_desc(elem_desc, symbolic::integer(4));
-    types::Array array_desc_2d(array_desc, symbolic::integer(8));
+    types::Array array_desc(elem_desc, symbolic::integer(8));
+    types::Array array_desc_2d(array_desc, symbolic::integer(4));
     types::Pointer ptr_desc(array_desc_2d);
-    builder.add_container("A", ptr_desc, true);
-    builder.add_container("C", ptr_desc);
+    types::Pointer flat_ptr_desc(elem_desc);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("C", opaque_desc);
 
     auto& root = builder.subject().root();
 
@@ -248,162 +203,406 @@ TEST(InLocalStorageTest, PolyBench_Array_2D) {
         symbolic::add(j, symbolic::integer(1))
     );
 
-    // C[0][i][j] += A[0][i][j]
+    // C[0][i][j] = A[0][i][j]
     auto& block = builder.add_block(inner_loop.root());
     auto& a_in = builder.add_access(block, "A");
-    auto& c_in = builder.add_access(block, "C");
     auto& c_out = builder.add_access(block, "C");
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block, c_in, tasklet, "_in1", {symbolic::integer(0), i, j}, ptr_desc);
-    builder.add_computational_memlet(block, a_in, tasklet, "_in2", {symbolic::integer(0), i, j}, ptr_desc);
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in1"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in1", {symbolic::integer(0), i, j}, ptr_desc);
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::integer(0), i, j}, ptr_desc);
 
-    auto structured_sdfg = builder.move();
-
-    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
-    analysis::AnalysisManager am(builder_opt.subject());
-
+    // Apply transformation
+    analysis::AnalysisManager am(builder.subject());
     transformations::InLocalStorage transformation(outer_loop, a_in);
-    EXPECT_TRUE(transformation.can_be_applied(builder_opt, am));
-    transformation.apply(builder_opt, am);
-    builder_opt.subject().validate();
+    EXPECT_TRUE(transformation.can_be_applied(builder, am));
+    transformation.apply(builder, am);
 
-    // Verify local buffer was created
-    EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder, am);
+        applies |= sf_pass.run(builder, am);
+    } while (applies);
 
-    // Structure: [init_loop(s), outer_loop]
-    auto& new_root = builder_opt.subject().root();
+    // Verify: local buffer was created
+    EXPECT_TRUE(builder.subject().exists("__daisy_in_local_storage_A0"));
+    types::Array array_desc_ref(elem_desc, symbolic::integer(32));
+    EXPECT_TRUE(builder.subject().type("__daisy_in_local_storage_A0") == array_desc_ref);
+
+    // Verify: structure should now be [copy_loop, main_loop]
+    auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
-    // Init should be a for loop (first dimension)
-    auto* init_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
-    EXPECT_NE(init_loop, nullptr);
-    // Should iterate 0..4 (first dim extent)
-    EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
-    EXPECT_TRUE(symbolic::eq(init_loop->condition(), symbolic::Lt(init_loop->indvar(), symbolic::integer(4))));
+    // First element should be copy loop
+    auto* copy_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    EXPECT_NE(copy_loop, nullptr);
+    EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), symbolic::integer(4))));
+    EXPECT_TRUE(symbolic::eq(copy_loop->update(), symbolic::add(copy_loop->indvar(), symbolic::integer(1))));
 
-    // Init loop should contain nested loop for second dimension
-    auto& init_body = init_loop->root();
-    EXPECT_EQ(init_body.size(), 1);
-    auto* inner_init = dynamic_cast<structured_control_flow::Map*>(&init_body.at(0).first);
-    EXPECT_NE(inner_init, nullptr);
-    EXPECT_TRUE(symbolic::eq(inner_init->init(), symbolic::integer(0)));
-    EXPECT_TRUE(symbolic::eq(inner_init->condition(), symbolic::Lt(inner_init->indvar(), symbolic::integer(8))));
+    auto& copy_body = copy_loop->root();
+    EXPECT_EQ(copy_body.size(), 1);
+    auto* copy_loop_inner = dynamic_cast<structured_control_flow::Map*>(&copy_body.at(0).first);
+    EXPECT_NE(copy_loop_inner, nullptr);
+    EXPECT_TRUE(symbolic::eq(copy_loop_inner->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(copy_loop_inner->condition(), symbolic::Lt(copy_loop_inner->indvar(), symbolic::integer(8)))
+    );
+    EXPECT_TRUE(symbolic::eq(copy_loop_inner->update(), symbolic::add(copy_loop_inner->indvar(), symbolic::integer(1)))
+    );
 
-    // check that accesses got converted into linearized accesses
-    auto* inner_init_body = dynamic_cast<structured_control_flow::Block*>(&inner_init->root().at(0).first);
-    EXPECT_NE(inner_init_body, nullptr);
-    for (auto& edge : inner_init_body->dataflow().edges()) {
-        auto inferred_type = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
-        EXPECT_EQ(inferred_type->type_id(), types::TypeID::Scalar);
-        EXPECT_EQ(edge.base_type().primitive_type(), types::PrimitiveType::Double);
+    auto& copy_body_inner = copy_loop_inner->root();
+    EXPECT_EQ(copy_body_inner.size(), 1);
+    auto* copy_block = dynamic_cast<structured_control_flow::Block*>(&copy_body_inner.at(0).first);
+    EXPECT_NE(copy_block, nullptr);
+
+    EXPECT_EQ(copy_block->dataflow().nodes().size(), 3);
+    EXPECT_EQ(copy_block->dataflow().edges().size(), 2);
+    bool reads_A = false;
+    bool writes_A_local = false;
+    for (auto* node : copy_block->dataflow().data_nodes()) {
+        if (node->data() == "A") {
+            reads_A = true;
+            EXPECT_EQ(copy_block->dataflow().out_degree(*node), 1);
+            EXPECT_EQ(copy_block->dataflow().in_degree(*node), 0);
+
+            auto& oedge = *copy_block->dataflow().out_edges(*node).begin();
+            EXPECT_TRUE(oedge.base_type() == flat_ptr_desc);
+            EXPECT_EQ(oedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(
+                oedge.subset().at(0),
+                symbolic::add(copy_loop_inner->indvar(), symbolic::mul(copy_loop->indvar(), symbolic::integer(8)))
+            ));
+        } else if (node->data() == "__daisy_in_local_storage_A0") {
+            writes_A_local = true;
+            EXPECT_EQ(copy_block->dataflow().in_degree(*node), 1);
+            EXPECT_EQ(copy_block->dataflow().out_degree(*node), 0);
+
+            auto& iedge = *copy_block->dataflow().in_edges(*node).begin();
+            EXPECT_TRUE(iedge.base_type() == array_desc_ref);
+            EXPECT_EQ(iedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(
+                iedge.subset().at(0),
+                symbolic::add(copy_loop_inner->indvar(), symbolic::mul(copy_loop->indvar(), symbolic::integer(8)))
+            ));
+        }
     }
+    EXPECT_TRUE(reads_A);
+    EXPECT_TRUE(writes_A_local);
 
-    // Compute loop preserved
-    auto* compute_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
-    EXPECT_NE(compute_loop, nullptr);
+    // Second element should be the main loop
+    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    EXPECT_NE(main_loop, nullptr);
+
+    // Verify main loop uses local buffer
+    auto& main_body = main_loop->root();
+    EXPECT_EQ(main_body.size(), 1);
+    auto* main_loop_inner = dynamic_cast<structured_control_flow::For*>(&main_body.at(0).first);
+    EXPECT_NE(main_loop_inner, nullptr);
+
+    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_loop_inner->root().at(0).first);
+    EXPECT_NE(main_block, nullptr);
+
+    EXPECT_EQ(main_block->dataflow().nodes().size(), 3);
+    EXPECT_EQ(main_block->dataflow().edges().size(), 2);
+    bool uses_A_local = false;
+    bool uses_A_original = false;
+    for (auto* node : main_block->dataflow().data_nodes()) {
+        if (node->data() == "__daisy_in_local_storage_A0") {
+            uses_A_local = true;
+            EXPECT_EQ(main_block->dataflow().in_degree(*node), 0);
+            EXPECT_EQ(main_block->dataflow().out_degree(*node), 1);
+
+            auto& oedge = *main_block->dataflow().out_edges(*node).begin();
+            EXPECT_TRUE(oedge.base_type() == array_desc_ref);
+            EXPECT_EQ(oedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(
+                oedge.subset().at(0),
+                symbolic::add(main_loop_inner->indvar(), symbolic::mul(main_loop->indvar(), symbolic::integer(8)))
+            ));
+        }
+        if (node->data() == "A") {
+            uses_A_original = true;
+        }
+    }
+    EXPECT_TRUE(uses_A_local);
+    EXPECT_FALSE(uses_A_original);
 }
 
 /**
- * Test: InLocalStorage should fail on containers that are written
+ * Test: InLocalStorage on a dynamic access
  *
- * for i = 0..N: C[i] += A[i]
+ * Before:
+ *   for i = 0..4: C += A[0]
  *
- * InLocalStorage(loop, "C") should fail because C is written
- * InLocalStorage(loop, "A") should succeed because A is read-only
+ * After:
+ *   A_local[1]
+ *   for i' = 0..1: A_local[i'] = A[i']
+ *   for i = 0..4: C += A_local[0]
  */
-TEST(InLocalStorageTest, FailsOnWrittenContainer) {
-    builder::StructuredSDFGBuilder builder("ils_rw_test", FunctionType_CPU);
+TEST(InLocalStorageTest, For_Scalar) {
+    builder::StructuredSDFGBuilder builder("ils_dynamic_test", FunctionType_CPU);
 
+    // Create containers
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
-    types::Pointer ptr_desc(elem_desc);
-    builder.add_container("A", ptr_desc, true); // read-only
-    builder.add_container("C", ptr_desc, true); // read-write
+    types::Pointer a_desc(elem_desc);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("C", elem_desc);
 
     auto& root = builder.subject().root();
 
+    // Create loop: for i = 0..4
     auto indvar = symbolic::symbol("i");
-    auto& loop = builder.add_for(
-        root,
-        indvar,
-        symbolic::Lt(indvar, symbolic::integer(4)),
-        symbolic::integer(0),
-        symbolic::add(indvar, symbolic::integer(1))
-    );
+    auto bound = symbolic::integer(4);
+    auto init = symbolic::integer(0);
+    auto condition = symbolic::Lt(indvar, bound);
+    auto update = symbolic::add(indvar, symbolic::integer(1));
 
-    // C[i] += A[i]
-    auto& block = builder.add_block(loop.root());
+    auto& loop = builder.add_for(root, indvar, condition, init, update);
+    auto& body = loop.root();
+
+    // Add computation: C += A[i]
+    auto& block = builder.add_block(body);
     auto& a_in = builder.add_access(block, "A");
     auto& c_in = builder.add_access(block, "C");
     auto& c_out = builder.add_access(block, "C");
     auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block, c_in, tasklet, "_in1", {indvar}, ptr_desc);
-    builder.add_computational_memlet(block, a_in, tasklet, "_in2", {indvar}, ptr_desc);
-    builder.add_computational_memlet(block, tasklet, "_out", c_out, {indvar}, ptr_desc);
+    builder.add_computational_memlet(block, c_in, tasklet, "_in1", {}, elem_desc);
+    builder.add_computational_memlet(block, a_in, tasklet, "_in2", {symbolic::integer(0)}, a_desc);
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {}, elem_desc);
 
-    auto structured_sdfg = builder.move();
+    // Apply transformation
+    analysis::AnalysisManager am(builder.subject());
+    transformations::InLocalStorage transformation(loop, a_in);
+    EXPECT_TRUE(transformation.can_be_applied(builder, am));
+    transformation.apply(builder, am);
 
-    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
-    analysis::AnalysisManager am(builder_opt.subject());
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder, am);
+        applies |= sf_pass.run(builder, am);
+    } while (applies);
 
-    // InLocalStorage should FAIL on C since it's written
-    transformations::InLocalStorage ils_c(loop, c_in);
-    EXPECT_FALSE(ils_c.can_be_applied(builder_opt, am));
+    // Verify: local buffer was created
+    EXPECT_TRUE(builder.subject().exists("__daisy_in_local_storage_A0"));
+    types::Array array_desc(elem_desc, symbolic::integer(1));
+    EXPECT_TRUE(builder.subject().type("__daisy_in_local_storage_A0") == array_desc);
 
-    // InLocalStorage should SUCCEED on A since A is read-only
-    transformations::InLocalStorage ils_a(loop, a_in);
-    EXPECT_TRUE(ils_a.can_be_applied(builder_opt, am));
+    // Verify: structure should now be [copy_block, main_loop]
+    auto& new_root = builder.subject().root();
+    EXPECT_EQ(new_root.size(), 2);
+
+    // First element should be copy block
+    auto* copy_block = dynamic_cast<structured_control_flow::Block*>(&new_root.at(0).first);
+    EXPECT_NE(copy_block, nullptr);
+
+    EXPECT_EQ(copy_block->dataflow().nodes().size(), 3);
+    EXPECT_EQ(copy_block->dataflow().edges().size(), 2);
+    bool reads_A = false;
+    bool writes_A_local = false;
+    for (auto* node : copy_block->dataflow().data_nodes()) {
+        if (node->data() == "A") {
+            reads_A = true;
+            EXPECT_EQ(copy_block->dataflow().out_degree(*node), 1);
+            EXPECT_EQ(copy_block->dataflow().in_degree(*node), 0);
+
+            auto& oedge = *copy_block->dataflow().out_edges(*node).begin();
+            EXPECT_TRUE(oedge.base_type() == a_desc);
+            EXPECT_EQ(oedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), symbolic::zero()));
+        } else if (node->data() == "__daisy_in_local_storage_A0") {
+            writes_A_local = true;
+            EXPECT_EQ(copy_block->dataflow().in_degree(*node), 1);
+            EXPECT_EQ(copy_block->dataflow().out_degree(*node), 0);
+
+            auto& iedge = *copy_block->dataflow().in_edges(*node).begin();
+            EXPECT_TRUE(iedge.base_type() == array_desc);
+            EXPECT_EQ(iedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), symbolic::zero()));
+        }
+    }
+    EXPECT_TRUE(reads_A);
+    EXPECT_TRUE(writes_A_local);
+
+    // Second element should be the main loop
+    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    EXPECT_NE(main_loop, nullptr);
+
+
+    // Verify main loop uses local buffer
+    auto& main_body = main_loop->root();
+    EXPECT_EQ(main_body.size(), 1);
+    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    EXPECT_NE(main_block, nullptr);
+
+    EXPECT_EQ(main_block->dataflow().nodes().size(), 4);
+    EXPECT_EQ(main_block->dataflow().edges().size(), 3);
+    bool uses_A_local = false;
+    bool uses_A_original = false;
+    for (auto* node : main_block->dataflow().data_nodes()) {
+        if (node->data() == "__daisy_in_local_storage_A0") {
+            uses_A_local = true;
+            EXPECT_EQ(main_block->dataflow().in_degree(*node), 0);
+            EXPECT_EQ(main_block->dataflow().out_degree(*node), 1);
+
+            auto& oedge = *main_block->dataflow().out_edges(*node).begin();
+            EXPECT_TRUE(oedge.base_type() == array_desc);
+            EXPECT_EQ(oedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), symbolic::integer(0)));
+        }
+        if (node->data() == "A") {
+            uses_A_original = true;
+        }
+    }
+    EXPECT_TRUE(uses_A_local);
+    EXPECT_FALSE(uses_A_original);
 }
 
-/**
- * Test: InLocalStorage should fail on scalars
- *
- * for i = 0..N: ... scalar_val ...
- *
- * InLocalStorage(loop, "scalar_val") should fail because it's not an array
- */
-TEST(InLocalStorageTest, FailsOnScalar) {
-    builder::StructuredSDFGBuilder builder("ils_scalar_fail_test", FunctionType_CPU);
+TEST(InLocalStorageTest, Map_Array) {
+    builder::StructuredSDFGBuilder builder("ils_dynamic_test", FunctionType_CPU);
 
+    // Create containers
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
-    builder.add_container("scalar_val", elem_desc, true);
-    builder.add_container("result", elem_desc);
+    types::Pointer a_desc(elem_desc);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("C", opaque_desc, true);
 
     auto& root = builder.subject().root();
 
+    // Create loop: for i = 0..4
     auto indvar = symbolic::symbol("i");
-    auto& loop = builder.add_for(
-        root,
-        indvar,
-        symbolic::Lt(indvar, symbolic::integer(4)),
-        symbolic::integer(0),
-        symbolic::add(indvar, symbolic::integer(1))
-    );
+    auto bound = symbolic::integer(4);
+    auto init = symbolic::integer(0);
+    auto condition = symbolic::Lt(indvar, bound);
+    auto update = symbolic::add(indvar, symbolic::integer(1));
 
-    // result = result + scalar_val
-    auto& block = builder.add_block(loop.root());
-    auto& s_in = builder.add_access(block, "scalar_val");
-    auto& r_in = builder.add_access(block, "result");
-    auto& r_out = builder.add_access(block, "result");
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block, r_in, tasklet, "_in1", {}, elem_desc);
-    builder.add_computational_memlet(block, s_in, tasklet, "_in2", {}, elem_desc);
-    builder.add_computational_memlet(block, tasklet, "_out", r_out, {}, elem_desc);
+    auto& loop =
+        builder
+            .add_map(root, indvar, condition, init, update, structured_control_flow::ScheduleType_Sequential::create());
+    auto& body = loop.root();
 
-    auto structured_sdfg = builder.move();
+    // Add computation: C[i] = A[i]
+    auto& block = builder.add_block(body);
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in1"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in1", {indvar}, a_desc);
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {indvar}, a_desc);
 
-    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
-    analysis::AnalysisManager am(builder_opt.subject());
+    // Apply transformation
+    analysis::AnalysisManager am(builder.subject());
+    transformations::InLocalStorage transformation(loop, a_in);
+    EXPECT_TRUE(transformation.can_be_applied(builder, am));
+    transformation.apply(builder, am);
 
-    // InLocalStorage should FAIL on scalar_val
-    transformations::InLocalStorage ils(loop, s_in);
-    EXPECT_FALSE(ils.can_be_applied(builder_opt, am));
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder, am);
+        applies |= sf_pass.run(builder, am);
+    } while (applies);
+
+    // Verify: local buffer was created
+    EXPECT_TRUE(builder.subject().exists("__daisy_in_local_storage_A0"));
+    types::Array array_desc(elem_desc, symbolic::integer(4));
+    EXPECT_TRUE(builder.subject().type("__daisy_in_local_storage_A0") == array_desc);
+
+    // Verify: structure should now be [copy_loop, main_loop]
+    auto& new_root = builder.subject().root();
+    EXPECT_EQ(new_root.size(), 2);
+
+    // First element should be copy loop
+    auto* copy_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    EXPECT_NE(copy_loop, nullptr);
+    EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), symbolic::integer(4))));
+    EXPECT_TRUE(symbolic::eq(copy_loop->update(), symbolic::add(copy_loop->indvar(), symbolic::integer(1))));
+
+    auto& copy_body = copy_loop->root();
+    EXPECT_EQ(copy_body.size(), 1);
+    auto* copy_block = dynamic_cast<structured_control_flow::Block*>(&copy_body.at(0).first);
+    EXPECT_NE(copy_block, nullptr);
+
+    EXPECT_EQ(copy_block->dataflow().nodes().size(), 3);
+    EXPECT_EQ(copy_block->dataflow().edges().size(), 2);
+    bool reads_A = false;
+    bool writes_A_local = false;
+    for (auto* node : copy_block->dataflow().data_nodes()) {
+        if (node->data() == "A") {
+            reads_A = true;
+            EXPECT_EQ(copy_block->dataflow().out_degree(*node), 1);
+            EXPECT_EQ(copy_block->dataflow().in_degree(*node), 0);
+
+            auto& oedge = *copy_block->dataflow().out_edges(*node).begin();
+            EXPECT_TRUE(oedge.base_type() == a_desc);
+            EXPECT_EQ(oedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), copy_loop->indvar()));
+        } else if (node->data() == "__daisy_in_local_storage_A0") {
+            writes_A_local = true;
+            EXPECT_EQ(copy_block->dataflow().in_degree(*node), 1);
+            EXPECT_EQ(copy_block->dataflow().out_degree(*node), 0);
+
+            auto& iedge = *copy_block->dataflow().in_edges(*node).begin();
+            EXPECT_TRUE(iedge.base_type() == array_desc);
+            EXPECT_EQ(iedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(iedge.subset().at(0), copy_loop->indvar()));
+        }
+    }
+    EXPECT_TRUE(reads_A);
+    EXPECT_TRUE(writes_A_local);
+
+    // Second element should be the main loop
+    auto* main_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    EXPECT_NE(main_loop, nullptr);
+
+
+    // Verify main loop uses local buffer
+    auto& main_body = main_loop->root();
+    EXPECT_EQ(main_body.size(), 1);
+    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    EXPECT_NE(main_block, nullptr);
+
+    EXPECT_EQ(main_block->dataflow().nodes().size(), 3);
+    EXPECT_EQ(main_block->dataflow().edges().size(), 2);
+    bool uses_A_local = false;
+    bool uses_A_original = false;
+    for (auto* node : main_block->dataflow().data_nodes()) {
+        if (node->data() == "__daisy_in_local_storage_A0") {
+            uses_A_local = true;
+            EXPECT_EQ(main_block->dataflow().in_degree(*node), 0);
+            EXPECT_EQ(main_block->dataflow().out_degree(*node), 1);
+
+            auto& oedge = *main_block->dataflow().out_edges(*node).begin();
+            EXPECT_TRUE(oedge.base_type() == array_desc);
+            EXPECT_EQ(oedge.subset().size(), 1);
+            EXPECT_TRUE(symbolic::eq(oedge.subset().at(0), main_loop->indvar()));
+        }
+        if (node->data() == "A") {
+            uses_A_original = true;
+        }
+    }
+    EXPECT_TRUE(uses_A_local);
+    EXPECT_FALSE(uses_A_original);
 }
 
 /**
@@ -662,6 +861,17 @@ TEST(InLocalStorageTest, TiledAccess_2D) {
     if (can_apply) {
         ils.apply(builder_opt, am);
 
+        // Cleanup for simpler verification
+        am.invalidate_all();
+        passes::SequenceFusion sf_pass;
+        passes::DeadCFGElimination dce_pass;
+        bool applies = false;
+        do {
+            applies = false;
+            applies |= dce_pass.run(builder_opt, am);
+            applies |= sf_pass.run(builder_opt, am);
+        } while (applies);
+
         // Verify: local buffer was created
         EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
 
@@ -783,6 +993,16 @@ TEST(InLocalStorageTest, TiledAccess_1D) {
 
     if (can_apply) {
         ils.apply(builder_opt, am);
+        // Cleanup for simpler verification
+        am.invalidate_all();
+        passes::SequenceFusion sf_pass;
+        passes::DeadCFGElimination dce_pass;
+        bool applies = false;
+        do {
+            applies = false;
+            applies |= dce_pass.run(builder_opt, am);
+            applies |= sf_pass.run(builder_opt, am);
+        } while (applies);
 
         // Verify: local buffer was created
         EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
@@ -901,6 +1121,17 @@ TEST(InLocalStorageTest, TiledAccess_2D_Panel) {
 
     if (can_apply) {
         ils.apply(builder_opt, am);
+        // Cleanup for simpler verification
+        am.invalidate_all();
+        passes::SequenceFusion sf_pass;
+        passes::DeadCFGElimination dce_pass;
+        bool applies = false;
+        do {
+            applies = false;
+            applies |= dce_pass.run(builder_opt, am);
+            applies |= sf_pass.run(builder_opt, am);
+        } while (applies);
+
 
         // Verify: local buffer was created
         EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
@@ -1096,6 +1327,17 @@ TEST(InLocalStorageTest, TiledStencil_2D_5Point) {
 
     if (can_apply) {
         ils.apply(builder_opt, am);
+        // Cleanup for simpler verification
+        am.invalidate_all();
+        passes::SequenceFusion sf_pass;
+        passes::DeadCFGElimination dce_pass;
+        bool applies = false;
+        do {
+            applies = false;
+            applies |= dce_pass.run(builder_opt, am);
+            applies |= sf_pass.run(builder_opt, am);
+        } while (applies);
+
 
         // Verify: local buffer was created
         EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
@@ -1260,6 +1502,17 @@ TEST(InLocalStorageTest, GPU_Cooperative_FlatPointer) {
     transformations::InLocalStorage ils(loop, a_in, types::StorageType::NV_Shared());
     EXPECT_TRUE(ils.can_be_applied(builder_opt, am));
     ils.apply(builder_opt, am);
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder_opt, am);
+        applies |= sf_pass.run(builder_opt, am);
+    } while (applies);
+
 
     // Verify: shared buffer was created
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
@@ -1386,6 +1639,17 @@ TEST(InLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     transformations::InLocalStorage ils(loop, a_in, types::StorageType::NV_Shared());
     EXPECT_TRUE(ils.can_be_applied(builder_opt, am));
     ils.apply(builder_opt, am);
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder_opt, am);
+        applies |= sf_pass.run(builder_opt, am);
+    } while (applies);
+
 
     // Verify: shared buffer with resolved size (M→8)
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
@@ -1579,6 +1843,17 @@ TEST(InLocalStorageTest, GPU_Cooperative_AllDimsFree) {
     transformations::InLocalStorage ils(loop, a_in, types::StorageType::NV_Shared());
     EXPECT_TRUE(ils.can_be_applied(builder_opt, am));
     ils.apply(builder_opt, am);
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder_opt, am);
+        applies |= sf_pass.run(builder_opt, am);
+    } while (applies);
+
 
     // Verify buffer: extent N resolved to 32
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
@@ -1645,6 +1920,17 @@ TEST(InLocalStorageTest, CPU_FlatPointer_Linearized) {
     transformations::InLocalStorage ils(loop, a_in);
     EXPECT_TRUE(ils.can_be_applied(builder_opt, am));
     ils.apply(builder_opt, am);
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder_opt, am);
+        applies |= sf_pass.run(builder_opt, am);
+    } while (applies);
+
 
     // Verify: buffer created, structure inside outer loop = [copy_map, main_loop]
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
@@ -1750,6 +2036,17 @@ TEST(InLocalStorageTest, TileGroups_TwoIndependentReads) {
     transformations::InLocalStorage ils_ik(k_loop, a_ik);
     EXPECT_TRUE(ils_ik.can_be_applied(builder_opt, am));
     ils_ik.apply(builder_opt, am);
+
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder_opt, am);
+        applies |= sf_pass.run(builder_opt, am);
+    } while (applies);
 
     // Verify: local buffer was created
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
@@ -1857,6 +2154,17 @@ TEST(InLocalStorageTest, TileGroups_SequentialApplication) {
     transformations::InLocalStorage ils_ik(k_loop, a_ik);
     ASSERT_TRUE(ils_ik.can_be_applied(builder_opt, am));
     ils_ik.apply(builder_opt, am);
+
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder_opt, am);
+        applies |= sf_pass.run(builder_opt, am);
+    } while (applies);
 
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
 
@@ -1974,6 +2282,17 @@ TEST(InLocalStorageTest, OpaquePointer_PolybenchMatmul_Tiled) {
     transformations::InLocalStorage ils(i_loop, a_in);
     ASSERT_TRUE(ils.can_be_applied(builder_opt, am));
     ils.apply(builder_opt, am);
+    // Cleanup for simpler verification
+    am.invalidate_all();
+    passes::SequenceFusion sf_pass;
+    passes::DeadCFGElimination dce_pass;
+    bool applies = false;
+    do {
+        applies = false;
+        applies |= dce_pass.run(builder_opt, am);
+        applies |= sf_pass.run(builder_opt, am);
+    } while (applies);
+
 
     EXPECT_NO_THROW(builder_opt.subject().validate());
 

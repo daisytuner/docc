@@ -19,7 +19,7 @@ namespace transformations {
  * within a loop. It copies the accessed subset (tile) into a contiguous buffer
  * before the loop, then redirects all reads to the local buffer.
  *
- * @note The container must be read-only within the loop scope (no writes)
+ * @note The transformation does not check the read-only property.
  * @note All tile extents must resolve to integer constants
  */
 class InLocalStorage : public Transformation {
@@ -69,7 +69,6 @@ public:
      *
      * Criteria:
      * - Container exists and is pointer type
-     * - Container is read-only within the loop (no writes)
      * - MemoryLayoutAnalysis provides a tile with integer extents
      *
      * @param builder The SDFG builder

@@ -11,8 +11,6 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/memlet.h"
-#include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
-#include "sdfg/passes/structured_control_flow/sequence_fusion.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -49,22 +47,9 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         return false;
     }
 
-    // Criterion: Container must be used in the loop body
-    auto& users = analysis_manager.get<analysis::Users>();
-    analysis::UsersView body_users(users, body);
-    if (body_users.uses(this->container_).empty()) {
-        return false;
-    }
-
-    // Criterion: Container must be read-only within the loop (no writes)
-    if (!body_users.writes(this->container_).empty()) {
-        return false;
-    }
-
     // Use MemoryLayoutAnalysis tile group API
-    auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
-
     // Find a representative memlet from the access node to identify its group.
+    auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
     const analysis::MemoryTileGroup* group = nullptr;
     auto& dfg = access_node_.get_parent();
     for (auto& memlet : dfg.out_edges(access_node_)) {
@@ -556,18 +541,6 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         }
     };
     rewrite_accesses(loop_.root());
-
-    // Cleanup
-    analysis_manager.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, analysis_manager);
-        applies |= sf_pass.run(builder, analysis_manager);
-    } while (applies);
 }
 
 void InLocalStorage::to_json(nlohmann::json& j) const {
