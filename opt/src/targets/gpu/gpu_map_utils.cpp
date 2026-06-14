@@ -88,16 +88,10 @@ symbolic::Expression find_nested_gpu_iterations(
                 continue;
             }
 
-            auto init = map->init();
-            if (!symbolic::eq(init, symbolic::zero())) {
-                throw InvalidSDFGException("Init is not zero");
-            }
-
-            auto stride = map->stride();
-            if (!symbolic::eq(stride, symbolic::one())) {
-                throw InvalidSDFGException("Stride is not one");
-            }
-
+            // Note: arbitrary `init` and `stride` are permitted here; the
+            // dispatcher emits `indvar = init + thread_flat_id * stride` so
+            // the body sees the natural strided value. `num_iterations()`
+            // already accounts for both.
             auto num_iterations = map->num_iterations();
             if (num_iterations.is_null()) {
                 throw InvalidSDFGException("Cannot determine number of iterations for nested map in GPU kernel");
@@ -144,6 +138,25 @@ symbolic::SymbolSet get_gpu_indvars(
     return indvars;
 }
 
+template<typename ScheduleT>
+std::vector<structured_control_flow::Map*>
+get_gpu_maps(structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.descendants(&node);
+    loops.insert(&node);
+    std::vector<structured_control_flow::Map*> maps;
+    for (const auto& loop : loops) {
+        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+            if (map->schedule_type().value() == ScheduleT::value()) {
+                if (ScheduleT::dimension(map->schedule_type()) == dimension) {
+                    maps.push_back(map);
+                }
+            }
+        }
+    }
+    return maps;
+}
+
 // Explicit template instantiations for CUDA
 template symbolic::Expression find_nested_gpu_blocksize<cuda::ScheduleType_CUDA>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
@@ -160,6 +173,10 @@ template symbolic::SymbolSet get_gpu_indvars<cuda::ScheduleType_CUDA>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 
+template std::vector<structured_control_flow::Map*> get_gpu_maps<cuda::ScheduleType_CUDA>(
+    structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
+);
+
 // Explicit template instantiations for ROCM
 template symbolic::Expression find_nested_gpu_blocksize<rocm::ScheduleType_ROCM>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
@@ -173,6 +190,10 @@ template bool is_outermost_gpu_map<
     rocm::ScheduleType_ROCM>(structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager);
 
 template symbolic::SymbolSet get_gpu_indvars<rocm::ScheduleType_ROCM>(
+    structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
+);
+
+template std::vector<structured_control_flow::Map*> get_gpu_maps<rocm::ScheduleType_ROCM>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 

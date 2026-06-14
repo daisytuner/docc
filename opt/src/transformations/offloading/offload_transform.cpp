@@ -75,10 +75,14 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
         }
     }
 
-    // Criterion: Map must start at 0
-    if (!symbolic::eq(this->map_.init(), symbolic::zero())) {
-        if (report_) report_->transform_impossible(this, "non zero start");
-        DEBUG_PRINTLN("Cannot apply transform: map does not start at zero");
+    // Note: arbitrary `init` and `stride` are permitted on the kernel-boundary
+    // Map. The CUDA/ROCm dispatchers emit
+    //   `<map.indvar> = init + thread_flat_id * stride`,
+    // and `num_iterations()` already accounts for both when computing the grid
+    // geometry.
+    if (map_.num_iterations().is_null()) {
+        if (report_) report_->transform_impossible(this, "cannot determine num iterations");
+        DEBUG_PRINTLN("Cannot apply transform: cannot determine number of iterations for map");
         return false;
     }
 

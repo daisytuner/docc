@@ -207,8 +207,23 @@ void ROCMMapDispatcher::dispatch_kernel_body(
     }
     // Boundary Conditions
     if (!ScheduleType_ROCM::nested_sync(node_.schedule_type())) {
-        library_stream << "if (" << indvar->get_name() << " < " << rocm_language_extension.expression(num_iterations)
-                       << ") {" << std::endl;
+        std::string flat_id;
+        switch (ScheduleType_ROCM::dimension(node_.schedule_type())) {
+            case ROCMDimension::X:
+                flat_id = "__daisy_hip_indvar_x";
+                break;
+            case ROCMDimension::Y:
+                flat_id = "__daisy_hip_indvar_y";
+                break;
+            case ROCMDimension::Z:
+                flat_id = "__daisy_hip_indvar_z";
+                break;
+            default:
+                flat_id = indvar->get_name();
+                break;
+        }
+        library_stream << "if (" << flat_id << " < " << rocm_language_extension.expression(num_iterations) << ") {"
+                       << std::endl;
         library_stream.setIndent(library_stream.indent() + 4);
     }
 
@@ -316,18 +331,38 @@ void ROCMMapDispatcher::dispatch_kernel_preamble(
     library_stream << "int " << indvar_z << " = " << this->language_extension_.expression(gpu_indvar_z) << ";"
                    << std::endl;
 
-    // Declare all other indvars in the kernel
-    for (auto& var : x_vars) {
-        library_stream << "int " << var->get_name() << " = " << indvar_x << ";" << std::endl;
-    }
+    // Declare each per-Map indvar as a strided affine of the flat thread id:
+    //   <map.indvar> = <map.init> + <thread_flat_id> * <map.stride>
+    auto x_maps = gpu::get_gpu_maps<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::X);
+    auto y_maps = gpu::get_gpu_maps<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Y);
+    auto z_maps = gpu::get_gpu_maps<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Z);
 
-    for (auto& var : y_vars) {
-        library_stream << "int " << var->get_name() << " = " << indvar_y << ";" << std::endl;
-    }
+    auto emit_indvar = [&](structured_control_flow::Map* map, const std::string& flat_id_var) {
+        symbolic::Expression value = symbolic::symbol(flat_id_var);
+        auto stride = map->stride();
+        if (!stride.is_null() && !symbolic::eq(stride, symbolic::one())) {
+            value = symbolic::mul(value, stride);
+        }
+        auto init = map->init();
+        if (!symbolic::eq(init, symbolic::zero())) {
+            value = symbolic::add(init, value);
+        }
+        library_stream << "int " << map->indvar()->get_name() << " = " << this->language_extension_.expression(value)
+                       << ";" << std::endl;
+    };
 
-    for (auto& var : z_vars) {
-        library_stream << "int " << var->get_name() << " = " << indvar_z << ";" << std::endl;
+    for (auto* map : x_maps) {
+        emit_indvar(map, indvar_x);
     }
+    for (auto* map : y_maps) {
+        emit_indvar(map, indvar_y);
+    }
+    for (auto* map : z_maps) {
+        emit_indvar(map, indvar_z);
+    }
+    (void) x_vars;
+    (void) y_vars;
+    (void) z_vars;
 }
 
 codegen::InstrumentationInfo ROCMMapDispatcher::instrumentation_info() const {
