@@ -14,7 +14,6 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
-#include "sdfg/transformations/utils.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/utils.h"

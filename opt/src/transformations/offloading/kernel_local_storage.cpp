@@ -25,7 +25,6 @@
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
-#include "sdfg/transformations/utils.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/structure.h"
 #include "sdfg/types/type.h"
@@ -125,7 +124,11 @@ std::tuple<bool, bool, bool> KernelLocalStorage::
     available_dims(std::vector<symbolic::Expression> subsets, analysis::AnalysisManager& analysis_manager) {
     auto ancestors = ControlFlowNode::parent_chain(loop_);
 
-    symbolic::Integer iteration_count = get_iteration_count(loop_);
+    auto num_iterations = loop_.num_iterations();
+    if (num_iterations.is_null() || !SymEngine::is_a<SymEngine::Integer>(*num_iterations)) {
+        num_iterations = loop_.num_iterations_approx();
+    }
+    symbolic::Integer iteration_count = SymEngine::rcp_static_cast<const SymEngine::Integer>(num_iterations);
 
     auto [x_dim_size, y_dim_size, z_dim_size] = dim_size(ancestors);
     auto [x_dim_indvar, y_dim_indvar, z_dim_indvar] = dim_indvars(ancestors);
@@ -341,19 +344,22 @@ bool KernelLocalStorage::is_candidate(
 
 bool KernelLocalStorage::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    // Criterion 1: Loop has integer iteration count
+    auto num_iterations = loop_.num_iterations();
+    if (num_iterations.is_null() || !SymEngine::is_a<SymEngine::Integer>(*num_iterations)) {
+        num_iterations = loop_.num_iterations_approx();
+        if (num_iterations.is_null() || !SymEngine::is_a<SymEngine::Integer>(*num_iterations)) {
+            return false;
+        }
+    }
+
+    // Check if valid candidate
     if (!is_candidate(loop_, container_, builder, analysis_manager)) {
         return false;
     }
 
-    auto ancestors = ControlFlowNode::parent_chain(loop_);
-
-    // Criterion: Iteration count is known and an Integer
-    symbolic::Integer iteration_count = get_iteration_count(loop_);
-    if (iteration_count == SymEngine::null) {
-        return false;
-    }
-
     // Criterion: All block dimensions are known and an Integer
+    auto ancestors = ControlFlowNode::parent_chain(loop_);
     auto [x_dim_size, y_dim_size, z_dim_size] = dim_size(ancestors);
     if (x_dim_size == SymEngine::null || y_dim_size == SymEngine::null || z_dim_size == SymEngine::null) {
         return false;
@@ -425,7 +431,11 @@ void KernelLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis
         6. replace subset expressions in loop
     */
 
-    symbolic::Integer iteration_count = get_iteration_count(loop_);
+    auto num_iterations = loop_.num_iterations();
+    if (num_iterations.is_null() || !SymEngine::is_a<SymEngine::Integer>(*num_iterations)) {
+        num_iterations = loop_.num_iterations_approx();
+    }
+    symbolic::Integer iteration_count = SymEngine::rcp_static_cast<const SymEngine::Integer>(num_iterations);
 
     auto [x_dim_size, y_dim_size, z_dim_size] = dim_size(ancestors);
     auto [x_dim_indvar, y_dim_indvar, z_dim_indvar] = dim_indvars(ancestors);

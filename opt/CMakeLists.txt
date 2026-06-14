@@ -109,7 +109,6 @@ set(SOURCE_FILES
     src/transformations/in_local_storage.cpp
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
-    src/transformations/utils.cpp
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
 )

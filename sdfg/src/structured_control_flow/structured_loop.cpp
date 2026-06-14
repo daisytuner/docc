@@ -94,6 +94,9 @@ symbolic::Integer StructuredLoop::stride() {
         return SymEngine::null;
     }
     auto int_add_coeff = SymEngine::rcp_static_cast<const SymEngine::Integer>(add_coeff)->as_int();
+    if (int_add_coeff == 0) {
+        return SymEngine::null;
+    }
     return SymEngine::integer(int_add_coeff);
 };
 
@@ -121,9 +124,6 @@ symbolic::Expression StructuredLoop::canonical_bound() {
         return SymEngine::null;
     }
     auto stride_int = stride->as_int();
-    if (stride_int == 0 || stride_int > 1 || stride_int < -1) {
-        return SymEngine::null;
-    }
     if (stride_int < 0) {
         return this->canonical_bound_lower();
     } else {
@@ -331,13 +331,68 @@ symbolic::Expression StructuredLoop::canonical_bound_lower() {
 }
 
 symbolic::Expression StructuredLoop::num_iterations() {
-    // implies |stride| == 1, so we can compute number of iterations as (bound - init)
+    auto stride = this->stride();
+    if (stride.is_null()) {
+        return SymEngine::null;
+    }
+    auto stride_int = stride->as_int();
+
     auto bound = this->canonical_bound();
     if (bound.is_null()) {
         return SymEngine::null;
     }
-    auto num_iters = symbolic::expand(symbolic::sub(bound, this->init()));
-    num_iters = symbolic::simplify(num_iters);
+
+    symbolic::Expression numerator;
+    symbolic::Expression divisor;
+    if (stride_int > 0) {
+        numerator = symbolic::expand(symbolic::sub(bound, this->init()));
+        divisor = stride;
+    } else {
+        numerator = symbolic::expand(symbolic::sub(this->init(), bound));
+        divisor = symbolic::integer(-stride_int);
+    }
+
+    auto num_iters = symbolic::divide_ceil(numerator, divisor);
+    num_iters = symbolic::simplify(symbolic::max(symbolic::zero(), num_iters));
+    return num_iters;
+}
+
+symbolic::Expression StructuredLoop::num_iterations_approx() {
+    // Conservative upper bound on the iteration count. Same formula as
+    // num_iterations(), but the numerator (bound - init for positive stride,
+    // init - bound for negative stride) is fed through symbolic::overapproximate
+    // before the ceiling division. This distributes the init term inside any
+    // top-level min/max in the bound, exposing tile-style cancellations such as
+    // min(global, init + T) - init  --(distribute)-->  min(global - init, T)
+    //                              --(overapproximate)-->  T
+    // when T is a plain integer constant.
+    auto stride = this->stride();
+    if (stride.is_null()) {
+        return SymEngine::null;
+    }
+    auto stride_int = stride->as_int();
+    if (stride_int == 0) {
+        return SymEngine::null;
+    }
+
+    auto bound = this->canonical_bound();
+    if (bound.is_null()) {
+        return SymEngine::null;
+    }
+
+    symbolic::Expression numerator;
+    symbolic::Expression divisor;
+    if (stride_int > 0) {
+        numerator = symbolic::sub(bound, this->init());
+        divisor = stride;
+    } else {
+        numerator = symbolic::sub(this->init(), bound);
+        divisor = symbolic::integer(-stride_int);
+    }
+    numerator = symbolic::simplify(symbolic::expand(symbolic::overapproximate(numerator)));
+
+    auto num_iters = symbolic::divide_ceil(numerator, divisor);
+    num_iters = symbolic::simplify(symbolic::max(symbolic::zero(), num_iters));
     return num_iters;
 }
 
