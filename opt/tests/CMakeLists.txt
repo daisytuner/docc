@@ -31,6 +31,8 @@ set(TEST_FILES
     transformations/offloading/rocblas_data_transfer_extraction_test.cpp
     transformations/offloading/cuda_stdlib_data_transfer_extraction_test.cpp
     transformations/offloading/rocm_stdlib_data_transfer_extraction_test.cpp
+    optimizations/diamond_tiling_test.cpp
+    optimizations/blocking_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
     passes/offloading/rocm_library_node_transfer_extraction_pass_test.cpp
@@ -64,8 +66,6 @@ set(TEST_FILES
     transformations/in_local_storage_test.cpp
     transformations/recorder_test.cpp
     transformations/vectorize_transform_test.cpp
-    transformations/optimizations/diamond_tiling_test.cpp
-    transformations/optimizations/blocking_test.cpp
     transformations/transformation_serialization_test.cpp
     test.cpp
 )
