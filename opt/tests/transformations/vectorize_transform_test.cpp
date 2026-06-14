@@ -1,10 +1,10 @@
-#include "sdfg/transformations/omp_transform.h"
+#include "sdfg/transformations/vectorize_transform.h"
 
 #include <gtest/gtest.h>
 
 using namespace sdfg;
 
-TEST(OMPTransformTest, MapWithSequentialSchedule) {
+TEST(VectorizeTransformTest, MapWithSequentialSchedule) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -46,14 +46,14 @@ TEST(OMPTransformTest, MapWithSequentialSchedule) {
 
     // Apply
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::OMPTransform transformation(loop1);
+    transformations::VectorizeTransform transformation(loop1);
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
-    EXPECT_EQ(loop1.schedule_type().value(), omp::ScheduleType_OMP::value());
+    EXPECT_EQ(loop1.schedule_type().value(), vectorize::ScheduleType_Vectorize::value());
 }
 
-TEST(OMPTransformTest, MapWithParallelSchedule) {
+TEST(VectorizeTransformTest, MapWithVectorizeSchedule) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -79,7 +79,8 @@ TEST(OMPTransformTest, MapWithParallelSchedule) {
     auto condition1 = symbolic::Lt(indvar1, bound1);
     auto update1 = symbolic::add(indvar1, symbolic::integer(1));
 
-    auto& loop1 = builder.add_map(root, indvar1, condition1, init1, update1, omp::ScheduleType_OMP::create());
+    auto& loop1 =
+        builder.add_map(root, indvar1, condition1, init1, update1, vectorize::ScheduleType_Vectorize::create());
     auto& body1 = loop1.root();
 
     // Add computation
@@ -93,12 +94,12 @@ TEST(OMPTransformTest, MapWithParallelSchedule) {
 
     // Apply
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::OMPTransform transformation(loop1);
+    transformations::VectorizeTransform transformation(loop1);
     ASSERT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
 
-TEST(OMPTransformTest, Serialization) {
+TEST(VectorizeTransformTest, Serialization) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -128,20 +129,20 @@ TEST(OMPTransformTest, Serialization) {
 
     size_t map_id = loop.element_id();
 
-    transformations::OMPTransform transformation(loop);
+    transformations::VectorizeTransform transformation(loop);
 
     // Test to_json
     nlohmann::json j;
     EXPECT_NO_THROW(transformation.to_json(j));
 
     // Verify JSON structure
-    EXPECT_EQ(j["transformation_type"], "OMPTransform");
+    EXPECT_EQ(j["transformation_type"], "VectorizeTransform");
     EXPECT_TRUE(j.contains("subgraph"));
     EXPECT_EQ(j["subgraph"]["0"]["element_id"], map_id);
     EXPECT_EQ(j["subgraph"]["0"]["type"], "map");
 }
 
-TEST(OMPTransformTest, Deserialization) {
+TEST(VectorizeTransformTest, Deserialization) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -167,20 +168,20 @@ TEST(OMPTransformTest, Deserialization) {
 
     // Create JSON description
     nlohmann::json j;
-    j["transformation_type"] = "OMPTransform";
+    j["transformation_type"] = "VectorizeTransform";
     j["subgraph"] = {{"0", {{"element_id", map_id}, {"type", "map"}}}};
 
     // Test from_json
     EXPECT_NO_THROW({
-        auto deserialized = transformations::OMPTransform::from_json(builder, j);
-        EXPECT_EQ(deserialized.name(), "OMPTransform");
+        auto deserialized = transformations::VectorizeTransform::from_json(builder, j);
+        EXPECT_EQ(deserialized.name(), "VectorizeTransform");
     });
 
     EXPECT_THROW(
         {
             nlohmann::json invalid_j = j;
             invalid_j["subgraph"]["0"]["element_id"] = 9999; // Non-existent ID
-            transformations::OMPTransform::from_json(builder, invalid_j);
+            transformations::VectorizeTransform::from_json(builder, invalid_j);
         },
         transformations::InvalidTransformationDescriptionException
     );

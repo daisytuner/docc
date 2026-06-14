@@ -16,7 +16,6 @@ bool LoopTiling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     if (this->tile_size_ <= 1) {
         return false;
     }
-    // Criterion contiguous loop
     return loop_.is_contiguous();
 };
 
@@ -32,7 +31,6 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     // Step 1: Define new outer loop
     auto outer_indvar_str = builder.find_new_name(indvar->get_name() + "_tile");
     builder.add_container(outer_indvar_str, sdfg.type(loop_.indvar()->get_name()));
-
     auto outer_indvar = symbolic::symbol(outer_indvar_str);
     auto outer_condition = symbolic::subs(loop_.condition(), indvar, outer_indvar);
     auto outer_update = symbolic::add(outer_indvar, symbolic::integer(this->tile_size_));

@@ -62,9 +62,8 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     }
 
     // Use MemoryLayoutAnalysis tile group API
-    auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
-
     // Find a representative memlet from the access node to identify its group.
+    auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
     const analysis::MemoryTileGroup* group = nullptr;
     auto& dfg = access_node_.get_parent();
     for (auto& memlet : dfg.out_edges(access_node_)) {
