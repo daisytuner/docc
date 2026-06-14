@@ -1,5 +1,6 @@
 #include "sdfg/transformations/in_local_storage.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <string>
@@ -218,30 +219,114 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     // Create local buffer name
     local_name_ = builder.find_new_name("__daisy_in_local_storage_" + this->container_);
 
-    // Collect varying dimensions (extent > 1) and compute buffer layout
+    // Collect varying dimensions (extent > 1) and their sizes
     std::vector<size_t> varying_dims;
-    std::vector<symbolic::Expression> dim_sizes;
+    std::vector<symbolic::Expression> varying_dim_sizes;
     for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
         auto& dim_size = tile_info_.dimensions.at(d);
         if (!symbolic::eq(dim_size, symbolic::integer(1))) {
             varying_dims.push_back(d);
-            dim_sizes.push_back(dim_size);
+            varying_dim_sizes.push_back(dim_size);
         }
     }
 
-    // Compute total buffer size
-    symbolic::Expression total_size = symbolic::integer(1);
-    for (auto& ds : dim_sizes) {
-        total_size = symbolic::mul(total_size, ds);
+    // GPU classification: each ancestor GPU Map is either
+    //  - per-thread (its Map indvar appears in tile.bases — each thread sees a
+    //    distinct slice along that dim, so the shared buffer gets its own
+    //    per-thread slot indexed by the within-block thread_idx), or
+    //  - cooperative (Map indvar not in bases — all threads along that dim
+    //    cooperatively load the same shared tile, strided by thread_idx).
+    struct GpuDim {
+        gpu::GPUDimension dim;
+        symbolic::Symbol map_indvar; // global thread index (== thread_idx + blockIdx * blockDim)
+        symbolic::Symbol thread_idx; // within-block thread index (NV_Symbol)
+        symbolic::Integer block_size;
+        bool is_per_thread;
+    };
+    std::vector<GpuDim> per_thread_dims; // populated only on GPU path
+    std::vector<GpuDim> coop_dims; // populated only on GPU path
+    bool is_rocm = false;
+
+    if (storage_type_.is_nv_shared()) {
+        auto ancestors = ControlFlowNode::parent_chain(loop_);
+        for (auto* node : ancestors) {
+            auto* m = dynamic_cast<structured_control_flow::Map*>(node);
+            if (!m || !gpu::is_gpu_schedule(m->schedule_type())) continue;
+            if (m->schedule_type().value() == "ROCM") {
+                is_rocm = true;
+                break;
+            }
+        }
+        const std::string prefix = is_rocm ? "__daisy_hip_thread_idx_" : "__daisy_cuda_thread_idx_";
+        auto suffix = [](gpu::GPUDimension d) -> std::string {
+            switch (d) {
+                case gpu::GPUDimension::X:
+                    return "x";
+                case gpu::GPUDimension::Y:
+                    return "y";
+                case gpu::GPUDimension::Z:
+                    return "z";
+            }
+            return "?";
+        };
+        for (auto* node : ancestors) {
+            auto* m = dynamic_cast<structured_control_flow::Map*>(node);
+            if (!m || !gpu::is_gpu_schedule(m->schedule_type())) continue;
+            GpuDim gd;
+            gd.dim = gpu::gpu_dimension(m->schedule_type());
+            gd.map_indvar = m->indvar();
+            gd.thread_idx = symbolic::symbol(prefix + suffix(gd.dim));
+            gd.block_size = gpu::gpu_block_size(m->schedule_type());
+            gd.is_per_thread = false;
+            for (auto& base : tile_info_.bases) {
+                if (symbolic::uses(base, m->indvar())) {
+                    gd.is_per_thread = true;
+                    break;
+                }
+            }
+            (gd.is_per_thread ? per_thread_dims : coop_dims).push_back(gd);
+        }
+        auto by_dim = [](const GpuDim& a, const GpuDim& b) {
+            return static_cast<int>(a.dim) < static_cast<int>(b.dim);
+        };
+        std::sort(per_thread_dims.begin(), per_thread_dims.end(), by_dim);
+        std::sort(coop_dims.begin(), coop_dims.end(), by_dim);
+
+        // Ensure within-block thread_idx containers exist. Codegen recognises
+        // NV_Symbol-typed scalars and substitutes them with threadIdx.{x,y,z}
+        // (CUDA) or the ROCm equivalent at emission time.
+        auto ensure_idx = [&](const symbolic::Symbol& sym) {
+            if (!sdfg.exists(sym->get_name())) {
+                types::Scalar idx_type(types::PrimitiveType::Int32);
+                idx_type.storage_type(types::StorageType::NV_Symbol());
+                builder.add_container(sym->get_name(), idx_type);
+            }
+        };
+        for (auto& gd : per_thread_dims) ensure_idx(gd.thread_idx);
+        for (auto& gd : coop_dims) ensure_idx(gd.thread_idx);
     }
 
-    // Helper: build linearized local index from per-dimension symbolic expressions
+    // Buffer dim sizes: [per-thread block sizes (X, Y, Z canonical order)] ++
+    //                   [varying tile dim sizes (original access-dim order)]
+    std::vector<symbolic::Expression> buf_dim_sizes;
+    for (auto& gd : per_thread_dims) buf_dim_sizes.push_back(gd.block_size);
+    for (auto& s : varying_dim_sizes) buf_dim_sizes.push_back(s);
+
+    // Total buffer size (number of scalar slots)
+    symbolic::Expression total_size = symbolic::integer(1);
+    for (auto& s : buf_dim_sizes) total_size = symbolic::mul(total_size, s);
+
+    // Per-thread index prefix (each thread's fixed buffer coords)
+    std::vector<symbolic::Expression> per_thread_indices;
+    for (auto& gd : per_thread_dims) per_thread_indices.push_back(gd.thread_idx);
+
+    // Row-major linearization over buf_dim_sizes (leftmost dim = outermost stride)
     auto linearize_exprs = [&](const std::vector<symbolic::Expression>& indices) -> symbolic::Expression {
         symbolic::Expression linear_idx = symbolic::integer(0);
         symbolic::Expression stride = symbolic::integer(1);
-        for (int i = indices.size() - 1; i >= 0; i--) {
+        for (int i = static_cast<int>(indices.size()) - 1; i >= 0; i--) {
             linear_idx = symbolic::add(linear_idx, symbolic::mul(indices[i], stride));
-            stride = symbolic::mul(stride, dim_sizes[i]);
+            stride = symbolic::mul(stride, buf_dim_sizes[i]);
         }
         return linear_idx;
     };
@@ -278,114 +363,93 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         // ============================================================
         // GPU COOPERATIVE PATH
         // ============================================================
-        auto ancestors = ControlFlowNode::parent_chain(loop_);
+        // Each thread owns a fixed slot along per-thread buffer dims and
+        // strides through the varying-flat range with the other threads
+        // sharing that slot (i.e. threads in cooperative dims only).
 
-        // Collect cooperative GPU dimensions (indvar not in tile bases)
-        struct CoopDim {
-            symbolic::Symbol indvar;
-            symbolic::Integer block_size;
-            gpu::GPUDimension dimension;
-        };
-        std::vector<CoopDim> coop_dims;
-
-        for (auto* node : ancestors) {
-            if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
-                if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
-                    continue;
-                }
-                bool appears_in_bases = false;
-                for (auto& base : tile_info_.bases) {
-                    if (symbolic::uses(base, ancestor_map->indvar())) {
-                        appears_in_bases = true;
-                        break;
-                    }
-                }
-                if (!appears_in_bases) {
-                    coop_dims.push_back(
-                        {ancestor_map->indvar(),
-                         gpu::gpu_block_size(ancestor_map->schedule_type()),
-                         gpu::gpu_dimension(ancestor_map->schedule_type())}
-                    );
-                }
-            }
-        }
-
-        // Compute total cooperative thread count
+        // Total cooperative-thread count (= 1 if no cooperative dims)
         symbolic::Expression total_coop_threads = symbolic::integer(1);
         for (auto& cd : coop_dims) {
             total_coop_threads = symbolic::mul(total_coop_threads, cd.block_size);
+        }
+
+        // Flat within-block index over cooperative dims only (= 0 if none).
+        // Row-major: X is least-significant when present.
+        symbolic::Expression coop_flat = symbolic::integer(0);
+        {
+            symbolic::Expression stride = symbolic::integer(1);
+            for (auto it = coop_dims.rbegin(); it != coop_dims.rend(); ++it) {
+                coop_flat = symbolic::add(coop_flat, symbolic::mul(it->thread_idx, stride));
+                stride = symbolic::mul(stride, it->block_size);
+            }
+        }
+
+        // Varying-flat size = product of tile dim extents (excluding extent==1).
+        // This is the address range each thread cooperatively walks within its
+        // per-thread slot.
+        symbolic::Expression varying_flat_size = symbolic::integer(1);
+        for (auto& s : varying_dim_sizes) {
+            varying_flat_size = symbolic::mul(varying_flat_size, s);
         }
 
         // Create the local buffer with NV_Shared storage
         types::Array buffer_type(storage_type_, 0, {}, scalar_type, total_size);
         builder.add_container(local_name_, buffer_type);
 
-        // Emit: barrier → guarded cooperative copy → barrier → loop
+        // Emit: barrier → cooperative copy loop → barrier → main loop
         // 1. Barrier before copy
         auto& barrier_block1 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
         builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block1, {});
 
-        // 2. Cooperative copy with if_else guard
-        // Flatten cooperative thread index: coop_flat = sum(indvar[i] * product(block_size[j] for j>i))
-        symbolic::Expression coop_flat = symbolic::integer(0);
-        symbolic::Expression coop_stride = symbolic::integer(1);
-        for (int i = coop_dims.size() - 1; i >= 0; i--) {
-            coop_flat = symbolic::add(coop_flat, symbolic::mul(coop_dims[i].indvar, coop_stride));
-            coop_stride = symbolic::mul(coop_stride, coop_dims[i].block_size);
-        }
-
-        // Each thread loads elements strided by total_coop_threads
-        // Thread t loads elements: t, t + total_threads, t + 2*total_threads, ...
-        // We emit a loop: for (idx = coop_flat; idx < total_size; idx += total_coop_threads)
+        // 2. Cooperative copy: for (idx = coop_flat; idx < varying_flat_size; idx += total_coop_threads)
         auto idx_name = builder.find_new_name("__daisy_ils_coop_" + this->container_);
         types::Scalar idx_type(types::PrimitiveType::UInt64);
         builder.add_container(idx_name, idx_type);
         auto idx_var = symbolic::symbol(idx_name);
 
-        auto copy_init = coop_flat;
-        auto copy_condition = symbolic::Lt(idx_var, total_size);
-        auto copy_update = symbolic::add(idx_var, total_coop_threads);
-
         auto& copy_loop = builder.add_map_before(
             *parent,
             loop_,
             idx_var,
-            copy_condition,
-            copy_init,
-            copy_update,
+            symbolic::Lt(idx_var, varying_flat_size),
+            coop_flat,
+            symbolic::add(idx_var, total_coop_threads),
             structured_control_flow::ScheduleType_Sequential::create(),
             {},
             loop_.debug_info()
         );
 
-        // Decompose flat idx back into per-dimension indices for source subset
-        // idx maps to varying_dims in row-major order
         auto& copy_scope = copy_loop.root();
         auto& copy_block = builder.add_block(copy_scope);
         auto& copy_src = builder.add_access(copy_block, this->container_);
         auto& copy_dst = builder.add_access(copy_block, local_name_);
         auto& copy_tasklet = builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"});
 
-        // Decompose idx_var into per-dim indices
-        std::vector<symbolic::Expression> copy_indices;
+        // Decompose idx_var into per-varying-dim indices (row-major).
+        // For a single varying dim this is just idx_var.
+        std::vector<symbolic::Expression> varying_decomp;
         symbolic::Expression remainder = idx_var;
-        for (size_t i = 0; i < dim_sizes.size(); i++) {
-            if (i < dim_sizes.size() - 1) {
-                // integer division: idx / (product of remaining dims)
+        for (size_t i = 0; i < varying_dim_sizes.size(); i++) {
+            if (i + 1 < varying_dim_sizes.size()) {
                 symbolic::Expression divisor = symbolic::integer(1);
-                for (size_t j = i + 1; j < dim_sizes.size(); j++) {
-                    divisor = symbolic::mul(divisor, dim_sizes[j]);
+                for (size_t j = i + 1; j < varying_dim_sizes.size(); j++) {
+                    divisor = symbolic::mul(divisor, varying_dim_sizes[j]);
                 }
-                auto quotient = symbolic::div(remainder, divisor);
-                copy_indices.push_back(quotient);
+                varying_decomp.push_back(symbolic::div(remainder, divisor));
                 remainder = symbolic::mod(remainder, divisor);
             } else {
-                copy_indices.push_back(remainder);
+                varying_decomp.push_back(remainder);
             }
         }
 
-        auto copy_src_subset = build_original_subset(copy_indices);
-        data_flow::Subset copy_dst_subset = {idx_var};
+        // Source = original container at (bases — which already use the global
+        // Map indvars — plus the varying decomposition along each varying dim).
+        auto copy_src_subset = build_original_subset(varying_decomp);
+
+        // Destination = buffer at (per_thread_indices ++ varying_decomp) linearized.
+        std::vector<symbolic::Expression> dest_indices = per_thread_indices;
+        for (auto& v : varying_decomp) dest_indices.push_back(v);
+        data_flow::Subset copy_dst_subset = {linearize_exprs(dest_indices)};
 
         builder.add_computational_memlet(copy_block, copy_src, copy_tasklet, "_in", copy_src_subset, pointer_type);
         builder.add_computational_memlet(copy_block, copy_tasklet, "_out", copy_dst, copy_dst_subset, buffer_type);
@@ -413,7 +477,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
             copy_indvars.push_back(indvar);
 
             auto init = symbolic::integer(0);
-            auto condition = symbolic::Lt(indvar, dim_sizes[i]);
+            auto condition = symbolic::Lt(indvar, varying_dim_sizes[i]);
             auto update = symbolic::add(indvar, symbolic::integer(1));
 
             auto& copy_loop = builder.add_map(
@@ -481,7 +545,8 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
                     }
                     auto* acc = mla.access(memlet);
                     if (acc && acc->subset.size() == tile_info_.dimensions.size()) {
-                        std::vector<symbolic::Expression> local_indices;
+                        // Buffer index: [per-thread thread_idx (X,Y,Z order)] ++ [varying d: subset[d] - base[d]]
+                        std::vector<symbolic::Expression> local_indices = per_thread_indices;
                         for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
                             if (!symbolic::eq(tile_info_.dimensions.at(d), symbolic::integer(1))) {
                                 local_indices.push_back(symbolic::sub(acc->subset.at(d), tile_info_.bases.at(d)));
@@ -498,7 +563,8 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
                     }
                     auto* acc = mla.access(memlet);
                     if (acc && acc->subset.size() == tile_info_.dimensions.size()) {
-                        std::vector<symbolic::Expression> local_indices;
+                        // Buffer index: [per-thread thread_idx (X,Y,Z order)] ++ [varying d: subset[d] - base[d]]
+                        std::vector<symbolic::Expression> local_indices = per_thread_indices;
                         for (size_t d = 0; d < tile_info_.dimensions.size(); d++) {
                             if (!symbolic::eq(tile_info_.dimensions.at(d), symbolic::integer(1))) {
                                 local_indices.push_back(symbolic::sub(acc->subset.at(d), tile_info_.bases.at(d)));

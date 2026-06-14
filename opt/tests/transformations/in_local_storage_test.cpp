@@ -2289,8 +2289,9 @@ TEST(InLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     EXPECT_EQ(buf_type.storage_type(), types::StorageType::NV_Shared());
 
     auto& arr_type = static_cast<const types::Array&>(buf_type);
-    // Extent M resolved to 8 from GPU Y-dim block_size
-    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(8)));
+    // Per-thread X dim contributes BX=32 slots; varying dim (extent M→8) contributes 8.
+    // Total = 32 * 8 = 256.
+    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(256)));
 
     // Verify structure: [barrier, copy_loop, barrier, main_loop]
     auto& map_y_body = map_y.root();

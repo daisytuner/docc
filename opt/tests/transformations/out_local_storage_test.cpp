@@ -2476,7 +2476,9 @@ TEST(OutLocalStorageTest, GPU_Cooperative_FlatPointer) {
     auto& buf_type = builder_opt.subject().type("__daisy_out_local_storage_C0");
     EXPECT_EQ(buf_type.storage_type(), types::StorageType::NV_Shared());
     auto& arr_type = static_cast<const types::Array&>(buf_type);
-    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(8)));
+    // Per-thread Y dim (j in C base) contributes BY=8 slots; varying dim (M→8) contributes 8.
+    // Total = 8 * 8 = 64.
+    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(64)));
 
     // Verify structure: write-only → [main_loop, barrier, writeback_loop, barrier]
     auto& map_y_body = map_y.root();
@@ -2595,7 +2597,9 @@ TEST(OutLocalStorageTest, GPU_Cooperative_ReadWrite) {
     EXPECT_EQ(buf_type.type_id(), types::TypeID::Array);
 
     auto& arr_type = static_cast<const types::Array&>(buf_type);
-    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(32)));
+    // Per-thread Y dim (j in C base) contributes BY=8 slots; varying dim (N→32) contributes 32.
+    // Total = 8 * 32 = 256.
+    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(256)));
 
     // Verify structure: has_read → [barrier, init_copy, barrier, main_loop, barrier, writeback, barrier]
     auto& map_y_body = map_y.root();
@@ -2880,6 +2884,8 @@ TEST(OutLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
     auto& buf_type = builder_opt.subject().type("__daisy_out_local_storage_C0");
     auto& arr_type = static_cast<const types::Array&>(buf_type);
-    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(8)));
+    // Per-thread X dim (i in C base) contributes BX=32 slots; varying dim (M→8) contributes 8.
+    // Total = 32 * 8 = 256.
+    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(256)));
     EXPECT_EQ(buf_type.storage_type(), types::StorageType::NV_Shared());
 }
