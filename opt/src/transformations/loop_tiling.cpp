@@ -76,6 +76,7 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     transition.assignments().clear();
     builder.move_child(*parent, index + 1, outer_loop->root());
 
+    analysis_manager.invalidate_all();
     applied_ = true;
     inner_loop_ = &loop_;
     outer_loop_ = outer_loop;
