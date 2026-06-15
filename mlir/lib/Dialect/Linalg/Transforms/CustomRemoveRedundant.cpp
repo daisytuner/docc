@@ -80,6 +80,7 @@ struct LinalgCustomRemoveRedundantOpsPass
 void populateLinalgCustomRemoveRedundantOpsPass(RewritePatternSet& patterns) {
     patterns.add<
         Linalg2DNchwRemoveLinalgFill<Conv2DNchwFchwOp, 0x0000000000000000>,
+        Linalg2DNchwRemoveLinalgFill<DepthwiseConv2DNchwChwOp, 0x0000000000000000>,
         Linalg2DNchwRemoveLinalgFill<PoolingNchwMaxOp, 0xFFF0000000000000>,
         Linalg2DNchwRemoveLinalgFill<PoolingNchwSumOp, 0x0000000000000000>>(patterns.getContext());
 }

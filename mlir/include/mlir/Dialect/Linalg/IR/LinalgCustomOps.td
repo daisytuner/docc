@@ -85,7 +85,8 @@ def LinalgCustom_Conv2DNchwFchwOp : LinalgCustom_Op<"conv_2d_nchw_fchw",
                          TensorRankOf<[AnyType], [4]>:$output,
                          DenseI64ArrayAttr:$strides,
                          DenseI64ArrayAttr:$dilations,
-                         DenseI64ArrayAttr:$paddings);
+                         DenseI64ArrayAttr:$paddings,
+                         I64Attr:$groups);
     let results = (outs TensorRankOf<[AnyType], [4]>:$result);
     let assemblyFormat = [{
         attr-dict
