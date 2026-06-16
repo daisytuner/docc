@@ -149,6 +149,9 @@ bool LoopSchedulingPass::run_pass(builder::StructuredSDFGBuilder& builder, analy
     bool applied = false;
     for (const auto& target : targets_) {
         bool target_applied = run_pass_target(builder, analysis_manager, target);
+        if (target_applied) {
+            analysis_manager.invalidate_all();
+        }
         applied = applied || target_applied;
     }
 
