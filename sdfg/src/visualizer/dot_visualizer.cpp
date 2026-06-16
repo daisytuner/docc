@@ -234,7 +234,7 @@ void DotVisualizer::visualizeMap(const StructuredSDFG& sdfg, const structured_co
     if (show_block_ids) {
         this->stream_ << "#" << map_node.element_id() << " ";
     }
-    this->stream_ << "map: ";
+    this->stream_ << "map [" << map_node.schedule_type().value() << "]: ";
     this->visualizeForBounds(map_node.indvar(), map_node.init(), map_node.condition(), map_node.update());
 
     this->stream_ << "\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;

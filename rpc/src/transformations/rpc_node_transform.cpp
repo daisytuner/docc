@@ -260,7 +260,7 @@ void RPCNodeTransform::
     if (opt.local_replay.has_value()) {
         auto recipe = opt.local_replay.value();
         std::cout << "Applied RPC optimization sequence with speedup " << opt.metadata.speedup
-                  << " and vector distance " << opt.metadata.vector_distance << ":\n";
+                  << " and vector distance " << opt.metadata.vector_distance << " to loopnest " << element_id << ":\n";
 
         if (dump_steps_) {
             print_transformation_sequence(recipe.sequence);
