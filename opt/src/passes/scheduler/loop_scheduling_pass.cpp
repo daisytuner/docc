@@ -39,19 +39,23 @@ bool LoopSchedulingPass::run_pass_target(
     }
 
     // Filter by compatible types
-    for (int i = 0; i < queue.size(); i++) {
+    size_t num_to_check = queue.size();
+    for (size_t i = 0; i < num_to_check; i++) {
         auto loop = queue.front();
         queue.pop_front();
 
-        auto descendants = loop_analysis.descendants(loop);
-
         bool found_incompatible = false;
-        for (auto descendant : descendants) {
-            if (auto map_node = dynamic_cast<structured_control_flow::Map*>(descendant)) {
-                auto compatible_schedules = scheduler->compatible_types();
-                if (compatible_schedules.find(map_node->schedule_type().category()) == compatible_schedules.end()) {
-                    found_incompatible = true;
-                    break;
+
+        // Check descendants
+        if (!found_incompatible) {
+            auto descendants = loop_analysis.descendants(loop);
+            for (auto descendant : descendants) {
+                if (auto map_node = dynamic_cast<structured_control_flow::Map*>(descendant)) {
+                    auto compatible_schedules = scheduler->compatible_types();
+                    if (compatible_schedules.find(map_node->schedule_type().category()) == compatible_schedules.end()) {
+                        found_incompatible = true;
+                        break;
+                    }
                 }
             }
         }
