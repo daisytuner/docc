@@ -44,7 +44,19 @@ OffloadTransform::OffloadTransform(structured_control_flow::Map& map, bool allow
 
 
 bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+
     auto& sdfg = builder.subject();
+
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+
+    if (!loop_analysis.is_outermost_loop(&map_)) {
+        if (report_) report_->transform_impossible(this, "map is outermost loop");
+        DEBUG_PRINTLN("Cannot apply transform: map is not outermost loop");
+        std::cerr << "Cannot apply transform: map is not outermost loop\n";
+        return false;
+    }
+
+    std::cerr << "Map is outermost loop, continuing checks...\n";
 
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
 
