@@ -38,10 +38,11 @@ public:
         auto& dataflow = block.dataflow();
         for (auto& node : dataflow.nodes()) {
             auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-            auto& container = access->data();
             if (access == nullptr) {
                 continue;
             }
+            auto& container = access->data();
+
             auto target_it = target_containers_.find(container);
             if (target_it == target_containers_.end()) {
                 continue;
@@ -650,13 +651,6 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     auto second_loop_info = loop_analysis.loop_info(&second_loop_);
 
     auto limit_depth = 0;
-    // if (first_loop_info.max_depth < second_loop_info.max_depth) {
-    // limit_depth = first_loop_info.max_depth;
-    //     loop_analysis.loop_tree_paths(&first_map_);
-    //     second_loop_info.is_perfectly_parallel = true; //TODO prove!
-    // second_loop_info.max_depth = limit_depth;
-    //     second_loop_info.is_perfectly_nested = true; // TODO prove
-    // }
 
     bool first_nested = first_loop_info.is_perfectly_nested;
     bool second_nested = second_loop_info.is_perfectly_nested;
