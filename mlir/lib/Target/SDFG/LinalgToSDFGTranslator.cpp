@@ -602,7 +602,7 @@ LogicalResult translateLinalgCustomConv2DNchwFchwOp(SDFGTranslator& translator, 
         dilations.push_back(::sdfg::symbolic::integer(dilation));
     }
     ::sdfg::symbolic::Expression output_channels = ::sdfg::symbolic::integer(weights.getType().getShape()[0]);
-    ::sdfg::symbolic::Expression group = ::sdfg::symbolic::one();
+    ::sdfg::symbolic::Expression group = ::sdfg::symbolic::integer(conv_op->getGroups());
 
     auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
     auto& input_access = builder.add_access(block, input_container, deb_info);
