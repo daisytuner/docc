@@ -16,6 +16,8 @@
 #include "sdfg/visitor/immutable_structured_sdfg_visitor.h"
 #include "symengine/symengine_rcp.h"
 
+#include "sdfg/analysis/loop_analysis.h"
+
 namespace sdfg {
 namespace transformations {
 
