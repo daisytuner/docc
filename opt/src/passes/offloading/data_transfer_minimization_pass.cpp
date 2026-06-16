@@ -90,6 +90,8 @@ bool DataTransferMinimizationPass::eliminate_transfer_pair(
     std::string copy_in_device_container = copy_in.dev_data->data();
     DebugInfo copy_out_src_debinfo = copy_out.dev_data->debug_info();
     DebugInfo copy_in_dst_debinfo = copy_in.dev_data->debug_info();
+    DebugInfo copy_out_off_debinfo = copy_out.offload_node->debug_info();
+    DebugInfo copy_in_off_debinfo = copy_in.offload_node->debug_info();
 
     bool remove_entirely = false;
     // Remove what you can remove
@@ -124,7 +126,7 @@ bool DataTransferMinimizationPass::eliminate_transfer_pair(
             out_access,
             {symbolic::zero()},
             *ref_type,
-            DebugInfo::merge(copy_out.offload_node->debug_info(), copy_in.offload_node->debug_info())
+            DebugInfo::merge(copy_out_off_debinfo, copy_in_off_debinfo)
         );
     }
 
