@@ -15,7 +15,6 @@ using namespace sdfg::structured_control_flow;
 
 namespace sdfg {
 namespace builder {
-
 std::unordered_set<const control_flow::State*> StructuredSDFGBuilder::
     determine_loop_nodes(SDFG& sdfg, const control_flow::State& start, const control_flow::State& end) const {
     std::unordered_set<const control_flow::State*> nodes;
@@ -532,6 +531,20 @@ std::pair<Sequence&, Transition&> StructuredSDFGBuilder::
     }
 
     return insert_node_internal<Sequence>(parent, index, {}, debug_info);
+}
+
+void StructuredSDFGBuilder::remove_from_parent(ControlFlowNode& child) {
+    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(child.get_parent());
+    if (parent == nullptr) {
+        throw InvalidSDFGException(
+            "StructuredSDFGBuilder: Child has no sequence parent: #" + std::to_string(child.element_id())
+        );
+    }
+    auto idx = parent->index(child);
+    if (idx < 0) {
+        throw InvalidSDFGException("StructuredSDFGBuilder: Child not found in parent");
+    }
+    remove_child(*parent, idx);
 }
 
 void StructuredSDFGBuilder::remove_child(Sequence& parent, size_t index) {

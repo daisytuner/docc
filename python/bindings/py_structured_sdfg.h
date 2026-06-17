@@ -34,6 +34,8 @@ public:
 
     std::string name() const;
 
+    void set_output_dir(const std::filesystem::path& dir);
+
     sdfg::plugins::Context& docc_context() const;
 
     sdfg::StructuredSDFG& sdfg() { return *sdfg_; }

@@ -8,6 +8,8 @@
 #include "sdfg/targets/vectorize/plugin.h"
 #include "sdfg/visualizer/dot_visualizer.h"
 
+#include "sdfg_debug_dump.h"
+
 static std::optional<std::filesystem::path> test_output_dir;
 
 int main(int argc, char** argv) {

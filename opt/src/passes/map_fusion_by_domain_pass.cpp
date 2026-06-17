@@ -1,4 +1,4 @@
-#include "sdfg/passes/new_map_fusion_pass.h"
+#include "sdfg/passes/map_fusion_by_domain_pass.h"
 
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
@@ -8,7 +8,7 @@
 
 namespace sdfg::passes {
 
-FusionLoopCandidate* NewMapFusionPass::State::get_next_level_map_stack(FusionLoopCandidate& current) {
+FusionLoopCandidate* MapFusionByDomainPass::State::get_next_level_map_stack(FusionLoopCandidate& current) {
     auto& children = loop_analysis->children(current.loop);
     if (children.empty()) {
         return nullptr;
@@ -18,9 +18,7 @@ FusionLoopCandidate* NewMapFusionPass::State::get_next_level_map_stack(FusionLoo
     return &fuse_candidates.at(next->element_id());
 }
 
-bool NewMapFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    fused_count = 0;
-
+bool MapFusionByDomainPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto loop_ana = std::make_unique<analysis::LoopAnalysis>(builder.subject());
     loop_ana->run(analysis_manager);
 
@@ -45,15 +43,24 @@ bool NewMapFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysi
         }
     }
 
+    auto dir = builder.subject().metadata_if_exists("output_dir");
+    if (dir) {
+        state.loop_analysis->dump_to_file(std::filesystem::path(*dir) / "loop_infos.pre-fusion.json");
+    }
+
     MapFusionHandler handler(state);
 
     NeighboringPatternVisitor v(handler);
     v.dispatch(builder.subject().root());
 
-    return fused_count;
+    if (dir) {
+        state.loop_analysis->dump_to_file(std::filesystem::path(*dir) / "loop_infos.post-fusion.json");
+    }
+
+    return state.fused_count;
 }
 
-const symbolic::Assumption* NewMapFusionPass::
+const symbolic::Assumption* MapFusionByDomainPass::
     find_indvar_boundaries(const symbolic::Symbol& indvar, const symbolic::Assumptions& assumptions) {
     auto it = assumptions.find(indvar);
     if (it != assumptions.end()) {
@@ -63,23 +70,33 @@ const symbolic::Assumption* NewMapFusionPass::
     return nullptr;
 }
 
-MapFusionHandler::MapFusionHandler(NewMapFusionPass::State& state) : state_(state) {}
+MapFusionHandler::MapFusionHandler(MapFusionByDomainPass::State& state) : state_(state) {}
 
-bool MapFusionHandler::fuse_contents(
+PatternHandler::MatchResult MapFusionHandler::fuse_contents(
+    ControlFlowNode* first_top,
     FusionLoopCandidate* first_current,
-    FusionLoopCandidate* second_current,
+    FusionLoopCandidate* second_innermost,
     SymEngine::map_basic_basic indvar_mapping,
-    Sequence& target_root
+    Sequence& target_root,
+    bool can_remove_original
 ) {
     Sequence* append_root = nullptr;
     if (target_root.size() == 0) {
+        // target seq is empty, so we can just append to it
         append_root = &target_root;
-    } else { // there currently is no way to prepend or limit replace, so add to new sequence, then move
+    } else {
+        // there currently is no way to prepend-copy with replace, so add to new sequence,
+        // replace on it, then flatten it into the existing
         append_root = &state_.builder.add_sequence_before(target_root, target_root.at(0).first, {}, {});
     }
 
-    deepcopy::StructuredSDFGDeepCopy copier(state_.builder, *append_root, first_current->loop->root());
-    auto copy_mapping = copier.insert();
+    std::optional<std::unordered_map<const ControlFlowNode*, const ControlFlowNode*>> copy_mapping;
+    if (can_remove_original) {
+        state_.builder.move_children(first_current->loop->root(), *append_root);
+    } else {
+        deepcopy::StructuredSDFGDeepCopy copier(state_.builder, *append_root, first_current->loop->root());
+        copy_mapping = copier.insert();
+    }
 
     update_fused_seq(*append_root, indvar_mapping);
 
@@ -88,18 +105,34 @@ bool MapFusionHandler::fuse_contents(
     }
 
     auto& first_children = state_.loop_analysis->children(first_current->loop);
-    bool keep_visiting_second = !state_.loop_analysis->children(second_current->loop).empty() ||
+    bool keep_visiting_second = !state_.loop_analysis->children(second_innermost->loop).empty() ||
                                 !first_children.empty();
     if (!first_children.empty()) {
-        for (auto& child : first_children) {
-            state_.loop_analysis->copied_loop(
-                child,
-                second_current->loop,
-                const_cast<structured_control_flow::ControlFlowNode*>(copy_mapping.at(child))
-            );
+        if (can_remove_original) {
+            for (auto& child : first_children) {
+                state_.loop_analysis->moved_loop(child, second_innermost->loop);
+            }
+        } else {
+            for (auto& child : first_children) {
+                state_.loop_analysis->copied_loop(
+                    child,
+                    second_innermost->loop,
+                    const_cast<structured_control_flow::ControlFlowNode*>(copy_mapping->at(child))
+                );
+            }
         }
     }
-    return keep_visiting_second;
+    bool removed_first = false;
+    if (can_remove_original) {
+        state_.loop_analysis->removed_loop(first_top);
+        state_.builder.remove_from_parent(*first_top);
+        removed_first = true;
+    }
+
+    state_.fused_count++;
+
+    // if there are further loops inside the now fused body, visit those as well
+    return {.removed_first = removed_first, .visit_second_body = keep_visiting_second};
 }
 
 PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, bool no_uses_between) {
@@ -153,11 +186,7 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
         );
 
         auto& target_root = second_current->loop->root();
-        bool keep_visiting_second =
-            fuse_contents(first_current, second_current, indvar_mapping, target_root, no_uses_between);
-
-        // if there are further loops inside the now fused body, visit those as well
-        return {.removed_first = false, .visit_second_body = keep_visiting_second};
+        return fuse_contents(&first, first_current, second_current, indvar_mapping, target_root, no_uses_between);
     }
 
     return {};
@@ -232,7 +261,7 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
                 continue;
             }
 
-            auto result = handler_.match(*first, *second, TODO);
+            auto result = handler_.match(*first, *second, true);
 
             if (!result.removed_first) {
                 dispatch(child_node);
