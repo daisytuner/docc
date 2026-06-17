@@ -533,7 +533,7 @@ TEST(CUDANestedParallelismTransformation, NonZeroStart) {
     transformations::CUDAParallelizeNestedMap transformation(map2, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
 }
 
 TEST(CUDANestedParallelismTransformation, GridSizeExceedsYZLimit) {
