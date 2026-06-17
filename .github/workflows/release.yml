@@ -14,15 +14,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [build-amd64-big, build-arm64-big, macos-14]
+        os: [build-amd64-big, build-arm64-big]
         python: ["cp311", "cp312", "cp313", "cp314"]
         include:
           - os: build-amd64-big
             cibw_archs: x86_64
           - os: build-arm64-big
             cibw_archs: aarch64
-          - os: macos-14
-            cibw_archs: arm64
 
     steps:
       - uses: actions/checkout@v4
@@ -51,15 +49,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [build-amd64-big, build-arm64-big, macos-14]
+        os: [build-amd64-big, build-arm64-big]
         python: ["cp311", "cp312"]
         include:
           - os: build-amd64-big
             cibw_archs: x86_64
           - os: build-arm64-big
             cibw_archs: aarch64
-          - os: macos-14
-            cibw_archs: arm64
 
     steps:
       - uses: actions/checkout@v4
