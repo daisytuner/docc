@@ -140,12 +140,11 @@ bool For2MapPass::can_be_applied(
 
 bool For2MapPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto& loop_tree = loop_analysis.loop_tree();
 
     // Traverse loops in bottom-up fashion (reverse loop)
     std::list<structured_control_flow::For*> for_queue;
-    for (auto& entry : loop_tree) {
-        if (auto for_stmt = dynamic_cast<structured_control_flow::For*>(entry.first)) {
+    for (auto& loop : loop_analysis.loops_in_pre_order()) {
+        if (auto for_stmt = dynamic_cast<structured_control_flow::For*>(loop)) {
             for_queue.push_front(for_stmt);
         }
     }

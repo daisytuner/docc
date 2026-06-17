@@ -55,6 +55,7 @@
 #include "docc/compile/src_file_compiler.h"
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
+#include "sdfg/passes/map_fusion_by_domain_pass.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
@@ -113,6 +114,10 @@ PyStructuredSDFG PyStructuredSDFG::from_sdfg(sdfg::plugins::Context& ctx, std::u
 }
 
 std::string PyStructuredSDFG::name() const { return sdfg_->name(); }
+
+void PyStructuredSDFG::set_output_dir(const std::filesystem::path& dir) {
+    sdfg_->add_metadata("output_dir", dir.string());
+}
 
 sdfg::plugins::Context& PyStructuredSDFG::docc_context() const { return docc_context_; }
 

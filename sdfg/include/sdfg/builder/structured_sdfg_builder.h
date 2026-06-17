@@ -164,6 +164,8 @@ public:
     std::pair<Sequence&, Transition&>
     add_sequence_before(Sequence& parent, ControlFlowNode& block, const DebugInfo& debug_info = DebugInfo());
 
+    void remove_from_parent(ControlFlowNode& child);
+
     void remove_child(Sequence& parent, size_t index);
 
     void remove_children(Sequence& parent);

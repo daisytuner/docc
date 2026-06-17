@@ -75,9 +75,8 @@ public:
     bool visit(sdfg::structured_control_flow::Sequence& node) override;
 };
 
-class NewMapFusionPass : public sdfg::passes::Pass {
+class MapFusionByDomainPass : public sdfg::passes::Pass {
     std::vector<FusionCandidatePair> candidate_pairs_;
-    size_t fused_count = 0;
 
 public:
     struct State {
@@ -85,11 +84,12 @@ public:
         analysis::AnalysisManager& analysis_manager;
         std::unique_ptr<analysis::LoopAnalysis> loop_analysis;
         std::unordered_map<analysis::ElementId, FusionLoopCandidate> fuse_candidates;
+        uint32_t fused_count = 0;
 
         FusionLoopCandidate* get_next_level_map_stack(FusionLoopCandidate& current);
     };
 
-    NewMapFusionPass() = default;
+    MapFusionByDomainPass() = default;
 
     std::string name() override { return "NewMapFusionPass"; }
 
@@ -104,17 +104,10 @@ protected:
 };
 
 class MapFusionHandler : public PatternHandler {
-    NewMapFusionPass::State& state_;
+    MapFusionByDomainPass::State& state_;
 
 public:
-    MapFusionHandler(NewMapFusionPass::State& state);
-
-    bool fuse_contents(
-        FusionLoopCandidate* first_current,
-        FusionLoopCandidate* second_current,
-        SymEngine::map_basic_basic indvar_mapping,
-        Sequence& target_root
-    );
+    MapFusionHandler(MapFusionByDomainPass::State& state);
 
     PatternHandler::MatchResult match(Map& first, Map& second, bool no_uses_between) override;
 
@@ -124,6 +117,15 @@ protected:
     void update_fused_seq(Sequence& sequence, const symbolic::ExpressionMapping& replacements);
 
     bool loop_match(FusionLoopCandidate& first, FusionLoopCandidate& second, SymEngine::map_basic_basic& canonical_indvars);
+
+    PatternHandler::MatchResult fuse_contents(
+        ControlFlowNode* first_top,
+        FusionLoopCandidate* first_innermost,
+        FusionLoopCandidate* second_innermost,
+        SymEngine::map_basic_basic indvar_mapping,
+        Sequence& target_root,
+        bool can_remove_original
+    );
 };
 
 } // namespace sdfg::passes
