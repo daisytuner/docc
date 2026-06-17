@@ -32,7 +32,8 @@ HttpResult post_json(CURL* curl, const std::string& url, const std::string& payl
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.http_status);
 
     if (result.http_status == 401) {
-        result.error_message = "[ERROR] RPC optimization query authentication issue: " + std::to_string(result.http_status) + ", body: " + result.body;
+        result.error_message = "[ERROR] RPC optimization query authentication issue: " +
+                               std::to_string(result.http_status) + ", body: " + result.body;
     } else if (result.http_status < 200 || result.http_status >= 204) {
         result.error_message = "HTTP error: " + std::to_string(result.http_status) + ", body: " + result.body;
     }
