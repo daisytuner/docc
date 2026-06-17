@@ -93,6 +93,15 @@ void BroadcastNode::replace(const symbolic::Expression old_expression, const sym
     }
 }
 
+void BroadcastNode::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& dim : input_shape_) {
+        dim = symbolic::subs(dim, replacements);
+    }
+    for (auto& dim : output_shape_) {
+        dim = symbolic::subs(dim, replacements);
+    }
+}
+
 bool BroadcastNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& dataflow = this->get_parent();
     auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());

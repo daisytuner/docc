@@ -45,6 +45,8 @@ void BatchNormNode::replace(const symbolic::Expression old_expression, const sym
     layout_.replace_symbols(old_expression, new_expression);
 }
 
+void BatchNormNode::replace(const symbolic::ExpressionMapping& replacements) { layout_.replace_symbols(replacements); }
+
 std::unique_ptr<data_flow::DataFlowNode> BatchNormNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(new BatchNormNode(

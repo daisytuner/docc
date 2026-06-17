@@ -33,6 +33,7 @@ set(SOURCE_FILES
     src/passes/readonly_transfer_hoisting_pass.cpp
     src/passes/dot_expansion_pass.cpp
     src/passes/gemm_expansion_pass.cpp
+    src/passes/new_map_fusion_pass.cpp
     src/passes/opt_pipeline.cpp
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/rocm_scheduler.cpp

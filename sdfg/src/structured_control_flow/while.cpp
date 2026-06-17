@@ -16,7 +16,9 @@ Sequence& While::root() { return *this->root_; };
 
 void While::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     this->root_->replace(old_expression, new_expression);
-};
+}
+
+void While::replace(const symbolic::ExpressionMapping& replacements) { this->root_->replace(replacements); }
 
 Break::Break(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent)
     : ControlFlowNode(element_id, debug_info, parent) {
@@ -25,18 +27,18 @@ Break::Break(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* pa
 
 void Break::validate(const Function& function) const {};
 
-void Break::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+void Break::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
 
-};
+void Break::replace(const symbolic::ExpressionMapping& replacements) {}
 
 Continue::Continue(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent)
     : ControlFlowNode(element_id, debug_info, parent) {};
 
 void Continue::validate(const Function& function) const {};
 
-void Continue::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+void Continue::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
 
-};
+void Continue::replace(const symbolic::ExpressionMapping& replacements) {}
 
 } // namespace structured_control_flow
 } // namespace sdfg

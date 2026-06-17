@@ -47,6 +47,11 @@ void CallocNode::replace(const symbolic::Expression old_expression, const symbol
     this->num_ = symbolic::subs(this->num_, old_expression, new_expression);
 }
 
+void CallocNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->size_ = symbolic::subs(this->size_, replacements);
+    this->num_ = symbolic::subs(this->num_, replacements);
+}
+
 nlohmann::json CallocNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const CallocNode& node = static_cast<const CallocNode&>(library_node);
 

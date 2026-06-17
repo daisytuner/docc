@@ -94,6 +94,12 @@ void TransposeNode::replace(const symbolic::Expression old_expression, const sym
     }
 }
 
+void TransposeNode::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& dim : shape_) {
+        dim = symbolic::subs(dim, replacements);
+    }
+}
+
 bool TransposeNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& dataflow = this->get_parent();
     auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());

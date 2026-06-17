@@ -127,6 +127,11 @@ void MatMulNode::replace(const symbolic::Expression old_expression, const symbol
     layout_b_.replace_symbols(old_expression, new_expression);
 }
 
+void MatMulNode::replace(const symbolic::ExpressionMapping& replacements) {
+    layout_a_.replace_symbols(replacements);
+    layout_b_.replace_symbols(replacements);
+}
+
 std::unique_ptr<data_flow::DataFlowNode> MatMulNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(new MatMulNode(

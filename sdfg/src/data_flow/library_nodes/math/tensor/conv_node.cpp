@@ -603,6 +603,12 @@ void ConvNode::replace(const symbolic::Expression old_expression, const symbolic
     group_ = symbolic::subs(group_, old_expression, new_expression);
 }
 
+void ConvNode::replace(const symbolic::ExpressionMapping& replacements) {
+    SpatialTensorNode::replace(replacements);
+    output_channels_ = symbolic::subs(output_channels_, replacements);
+    group_ = symbolic::subs(group_, replacements);
+}
+
 std::unique_ptr<data_flow::DataFlowNode> ConvNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(new ConvNode(

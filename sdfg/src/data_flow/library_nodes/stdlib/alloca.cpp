@@ -38,6 +38,10 @@ void AllocaNode::replace(const symbolic::Expression old_expression, const symbol
     this->size_ = symbolic::subs(this->size_, old_expression, new_expression);
 }
 
+void AllocaNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->size_ = symbolic::subs(this->size_, replacements);
+}
+
 nlohmann::json AllocaNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const AllocaNode& node = static_cast<const AllocaNode&>(library_node);
 

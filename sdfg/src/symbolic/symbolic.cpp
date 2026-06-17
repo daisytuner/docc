@@ -911,6 +911,10 @@ Condition subs(const Condition expr, const Expression old_expr, const Expression
     return SymEngine::rcp_dynamic_cast<const SymEngine::Boolean>(subs(expr, d));
 };
 
+Condition subs(const Condition expr, const symbolic::ExpressionMapping& replacements) {
+    return SymEngine::rcp_dynamic_cast<const SymEngine::Boolean>(SymEngine::subs(expr, replacements));
+}
+
 Expression parse(const std::string& expr_str) {
     auto expr = SymEngine::parse(expr_str);
     expr = symbolic::subs(expr, symbolic::symbol("true"), symbolic::one());

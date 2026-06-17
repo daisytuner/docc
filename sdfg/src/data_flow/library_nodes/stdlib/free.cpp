@@ -33,6 +33,11 @@ void FreeNode::replace(const symbolic::Expression old_expression, const symbolic
     return;
 }
 
+void FreeNode::replace(const symbolic::ExpressionMapping& replacements) {
+    // Do nothing
+    return;
+}
+
 data_flow::PointerAccessType FreeNode::pointer_access_type(int input_idx) const {
     if (input_idx == 0) {
         return data_flow::PointerAccessMeta::create_invalidate();

@@ -564,6 +564,35 @@ void EinsumNode::replace(const symbolic::Expression old_expression, const symbol
     // Note: indices only contain internal indvars, so no substitution needed
 }
 
+void EinsumNode::replace(const symbolic::ExpressionMapping& replacements) {
+    // Filter out replacements whose key is an internal symbol (indvar)
+    symbolic::ExpressionMapping filtered;
+    for (auto& pair : replacements) {
+        bool is_internal = false;
+        for (auto& dim : this->dims_) {
+            if (symbolic::eq(dim.indvar, pair.first)) {
+                is_internal = true;
+                break;
+            }
+        }
+        if (!is_internal) {
+            filtered[pair.first] = pair.second;
+        }
+    }
+
+    if (filtered.empty()) {
+        return;
+    }
+
+    // Only replace external symbols in bounds/init expressions
+    for (auto& dim : this->dims_) {
+        dim.init = symbolic::subs(dim.init, filtered);
+        dim.bound = symbolic::subs(dim.bound, filtered);
+    }
+
+    // Note: indices only contain internal indvars, so no substitution needed
+}
+
 std::string EinsumNode::toStr() const {
     std::stringstream stream;
 

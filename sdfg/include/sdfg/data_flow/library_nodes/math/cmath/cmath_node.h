@@ -404,6 +404,8 @@ public:
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
+    void replace(const symbolic::ExpressionMapping& replacements) override;
+
     bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override {
         return false;
     };
