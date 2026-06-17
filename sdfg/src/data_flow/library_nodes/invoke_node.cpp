@@ -74,6 +74,8 @@ std::unique_ptr<data_flow::DataFlowNode> InvokeNode::
 
 void InvokeNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
 
+void InvokeNode::replace(const symbolic::ExpressionMapping& replacements) {}
+
 nlohmann::json InvokeNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const InvokeNode& node = static_cast<const InvokeNode&>(library_node);
 

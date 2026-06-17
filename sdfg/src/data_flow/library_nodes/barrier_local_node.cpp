@@ -32,6 +32,10 @@ void BarrierLocalNode::replace(const symbolic::Expression old_expression, const 
     // Do nothing
 };
 
+void BarrierLocalNode::replace(const symbolic::ExpressionMapping& replacements) {
+    // Do nothing
+};
+
 nlohmann::json BarrierLocalNodeSerializer::serialize(const sdfg::data_flow::LibraryNode& library_node) {
     if (library_node.code() != data_flow::LibraryNodeType_BarrierLocal) {
         throw std::runtime_error("Invalid library node code");

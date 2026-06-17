@@ -50,6 +50,7 @@
 
 #include <unordered_map>
 #include "symengine/functions.h"
+#include "symengine/subs.h"
 
 namespace sdfg {
 
@@ -104,6 +105,8 @@ typedef std::set<Expression, SymEngine::RCPBasicKeyLess> ExpressionSet;
 
 /** @brief Map from expressions to expressions */
 typedef std::unordered_map<Expression, Expression, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq> ExpressionMap;
+
+typedef SymEngine::map_basic_basic ExpressionMapping;
 
 /** @} */ // end of symbolic_types group
 
@@ -685,6 +688,13 @@ ExpressionSet muls(const Expression expr);
 Expression subs(const Expression expr, const Expression old_expr, const Expression new_expr);
 
 /**
+ * Bulk replacement
+ */
+inline Expression subs(const Expression expr, const symbolic::ExpressionMapping& replacements) {
+    return SymEngine::subs(expr, replacements);
+}
+
+/**
  * @brief Substitutes a sub-expression in a condition
  * @param expr Condition to perform substitution in
  * @param old_expr Sub-expression to replace
@@ -692,6 +702,11 @@ Expression subs(const Expression expr, const Expression old_expr, const Expressi
  * @return New condition with substitution applied
  */
 Condition subs(const Condition expr, const Expression old_expr, const Expression new_expr);
+
+/**
+ * Bulk replacement
+ */
+Condition subs(const Condition expr, const symbolic::ExpressionMapping& replacements);
 
 /**
  * @brief Computes the inverse of an expression with respect to a symbol

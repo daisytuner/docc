@@ -171,6 +171,8 @@ public:
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
+    void replace(const symbolic::ExpressionMapping& replacements) override;
+
     static std::pair<structured_control_flow::Sequence*, std::vector<symbolic::Expression>> add_eltwise_scope(
         builder::StructuredSDFGBuilder& builder,
         const DebugInfo& scope_deb_info,

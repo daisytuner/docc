@@ -365,5 +365,39 @@ void LoopAnalysis::dump_to_file(std::filesystem::path file) const {
     out.close();
 }
 
+void LoopAnalysis::copied_loop(
+    structured_control_flow::ControlFlowNode* existing_loop,
+    structured_control_flow::ControlFlowNode* new_parent_loop,
+    structured_control_flow::ControlFlowNode* new_loop,
+    bool start_not_end
+) {
+    // this->loops_.push_back(new_loop);
+    // this->loop_tree_[new_loop] = new_parent_loop;
+    // auto& new_loop_state = loop_infos_[new_loop];
+    // size_t new_loop_id;
+    // {
+    //     auto& new_parent_loop_children = loop_children_.at(new_parent_loop);
+    //     if (start_not_end) {
+    //         new_loop_id = new_parent_loop_children.size();
+    //         new_parent_loop_children.insert(new_parent_loop_children.begin(), new_loop);
+    //     } else {
+    //         new_parent_loop_children.push_back(new_loop);
+    //     }
+    // }
+    // run(*new_loop, new_parent_loop, loop_infos_.at(new_parent_loop).first.loop_level + 1);
+    //
+    // auto& ex_loop_info = loop_infos_.at(existing_loop);
+    // auto& new_parent_state = loop_infos_.at(new_parent_loop);
+    // auto& copied_children = loop_children_.at(existing_loop);
+    //
+    // this->init_new_loop_info(
+    //     new_loop_state,
+    //     new_parent_state.first.loop_level+1,
+    //     new_loop,
+    //     dynamic_cast<structured_control_flow::Map*>(new_loop),
+    //     dynamic_cast<structured_control_flow::While*>(new_loop)
+    // );
+}
+
 } // namespace analysis
 } // namespace sdfg

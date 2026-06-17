@@ -2,6 +2,7 @@
 
 #include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "symengine/subs.h"
 
 namespace sdfg {
 namespace structured_control_flow {
@@ -56,6 +57,13 @@ void IfElse::replace(const symbolic::Expression old_expression, const symbolic::
     for (size_t i = 0; i < this->cases_.size(); ++i) {
         this->cases_.at(i)->replace(old_expression, new_expression);
         this->conditions_.at(i) = symbolic::subs(this->conditions_.at(i), old_expression, new_expression);
+    }
+}
+
+void IfElse::replace(const symbolic::ExpressionMapping& replacements) {
+    for (size_t i = 0; i < this->cases_.size(); ++i) {
+        this->cases_.at(i)->replace(replacements);
+        this->conditions_.at(i) = symbolic::subs(this->conditions_.at(i), replacements);
     }
 };
 

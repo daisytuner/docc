@@ -85,6 +85,16 @@ void TensorLayout::replace_symbols(const symbolic::Expression& old, const symbol
     offset_ = symbolic::subs(offset_, old, new_expr);
 }
 
+void TensorLayout::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    for (auto& dim : shape_) {
+        dim = symbolic::subs(dim, replacements);
+    }
+    for (auto& stride : strides_) {
+        stride = symbolic::subs(stride, replacements);
+    }
+    offset_ = symbolic::subs(offset_, replacements);
+}
+
 symbolic::Expression TensorLayout::total_elements() const { return SymEngine::mul(shape_); }
 
 symbolic::MultiExpression TensorLayout::linear_strides() const { return std::move(linear_strides(shape_)); }

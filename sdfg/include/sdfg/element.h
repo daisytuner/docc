@@ -94,6 +94,8 @@ public:
     virtual void validate(const Function& function) const = 0;
 
     virtual void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) = 0;
+
+    virtual void replace(const symbolic::ExpressionMapping& replacements);
 };
 
 typedef size_t ElementId;

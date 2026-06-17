@@ -144,6 +144,7 @@ public:
     size_t out_degree(const data_flow::DataFlowNode& node) const;
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression);
+    void replace(const symbolic::ExpressionMapping& replacements);
 
     /***** Section: Analysis *****/
 

@@ -200,6 +200,15 @@ public:
     descendants(sdfg::structured_control_flow::ControlFlowNode* loop) const;
 
     void dump_to_file(std::filesystem::path file) const;
+
+    // update with changes
+
+    void copied_loop(
+        structured_control_flow::ControlFlowNode* existing_loop,
+        structured_control_flow::ControlFlowNode* new_parent_loop,
+        structured_control_flow::ControlFlowNode* new_loop,
+        bool start_not_end = false
+    );
 };
 
 } // namespace analysis

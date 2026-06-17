@@ -2,6 +2,7 @@
 
 #include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/polynomials.h"
+#include "symengine/subs.h"
 
 namespace sdfg {
 namespace structured_control_flow {
@@ -59,7 +60,20 @@ void StructuredLoop::replace(const symbolic::Expression old_expression, const sy
     this->condition_ = symbolic::subs(this->condition_, old_expression, new_expression);
 
     this->root_->replace(old_expression, new_expression);
-};
+}
+
+void StructuredLoop::replace(const symbolic::ExpressionMapping& replacements) {
+    auto indvar_repl = replacements.find(this->indvar_);
+    if (indvar_repl != replacements.end()) {
+        this->indvar_ = SymEngine::rcp_static_cast<const SymEngine::Symbol>(indvar_repl->second);
+    }
+
+    this->init_ = SymEngine::subs(this->init_, replacements);
+    this->update_ = SymEngine::subs(this->update_, replacements);
+    this->condition_ = symbolic::subs(this->condition_, replacements);
+
+    this->root_->replace(replacements);
+}
 
 symbolic::Integer StructuredLoop::stride() {
     auto expr = this->update();

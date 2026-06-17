@@ -139,7 +139,17 @@ void DataFlowGraph::replace(const symbolic::Expression old_expression, const sym
     for (auto& edge : this->edges_) {
         edge.second->replace(old_expression, new_expression);
     }
-};
+}
+
+void DataFlowGraph::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& node : this->nodes_) {
+        node.second->replace(replacements);
+    }
+
+    for (auto& edge : this->edges_) {
+        edge.second->replace(replacements);
+    }
+}
 
 /***** Section: Analysis *****/
 
