@@ -11,7 +11,34 @@ Polynomial polynomial(const Expression expr, SymbolVec& symbols) {
         for (auto& symbol : symbols) {
             gens.insert(symbol);
         }
-        return SymEngine::from_basic<SymEngine::MExprPoly>(expr, gens);
+        auto poly = SymEngine::from_basic<SymEngine::MExprPoly>(expr, gens);
+
+        // SymEngine's MExprPoly conversion treats any sub-expression it does
+        // not recognize as polynomial (e.g. `idiv(g, k)`, `imod(g, k)`,
+        // `Min(...)`, opaque function symbols) as an *opaque constant* with
+        // respect to the polynomial variables. When the input is built
+        // exclusively from such sub-expressions referencing `g`, the
+        // resulting polynomial has a single degree-0 entry whose coefficient
+        // is the entire original expression — a degenerate decomposition
+        // that is unsafe for downstream interval analysis: visiting such a
+        // coefficient as if it were a "constant in g" leads to direct
+        // self-recursion. Detect this case by scanning every coefficient
+        // for occurrences of the declared variables and reject the
+        // polynomial if any is found.
+        if (!poly.is_null()) {
+            const auto& dict = poly->get_poly().get_dict();
+            for (const auto& [_exponents, coeff] : dict) {
+                auto coeff_atoms = atoms(coeff);
+                for (const auto& var : poly->get_vars()) {
+                    auto var_sym = SymEngine::rcp_static_cast<const SymEngine::Symbol>(var);
+                    if (coeff_atoms.count(var_sym)) {
+                        return SymEngine::null;
+                    }
+                }
+            }
+        }
+
+        return poly;
     } catch (SymEngine::SymEngineException& e) {
         return SymEngine::null;
     }
