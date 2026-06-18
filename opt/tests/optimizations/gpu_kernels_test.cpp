@@ -3,32 +3,51 @@
 // =============================================================================
 //
 // The pipeline demonstrated here is the canonical way to bring a sequential,
-// flat-pointer matmul kernel onto the GPU:
+// flat-pointer matmul kernel onto the GPU using a CUTLASS-style
+// thread-coarsened layout: each thread owns a CY*CX register tile of C and
+// the inner k-loop is an outer product over (iI, jI) that consumes A/B
+// fragments staged in shared memory.
 //
-//   sequential Map(i) Map(j) For(k)               // host-side scalar kernel
+// Transformations are grouped by phase: tiling -> interchange -> offload ->
+// local storage. Each phase only reshapes the loop nest; the offload phase
+// is the single point where the kernel gets bound to CUDA grid/block dims.
+//
+//   sequential Map(i) Map(j) For(k)                            // host-side scalar kernel
 //     |
-//     |  (1) LoopInterchange(i, j)                // coalesce X-dim along j
+//     |  === TILING ===
+//     |  (T1) LoopTiling(for_i, CY)                            // thread coarsening, rows
+//     |  (T2) LoopTiling(for_j, CX)                            // thread coarsening, cols
+//     |  (T3) LoopTiling(for_k, TK)                            // strip-mine k
 //     v
-//   Map(j) Map(i) For(k)
+//   Map(iO,CY) Map(iI) Map(jO,CX) Map(jI) For(kk,TK) For(kI)
 //     |
-//     |  (2) cuda::CUDATransform(map_j, BX=32)    // offload to CUDA, X-dim
-//     |  (3) CUDAParallelizeNestedMap(map_i, BY)  // nested Y-dim
+//     |  === INTERCHANGE ===
+//     |  (I1) LoopInterchange(iI, jO)                          // put block loops adjacent
+//     |  (I2) LoopInterchange(iO, jO)                          // coalesce X-dim along j
+//     |  (I3) LoopInterchange(jI, kk)                          // sink kk above (iI, jI)
+//     |  (I4) LoopInterchange(iI, kk)
+//     |  (I5) LoopInterchange(jI, kI)                          // sink kI above (iI, jI)
+//     |  (I6) LoopInterchange(iI, kI)
 //     v
-//   Map_X(j, BX=32) Map_Y(i, BY=8) For(k)        // kernel skeleton
+//   Map(jO) Map(iO) For(kk) For(kI) Map(iI) Map(jI) { fma }
 //     |
-//     |  (4) LoopTiling(for_k, TK=8)              // strip-mine k
+//     |  === OFFLOAD ===
+//     |  (O1) cuda::CUDATransform(jO, TX=8)                    // offload to CUDA X-dim
+//     |  (O2) CUDAParallelizeNestedMap(iO, TY=4)               // nested Y-dim
 //     v
-//   Map_X Map_Y For(kk, step=8) For(k_in)
+//   Map_X(jO,TX) Map_Y(iO,TY) For(kk) For(kI) Map(iI) Map(jI) { fma }
 //     |
-//     |  (5) InLocalStorage(for_k_inner, A, NV_Shared) // stage A tile in SMEM
-//     |  (6) InLocalStorage(for_k_inner, B, NV_Shared) // stage B tile in SMEM
-//     |  (7) OutLocalStorage(for_kk, C)                 // promote C to register
+//     |  === LOCAL STORAGE ===
+//     |  (L1) InLocalStorage(for_kI, A, NV_Shared)             // A tile: TY*CY*TK
+//     |  (L2) InLocalStorage(for_kI, B, NV_Shared)             // B tile: TX*CX*TK
+//     |  (L3) OutLocalStorage(for_kk, C)                       // C reg tile: CY*CX
 //     v
-//   Map_X Map_Y { C_reg = C[..],
+//   Map_X Map_Y { C_reg[CY*CX] = C[..],
 //                 for(kk) {
-//                   barriers + coop copy_A,
-//                   barriers + coop copy_B,
-//                   for(k_in) [fma reads A_local, B_local; accumulates C_reg]
+//                   barriers + coop copy_A (TY*CY*TK SMEM),
+//                   barriers + coop copy_B (TX*CX*TK SMEM),
+//                   for(kI) { for(iI) { for(jI) { fma:
+//                       C_reg[iI,jI] += A_local[iI,kI] * B_local[kI,jI] } } }
 //                 },
 //                 C[..] = C_reg }
 //
@@ -267,9 +286,17 @@ struct MatmulFixture {
 // =============================================================================
 
 TEST(GPUKernelTest, GEMM_CudaTilingILS) {
-    constexpr int BX = 32; // X-dim block size (warp width, coalesced along j)
-    constexpr int BY = 8; // Y-dim block size
-    constexpr int TK = 8; // K-tile size
+    // Thread block & register-tile geometry.
+    //   Block tile  = TY*CY rows  x  TX*CX cols  =  16 x 32
+    //   Grid        = M/(TY*CY) x N/(TX*CX)      =   8 x  4
+    //   Reg tile    = CY x CX per thread         =   4 x  4
+    //   SMEM A tile = TY*CY x TK                 =  16 x  8 = 128 elems
+    //   SMEM B tile = TX*CX x TK                 =  32 x  8 = 256 elems
+    constexpr int TX = 8; // threads per block, X (coalesced along j)
+    constexpr int TY = 4; // threads per block, Y
+    constexpr int CX = 4; // register-tile cols per thread
+    constexpr int CY = 4; // register-tile rows per thread
+    constexpr int TK = 8; // K-tile depth
 
     MatmulFixture fix;
     fix.build();
@@ -277,97 +304,223 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     analysis::AnalysisManager am(builder.subject());
 
     // -------------------------------------------------------------------------
-    // (1) Loop interchange: i <-> j so j becomes outermost.
-    //     This makes the j-dim the X-dim (coalesced along the fast axis of
-    //     row-major C/B) once we offload.
+    // Phase 1: TILING. Strip-mine i, j, k. We tile all three before doing any
+    // structural reordering so the rest of the pipeline can refer to all six
+    // resulting loops (iO/iI, jO/jI, kk/kI) by name.
+    //
+    //   Why tile BEFORE offload: once Map(i)/Map(j) are bound to CUDA grid
+    //   dims, there is no transform that splits them back into a "block
+    //   loop + sequential thread-tile loop" pair. The inner loops (iI, jI)
+    //   need to end up INSIDE the k-traversal so each thread accumulates a
+    //   CY*CX register tile of C via an outer product over k — the
+    //   structural pattern that defines a CUTLASS-style GEMM.
+    //
+    //   LoopTiling renames the OUTER loop to "<orig>_tile0" and leaves the
+    //   original indvar on the INNER per-thread tile loop. So after T1+T2+T3
+    //   the indvars are:
+    //         iO="i_tile0", iI="i", jO="j_tile0", jI="j",
+    //         kk="k_tile0", kI="k"
+    //
+    //   Structure after this phase:
+    //         iO { iI { jO { jI { kk { kI { fma } } } } } }
     // -------------------------------------------------------------------------
+    // (T1) LoopTiling(for_i, CY)
     {
-        transformations::LoopInterchange interchange(*fix.for_i, *fix.for_j);
-        ASSERT_TRUE(interchange.can_be_applied(builder, am)) << "LoopInterchange(i, j) must apply";
+        transformations::LoopTiling tile_i(*fix.for_i, /*tile_size=*/CY);
+        ASSERT_TRUE(tile_i.can_be_applied(builder, am)) << "LoopTiling(for_i, CY) must apply";
+        tile_i.apply(builder, am);
+        am.invalidate_all();
+    }
+    // (T2) LoopTiling(for_j, CX): for_j now sits inside the new iI.
+    {
+        auto* iO_re = find_first_map(builder.subject().root());
+        ASSERT_NE(iO_re, nullptr);
+        auto* iI_re = find_first_map(iO_re->root());
+        ASSERT_NE(iI_re, nullptr);
+        auto* j_re = find_first_map(iI_re->root());
+        ASSERT_NE(j_re, nullptr);
+        EXPECT_EQ(j_re->indvar()->get_name(), "j");
+
+        transformations::LoopTiling tile_j(*j_re, /*tile_size=*/CX);
+        ASSERT_TRUE(tile_j.can_be_applied(builder, am)) << "LoopTiling(for_j, CX) must apply";
+        tile_j.apply(builder, am);
+        am.invalidate_all();
+    }
+    // (T3) LoopTiling(for_k, TK): for_k now sits at iO { iI { jO { jI { for_k } } } }.
+    {
+        auto* iO_re = find_first_map(builder.subject().root());
+        auto* iI_re = find_first_map(iO_re->root());
+        auto* jO_re = find_first_map(iI_re->root());
+        auto* jI_re = find_first_map(jO_re->root());
+        auto* k_re = find_first_for(jI_re->root());
+        ASSERT_NE(k_re, nullptr);
+        EXPECT_EQ(k_re->indvar()->get_name(), "k");
+
+        transformations::LoopTiling tile_k(*k_re, /*tile_size=*/TK);
+        ASSERT_TRUE(tile_k.can_be_applied(builder, am)) << "LoopTiling(for_k, TK) must apply";
+        tile_k.apply(builder, am);
+        am.invalidate_all();
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 2: INTERCHANGE. Reorder the nest to the CUTLASS mainloop shape
+    //   jO { iO { kk { kI { iI { jI { fma } } } } } }
+    //
+    // Why this exact order:
+    //   * jO outermost  -> coalesced X-dim along the fast axis of row-major
+    //                       C / B (after offload, jO becomes Map_X).
+    //   * iO next       -> Y-dim (after offload, iO becomes Map_Y).
+    //   * kk between (iO, kI) -> OLS(C) at for_kk projects C's subset over
+    //                       the enclosed (iI, jI) and yields a CY*CX
+    //                       per-thread register tile.
+    //   * kI between (kk, iI) -> ILS(A) at for_kI produces an SMEM A tile
+    //                       of shape (TY*CY) x TK; ILS(B) a tile of shape
+    //                       (TX*CX) x TK. The inner (iI, jI) loops are
+    //                       then a pure outer product reading
+    //                       A[iI,kI]*B[kI,jI] from SMEM into the C
+    //                       register tile — the CUTLASS mainloop pattern.
+    // -------------------------------------------------------------------------
+    // (I1) Interchange(iI, jO): iO { iI { jO { ... } } } -> iO { jO { iI { ... } } }
+    {
+        auto* iO_re = find_first_map(builder.subject().root());
+        auto* iI_re = find_first_map(iO_re->root());
+        auto* jO_re = find_first_map(iI_re->root());
+        ASSERT_NE(jO_re, nullptr);
+        EXPECT_EQ(jO_re->indvar()->get_name(), "j_tile0");
+
+        transformations::LoopInterchange swap(*iI_re, *jO_re);
+        ASSERT_TRUE(swap.can_be_applied(builder, am)) << "Interchange(iI, jO) must apply";
+        swap.apply(builder, am);
+        am.invalidate_all();
+    }
+    // (I2) Interchange(iO, jO): iO { jO { ... } } -> jO { iO { ... } }
+    {
+        auto* iO_re = find_first_map(builder.subject().root());
+        auto* jO_re = find_first_map(iO_re->root());
+        ASSERT_EQ(iO_re->indvar()->get_name(), "i_tile0");
+        ASSERT_EQ(jO_re->indvar()->get_name(), "j_tile0");
+
+        transformations::LoopInterchange interchange(*iO_re, *jO_re);
+        ASSERT_TRUE(interchange.can_be_applied(builder, am)) << "Interchange(iO, jO) must apply";
         interchange.apply(builder, am);
         am.invalidate_all();
     }
-
-    // After interchange the new outer loop body is the (former) i loop, and
-    // its body still contains the unchanged k loop. Re-find references.
+    // After I1+I2: jO { iO { iI { jI { kk { kI { fma } } } } } }.
     auto* for_j_outer = find_first_map(builder.subject().root());
     ASSERT_NE(for_j_outer, nullptr);
-    EXPECT_EQ(for_j_outer->indvar()->get_name(), "j");
+    EXPECT_EQ(for_j_outer->indvar()->get_name(), "j_tile0");
 
     auto* for_i_inner = find_first_map(for_j_outer->root());
     ASSERT_NE(for_i_inner, nullptr);
-    EXPECT_EQ(for_i_inner->indvar()->get_name(), "i");
+    EXPECT_EQ(for_i_inner->indvar()->get_name(), "i_tile0");
 
-    auto* for_k_inner = find_first_for(for_i_inner->root());
-    ASSERT_NE(for_k_inner, nullptr);
-    EXPECT_EQ(for_k_inner->indvar()->get_name(), "k");
-
-    // -------------------------------------------------------------------------
-    // (2) CUDATransform on Map(j): X-dim CUDA kernel, BX=32.
-    //     Also inserts H2D/D2H blocks around the kernel and renames pointer
-    //     arguments A, B, C -> __daisy_cuda_<id>_{A,B,C}.
-    // -------------------------------------------------------------------------
+    // (I3) Interchange(jI, kk): iI { jI { kk } } -> iI { kk { jI } }
     {
-        cuda::CUDATransform offload(*for_j_outer, /*block_size=*/BX);
-        ASSERT_TRUE(offload.can_be_applied(builder, am)) << "CUDATransform on Map(j) must apply";
+        auto* iI_re = find_first_map(for_i_inner->root());
+        auto* jI_re = find_first_map(iI_re->root());
+        auto* kk_re = find_first_for(jI_re->root());
+        ASSERT_NE(kk_re, nullptr);
+        transformations::LoopInterchange swap(*jI_re, *kk_re);
+        ASSERT_TRUE(swap.can_be_applied(builder, am)) << "Interchange(jI, kk) must apply";
+        swap.apply(builder, am);
+        am.invalidate_all();
+    }
+    // (I4) Interchange(iI, kk): iI { kk { ... } } -> kk { iI { ... } }
+    {
+        auto* iI_re = find_first_map(for_i_inner->root());
+        auto* kk_re = find_first_for(iI_re->root());
+        ASSERT_NE(kk_re, nullptr);
+        transformations::LoopInterchange swap(*iI_re, *kk_re);
+        ASSERT_TRUE(swap.can_be_applied(builder, am)) << "Interchange(iI, kk) must apply";
+        swap.apply(builder, am);
+        am.invalidate_all();
+    }
+    // After I3+I4: kk { iI { jI { kI { fma } } } } under for_i_inner.
+    // (I5) Interchange(jI, kI): iI { jI { kI } } -> iI { kI { jI } }
+    {
+        auto* kk_re = find_first_for(for_i_inner->root());
+        auto* iI_re = find_first_map(kk_re->root());
+        auto* jI_re = find_first_map(iI_re->root());
+        auto* kI_re = find_first_for(jI_re->root());
+        ASSERT_NE(kI_re, nullptr);
+        transformations::LoopInterchange swap(*jI_re, *kI_re);
+        ASSERT_TRUE(swap.can_be_applied(builder, am)) << "Interchange(jI, kI) must apply";
+        swap.apply(builder, am);
+        am.invalidate_all();
+    }
+    // (I6) Interchange(iI, kI): iI { kI { ... } } -> kI { iI { ... } }
+    {
+        auto* kk_re = find_first_for(for_i_inner->root());
+        auto* iI_re = find_first_map(kk_re->root());
+        auto* kI_re = find_first_for(iI_re->root());
+        ASSERT_NE(kI_re, nullptr);
+        transformations::LoopInterchange swap(*iI_re, *kI_re);
+        ASSERT_TRUE(swap.can_be_applied(builder, am)) << "Interchange(iI, kI) must apply";
+        swap.apply(builder, am);
+        am.invalidate_all();
+    }
+    // After I5+I6: jO { iO { kk { kI { iI { jI { fma } } } } } }.
+
+    // -------------------------------------------------------------------------
+    // Phase 3: OFFLOAD. Bind the two block-mapped loops to CUDA grid dims.
+    //   (O1) CUDATransform on Map(jO): X-dim CUDA kernel, TX=8 threads/block.
+    //        jO has step CX, so the X block tile is TX*CX = 32 cols. Inserts
+    //        H2D/D2H blocks around the kernel and renames pointer arguments
+    //        A, B, C -> __daisy_cuda_<id>_{A,B,C}.
+    //   (O2) Promote Map(iO) to the Y dim (TY=4 threads/block).
+    //        iO has step CY, so the Y block tile is TY*CY = 16 rows.
+    // -------------------------------------------------------------------------
+    // (O1) CUDATransform(jO, TX)
+    {
+        cuda::CUDATransform offload(*for_j_outer, /*block_size=*/TX);
+        ASSERT_TRUE(offload.can_be_applied(builder, am)) << "CUDATransform on Map(jO) must apply";
         offload.apply(builder, am);
         am.invalidate_all();
     }
-
-    // for_j_outer is unchanged in identity but the schedule type was updated.
     EXPECT_EQ(for_j_outer->schedule_type().value(), cuda::ScheduleType_CUDA::value());
     EXPECT_EQ(cuda::ScheduleType_CUDA::dimension(for_j_outer->schedule_type()), cuda::CUDADimension::X);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(for_j_outer->schedule_type()), symbolic::integer(BX)));
+    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(for_j_outer->schedule_type()), symbolic::integer(TX)));
 
-    // -------------------------------------------------------------------------
-    // (3) Promote Map(i) to the Y dimension (BY=8).
-    // -------------------------------------------------------------------------
+    // (O2) CUDAParallelizeNestedMap(iO, TY)
     {
-        transformations::CUDAParallelizeNestedMap parallelize(*for_i_inner, /*block_size=*/BY);
-        ASSERT_TRUE(parallelize.can_be_applied(builder, am)) << "CUDAParallelizeNestedMap on Map(i) must apply";
+        transformations::CUDAParallelizeNestedMap parallelize(*for_i_inner, /*block_size=*/TY);
+        ASSERT_TRUE(parallelize.can_be_applied(builder, am)) << "CUDAParallelizeNestedMap on Map(iO) must apply";
         parallelize.apply(builder, am);
         am.invalidate_all();
     }
-
     EXPECT_EQ(for_i_inner->schedule_type().value(), cuda::ScheduleType_CUDA::value());
     EXPECT_EQ(cuda::ScheduleType_CUDA::dimension(for_i_inner->schedule_type()), cuda::CUDADimension::Y);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(for_i_inner->schedule_type()), symbolic::integer(BY)));
+    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(for_i_inner->schedule_type()), symbolic::integer(TY)));
 
     // -------------------------------------------------------------------------
-    // (4) Strip-mine the k loop: For(k) -> For(k_tile, step=TK) For(k).
+    // Phase 4: LOCAL STORAGE. Stage A/B in SMEM at for_kI; promote C to a
+    // per-thread CY*CX REGISTER TILE at for_kk.
+    //
+    //   ILS at for_kI lands the cooperative load BETWEEN for_kk and for_kI;
+    //   per kk iter, all threads in the block cooperatively load the
+    //   (TY*CY) x TK A tile (resp. (TX*CX) x TK B tile) into SMEM once.
+    //
+    //   OLS at for_kk hoists the C load BEFORE for_kk and the writeback
+    //   AFTER for_kk. With (iI, jI) now nested INSIDE for_kk (Phase 2),
+    //   OLS projects C's index subset over those loops and materialises a
+    //   CY*CX per-thread local — the canonical CUTLASS accumulator
+    //   fragment — instead of the 1-elem scalar from the un-coarsened
+    //   pipeline. Each thread now performs CY*CX*TK FMAs per kk-iteration
+    //   while issuing only CY+CX SMEM loads per kI step (after backend
+    //   scalarization of the outer product). Global-memory traffic on C
+    //   drops to 2 transactions per output element (one load, one store).
+    //
+    //   Default OLS storage = CPU_Stack: on GPU codegen this lowers to a
+    //   per-thread local (register file / local memory, at the compiler's
+    //   discretion).
     // -------------------------------------------------------------------------
-    auto* for_k_in_kernel = find_first_for(for_i_inner->root());
-    ASSERT_NE(for_k_in_kernel, nullptr);
-    EXPECT_EQ(for_k_in_kernel->indvar()->get_name(), "k");
-
-    structured_control_flow::StructuredLoop* for_kk = nullptr;
-    {
-        transformations::LoopTiling tile(*for_k_in_kernel, /*tile_size=*/TK);
-        ASSERT_TRUE(tile.can_be_applied(builder, am)) << "LoopTiling on for_k must apply";
-        tile.apply(builder, am);
-        for_kk = tile.outer_loop();
-        ASSERT_NE(for_kk, nullptr);
-        am.invalidate_all();
-    }
-
-    // for_kk should now be the only direct loop child of for_i_inner->root().
-    // LoopTiling uses find_new_name for the outer indvar, so the actual name
-    // includes a disambiguating suffix ("k_tile0").
-    {
-        const std::string indvar = for_kk->indvar()->get_name();
-        EXPECT_EQ(indvar.compare(0, std::strlen("k_tile"), "k_tile"), 0) << "Unexpected k_tile indvar: " << indvar;
-    }
-
-    // -------------------------------------------------------------------------
-    // (5) Stage A tile in SMEM. ILS is applied to the *inner* k-loop (post
-    //     tiling), so the cooperative load lands BETWEEN for_kk and the inner
-    //     for_k. Each for_kk iteration loads exactly TK elements per i thread.
-    //     After CUDATransform, A is renamed - look it up by suffix.
-    // -------------------------------------------------------------------------
+    auto* for_kk = find_first_for(for_i_inner->root());
+    ASSERT_NE(for_kk, nullptr);
     auto* for_k_inner_tiled = find_first_for(for_kk->root());
     ASSERT_NE(for_k_inner_tiled, nullptr);
     EXPECT_EQ(for_k_inner_tiled->indvar()->get_name(), "k");
 
+    // (L1) ILS(A, NV_Shared) at for_kI
     {
         auto* a_access = find_access_by_suffix(*for_k_inner_tiled, "_A");
         ASSERT_NE(a_access, nullptr) << "Renamed A access not found under for_k_inner_tiled";
@@ -377,10 +530,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
         ils_a.apply(builder, am);
         am.invalidate_all();
     }
-
-    // -------------------------------------------------------------------------
-    // (6) Stage B tile in SMEM.
-    // -------------------------------------------------------------------------
+    // (L2) ILS(B, NV_Shared) at for_kI
     {
         auto* b_access = find_access_by_suffix(*for_k_inner_tiled, "_B");
         ASSERT_NE(b_access, nullptr) << "Renamed B access not found under for_k_inner_tiled";
@@ -390,25 +540,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
         ils_b.apply(builder, am);
         am.invalidate_all();
     }
-
-    // -------------------------------------------------------------------------
-    // (7) Promote C to a per-thread register accumulator.
-    //
-    //     OLS applied at the for_kk scope hoists the C load OUT of for_kk and
-    //     the writeback AFTER for_kk. Each thread sees C[i*N + j] (a single
-    //     scalar slot per thread), so the tile collapses to a 1-element local
-    //     and the entire k-traversal accumulates in a register.
-    //
-    //     This cuts GMEM traffic on C from 2*M*N*(K/TK) accesses to just 2*M*N
-    //     (one load + one store per output element), and is the prerequisite
-    //     for any further inner-loop optimization (unrolling, vectorization,
-    //     tensor-core MMA), since the inner k loop is now a pure FMA chain
-    //     with no DRAM round-trip on the accumulator.
-    //
-    //     Default storage = CPU_Stack: on GPU codegen this lowers to a
-    //     per-thread local (register or stack slot, at the compiler's
-    //     discretion).
-    // -------------------------------------------------------------------------
+    // (L3) OLS(C) at for_kk — CY*CX per-thread register tile.
     {
         auto* c_access = find_access_by_suffix(*for_kk, "_C");
         ASSERT_NE(c_access, nullptr) << "Renamed C access not found under for_kk";
@@ -420,11 +552,12 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     }
 
     // -------------------------------------------------------------------------
-    // (8) Propagate the grid-condition through the kernel so that out-of-bounds
-    //     threads still hit every barrier but skip non-barrier work. For
-    //     perfectly divisible bounds (M%BY == 0, N%BX == 0) this is a no-op
-    //     w.r.t. semantics, but it sets the `nested_sync` schedule property
-    //     and is part of the canonical pipeline.
+    // Post-passes: SyncConditionPropagation propagates the grid-condition
+    // through the kernel so that out-of-bounds threads still hit every
+    // barrier but skip non-barrier work. For perfectly divisible bounds
+    // (M%(TY*CY)==0, N%(TX*CX)==0) this is a no-op w.r.t. semantics, but it
+    // sets the `nested_sync` schedule property and is part of the canonical
+    // pipeline.
     // -------------------------------------------------------------------------
     {
         passes::SyncConditionPropagation sync_prop;
@@ -436,8 +569,8 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
 
     // -------------------------------------------------------------------------
     // Verification: SMEM buffers exist with correct sizes.
-    //   A_local: per-thread on Y (BY) x varying TK = 8 * 8 = 64 elements
-    //   B_local: per-thread on X (BX) x varying TK = 32 * 8 = 256 elements
+    //   A_local: TY*CY rows x TK k-depths = 4*4*8 = 128 elements per block
+    //   B_local: TX*CX cols x TK k-depths = 8*4*8 = 256 elements per block
     //
     // ILS names its buffer `__daisy_in_local_storage_<container>` (where
     // <container> is the renamed device arg, e.g. `__daisy_cuda_0_A`). The
@@ -475,18 +608,19 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     ASSERT_NE(a_arr, nullptr) << "A_local is not an Array";
     ASSERT_NE(b_arr, nullptr) << "B_local is not an Array";
 
-    EXPECT_TRUE(symbolic::eq(a_arr->num_elements(), symbolic::integer(BY * TK)))
-        << "A_local size mismatch: got " << a_arr->num_elements()->__str__() << ", expected " << (BY * TK);
-    EXPECT_TRUE(symbolic::eq(b_arr->num_elements(), symbolic::integer(BX * TK)))
-        << "B_local size mismatch: got " << b_arr->num_elements()->__str__() << ", expected " << (BX * TK);
+    EXPECT_TRUE(symbolic::eq(a_arr->num_elements(), symbolic::integer(TY * CY * TK)))
+        << "A_local size mismatch: got " << a_arr->num_elements()->__str__() << ", expected " << (TY * CY * TK);
+    EXPECT_TRUE(symbolic::eq(b_arr->num_elements(), symbolic::integer(TX * CX * TK)))
+        << "B_local size mismatch: got " << b_arr->num_elements()->__str__() << ", expected " << (TX * CX * TK);
 
     // -------------------------------------------------------------------------
-    // Verification: C register accumulator exists as a 1-element per-thread
-    // local (CPU_Stack on GPU = register/local slot). OLS names its buffer
-    // `__daisy_out_local_storage_<container>`.
+    // Verification: C register-tile accumulator. After coarsening, OLS at
+    // for_kk projects C's subset over (iI, jI), giving a CY*CX per-thread
+    // local — the CUTLASS-style accumulator fragment. Storage is CPU_Stack:
+    // on GPU codegen this lowers to a register-file allocation.
     // -------------------------------------------------------------------------
     auto c_local = find_container_by_prefix(builder.subject(), "__daisy_out_local_storage_");
-    ASSERT_FALSE(c_local.empty()) << "C register-accumulator container not created";
+    ASSERT_FALSE(c_local.empty()) << "C register-tile container not created";
     EXPECT_NE(c_local.find("_C"), std::string::npos) << "OLS buffer name: " << c_local;
 
     const auto& c_type = builder.subject().type(c_local);
@@ -495,15 +629,15 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
 
     const auto* c_arr = dynamic_cast<const types::Array*>(&c_type);
     ASSERT_NE(c_arr, nullptr) << "C_local is not an Array";
-    EXPECT_TRUE(symbolic::eq(c_arr->num_elements(), symbolic::integer(1)))
-        << "C_local should be a single-element register accumulator, got " << c_arr->num_elements()->__str__();
+    EXPECT_TRUE(symbolic::eq(c_arr->num_elements(), symbolic::integer(CY * CX)))
+        << "C_local should be a CY*CX register tile, got " << c_arr->num_elements()->__str__() << ", expected "
+        << (CY * CX);
 
     // -------------------------------------------------------------------------
-    // Loop structure: map_j(X, BX) > map_i(Y, BY) > for_kk > [prologue
-    // blocks/maps..., for_k_inner > fma_block]. ILS was applied to the inner
-    // for_k, so the cooperative copy + barriers live INSIDE for_kk's body,
-    // ahead of the inner k loop. map_i_body should still hold just for_kk as
-    // its only meaningful child.
+    // Loop structure: map_j(X, TX) > map_i(Y, TY) > for_kk > [prologue
+    // blocks/maps..., for_kI > iI > jI > fma_block]. ILS at for_kI lands its
+    // copies + barriers INSIDE for_kk, ahead of for_kI. map_i_body should
+    // still hold for_kk as its only non-trivial loop child.
     // -------------------------------------------------------------------------
     auto& map_i_body = for_i_inner->root();
 
@@ -540,7 +674,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
         return node;
     };
 
-    // Last child of kk_body must be (a wrapper around) the inner k loop.
+    // Last child of kk_body must be (a wrapper around) for_kI.
     auto* last_raw = &kk_body.at(kk_body.size() - 1).first;
     auto* last_unwrapped = unwrap_if_else(last_raw);
     ASSERT_NE(last_unwrapped, nullptr) << "last kk_body child does not unwrap to a single inner node";
@@ -549,9 +683,9 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     ASSERT_NE(last_child, nullptr) << "last unwrapped child is not a For";
     EXPECT_EQ(last_child->indvar()->get_name(), "k");
 
-    // The fma body references the SMEM buffers (no longer the renamed device
-    // pointers for A/B) and the C register accumulator (no longer the C device
-    // pointer).
+    // The fma body (now nested under for_kI > iI > jI) references the SMEM
+    // buffers (no longer the renamed device pointers for A/B) and the C
+    // register tile (no longer the C device pointer).
     auto* a_in_body = find_access_by_suffix(*last_child, a_local);
     auto* b_in_body = find_access_by_suffix(*last_child, b_local);
     EXPECT_NE(a_in_body, nullptr) << "fma body does not read A from SMEM";
@@ -559,12 +693,12 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
 
     // OLS rewrote all C accesses inside for_kk to point at C_local. The
     // device pointer "_C" (i.e. `__daisy_cuda_0_C`) should no longer appear
-    // anywhere inside the inner k loop. C_local must appear instead.
+    // anywhere inside for_kI. C_local must appear instead.
     auto* c_dev_in_body = find_access_by_suffix(*last_child, "_C");
-    EXPECT_EQ(c_dev_in_body, nullptr) << "C device pointer still present inside inner k loop after OLS";
+    EXPECT_EQ(c_dev_in_body, nullptr) << "C device pointer still present inside for_kI after OLS";
 
     auto* c_reg_in_body = find_access_by_suffix(*last_child, c_local);
-    EXPECT_NE(c_reg_in_body, nullptr) << "fma body does not reference C register accumulator";
+    EXPECT_NE(c_reg_in_body, nullptr) << "fma body does not reference C register tile";
 
     // The C device pointer must still appear OUTSIDE for_kk — once for the
     // initial load (C_local = C[..]) and once for the writeback (C[..] =
