@@ -14,6 +14,7 @@
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/structured_control_flow/sequence_fusion.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -650,6 +651,10 @@ void InLocalStorage::to_json(nlohmann::json& j) const {
     };
     j["transformation_type"] = this->name();
     j["container"] = container_;
+    serializer::JSONSerializer ser;
+    nlohmann::json storage_json = nlohmann::json::object();
+    ser.storage_type_to_json(storage_json, storage_type_);
+    j["storage_type"] = storage_json;
 }
 
 InLocalStorage InLocalStorage::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
@@ -674,7 +679,13 @@ InLocalStorage InLocalStorage::from_json(builder::StructuredSDFGBuilder& builder
         );
     }
 
-    return InLocalStorage(*loop, *access_node);
+    types::StorageType storage_type = types::StorageType::CPU_Stack();
+    if (desc.contains("storage_type")) {
+        serializer::JSONSerializer ser;
+        storage_type = ser.json_to_storage_type(desc.at("storage_type"));
+    }
+
+    return InLocalStorage(*loop, *access_node, storage_type);
 }
 
 } // namespace transformations
