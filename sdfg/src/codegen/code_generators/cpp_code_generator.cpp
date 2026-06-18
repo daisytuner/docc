@@ -115,6 +115,25 @@ void CPPCodeGenerator::dispatch_header_structures(PrettyPrinter& out) {
 }
 
 void CPPCodeGenerator::dispatch_globals() {
+    // Optional one-shot GPU runtime / context warmup, executed at .so load time
+    // via __attribute__((constructor)). Moves the cold CUDA driver+context
+    // init cost out of the first kernel call (and out of any instrumented region
+    // wrapping it). Opt-in: callers set GlobalConstructor at construction time.
+    if (this->global_constructor_ != GlobalConstructor::None) {
+        // No explicit cuda_runtime.h include: the source file
+        // is compiled with `-x cuda`, which provides the runtime
+        // API declarations implicitly (matches the rest of the emitted host
+        // wrapper, e.g. cudaSetDevice/cudaMalloc below).
+        this->globals_stream_ << "static void __attribute__((constructor)) "
+                                 "__daisy_gpu_context_warmup(void) {"
+                              << std::endl;
+        if (this->global_constructor_ == GlobalConstructor::CUDA) {
+            this->globals_stream_ << "    (void)cudaSetDevice(0);" << std::endl;
+            this->globals_stream_ << "    (void)cudaFree(0);" << std::endl;
+        }
+        this->globals_stream_ << "}" << std::endl;
+    }
+
     // Declare globals
     for (auto& container : sdfg_.externals()) {
         // Function declarations
