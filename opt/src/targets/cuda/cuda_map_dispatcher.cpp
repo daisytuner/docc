@@ -207,8 +207,27 @@ void CUDAMapDispatcher::dispatch_kernel_body(
     }
     // Boundary Conditions
     if (!ScheduleType_CUDA::nested_sync(node_.schedule_type())) {
-        library_stream << "if (" << indvar->get_name() << " < " << cuda_language_extension.expression(num_iterations)
-                       << ") {" << std::endl;
+        // Guard on the flat thread id rather than the per-Map indvar so that
+        // Maps with non-unit stride or non-zero init still get a correct OOB
+        // check (the per-Map indvar = init + flat_id * stride and is
+        // only well-defined when flat_id < num_iterations).
+        std::string flat_id;
+        switch (ScheduleType_CUDA::dimension(node_.schedule_type())) {
+            case CUDADimension::X:
+                flat_id = "__daisy_cuda_indvar_x";
+                break;
+            case CUDADimension::Y:
+                flat_id = "__daisy_cuda_indvar_y";
+                break;
+            case CUDADimension::Z:
+                flat_id = "__daisy_cuda_indvar_z";
+                break;
+            default:
+                flat_id = indvar->get_name();
+                break;
+        }
+        library_stream << "if (" << flat_id << " < " << cuda_language_extension.expression(num_iterations) << ") {"
+                       << std::endl;
         library_stream.setIndent(library_stream.indent() + 4);
     }
 
@@ -317,18 +336,46 @@ void CUDAMapDispatcher::dispatch_kernel_preamble(
     library_stream << "int " << indvar_z << " = " << this->language_extension_.expression(gpu_indvar_z) << ";"
                    << std::endl;
 
-    // Declare all other indvars in the kernel
-    for (auto& var : x_vars) {
-        library_stream << "int " << var->get_name() << " = " << indvar_x << ";" << std::endl;
-    }
+    // Declare each per-Map indvar as a strided affine of the flat thread id:
+    //   <map.indvar> = <map.init> + <thread_flat_id> * <map.stride>
+    //
+    // This lets the dispatcher consume Maps with arbitrary init / stride
+    // (e.g. block-tiled outer loops produced by LoopTiling). The bound check
+    // in dispatch_kernel_body() guards on the flat id against num_iterations,
+    // so out-of-grid threads are skipped before any body access.
+    auto x_maps = gpu::get_gpu_maps<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::X);
+    auto y_maps = gpu::get_gpu_maps<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Y);
+    auto z_maps = gpu::get_gpu_maps<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Z);
 
-    for (auto& var : y_vars) {
-        library_stream << "int " << var->get_name() << " = " << indvar_y << ";" << std::endl;
-    }
+    auto emit_indvar = [&](structured_control_flow::Map* map, const std::string& flat_id_var) {
+        symbolic::Expression value = symbolic::symbol(flat_id_var);
+        auto stride = map->stride();
+        if (!stride.is_null() && !symbolic::eq(stride, symbolic::one())) {
+            value = symbolic::mul(value, stride);
+        }
+        auto init = map->init();
+        if (!symbolic::eq(init, symbolic::zero())) {
+            value = symbolic::add(init, value);
+        }
+        library_stream << "int " << map->indvar()->get_name() << " = " << this->language_extension_.expression(value)
+                       << ";" << std::endl;
+    };
 
-    for (auto& var : z_vars) {
-        library_stream << "int " << var->get_name() << " = " << indvar_z << ";" << std::endl;
+    for (auto* map : x_maps) {
+        emit_indvar(map, indvar_x);
     }
+    for (auto* map : y_maps) {
+        emit_indvar(map, indvar_y);
+    }
+    for (auto* map : z_maps) {
+        emit_indvar(map, indvar_z);
+    }
+    // x_vars/y_vars/z_vars params kept for signature compatibility (used by
+    // callers to filter scope_variables); their iteration here would be
+    // redundant with the per-Map loops above.
+    (void) x_vars;
+    (void) y_vars;
+    (void) z_vars;
 }
 
 codegen::InstrumentationInfo CUDAMapDispatcher::instrumentation_info() const {

@@ -171,6 +171,25 @@ public:
     symbolic::Expression num_iterations();
 
     /**
+     * @brief Overapproximated (upper-bound) number of iterations.
+     *
+     * Same formula as @ref num_iterations, but applies @ref symbolic::overapproximate
+     * to the numerator before dividing by the stride. This collapses tile-style
+     * patterns where the canonical bound is a `min(...)` containing the loop's
+     * init expression. For example, with `init = k_tile0` and condition
+     * `k < k_tile0 + 8 && k < 500`, @ref num_iterations returns
+     * `max(0, min(500 - k_tile0, 8))` while this helper returns the constant `8`.
+     *
+     * The returned expression is always >= @ref num_iterations for all symbol
+     * valuations. Use this when a conservative integer upper bound is needed
+     * (e.g. tile sizing, working-set estimates) and the exact symbolic form is
+     * not required.
+     *
+     * @return An expression that upper-bounds the iteration count, otherwise null.
+     */
+    symbolic::Expression num_iterations_approx();
+
+    /**
      * @brief Checks if the loop is in a normal form.
      *
      * Criteria:

@@ -28,13 +28,35 @@ struct DataFlowState {
     virtual ~DataFlowState() = default;
 
     virtual bool ran_at_least_once() const = 0;
+
+    /**
+     * All-in-one for leaf-nodes
+     * @param incoming current set of live elements entering the node (in forward direction)
+     * @return whether a relevant output changed that necessetates further propagation
+     */
     virtual bool update(const T& incoming) = 0;
+
+    /**
+     * Get the current state of live elements leaving the node in forward direction
+     */
     virtual const T& forward_exposed() const = 0;
+
+    /**
+     * For non-leaf nodes: update inputs
+     * @param incoming current set of live elements entering the node (in forward direction)
+     * @return whether the incoming set changed since last time
+     */
     virtual bool update_incoming(const T& incoming) = 0;
+
+    /**
+     * For non-leaf nodes: update outputs
+     * @param forward_exposed current set of live elements leaving the node in forward direction
+     * @return whether the leaving set has changed since last time
+     */
     virtual bool update_forward_exposed(const T& forward_exposed) = 0;
 };
 
-typedef size_t ElementId;
+using ElementId = sdfg::ElementId;
 
 template<typename T, typename I>
 struct ElementIdMapDataFlowState : public DataFlowState<std::unordered_map<ElementId, T>> {
@@ -121,15 +143,14 @@ public:
  *
  * **Usage:**
  *
- * 1. Derive from `ForwardDataFlowAnalysis<YourElementType>`.
- * 2. Override `transfer` to provide the gen/kill sets for leaf nodes.
- *    At a minimum you should handle `Block`; the other overloads have
- *    sensible defaults (empty gen/kill).
- * 3. Optionally override `merge` if you need intersection semantics
- *    (must-analysis) instead of the default union (may-analysis).
+ * 1. Derive per-node State from DataFlowState<T> or ElementIdMapDataFlowState<S>
+ * 1a. Pick the container T that will represent the live sets between the per-node states
+ * 1b. implement the static functions empty_in() and merge(a, b, MergeMode) on the DataFlowState impl.
+ * 2. Derive from `ForwardDataFlowAnalysis<YourStateType>`.
+ * 3. Implement create_initial_state(node) to fill the per-node gen & kill lists
  * 4. Optionally override `boundary` to provide the initial set that
  *    flows into the root of the tree.
- * 5. Call `run(root_sequence)`.  Afterwards query `state(node)` for any
+ * 5. Call `run_forward(root_sequence)`. Afterwards query `state(node)` for any
  *    visited node.
  *
  * @tparam T Element type.  Must support `operator<` (used in std::set).

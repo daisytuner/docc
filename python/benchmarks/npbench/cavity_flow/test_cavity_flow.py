@@ -125,10 +125,12 @@ def kernel(nx, ny, nt, nit, u, v, dt, dx, dy, p, rho, nu):
         "none",
         "sequential",
         "openmp",
-        # "cuda"
+        # "cuda",
+        # "rocm"
     ],
 )
 def test_cavity_flow(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={"MAP": 76, "SEQUENTIAL": 76, "FOR": 80}
@@ -157,17 +159,14 @@ def test_cavity_flow(target):
                 "CUDAOffloading": 73,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "CMath": 14,
-                "ROCM": 160,
-                "MAP": 182,
-                "ROCMOffloading": 305,
-                "SEQUENTIAL": 22,
-                "FOR": 186,
-                "Memset": 1,
-                "Malloc": 84,
+                "ROCM": 52,
+                "SEQUENTIAL": 24,
+                "FOR": 80,
+                "MAP": 76,
+                "ROCMOffloading": 73,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

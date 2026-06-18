@@ -270,3 +270,79 @@ def test_depthwise_backend():
             return self.conv(x)
 
     check_backend(DepthwiseConv2dNet().eval(), torch.randn(1, 16, 32, 32))
+
+
+def test_depthwise_bias_compile():
+    class DepthwiseConv2dBiasNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = nn.Conv2d(16, 16, kernel_size=3, groups=16)
+
+        def forward(self, x: torch.Tensor):
+            return self.conv(x)
+
+    check_compile(DepthwiseConv2dBiasNet().eval(), torch.randn(1, 16, 32, 32))
+
+
+def test_depthwise_bias_backend():
+    class DepthwiseConv2dBiasNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = nn.Conv2d(16, 16, kernel_size=3, groups=16)
+
+        def forward(self, x: torch.Tensor):
+            return self.conv(x)
+
+    check_backend(DepthwiseConv2dBiasNet().eval(), torch.randn(1, 16, 32, 32))
+
+
+def test_depthwise_padding_compile():
+    class DepthwiseConv2dPaddingNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = nn.Conv2d(
+                16, 16, kernel_size=3, padding=1, groups=16, bias=False
+            )
+
+        def forward(self, x: torch.Tensor):
+            return self.conv(x)
+
+    check_compile(DepthwiseConv2dPaddingNet().eval(), torch.randn(1, 16, 32, 32))
+
+
+def test_depthwise_padding_backend():
+    class DepthwiseConv2dPaddingNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = nn.Conv2d(
+                16, 16, kernel_size=3, padding=1, groups=16, bias=False
+            )
+
+        def forward(self, x: torch.Tensor):
+            return self.conv(x)
+
+    check_backend(DepthwiseConv2dPaddingNet().eval(), torch.randn(1, 16, 32, 32))
+
+
+def test_depthwise_padding_bias_compile():
+    class DepthwiseConv2dPaddingBiasNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = nn.Conv2d(16, 16, kernel_size=3, padding=1, groups=16)
+
+        def forward(self, x: torch.Tensor):
+            return self.conv(x)
+
+    check_compile(DepthwiseConv2dPaddingBiasNet().eval(), torch.randn(1, 16, 32, 32))
+
+
+def test_depthwise_padding_bias_backend():
+    class DepthwiseConv2dPaddingBiasNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = nn.Conv2d(16, 16, kernel_size=3, padding=1, groups=16)
+
+        def forward(self, x: torch.Tensor):
+            return self.conv(x)
+
+    check_backend(DepthwiseConv2dPaddingBiasNet().eval(), torch.randn(1, 16, 32, 32))

@@ -31,7 +31,7 @@ def kernel(r):
 
 
 @pytest.mark.skip(reason="dot with tensor types not implemented")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_durbin(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -76,7 +76,7 @@ def test_durbin(target):
                 "DOT": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 0,

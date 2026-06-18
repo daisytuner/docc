@@ -88,7 +88,7 @@ def test_covariance(target):
                 "FOR": 14,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(verification={})
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

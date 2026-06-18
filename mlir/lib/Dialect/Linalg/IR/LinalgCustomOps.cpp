@@ -102,7 +102,7 @@ LogicalResult Conv2DNchwFchwOp::verify() {
     if (inputType.getDimSize(0) != outputType.getDimSize(0)) {
         return this->emitOpError("incompatible N shape");
     }
-    if (inputType.getDimSize(1) != weightsType.getDimSize(1)) {
+    if (inputType.getDimSize(1) != static_cast<int64_t>(weightsType.getDimSize(1) * this->getGroups())) {
         return this->emitOpError("incompatible C shape");
     }
     if (weightsType.getDimSize(0) != outputType.getDimSize(1)) {
@@ -138,6 +138,10 @@ LogicalResult Conv2DNchwFchwOp::verify() {
     }
     if (Wo != outputType.getDimSize(3)) {
         return this->emitOpError("output width should be ") << Wo;
+    }
+
+    if (inputType.getDimSize(1) % this->getGroups() != 0) {
+        return this->emitOpError("input/output channels must be divisable by groups");
     }
 
     return success();

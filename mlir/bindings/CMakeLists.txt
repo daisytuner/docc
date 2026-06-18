@@ -53,5 +53,12 @@ add_custom_command(TARGET sdfg-mlir POST_BUILD
         COMMENT "Creating symlink to docc.mlir._sdfg_mlir in src dir"
 )
 
+# Custom target to ensure both sdfg-mlir and sdfg-py bindings are built
+if(TARGET sdfg-py)
+    add_custom_target(sdfg-mlir-libs ALL DEPENDS sdfg-mlir sdfg-py)
+else()
+    add_custom_target(sdfg-mlir-libs ALL DEPENDS sdfg-mlir)
+endif()
+
 # Install the Python module to the docc/mlir package directory
 install(TARGETS sdfg-mlir DESTINATION docc/mlir COMPONENT docc_mlir)

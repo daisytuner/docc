@@ -38,13 +38,12 @@ VectorizeTransform VectorizeTransform::from_json(builder::StructuredSDFGBuilder&
     auto map_id = desc["subgraph"]["0"]["element_id"].get<size_t>();
     auto element = builder.find_element_by_id(map_id);
     if (element == nullptr) {
-        throw std::runtime_error("Element with ID " + std::to_string(map_id) + " not found.");
+        throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(map_id) + " not found.");
     }
 
     auto loop = dynamic_cast<structured_control_flow::Map*>(element);
-
     if (loop == nullptr) {
-        throw std::runtime_error("Element with ID " + std::to_string(map_id) + " is not a Map.");
+        throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(map_id) + " is not a Map.");
     }
 
     return VectorizeTransform(*loop);

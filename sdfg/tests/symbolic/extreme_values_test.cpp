@@ -970,3 +970,84 @@ TEST(InequalityProofs, Diagnostic_Minimum_NMinusI) {
     auto lb = symbolic::minimum(expr, {N}, assums, false);
     EXPECT_FALSE(lb.is_null());
 }
+
+// ===== Regression tests: `polynomial()` must reject degenerate              =====
+// ===== conversions where SymEngine treats `idiv(g, k)` / `imod(g, k)` as    =====
+// ===== opaque constants w.r.t. the polynomial variable `g`. Such a          =====
+// ===== polynomial places the whole input in its constant coefficient, and  =====
+// ===== `visit_add_affine` then recurses on the original expression until    =====
+// ===== `MAX_DEPTH` and (with cycle_hits suppressing caching) the cost       =====
+// ===== blows up exponentially across repeated MLA invocations.              =====
+
+// Reproduces the cooperative-copy scenario that caused MLA to hang after
+// InLocalStorage inserted a coop-copy Map whose source-memlet linearized
+// index was `32*x + 4*idiv(coop, 4) + imod(coop, 4)` with `coop` the new
+// loop indvar and `x` the GPU thread index. Without the fix, `polynomial`
+// returns a degenerate degree-0-in-`coop` polynomial whose constant
+// coefficient equals the entire original Add, causing `visit_add_affine`
+// to call `visit()` on its own input.
+TEST(ExtremeValuesTest, CoopCopy_IDivBound_Termination) {
+    auto x = symbolic::symbol("x");
+    auto coop = symbolic::symbol("coop");
+
+    symbolic::Assumption ax(x);
+    ax.add_lower_bound(symbolic::integer(0));
+    ax.add_upper_bound(symbolic::integer(7));
+
+    symbolic::Assumption ac(coop);
+    ac.add_lower_bound(symbolic::integer(0));
+    ac.add_upper_bound(symbolic::integer(31));
+    ac.map(symbolic::add(coop, symbolic::integer(1)));
+
+    symbolic::Assumptions assums;
+    assums.insert({x, ax});
+    assums.insert({coop, ac});
+
+    // expr = 32*x + 4*idiv(coop, 4) + imod(coop, 4)
+    auto expr = symbolic::
+        add(symbolic::
+                add(symbolic::mul(symbolic::integer(32), x),
+                    symbolic::mul(symbolic::integer(4), symbolic::div(coop, symbolic::integer(4)))),
+            symbolic::mod(coop, symbolic::integer(4)));
+
+    auto min = symbolic::minimum(expr, {}, assums, false);
+    auto max = symbolic::maximum(expr, {}, assums, false);
+
+    // With the degenerate-polynomial fix, the arg-wise fallback delivers
+    // a concrete numeric interval: every addend can be bounded individually
+    // (32*x in [0, 224], 4*idiv(coop, 4) in [0, 28], imod(coop, 4) in [0, 3]).
+    // Without the fix this call either does not terminate or returns null
+    // bounds after exhausting MAX_DEPTH.
+    ASSERT_FALSE(min.is_null());
+    ASSERT_FALSE(max.is_null());
+    EXPECT_TRUE(symbolic::is_true(symbolic::Ge(min, symbolic::integer(0))));
+    EXPECT_TRUE(symbolic::is_true(symbolic::Le(max, symbolic::integer(255))));
+}
+
+// Minimal isolation: a single-variable Add whose every addend buries the
+// variable inside a non-polynomial function. Without the fix, `polynomial`
+// reports a degenerate degree-0 polynomial and the affine path recurses on
+// the original expression.
+TEST(ExtremeValuesTest, Polynomial_DegenerateIDivImod_RejectedAndArgwiseBounds) {
+    auto g = symbolic::symbol("g");
+    symbolic::Assumption ag(g);
+    ag.add_lower_bound(symbolic::integer(0));
+    ag.add_upper_bound(symbolic::integer(7));
+    ag.map(symbolic::add(g, symbolic::integer(1)));
+
+    symbolic::Assumptions assums;
+    assums.insert({g, ag});
+
+    // expr = idiv(g, 2) + imod(g, 2) — both terms reference g only through
+    // opaque (non-polynomial) function symbols.
+    auto expr = symbolic::add(symbolic::div(g, symbolic::integer(2)), symbolic::mod(g, symbolic::integer(2)));
+
+    auto min = symbolic::minimum(expr, {}, assums, false);
+    auto max = symbolic::maximum(expr, {}, assums, false);
+
+    ASSERT_FALSE(min.is_null());
+    ASSERT_FALSE(max.is_null());
+    EXPECT_TRUE(symbolic::is_true(symbolic::Ge(min, symbolic::integer(0))));
+    // idiv(7, 2) + (2 - 1) = 3 + 1 = 4
+    EXPECT_TRUE(symbolic::is_true(symbolic::Le(max, symbolic::integer(4))));
+}

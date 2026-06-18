@@ -226,7 +226,8 @@ void RPCNodeTransform::
         // TODO: add transitions from after loop to tmp_scope
 
         auto num_children = opt.sdfg_result->sdfg->root().size();
-        builder.move_children(opt.sdfg_result->sdfg->root(), *parent_scope, index); // move all optimized children into place
+        builder.move_children(opt.sdfg_result->sdfg->root(), *parent_scope, index); // move all optimized children into
+                                                                                    // place
         builder.remove_child(*parent_scope, index + num_children); // remove old loop
 
         if (opt.sdfg_result->sdfg->element_counter() > builder.subject().element_counter()) {

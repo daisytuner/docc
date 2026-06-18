@@ -25,8 +25,9 @@ def kernel(alpha, beta, C, A):
             C[i, : i + 1] += alpha * A[i, k] * A[: i + 1, k]
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_syrk(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={"MAP": 2, "SEQUENTIAL": 2, "FOR": 4}, non_critical=True
@@ -58,7 +59,7 @@ def test_syrk(target):
             },
             non_critical=True,
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 1,
@@ -66,7 +67,8 @@ def test_syrk(target):
                 "FOR": 5,
                 "MAP": 3,
                 "ROCMOffloading": 2,
-            }
+            },
+            non_critical=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

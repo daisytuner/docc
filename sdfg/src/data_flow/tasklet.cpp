@@ -33,12 +33,14 @@ void Tasklet::validate(const Function& function) const {
         auto input_type = iedge.result_type(function);
         if (is_integer(this->code_) && !types::is_integer(input_type->primitive_type())) {
             throw InvalidSDFGException(
-                "Tasklet (Code: " + std::to_string(this->code_) + "): Integer operation with non-integer input type"
+                "Tasklet (Code: " + std::to_string(this->code_) +
+                "): Integer operation with non-integer input type: " + input_type->print()
             );
         }
         if (is_floating_point(this->code_) && !types::is_floating_point(input_type->primitive_type())) {
             throw InvalidSDFGException(
-                "Tasklet (Code: " + std::to_string(this->code_) + "): Floating point operation with integer input type"
+                "Tasklet (Code: " + std::to_string(this->code_) +
+                "): Floating point operation with integer input type: " + input_type->print()
             );
         }
     }

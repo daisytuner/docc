@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -75,6 +77,23 @@ symbolic::SymbolSet get_gpu_indvars(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 
+/**
+ * @brief Get all GPU Map nodes in a given dimension (in tree traversal order).
+ *
+ * Unlike get_gpu_indvars, this preserves access to each Map's init / stride
+ * so the codegen can emit `indvar = init + thread_flat_id * stride` for
+ * arbitrary affine grid loops.
+ *
+ * @tparam ScheduleT Schedule type class with value() and dimension() static methods
+ * @param node The current map node
+ * @param analysis_manager Analysis manager for loop analysis
+ * @param dimension GPU dimension (X, Y, or Z)
+ * @return Vector of Map pointers in the given GPU dimension
+ */
+template<typename ScheduleT>
+std::vector<structured_control_flow::Map*>
+get_gpu_maps(structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension);
+
 // Extern template declarations to prevent implicit instantiation
 extern template symbolic::Expression find_nested_gpu_blocksize<
     cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
@@ -94,6 +113,11 @@ extern template bool is_outermost_gpu_map<
 extern template symbolic::SymbolSet get_gpu_indvars<
     cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 extern template symbolic::SymbolSet get_gpu_indvars<
+    rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+
+extern template std::vector<structured_control_flow::Map*> get_gpu_maps<
+    cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+extern template std::vector<structured_control_flow::Map*> get_gpu_maps<
     rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 
 } // namespace gpu

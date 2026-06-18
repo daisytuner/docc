@@ -23,7 +23,7 @@ def kernel(A, p, r):
     return r @ A, A @ p
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_bicg(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -75,7 +75,7 @@ def test_bicg(target):
                 "Malloc": 2,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 2,

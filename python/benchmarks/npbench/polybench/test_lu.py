@@ -49,7 +49,7 @@ def test_lu(target):
         verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
     elif target == "cuda":
         verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

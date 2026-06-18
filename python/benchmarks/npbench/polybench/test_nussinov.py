@@ -41,7 +41,7 @@ def kernel(N, seq):
     return table
 
 
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_nussinov(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -93,7 +93,7 @@ def test_nussinov(target):
                 "DOT": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 5,

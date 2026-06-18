@@ -10,6 +10,8 @@
 namespace sdfg {
 namespace transformations {
 
+class FusionConsumerUpdateVisitor;
+
 /**
  * @brief Map fusion transformation that fuses two sequential maps
  *
@@ -25,12 +27,15 @@ namespace transformations {
  *   Inlines producer blocks at the consumer's read location.
  */
 class MapFusion : public Transformation {
+    friend class FusionConsumerUpdateVisitor;
+
     structured_control_flow::Map& first_map_;
     structured_control_flow::StructuredLoop& second_loop_;
     bool applied_ = false;
     bool require_consecutive_ = true; // Only fuse if maps are consecutive in the sequence
 
     enum class FusionDirection {
+        None = 0,
         ProducerIntoConsumer,
         ConsumerIntoProducer,
     };

@@ -29,8 +29,9 @@ def kernel(TMAX, ex, ey, hz, _fict_):
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_fdtd_2d(target):
+    verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={"MAP": 13, "SEQUENTIAL": 13, "FOR": 14, "Malloc": 3}
@@ -53,15 +54,9 @@ def test_fdtd_2d(target):
         verifier = SDFGVerification(
             verification={"CUDA": 13, "MAP": 13, "CUDAOffloading": 20, "FOR": 14}
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
-            verification={
-                "ROCM": 25,
-                "MAP": 25,
-                "ROCMOffloading": 38,
-                "FOR": 26,
-                "Malloc": 0,
-            }
+            verification={"ROCM": 13, "MAP": 13, "ROCMOffloading": 20, "FOR": 14}
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

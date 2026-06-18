@@ -96,4 +96,6 @@ public:
     virtual void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) = 0;
 };
 
+typedef size_t ElementId;
+
 } // namespace sdfg

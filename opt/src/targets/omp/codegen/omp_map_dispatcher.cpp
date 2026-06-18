@@ -73,7 +73,16 @@ void OMPMapDispatcher::dispatch_node(
     main_stream << " = ";
     main_stream << language_extension_.expression(node_.init());
     main_stream << ";";
-    main_stream << language_extension_.expression(node_.condition());
+
+    // Default condition
+    auto condition = node_.condition();
+
+    // OpenMP requires the loop condition to be in a simple form (no && or ||), so we rely on canonical_bound()
+    auto canonical_bound = node_.canonical_bound_upper();
+    if (!canonical_bound.is_null()) {
+        condition = symbolic::Lt(node_.indvar(), canonical_bound);
+    }
+    main_stream << language_extension_.expression(condition);
     main_stream << ";";
     main_stream << node_.indvar()->get_name();
     main_stream << " = ";

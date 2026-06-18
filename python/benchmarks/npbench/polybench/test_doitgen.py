@@ -26,7 +26,7 @@ def kernel(NR, NQ, NP, A, C4):
 @pytest.mark.skip(
     reason="Broadcast on non-contiguous arrays is currently not supported"
 )
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda"])
+@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_doitgen(target):
     if target == "none":
         verifier = SDFGVerification(
@@ -80,7 +80,7 @@ def test_doitgen(target):
                 "DOT": 0,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "FOR": 0,

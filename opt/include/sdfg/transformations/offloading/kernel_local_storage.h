@@ -9,7 +9,21 @@
 namespace sdfg {
 namespace transformations {
 
-class KernelLocalStorage : public Transformation {
+/**
+ * @brief [DEPRECATED] Monolithic shared-memory staging transformation.
+ *
+ * Prefer `transformations::InLocalStorage` (for read tiles) and
+ * `transformations::OutLocalStorage` (for write tiles) with the
+ * `types::StorageType::NV_Shared()` storage. Those transformations are
+ * composable with `LoopTiling`, `CUDATransform` / `CUDAParallelizeNestedMap`,
+ * and `passes::SyncConditionPropagation`. See
+ * `docc/opt/tests/optimizations/gpu_kernels_test.cpp` for a worked example.
+ *
+ * The legacy transformation is retained for autotuning search spaces and
+ * existing schedulers that have not yet been migrated.
+ */
+class [[deprecated("Use InLocalStorage / OutLocalStorage with NV_Shared. See gpu_kernels_test.cpp."
+)]] KernelLocalStorage : public Transformation {
 private:
     structured_control_flow::StructuredLoop& loop_;
     symbolic::Expression offset_;

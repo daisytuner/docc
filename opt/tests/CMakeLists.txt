@@ -23,6 +23,7 @@ set(TEST_FILES
     passes/offloading/code_motion/block_sorting_test.cpp
     passes/offloading/data_transfer_minimization_pass_test.cpp
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
+    transformations/offloading/rocm_parallelize_nested_map_test.cpp
     transformations/offloading/cuda_transform_im2col_test.cpp
     transformations/offloading/gpu_tiling_test.cpp
     transformations/offloading/kernel_local_storage_test.cpp
@@ -30,6 +31,9 @@ set(TEST_FILES
     transformations/offloading/rocblas_data_transfer_extraction_test.cpp
     transformations/offloading/cuda_stdlib_data_transfer_extraction_test.cpp
     transformations/offloading/rocm_stdlib_data_transfer_extraction_test.cpp
+    optimizations/diamond_tiling_test.cpp
+    optimizations/blocking_test.cpp
+    optimizations/gpu_kernels_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
     passes/offloading/rocm_library_node_transfer_extraction_pass_test.cpp
@@ -62,8 +66,7 @@ set(TEST_FILES
     transformations/out_local_storage_test.cpp
     transformations/in_local_storage_test.cpp
     transformations/recorder_test.cpp
-    transformations/optimizations/diamond_tiling_test.cpp
-    transformations/optimizations/blocking_test.cpp
+    transformations/vectorize_transform_test.cpp
     transformations/transformation_serialization_test.cpp
     test.cpp
 )

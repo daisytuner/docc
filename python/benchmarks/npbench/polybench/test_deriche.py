@@ -130,27 +130,21 @@ def test_deriche(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "CUDAOffloading": 44,
+                "SEQUENTIAL": 4,
+                "FOR": 31,
+                "CUDA": 23,
+                "MAP": 27,
             }
         )
-    else:  # rocm
+    elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "ROCM": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "ROCMOffloading": 44,
+                "SEQUENTIAL": 4,
+                "FOR": 31,
+                "ROCM": 23,
+                "MAP": 27,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

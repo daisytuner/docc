@@ -39,9 +39,9 @@ bool LoopIndvarFinalize::
 void LoopIndvarFinalize::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto indvar = loop_.indvar();
 
-    // Use max(0, num_iterations) to handle the case where the loop doesn't execute
-    // (when bound <= 0, the loop body is skipped and indvar stays at 0)
-    auto closed_form = symbolic::simplify(symbolic::max(symbolic::zero(), loop_.num_iterations()));
+    // num_iterations() already returns max(0, ceil((bound - init) / stride)),
+    // so it is safe to use directly even when the loop does not execute.
+    auto closed_form = loop_.num_iterations();
 
     auto parent_node = loop_.get_parent();
     auto* parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);

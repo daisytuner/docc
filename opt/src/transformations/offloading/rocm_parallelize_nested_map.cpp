@@ -53,15 +53,23 @@ bool ROCMParallelizeNestedMap::
         return false;
     }
 
-    // Condition: Check if current loop starts from 0
-    if (!symbolic::eq(loop_.init(), symbolic::zero())) {
-        return false;
-    }
+    // Note: arbitrary `init` and `stride` are permitted. The ROCm dispatcher
+    // emits `<map.indvar> = init + thread_flat_id * stride`, so the body sees
+    // the natural strided value; `num_iterations()` accounts for both when
+    // computing the grid geometry.
 
-    // Condition: Loop has a stride of 1
-    auto stride = loop_.stride();
-    if (!symbolic::eq(stride, symbolic::one())) {
-        return false;
+    // Condition: Resulting ROCm grid dimension must not exceed hardware limits.
+    // Y and Z grid dimensions are limited to 65535.
+    auto num_iters = loop_.num_iterations();
+    if (!num_iters.is_null() && SymEngine::is_a<SymEngine::Integer>(*num_iters)) {
+        int64_t iters = SymEngine::down_cast<const SymEngine::Integer&>(*num_iters).as_int();
+        int64_t block = static_cast<int64_t>(block_size_);
+        int64_t grid_size = (iters + block - 1) / block;
+
+        constexpr int64_t max_grid_dim_yz = 65535;
+        if (grid_size > max_grid_dim_yz) {
+            return false;
+        }
     }
 
     return true;

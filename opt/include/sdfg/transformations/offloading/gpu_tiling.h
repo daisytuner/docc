@@ -6,7 +6,27 @@
 namespace sdfg {
 namespace transformations {
 
-class GPUTiling : public Transformation {
+/**
+ * @brief [DEPRECATED] Monolithic GPU tiling transformation.
+ *
+ * Prefer the composable pipeline instead:
+ *   1. transformations::LoopTiling             — strip-mine the target loop
+ *   2. transformations::CUDAParallelizeNestedMap / cuda::CUDATransform
+ *                                              — assign GPU schedules
+ *   3. transformations::InLocalStorage  (NV_Shared) — stage read tiles
+ *      transformations::OutLocalStorage (NV_Shared) — stage write tiles
+ *   4. passes::SyncConditionPropagation         — guard out-of-bounds threads
+ *
+ * See `docc/opt/tests/optimizations/gpu_kernels_test.cpp` for a worked
+ * example (GEMM). KernelLocalStorage and GPUTilingPass are deprecated for
+ * the same reason.
+ *
+ * The legacy transformation is retained for autotuning search spaces and
+ * existing schedulers that have not yet been migrated.
+ */
+class [[deprecated(
+    "Use LoopTiling + CUDA/ROCm parallelize + In/OutLocalStorage + SyncConditionPropagation. See gpu_kernels_test.cpp."
+)]] GPUTiling : public Transformation {
     structured_control_flow::StructuredLoop& loop_;
     size_t size_;
     bool applied_ = false;
