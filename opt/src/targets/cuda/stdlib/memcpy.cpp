@@ -32,7 +32,7 @@ void MemcpyNodeDispatcher_CUDAWithTransfers::dispatch_code_with_edges(
     out.stream << "err_cuda = cudaMalloc(&d_ptr_out, " << num_expr << ");" << std::endl;
     cuda_error_checking(out.stream, language_extension_, "err_cuda");
 
-    out.stream << "err_cuda = cudaMemcpy(d_ptr_in, " << inputs.at(0).expr << ", " << num_expr
+    out.stream << "err_cuda = cudaMemcpy(d_ptr_in, " << inputs.at(1).expr << ", " << num_expr
                << ", cudaMemcpyHostToDevice);" << std::endl;
     cuda_error_checking(out.stream, language_extension_, "err_cuda");
 
@@ -40,7 +40,7 @@ void MemcpyNodeDispatcher_CUDAWithTransfers::dispatch_code_with_edges(
                << std::endl;
     cuda_error_checking(out.stream, language_extension_, "err_cuda");
 
-    out.stream << "err_cuda = cudaMemcpy(" << inputs.at(1).expr << ", d_ptr_out, " << num_expr
+    out.stream << "err_cuda = cudaMemcpy(" << inputs.at(0).expr << ", d_ptr_out, " << num_expr
                << ", cudaMemcpyDeviceToHost);" << std::endl;
     cuda_error_checking(out.stream, language_extension_, "err_cuda");
 
@@ -68,7 +68,7 @@ void MemcpyNodeDispatcher_CUDAWithoutTransfers::dispatch_code_with_edges(
     out.library_snippet_factory.add_global("#include <cuda.h>");
 
     out.stream << "cudaError_t err_cuda;" << std::endl;
-    out.stream << "err_cuda = cudaMemcpy(" << inputs.at(1).expr << ", " << inputs.at(0).expr << ", "
+    out.stream << "err_cuda = cudaMemcpy(" << inputs.at(0).expr << ", " << inputs.at(1).expr << ", "
                << language_extension_.expression(node.count()) << ", cudaMemcpyDeviceToDevice);" << std::endl;
     cuda_error_checking(out.stream, language_extension_, "err_cuda");
 }
