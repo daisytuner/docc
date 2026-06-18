@@ -226,7 +226,7 @@ jobs:
   mlir-tests-linux:
     runs-on:
       group: dahlia
-      labels: Linux
+      labels: cuda
     container:
       image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
     strategy:
@@ -294,6 +294,10 @@ jobs:
 
           cd mlir/
           pytest -v integration/ -m "unmarked"
+
+          # Segformer correctness test
+          # pytest -v benchmarks/torch/model_zoo/segformer.py -k "sequential"
+          pytest -v benchmarks/torch/model_zoo/segformer.py -k "cuda"
 
       # - name: Model Zoo Tests (Nightly only)
       #   if: github.event_name == 'schedule'
