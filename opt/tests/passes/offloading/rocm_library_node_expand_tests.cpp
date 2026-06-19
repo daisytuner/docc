@@ -3,14 +3,14 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
-#include "sdfg/targets/cuda/math/tensor/conv_expander.h"
+#include "sdfg/targets/rocm/math/tensor/conv_expander.h"
 
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
-// Test that CudaConvExpander successfully expands a valid 2D ConvNode with group==1 with im2row expansion
-TEST(CudaConvExpanderTest, ExpandsValidConv2D_Group1) {
+// Test that RocmConvExpander successfully expands a valid 2D ConvNode with group==1 with im2row expansion
+TEST(RocmConvExpanderTest, ExpandsValidConv2D_Group1) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -58,7 +58,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_Group1) {
     dump_sdfg(sdfg, "0.before");
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
+    offloading::RocmConvExpander expander(conv_node);
     EXPECT_TRUE(expander.expand(builder, analysis_manager));
 
     EXPECT_NO_THROW(sdfg.validate());
@@ -70,8 +70,8 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_Group1) {
     EXPECT_EQ(new_sequence->size(), 7) << "Expecting im2row expansion";
 }
 
-// Test that CudaConvExpander successfully expands a valid 2D ConvNode with group!=1 with naïve expansion
-TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne) {
+// Test that RocmConvExpander successfully expands a valid 2D ConvNode with group!=1 with naïve expansion
+TEST(RocmConvExpanderTest, ExpandsValidConv2D_GroupNotOne) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -119,7 +119,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne) {
     dump_sdfg(sdfg, "0.before");
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
+    offloading::RocmConvExpander expander(conv_node);
     EXPECT_TRUE(expander.expand(builder, analysis_manager));
 
     EXPECT_NO_THROW(sdfg.validate());
@@ -131,8 +131,8 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne) {
     EXPECT_EQ(new_sequence->size(), 1) << "Expecting naïve expansion";
 }
 
-// Test that CudaConvExpander successfully expands a valid 2D ConvNode with group==1 with im2row expansion
-TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_Group1) {
+// Test that RocmConvExpander successfully expands a valid 2D ConvNode with group==1 with im2row expansion
+TEST(RocmConvExpanderTest, ExpandsValidConv2DWithBias_Group1) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -184,7 +184,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_Group1) {
     dump_sdfg(sdfg, "0.before");
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
+    offloading::RocmConvExpander expander(conv_node);
     EXPECT_TRUE(expander.expand(builder, analysis_manager));
 
     EXPECT_NO_THROW(sdfg.validate());
@@ -196,8 +196,8 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_Group1) {
     EXPECT_EQ(new_sequence->size(), 7) << "Expecting im2row expansion";
 }
 
-// Test that CudaConvExpander successfully expands a valid 2D ConvNode with group!=1 with naïve expansion
-TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_GroupNotOne) {
+// Test that RocmConvExpander successfully expands a valid 2D ConvNode with group!=1 with naïve expansion
+TEST(RocmConvExpanderTest, ExpandsValidConv2DWithBias_GroupNotOne) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -249,7 +249,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_GroupNotOne) {
     dump_sdfg(sdfg, "0.before");
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
+    offloading::RocmConvExpander expander(conv_node);
     EXPECT_TRUE(expander.expand(builder, analysis_manager));
 
     EXPECT_NO_THROW(sdfg.validate());
@@ -261,8 +261,8 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_GroupNotOne) {
     EXPECT_EQ(new_sequence->size(), 1) << "Expecting naïve expansion";
 }
 
-// Test that CudaConvExpander successfully expands a valid 2D ConvNode with group!=1 with naïve expansion
-TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne_SymbolicPadding) {
+// Test that RocmConvExpander successfully expands a valid 2D ConvNode with group!=1 with naïve expansion
+TEST(RocmConvExpanderTest, ExpandsValidConv2D_GroupNotOne_SymbolicPadding) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -313,7 +313,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne_SymbolicPadding) {
     dump_sdfg(sdfg, "0.before");
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
+    offloading::RocmConvExpander expander(conv_node);
     EXPECT_TRUE(expander.expand(builder, analysis_manager));
 
     EXPECT_NO_THROW(sdfg.validate());
@@ -325,9 +325,9 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne_SymbolicPadding) {
     EXPECT_EQ(new_sequence->size(), 1) << "Expecting naïve expansion";
 }
 
-// Test that CudaConvExpander declines when the dataflow graph has extra nodes
+// Test that RocmConvExpander declines when the dataflow graph has extra nodes
 // (i.e., check_expandable fails due to unexpected graph structure)
-TEST(CudaConvExpanderTest, DeclinesWhenNotExpandable_ExtraNodes) {
+TEST(RocmConvExpanderTest, DeclinesWhenNotExpandable_ExtraNodes) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -375,15 +375,15 @@ TEST(CudaConvExpanderTest, DeclinesWhenNotExpandable_ExtraNodes) {
     builder.add_computational_memlet(block, output_node, conv_node, "Y", {}, desc_tensor_output, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
+    offloading::RocmConvExpander expander(conv_node);
     bool expanded = expander.expand(builder, analysis_manager);
 
     // Should decline because check_expandable fails (extra node in DFG)
     EXPECT_FALSE(expanded);
 }
 
-// Test that CudaConvExpander successfully expands a valid 1D ConvNode with group==1
-TEST(CudaConvExpanderTest, ExpandsValidConv1D_Group1) {
+// Test that RocmConvExpander successfully expands a valid 1D ConvNode with group==1
+TEST(RocmConvExpanderTest, ExpandsValidConv1D_Group1) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -423,7 +423,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv1D_Group1) {
     EXPECT_NO_THROW(sdfg.validate());
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
+    offloading::RocmConvExpander expander(conv_node);
     bool expanded = expander.expand(builder, analysis_manager);
 
     EXPECT_TRUE(expanded);

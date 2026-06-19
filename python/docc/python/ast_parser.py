@@ -804,6 +804,10 @@ class ASTParser(ast.NodeVisitor):
             # Handle rhs and store in scalar tmp
             rhs_tmp = self.visit(node.value)
 
+            # Evaluate the LHS (index) expression before creating the store
+            # block/tasklet.
+            lhs_expr = self.visit(target)
+
             block = self.builder.add_block(debug_info)
             t_task = self.builder.add_tasklet(
                 block, TaskletCode.assign, ["_in"], ["_out"], debug_info
@@ -814,7 +818,6 @@ class ASTParser(ast.NodeVisitor):
                 block, t_src, "void", t_task, "_in", src_sub, None, debug_info
             )
 
-            lhs_expr = self.visit(target)
             if "(" in lhs_expr and lhs_expr.endswith(")"):
                 subset = lhs_expr[lhs_expr.find("(") + 1 : -1]
                 tensor_dst = self.tensor_table[target_name]
