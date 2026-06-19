@@ -52,21 +52,21 @@ def kernel(TSTEPS, A, B):
 def test_heat_3d(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 15, "SEQUENTIAL": 15, "FOR": 16, "Malloc": 3}
+            verification={"MAP": 6, "SEQUENTIAL": 6, "FOR": 7, "Malloc": 0}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 5,
-                "MAP": 15,
-                "SEQUENTIAL": 10,
-                "FOR": 16,
-                "Malloc": 3,
+                "VECTORIZE": 2,
+                "MAP": 6,
+                "SEQUENTIAL": 4,
+                "FOR": 7,
+                "Malloc": 0,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"CPU_PARALLEL": 5, "MAP": 5, "FOR": 6, "Malloc": 3}
+            verification={"CPU_PARALLEL": 2, "MAP": 2, "FOR": 3, "Malloc": 0}
         )
     elif target == "cuda":
         verifier = SDFGVerification(

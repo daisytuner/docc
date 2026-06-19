@@ -138,6 +138,7 @@ public:
     struct InOutCheckResult {
         bool no_conflicts;
         bool overlap = false;
+        bool subset_mismatch = false;
     };
 
 protected:
