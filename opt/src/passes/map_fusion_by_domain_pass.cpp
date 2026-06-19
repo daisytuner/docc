@@ -425,6 +425,18 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
 }
 
 bool MapFusionHandler::
+    check_no_overlap(const Map& map, const Map& second, const std::unordered_set<std::string>& skipped_containers) {
+    auto& first_cand = *state_.fuse_candidates.at(map.element_id());
+    auto& second_cand = *state_.fuse_candidates.at(second.element_id());
+    for (auto& arg : first_cand.args) {
+        if (skipped_containers.contains(arg.first)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool MapFusionHandler::
     loop_match(FusionLoopCandidate& first, FusionLoopCandidate& second, SymEngine::map_basic_basic& canonical_indvars) {
     // if (first.incompatible || second.incompatible) {
     //     return false;
@@ -449,6 +461,21 @@ bool MapFusionHandler::
     return true;
 }
 
+void MapFusionHandler::update_child_candidate_states(FusionLoopCandidate* top, const symbolic::ExpressionMapping& replace) {
+    auto& info = state_.loop_analysis->loop_info_local(top->loop);
+    auto& candidates = state_.fuse_candidates;
+
+    auto& by_id = state_.loop_analysis->loops_in_pre_order();
+    for (auto i = info.loop_id; i <= info.last_child_id; ++i) {
+        auto* child_loop = by_id.at(i);
+        auto cand_it = candidates.find(child_loop->element_id());
+        if (cand_it != candidates.end()) {
+            auto& child_cand = *cand_it->second;
+            child_cand.replace(replace);
+        }
+    }
+}
+
 data_flow::Subset updated_subset(const data_flow::Subset& subset, const symbolic::ExpressionMapping& canonical_indvars) {
     std::vector<symbolic::Expression> updated_subset(subset.size());
     for (auto i = 0; i < subset.size(); i++) {
@@ -463,6 +490,8 @@ void MapFusionHandler::update_candidate_state(
     FusionLoopCandidate* second_current,
     const symbolic::ExpressionMapping& canonical_indvars
 ) {
+    update_child_candidate_states(first_current, canonical_indvars);
+
     auto terminate_at = state_.loop_analysis->parent_loop(first_top);
     do {
         auto& second_args = second_current->args;
@@ -546,6 +575,14 @@ bool FusionArg::saw_access_locally() const { return not_understood || subset.has
 
 void FusionLoopCandidate::non_indvar_writes() { this->incompatible = true; }
 
+void FusionLoopCandidate::replace(const symbolic::ExpressionMapping& mapping) {
+    for (auto& [name, arg] : args) {
+        if (arg.subset.has_value()) {
+            arg.subset = updated_subset(arg.subset.value(), mapping);
+        }
+    }
+}
+
 NeighboringPatternVisitor::NeighboringPatternVisitor(PatternHandler& handler) : handler_(handler) {}
 
 bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& node) {
@@ -569,8 +606,11 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
             continue;
         }
 
+        Map* second = nullptr;
+
         if (i + 1 < node.size()) {
-            if (auto* second = dynamic_cast<structured_control_flow::Map*>(&node.at(i + 1).first)) {
+            second = dynamic_cast<structured_control_flow::Map*>(&node.at(i + 1).first);
+            if (second) {
                 if (second->root().size() == 0) {
                     i++;
                     continue;
@@ -592,30 +632,55 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
                 }
             } else if (i + 2 < node.size()) {
                 auto* mid_block = dynamic_cast<structured_control_flow::Block*>(&node.at(i + 1).first);
-                if (mid_block && mid_block->is_a_library_node<stdlib::MallocNode>()) {
-                    if (auto* second = dynamic_cast<structured_control_flow::Map*>(&node.at(i + 2).first)) {
+                bool skippable = false;
+                std::unordered_set<std::string> skipped_containers;
+                if (mid_block) {
+                    if (mid_block->dataflow().nodes().empty()) {
+                        skippable = true;
+                    } else if (mid_block->is_a_library_node<stdlib::MallocNode>()) {
+                        for (auto& data_flow_node : mid_block->dataflow().nodes()) {
+                            if (auto* container = dynamic_cast<data_flow::AccessNode*>(&data_flow_node)) {
+                                skipped_containers.emplace(container->data());
+                            }
+                        }
+                        skippable = true;
+                    }
+                }
+                if (skippable) {
+                    second = dynamic_cast<structured_control_flow::Map*>(&node.at(i + 2).first);
+                    if (second) {
                         if (second->root().size() == 0) {
-                            i++;
+                            i += 2;
                             continue;
                         }
 
-                        // until we support matching this, just keep visiting
-                        dispatch(child_node);
-                        dispatch(*second);
-                        // transformations::MapFusion transformation(*first, *second, false);
-                        // if (transformation.can_be_applied(builder_, analysis_manager_)) {
-                        //     auto first_name = first->indvar()->get_name();
-                        //     auto second_name = second->indvar()->get_name();
-                        //     transformation.apply(builder_, analysis_manager_);
-                        //     DEBUG_PRINTLN(
-                        //         "Applied MapFusion to map " + first_name + " and loop " + second_name +
-                        //         " with intermediate malloc block"
-                        //     );
-                        //     applied = true;
-                        //
-                        //     i = i + 2; // Skip over the newly moved malloc block and the second loop that was just
-                        //     fused continue;
-                        // }
+                        if (!handler_.check_no_overlap(*first, *second, skipped_containers)) {
+                            i += 2;
+                            continue;
+                        }
+
+                        auto result = handler_.match(*first, *second, true);
+
+                        if (!result.removed_first) {
+                            dispatch(child_node);
+                        }
+                        if (result.visit_second_body) {
+                            auto* second_updated_child = result.second_root_replacement ? result.second_root_replacement
+                                                                                        : second;
+                            dispatch(*second_updated_child);
+                        }
+                        if (result.removed_first) {
+                            i += 1; // skip the block, retry with second as next first
+                            continue;
+                        }
+                        // we visited [first, skipped, second] successfully, without shifting indices, move to second as
+                        // new first
+                        i += 2;
+                        continue;
+                    } else {
+                        // we know i+1 is worthless, so skip it
+                        i += 2;
+                        continue;
                     }
                 }
             }

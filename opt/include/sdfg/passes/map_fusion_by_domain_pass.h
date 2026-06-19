@@ -65,6 +65,8 @@ struct FusionLoopCandidate {
     bool incompatible = false;
 
     void non_indvar_writes();
+
+    void replace(const symbolic::ExpressionMapping& mapping);
 };
 
 
@@ -77,6 +79,9 @@ public:
     };
 
     virtual MatchResult match(Map& map, Map& second, bool no_uses_between) = 0;
+
+    virtual bool
+    check_no_overlap(const Map& map, const Map& second, const std::unordered_set<std::string>& skipped_containers) = 0;
 };
 
 class NeighboringPatternVisitor : public sdfg::visitor::ActualStructuredSDFGVisitor {
@@ -127,6 +132,9 @@ public:
 
     PatternHandler::MatchResult match(Map& first, Map& second, bool no_uses_between) override;
 
+    bool check_no_overlap(const Map& map, const Map& second, const std::unordered_set<std::string>& skipped_containers)
+        override;
+
     struct InOutCheckResult {
         bool no_conflicts;
         bool overlap = false;
@@ -142,6 +150,8 @@ protected:
     void update_fused_seq(Sequence& sequence, const symbolic::ExpressionMapping& replacements);
 
     bool loop_match(FusionLoopCandidate& first, FusionLoopCandidate& second, SymEngine::map_basic_basic& canonical_indvars);
+
+    void update_child_candidate_states(FusionLoopCandidate* top, const symbolic::ExpressionMapping& replace);
 
     void update_candidate_state(
         ControlFlowNode* first_top,
