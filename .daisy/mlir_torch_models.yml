@@ -27,7 +27,7 @@ steps:
 
     # Warm start
 
-    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --torch
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --device cpu
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --docc --target=none
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --docc --target=sequential
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --docc --target=openmp
@@ -38,7 +38,7 @@ steps:
     # model resnet18
 
     resnet18_torch:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --torch
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --device cpu
       energy: true
     resnet18_docc_none:
       command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --docc --target=none
