@@ -226,7 +226,6 @@ jobs:
   mlir-tests-linux:
     runs-on:
       group: dahlia
-      labels: cuda
     container:
       image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
     strategy:
