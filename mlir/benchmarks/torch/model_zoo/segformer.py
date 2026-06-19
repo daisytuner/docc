@@ -1663,7 +1663,7 @@ def test_decode_head_linear_c_3(target, batch_size) -> None:
 @pytest.mark.parametrize("target", TARGETS)
 def test_decode_head(target) -> None:
     model, x = BENCHMARKS["decode_head"]()
-    check_backend(model, x, target=target)
+    check_backend(model, *x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
