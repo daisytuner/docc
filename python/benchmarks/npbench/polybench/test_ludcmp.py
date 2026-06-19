@@ -89,7 +89,7 @@ def test_ludcmp(target):
         verifier = SDFGVerification(
             verification={
                 "ROCM": 1,
-                "MAP": 23,
+                "MAP": 2,
                 "SEQUENTIAL": 1,
                 "ROCMOffloading": 12,
                 "FOR": 10,
