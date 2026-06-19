@@ -601,7 +601,7 @@ class SegformerDecodeHead(nn.Module):
 
 def setup_segformer_decode_head() -> tuple[
     SegformerDecodeHead,
-    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+    tuple[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
 ]:
     model = SegformerDecodeHead()
     model.eval()
@@ -609,7 +609,7 @@ def setup_segformer_decode_head() -> tuple[
     x = torch.randn(1, 64, 64, 64)
     y = torch.randn(1, 160, 32, 32)
     z = torch.randn(1, 256, 16, 16)
-    return model, (w, x, y, z)
+    return model, ((w, x, y, z),)
 
 
 class SegformerForSemanticSegmentation(nn.Module):

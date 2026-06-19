@@ -15,7 +15,7 @@ namespace sdfg {
 namespace offloading {
 
 bool RocmConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    // for now we reuse the cuda impl until we find sth. where they need to diver
+    // for now we reuse the cuda impl until we find sth. where they need to diverge
     return CudaConvExpander::expand_conv(builder, analysis_manager, node_);
 }
 } // namespace offloading
