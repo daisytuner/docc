@@ -222,6 +222,8 @@ void BlockFusion::apply(
             edge.debug_info()
         );
     }
+
+    builder_.merge_sinks(first_block);
 };
 
 bool BlockFusion::accept(structured_control_flow::Sequence& node) {
