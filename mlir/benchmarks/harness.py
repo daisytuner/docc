@@ -27,7 +27,7 @@ def _invoke(model, model_input):
     return model(model_input)
 
 
-def run_benchmark(setup_func, name, batch_size=1):
+def run_benchmark(setup_func, name, batch_size=32):
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--device",
