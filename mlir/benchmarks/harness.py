@@ -72,17 +72,21 @@ def run_benchmark(setup_func, name, batch_size=32):
         print(f"GPU: {torch.cuda.get_device_name(device)}", flush=True)
 
     model, model_input = setup_func(batch_size)
-    model = model.eval().to(device)
+    model = model.eval()
     program = torch.compile(model, **compile_kwargs)
 
     for i in range(args.n_runs):
+        model.to("cpu")
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
         sync_fn()
         start = time.time()
         with torch.no_grad():
+            model.to(device)
             x = _prepare_input(model_input, device)
             out = _invoke(program, x)
             if isinstance(out, torch.Tensor):
-                out.to("cpu")
+                out.to("cpu").detach()
         sync_fn()
         end = time.time()
         print(f"{name} {backend_label} execution time: {end - start:.6f} seconds")
