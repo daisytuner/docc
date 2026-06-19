@@ -344,14 +344,6 @@ PatternHandler::MatchResult MapFusionHandler::fuse_contents(
 
     state_.fused_count++;
 
-    static auto count = 0;
-    std::filesystem::path dir = state_.builder.subject().metadata("output_dir");
-    visualizer::DotVisualizer::writeToFile(
-        state_.builder.subject(),
-        dir /
-            ("map_fusion_by_domain_pass_dump_" + std::to_string(count++) + "_" + std::to_string(first_elem_id) + ".dot")
-    );
-
     // if there are further loops inside the now fused body, visit those as well
     return {.removed_first = removed_first, .visit_second_body = keep_visiting_second};
 }
