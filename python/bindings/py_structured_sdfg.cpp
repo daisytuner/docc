@@ -523,8 +523,25 @@ std::string PyStructuredSDFG::compile(
     docc::compile::CodegenBuildPool pool((threads > 0) ? threads : std::thread::hardware_concurrency());
 
     std::shared_ptr<sdfg::codegen::CodeSnippetFactory> snippet_factory = fcomp_handler->create_snippet_factory(*sdfg_);
-    sdfg::codegen::CPPCodeGenerator
-        generator(*sdfg_, analysis_manager, *instrumentation_plan, *arg_capture_plan, snippet_factory);
+
+    // Opt-in to one-shot GPU context warmup at .so load time so that the
+    // first kernel invocation does not pay the cold CUDA/HIP driver+context
+    // init cost. The constructor runs inside ctypes.CDLL(lib_path) during
+    // `program.compile()`, i.e. before any timed user call.
+    sdfg::codegen::GlobalConstructor global_constructor = sdfg::codegen::GlobalConstructor::None;
+    if (target == "cuda") {
+        global_constructor = sdfg::codegen::GlobalConstructor::CUDA;
+    }
+
+    sdfg::codegen::CPPCodeGenerator generator(
+        *sdfg_,
+        analysis_manager,
+        *instrumentation_plan,
+        *arg_capture_plan,
+        snippet_factory,
+        /*externals_prefix=*/"",
+        global_constructor
+    );
 
     return fcomp_handler->process(generator, pool, "lib" + sdfg_->name());
 }

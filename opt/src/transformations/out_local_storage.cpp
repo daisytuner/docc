@@ -13,6 +13,7 @@
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/structured_control_flow/sequence_fusion.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -734,6 +735,10 @@ void OutLocalStorage::to_json(nlohmann::json& j) const {
         {"1", {{"element_id", this->access_node_.element_id()}, {"type", "access_node"}}}
     };
     j["transformation_type"] = this->name();
+    serializer::JSONSerializer ser;
+    nlohmann::json storage_json = nlohmann::json::object();
+    ser.storage_type_to_json(storage_json, storage_type_);
+    j["storage_type"] = storage_json;
 };
 
 OutLocalStorage OutLocalStorage::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
@@ -753,7 +758,13 @@ OutLocalStorage OutLocalStorage::from_json(builder::StructuredSDFGBuilder& build
         );
     }
 
-    return OutLocalStorage(*loop, *access_node);
+    types::StorageType storage_type = types::StorageType::CPU_Stack();
+    if (desc.contains("storage_type")) {
+        serializer::JSONSerializer ser;
+        storage_type = ser.json_to_storage_type(desc.at("storage_type"));
+    }
+
+    return OutLocalStorage(*loop, *access_node, storage_type);
 };
 
 } // namespace transformations

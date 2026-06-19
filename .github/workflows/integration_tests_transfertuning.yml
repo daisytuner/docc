@@ -1,0 +1,80 @@
+name: Integration Tests - Transfertuning
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: "0 5 * * *"
+
+jobs:
+  tests:
+    runs-on:
+      group: dahlia
+      labels: openmp
+    container:
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
+          submodules: recursive
+          lfs: true
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          pip install pytest==7.1.3 pytest-parallel tqdm
+          pip install pandas numpy scipy
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja \
+             -DCMAKE_C_COMPILER=clang-19 \
+             -DCMAKE_CXX_COMPILER=clang++-19 \
+             -DCMAKE_BUILD_TYPE=Debug \
+             -DLLVM_BUILD_FRONTEND=ON \
+             -DLLVM_BUILD_TESTS=ON \
+             -DSDFG_BUILD_TESTS=OFF \
+             -DINSTALL_GTEST=OFF \
+             -DBUILD_TESTS:BOOL=OFF \
+             -DBUILD_BENCHMARKS:BOOL=OFF \
+             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+             ..
+          ninja -j$(nproc)
+          cpack -G DEB
+
+          apt-get install -y ./docc*.deb
+
+      - name: Integration tests - Transfertuning
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+        run: |
+          export CPATH=/usr/local/include:$CPATH
+          export LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          export PATH=$PATH:/usr/local/bin
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
+
+          export DOCC_OFFLOAD_REPORT=1
+
+          # End-to-end tests for transfer tuning
+          cd llvm/integration/tests/matmul/
+          docc -g -O3 -docc-tune=sequential -docc-transfer-tune -docc-save-temps matmul.c -o matmul.out
+          ./matmul.out
+          cd ../../../../
+
+          cd llvm/integration
+          pytest -v -rx -s polybench_transfertuning_test.py

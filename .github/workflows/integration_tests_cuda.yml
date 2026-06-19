@@ -1,0 +1,91 @@
+name: Integration Tests - CUDA
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: "0 5 * * *"
+
+jobs:
+  tests:
+    runs-on:
+      group: dahlia
+      labels: RTX5060
+    container:
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+      options: >-
+        --cap-add=PERFMON
+        --gpus=all
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
+          submodules: recursive
+          lfs: true
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja \
+             -DCMAKE_C_COMPILER=clang-19 \
+             -DCMAKE_CXX_COMPILER=clang++-19 \
+             -DCMAKE_BUILD_TYPE=Debug \
+             -DLLVM_BUILD_FRONTEND=ON \
+             -DLLVM_BUILD_TESTS=ON \
+             -DSDFG_BUILD_TESTS=OFF \
+             -DINSTALL_GTEST=OFF \
+             -DBUILD_TESTS:BOOL=OFF \
+             -DBUILD_BENCHMARKS:BOOL=OFF \
+             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+             ..
+          ninja -j$(nproc)
+          cpack -G DEB
+
+          apt-get install -y ./docc*.deb
+          apt-get install -y libhdf5-dev
+
+      - name: Integration tests - CUDA
+        run: |
+          export CPATH=/usr/local/include:$CPATH
+          export LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          export PATH=/usr/local/bin:$PATH
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
+          export CPLUS_INCLUDE_PATH=$(pwd)/rtl/include/daisy_rtl:$CPLUS_INCLUDE_PATH
+
+          pip install pytest==7.1.3 --break-system-packages
+          pip install pytest-parallel --break-system-packages
+
+          cd llvm/integration
+
+          nvidia-smi
+
+          # Basic tests
+          pytest -v -rx basic_test.py
+          pytest -v -rx rtl_test.py
+
+          # PolyBench
+          pytest -v -rx polybench_cuda_test.py
+
+          # Rodinia
+          pytest -v -rx rodinia_cuda_test.py
+
+      - name: Integration tests - Apps (nightly only)
+        if: github.event_name == 'schedule'
+        run: |
+          export CPATH=/usr/local/include:$CPATH
+          export LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          export PATH=/usr/local/bin:$PATH
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
+          export CPLUS_INCLUDE_PATH=$(pwd)/rtl/include/daisy_rtl:$CPLUS_INCLUDE_PATH
+
+          cd llvm/integration
+
+          # Apps
+          pytest -v -rx apps_cuda_test.py

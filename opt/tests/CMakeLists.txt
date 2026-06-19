@@ -36,6 +36,7 @@ set(TEST_FILES
     optimizations/gpu_kernels_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
+    passes/offloading/rocm_library_node_expand_tests.cpp
     passes/offloading/rocm_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_rewriter_pass_test.cpp
     passes/offloading/rocm_library_node_rewriter_pass_test.cpp

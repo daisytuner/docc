@@ -1,0 +1,88 @@
+name: Integration Tests - OpenMP
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: "0 5 * * *"
+
+jobs:
+  tests:
+    runs-on:
+      group: dahlia
+      labels: openmp
+    container:
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
+          submodules: recursive
+          lfs: true
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja \
+             -DCMAKE_C_COMPILER=clang-19 \
+             -DCMAKE_CXX_COMPILER=clang++-19 \
+             -DCMAKE_BUILD_TYPE=Debug \
+             -DLLVM_BUILD_FRONTEND=ON \
+             -DLLVM_BUILD_TESTS=ON \
+             -DSDFG_BUILD_TESTS=OFF \
+             -DINSTALL_GTEST=OFF \
+             -DBUILD_TESTS:BOOL=OFF \
+             -DBUILD_BENCHMARKS:BOOL=OFF \
+             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+             ..
+          ninja -j$(nproc)
+          cpack -G DEB
+
+          apt-get install -y ./docc*.deb
+          apt-get install -y libhdf5-dev
+
+      # - name: Build Plugins # out-of-tree build currently broken, as needed deps are not installed as part of docc-llvm deb
+      #   run: |
+      #     cd llvm/integration/tests/plugins/simple
+      #     mkdir build && cd build
+      #     cmake -GNinja ..
+      #     ninja -j$(nproc)
+
+      - name: Integration tests - OpenMP
+        run: |
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
+  
+          pip install pytest==7.1.3 --break-system-packages
+          pip install pytest-parallel --break-system-packages
+
+          cd llvm/integration
+
+          # Plugin
+          # LD_LIBRARY_PATH=../../build/llvm/integration/tests/plugins/simple:$LD_LIBRARY_PATH pytest -v -s plugin_test.py
+
+          # Polybench
+          pytest --workers auto -v -rx polybench_none_test.py
+          pytest --workers auto -v -rx polybench_sequential_test.py
+          pytest --workers auto -v -rx polybench_openmp_test.py
+
+          # Rodinia
+          pytest -v -rx rodinia_none_test.py
+          pytest -v -rx rodinia_sequential_test.py
+          pytest -v -rx rodinia_openmp_test.py
+
+      - name: Integration tests - Apps (nightly only)
+        if: github.event_name == 'schedule'
+        run: |
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
+
+          cd llvm/integration
+
+          # Apps
+          pytest -v -rx apps_none_test.py
+          pytest -v -rx apps_sequential_test.py
+          pytest -v -rx apps_openmp_test.py

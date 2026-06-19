@@ -18,6 +18,21 @@ def test_array_loop():
     np.testing.assert_array_equal(arr, expected)
 
 
+def test_array_constants():
+    @native
+    def array_constants(A):
+        for i in range(32):
+            for j in range(64):
+                for k in range(16):
+                    A[i * 64 * 16 + j * 16 + k] = A[i * 64 * 16 + j * 16 + k] + 1
+
+    arr = np.zeros(32 * 64 * 16, dtype=np.int32)
+    array_constants(arr)
+
+    expected = np.ones(32 * 64 * 16, dtype=np.int32)
+    np.testing.assert_array_equal(arr, expected)
+
+
 def test_negative_step_loop_array():
     @native
     def negative_step_loop_array(n):

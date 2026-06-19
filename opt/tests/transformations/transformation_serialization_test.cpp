@@ -11,11 +11,13 @@
 #include <sdfg/structured_sdfg.h>
 #include <sdfg/symbolic/symbolic.h>
 
+#include <sdfg/transformations/in_local_storage.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_skewing.h>
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/out_local_storage.h>
+#include <sdfg/types/type.h>
 
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
@@ -126,13 +128,47 @@ TEST(TransformationSerializationTest, CoreLoopTransformationsShape) {
     auto interchange2 = transformations::LoopInterchange::from_json(f.builder, ji);
     ASSERT_EQ(interchange2.name(), interchange.name());
 
-    // OutLocalStorage
+    // OutLocalStorage (default storage = CPU_Stack)
     transformations::OutLocalStorage ols(*f.outer_map, *f.access_A);
     nlohmann::json jo;
     ols.to_json(jo);
     ValidateSerialization(jo, 2);
+    ASSERT_TRUE(jo.contains("storage_type"));
+    ASSERT_TRUE(jo["storage_type"].is_object());
+    ASSERT_EQ(jo["storage_type"]["value"].get<std::string>(), "CPU_Stack");
     auto ols2 = transformations::OutLocalStorage::from_json(f.builder, jo);
     ASSERT_EQ(ols2.name(), ols.name());
+
+    // OutLocalStorage with explicit NV_Shared storage
+    transformations::OutLocalStorage ols_shared(*f.outer_map, *f.access_A, types::StorageType::NV_Shared());
+    nlohmann::json jo_sh;
+    ols_shared.to_json(jo_sh);
+    ValidateSerialization(jo_sh, 2);
+    ASSERT_EQ(jo_sh["storage_type"]["value"].get<std::string>(), "NV_Shared");
+    auto ols_shared2 = transformations::OutLocalStorage::from_json(f.builder, jo_sh);
+    ASSERT_EQ(ols_shared2.name(), ols_shared.name());
+
+    // InLocalStorage (default storage = CPU_Stack)
+    transformations::InLocalStorage ils(*f.outer_map, *f.access_A);
+    nlohmann::json jils;
+    ils.to_json(jils);
+    ValidateSerialization(jils, 2);
+    ASSERT_TRUE(jils.contains("container"));
+    ASSERT_EQ(jils["container"].get<std::string>(), "A");
+    ASSERT_TRUE(jils.contains("storage_type"));
+    ASSERT_TRUE(jils["storage_type"].is_object());
+    ASSERT_EQ(jils["storage_type"]["value"].get<std::string>(), "CPU_Stack");
+    auto ils2 = transformations::InLocalStorage::from_json(f.builder, jils);
+    ASSERT_EQ(ils2.name(), ils.name());
+
+    // InLocalStorage with explicit NV_Shared storage
+    transformations::InLocalStorage ils_shared(*f.outer_map, *f.access_A, types::StorageType::NV_Shared());
+    nlohmann::json jils_sh;
+    ils_shared.to_json(jils_sh);
+    ValidateSerialization(jils_sh, 2);
+    ASSERT_EQ(jils_sh["storage_type"]["value"].get<std::string>(), "NV_Shared");
+    auto ils_shared2 = transformations::InLocalStorage::from_json(f.builder, jils_sh);
+    ASSERT_EQ(ils_shared2.name(), ils_shared.name());
 
     // LoopSkewing
     transformations::LoopSkewing skew(*f.outer_map, *f.inner_map, 1);
