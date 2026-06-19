@@ -31,13 +31,19 @@ class SegformerOverlapPatchEmbeddings(nn.Module):
 
 
 def setup_segformer_overlap_patch_embeddings(
-    patch_size: int, stride: int, num_channels: int, hidden_size: int, h: int, w: int
+    patch_size: int,
+    stride: int,
+    num_channels: int,
+    hidden_size: int,
+    h: int,
+    w: int,
+    batch_size: int,
 ) -> tuple[SegformerOverlapPatchEmbeddings, torch.Tensor]:
     model = SegformerOverlapPatchEmbeddings(
         patch_size, stride, num_channels, hidden_size
     )
     model.eval()
-    x = torch.randn(1, num_channels, 512, 512)
+    x = torch.randn(batch_size, num_channels, 512, 512)
     return model, x
 
 
@@ -135,12 +141,13 @@ def setup_segformer_efficient_self_attention(
     w: int,
     height: int,
     width: int,
+    batch_size: int,
 ) -> tuple[SegformerEfficientSelfAttention, tuple[torch.Tensor, int, int]]:
     model = SegformerEfficientSelfAttention(
         hidden_size, num_attention_heads, sequence_reduction_ratio
     )
     model.eval()
-    x = torch.randn(1, h, w)
+    x = torch.randn(batch_size, h, w)
     return model, (x, height, width)
 
 
@@ -159,12 +166,12 @@ class SegformerSelfOutput(nn.Module):
 
 
 def setup_segformer_self_output(
-    h: int, w: int
+    h: int, w: int, batch_size: int
 ) -> tuple[SegformerSelfOutput, tuple[torch.Tensor, torch.Tensor]]:
     model = SegformerSelfOutput(w)
     model.eval()
-    x = torch.randn(1, h, w)
-    y = torch.randn(1, h, w)
+    x = torch.randn(batch_size, h, w)
+    y = torch.randn(batch_size, h, w)
     return model, (x, y)
 
 
@@ -199,12 +206,13 @@ def setup_segformer_attention(
     h: int,
     height: int,
     width: int,
+    batch_size: int,
 ) -> tuple[SegformerAttention, tuple[torch.Tensor, int, int]]:
     model = SegformerAttention(
         hidden_size, num_attention_heads, sequence_reduction_ratio
     )
     model.eval()
-    x = torch.randn(1, h, hidden_size)
+    x = torch.randn(batch_size, h, hidden_size)
     return model, (x, height, width)
 
 
@@ -228,10 +236,10 @@ class SegformerDropPath(nn.Module):
         return f"p={self.drop_prob}"
 
 
-def setup_segformer_drop_path(drop_prob: float, h: int, w: int):
+def setup_segformer_drop_path(drop_prob: float, h: int, w: int, batch_size: int):
     model = SegformerDropPath(drop_prob)
     model.eval()
-    x = torch.randn(1, h, w)
+    x = torch.randn(batch_size, h, w)
     return model, x
 
 
@@ -254,11 +262,11 @@ class SegformerDWConv(nn.Module):
 
 
 def setup_segformer_dw_conv(
-    dim: int, h: int, height: int, width: int
+    dim: int, h: int, height: int, width: int, batch_size: int
 ) -> tuple[SegformerDWConv, tuple[torch.Tensor, int, int]]:
     model = SegformerDWConv(dim)
     model.eval()
-    x = torch.randn(1, h, dim)
+    x = torch.randn(batch_size, h, dim)
     return model, (x, height, width)
 
 
@@ -285,11 +293,16 @@ class SegformerMixFFN(nn.Module):
 
 
 def setup_segformer_mix_ffn(
-    in_features: int, hidden_features: int, h: int, height: int, width: int
+    in_features: int,
+    hidden_features: int,
+    h: int,
+    height: int,
+    width: int,
+    batch_size: int,
 ) -> tuple[SegformerMixFFN, tuple[torch.Tensor, int, int]]:
     model = SegformerMixFFN(in_features, hidden_features)
     model.eval()
-    x = torch.randn(1, h, in_features)
+    x = torch.randn(batch_size, h, in_features)
     return model, (x, height, width)
 
 
@@ -355,12 +368,13 @@ def setup_segformer_layer(
     h: int,
     height: int,
     width: int,
+    batch_size: int,
 ) -> tuple[SegformerLayer, tuple[torch.Tensor, int, int]]:
     model = SegformerLayer(
         hidden_size, num_attention_heads, drop_path, sequence_reduction_ratio, mlp_ratio
     )
     model.eval()
-    x = torch.randn(1, h, hidden_size)
+    x = torch.randn(batch_size, h, hidden_size)
     return model, (x, height, width)
 
 
@@ -464,12 +478,12 @@ class SegformerEncoder(nn.Module):
         )
 
 
-def setup_segformer_encoder() -> (
-    tuple[SegformerEncoder, tuple[torch.Tensor, bool, bool, bool]]
-):
+def setup_segformer_encoder(
+    batch_size: int,
+) -> tuple[SegformerEncoder, tuple[torch.Tensor, bool, bool, bool]]:
     model = SegformerEncoder()
     model.eval()
-    x = torch.randn(1, 3, 512, 512)
+    x = torch.randn(batch_size, 3, 512, 512)
     return model, (x, False, True, False)
 
 
@@ -511,12 +525,12 @@ class SegformerModel(nn.Module):
         )
 
 
-def setup_segformer_model() -> (
-    tuple[SegformerModel, tuple[torch.Tensor, bool | None, bool | None, bool | None]]
-):
+def setup_segformer_model(
+    batch_size: int,
+) -> tuple[SegformerModel, tuple[torch.Tensor, bool | None, bool | None, bool | None]]:
     model = SegformerModel()
     model.eval()
-    x = torch.randn(1, 3, 512, 512)
+    x = torch.randn(batch_size, 3, 512, 512)
     return model, (x, None, True, False)
 
 
@@ -532,11 +546,11 @@ class SegformerMLP(nn.Module):
 
 
 def setup_segformer_mlp(
-    input_dim: int, height: int, width: int
+    input_dim: int, height: int, width: int, batch_size: int
 ) -> tuple[SegformerMLP, torch.Tensor]:
     model = SegformerMLP(input_dim)
     model.eval()
-    x = torch.randn(1, input_dim, height, width)
+    x = torch.randn(batch_size, input_dim, height, width)
     return model, x
 
 
@@ -599,16 +613,16 @@ class SegformerDecodeHead(nn.Module):
         return logits
 
 
-def setup_segformer_decode_head() -> tuple[
+def setup_segformer_decode_head(batch_size: int) -> tuple[
     SegformerDecodeHead,
     tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
 ]:
     model = SegformerDecodeHead()
     model.eval()
-    w = torch.randn(1, 32, 128, 128)
-    x = torch.randn(1, 64, 64, 64)
-    y = torch.randn(1, 160, 32, 32)
-    z = torch.randn(1, 256, 16, 16)
+    w = torch.randn(batch_size, 32, 128, 128)
+    x = torch.randn(batch_size, 64, 64, 64)
+    y = torch.randn(batch_size, 160, 32, 32)
+    z = torch.randn(batch_size, 256, 16, 16)
     return model, (w, x, y, z)
 
 
@@ -655,21 +669,23 @@ class SegformerForSemanticSegmentation(nn.Module):
         return ((loss,) + output) if loss is not None else output
 
 
-def setup_segformer_for_semantic_segmentation() -> (
-    tuple[SegformerForSemanticSegmentation, torch.Tensor]
-):
+def setup_segformer_for_semantic_segmentation(
+    batch_size: int,
+) -> tuple[SegformerForSemanticSegmentation, torch.Tensor]:
     model = SegformerForSemanticSegmentation()
     model.eval()
-    x = torch.randn(1, 3, 512, 512)
+    x = torch.randn(batch_size, 3, 512, 512)
     return model, x
 
 
-def setup() -> tuple[transformers.SegformerForSemanticSegmentation, torch.Tensor]:
+def setup(
+    batch_size: int,
+) -> tuple[transformers.SegformerForSemanticSegmentation, torch.Tensor]:
     model = transformers.SegformerForSemanticSegmentation.from_pretrained(
         "nvidia/segformer-b0-finetuned-cityscapes-1024-1024"
     )
     model.eval()
-    x = torch.randn(1, 3, 512, 512)
+    x = torch.randn(batch_size, 3, 512, 512)
     return model, x
 
 
@@ -813,6 +829,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--variant", type=str, choices=list(BENCHMARKS.keys()), default="default"
     )
+    parser.add_argument("--batch-size", type=int, default=1)
     args, remaining = parser.parse_known_args()
 
     import sys
@@ -821,7 +838,9 @@ if __name__ == "__main__":
 
     from benchmarks.harness import run_benchmark
 
-    run_benchmark(BENCHMARKS[args.variant], f"segformer {args.variant}")
+    run_benchmark(
+        BENCHMARKS[args.variant], f"segformer {args.variant}", args.batch_size
+    )
 
 
 def test_segformer_encoder_path_embeddings_0() -> None:
