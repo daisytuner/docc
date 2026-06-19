@@ -41,25 +41,25 @@ steps:
       command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --device cpu
       energy: true
     resnet18_docc_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --docc --target=none
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --device docc --target=none
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     resnet18_docc_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --docc --target=sequential
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --device docc --target=sequential
       energy: true
       env:
         DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     resnet18_docc_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --docc --target=openmp
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --device docc --target=openmp
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     resnet18_docc_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --docc --target=cuda
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --device docc --target=cuda
       energy: true
       env:
         DOCC_CI: regions
