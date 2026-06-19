@@ -726,3 +726,89 @@ TEST(StructuredSDFGBuilderTest, MoveChildren) {
     EXPECT_EQ(source_block1.get_parent(), &if_true2);
     EXPECT_EQ(source_block2.get_parent(), &if_true2);
 }
+
+TEST(StructuredSDFGBuilderTest, MergeSinks_SameContainer) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int64);
+    builder.add_container("A", desc);
+    builder.add_container("B", desc);
+    builder.add_container("C", desc);
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+
+    // First write to A: B -> tasklet -> A
+    auto& b_node = builder.add_access(block, "B");
+    auto& tasklet1 = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, b_node, tasklet1, "_in", {});
+    auto& a_node1 = builder.add_access(block, "A");
+    builder.add_computational_memlet(block, tasklet1, "_out", a_node1, {});
+
+    // Second write to A: C -> tasklet -> A
+    auto& c_node = builder.add_access(block, "C");
+    auto& tasklet2 = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, c_node, tasklet2, "_in", {});
+    auto& a_node2 = builder.add_access(block, "A");
+    builder.add_computational_memlet(block, tasklet2, "_out", a_node2, {});
+
+    dump_sdfg(builder.subject(), "0-before");
+
+    // Two separate sink access nodes both refer to "A"
+    EXPECT_EQ(block.dataflow().sinks().size(), 2);
+    EXPECT_EQ(block.dataflow().nodes().size(), 6);
+    EXPECT_EQ(block.dataflow().edges().size(), 4);
+
+    builder.merge_sinks(block);
+
+    dump_sdfg(builder.subject(), "1-after");
+
+    // The two "A" sinks are merged into a single node receiving both writes
+    auto sinks = block.dataflow().sinks();
+    EXPECT_EQ(sinks.size(), 1);
+    auto* sink = dynamic_cast<data_flow::AccessNode*>(*sinks.begin());
+    ASSERT_NE(sink, nullptr);
+    EXPECT_EQ(sink->data(), "A");
+    EXPECT_EQ(block.dataflow().in_degree(*sink), 2);
+    EXPECT_EQ(block.dataflow().nodes().size(), 5);
+    EXPECT_EQ(block.dataflow().edges().size(), 4);
+}
+
+TEST(StructuredSDFGBuilderTest, MergeSinks_DifferentContainers) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int64);
+    builder.add_container("A", desc);
+    builder.add_container("B", desc);
+    builder.add_container("C", desc);
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+
+    // C -> tasklet -> A
+    auto& c_node = builder.add_access(block, "C");
+    auto& tasklet1 = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, c_node, tasklet1, "_in", {});
+    auto& a_node = builder.add_access(block, "A");
+    builder.add_computational_memlet(block, tasklet1, "_out", a_node, {});
+
+    // C -> tasklet -> B
+    auto& c_node2 = builder.add_access(block, "C");
+    auto& tasklet2 = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, c_node2, tasklet2, "_in", {});
+    auto& b_node = builder.add_access(block, "B");
+    builder.add_computational_memlet(block, tasklet2, "_out", b_node, {});
+
+    dump_sdfg(builder.subject(), "0-before");
+
+    EXPECT_EQ(block.dataflow().sinks().size(), 2);
+
+    builder.merge_sinks(block);
+
+    dump_sdfg(builder.subject(), "1-after");
+
+    // Distinct containers must not be merged
+    EXPECT_EQ(block.dataflow().sinks().size(), 2);
+    EXPECT_EQ(block.dataflow().nodes().size(), 6);
+    EXPECT_EQ(block.dataflow().edges().size(), 4);
+}
