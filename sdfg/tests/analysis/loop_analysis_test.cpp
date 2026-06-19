@@ -512,12 +512,15 @@ struct MultiNestLoops {
  * multiple children. Reuse this across the incremental-update tests and then
  * issue a single removed_loop / moved_loop / copied_loop call.
  */
-MultiNestLoops build_multi_nest(builder::StructuredSDFGBuilder& builder) {
-    using namespace sdfg::structured_control_flow;
-    auto& root = builder.subject().root();
-    auto sched = ScheduleType_Sequential::create();
+class MultiNestBuilder {
+public:
+    builder::StructuredSDFGBuilder& builder;
+    MultiNestBuilder(builder::StructuredSDFGBuilder& builder) : builder(builder) {}
 
-    auto add_map = [&](Sequence& parent, const std::string& iv) -> Map& {
+    ScheduleType sched_ = ScheduleType_Sequential::create();
+    Sequence& root = builder.subject().root();
+
+    Map& add_map(Sequence& parent, const std::string& iv) {
         builder.add_container(iv, types::Scalar(types::PrimitiveType::Int32));
         auto sym = symbolic::symbol(iv);
         return builder.add_map(
@@ -526,47 +529,54 @@ MultiNestLoops build_multi_nest(builder::StructuredSDFGBuilder& builder) {
             symbolic::Lt(sym, symbolic::symbol("N")),
             symbolic::zero(),
             symbolic::add(sym, symbolic::one()),
-            sched
+            sched_
         );
-    };
-    auto add_for = [&](Sequence& parent, const std::string& iv) -> For& {
+    }
+    For& add_for(Sequence& parent, const std::string& iv) {
         builder.add_container(iv, types::Scalar(types::PrimitiveType::Int32));
         auto sym = symbolic::symbol(iv);
         return builder.add_for(
             parent, sym, symbolic::Lt(sym, symbolic::symbol("N")), symbolic::zero(), symbolic::add(sym, symbolic::one())
         );
-    };
+    }
 
-    MultiNestLoops loops;
+    MultiNestLoops build_default_multi_nest() {
+        MultiNestLoops loops;
 
-    // Nest A: a0 -> a1 -> a2 (perfectly nested maps).
-    auto& a0 = add_map(root, "i_a0");
-    auto& a1 = add_map(a0.root(), "i_a1");
-    auto& a2 = add_for(a1.root(), "i_a2");
-    loops.a0 = &a0;
-    loops.a1 = &a1;
-    loops.a2 = &a2;
+        // Nest A: a0 -> a1 -> a2 (perfectly nested maps).
+        auto& a0 = add_map(root, "i_a0");
+        auto& a1 = add_map(a0.root(), "i_a1");
+        auto& a2 = add_for(a1.root(), "i_a2");
+        loops.a0 = &a0;
+        loops.a1 = &a1;
+        loops.a2 = &a2;
 
-    // Nest B: for b0 with an empty block (=> non-perfectly nested) then b1 -> b2 (maps).
-    auto& b0 = add_map(root, "i_b0");
-    auto& b1 = add_map(b0.root(), "i_b1");
-    builder.add_block(b1.root());
-    auto& b2 = add_map(b1.root(), "i_b2");
-    loops.b0 = &b0;
-    loops.b1 = &b1;
-    loops.b2 = &b2;
+        // Nest B: for b0 with an empty block (=> non-perfectly nested) then b1 -> b2 (maps).
+        auto& b0 = add_map(root, "i_b0");
+        auto& b1 = add_map(b0.root(), "i_b1");
+        builder.add_block(b1.root());
+        auto& b2 = add_map(b1.root(), "i_b2");
+        loops.b0 = &b0;
+        loops.b1 = &b1;
+        loops.b2 = &b2;
 
-    // Nest C: c0 with two children: leaf map c1 and c2 -> for c3.
-    auto& c0 = add_map(root, "i_c0");
-    auto& c1 = add_map(c0.root(), "i_c1");
-    auto& c2 = add_map(c0.root(), "i_c2");
-    auto& c3 = add_for(c2.root(), "i_c3");
-    loops.c0 = &c0;
-    loops.c1 = &c1;
-    loops.c2 = &c2;
-    loops.c3 = &c3;
+        // Nest C: c0 with two children: leaf map c1 and c2 -> for c3.
+        auto& c0 = add_map(root, "i_c0");
+        auto& c1 = add_map(c0.root(), "i_c1");
+        auto& c2 = add_map(c0.root(), "i_c2");
+        auto& c3 = add_for(c2.root(), "i_c3");
+        loops.c0 = &c0;
+        loops.c1 = &c1;
+        loops.c2 = &c2;
+        loops.c3 = &c3;
 
-    return loops;
+        return loops;
+    }
+};
+
+MultiNestLoops build_multi_nest(builder::StructuredSDFGBuilder& builder) {
+    MultiNestBuilder b(builder);
+    return b.build_default_multi_nest();
 }
 
 /**
@@ -730,6 +740,50 @@ TEST(LoopAnalysisTest, MovedLoop_ToOwnParent) {
     EXPECT_NE(std::find(a0_children.begin(), a0_children.end(), loops.a2), a0_children.end());
     const auto& a1_children = la.children(loops.a1);
     EXPECT_EQ(std::find(a1_children.begin(), a1_children.end(), loops.a2), a1_children.end());
+
+    verify_loop_index_consistency(la);
+}
+
+TEST(LoopAnalysisTest, Added_LocalContents) {
+    builder::StructuredSDFGBuilder builder("sdfg_move", FunctionType_CPU);
+    MultiNestBuilder b(builder);
+
+    auto a0 = &b.add_map(b.root, "i_a0");
+    auto a1 = &b.add_map(a0->root(), "i_a1");
+    auto a2 = &b.add_map(a1->root(), "i_a2");
+
+    analysis::AnalysisManager manager(builder.subject());
+    auto& la = manager.get<analysis::LoopAnalysis>();
+
+    dump_loop_info(la, "0.org");
+
+    EXPECT_TRUE(la.loop_info(a0).is_perfectly_nested);
+    EXPECT_TRUE(la.loop_info(a0).is_perfectly_parallel);
+    EXPECT_EQ(la.loop_info(a0).map_stack_depth, 3u);
+    EXPECT_EQ(la.loop_info(a1).map_stack_depth, 2u);
+    EXPECT_EQ(la.loop_info(a2).map_stack_depth, 1u);
+    EXPECT_FALSE(la.loop_info(a0).has_side_effects);
+
+    // move to a parent
+    la.added_local_contents(a1, true, true);
+
+    dump_loop_info(la, "0.added");
+
+    EXPECT_EQ(la.parent_loop(a2), a1);
+    EXPECT_EQ(la.parent_loop(a1), a0);
+
+    EXPECT_TRUE(la.loop_info(a2).is_perfectly_nested);
+    EXPECT_FALSE(la.loop_info(a1).is_perfectly_nested);
+    EXPECT_FALSE(la.loop_info(a0).is_perfectly_nested);
+
+    EXPECT_TRUE(la.loop_info(a2).is_perfectly_parallel);
+    EXPECT_TRUE(la.loop_info(a1).is_perfectly_parallel);
+    EXPECT_TRUE(la.loop_info(a0).is_perfectly_parallel);
+
+    EXPECT_FALSE(la.loop_info(a2).has_side_effects);
+    EXPECT_TRUE(la.loop_info(a1).has_side_effects);
+    EXPECT_TRUE(la.loop_info(a0).has_side_effects);
+
 
     verify_loop_index_consistency(la);
 }
