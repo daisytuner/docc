@@ -11,6 +11,7 @@
 #include <sdfg/transformations/loop_skewing.h>
 #include <sdfg/transformations/loop_split.h>
 #include <sdfg/transformations/loop_tiling.h>
+#include <sdfg/transformations/map_collapse.h>
 #include <sdfg/transformations/multi_level_tiling.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
@@ -45,6 +46,8 @@ void Replayer::replay(
 
         if (transformation_name == "LoopTiling") {
             this->apply<transformations::LoopTiling>(builder, analysis_manager, desc, skip_if_not_applicable);
+        } else if (transformation_name == "MapCollapse") {
+            this->apply<transformations::MapCollapse>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "MultiLevelTiling") {
             this->apply<transformations::MultiLevelTiling>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "LoopDistribute") {
