@@ -42,3 +42,13 @@ void dump_sdfg(const sdfg::StructuredSDFG& sdfg, const std::string& step) {
         sdfg::visualizer::DotVisualizer::writeToFile(sdfg, base_path / (sdfg.name() + "." + step + ".sdfg.dot"));
     }
 }
+
+void dump_loop_info(const sdfg::analysis::LoopAnalysis& analysis, const std::string& step) {
+    if (test_output_dir) {
+        auto info = ::testing::UnitTest::GetInstance()->current_test_info();
+        auto suite_name = info->test_suite_name();
+        auto test_name = info->name();
+        auto base_path = test_output_dir.value() / suite_name / test_name;
+        analysis.dump_to_file(base_path / (step + ".loop_info.json"));
+    }
+}

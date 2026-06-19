@@ -46,9 +46,9 @@ def test_ludcmp(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "MAP": 3,
-                "SEQUENTIAL": 3,
-                "FOR": 11,
+                "MAP": 2,
+                "SEQUENTIAL": 2,
+                "FOR": 10,
                 "Memset": 2,
                 "Malloc": 2,
             }
@@ -56,10 +56,10 @@ def test_ludcmp(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 2,
-                "MAP": 3,
+                "VECTORIZE": 1,
+                "MAP": 2,
                 "SEQUENTIAL": 1,
-                "FOR": 11,
+                "FOR": 10,
                 "Memset": 2,
                 "Malloc": 2,
             }
@@ -67,10 +67,10 @@ def test_ludcmp(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "CPU_PARALLEL": 2,
-                "MAP": 3,
+                "CPU_PARALLEL": 1,
+                "MAP": 2,
                 "SEQUENTIAL": 1,
-                "FOR": 11,
+                "FOR": 10,
                 "Memset": 2,
                 "Malloc": 2,
             }
@@ -78,21 +78,21 @@ def test_ludcmp(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CUDA": 2,
-                "MAP": 3,
+                "CUDA": 1,
+                "MAP": 2,
                 "SEQUENTIAL": 1,
                 "CUDAOffloading": 12,
-                "FOR": 11,
+                "FOR": 10,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 2,
-                "MAP": 3,
+                "ROCM": 1,
+                "MAP": 23,
                 "SEQUENTIAL": 1,
                 "ROCMOffloading": 12,
-                "FOR": 11,
+                "FOR": 10,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

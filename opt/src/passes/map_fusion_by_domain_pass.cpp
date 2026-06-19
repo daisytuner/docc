@@ -6,9 +6,12 @@
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/symbolic/utils.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
+#include "sdfg/visualizer/dot_visualizer.h"
 #include "symengine/subs.h"
 
 namespace sdfg::passes {
+
+static const symbolic::Symbol lower_indvar_placeholder = symbolic::symbol("__lower_it");
 
 class LoopIndirectAccessFinder : public analysis::BaseUserVisitor {
     analysis::LoopAnalysis& loop_analysis_;
@@ -25,6 +28,41 @@ class LoopIndirectAccessFinder : public analysis::BaseUserVisitor {
             return nullptr;
         }
         return &loop_stack_.back();
+    }
+
+    /**
+     * Merge a newly observed access (its `subset` and `not_understood` flag) into the FusionArg `into`.
+     * If `into` already tracks a different subset, we can no longer describe the access with a single
+     * subset and mark it not_understood. Returns true if `into` was modified.
+     */
+    static bool merge_fusion_arg_props_into(
+        FusionArg& into,
+        const std::optional<data_flow::Subset>& subset,
+        bool not_understood,
+        const symbolic::ExpressionMapping& lower_indvars
+    ) {
+        bool updated = false;
+        if (into.subset.has_value() && subset.has_value() &&
+            !symbolic::vectors_of_expressions_match(into.subset.value(), subset.value(), lower_indvars)) {
+            if (!into.not_understood) {
+                into.not_understood = true;
+                updated = true;
+            }
+        } else if (!into.subset.has_value() && subset.has_value() && !into.not_understood) {
+            into.subset = subset.value();
+            updated = true;
+        }
+        if (not_understood && !into.not_understood) {
+            into.not_understood = true;
+            updated = true;
+        }
+        return updated;
+    }
+
+    static bool merge_fusion_arg_props_into(
+        FusionArg& into, const FusionArg& from, const symbolic::ExpressionMapping& lower_indvars
+    ) {
+        return merge_fusion_arg_props_into(into, from.subset, from.not_understood, lower_indvars);
     }
 
 public:
@@ -66,6 +104,57 @@ public:
         symbolic::Expression expr
     ) override {}
 
+    void found_indirect_arg_access(
+        const std::string& container, const data_flow::Memlet& edge, LoopEntry* current, bool is_write
+    ) {
+        auto cand_it = fuse_candidates_.find(current->loop->element_id());
+        if (cand_it != fuse_candidates_.end()) {
+            auto& cand = *cand_it->second;
+            auto arg_it = cand.args.find(container);
+            if (arg_it != cand.args.end()) {
+                auto& fusion_arg = arg_it->second;
+                merge_fusion_arg_props_into(fusion_arg, edge.subset(), false, symbolic::ExpressionMapping());
+                // propagate_arg_up(current, container, fusion_arg); // may include lower level indvars, in which case
+                // it will block everything
+            }
+        }
+    }
+
+    /**
+     * Push an access change observed at the innermost loop (back of `loop_stack_`) up through its
+     * enclosing loops, merging it into every ancestor that still tracks `arg`. Stops once the root
+     * (front of the stack) is reached or a loop no longer contains the arg.
+     */
+    void propagate_arg_up(LoopEntry* start, const std::string& arg, FusionArg& changes) {
+        if (loop_stack_.size() < 2) {
+            return; // no enclosing loops above the current one
+        }
+
+        symbolic::ExpressionMapping lower_indvars;
+        for (auto& indvar : start->indvars) {
+            lower_indvars[symbolic::symbol(indvar)] = lower_indvar_placeholder;
+        }
+
+        // Start at the direct parent of the current (innermost) loop and walk toward the root.
+        for (auto it = loop_stack_.end() - 2;; --it) {
+            auto cand_it = fuse_candidates_.find(it->loop->element_id());
+            if (cand_it == fuse_candidates_.end()) {
+                break; // loop is not a tracked candidate, fusing will never cross that boundary anyway
+            }
+            auto& args = cand_it->second->args;
+            auto arg_it = args.find(arg);
+            if (arg_it == args.end()) {
+                break; // arg does not reach this loop -> nothing higher up needs it either
+            }
+
+            merge_fusion_arg_props_into(arg_it->second, changes, lower_indvars);
+
+            if (it == loop_stack_.begin()) {
+                break; // reached the root of the stack
+            }
+        }
+    }
+
     void use_as_dst_node(
         const std::string& container,
         const data_flow::AccessNode& node,
@@ -74,20 +163,7 @@ public:
     ) override {
         auto current = get_current_loop();
         if (current && edge.is_dst_pointed_to_write()) {
-            auto cand_it = fuse_candidates_.find(current->loop->element_id());
-            if (cand_it != fuse_candidates_.end()) {
-                auto& cand = *cand_it->second;
-                auto arg_it = cand.args.find(container);
-                if (arg_it != cand.args.end()) {
-                    auto& fusion_arg = arg_it->second;
-                    if (fusion_arg.subset.has_value() &&
-                        !symbolic::vectors_of_expressions_match(fusion_arg.subset.value(), edge.subset())) {
-                        fusion_arg.not_understood = true;
-                    } else if (!fusion_arg.subset.has_value() && !fusion_arg.not_understood) {
-                        fusion_arg.subset = edge.subset();
-                    }
-                }
-            }
+            found_indirect_arg_access(container, edge, current, true);
         }
     }
     void use_as_return_src(const std::string& container, const Return& ret) override {}
@@ -103,20 +179,7 @@ public:
     ) override {
         auto current = get_current_loop();
         if (current && edge.is_src_pointed_to_read()) {
-            auto cand_it = fuse_candidates_.find(current->loop->element_id());
-            if (cand_it != fuse_candidates_.end()) {
-                auto& cand = *cand_it->second;
-                auto arg_it = cand.args.find(container);
-                if (arg_it != cand.args.end()) {
-                    auto& fusion_arg = arg_it->second;
-                    if (fusion_arg.subset.has_value() &&
-                        !symbolic::vectors_of_expressions_match(fusion_arg.subset.value(), edge.subset())) {
-                        fusion_arg.not_understood = true;
-                    } else if (!fusion_arg.subset.has_value() && !fusion_arg.not_understood) {
-                        fusion_arg.subset = edge.subset();
-                    }
-                }
-            }
+            found_indirect_arg_access(container, edge, current, false);
         }
     }
     void use_as_symbol_write(
@@ -217,6 +280,8 @@ PatternHandler::MatchResult MapFusionHandler::fuse_contents(
     Sequence& target_root,
     bool can_remove_original
 ) {
+    auto first_elem_id = first_current->loop->element_id();
+
     Sequence* append_root = nullptr;
     if (target_root.size() == 0) {
         // target seq is empty, so we can just append to it
@@ -278,6 +343,14 @@ PatternHandler::MatchResult MapFusionHandler::fuse_contents(
     }
 
     state_.fused_count++;
+
+    static auto count = 0;
+    std::filesystem::path dir = state_.builder.subject().metadata("output_dir");
+    visualizer::DotVisualizer::writeToFile(
+        state_.builder.subject(),
+        dir /
+            ("map_fusion_by_domain_pass_dump_" + std::to_string(count++) + "_" + std::to_string(first_elem_id) + ".dot")
+    );
 
     // if there are further loops inside the now fused body, visit those as well
     return {.removed_first = removed_first, .visit_second_body = keep_visiting_second};
@@ -482,7 +555,8 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
 
     // Iterate over sequence looking for consecutive (Map, StructuredLoop) pairs
     size_t i = 0;
-    while (i + 1 < node.size()) {
+    structured_control_flow::ControlFlowNode* override_last = nullptr;
+    while (i < node.size()) {
         auto& child_node = node.at(i).first;
         auto* first = dynamic_cast<structured_control_flow::Map*>(&child_node);
         if (!first) {
@@ -495,53 +569,58 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
             continue;
         }
 
-        if (auto* second = dynamic_cast<structured_control_flow::Map*>(&node.at(i + 1).first)) {
-            if (second->root().size() == 0) {
-                i++;
-                continue;
-            }
+        if (i + 1 < node.size()) {
+            if (auto* second = dynamic_cast<structured_control_flow::Map*>(&node.at(i + 1).first)) {
+                if (second->root().size() == 0) {
+                    i++;
+                    continue;
+                }
 
-            auto result = handler_.match(*first, *second, true);
+                auto result = handler_.match(*first, *second, true);
 
-            if (!result.removed_first) {
-                dispatch(child_node);
-            }
-            if (result.visit_second_body) {
-                auto* second_updated_child = result.second_root_replacement ? result.second_root_replacement : second;
-                dispatch(*second_updated_child);
-            }
-            if (result.removed_first) {
-                // do not increment i, we can use at as next firs
-                continue;
-            }
-        } else if (i + 2 < node.size()) {
-            auto* mid_block = dynamic_cast<structured_control_flow::Block*>(&node.at(i + 1).first);
-            if (mid_block && mid_block->is_a_library_node<stdlib::MallocNode>()) {
-                if (auto* second = dynamic_cast<structured_control_flow::Map*>(&node.at(i + 2).first)) {
-                    if (second->root().size() == 0) {
-                        i++;
-                        continue;
-                    }
-
-                    // until we support matching this, just keep visiting
+                if (!result.removed_first) {
                     dispatch(child_node);
-                    dispatch(*second);
-                    // transformations::MapFusion transformation(*first, *second, false);
-                    // if (transformation.can_be_applied(builder_, analysis_manager_)) {
-                    //     auto first_name = first->indvar()->get_name();
-                    //     auto second_name = second->indvar()->get_name();
-                    //     transformation.apply(builder_, analysis_manager_);
-                    //     DEBUG_PRINTLN(
-                    //         "Applied MapFusion to map " + first_name + " and loop " + second_name +
-                    //         " with intermediate malloc block"
-                    //     );
-                    //     applied = true;
-                    //
-                    //     i = i + 2; // Skip over the newly moved malloc block and the second loop that was just fused
-                    //     continue;
-                    // }
+                }
+                if (result.visit_second_body) {
+                    auto* second_updated_child = result.second_root_replacement ? result.second_root_replacement
+                                                                                : second;
+                    dispatch(*second_updated_child);
+                }
+                if (result.removed_first) {
+                    // do not increment i, we can use at as next firs
+                    continue;
+                }
+            } else if (i + 2 < node.size()) {
+                auto* mid_block = dynamic_cast<structured_control_flow::Block*>(&node.at(i + 1).first);
+                if (mid_block && mid_block->is_a_library_node<stdlib::MallocNode>()) {
+                    if (auto* second = dynamic_cast<structured_control_flow::Map*>(&node.at(i + 2).first)) {
+                        if (second->root().size() == 0) {
+                            i++;
+                            continue;
+                        }
+
+                        // until we support matching this, just keep visiting
+                        dispatch(child_node);
+                        dispatch(*second);
+                        // transformations::MapFusion transformation(*first, *second, false);
+                        // if (transformation.can_be_applied(builder_, analysis_manager_)) {
+                        //     auto first_name = first->indvar()->get_name();
+                        //     auto second_name = second->indvar()->get_name();
+                        //     transformation.apply(builder_, analysis_manager_);
+                        //     DEBUG_PRINTLN(
+                        //         "Applied MapFusion to map " + first_name + " and loop " + second_name +
+                        //         " with intermediate malloc block"
+                        //     );
+                        //     applied = true;
+                        //
+                        //     i = i + 2; // Skip over the newly moved malloc block and the second loop that was just
+                        //     fused continue;
+                        // }
+                    }
                 }
             }
+        } else {
+            dispatch(child_node);
         }
         i++;
     }

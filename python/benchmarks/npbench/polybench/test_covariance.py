@@ -61,7 +61,7 @@ def test_covariance(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 3,
+                "VECTORIZE": 2,
                 "GEMM": 1,
                 "CPU_PARALLEL": 5,
                 "MAP": 8,
