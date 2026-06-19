@@ -62,9 +62,9 @@ def test_mlp(target):
             verification={
                 "Free": 11,
                 "CMath": 4,
-                "SEQUENTIAL": 18,
-                "FOR": 20,
-                "MAP": 18,
+                "SEQUENTIAL": 15,
+                "FOR": 17,
+                "MAP": 15,
                 "GEMM": 3,
                 "Malloc": 11,
             }
