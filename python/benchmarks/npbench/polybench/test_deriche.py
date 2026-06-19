@@ -96,35 +96,35 @@ def test_deriche(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "Free": 10,
-                "SEQUENTIAL": 27,
-                "FOR": 31,
-                "MAP": 27,
+                "Free": 9,
+                "SEQUENTIAL": 24,
+                "FOR": 28,
+                "MAP": 24,
                 "CMath": 9,
-                "Malloc": 10,
+                "Malloc": 9,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "Free": 10,
-                "VECTORIZE": 22,
-                "SEQUENTIAL": 5,
-                "FOR": 31,
-                "MAP": 27,
+                "Free": 9,
+                "VECTORIZE": 20,
+                "SEQUENTIAL": 4,
+                "FOR": 28,
+                "MAP": 24,
                 "CMath": 9,
-                "Malloc": 10,
+                "Malloc": 9,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "Free": 10,
-                "FOR": 26,
-                "MAP": 22,
-                "CPU_PARALLEL": 22,
+                "Free": 9,
+                "FOR": 24,
+                "MAP": 20,
+                "CPU_PARALLEL": 20,
                 "CMath": 9,
-                "Malloc": 10,
+                "Malloc": 9,
             }
         )
     elif target == "cuda":

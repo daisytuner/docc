@@ -44,11 +44,11 @@ def test_covariance(target):
             verification={
                 "Free": 3,
                 "GEMM": 1,
-                "MAP": 12,
-                "SEQUENTIAL": 12,
-                "FOR": 14,
+                "MAP": 11,
+                "SEQUENTIAL": 11,
+                "FOR": 13,
                 "Memset": 1,
-                "Malloc": 5,
+                "Malloc": 4,
             }
         )
     elif target == "sequential":
@@ -56,25 +56,25 @@ def test_covariance(target):
             verification={
                 "Free": 3,
                 "GEMM": 1,
-                "VECTORIZE": 8,
-                "MAP": 12,
+                "VECTORIZE": 7,
+                "MAP": 11,
                 "SEQUENTIAL": 4,
-                "FOR": 14,
+                "FOR": 13,
                 "Memset": 1,
-                "Malloc": 5,
+                "Malloc": 4,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "VECTORIZE": 3,
+                "VECTORIZE": 2,
                 "GEMM": 1,
                 "CPU_PARALLEL": 6,
-                "MAP": 9,
-                "FOR": 11,
+                "MAP": 8,
+                "FOR": 10,
                 "Memset": 1,
-                "Malloc": 5,
+                "Malloc": 4,
             }
         )
     elif target == "cuda":
@@ -83,9 +83,9 @@ def test_covariance(target):
                 "GEMM": 1,
                 "CUDA": 9,
                 "CUDAOffloading": 12,
-                "SEQUENTIAL": 3,
-                "MAP": 12,
-                "FOR": 14,
+                "SEQUENTIAL": 2,
+                "MAP": 11,
+                "FOR": 13,
             }
         )
     elif target == "rocm":

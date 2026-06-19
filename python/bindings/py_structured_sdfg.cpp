@@ -293,6 +293,10 @@ void PyStructuredSDFG::simplify() {
     sdfg::passes::PointerEvolution pointer_evolution_pass;
     pointer_evolution_pass.run(builder_opt, analysis_manager);
     loop_normalization_pass.run(builder_opt, analysis_manager);
+    auto dir = sdfg_->metadata_if_exists("output_dir");
+    if (dir) {
+        dump(std::filesystem::path(*dir), "loop-norm", true, true);
+    }
 
     sdfg::passes::TypeMinimizationPass type_minimization_pass;
     type_minimization_pass.run(builder_opt, analysis_manager);
@@ -316,18 +320,25 @@ void PyStructuredSDFG::simplify() {
     dce.run(builder_opt, analysis_manager);
     dataflow_simplification.run(builder_opt, analysis_manager);
 
-    sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
-    map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
-    dde.run(builder_opt, analysis_manager);
-    dce.run(builder_opt, analysis_manager);
-    sdfg::passes::Pipeline block_fusion("BlockFusion");
-    block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
-    block_fusion.run(builder_opt, analysis_manager);
-    sdfg::passes::RedundantLoadEliminationPass rle;
-    rle.run(builder_opt, analysis_manager);
-    dde.run(builder_opt, analysis_manager);
-    sdfg::passes::TaskletFusionPass task_fuse_pass;
-    task_fuse_pass.run(builder_opt, analysis_manager);
+    bool use_new_fusion = true;
+
+    if (use_new_fusion) {
+        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
+        map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
+
+        dde.run(builder_opt, analysis_manager);
+        dce.run(builder_opt, analysis_manager);
+        sdfg::passes::Pipeline block_fusion("BlockFusion");
+        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
+        block_fusion.run(builder_opt, analysis_manager);
+
+        sdfg::passes::RedundantLoadEliminationPass rle;
+        rle.run(builder_opt, analysis_manager);
+        dde.run(builder_opt, analysis_manager);
+        sdfg::passes::TaskletFusionPass task_fuse_pass;
+        task_fuse_pass.run(builder_opt, analysis_manager);
+    }
+
     // Fuse maps
     auto map_fusion = sdfg::passes::normalization::map_fusion();
     map_fusion.run(builder_opt, analysis_manager);
