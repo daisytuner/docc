@@ -257,7 +257,6 @@ def run_pytest(
             test_sub = target
     else:
         test_case = f"unknown"
-    verifier.verify(stats, test_case, test_sub)
 
     # Validate return values if they exist
     if res_ref is not None:
@@ -275,3 +274,5 @@ def run_pytest(
             np.testing.assert_allclose(
                 inputs_docc[i], inputs_ref[i], rtol=1e-5, atol=1e-8
             )
+
+    verifier.verify(stats, test_case, test_sub)

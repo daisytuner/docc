@@ -391,6 +391,11 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
             if (uneven && !res.overlap) { // heuristic: do not fuse if there is no memory shared between them
                 return {};
             }
+            if (res.subset_mismatch) { // heuristic: if we see the actual accesses having a subset conflict, we abort,
+                                       // instead of trying to fuse outer maps
+                // this also likely prevents some incorrect fusings
+                return {};
+            }
         }
         bool go_deeper = false;
         if (level_match) {
@@ -550,14 +555,14 @@ MapFusionHandler::InOutCheckResult MapFusionHandler::check_ins_outs(
             } else if (prod_meta.arg.is_output && cons_meta.arg.is_input) {
                 overlap = true;
                 if (prod_meta.not_understood || cons_meta.not_understood) {
-                    return {false, overlap};
+                    return {false, overlap, true};
                 }
 
                 if (prod_meta.subset.has_value() && cons_meta.subset.has_value()) {
                     if (!symbolic::vectors_of_expressions_match(
                             prod_meta.subset.value(), cons_meta.subset.value(), canonical_indvars
                         )) {
-                        return {false, overlap};
+                        return {false, overlap, true};
                     }
                 }
             }
