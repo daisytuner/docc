@@ -87,9 +87,9 @@ def test_adi(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "MAP": 24,
-                "SEQUENTIAL": 24,
-                "FOR": 29,
+                "MAP": 21,
+                "SEQUENTIAL": 21,
+                "FOR": 26,
                 "Malloc": 11,
             }
         )
@@ -97,10 +97,10 @@ def test_adi(target):
         verifier = SDFGVerification(
             verification={
                 "Free": 3,
-                "VECTORIZE": 23,
-                "MAP": 24,
+                "VECTORIZE": 20,
+                "MAP": 21,
                 "SEQUENTIAL": 1,
-                "FOR": 29,
+                "FOR": 26,
                 "Malloc": 11,
             }
         )
@@ -109,9 +109,9 @@ def test_adi(target):
             verification={
                 "Free": 3,
                 "CPU_PARALLEL": 1,
-                "VECTORIZE": 22,
-                "MAP": 23,
-                "FOR": 28,
+                "VECTORIZE": 19,
+                "MAP": 20,
+                "FOR": 25,
                 "Malloc": 11,
             }
         )
@@ -121,9 +121,9 @@ def test_adi(target):
                 "Free": 3,
                 "CUDA": 2,
                 "CUDAOffloading": 4,
-                "MAP": 24,
-                "SEQUENTIAL": 22,
-                "FOR": 29,
+                "MAP": 21,
+                "SEQUENTIAL": 19,
+                "FOR": 26,
                 "Malloc": 11,
             }
         )
@@ -133,9 +133,9 @@ def test_adi(target):
                 "Free": 3,
                 "ROCM": 2,
                 "ROCMOffloading": 4,
-                "MAP": 24,
-                "SEQUENTIAL": 22,
-                "FOR": 29,
+                "MAP": 21,
+                "SEQUENTIAL": 19,
+                "FOR": 26,
                 "Malloc": 11,
             }
         )
