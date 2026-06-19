@@ -48,10 +48,23 @@ struct FusionCandidatePair {
     FusionCandidate* second;
 };
 
+struct FusionArg {
+    analysis::RegionArgument arg;
+    bool not_understood = false;
+    std::optional<data_flow::Subset> subset;
+
+    FusionArg(const analysis::RegionArgument& arg) : arg(arg) {}
+
+    bool saw_access_locally() const;
+};
+
 struct FusionLoopCandidate {
     StructuredLoop* loop;
     const symbolic::Assumption* indvar_boundaries;
-    const std::map<std::string, analysis::RegionArgument>* args;
+    std::unordered_map<std::string, FusionArg> args;
+    bool incompatible = false;
+
+    void non_indvar_writes();
 };
 
 
@@ -77,21 +90,24 @@ public:
 
 class MapFusionByDomainPass : public sdfg::passes::Pass {
     std::vector<FusionCandidatePair> candidate_pairs_;
+    bool dump_infos = false;
 
 public:
     struct State {
         builder::StructuredSDFGBuilder& builder;
         analysis::AnalysisManager& analysis_manager;
         std::unique_ptr<analysis::LoopAnalysis> loop_analysis;
-        std::unordered_map<analysis::ElementId, FusionLoopCandidate> fuse_candidates;
+        std::unordered_map<analysis::ElementId, std::unique_ptr<FusionLoopCandidate>> fuse_candidates;
         uint32_t fused_count = 0;
 
         FusionLoopCandidate* get_next_level_map_stack(FusionLoopCandidate& current);
+
+        FusionLoopCandidate* get_parent(FusionLoopCandidate& current);
     };
 
     MapFusionByDomainPass() = default;
 
-    std::string name() override { return "NewMapFusionPass"; }
+    std::string name() override { return "MapFusionByDomainPass"; }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
@@ -111,18 +127,34 @@ public:
 
     PatternHandler::MatchResult match(Map& first, Map& second, bool no_uses_between) override;
 
+    struct InOutCheckResult {
+        bool no_conflicts;
+        bool overlap = false;
+    };
+
 protected:
-    bool no_data_conflicts(const FusionLoopCandidate& first_candidate, const FusionLoopCandidate& second_candidate);
+    InOutCheckResult check_ins_outs(
+        const FusionLoopCandidate& first_candidate,
+        const FusionLoopCandidate& second_candidate,
+        symbolic::ExpressionMapping& canonical_indvars
+    );
 
     void update_fused_seq(Sequence& sequence, const symbolic::ExpressionMapping& replacements);
 
     bool loop_match(FusionLoopCandidate& first, FusionLoopCandidate& second, SymEngine::map_basic_basic& canonical_indvars);
 
+    void update_candidate_state(
+        ControlFlowNode* first_top,
+        FusionLoopCandidate* first_current,
+        FusionLoopCandidate* second_current,
+        const symbolic::ExpressionMapping& canonical_indvars
+    );
+
     PatternHandler::MatchResult fuse_contents(
         ControlFlowNode* first_top,
         FusionLoopCandidate* first_innermost,
         FusionLoopCandidate* second_innermost,
-        SymEngine::map_basic_basic indvar_mapping,
+        const symbolic::ExpressionMapping& indvar_mapping,
         Sequence& target_root,
         bool can_remove_original
     );

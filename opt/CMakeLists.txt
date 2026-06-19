@@ -35,6 +35,7 @@ set(SOURCE_FILES
     src/passes/gemm_expansion_pass.cpp
     src/passes/map_fusion_by_domain_pass.cpp
     src/passes/opt_pipeline.cpp
+    src/passes/redundant_load_elimination_pass.cpp
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/rocm_scheduler.cpp
     src/passes/scheduler/vectorize_scheduler.cpp

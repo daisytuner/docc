@@ -54,12 +54,14 @@
 #include "docc/compile/src_file_compiler.h"
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
+#include "sdfg/passes/dataflow/tasklet_fusion.h"
 #include "sdfg/passes/map_fusion_by_domain_pass.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
+#include "sdfg/passes/redundant_load_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
@@ -314,6 +316,18 @@ void PyStructuredSDFG::simplify() {
     dce.run(builder_opt, analysis_manager);
     dataflow_simplification.run(builder_opt, analysis_manager);
 
+    sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
+    map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
+    dde.run(builder_opt, analysis_manager);
+    dce.run(builder_opt, analysis_manager);
+    sdfg::passes::Pipeline block_fusion("BlockFusion");
+    block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
+    block_fusion.run(builder_opt, analysis_manager);
+    sdfg::passes::RedundantLoadEliminationPass rle;
+    rle.run(builder_opt, analysis_manager);
+    dde.run(builder_opt, analysis_manager);
+    sdfg::passes::TaskletFusionPass task_fuse_pass;
+    task_fuse_pass.run(builder_opt, analysis_manager);
     // Fuse maps
     auto map_fusion = sdfg::passes::normalization::map_fusion();
     map_fusion.run(builder_opt, analysis_manager);

@@ -203,12 +203,11 @@ LoopAnalysis::AggregatedResult LoopAnalysis::aggregate_loop_info(structured_cont
     info.is_perfectly_parallel = is_perfectly_parallel;
     auto child_count = loop_children.size();
     if (child_count > 1) {
-        info.is_perfectly_nested = false;
+        is_perfectly_nested = false;
     } else if (child_count < 1) {
-        info.is_perfectly_nested = true;
-    } else {
-        info.is_perfectly_nested = is_perfectly_nested;
+        is_perfectly_nested = true;
     }
+    info.is_perfectly_nested = is_perfectly_nested;
     info.is_elementwise = is_elementwise && is_perfectly_nested & is_perfectly_parallel;
     info.has_side_effects = has_side_effects;
     if (map_stack_member) {
@@ -622,6 +621,15 @@ void LoopAnalysis::removed_loop(structured_control_flow::ControlFlowNode* existi
     }
 
     reindex_loop_nest_idx();
+}
+
+void LoopAnalysis::
+    added_local_contents(structured_control_flow::ControlFlowNode* loop, bool side_effects, bool non_perfectly_nested) {
+    auto& state = loop_infos_.at(loop);
+    state.local.contains_side_effects = side_effects;
+    state.local.contains_non_perfectly_nested = non_perfectly_nested;
+
+    propagate_changed_nest_info(loops_.begin() + state.local.loop_id);
 }
 
 void loop_info_local_to_json(nlohmann::json& j, const LocalLoopInfo& info) {

@@ -59,6 +59,12 @@ struct RegionArgument : public DataRwFlags {
     ~RegionArgument() = default;
 
     RegionArgument& operator=(const RegionArgument& other) = default;
+
+    void merge(RegionArgument& other) {
+        DataRwFlags::merge(other);
+        is_scalar |= other.is_scalar;
+        is_ptr |= other.is_ptr;
+    }
 };
 
 class ArgumentsAnalysis : public Analysis {

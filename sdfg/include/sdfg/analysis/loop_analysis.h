@@ -263,6 +263,15 @@ public:
     );
 
     void removed_loop(structured_control_flow::ControlFlowNode* existing_loop);
+
+    /**
+     *
+     * @param loop the loop to modify
+     * @param side_effects elements that have sideffects were added to the body of this loop (and not its children)
+     * @param non_perfectly_nested elements other than a loop were added to the body of this loop (block, another
+     * sequence etc.)
+     */
+    void added_local_contents(structured_control_flow::ControlFlowNode* loop, bool side_effects, bool non_perfectly_nested);
 };
 
 } // namespace analysis
