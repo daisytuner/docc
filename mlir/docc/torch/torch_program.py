@@ -530,6 +530,20 @@ def _docc_dynamo_compiler(gm, example_inputs, backend_options):
     """Dynamic Compiler based on TorchProgram (inference only)."""
     import torch
 
+    # Resolve SymInt/SymFloat values that dynamo passes as graph inputs when a
+    # model (e.g. SegFormer) unpacks tensor shapes and forwards them as explicit
+    # integer arguments to submodules.  torch.export.export cannot handle
+    # torch.SymInt; converting to concrete Python ints/floats is safe here
+    # because these values are always backed by a concrete shape at this point.
+    def _resolve(x):
+        if isinstance(x, torch.SymInt):
+            return int(x)
+        if isinstance(x, torch.SymFloat):
+            return float(x)
+        return x
+
+    example_inputs = [_resolve(inp) for inp in example_inputs]
+
     if len(example_inputs) == 1:
         example_input = example_inputs[0]
     else:
@@ -559,6 +573,15 @@ def _docc_aot_compiler_wrapper(target: str, category: str, remote_tuning: bool):
         from functorch.compile import make_boxed_func
 
         import torch
+
+        def _resolve(x):
+            if isinstance(x, torch.SymInt):
+                return int(x)
+            if isinstance(x, torch.SymFloat):
+                return float(x)
+            return x
+
+        example_inputs = [_resolve(inp) for inp in example_inputs]
 
         if len(example_inputs) == 1:
             example_input = example_inputs[0]
