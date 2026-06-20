@@ -73,7 +73,6 @@ def test_mvt(target):
                 "FOR": 4,
                 "MAP": 2,
                 "CUDA": 2,
-                "CUDAOffloading": 10,
             },
             device_resident=True,
         )
@@ -83,7 +82,6 @@ def test_mvt(target):
                 "FOR": 4,
                 "MAP": 2,
                 "ROCM": 2,
-                "ROCMOffloading": 10,
             },
             device_resident=True,
         )

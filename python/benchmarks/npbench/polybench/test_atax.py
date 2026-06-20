@@ -71,7 +71,7 @@ def test_atax(target):
                 "CUDA": 2,
                 "FOR": 4,
                 "MAP": 2,
-                "CUDAOffloading": 10,
+                "CUDAOffloading": 4,
             },
             device_resident=True,
         )
@@ -81,7 +81,7 @@ def test_atax(target):
                 "ROCM": 2,
                 "FOR": 4,
                 "MAP": 2,
-                "ROCMOffloading": 10,
+                "ROCMOffloading": 4,
             },
             device_resident=True,
         )

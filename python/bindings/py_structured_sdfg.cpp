@@ -435,7 +435,9 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
     sdfg::passes::DeviceResidentArgPromotionPass promotion_pass(is_rocm);
-    return promotion_pass.run(builder, analysis_manager);
+    bool changed = promotion_pass.run(builder, analysis_manager);
+
+    return changed;
 }
 
 struct SnippetMetadata {

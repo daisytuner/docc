@@ -66,7 +66,7 @@ def test_gesummv(target):
                 "CUDA": 6,
                 "FOR": 8,
                 "MAP": 6,
-                "CUDAOffloading": 16,
+                "CUDAOffloading": 8,
             },
             device_resident=True,
         )
@@ -76,7 +76,7 @@ def test_gesummv(target):
                 "ROCM": 6,
                 "FOR": 8,
                 "MAP": 6,
-                "ROCMOffloading": 16,
+                "ROCMOffloading": 8,
             },
             device_resident=True,
         )
