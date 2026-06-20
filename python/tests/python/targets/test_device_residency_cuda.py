@@ -1,32 +1,4 @@
-"""Device-resident argument promotion: full behavioural matrix (numpy frontend).
-
-The promotion pass flips every pointer argument to device-resident storage when
-the whole program keeps its data on device, i.e. when every pointer argument is
-only ever touched by the offloading boundary nodes (H2D/D2H). When that holds the
-compiled artifact expects device pointers and avoids host<->device copies at the
-boundary.
-
-The resulting :class:`CompiledSDFG` dispatches on the *call mode* (the kind of
-array passed at call time) combined with whether the artifact is device-resident:
-
-    call mode     | non-device-resident       | device-resident
-    --------------|---------------------------|------------------------------
-    NumPyCPU      | host execution            | host->device copy + warning
-    NumPyGPU/cupy | TypeError (rejected)      | zero-copy device execution
-
-Mixing array kinds in a single call is rejected. When a GPU target falls back to
-host execution because promotion did not apply, a one-time performance warning is
-emitted instead.
-
-Promotion succeeds for a fully data-parallel kernel (all loops are offloaded) and
-fails when a pointer argument is used by host code, which we trigger with a
-sequential loop carrying a true dependence (cannot be offloaded).
-
-These tests cover the promotion decision, every valid (artifact, call-mode)
-combination and its numerical result, the rejected combinations (mixed kinds,
-device arrays on a host artifact), and warning emission (and absence) for each
-path. All tests require a CUDA device (cupy) and are marked accordingly.
-"""
+"""Device-resident argument promotion (cuda)."""
 
 from contextlib import contextmanager
 import warnings

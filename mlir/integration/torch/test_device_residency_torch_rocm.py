@@ -1,29 +1,4 @@
-"""Device-resident promotion: behavioural matrix for the torch frontend.
-
-When a model lowers to a program whose pointer arguments are only touched by the
-offloading boundary nodes, the device-resident promotion pass keeps the data on
-device (``device_resident is True``). This holds both for a fully data-parallel
-elementwise model and for a cuBLAS gemm: the gemm's host<->device transfers are
-extracted into explicit offloading nodes (so its operands become boundary-only
-and the arguments stay device-resident).
-
-The resulting program dispatches on the kind of tensor passed at call time:
-
-  * CUDA tensors -> passed straight through (zero-copy), no warning,
-  * CPU tensors  -> copied to the device with a one-time performance warning.
-
-These tests cover the promotion decision and, for each device-resident model,
-both call modes (CUDA pass-through without a warning, and CPU fallback with the
-host-to-device performance warning), checking results numerically.
-
-The host-resident (``device_resident is False``) negative cases -- host fallback
-and rejecting device tensors on a host artifact -- are covered by the numpy
-``test_device_residency_cupy`` tests; torch ops that lower to a sequential host
-program (e.g. ``cumsum`` -> ``tm_tensor.scan``) are not currently supported, so
-no host-resident torch model is available here.
-
-All tests require a CUDA device and are marked accordingly.
-"""
+"""Device-resident promotion (rocm)"""
 
 from contextlib import contextmanager
 import warnings
@@ -58,7 +33,7 @@ def _no_perf_warning():
         yield
 
 
-def _compile_elementwise(target="cuda"):
+def _compile_elementwise(target="rocm"):
     """Compile the elementwise model and return (program, x, y)."""
     x = torch.randn(1024)
     y = torch.randn(1024)
@@ -67,7 +42,7 @@ def _compile_elementwise(target="cuda"):
     return program, x, y
 
 
-def _compile_matmul(target="cuda"):
+def _compile_matmul(target="rocm"):
     """Compile the gemm model and return (program, x, weight)."""
     x = torch.randn(32, 32)
     weight = torch.randn(32, 16)
@@ -81,20 +56,20 @@ def _compile_matmul(target="cuda"):
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.cuda()
+@pytest.mark.rocm()
 def test_elementwise_promoted_device_resident():
-    program, *_ = _compile_elementwise("cuda")
+    program, *_ = _compile_elementwise("rocm")
     assert program._compiled.device_resident is True
-    assert program._compiled.device_backend == "cuda"
+    assert program._compiled.device_backend == "rocm"
 
 
-@pytest.mark.cuda()
+@pytest.mark.rocm()
 def test_matmul_promoted_device_resident():
     # The cuBLAS gemm's transfers are extracted into offloading nodes, so the
     # arguments are boundary-only and stay device-resident.
-    program, *_ = _compile_matmul("cuda")
+    program, *_ = _compile_matmul("rocm")
     assert program._compiled.device_resident is True
-    assert program._compiled.device_backend == "cuda"
+    assert program._compiled.device_backend == "rocm"
 
 
 # --------------------------------------------------------------------------- #
@@ -102,40 +77,40 @@ def test_matmul_promoted_device_resident():
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.cuda()
+@pytest.mark.rocm()
 def test_elementwise_with_cuda_tensors():
     """CUDA tensors pass straight through (zero-copy), no warning, device out."""
-    program, x, y = _compile_elementwise("cuda")
+    program, x, y = _compile_elementwise("rocm")
     with _no_perf_warning(), torch.no_grad():
         res = program(x.cuda(), y.cuda())
     assert res.is_cuda
     torch.testing.assert_close(res.cpu(), x + y, rtol=1e-5, atol=1e-5)
 
 
-@pytest.mark.cuda()
+@pytest.mark.rocm()
 def test_elementwise_with_cpu_tensors_warns():
     """CPU tensors are copied to the device with a host-to-device perf warning."""
-    program, x, y = _compile_elementwise("cuda")
+    program, x, y = _compile_elementwise("rocm")
     with pytest.warns(DoccPerformanceWarning, match="passed from host memory"):
         with torch.no_grad():
             res = program(x, y)
     torch.testing.assert_close(res.cpu(), x + y, rtol=1e-5, atol=1e-5)
 
 
-@pytest.mark.cuda()
+@pytest.mark.rocm()
 def test_matmul_with_cuda_tensors():
     """CUDA tensors pass straight through (zero-copy), no warning, device out."""
-    program, x, weight = _compile_matmul("cuda")
+    program, x, weight = _compile_matmul("rocm")
     with _no_perf_warning(), torch.no_grad():
         res = program(x.cuda())
     assert res.is_cuda
     torch.testing.assert_close(res.cpu(), x @ weight, rtol=1e-3, atol=1e-4)
 
 
-@pytest.mark.cuda()
+@pytest.mark.rocm()
 def test_matmul_with_cpu_tensors_warns():
     """CPU tensors are copied to the device with a host-to-device perf warning."""
-    program, x, weight = _compile_matmul("cuda")
+    program, x, weight = _compile_matmul("rocm")
     with pytest.warns(DoccPerformanceWarning, match="passed from host memory"):
         with torch.no_grad():
             res = program(x)
