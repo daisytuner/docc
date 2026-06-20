@@ -23,17 +23,29 @@ namespace passes {
  * conservative: if any argument is touched by host code, nothing is promoted and
  * the program keeps its original (all-host) behavior.
  */
-class DeviceResidentArgPromotionPass : public Pass {
+class DeviceResidentPromotionPass : public Pass {
 private:
     bool is_rocm_;
 
+    /// Whether the last run actually promoted pointer arguments to device storage.
+    /// This drives the program's device-residency reporting and is *independent*
+    /// of whether the pass changed the SDFG: eliminating purely-internal transient
+    /// host bounces makes `run_pass` return true (something changed) but must not,
+    /// on its own, flip the program to "device resident".
+    bool arguments_promoted_ = false;
+
 public:
-    explicit DeviceResidentArgPromotionPass(bool is_rocm);
-    ~DeviceResidentArgPromotionPass() override = default;
+    explicit DeviceResidentPromotionPass(bool is_rocm);
+    ~DeviceResidentPromotionPass() override = default;
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
-    std::string name() override { return "DeviceResidentArgPromotionPass"; }
+    /// True iff the most recent `run_pass` promoted pointer arguments to device
+    /// storage. Use this (not the `run_pass` return value) to decide whether the
+    /// program runs with device-resident arguments.
+    bool arguments_promoted() const { return arguments_promoted_; }
+
+    std::string name() override { return "DeviceResidentPromotionPass"; }
 };
 
 } // namespace passes

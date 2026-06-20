@@ -27,7 +27,7 @@
 #include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
-#include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
+#include <sdfg/passes/offloading/device_resident_promotion_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/scheduler/cuda_scheduler.h>
@@ -434,10 +434,14 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
-    sdfg::passes::DeviceResidentArgPromotionPass promotion_pass(is_rocm);
-    bool changed = promotion_pass.run(builder, analysis_manager);
+    sdfg::passes::DeviceResidentPromotionPass promotion_pass(is_rocm);
+    promotion_pass.run(builder, analysis_manager);
 
-    return changed;
+    // The program is "device resident" only when pointer *arguments* were promoted
+    // to device storage. Transient host-bounce elimination also mutates the SDFG
+    // (and makes the pass report a change) but does not move the host/device
+    // boundary, so it must not by itself flip device residency.
+    return promotion_pass.arguments_promoted();
 }
 
 struct SnippetMetadata {
