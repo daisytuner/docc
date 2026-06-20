@@ -2,15 +2,17 @@
 """
 Run every SegFormer benchmark configuration and print an overview.
 
-Each variant defined in ``segformer.BENCHMARKS`` is executed once via the
-standard benchmark harness, and the runtime of the final run is recorded.
+Each variant defined in ``segformer.BENCHMARKS`` is executed via the standard
+benchmark harness for every requested batch size, and the average runtime
+(excluding the warmup run) is recorded.
 
 Usage (arguments mirror the original ``segformer.py`` invocation):
 
     python -m benchmarks.torch.model_zoo.segformer_run_all \
-        --batch-size 1 --device docc --target cuda --n_runs 10
+        --batch-size 1 4 16 --device docc --target cuda --n_runs 10
 
-The script prints a table with the final runtime per variant.
+The script prints a table with the average runtime per variant, one column
+per batch size.
 """
 
 import argparse
@@ -66,6 +68,7 @@ def run_variant(
         "--n_runs",
         str(n_runs),
     ]
+    print(cmd, flush=True)
 
     try:
         result = subprocess.run(
@@ -94,7 +97,7 @@ def run_variant(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run all SegFormer benchmarks")
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, nargs="+", default=[1])
     parser.add_argument(
         "--device",
         choices=["cpu", "cuda", "rocm", "docc"],
@@ -135,35 +138,48 @@ def main() -> None:
     if args.device == "docc":
         backend_label = f"docc_{args.target}"
 
+    batch_sizes = args.batch_size
     print(
-        f"SegFormer benchmark overview  |  batch_size={args.batch_size}  "
+        f"SegFormer benchmark overview  |  batch_sizes={batch_sizes}  "
         f"backend={backend_label}  n_runs={args.n_runs}",
         flush=True,
     )
 
     name_width = max(len("variant"), *(len(v) for v in variants))
-    header = f"{'variant':<{name_width}s}  {'avg runtime':>16s}"
+    col_labels = [f"bs={bs}" for bs in batch_sizes]
+    col_width = max(16, *(len(c) for c in col_labels))
+    header = f"{'variant':<{name_width}s}"
+    for label in col_labels:
+        header += f"  {label:>{col_width}s}"
     print(header)
     print("-" * len(header))
 
-    results: dict[str, float | None] = {}
+    results: dict[str, dict[int, float | None]] = {}
+    succeeded = 0
+    total = 0
     for variant in variants:
-        sys.stdout.flush()
-        t = run_variant(
-            variant,
-            args.batch_size,
-            args.device,
-            args.target,
-            args.n_runs,
-            args.timeout,
-        )
-        results[variant] = t
-        cell = f"{t:.6f}s" if t is not None else "FAIL"
-        print(f"{variant:<{name_width}s}  {cell:>16s}", flush=True)
+        row = f"{variant:<{name_width}s}"
+        results[variant] = {}
+        for bs in batch_sizes:
+            sys.stdout.flush()
+            t = run_variant(
+                variant,
+                bs,
+                args.device,
+                args.target,
+                args.n_runs,
+                args.timeout,
+            )
+            results[variant][bs] = t
+            total += 1
+            if t is not None:
+                succeeded += 1
+            cell = f"{t:.6f}s" if t is not None else "FAIL"
+            row += f"  {cell:>{col_width}s}"
+        print(row, flush=True)
 
-    succeeded = sum(1 for t in results.values() if t is not None)
     print("-" * len(header))
-    print(f"{succeeded}/{len(variants)} variants completed", flush=True)
+    print(f"{succeeded}/{total} runs completed", flush=True)
 
 
 if __name__ == "__main__":
