@@ -10,13 +10,13 @@ import docc.torch
 
 
 def _prepare_input(model_input, device):
-    """Move input(s) to the given device."""
-    if isinstance(model_input, tuple):
-        return tuple(
-            x.to(device) if isinstance(x, torch.Tensor) else x for x in model_input
-        )
+    """Move input(s) to the given device, recursing into nested tuples/lists."""
     if isinstance(model_input, torch.Tensor):
         return model_input.to(device)
+    if isinstance(model_input, tuple):
+        return tuple(_prepare_input(x, device) for x in model_input)
+    if isinstance(model_input, list):
+        return [_prepare_input(x, device) for x in model_input]
     return model_input
 
 

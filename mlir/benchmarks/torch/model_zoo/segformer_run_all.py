@@ -34,7 +34,7 @@ def _load_variants() -> list[str]:
         sys.path.insert(0, MLIR_DIR)
     from benchmarks.torch.model_zoo.segformer import BENCHMARKS
 
-    return [v for v in BENCHMARKS.keys() if v not in ("default", "all")]
+    return [v for v in BENCHMARKS.keys() if v not in ("default")]
 
 
 def _parse_times(output: str) -> list[float]:
