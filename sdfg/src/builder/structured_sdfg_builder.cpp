@@ -1466,5 +1466,53 @@ void StructuredSDFGBuilder::merge_siblings(data_flow::AccessNode& source_node) {
     }
 }
 
+void StructuredSDFGBuilder::merge_sinks(structured_control_flow::Block& block) {
+    auto& graph = block.dataflow();
+
+    // Collect sink access nodes (modifying the graph during iteration is not safe)
+    std::vector<data_flow::AccessNode*> sink_access_nodes;
+    for (auto node : graph.sinks()) {
+        if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(node)) {
+            sink_access_nodes.push_back(access_node);
+        }
+    }
+
+    // Merge sink access nodes that refer to the same container
+    std::unordered_map<std::string, data_flow::AccessNode*> representatives;
+    for (auto* access_node : sink_access_nodes) {
+        auto it = representatives.find(access_node->data());
+        if (it == representatives.end()) {
+            representatives.insert({access_node->data(), access_node});
+            continue;
+        }
+
+        auto& rep = *it->second;
+
+        // Redirect all incoming memlets of this node onto the representative
+        std::unordered_set<data_flow::Memlet*> iedges;
+        for (auto& iedge : graph.in_edges(*access_node)) {
+            iedges.insert(&iedge);
+        }
+        for (auto* iedge : iedges) {
+            this->add_memlet(
+                block,
+                iedge->src(),
+                iedge->src_conn(),
+                rep,
+                iedge->dst_conn(),
+                iedge->subset(),
+                iedge->base_type(),
+                iedge->debug_info()
+            );
+            this->remove_memlet(block, *iedge);
+        }
+
+        rep.set_debug_info(DebugInfo::merge(rep.debug_info(), access_node->debug_info()));
+
+        // The node is now isolated and can be removed
+        this->remove_node(block, *access_node);
+    }
+}
+
 } // namespace builder
 } // namespace sdfg

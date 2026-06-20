@@ -68,7 +68,7 @@ bool CollapseToDepth::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // target_loops_ == 2
-    size_t outer_count = (depth + 1) / 2;
+    size_t outer_count = static_cast<size_t>(std::ceil((depth + 1) / 2.0));
     size_t inner_count = depth - outer_count;
 
     // Check inner half first
@@ -104,7 +104,7 @@ void CollapseToDepth::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         inner_loop_ = nullptr;
     } else {
         // target_loops_ == 2
-        size_t outer_count = (depth + 1) / 2;
+        size_t outer_count = static_cast<size_t>(std::ceil((depth + 1) / 2.0));
         size_t inner_count = depth - outer_count;
 
         // Collapse inner half first (so that the outer map chain stays valid)

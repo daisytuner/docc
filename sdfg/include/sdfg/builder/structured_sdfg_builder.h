@@ -551,6 +551,12 @@ public:
     int clear_ptr_borrow_edge(Block& block, const data_flow::Memlet& edge);
 
     void merge_siblings(data_flow::AccessNode& in_node);
+
+    /**
+     * Walks all sink nodes of a block's dataflow graph and merges access nodes that refer to the same
+     * container into a single sink access node, redirecting their incoming memlets.
+     */
+    void merge_sinks(structured_control_flow::Block& block);
 };
 
 } // namespace builder
