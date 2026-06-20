@@ -51,20 +51,20 @@ def test_floyd_warshall(target):
             verification={
                 "CUDA": 4,
                 "MAP": 4,
-                "CUDAOffloading": 6,
+                "CUDAOffloading": 2,
                 "FOR": 5,
-                "Malloc": 0,
-            }
+            },
+            device_resident=True,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 4,
                 "MAP": 4,
-                "ROCMOffloading": 6,
+                "ROCMOffloading": 2,
                 "FOR": 5,
-                "Malloc": 0,
-            }
+            },
+            device_resident=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

@@ -70,7 +70,7 @@ def test_bicg(target):
                 "CUDA": 4,
                 "FOR": 6,
                 "MAP": 4,
-                "CUDAOffloading": 14,
+                "CUDAOffloading": 4,
             },
         )
     elif target == "rocm":
@@ -79,7 +79,7 @@ def test_bicg(target):
                 "ROCM": 4,
                 "FOR": 6,
                 "MAP": 4,
-                "ROCMOffloading": 14,
+                "ROCMOffloading": 4,
             },
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

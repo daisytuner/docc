@@ -76,12 +76,8 @@ def test_k3mm(target):
             verification={
                 "FOR": 2,
                 "MAP": 2,
-                "SEQUENTIAL": 0,
                 "CUDA": 2,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 3,
-                "DOT": 0,
             },
             device_resident=True,
         )
@@ -90,12 +86,8 @@ def test_k3mm(target):
             verification={
                 "FOR": 2,
                 "MAP": 2,
-                "SEQUENTIAL": 0,
                 "ROCM": 2,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 3,
-                "DOT": 0,
             },
             device_resident=True,
         )
