@@ -187,18 +187,21 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
 
     sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;
     tensor_to_pointer_conversion_pass.run(builder_opt, analysis_manager);
+
+    // Workaround until built-in targets are supported by the above mechanism
+    sdfg::passes::DotExpansionPass dot_expansion_pass;
+    dot_expansion_pass.run(builder_opt, analysis_manager);
+    if (options.target == "cuda" || options.target == "rocm") {
+        // Expand GEMV / DOT nodes represented as GEMM
+        sdfg::passes::GemmExpansionPass gemm_expansion_pass;
+        gemm_expansion_pass.run(builder_opt, analysis_manager);
+    }
 }
 
 
 void PyStructuredSDFG::simplify() {
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
-
-    // Expand Dot nodes
-    sdfg::passes::DotExpansionPass dot_expansion_pass;
-    dot_expansion_pass.run(builder_opt, analysis_manager);
-    // sdfg::passes::GemmExpansionPass gemm_expansion_pass;
-    // gemm_expansion_pass.run(builder_opt, analysis_manager);
 
     // Optimization Pipelines
     sdfg::passes::Pipeline dataflow_simplification = sdfg::passes::Pipeline::dataflow_simplification();

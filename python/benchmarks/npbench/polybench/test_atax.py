@@ -68,24 +68,20 @@ def test_atax(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CUDA": 1,
-                "FOR": 1,
-                "MAP": 1,
-                "CUDAOffloading": 4,
-                "GEMM": 2,
-                "Malloc": 2,
-            }
+                "CUDA": 2,
+                "FOR": 4,
+                "MAP": 2,
+                "CUDAOffloading": 10,
+            },
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 1,
-                "FOR": 1,
-                "MAP": 1,
-                "ROCMOffloading": 4,
-                "GEMM": 2,
-                "Malloc": 2,
-            }
+                "ROCM": 2,
+                "FOR": 4,
+                "MAP": 2,
+                "ROCMOffloading": 10,
+            },
         )
     run_pytest(initialize, kernel, PARAMETERS, target=target, verifier=verifier)
 

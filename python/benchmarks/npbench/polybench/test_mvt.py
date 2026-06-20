@@ -70,28 +70,20 @@ def test_mvt(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 2,
-                "DOT": 0,
-            }
+                "FOR": 4,
+                "MAP": 2,
+                "CUDA": 2,
+                "CUDAOffloading": 10,
+            },
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "ROCM": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 2,
-                "DOT": 0,
-            }
+                "FOR": 4,
+                "MAP": 2,
+                "ROCM": 2,
+                "ROCMOffloading": 10,
+            },
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
