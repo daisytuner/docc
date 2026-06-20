@@ -79,6 +79,18 @@ public:
     void schedule(const docc::target::TargetOptions& options);
 
     /**
+     * Run the device-resident argument promotion pass.
+     *
+     * Must be called after scheduling (offloading). If every pointer argument is only used by
+     * boundary offloading nodes, all pointer arguments are flipped to device-resident storage so
+     * that the generated code keeps the data on device (emitting device-to-device transfers).
+     *
+     * @param is_rocm select the ROCm (AMD) backend storage instead of CUDA (NVIDIA)
+     * @return true if the SDFG was promoted to device residency, false otherwise
+     */
+    bool promote_device_residency(bool is_rocm);
+
+    /**
      * Build the shared library containing the SDFG
      * @param output_folder will contain src and binary files
      * @param target

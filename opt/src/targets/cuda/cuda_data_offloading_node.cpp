@@ -10,6 +10,7 @@
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
 #include "sdfg/codegen/language_extension.h"
 #include "sdfg/codegen/utils.h"
+#include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/data_flow_node.h"
 #include "sdfg/data_flow/library_node.h"
@@ -141,6 +142,22 @@ void CUDADataOffloadingNodeDispatcher::dispatch_code_with_edges(
 
     out.stream << "cudaError_t err;" << std::endl;
 
+    // Derive the memcpy kind from the storage of the host endpoint. When the
+    // function argument has been promoted to device-resident storage (see
+    // DeviceResidentArgPromotion), the "host" side is actually on the device and
+    // the transfer becomes a device-to-device copy. The topology (H2D/D2H role)
+    // is unchanged; only the emitted cudaMemcpy kind differs.
+    bool host_is_device = false;
+    {
+        int host_idx = offloading_node.host_ptr_input_idx();
+        if (host_idx >= 0 && host_idx < static_cast<int>(inputs.size())) {
+            const auto& src_node = inputs.at(host_idx).edge.src();
+            if (auto* access = dynamic_cast<const data_flow::AccessNode*>(&src_node)) {
+                host_is_device = this->function_.type(access->data()).storage_type().is_device();
+            }
+        }
+    }
+
     std::string dev_ptr;
     if (offloading_node.is_alloc()) {
         auto& ptr = outputs.at(0);
@@ -155,13 +172,13 @@ void CUDADataOffloadingNodeDispatcher::dispatch_code_with_edges(
 
     if (offloading_node.is_h2d()) {
         out.stream << "err = cudaMemcpy(" << dev_ptr << ", " << inputs.at(offloading_node.host_ptr_input_idx()).expr
-                   << ", " << this->language_extension_.expression(offloading_node.size())
-                   << ", cudaMemcpyHostToDevice);" << std::endl;
+                   << ", " << this->language_extension_.expression(offloading_node.size()) << ", "
+                   << (host_is_device ? "cudaMemcpyDeviceToDevice" : "cudaMemcpyHostToDevice") << ");" << std::endl;
         cuda_error_checking(out.stream, this->language_extension_, "err");
     } else if (offloading_node.is_d2h()) {
         out.stream << "err = cudaMemcpy(" << inputs.at(offloading_node.host_ptr_input_idx()).expr << ", " << dev_ptr
-                   << ", " << this->language_extension_.expression(offloading_node.size())
-                   << ", cudaMemcpyDeviceToHost);" << std::endl;
+                   << ", " << this->language_extension_.expression(offloading_node.size()) << ", "
+                   << (host_is_device ? "cudaMemcpyDeviceToDevice" : "cudaMemcpyDeviceToHost") << ");" << std::endl;
         cuda_error_checking(out.stream, this->language_extension_, "err");
     }
 

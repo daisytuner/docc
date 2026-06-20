@@ -122,7 +122,8 @@ class PythonProgram(DoccProgram):
         self._last_structure_member_info = {}
 
     def __call__(self, *args: Any) -> Any:
-        # JIT compile and run
+        # JIT compile and run. CompiledSDFG validates the call mode (numpy /
+        # cupy / torch) and rejects GPU arrays on non-device-resident artifacts.
         compiled = self.compile(*args)
         res = compiled(*args)
 
@@ -258,6 +259,9 @@ class PythonProgram(DoccProgram):
             out_args,
             out_shapes,
             out_strides,
+            device_resident=self._device_resident,
+            device_backend=self._device_backend,
+            target=self.target,
         )
 
         # Cache if using default output folder
