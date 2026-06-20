@@ -27,6 +27,7 @@
 #include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
+#include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/scheduler/cuda_scheduler.h>
@@ -424,6 +425,14 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         sdfg::passes::DeadCFGElimination dead_cfg_elimination;
         dead_cfg_elimination.run(builder, analysis_manager);
     }
+}
+
+bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
+    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
+    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
+
+    sdfg::passes::DeviceResidentArgPromotionPass promotion_pass(is_rocm);
+    return promotion_pass.run(builder, analysis_manager);
 }
 
 struct SnippetMetadata {

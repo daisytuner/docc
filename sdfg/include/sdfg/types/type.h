@@ -162,6 +162,9 @@ public:
     /// @brief Checks if this storage is CPU heap storage
     bool is_cpu_heap() const { return value_ == "CPU_Heap"; }
 
+    /// @brief Checks if this storage resides on a device (i.e. not CPU stack/heap)
+    bool is_device() const { return !is_cpu_stack() && !is_cpu_heap(); }
+
     /// @brief Checks if this storage is NVIDIA generic memory
     bool is_nv_generic() const { return value_ == "NV_Generic"; }
 

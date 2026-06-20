@@ -431,6 +431,10 @@ jobs:
           pip install numpy scipy ml_dtypes transformers
           pip install -r mlir/requirements.txt
 
+          pip uninstall -y torch torchvision
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+          pip install cupy-cuda12x
+
       - name: Build
         run: |
           mkdir build
@@ -508,6 +512,10 @@ jobs:
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
           pip install numpy scipy ml_dtypes transformers
           pip install -r mlir/requirements.txt
+
+          # pip uninstall -y torch torchvision
+          # pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm7.2
+          # pip install cupy-rocm-7-0
 
       - name: Build
         run: |

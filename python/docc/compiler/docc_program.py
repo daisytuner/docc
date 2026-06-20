@@ -61,6 +61,8 @@ class DoccProgram(ABC):
         self.category = category
         self.remote_tuning = remote_tuning
         self.last_sdfg: Optional[StructuredSDFG] = None
+        self._device_resident: bool = False
+        self._device_backend: Optional[str] = None
         self.cache: dict = {}
         debug_flags = _parse_docc_debug()
         self.debug_dump: bool = _is_debug_dump(debug_flags)
@@ -200,6 +202,16 @@ class DoccProgram(ABC):
 
         if self.debug_dump:
             sdfg.dump(output_folder, "py5.post_sched", dump_dot=True)
+
+        # Promote pointer arguments to device residency when the whole program keeps
+        # data on device. Communicated explicitly via the pass return value (bool),
+        # not through SDFG metadata.
+        self._device_resident = False
+        self._device_backend = None
+        if self.target in ("cuda", "rocm"):
+            if sdfg.promote_device_residency(self.target == "rocm"):
+                self._device_resident = True
+                self._device_backend = self.target
 
         self.last_sdfg = sdfg
 

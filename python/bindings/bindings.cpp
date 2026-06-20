@@ -248,6 +248,12 @@ PYBIND11_MODULE(_sdfg, m) {
             "Schedule the SDFG"
         )
         .def(
+            "promote_device_residency",
+            &PyStructuredSDFG::promote_device_residency,
+            py::arg("is_rocm"),
+            "Run the device-resident argument promotion pass; returns true if the SDFG was promoted"
+        )
+        .def(
             "_compile",
             &PyStructuredSDFG::compile,
             py::arg("output_folder"),
