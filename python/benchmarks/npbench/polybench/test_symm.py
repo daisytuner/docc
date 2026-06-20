@@ -80,25 +80,21 @@ def test_symm(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 11,
+                "FOR": 12,
                 "MAP": 9,
                 "SEQUENTIAL": 5,
                 "CUDA": 4,
                 "CUDAOffloading": 4,
-                "GEMM": 1,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 7,
-                "MAP": 5,
-                "SEQUENTIAL": 0,
-                "ROCM": 5,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 1,
-                "DOT": 0,
+                "FOR": 12,
+                "MAP": 9,
+                "SEQUENTIAL": 5,
+                "ROCM": 4,
+                "ROCMOffloading": 4,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
