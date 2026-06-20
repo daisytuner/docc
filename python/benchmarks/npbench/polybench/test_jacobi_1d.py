@@ -37,11 +37,13 @@ def test_jacobi_1d(target):
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={"CUDA": 2, "MAP": 2, "CUDAOffloading": 8, "FOR": 3}
+            verification={"CUDA": 2, "MAP": 2, "CUDAOffloading": 8, "FOR": 3},
+            device_resident=True,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={"ROCM": 2, "MAP": 2, "ROCMOffloading": 8, "FOR": 3}
+            verification={"ROCM": 2, "MAP": 2, "ROCMOffloading": 8, "FOR": 3},
+            device_resident=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

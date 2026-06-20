@@ -82,7 +82,8 @@ def test_k3mm(target):
                 "VECTORIZE": 0,
                 "GEMM": 3,
                 "DOT": 0,
-            }
+            },
+            device_resident=True,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
@@ -95,7 +96,8 @@ def test_k3mm(target):
                 "VECTORIZE": 0,
                 "GEMM": 3,
                 "DOT": 0,
-            }
+            },
+            device_resident=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
