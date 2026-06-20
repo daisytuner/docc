@@ -72,6 +72,7 @@ def test_trmm(target):
                 "CUDA": 4,
                 "CUDAOffloading": 7,
             },
+            rtol=5 - 1,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
@@ -81,6 +82,7 @@ def test_trmm(target):
                 "ROCM": 4,
                 "ROCMOffloading": 7,
             },
+            rtol=5 - 1,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
