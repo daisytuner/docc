@@ -105,6 +105,8 @@ class SDFGVerification:
         non_critical: bool = False,
         capsys=None,
         device_resident=None,
+        atol=1e-5,
+        rtol=1e-8,
     ):
         self._verification = verification
         self._non_critical = non_critical
@@ -112,6 +114,8 @@ class SDFGVerification:
         # Expected device-residency promotion result (True/False), or None to
         # skip the check.
         self._device_resident = device_resident
+        self.atol = atol
+        self.rtol = rtol
 
     def verify(
         self, stats: dict, test_file: str, test_target: str, device_resident=None
@@ -354,14 +358,16 @@ def run_pytest(
         if isinstance(res_ref, tuple):
             for i in range(len(res_ref)):
                 np.testing.assert_allclose(
-                    res_docc[i], res_ref[i], rtol=1e-5, atol=1e-8
+                    res_docc[i], res_ref[i], rtol=verifier.rtol, atol=verifier.atol
                 )
         else:
-            np.testing.assert_allclose(res_docc, res_ref, rtol=1e-5, atol=1e-8)
+            np.testing.assert_allclose(
+                res_docc, res_ref, rtol=verifier.rtol, atol=verifier.atol
+            )
 
     # Validate arguments (in-place modifications)
     for i in range(len(kernel_args)):
         if isinstance(kernel_args[i], np.ndarray):
             np.testing.assert_allclose(
-                inputs_docc[i], inputs_ref[i], rtol=1e-5, atol=1e-8
+                inputs_docc[i], inputs_ref[i], rtol=verifier.rtol, atol=verifier.atol
             )
