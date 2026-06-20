@@ -68,7 +68,6 @@ def run_variant(
         "--n_runs",
         str(n_runs),
     ]
-    print(cmd, flush=True)
 
     try:
         result = subprocess.run(
