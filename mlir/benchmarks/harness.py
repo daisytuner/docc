@@ -73,7 +73,7 @@ def run_benchmark(setup_func, name, batch_size=32):
 
     model, model_input = setup_func(batch_size)
     model = model.eval()
-    program = torch.compile(model, **compile_kwargs)
+    program = torch.compile(model, fullgraph=True, **compile_kwargs)
 
     for i in range(args.n_runs):
         model.to("cpu")
