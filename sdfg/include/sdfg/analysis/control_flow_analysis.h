@@ -27,6 +27,11 @@ private:
 
     std::pair<graph::Vertex, graph::Vertex> traverse(structured_control_flow::ControlFlowNode& current);
 
+    // Walk a boost (post)dominator tree from `start`, skipping synthetic vertices (IfElse merge points and the
+    // post-dominance super-terminal) that map to no real control-flow node, and return the first real ancestor.
+    structured_control_flow::ControlFlowNode*
+    resolve_real_ancestor(const std::unordered_map<graph::Vertex, graph::Vertex>& tree, graph::Vertex start) const;
+
 public:
     ControlFlowAnalysis(StructuredSDFG& sdfg);
 

@@ -91,7 +91,14 @@ std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured
 
         last_loop_ = previous_loop_;
 
-        return {header_v, header_v};
+        // Model the loop-exit (condition false) as a fall-through from the header to a synthetic exit vertex. Without
+        // it a loop that is the last node in its scope is an exitless cycle whose body can never reach the CFG
+        // terminal, leaving every body node without a post-dominator.
+        auto exit_v = boost::add_vertex(graph_);
+        nodes_[exit_v] = nullptr;
+        boost::add_edge(header_v, exit_v, graph_);
+
+        return {header_v, exit_v};
     } else if (auto structured_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&current)) {
         auto header_v = boost::add_vertex(graph_);
         nodes_[header_v] = &current;
@@ -109,7 +116,14 @@ std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured
 
         last_loop_ = previous_loop_;
 
-        return {header_v, header_v};
+        // Model the loop-exit (condition false) as a fall-through from the header to a synthetic exit vertex. Without
+        // it a loop that is the last node in its scope is an exitless cycle whose body can never reach the CFG
+        // terminal, leaving every body node without a post-dominator.
+        auto exit_v = boost::add_vertex(graph_);
+        nodes_[exit_v] = nullptr;
+        boost::add_edge(header_v, exit_v, graph_);
+
+        return {header_v, exit_v};
     } else if (auto sequence_node = dynamic_cast<structured_control_flow::Sequence*>(&current)) {
         graph::Vertex seq_start = boost::graph_traits<graph::Graph>::null_vertex();
         graph::Vertex seq_end = boost::graph_traits<graph::Graph>::null_vertex();
@@ -153,17 +167,51 @@ void ControlFlowAnalysis::run(analysis::AnalysisManager& analysis_manager) {
 
     auto dom_tree = graph::dominator_tree(graph_, entry_vertex);
     for (const auto& [node, dom_node] : dom_tree) {
-        if (nodes_.find(node) != nodes_.end() && nodes_.find(dom_node) != nodes_.end()) {
-            dom_tree_[nodes_.at(node)] = nodes_.at(dom_node);
+        auto node_it = nodes_.find(node);
+        if (node_it == nodes_.end() || node_it->second == nullptr) {
+            continue; // only key real control-flow nodes
+        }
+        auto* real_dom = resolve_real_ancestor(dom_tree, dom_node);
+        if (real_dom != nullptr) {
+            dom_tree_[node_it->second] = real_dom;
         }
     }
 
     auto pdom_tree = graph::post_dominator_tree(graph_);
     for (const auto& [node, pdom_node] : pdom_tree) {
-        if (nodes_.find(node) != nodes_.end() && nodes_.find(pdom_node) != nodes_.end()) {
-            pdom_tree_[nodes_.at(node)] = nodes_.at(pdom_node);
+        auto node_it = nodes_.find(node);
+        if (node_it == nodes_.end() || node_it->second == nullptr) {
+            continue; // only key real control-flow nodes
+        }
+        auto* real_pdom = resolve_real_ancestor(pdom_tree, pdom_node);
+        if (real_pdom != nullptr) {
+            pdom_tree_[node_it->second] = real_pdom;
         }
     }
+};
+
+structured_control_flow::ControlFlowNode* ControlFlowAnalysis::
+    resolve_real_ancestor(const std::unordered_map<graph::Vertex, graph::Vertex>& tree, graph::Vertex start) const {
+    // The boost (post)dominator tree contains synthetic vertices that carry no real control-flow node: IfElse merge
+    // points (stored in nodes_ with a nullptr value) and the super-terminal added for post-dominance. A real node's
+    // immediate (post)dominator may be one of these synthetics, which previously left the tree pointing at a nullptr
+    // and silently truncated the dominates()/post_dominates() walk. Skip the synthetics and return the first real
+    // ancestor instead so the relation stays transitively walkable.
+    auto null_vertex = boost::graph_traits<graph::Graph>::null_vertex();
+    graph::Vertex cur = start;
+    std::unordered_set<graph::Vertex> seen;
+    while (cur != null_vertex && seen.insert(cur).second) {
+        auto it = nodes_.find(cur);
+        if (it != nodes_.end() && it->second != nullptr) {
+            return it->second;
+        }
+        auto next_it = tree.find(cur);
+        if (next_it == tree.end() || next_it->second == cur) {
+            break; // root maps to itself or has no parent
+        }
+        cur = next_it->second;
+    }
+    return nullptr;
 };
 
 std::unordered_set<structured_control_flow::ControlFlowNode*> ControlFlowAnalysis::exits() const {
