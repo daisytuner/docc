@@ -42,7 +42,10 @@ LogicalResult translateArithBinaryOp(SDFGTranslator& translator, Op* op) {
     if (is_sdfg_primitive(lhs.getType()) && is_sdfg_primitive(rhs.getType()) && is_sdfg_primitive(result.getType())) {
         auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
         auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
-        auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+        // Reuse the same access node when both operands alias (e.g. `arith.addf %x, %x`) to
+        // satisfy the SDFG rule against two distinct access nodes for the same data on a tasklet.
+        auto& rhs_access = (rhs_container == lhs_container) ? lhs_access
+                                                            : builder.add_access(block, rhs_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"}, deb_info);
         builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {}, deb_info);
@@ -67,7 +70,8 @@ LogicalResult translateArithBinaryOp(SDFGTranslator& translator, Op* op) {
         );
         auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
         auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
-        auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+        auto& rhs_access = (rhs_container == lhs_container) ? lhs_access
+                                                            : builder.add_access(block, rhs_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         std::vector<::sdfg::symbolic::Expression> shape;
         auto& libnode = builder.add_library_node<::sdfg::math::tensor::TaskletTensorNode>(
@@ -103,7 +107,8 @@ LogicalResult translateArithCMathBinaryOp(SDFGTranslator& translator, Op* op) {
 
     auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
     auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
-    auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+    auto& rhs_access = (rhs_container == lhs_container) ? lhs_access
+                                                        : builder.add_access(block, rhs_container, deb_info);
     auto& result_access = builder.add_access(block, result_container, deb_info);
     auto& libnode = builder.add_library_node<
         ::sdfg::math::cmath::CMathNode>(block, deb_info, function, lhs_container_type.primitive_type());
@@ -219,7 +224,8 @@ LogicalResult translateArithCmpFOp(SDFGTranslator& translator, arith::CmpFOp* cm
     }
 
     auto& lhs_access = builder.add_access(block, translator.get_or_create_container(lhs), deb_info);
-    auto& rhs_access = builder.add_access(block, translator.get_or_create_container(rhs), deb_info);
+    auto& rhs_access = (lhs == rhs) ? lhs_access
+                                    : builder.add_access(block, translator.get_or_create_container(rhs), deb_info);
     auto& result_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
     auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"}, deb_info);
     builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {}, deb_info);
@@ -279,7 +285,8 @@ LogicalResult translateArithCmpIOp(SDFGTranslator& translator, arith::CmpIOp* cm
     auto& builder = translator.builder();
     auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
     auto& lhs_access = builder.add_access(block, translator.get_or_create_container(lhs), deb_info);
-    auto& rhs_access = builder.add_access(block, translator.get_or_create_container(rhs), deb_info);
+    auto& rhs_access = (lhs == rhs) ? lhs_access
+                                    : builder.add_access(block, translator.get_or_create_container(rhs), deb_info);
     auto& result_access = builder.add_access(block, translator.get_or_create_container(result), deb_info);
     auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"}, deb_info);
     builder.add_computational_memlet(block, lhs_access, tasklet, "_in1", {}, deb_info);
