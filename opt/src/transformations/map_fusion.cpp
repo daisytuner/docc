@@ -672,19 +672,31 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     }
 
     // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
-    // ProducerIntoConsumer: both sides must be all-parallel. The producer is replicated at
-    // each consumer site — it must be reorderable. The consumer must also be all-parallel
-    // because a sequential (For) loop would re-execute the inlined producer on every
-    // iteration (e.g. init T=0 fused into For(k){T+=A[k]} re-initializes each k).
+    // ProducerIntoConsumer: the producer is replicated at each consumer site and must be
+    // reorderable, so it must be all-parallel. The consumer is normally required to be
+    // all-parallel too, because a sequential (For) loop would re-execute the inlined producer
+    // on every iteration (e.g. init T=0 fused into For(k){T+=A[k]} re-initializes each k).
+    //
+    // Reduction branch: we relax the consumer requirement when the consumer is a perfect nest
+    // (parallel outer band + inner sequential For, i.e. a reduction). A fully-parallel producer
+    // that is *streamed element-by-element* inside the reduction loop can still be inlined
+    // soundly (e.g. scale -> max: max(M, A[i,j,k]/d)). The element-streaming safety conditions
+    // are verified once the fusion candidates are known (see consumer_reduction_branch below):
+    //   (1) the fused container must not be written by the consumer (no loop-carried
+    //       accumulator), and
+    //   (2) its consumer read subset must depend on an inner sequential loop indvar, so the
+    //       inlined producer runs once per element rather than per init position.
+    // These keep init-into-reduction (T=0 followed by For(k){T+=...}) rejected.
     // ConsumerIntoProducer: only the consumer (inlined side) must be all-parallel.
+    bool consumer_reduction_branch = false;
     if (direction_ == FusionDirection::ProducerIntoConsumer) {
         if (!first_loop_info.is_perfectly_parallel) {
             return false;
         } else if (!second_loop_info.is_perfectly_parallel) {
-            if (second_loop_info.is_perfectly_nested) { // we can check if the innermost loop is non parallel, but the
-                                                        // outers are
+            if (!second_loop_info.is_perfectly_nested) {
+                return false;
             }
-            return false;
+            consumer_reduction_branch = true;
         }
     } else {
         if (!second_loop_info.is_perfectly_parallel) {
@@ -769,6 +781,13 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
         if (arg.is_input) {
             first_inputs.insert(name);
+        }
+    }
+
+    std::unordered_set<std::string> second_outputs;
+    for (const auto& [name, arg] : second_args) {
+        if (arg.is_output) {
+            second_outputs.insert(name);
         }
     }
 
@@ -982,6 +1001,44 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             candidate.index_mappings = std::move(mappings);
 
             fusion_candidates_.push_back(candidate);
+        }
+    }
+
+    // Reduction-branch safety: when inlining a parallel producer into a non-parallel
+    // (reduction) consumer, only allow containers that are streamed element-by-element
+    // inside the reduction loop. Reject (1) containers the consumer also writes (loop-carried
+    // accumulators) and (2) reads that do not depend on an inner sequential loop indvar (these
+    // are init/loop-invariant values that would be wrongly recomputed every reduction
+    // iteration). Together these keep init-into-reduction rejected.
+    if (consumer_reduction_branch) {
+        symbolic::SymbolSet sequential_indvars;
+        for (auto* loop : consumer_loops_) {
+            if (dynamic_cast<structured_control_flow::Map*>(loop) == nullptr) {
+                sequential_indvars.insert(loop->indvar());
+            }
+        }
+        if (sequential_indvars.empty()) {
+            return false;
+        }
+        for (const auto& candidate : fusion_candidates_) {
+            if (second_outputs.contains(candidate.container)) {
+                return false;
+            }
+            bool depends_on_sequential = false;
+            for (const auto& dim : candidate.consumer_subset) {
+                for (const auto& atom : symbolic::atoms(dim)) {
+                    if (sequential_indvars.count(atom)) {
+                        depends_on_sequential = true;
+                        break;
+                    }
+                }
+                if (depends_on_sequential) {
+                    break;
+                }
+            }
+            if (!depends_on_sequential) {
+                return false;
+            }
         }
     }
 
