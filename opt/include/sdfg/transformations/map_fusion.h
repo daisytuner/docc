@@ -33,6 +33,10 @@ class MapFusion : public Transformation {
     structured_control_flow::StructuredLoop& second_loop_;
     bool applied_ = false;
     bool require_consecutive_ = true; // Only fuse if maps are consecutive in the sequence
+    // When false, Case 2 (init-into-reduction hoisting) is disabled and such fusions are
+    // rejected. This lets the pipeline restrict hoisting to a single, final map-fusion run
+    // so that loop distribution and earlier fusion runs do not fight each other.
+    bool allow_init_hoist_ = true;
 
     enum class FusionDirection {
         None = 0,
@@ -55,6 +59,14 @@ class MapFusion : public Transformation {
 
     std::vector<structured_control_flow::StructuredLoop*> consumer_loops_;
     structured_control_flow::Sequence* consumer_body_ = nullptr;
+
+    // Case 2 (init-into-reduction): when true, the producer is hoisted to the
+    // reduction's outer parallel band (before the innermost sequential loop) and
+    // keeps writing the accumulator array, instead of being scalarized and inlined
+    // element-by-element inside the reduction loop (Case 1).
+    bool init_hoist_ = false;
+    // The outer parallel-band body that hosts the hoisted init (Case 2 only).
+    structured_control_flow::Sequence* hoist_body_ = nullptr;
 
     static std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> solve_subsets(
         const data_flow::Subset& producer_subset,
@@ -103,11 +115,13 @@ public:
      * @param first_map The first map (producer) to be fused
      * @param second_loop The second loop (consumer, can be Map or For) to be fused
      * @param require_consecutive Whether the maps must be consecutive in the sequence for fusion to be applied
+     * @param allow_init_hoist Whether Case 2 (init-into-reduction hoisting) may be applied
      */
     MapFusion(
         structured_control_flow::Map& first_map,
         structured_control_flow::StructuredLoop& second_loop,
-        bool require_consecutive = true
+        bool require_consecutive = true,
+        bool allow_init_hoist = true
     );
 
     /**

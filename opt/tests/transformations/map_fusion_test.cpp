@@ -548,83 +548,6 @@ TEST(MapFusionTest, TransformedAccessIndices) {
     EXPECT_TRUE(found_a_access);
 }
 
-TEST(MapFusionTest, MapAndForFusion) {
-    // Test fusion where first is a Map and second is a For loop
-    // Map 1: T[i] = A[i] + 1.0
-    // For 2: B[j] = T[j] * 2.0
-    // After fusion: B[j] = (A[j] + 1.0) * 2.0
-
-    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
-
-    auto& sdfg = builder.subject();
-    auto& root = sdfg.root();
-
-    // Add containers
-    types::Scalar float_desc(types::PrimitiveType::Float);
-    types::Array array_desc(float_desc, {symbolic::symbol("N")});
-
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
-    builder.add_container("N", sym_desc, true);
-    builder.add_container("i", sym_desc);
-    builder.add_container("j", sym_desc);
-
-    builder.add_container("A", array_desc, true);
-    builder.add_container("T", array_desc);
-    builder.add_container("B", array_desc, true);
-
-    // Define first map: T[i] = A[i] + 1.0
-    auto indvar1 = symbolic::symbol("i");
-    auto& map1 = builder.add_map(
-        root,
-        indvar1,
-        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
-        symbolic::integer(0),
-        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
-        structured_control_flow::ScheduleType_Sequential::create()
-    );
-    auto& body1 = map1.root();
-
-    auto& block1 = builder.add_block(body1);
-    auto& a_in = builder.add_access(block1, "A");
-    auto& one_node = builder.add_constant(block1, "1.0", float_desc);
-    auto& t_out = builder.add_access(block1, "T");
-    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block1, a_in, tasklet1, "_in1", {symbolic::symbol("i")}, array_desc);
-    builder.add_computational_memlet(block1, one_node, tasklet1, "_in2", {});
-    builder.add_computational_memlet(block1, tasklet1, "_out", t_out, {symbolic::symbol("i")}, array_desc);
-
-    // Define second loop as a For (not Map): B[j] = T[j] * 2.0
-    // For2Map would have promoted this to a Map in a real pipeline,
-    // but since we test the transformation directly, use a For to verify
-    // that MapFusion correctly rejects a non-parallel consumer.
-    auto indvar2 = symbolic::symbol("j");
-    auto& for2 = builder.add_for(
-        root,
-        indvar2,
-        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
-        symbolic::integer(0),
-        symbolic::add(symbolic::symbol("j"), symbolic::integer(1))
-    );
-    auto& body2 = for2.root();
-
-    auto& block2 = builder.add_block(body2);
-    auto& t_in = builder.add_access(block2, "T");
-    auto& two_node = builder.add_constant(block2, "2.0", float_desc);
-    auto& b_out = builder.add_access(block2, "B");
-    auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block2, t_in, tasklet2, "_in1", {symbolic::symbol("j")}, array_desc);
-    builder.add_computational_memlet(block2, two_node, tasklet2, "_in2", {});
-    builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
-
-    // Analyze and apply transformation
-    analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::MapFusion transformation(map1, for2);
-
-    // For consumer is not perfectly parallel — MapFusion should reject
-    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager))
-        << "For consumer should be rejected (not perfectly parallel)";
-}
-
 TEST(MapFusionTest, Domain_IdenticalDomain) {
     // Both maps have identical domain: 0:N:1
     // Map 1: T[i] = A[i] for i in 0:N:1
@@ -3735,13 +3658,15 @@ TEST(MapFusionTest, ScenarioC_BothReadWriteT) {
     EXPECT_TRUE(consumer_reads_tmp) << "Inlined consumer should read from _fused_tmp";
 }
 
-TEST(MapFusionTest, InitPlusReduction_Rejected) {
-    // Init map followed by reduction map with inner For loop must be rejected.
+TEST(MapFusionTest, InitIntoReduction_Hoisted) {
+    // Init map followed by reduction map with inner For loop: fused by HOISTING the init to
+    // the reduction's outer parallel band (Case 2), eliminating the separate init map.
     // Map(i, 0:N) { Map(j, 0:M) { T[i,j] = 0 } }
     // Map(i, 0:N) { Map(j, 0:M) { For(k, 0:K) { T[i,j] = T[i,j] + A[i,j,k] } } }
     //
-    // The consumer reads T inside a For loop (accumulation pattern).
-    // Fusing the init into the For would reset the accumulator every k iteration.
+    // The init writes the accumulator T at [i,j] (loop-invariant w.r.t. k), so it is placed
+    // once per (i,j) before For(k) rather than inlined inside the loop (which would reset the
+    // accumulator every k iteration).
 
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto& sdfg = builder.subject();
@@ -3841,7 +3766,211 @@ TEST(MapFusionTest, InitPlusReduction_Rejected) {
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1_outer, map2_outer);
 
-    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+    // Case 2 (init-into-reduction): the zero-init of the accumulator T is loop-invariant
+    // w.r.t. the reduction indvar k and T is the accumulator, so the init is hoisted to the
+    // reduction's outer parallel band (before For(k)), eliminating the separate init map.
+    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+
+    transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.fused");
+
+    // The init must land in the inner parallel-band body (Map(j2)) BEFORE the For(k) loop,
+    // writing the accumulator T (not scalarized), and the reduction loop must be preserved.
+    auto& band_body = map2_inner.root();
+    ASSERT_EQ(band_body.size(), 2u);
+
+    auto* hoisted_init = dynamic_cast<structured_control_flow::Block*>(&band_body.at(0).first);
+    ASSERT_NE(hoisted_init, nullptr);
+    bool writes_T = false;
+    bool reads_A = false;
+    for (auto& node : hoisted_init->dataflow().nodes()) {
+        auto* acc = dynamic_cast<data_flow::AccessNode*>(&node);
+        if (acc == nullptr) {
+            continue;
+        }
+        if (acc->data() == "T" && hoisted_init->dataflow().in_degree(*acc) > 0) {
+            writes_T = true;
+        }
+        if (acc->data() == "A") {
+            reads_A = true;
+        }
+    }
+    EXPECT_TRUE(writes_T); // the hoisted init writes the accumulator array directly
+    EXPECT_FALSE(reads_A); // it is the init, not the reduction body
+
+    auto* preserved = dynamic_cast<structured_control_flow::StructuredLoop*>(&band_body.at(1).first);
+    ASSERT_NE(preserved, nullptr);
+    EXPECT_EQ(dynamic_cast<structured_control_flow::Map*>(preserved), nullptr); // still a sequential For
+}
+
+TEST(MapFusionTest, ElementwiseIntoReduction_Fused) {
+    // A fully-parallel elementwise producer streamed element-by-element into a reduction
+    // consumer must fuse (e.g. softmax scale -> max). The producer writes a distinct full
+    // tensor S that the reduction reads at the inner loop index; nothing accumulates into S.
+    // Map(i, 0:N)  { Map(j, 0:M) { Map(k, 0:K) { S[i,j,k] = A[i,j,k] * c } } }
+    // Map(i2, 0:N) { Map(j2, 0:M) { For(k2, 0:K) { R[i2,j2] = R[i2,j2] <op> S[i2,j2,k2] } } }
+    //
+    // S is read at [i2,j2,k2] (depends on the inner For indvar k2) and is never written by
+    // the consumer, so inlining the scale into the reduction loop is sound and eliminates S.
+    // (The reduction tasklet op is irrelevant to fusion legality; fp_add stands in for max/sum.)
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Array array_2d(float_desc, symbolic::mul(symbolic::symbol("N"), symbolic::symbol("M")));
+    types::Array array_3d(
+        float_desc, symbolic::mul(symbolic::symbol("N"), symbolic::mul(symbolic::symbol("M"), symbolic::symbol("K")))
+    );
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("K", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+    builder.add_container("i2", sym_desc);
+    builder.add_container("j2", sym_desc);
+    builder.add_container("k2", sym_desc);
+    builder.add_container("A", array_3d, true);
+    builder.add_container("S", array_3d);
+    builder.add_container("R", array_2d);
+
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+
+    auto subset_3d = [&](const std::string& a, const std::string& b, const std::string& c) {
+        return data_flow::Subset{symbolic::add(
+            symbolic::symbol(c),
+            symbolic::
+                add(symbolic::mul(symbolic::symbol("K"), symbolic::symbol(b)),
+                    symbolic::mul(symbolic::symbol("K"), symbolic::mul(symbolic::symbol("M"), symbolic::symbol(a))))
+        )};
+    };
+    auto subset_2d = [&](const std::string& a, const std::string& b) {
+        return data_flow::Subset{
+            symbolic::add(symbolic::symbol(b), symbolic::mul(symbolic::symbol("M"), symbolic::symbol(a)))
+        };
+    };
+
+    // Producer: Map(i) { Map(j) { Map(k) { S[i,j,k] = A[i,j,k] * c } } }
+    auto& map1_outer = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map1_mid = builder.add_map(
+        map1_outer.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map1_inner = builder.add_map(
+        map1_mid.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::symbol("K")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1)),
+        schedule
+    );
+    auto& scale_block = builder.add_block(map1_inner.root());
+    auto& a_read = builder.add_access(scale_block, "A");
+    auto& scale_const = builder.add_constant(scale_block, "2.0", float_desc);
+    auto& s_write = builder.add_access(scale_block, "S");
+    auto& mul_tasklet = builder.add_tasklet(scale_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(scale_block, a_read, mul_tasklet, "_in1", subset_3d("i", "j", "k"), array_3d);
+    builder.add_computational_memlet(scale_block, scale_const, mul_tasklet, "_in2", {});
+    builder.add_computational_memlet(scale_block, mul_tasklet, "_out", s_write, subset_3d("i", "j", "k"), array_3d);
+
+    // Consumer: Map(i2) { Map(j2) { For(k2) { R[i2,j2] = R[i2,j2] + S[i2,j2,k2] } } }
+    auto& map2_outer = builder.add_map(
+        root,
+        symbolic::symbol("i2"),
+        symbolic::Lt(symbolic::symbol("i2"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i2"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map2_inner = builder.add_map(
+        map2_outer.root(),
+        symbolic::symbol("j2"),
+        symbolic::Lt(symbolic::symbol("j2"), symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j2"), symbolic::integer(1)),
+        schedule
+    );
+    auto& for_k = builder.add_for(
+        map2_inner.root(),
+        symbolic::symbol("k2"),
+        symbolic::Lt(symbolic::symbol("k2"), symbolic::symbol("K")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k2"), symbolic::integer(1))
+    );
+    auto& reduce_block = builder.add_block(for_k.root());
+    auto& r_read = builder.add_access(reduce_block, "R");
+    auto& s_read = builder.add_access(reduce_block, "S");
+    auto& r_write = builder.add_access(reduce_block, "R");
+    auto& add_tasklet = builder.add_tasklet(reduce_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(reduce_block, r_read, add_tasklet, "_in1", subset_2d("i2", "j2"), array_2d);
+    builder.add_computational_memlet(reduce_block, s_read, add_tasklet, "_in2", subset_3d("i2", "j2", "k2"), array_3d);
+    builder.add_computational_memlet(reduce_block, add_tasklet, "_out", r_write, subset_2d("i2", "j2"), array_2d);
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(map1_outer, map2_outer);
+
+    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+
+    transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.fused");
+
+    // Verify the scale producer was inlined INSIDE the reduction For loop (streamed
+    // per k2 iteration), scalarized through a _fused_tmp temporary, and that the
+    // reduction body no longer references the materialized array S.
+    auto& fused_body = for_k.root();
+    ASSERT_EQ(fused_body.size(), 2u); // inlined scale block, then the original reduce block
+
+    std::unordered_set<std::string> reads_in_for;
+    std::unordered_set<std::string> writes_in_for;
+    for (size_t bi = 0; bi < fused_body.size(); ++bi) {
+        auto* blk = dynamic_cast<structured_control_flow::Block*>(&fused_body.at(bi).first);
+        ASSERT_NE(blk, nullptr);
+        auto& df = blk->dataflow();
+        for (auto& node : df.nodes()) {
+            auto* acc = dynamic_cast<data_flow::AccessNode*>(&node);
+            if (acc == nullptr) {
+                continue;
+            }
+            if (df.in_degree(*acc) > 0) {
+                writes_in_for.insert(acc->data());
+            }
+            if (df.out_degree(*acc) > 0) {
+                reads_in_for.insert(acc->data());
+            }
+        }
+    }
+    // S (the big intermediate) is fully scalarized away inside the fused loop.
+    EXPECT_EQ(reads_in_for.count("S"), 0u);
+    EXPECT_EQ(writes_in_for.count("S"), 0u);
+    // The inlined scale now reads A directly inside the reduction loop.
+    EXPECT_EQ(reads_in_for.count("A"), 1u);
+    // A fresh per-element scalar temp carries the streamed value.
+    bool has_fused_tmp = false;
+    for (const auto& w : writes_in_for) {
+        if (w.rfind("_fused_tmp", 0) == 0) {
+            has_fused_tmp = true;
+        }
+    }
+    EXPECT_TRUE(has_fused_tmp);
 }
 
 TEST(MapFusionTest, ConsumerHasMoreDimensions) {

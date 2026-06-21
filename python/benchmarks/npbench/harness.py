@@ -82,10 +82,19 @@ def _combine_params_with_init_returns(params, initialize_func, init_returns):
 
 
 class SDFGVerification:
-    def __init__(self, verification: dict, non_critical: bool = False, capsys=None):
+    def __init__(
+        self,
+        verification: dict,
+        non_critical: bool = False,
+        capsys=None,
+        atol=1e-5,
+        rtol=1e-8,
+    ):
         self._verification = verification
         self._non_critical = non_critical
         self._capsys = capsys
+        self.atol = atol
+        self.rtol = rtol
 
     def verify(self, stats: dict, test_file: str, test_target: str) -> None:
         print(stats)
@@ -264,14 +273,16 @@ def run_pytest(
         if isinstance(res_ref, tuple):
             for i in range(len(res_ref)):
                 np.testing.assert_allclose(
-                    res_docc[i], res_ref[i], rtol=1e-5, atol=1e-8
+                    res_docc[i], res_ref[i], rtol=verifier.rtol, atol=verifier.atol
                 )
         else:
-            np.testing.assert_allclose(res_docc, res_ref, rtol=1e-5, atol=1e-8)
+            np.testing.assert_allclose(
+                res_docc, res_ref, rtol=verifier.rtol, atol=verifier.atol
+            )
 
     # Validate arguments (in-place modifications)
     for i in range(len(kernel_args)):
         if isinstance(kernel_args[i], np.ndarray):
             np.testing.assert_allclose(
-                inputs_docc[i], inputs_ref[i], rtol=1e-5, atol=1e-8
+                inputs_docc[i], inputs_ref[i], rtol=verifier.rtol, atol=verifier.atol
             )

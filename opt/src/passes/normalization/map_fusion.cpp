@@ -7,8 +7,10 @@ namespace sdfg {
 namespace passes {
 namespace normalization {
 
-MapFusion::MapFusion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+MapFusion::MapFusion(
+    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, bool allow_init_hoist
+)
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), allow_init_hoist_(allow_init_hoist) {}
 
 bool MapFusion::accept(structured_control_flow::Sequence& node) {
     bool applied = false;
@@ -35,7 +37,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                 i++;
                 continue;
             }
-            transformations::MapFusion transformation(*first, *second);
+            transformations::MapFusion transformation(*first, *second, true, allow_init_hoist_);
             if (transformation.can_be_applied(builder_, analysis_manager_)) {
                 auto first_name = first->indvar()->get_name();
                 auto second_name = second->indvar()->get_name();
@@ -51,7 +53,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                         i++;
                         continue;
                     }
-                    transformations::MapFusion transformation(*first, *second, false);
+                    transformations::MapFusion transformation(*first, *second, false, allow_init_hoist_);
                     if (transformation.can_be_applied(builder_, analysis_manager_)) {
                         auto first_name = first->indvar()->get_name();
                         auto second_name = second->indvar()->get_name();

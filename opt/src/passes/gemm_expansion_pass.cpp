@@ -30,9 +30,8 @@ bool GemmExpansion::accept(structured_control_flow::Block& block) {
             auto gemm_node = static_cast<math::blas::GEMMNode*>(lib_node);
             if (symbolic::eq(gemm_node->m(), symbolic::one()) || symbolic::eq(gemm_node->n(), symbolic::one()) ||
                 symbolic::eq(gemm_node->k(), symbolic::one())) {
-                DEBUG_PRINTLN("found applicable GEMM");
+                DEBUG_PRINTLN("Found degenerate GEMM. Expanding...");
                 if (gemm_node->expand(builder_, analysis_manager_)) {
-                    DEBUG_PRINTLN("expanded");
                     return true;
                 }
             }

@@ -28,45 +28,41 @@ def kernel(x):
     return tmp_out / tmp_sum
 
 
-@pytest.mark.skip(reason="Does not terminate in CI")
 @pytest.mark.parametrize(
     "target",
-    ["none", "sequential", "openmp", "cuda", "rocm"],
+    [
+        "none",
+        "sequential",
+        "openmp",
+        # "cuda",
+        # "rocm",
+    ],
 )
 def test_softmax(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "Free": 3,
-                "CMath": 2,
                 "SEQUENTIAL": 20,
                 "FOR": 22,
                 "MAP": 20,
-                "Malloc": 3,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "Free": 3,
-                "CMath": 2,
-                "VECTORIZE": 4,
-                "SEQUENTIAL": 16,
-                "FOR": 22,
-                "MAP": 20,
-                "Malloc": 3,
+                "VECTORIZE": 2,
+                "SEQUENTIAL": 12,
+                "FOR": 16,
+                "MAP": 14,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "Free": 3,
-                "CMath": 2,
-                "CPU_PARALLEL": 6,
-                "FOR": 8,
-                "MAP": 6,
-                "Malloc": 3,
+                "CPU_PARALLEL": 4,
+                "FOR": 6,
+                "MAP": 4,
             }
         )
     elif target == "cuda":

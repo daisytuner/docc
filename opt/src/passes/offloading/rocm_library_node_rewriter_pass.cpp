@@ -27,11 +27,6 @@ std::optional<data_flow::ImplementationType> RocmLibraryNodeRewriter::
 
 std::optional<data_flow::ImplementationType> RocmLibraryNodeRewriter::
     try_rocm_gemm_node_implementation(const math::blas::GEMMNode& gemm_node, types::PrimitiveType data_type) {
-    // Heuristic: Avoid using ROCm BLAS for very small matrix multiplications
-    if (symbolic::eq(gemm_node.m(), symbolic::one()) || symbolic::eq(gemm_node.n(), symbolic::one()) ||
-        symbolic::eq(gemm_node.k(), symbolic::one())) {
-        return std::nullopt;
-    }
     return rocm::ImplementationType_ROCMWithTransfers;
 }
 

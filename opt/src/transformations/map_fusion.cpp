@@ -297,9 +297,11 @@ public:
 MapFusion::MapFusion(
     structured_control_flow::Map& first_map,
     structured_control_flow::StructuredLoop& second_loop,
-    bool require_consecutive
+    bool require_consecutive,
+    bool allow_init_hoist
 )
-    : first_map_(first_map), second_loop_(second_loop), require_consecutive_(require_consecutive) {}
+    : first_map_(first_map), second_loop_(second_loop), require_consecutive_(require_consecutive),
+      allow_init_hoist_(allow_init_hoist) {}
 
 std::string MapFusion::name() const { return "MapFusion"; }
 
@@ -672,19 +674,31 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     }
 
     // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
-    // ProducerIntoConsumer: both sides must be all-parallel. The producer is replicated at
-    // each consumer site — it must be reorderable. The consumer must also be all-parallel
-    // because a sequential (For) loop would re-execute the inlined producer on every
-    // iteration (e.g. init T=0 fused into For(k){T+=A[k]} re-initializes each k).
+    // ProducerIntoConsumer: the producer is replicated at each consumer site and must be
+    // reorderable, so it must be all-parallel. The consumer is normally required to be
+    // all-parallel too, because a sequential (For) loop would re-execute the inlined producer
+    // on every iteration (e.g. init T=0 fused into For(k){T+=A[k]} re-initializes each k).
+    //
+    // Reduction branch: we relax the consumer requirement when the consumer is a perfect nest
+    // (parallel outer band + inner sequential For, i.e. a reduction). A fully-parallel producer
+    // that is *streamed element-by-element* inside the reduction loop can still be inlined
+    // soundly (e.g. scale -> max: max(M, A[i,j,k]/d)). The element-streaming safety conditions
+    // are verified once the fusion candidates are known (see consumer_reduction_branch below):
+    //   (1) the fused container must not be written by the consumer (no loop-carried
+    //       accumulator), and
+    //   (2) its consumer read subset must depend on an inner sequential loop indvar, so the
+    //       inlined producer runs once per element rather than per init position.
+    // These keep init-into-reduction (T=0 followed by For(k){T+=...}) rejected.
     // ConsumerIntoProducer: only the consumer (inlined side) must be all-parallel.
+    bool consumer_reduction_branch = false;
     if (direction_ == FusionDirection::ProducerIntoConsumer) {
         if (!first_loop_info.is_perfectly_parallel) {
             return false;
         } else if (!second_loop_info.is_perfectly_parallel) {
-            if (second_loop_info.is_perfectly_nested) { // we can check if the innermost loop is non parallel, but the
-                                                        // outers are
+            if (!second_loop_info.is_perfectly_nested) {
+                return false;
             }
-            return false;
+            consumer_reduction_branch = true;
         }
     } else {
         if (!second_loop_info.is_perfectly_parallel) {
@@ -769,6 +783,13 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
         if (arg.is_input) {
             first_inputs.insert(name);
+        }
+    }
+
+    std::unordered_set<std::string> second_outputs;
+    for (const auto& [name, arg] : second_args) {
+        if (arg.is_output) {
+            second_outputs.insert(name);
         }
     }
 
@@ -985,6 +1006,84 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
     }
 
+    // Reduction-branch safety: when fusing a parallel producer into a non-parallel
+    // (reduction) consumer, classify each fusion container into one of two sound patterns:
+    //   Case 1 (stream):     the container is NOT a consumer output and its consumer read
+    //                        depends on an inner sequential indvar -> it is produced and
+    //                        consumed element-by-element, so the producer is scalarized and
+    //                        inlined inside the reduction loop (e.g. softmax scale -> max).
+    //   Case 2 (init-hoist): the container IS a consumer output (the reduction accumulator)
+    //                        and its consumer read is loop-invariant w.r.t. every sequential
+    //                        indvar -> the producer is the accumulator's initial value and is
+    //                        hoisted to the reduction's outer parallel band, before the inner
+    //                        sequential loop (e.g. T = -INF preceding T = max(T, x)).
+    // Anything else (e.g. an accumulator whose read depends on the sequential indvar, or a
+    // streamed value that the consumer also writes) is unsafe and rejected. The two patterns
+    // require different placement in apply(), so all candidates must share one pattern.
+    if (consumer_reduction_branch) {
+        symbolic::SymbolSet sequential_indvars;
+        size_t first_sequential = consumer_loops_.size();
+        for (size_t li = 0; li < consumer_loops_.size(); ++li) {
+            if (dynamic_cast<structured_control_flow::Map*>(consumer_loops_[li]) == nullptr) {
+                sequential_indvars.insert(consumer_loops_[li]->indvar());
+                if (first_sequential == consumer_loops_.size()) {
+                    first_sequential = li;
+                }
+            }
+        }
+        if (sequential_indvars.empty()) {
+            return false;
+        }
+        bool any_stream = false;
+        bool any_init = false;
+        for (const auto& candidate : fusion_candidates_) {
+            bool depends_on_sequential = false;
+            for (const auto& dim : candidate.consumer_subset) {
+                for (const auto& atom : symbolic::atoms(dim)) {
+                    if (sequential_indvars.count(atom)) {
+                        depends_on_sequential = true;
+                        break;
+                    }
+                }
+                if (depends_on_sequential) {
+                    break;
+                }
+            }
+
+            if (second_outputs.contains(candidate.container)) {
+                // Case 2 candidate: must be a loop-invariant accumulator init.
+                if (!allow_init_hoist_) {
+                    // Init-hoisting disabled for this run (reserved for the final
+                    // map-fusion pass so it does not fight loop distribution).
+                    return false;
+                }
+                if (depends_on_sequential) {
+                    return false;
+                }
+                any_init = true;
+            } else {
+                // Case 1 candidate: must be a streamed element.
+                if (!depends_on_sequential) {
+                    return false;
+                }
+                any_stream = true;
+            }
+        }
+        // Do not mix patterns in a single fusion.
+        if (any_init && any_stream) {
+            return false;
+        }
+        if (any_init) {
+            // Need an enclosing parallel band to host the hoisted init (the init must run
+            // once per accumulator element, outside the sequential reduction loop).
+            if (first_sequential == 0) {
+                return false;
+            }
+            init_hoist_ = true;
+            hoist_body_ = &consumer_loops_[first_sequential - 1]->root();
+        }
+    }
+
     // Criterion: At least one valid fusion candidate
     return !fusion_candidates_.empty();
 }
@@ -1003,15 +1102,22 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             auto& candidate = fusion_candidates_[cand_idx];
 
             auto& container_type = sdfg.type(candidate.container);
-            std::string temp_name = builder.find_new_name("_fused_tmp");
             types::Scalar tmp_type(container_type.primitive_type());
-            builder.add_container(temp_name, tmp_type);
-            candidate_temps.push_back(temp_name);
+            std::string temp_name;
+            if (!init_hoist_) {
+                // Case 1: scalarize the streamed element into a private temp.
+                temp_name = builder.find_new_name("_fused_tmp");
+                builder.add_container(temp_name, tmp_type);
+                candidate_temps.push_back(temp_name);
+            }
 
-            // Insert a producer block at the beginning of the consumer's body
-            auto& first_child = consumer_body_->at(0).first;
+            // Insert the producer block at the beginning of the host sequence:
+            //  - Case 1 (stream):     consumer_body_ = innermost sequential (reduction) loop body.
+            //  - Case 2 (init-hoist): hoist_body_   = outer parallel-band body, before that loop.
+            auto& host_seq = init_hoist_ ? *hoist_body_ : *consumer_body_;
+            auto& first_child = host_seq.at(0).first;
             control_flow::Assignments empty_assignments;
-            auto& new_block = builder.add_block_before(*consumer_body_, first_child, empty_assignments);
+            auto& new_block = builder.add_block_before(host_seq, first_child, empty_assignments);
             structured_control_flow::Block* empty_block = nullptr;
 
             // Deep copy all nodes from producer block to new block
@@ -1021,7 +1127,8 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                 node_mapping[&node] = &builder.copy_node(new_block, node);
                 auto* copied = node_mapping[&node];
                 if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(copied)) {
-                    if (access_node->data() == candidate.container) {
+                    if (!init_hoist_ && access_node->data() == candidate.container) {
+                        // Case 1: redirect the producer's array write to the private scalar.
                         access_node->data(temp_name);
                     } else if (access_node->data() == first_map_.indvar()->get_name()) {
                         // Determine the new expression for the index variable of the first map
@@ -1046,14 +1153,12 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                             // shifted index into a new temporary variable with an assignment. Then, replace the index
                             // variable with the new temporary variable
                             if (!empty_block) {
-                                empty_block = &builder.add_block_before(*consumer_body_, new_block, empty_assignments);
+                                empty_block = &builder.add_block_before(host_seq, new_block, empty_assignments);
                             }
                             auto new_index_name = builder.find_new_name();
                             builder
                                 .add_container(new_index_name, builder.subject().type(second_loop_.indvar()->get_name()));
-                            consumer_body_->at(0)
-                                .second.assignments()
-                                .insert({symbolic::symbol(new_index_name), new_expr});
+                            host_seq.at(0).second.assignments().insert({symbolic::symbol(new_index_name), new_expr});
                             access_node->data(new_index_name);
                         }
                     } else if (first_dataflow.in_degree(node) > 0 && first_dataflow.out_degree(node) > 0 &&
@@ -1088,9 +1193,10 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                     new_subset.push_back(new_dim);
                 }
 
-                // For output edges to temp scalar, use empty subset
+                // Case 1: the producer's array write becomes a scalar write (empty subset).
+                // Case 2: keep the remapped array subset so the init writes the accumulator.
                 auto* dst_access = dynamic_cast<data_flow::AccessNode*>(&dst_node);
-                if (dst_access != nullptr && dst_access->data() == candidate.container &&
+                if (!init_hoist_ && dst_access != nullptr && dst_access->data() == candidate.container &&
                     first_dataflow.in_degree(*dst_access) > 0) {
                     new_subset.clear();
                     base_type = &tmp_type;
@@ -1109,11 +1215,27 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             }
         }
 
-        // Update all read accesses in consumer blocks to point to the appropriate temp
-        size_t num_producer_blocks = fusion_candidates_.size();
-
-        FusionConsumerUpdateVisitor update_visitor(builder, fusion_candidates_, candidate_temps);
-        update_visitor.dispatch_partial_sequence(*consumer_body_, num_producer_blocks, consumer_body_->size());
+        // Case 1 only: rewrite consumer reads of the fused arrays to the scalar temps.
+        // Case 2 leaves the reduction body untouched (it keeps reading/writing the accumulator,
+        // now pre-initialized by the hoisted init block).
+        if (!init_hoist_) {
+            size_t num_producer_blocks = fusion_candidates_.size();
+            FusionConsumerUpdateVisitor update_visitor(builder, fusion_candidates_, candidate_temps);
+            update_visitor.dispatch_partial_sequence(*consumer_body_, num_producer_blocks, consumer_body_->size());
+        } else {
+            // Case 2: the hoisted init copy fully overwrites the accumulator before the
+            // reduction reads it, so the original init producer map is redundant. Unlike
+            // Case 1, the accumulator array stays live, so DCE would not reclaim it — remove
+            // the producer explicitly (mirrors how ConsumerIntoProducer removes its loop).
+            auto* parent = first_map_.get_parent();
+            auto* parent_seq = dynamic_cast<structured_control_flow::Sequence*>(parent);
+            if (parent_seq != nullptr) {
+                int idx = parent_seq->index(first_map_);
+                if (idx >= 0) {
+                    builder.remove_child(*parent_seq, static_cast<size_t>(idx));
+                }
+            }
+        }
 
     } else {
         // ConsumerIntoProducer (Pattern 2): Inline consumer blocks into the producer's write body

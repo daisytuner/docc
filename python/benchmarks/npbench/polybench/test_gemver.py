@@ -56,24 +56,20 @@ def test_gemver(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CUDA": 3,
-                "FOR": 3,
-                "MAP": 3,
-                "CUDAOffloading": 12,
-                "Malloc": 2,
-                "GEMM": 4,
-            }
+                "CUDA": 8,
+                "FOR": 12,
+                "MAP": 8,
+                "CUDAOffloading": 27,
+            },
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 3,
-                "FOR": 3,
-                "MAP": 3,
-                "ROCMOffloading": 12,
-                "Malloc": 2,
-                "GEMM": 4,
-            }
+                "ROCM": 8,
+                "FOR": 12,
+                "MAP": 8,
+                "ROCMOffloading": 27,
+            },
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

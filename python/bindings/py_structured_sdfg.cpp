@@ -187,18 +187,21 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
 
     sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;
     tensor_to_pointer_conversion_pass.run(builder_opt, analysis_manager);
+
+    // Workaround until built-in targets are supported by the above mechanism
+    sdfg::passes::DotExpansionPass dot_expansion_pass;
+    dot_expansion_pass.run(builder_opt, analysis_manager);
+    if (options.target == "cuda" || options.target == "rocm") {
+        // Expand GEMV / DOT nodes represented as GEMM
+        sdfg::passes::GemmExpansionPass gemm_expansion_pass;
+        gemm_expansion_pass.run(builder_opt, analysis_manager);
+    }
 }
 
 
 void PyStructuredSDFG::simplify() {
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
-
-    // Expand Dot nodes
-    sdfg::passes::DotExpansionPass dot_expansion_pass;
-    dot_expansion_pass.run(builder_opt, analysis_manager);
-    // sdfg::passes::GemmExpansionPass gemm_expansion_pass;
-    // gemm_expansion_pass.run(builder_opt, analysis_manager);
 
     // Optimization Pipelines
     sdfg::passes::Pipeline dataflow_simplification = sdfg::passes::Pipeline::dataflow_simplification();
@@ -309,8 +312,9 @@ void PyStructuredSDFG::simplify() {
     dce.run(builder_opt, analysis_manager);
     dataflow_simplification.run(builder_opt, analysis_manager);
 
-    // Fuse maps
-    auto map_fusion = sdfg::passes::normalization::map_fusion();
+    // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
+    // normalize() map-fusion run so loop distribution and fusion do not fight)
+    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
     map_fusion.run(builder_opt, analysis_manager);
 }
 
@@ -360,16 +364,17 @@ void PyStructuredSDFG::normalize() {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
-    // Fuse maps
-    auto map_fusion = sdfg::passes::normalization::map_fusion();
+    // Fuse maps (no init-into-reduction hoisting yet; this run precedes loop distribution)
+    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
     map_fusion.run(builder, analysis_manager);
 
     // Distribute and permute
     auto pipeline = sdfg::passes::normalization::loop_normalization();
     pipeline.run(builder, analysis_manager);
 
-    // Fuse maps
-    map_fusion.run(builder, analysis_manager);
+    // Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
+    auto map_fusion_hoist = sdfg::passes::normalization::map_fusion(true);
+    map_fusion_hoist.run(builder, analysis_manager);
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {

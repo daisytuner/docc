@@ -83,6 +83,8 @@ bool DataTransferMinimizationPass::eliminate_transfer_pair(
     builder::StructuredSDFGBuilder& builder,
     analysis::OffloadHolder& copy_out,
     analysis::OffloadHolder& copy_in,
+    const analysis::DataTransferEliminationAnalysis& transfer_analysis,
+    analysis::ControlFlowAnalysis& cf_analysis,
     bool remove_d2h
 ) {
     // Get all relevant information
@@ -93,11 +95,51 @@ bool DataTransferMinimizationPass::eliminate_transfer_pair(
     DebugInfo copy_out_off_debinfo = copy_out.offload_node->debug_info();
     DebugInfo copy_in_off_debinfo = copy_in.offload_node->debug_info();
 
+    const bool aliases = copy_out_device_container != copy_in_device_container;
+
+    // When the two device buffers differ we will alias `T = S` (T == copy_in's buffer, S == copy_out's). After that
+    // both buffers name the same storage, so any deallocation of S and of T would free it twice. Reconcile the two
+    // device frees up front: keep the one that post-dominates the other (it outlives every use of the shared storage)
+    // and drop the dominated one. If the lifetimes are not ordered we cannot prove a single safe free, so we bail out
+    // before mutating anything. OffloadTransform emits these frees locally and never reconciles them, which is the
+    // double-free this guards against.
+    const analysis::DeviceFreeSite* free_to_drop = nullptr;
+    bool drop_free_via_copy_out = false; // the dominated free is fused into copy_out's D2H node
+    if (aliases) {
+        const auto* frees_s = transfer_analysis.device_frees(copy_out_device_container);
+        const auto* frees_t = transfer_analysis.device_frees(copy_in_device_container);
+        const bool s_freed = frees_s != nullptr && !frees_s->empty();
+        const bool t_freed = frees_t != nullptr && !frees_t->empty();
+        if (s_freed && t_freed) {
+            // Only the unambiguous single-free-each topology is reconcilable here.
+            if (frees_s->size() != 1 || frees_t->size() != 1) {
+                return false;
+            }
+            const analysis::DeviceFreeSite& free_s = frees_s->front();
+            const analysis::DeviceFreeSite& free_t = frees_t->front();
+            if (cf_analysis.post_dominates(*free_t.block, *free_s.block)) {
+                free_to_drop = &free_s; // keep T's (later) free
+            } else if (cf_analysis.post_dominates(*free_s.block, *free_t.block)) {
+                free_to_drop = &free_t; // keep S's (later) free
+            } else {
+                return false; // frees on incomparable paths: cannot prove a single safe deallocation
+            }
+            // If the dominated free is fused into copy_out's D2H node we must strip only the free part (the D2H itself
+            // may still feed a live host buffer), handled below via remove_free().
+            drop_free_via_copy_out = free_to_drop->node == copy_out.offload_node;
+        }
+        // If at most one of the buffers is freed there is no double free to reconcile.
+    }
+
     bool remove_entirely = false;
     // Remove what you can remove
     if (!remove_d2h && copy_out.offload_node->is_free()) {
         if (copy_out.offload_node->is_d2h()) {
-            copy_out.offload_node->remove_free();
+            // Only drop copy_out's fused free if it is the deallocation we decided to remove (same-container case keeps
+            // the historical behaviour of always dropping it).
+            if (!aliases || drop_free_via_copy_out) {
+                copy_out.offload_node->remove_free();
+            }
         } else {
             remove_entirely = true;
         }
@@ -115,7 +157,7 @@ bool DataTransferMinimizationPass::eliminate_transfer_pair(
     builder.clear_code_node_legacy(*copy_in_block, *copy_in.offload_node);
 
     // Maps the device pointers if necessary
-    if (copy_out_device_container != copy_in_device_container) {
+    if (aliases) {
         auto& container_type = builder.subject().type(copy_out_device_container);
         auto ref_type = container_type.clone();
         auto& in_access = builder.add_access(*copy_in_block, copy_out_device_container, copy_out_src_debinfo);
@@ -128,6 +170,12 @@ bool DataTransferMinimizationPass::eliminate_transfer_pair(
             *ref_type,
             DebugInfo::merge(copy_out_off_debinfo, copy_in_off_debinfo)
         );
+
+        // Drop the dominated device free of the now-shared storage (unless it was copy_out's fused free, already
+        // stripped above).
+        if (free_to_drop != nullptr && !drop_free_via_copy_out) {
+            builder.clear_code_node_legacy(*free_to_drop->block, *free_to_drop->node);
+        }
     }
 
     return true;
@@ -137,6 +185,8 @@ bool DataTransferMinimizationPass::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     analysis::DataTransferEliminationAnalysis transfer_analysis(builder.subject(), analysis_manager);
     transfer_analysis.run();
+
+    auto& cf_analysis = analysis_manager.get<analysis::ControlFlowAnalysis>();
 
     int removed = 0;
 
@@ -190,7 +240,7 @@ bool DataTransferMinimizationPass::
                             << copy_in.dev_data->data()
         );
 
-        bool success = eliminate_transfer_pair(builder, copy_out, copy_in, false);
+        bool success = eliminate_transfer_pair(builder, copy_out, copy_in, transfer_analysis, cf_analysis, false);
 
         if (success) {
             ++removed;

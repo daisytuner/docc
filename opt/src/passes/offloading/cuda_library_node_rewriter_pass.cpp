@@ -35,11 +35,6 @@ std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::
 
 std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::
     try_cublas_gemm_node_implementation(const math::blas::GEMMNode& gemm_node, types::PrimitiveType data_type) {
-    // Heuristic: Avoid using CUBLAS for very small matrix multiplications
-    if (symbolic::eq(gemm_node.m(), symbolic::one()) || symbolic::eq(gemm_node.n(), symbolic::one()) ||
-        symbolic::eq(gemm_node.k(), symbolic::one())) {
-        return std::nullopt;
-    }
     return cuda::ImplementationType_CUDAWithTransfers;
 }
 

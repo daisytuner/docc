@@ -73,9 +73,10 @@ void CUDAMapDispatcher::dispatch_node(
     std::sort(arguments.begin(), arguments.end());
     std::vector<std::string> arguments_device;
     for (auto& argument : arguments) {
-        if (argument.starts_with(CUDA_DEVICE_PREFIX)) {
+        auto& arg_type = sdfg_.type(argument);
+        if (arg_type.storage_type().is_nv_generic()) {
             arguments_device.push_back(argument);
-        } else if (sdfg_.type(argument).type_id() == types::TypeID::Scalar) {
+        } else if (arg_type.type_id() == types::TypeID::Scalar) {
             arguments_device.push_back(argument);
         } else {
             throw InvalidSDFGException("Argument " + argument + " is not a scalar or device pointer");
