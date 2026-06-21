@@ -194,6 +194,18 @@ void OffloadState::found_offload_node(Block& block, offloading::DataOffloadingNo
         }
     }
 
+    // A D2H overwrites its host destination container. Whatever we were still tracking for that container -- an
+    // earlier D2H staged into it, or its initial malloc -- is now stale: a later H2D reading the container observes
+    // THIS transfer's bytes, not the predecessors'. Because offloading-node host writes are intentionally excluded
+    // from on_write_via, the predecessor entries would otherwise survive and remain reuse candidates, letting the
+    // matcher pair the H2D with a transfer that did not produce the bytes (a WAW hazard on the staging buffer that
+    // aliases the wrong device buffer). Killing the container here keeps only the most recent D2H live, so the reuse
+    // matcher pairs the H2D with the transfer that actually wrote the buffer. The D2H's own entry is added to
+    // generated_ below and re-exposed after this kill is applied, so it is unaffected.
+    if (updates_on_host && found_host_access) {
+        kills_containers_.insert(found_host_access->data());
+    }
+
     // Record every device-buffer deallocation so a later `T = S` aliasing transform can reconcile the shared
     // storage's frees (drop the dominated one) instead of leaving a double free.
     if (ends_dev_lifetime && found_dev_access) {

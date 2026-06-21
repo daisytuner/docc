@@ -899,7 +899,7 @@ def test_segformer_encoder_block_1_0_attention_self(target, batch_size) -> None:
     model = SegformerEncoderBlock10AttentionSelf()
     model.eval()
     x = (torch.randn(batch_size, 4096, 64), 64, 64)
-    check_backend(model, *x, target=target, rtol=1e-3, atol=1e-3)
+    check_backend(model, *x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
@@ -1067,7 +1067,7 @@ def test_segformer_encoder_block_1_0_attention(target, batch_size) -> None:
     model = SegformerEncoderBlock10Attention()
     model.eval()
     x = (torch.randn(batch_size, 4096, 64), 64, 64)
-    check_backend(model, *x, target=target, rtol=1e-3, atol=1e-3)
+    check_backend(model, *x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
@@ -1459,7 +1459,7 @@ def test_segformer_encoder_block_1_0(target, batch_size) -> None:
     model = SegformerEncoderBlock10()
     model.eval()
     x = (torch.randn(batch_size, 4096, 64), 64, 64)
-    check_backend(model, *x, target=target, rtol=1e-3, atol=1e-3)
+    check_backend(model, *x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
@@ -1483,7 +1483,7 @@ def test_segformer_encoder_block_1_1(target, batch_size) -> None:
     model = SegformerEncoderBlock11()
     model.eval()
     x = (torch.randn(batch_size, 4096, 64), 64, 64)
-    check_backend(model, *x, target=target, rtol=1e-3, atol=1e-3)
+    check_backend(model, *x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
