@@ -59,7 +59,7 @@ def test_gemver(target):
                 "CUDA": 8,
                 "FOR": 12,
                 "MAP": 8,
-                "CUDAOffloading": 27,
+                "CUDAOffloading": 6,
             },
         )
     elif target == "rocm":
@@ -68,7 +68,7 @@ def test_gemver(target):
                 "ROCM": 8,
                 "FOR": 12,
                 "MAP": 8,
-                "ROCMOffloading": 27,
+                "ROCMOffloading": 6,
             },
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

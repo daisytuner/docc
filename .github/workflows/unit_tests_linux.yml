@@ -428,8 +428,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes transformers
+          pip install numpy scipy ml_dtypes cupy-cuda12x transformers
+
           pip install -r mlir/requirements.txt
+          pip uninstall -y torch torchvision
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
       - name: Build
         run: |
@@ -462,7 +465,7 @@ jobs:
 
           pytest -v python/tests -m "cuda"
           pytest -v python/benchmarks/ -k cuda
-          # pytest -v mlir/integration -m "cuda"
+          pytest -v mlir/integration -m "cuda"
 
           # Segformer correctness test
           pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
@@ -507,7 +510,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
           pip install numpy scipy ml_dtypes transformers
+
+          # Build cupy-rocm from source for ROCm 6x
+          # To be removed when docker image is updated to ROCm 7x
+          export CUPY_INSTALL_USE_HIP=1
+          export ROCM_HOME=/opt/rocm
+          export HCC_AMDGPU_TARGET=$(rocminfo | grep -m1 -o 'gfx[0-9a-f]*')
+          pip install cupy --no-cache-dir
+
           pip install -r mlir/requirements.txt
+          pip uninstall -y torch torchvision
+          pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/rocm6.4
 
       - name: Build
         run: |
@@ -538,9 +551,13 @@ jobs:
           rocm-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          # pytest -v python/tests -m "rocm" enable with first test. Empty tests yield != 0 exit code
+          # Make cupy find ROCm libraries
+          export ROCM_HOME=/opt/rocm
+          export LD_LIBRARY_PATH=/opt/rocm/lib:$LD_LIBRARY_PATH
+
+          pytest -v python/tests -m "rocm"
           pytest -v python/benchmarks/ -k rocm
-          # pytest -v mlir/integration -m "rocm"
+          pytest -v mlir/integration -m "rocm"
 
           pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
 

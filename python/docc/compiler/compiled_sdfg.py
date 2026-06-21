@@ -1,15 +1,83 @@
 import ctypes
 import re
 import time
+import warnings
 from docc.sdfg import Scalar, Array, Pointer, Structure, PrimitiveType
 
 import numpy as np
 import ml_dtypes
 
 
+class DoccPerformanceWarning(UserWarning):
+    """Warning emitted when a slower-than-necessary execution path is taken."""
+
+
+def warn_device_residency_failed(backend):
+    """Emit a one-time warning that device-residency promotion did not apply.
+
+    Args:
+        backend: The GPU backend name (e.g. "cuda", "rocm") for context.
+    """
+    warnings.warn(
+        f"Device residency could not be enabled for this function on backend {backend}. "
+        f"The function is only partially offloaded; function arguments stay in host memory before "
+        f"and after execution.",
+        DoccPerformanceWarning,
+        stacklevel=3,
+    )
+
+
+def warn_host_to_device_copies(backend):
+    """Emit a one-time performance warning about unnecessary host-to-device copies.
+
+    Args:
+        backend: The GPU backend name (e.g. "cuda", "rocm") for context.
+    """
+    warnings.warn(
+        f"Device residency is enabled for this function on backend {backend}. "
+        f"Function arguments are passed from host memory slowing down execution. "
+        f"Provide device-resident arrays to avoid unnecessary copies and improve performance.",
+        DoccPerformanceWarning,
+        stacklevel=3,
+    )
+
+
 def idiv(a, b):
     """Integer division (floor division for positive numbers)."""
     return int(a) // int(b)
+
+
+def _is_device_array(arg):
+    """Return True if ``arg`` already lives in device memory.
+
+    cupy arrays and CUDA torch tensors expose ``__cuda_array_interface__``; a
+    torch tensor reports its location via ``is_cuda``. Host arrays (numpy, CPU
+    torch tensors) return False.
+    """
+    if getattr(arg, "__cuda_array_interface__", None) is not None:
+        return True
+    is_cuda = getattr(arg, "is_cuda", None)
+    if is_cuda is not None:
+        return bool(is_cuda)
+    return False
+
+
+def _device_array_ptr(arg):
+    """Extract the raw device pointer from a GPU array (cupy or torch.cuda).
+
+    Both cupy arrays and CUDA torch tensors expose ``__cuda_array_interface__``;
+    torch tensors additionally expose ``data_ptr()``. Returns an integer address.
+    """
+    cai = getattr(arg, "__cuda_array_interface__", None)
+    if cai is not None:
+        return cai["data"][0]
+    data_ptr = getattr(arg, "data_ptr", None)
+    if callable(data_ptr):
+        return data_ptr()
+    raise TypeError(
+        f"Device-resident execution requires a GPU array exposing "
+        f"__cuda_array_interface__ or data_ptr(), got {type(arg).__name__}"
+    )
 
 
 # Evaluation context for shape expressions
@@ -31,6 +99,56 @@ _ARG_TYPE_SHAPE = 2
 _ARG_TYPE_USER_ARRAY = 3
 _ARG_TYPE_USER_STRUCT = 4
 _ARG_TYPE_USER_SCALAR = 5
+
+# Call modes. A single call uses exactly one mode (mixing array kinds is not
+# allowed). The mode, combined with whether the artifact is device-resident,
+# fully determines the execution path:
+#
+#   mode      | non-device-resident        | device-resident
+#   ----------|----------------------------|-------------------------------
+#   NumPyCPU  | host execution (default)   | host->device copy + warning
+#   NumPyGPU  | rejected (TypeError)       | zero-copy device execution
+#   TorchCPU  | host execution             | host->device copy + warning
+#   TorchGPU  | rejected (TypeError)       | zero-copy device execution
+_CALL_MODE_NUMPY_CPU = "NumPyCPU"
+_CALL_MODE_NUMPY_GPU = "NumPyGPU"
+_CALL_MODE_TORCH_CPU = "TorchCPU"
+_CALL_MODE_TORCH_GPU = "TorchGPU"
+
+# Modes whose data lives in device memory; these require a device-resident
+# artifact, otherwise the call is rejected.
+_GPU_CALL_MODES = frozenset({_CALL_MODE_NUMPY_GPU, _CALL_MODE_TORCH_GPU})
+
+
+def _is_torch_tensor(arg):
+    """Return True if ``arg`` is a torch tensor (without importing torch)."""
+    return type(arg).__module__.split(".", 1)[0] == "torch"
+
+
+def _classify_array_kind(arg):
+    """Classify a single argument into one of the four call modes.
+
+    Returns one of the ``_CALL_MODE_*`` constants for array arguments, or None
+    for mode-agnostic values (Python/numpy scalars, structures, ...). Neither
+    torch nor cupy is imported: classification relies on the defining module and
+    the array's own attributes.
+    """
+    root = type(arg).__module__.split(".", 1)[0]
+    if root == "torch":
+        return (
+            _CALL_MODE_TORCH_GPU
+            if getattr(arg, "is_cuda", False)
+            else _CALL_MODE_TORCH_CPU
+        )
+    if root == "cupy":
+        return _CALL_MODE_NUMPY_GPU
+    if isinstance(arg, np.ndarray):
+        return _CALL_MODE_NUMPY_CPU
+    # Any other object exposing the CUDA array interface is a device array.
+    if getattr(arg, "__cuda_array_interface__", None) is not None:
+        return _CALL_MODE_NUMPY_GPU
+    return None
+
 
 # Pre-cache ctypes.c_int64 for speed
 _c_int64 = ctypes.c_int64
@@ -102,6 +220,9 @@ class CompiledSDFG:
         output_args=None,
         output_shapes=None,
         output_strides=None,
+        device_resident=False,
+        device_backend=None,
+        target=None,
     ):
         self.lib_path = lib_path
         self.sdfg = sdfg
@@ -119,6 +240,24 @@ class CompiledSDFG:
 
         self.output_shapes = output_shapes or {}
         self.output_strides = output_strides or {}
+
+        # Device residency: set by the DeviceResidentArgPromotion pass when all
+        # pointer arguments were promoted to device-resident storage. When active,
+        # the compiled function expects device pointers (no host<->device copies at
+        # the boundary) and produces device-resident outputs. Communicated
+        # explicitly via the constructor (pass return value), not via metadata.
+        self.device_resident = bool(device_resident)
+        self.device_backend = device_backend or (
+            "cuda" if self.device_resident else None
+        )
+        # Warn at most once per artifact when host inputs must be copied to device.
+        self._warned_host_to_device = False
+
+        # Compilation target (e.g. "cuda"/"rocm"/"sequential"). Used to inform,
+        # once, when a GPU target ran on the host because device-residency
+        # promotion did not apply to this artifact.
+        self.target = target
+        self._warned_residency_failed = False
 
         # Cache for ctypes structure definitions
         self._ctypes_structures = {}
@@ -455,7 +594,235 @@ class CompiledSDFG:
 
         return func_result
 
+    def _ensure_device_array(self, arg, keepalive, writebacks):
+        """Return a device array for ``arg``, copying host inputs to the device.
+
+        Device-resident artifacts consume raw device pointers. For backwards
+        compatibility, callers may still pass host arrays (numpy arrays or CPU
+        torch tensors); these are copied to the device here and a one-time
+        performance warning is emitted. Device arrays are returned unchanged.
+
+        The copied device array is appended to ``keepalive`` so it outlives the
+        call, and the ``(host, device)`` pair is recorded in ``writebacks`` so
+        that in-place writes (e.g. output arguments) are mirrored back to the
+        original host array after execution.
+        """
+        if _is_device_array(arg):
+            return arg
+
+        import cupy
+
+        host = arg
+        # Convert a CPU torch tensor to numpy first; cupy.asarray handles numpy.
+        if hasattr(host, "detach") and hasattr(host, "numpy"):
+            host = host.detach().numpy()
+        device_arg = cupy.asarray(host)
+        keepalive.append(device_arg)
+        writebacks.append((arg, device_arg))
+
+        if not self._warned_host_to_device:
+            self._warned_host_to_device = True
+            warn_host_to_device_copies(self.device_backend or "cuda")
+
+        return device_arg
+
+    def _call_device(self, *args):
+        """Execute with device-resident arguments (cupy / torch.cuda).
+
+        Inputs are passed as raw device pointers and output arrays are allocated
+        on the device, so no host<->device copies happen at the call boundary.
+        Outputs are returned as cupy arrays (zero-copy interoperable with torch
+        via DLPack / __cuda_array_interface__).
+        """
+        import cupy
+
+        _eval = eval
+        _GLOBALS = _EVAL_GLOBALS
+        # 1. Build shape_symbol_values from shape sources
+        shape_symbol_values = {}
+        for s_idx, u_idx, dim_idx, key in self._shape_sources_list:
+            if u_idx < len(args):
+                shape_symbol_values[key] = args[u_idx].shape[dim_idx]
+
+        # 2. Process arguments
+        converted_args = []
+        keepalive = []  # keep device buffers / ctypes scalars alive
+        writebacks = []  # (host_arg, device_arg) for host inputs copied to device
+        return_buffers = []  # (buf, size, dims, compiled_strides, primitive_type)
+        # Track whether the caller supplied device arrays. When all array inputs
+        # are host arrays (numpy / CPU torch), the caller works in host space and
+        # expects host outputs, so device output buffers are copied back to host.
+        any_device_input = False
+
+        for info in self._arg_info:
+            arg_type = info[0]
+
+            if arg_type == _ARG_TYPE_OUTPUT_ARRAY:
+                target_type = info[3]
+                compiled_dims = info[4]
+                compiled_strides = info[5]
+                np_dtype = info[7]
+
+                size = 1
+                dims = []
+                for code in compiled_dims:
+                    d = int(_eval(code, _GLOBALS, shape_symbol_values))
+                    dims.append(d)
+                    size *= d
+
+                buf = cupy.empty(size, dtype=np_dtype)
+                keepalive.append(buf)
+                return_buffers.append((buf, size, dims, compiled_strides, info[6]))
+                converted_args.append(_ctypes_cast(int(buf.data.ptr), target_type))
+
+            elif arg_type == _ARG_TYPE_OUTPUT_SCALAR:
+                base_type = info[2]
+                primitive_type = info[3]
+                buf = base_type()
+                keepalive.append(buf)
+                return_buffers.append((buf, 1, None, None, primitive_type))
+                converted_args.append(_ctypes_byref(buf))
+
+            elif arg_type == _ARG_TYPE_SHAPE:
+                converted_args.append(_c_int64(shape_symbol_values.get(info[2], 0)))
+
+            elif arg_type == _ARG_TYPE_USER_ARRAY:
+                arg = args[info[1]]
+                shape_symbol_values[info[2]] = arg
+                if _is_device_array(arg):
+                    any_device_input = True
+                arg = self._ensure_device_array(arg, keepalive, writebacks)
+                converted_args.append(_ctypes_cast(_device_array_ptr(arg), info[3]))
+
+            elif arg_type == _ARG_TYPE_USER_STRUCT:
+                raise NotImplementedError(
+                    "Structure arguments are not supported for device-resident "
+                    "execution."
+                )
+
+            else:  # _ARG_TYPE_USER_SCALAR
+                arg = args[info[1]]
+                shape_symbol_values[info[2]] = arg
+                converted_args.append(info[3](arg))
+
+        # 3. Call the function
+        func_result = self.func(*converted_args)
+
+        # 3b. Mirror device results back into host inputs that were copied to the
+        # device, so in-place writes (e.g. output arguments) are visible to the
+        # caller. Read-only inputs are unchanged and copy back identically.
+        for host_arg, device_arg in writebacks:
+            host_view = cupy.asnumpy(device_arg)
+            if isinstance(host_arg, np.ndarray):
+                np.copyto(host_arg, host_view.reshape(host_arg.shape))
+            elif hasattr(host_arg, "copy_"):  # torch CPU tensor
+                import torch
+
+                host_arg.copy_(
+                    torch.from_numpy(host_view.reshape(tuple(host_arg.shape)))
+                )
+
+        # 4. Process returns using pre-sorted order
+        if not return_buffers:
+            return None
+
+        # Host callers get host (numpy) outputs; device callers get cupy outputs.
+        host_mode = not any_device_input
+
+        num_outputs = len(return_buffers)
+        results = [None] * num_outputs
+
+        buf_idx = 0
+        for i, info in enumerate(self._arg_info):
+            arg_type = info[0]
+            if arg_type not in (_ARG_TYPE_OUTPUT_ARRAY, _ARG_TYPE_OUTPUT_SCALAR):
+                continue
+
+            result_pos = self._output_pos_map[i]
+            buf, size, dims, compiled_strides, primitive_type = return_buffers[buf_idx]
+            buf_idx += 1
+
+            if arg_type == _ARG_TYPE_OUTPUT_SCALAR:
+                results[result_pos] = buf.value
+            else:
+                arr = buf
+                if dims and len(dims) > 1:
+                    arr = arr.reshape(dims)
+                if host_mode:
+                    arr = cupy.asnumpy(arr)
+                results[result_pos] = arr
+
+        if len(results) == 1:
+            return results[0]
+        return tuple(results) if results else None
+
+    def _resolve_call_mode(self, args):
+        """Classify the call's array arguments into exactly one call mode.
+
+        All array arguments must be the same kind; mixing numpy / cupy / CPU
+        torch / CUDA torch arrays in a single call is rejected. Calls without any
+        array argument default to ``NumPyCPU`` (host execution).
+        """
+        modes = set()
+        for info in self._arg_info:
+            arg_type = info[0]
+            if arg_type == _ARG_TYPE_USER_ARRAY or arg_type == _ARG_TYPE_USER_STRUCT:
+                kind = _classify_array_kind(args[info[1]])
+                if kind is not None:
+                    modes.add(kind)
+
+        if not modes:
+            return _CALL_MODE_NUMPY_CPU
+        if len(modes) > 1:
+            raise TypeError(
+                "Mixed array kinds are not allowed in a single call; every array "
+                f"argument must be the same kind, but got {sorted(modes)}. "
+                "Provide all inputs (and outputs) as one of: numpy arrays, cupy "
+                "arrays, CPU torch tensors, or CUDA torch tensors."
+            )
+        return next(iter(modes))
+
     def __call__(self, *args):
+        """Execute the compiled artifact, dispatching by call mode.
+
+        Exactly one call mode is allowed per call (no mixing of array kinds).
+        GPU modes (cupy / CUDA torch) require a device-resident artifact; host
+        modes (numpy / CPU torch) run on the device with a one-time performance
+        warning when the artifact is device-resident, otherwise on the host.
+        """
+        mode = self._resolve_call_mode(args)
+
+        if mode in _GPU_CALL_MODES and not self.device_resident:
+            raise TypeError(
+                f"{mode} arguments were provided, but this artifact is not "
+                "device-resident. GPU arrays can only be used with a "
+                "device-resident artifact (a fully-offloadable kernel compiled "
+                "for a GPU target). Provide host arrays (numpy arrays or CPU "
+                "torch tensors) instead."
+            )
+
+        # Device-resident artifacts consume/produce device pointers directly.
+        # Host inputs are copied to the device inside _call_device (with a
+        # one-time warning); device inputs are consumed zero-copy.
+        if self.device_resident:
+            return self._call_device(*args)
+
+        # Host execution path. CPU torch tensors are converted to numpy views so
+        # the ctypes boundary can take their data pointer.
+        # Inform once when a GPU target falls back to host execution because the
+        # device-residency optimization did not apply to this artifact.
+        if self.target in ("cuda", "rocm") and not self._warned_residency_failed:
+            self._warned_residency_failed = True
+            warn_device_residency_failed(self.target)
+
+        if mode == _CALL_MODE_TORCH_CPU:
+            args = tuple(
+                a.detach().cpu().contiguous().numpy() if _is_torch_tensor(a) else a
+                for a in args
+            )
+        return self._call_host(*args)
+
+    def _call_host(self, *args):
         # Ultra-fast path using pre-computed tuple-based argument info
         # Local variable caching for speed
         _eval = eval

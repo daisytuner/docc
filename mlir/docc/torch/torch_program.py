@@ -133,16 +133,30 @@ class TorchProgram(DoccProgram):
         else:
             all_args = args
 
-        # Convert inputs to numpy
+        # Device-resident artifacts consume/produce device pointers directly:
+        # pass tensors straight through. CompiledSDFG runs CUDA tensors zero-copy
+        # and copies CPU tensors to the device (with a one-time warning).
+        if self._compiled.device_resident:
+            result = self._compiled(*all_args)
+            if is_torch_input:
+                result = self._convert_outputs(result, args)
+            return result
+
+        # Non-device-resident artifact: CUDA tensors cannot run on the host.
+        if any(isinstance(arg, torch.Tensor) and arg.is_cuda for arg in all_args):
+            raise TypeError(
+                "CUDA torch tensors were provided, but this artifact is not "
+                "device-resident. GPU tensors can only be used with a "
+                "device-resident artifact (a fully-offloadable model compiled "
+                "for a GPU target). Move the tensors to the host (`.cpu()`) to "
+                "run on this artifact."
+            )
+
+        # Host execution: convert CPU tensors to numpy, run, convert back.
         numpy_args = self._convert_inputs(all_args)
-
-        # Execute - CompiledSDFG returns tuple for multi-output or single value
         result = self._compiled(*numpy_args)
-
-        # Convert outputs back to torch if inputs were torch
         if is_torch_input:
             result = self._convert_outputs(result, args)
-
         return result
 
     def compile(
@@ -257,6 +271,15 @@ class TorchProgram(DoccProgram):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
             sdfg = StructuredSDFG.from_file(sdfg_path)
             self._sdfg = sdfg
+
+            # The cached .so embeds a device-resident (or host) calling
+            # convention chosen at compile time and recorded in the SDFG
+            # metadata. Restore that decision so we marshal arguments the same
+            # way; otherwise a device-resident binary would be fed host pointers
+            # via the host path -> double free.
+            self._device_resident = sdfg.metadata("device_resident") == "1"
+            backend = sdfg.metadata("device_backend")
+            self._device_backend = backend or None
         else:
             # Build SDFG if not already done
             if self._sdfg is None:
@@ -306,6 +329,9 @@ class TorchProgram(DoccProgram):
             shape_sources=shape_sources,
             output_args=output_args,
             output_shapes=output_shapes,
+            device_resident=self._device_resident,
+            device_backend=self._device_backend,
+            target=self.target,
         )
 
         # Cache
@@ -451,6 +477,12 @@ class TorchProgram(DoccProgram):
                 return val if is_cpu else val.to(device)
             elif isinstance(val, (int, float)):
                 return torch.tensor(val, device=device)
+            elif hasattr(val, "__cuda_array_interface__"):
+                # Device-resident output (e.g. cupy array): zero-copy to torch.
+                t = torch.from_dlpack(val)
+                if t.device != device:
+                    t = t.to(device)
+                return t
             else:
                 return val
 

@@ -70,7 +70,7 @@ def test_trmm(target):
                 "FOR": 5,
                 "MAP": 4,
                 "CUDA": 4,
-                "CUDAOffloading": 7,
+                "CUDAOffloading": 2,
             },
             rtol=5 - 1,
         )
@@ -80,7 +80,7 @@ def test_trmm(target):
                 "FOR": 5,
                 "MAP": 4,
                 "ROCM": 4,
-                "ROCMOffloading": 7,
+                "ROCMOffloading": 2,
             },
             rtol=5 - 1,
         )

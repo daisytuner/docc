@@ -81,6 +81,23 @@ def _combine_params_with_init_returns(params, initialize_func, init_returns):
     return combined, init_returns
 
 
+def _to_host(obj):
+    """Recursively bring cupy arrays back to host (numpy) for verification.
+
+    Only called on the device-resident path, where cupy is guaranteed to be
+    importable (the artifact ran on the device).
+    """
+    import cupy as cp
+
+    if isinstance(obj, cp.ndarray):
+        return cp.asnumpy(obj)
+    if isinstance(obj, tuple):
+        return tuple(_to_host(o) for o in obj)
+    if isinstance(obj, list):
+        return [_to_host(o) for o in obj]
+    return obj
+
+
 class SDFGVerification:
     def __init__(
         self,
@@ -89,14 +106,20 @@ class SDFGVerification:
         capsys=None,
         atol=1e-5,
         rtol=1e-8,
+        device_resident=None,
     ):
         self._verification = verification
         self._non_critical = non_critical
         self._capsys = capsys
         self.atol = atol
         self.rtol = rtol
+        # Expected device-residency promotion result (True/False), or None to
+        # skip the check.
+        self._device_resident = device_resident
 
-    def verify(self, stats: dict, test_file: str, test_target: str) -> None:
+    def verify(
+        self, stats: dict, test_file: str, test_target: str, device_resident=None
+    ) -> None:
         print(stats)
         all_good = True
         for key, val in self._verification.items():
@@ -122,6 +145,25 @@ class SDFGVerification:
                             f"::error file=python/{test_file},title={test_target}::Report key {key} is {stat}, expected {val}",
                         )
                     all_good = False
+
+        # Optional device-residency expectation.
+        if self._device_resident is not None:
+            if not self._non_critical:
+                assert device_resident == self._device_resident, (
+                    f"Expected device_resident={self._device_resident} "
+                    f"but got {device_resident}"
+                )
+            elif device_resident != self._device_resident:
+                capsys = self._capsys or _GLOBAL_CAPSYS
+                with capsys.disabled():
+                    if all_good:
+                        print()
+                    print(
+                        f"::error file=python/{test_file},title={test_target}::"
+                        f"Device residency is {device_resident}, expected {self._device_resident}",
+                    )
+                all_good = False
+
         if all_good:
             print("All verifications passed.")
 
@@ -179,16 +221,36 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
             remote_tuning=args.remote_tuning,
         )
 
+        # Compile with host arrays (shape inference / caching), then feed
+        # device-resident artifacts with cupy arrays so the benchmark measures
+        # pure on-device execution without host<->device copies at the boundary.
+        compiled = kernel_with_target.compile(*inputs_docc)
+        if kernel_with_target._device_resident:
+            import cupy as cp
+
+            device_inputs = [
+                cp.asarray(x) if isinstance(x, np.ndarray) else x for x in inputs_docc
+            ]
+
+            def _run_docc():
+                compiled(*device_inputs)
+                cp.cuda.runtime.deviceSynchronize()
+
+        else:
+
+            def _run_docc():
+                kernel_with_target(*inputs_docc)
+
         times = []
         start = time.time()
-        kernel_with_target(*inputs_docc)
+        _run_docc()
         end = time.time()
         times.append(end - start)
         print(f"Docc execution time: {end - start:.6f} seconds")
 
         for _ in range(args.n_runs):
             start = time.time()
-            kernel_with_target(*inputs_docc)
+            _run_docc()
             end = time.time()
             times.append(end - start)
             print(f"Docc execution time (cached): {end - start:.6f} seconds")
@@ -249,7 +311,30 @@ def run_pytest(
         category="server",
         remote_tuning=remote_tuning,
     )
-    res_docc = kernel_with_target(*inputs_docc)
+
+    # Compile with host arrays so shape inference and caching are correct, then
+    # learn whether the device-residency promotion pass succeeded.
+    compiled = kernel_with_target.compile(*inputs_docc)
+    device_resident = kernel_with_target._device_resident
+
+    if device_resident:
+        # Device-resident artifacts keep their data on the device: feed cupy
+        # arrays (no host<->device copies at the boundary), then synchronize the
+        # results and any in-place argument writes back to the host so the
+        # numerical checks below run against numpy arrays.
+        import cupy as cp
+
+        device_inputs = [
+            cp.asarray(x) if isinstance(x, np.ndarray) else x for x in inputs_docc
+        ]
+        res_docc = compiled(*device_inputs)
+        cp.cuda.runtime.deviceSynchronize()
+        res_docc = _to_host(res_docc)
+        for i in range(len(inputs_docc)):
+            if isinstance(inputs_docc[i], np.ndarray):
+                inputs_docc[i] = cp.asnumpy(device_inputs[i])
+    else:
+        res_docc = kernel_with_target(*inputs_docc)
 
     sdfg = kernel_with_target.last_sdfg
     stats = sdfg.loop_report()
@@ -266,7 +351,7 @@ def run_pytest(
             test_sub = target
     else:
         test_case = f"unknown"
-    verifier.verify(stats, test_case, test_sub)
+    verifier.verify(stats, test_case, test_sub, device_resident=device_resident)
 
     # Validate return values if they exist
     if res_ref is not None:

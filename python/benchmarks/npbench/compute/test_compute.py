@@ -62,23 +62,19 @@ def test_compute(target):
         verifier = SDFGVerification(
             verification={
                 "CUDA": 2,
-                "SEQUENTIAL": 0,
                 "FOR": 2,
                 "MAP": 2,
-                "CUDAOffloading": 6,
-                "Malloc": 0,
-            }
+            },
+            device_resident=True,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 2,
-                "SEQUENTIAL": 0,
                 "FOR": 2,
                 "MAP": 2,
-                "ROCMOffloading": 6,
-                "Malloc": 0,
-            }
+            },
+            device_resident=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
