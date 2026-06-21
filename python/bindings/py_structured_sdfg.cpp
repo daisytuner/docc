@@ -437,9 +437,21 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
     sdfg::passes::DeviceResidentArgPromotionPass promotion_pass(is_rocm);
-    bool changed = promotion_pass.run(builder, analysis_manager);
+    bool promoted = promotion_pass.run(builder, analysis_manager);
 
-    return changed;
+    if (promoted) {
+        // Cleanup
+        // sdfg::passes::ReferencePropagation reference_propagation;
+        // reference_propagation.run(builder, analysis_manager);
+        // sdfg::passes::DeadReferenceElimination dead_reference_elimination;
+        // dead_reference_elimination.run(builder, analysis_manager);
+        // sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
+        // data_transfer_minimization.run(builder, analysis_manager);
+        // sdfg::passes::DeadDataElimination dead_data_elimination;
+        // dead_data_elimination.run(builder, analysis_manager);
+    }
+
+    return promoted;
 }
 
 struct SnippetMetadata {
