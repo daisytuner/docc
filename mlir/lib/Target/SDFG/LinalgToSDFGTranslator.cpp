@@ -889,7 +889,9 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
     auto result = op->getResult(0);
     auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
-    auto output_container = translator.get_or_copy_output_container(output, deb_info);
+    // The matmul fully overwrites its output (beta=0), so the init copy is dead.
+    auto output_container =
+        translator.get_or_copy_output_container(output, deb_info, /*consumer_overwrites_output=*/true);
     auto result_container = translator.get_or_create_container(result);
 
     translator.add_reference(output_container, result_container, deb_info);
@@ -982,7 +984,9 @@ LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::B
     auto result = op->getResult(0);
     auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
-    auto output_container = translator.get_or_copy_output_container(output, deb_info);
+    // The batch matmul fully overwrites its output (beta=0), so the init copy is dead.
+    auto output_container =
+        translator.get_or_copy_output_container(output, deb_info, /*consumer_overwrites_output=*/true);
     auto result_container = translator.get_or_create_container(result);
 
     translator.add_reference(output_container, result_container, deb_info);

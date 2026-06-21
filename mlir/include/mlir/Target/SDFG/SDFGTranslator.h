@@ -123,7 +123,12 @@ public:
     /// If `output` is used as a DPS init by more than one linalg op, allocate a fresh
     /// copy via malloc + memcpy and return the new container name.
     /// Otherwise return the original container for `output`.
-    std::string get_or_copy_output_container(Value output, const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo());
+    /// If `consumer_overwrites_output` is true, the caller guarantees it fully overwrites the
+    /// returned buffer before reading it (e.g. matmul with beta=0), so the init copy is skipped
+    /// and a fresh uninitialized buffer is handed out (the malloc still happens).
+    std::string get_or_copy_output_container(
+        Value output, const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo(), bool consumer_overwrites_output = false
+    );
 
     std::string store_in_c_order(
         const std::string& container,

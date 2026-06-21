@@ -386,7 +386,8 @@ static int count_linalg_output_uses(Value value) {
     return count;
 }
 
-std::string SDFGTranslator::get_or_copy_output_container(Value output, const ::sdfg::DebugInfo& deb_info) {
+std::string SDFGTranslator::
+    get_or_copy_output_container(Value output, const ::sdfg::DebugInfo& deb_info, bool consumer_overwrites_output) {
     auto output_container = this->get_or_create_container(output);
 
     if (count_linalg_output_uses(output) <= 1) {
@@ -414,8 +415,10 @@ std::string SDFGTranslator::get_or_copy_output_container(Value output, const ::s
 
     this->handle_malloc(copy_container, byte_count, deb_info);
 
-    // Skip memcpy if the output is defined by tensor.empty (uninitialized data)
-    if (!output.getDefiningOp() || !llvm::isa<tensor::EmptyOp>(output.getDefiningOp())) {
+    // Skip the init copy if the consumer fully overwrites its output before reading it
+    // (e.g. matmul with beta=0), or the output is uninitialized (tensor.empty).
+    if (!consumer_overwrites_output &&
+        (!output.getDefiningOp() || !llvm::isa<tensor::EmptyOp>(output.getDefiningOp()))) {
         auto& src_type = builder_.subject().type(output_container);
         auto& dst_type = builder_.subject().type(copy_container);
         ::sdfg::stdlib::add_memcpy_block(
