@@ -27,6 +27,10 @@ MLIR_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
 SEGFORMER_MODULE = "benchmarks.torch.model_zoo.segformer"
 
 TIME_RE = re.compile(r"execution time:\s*([\d.]+)\s*seconds", re.IGNORECASE)
+# The stage index is the first number following a stage-prefixed segment, e.g.
+# "...block.1.0" -> stage 1, while "...block.0.1" -> stage 0 (the trailing .1 is
+# the layer within stage 0, not a stage selector).
+STAGE_RE = re.compile(r"(?:path_embeddings|block|linear_c)\.(\d+)")
 
 
 def _load_variants() -> list[str]:
@@ -35,6 +39,12 @@ def _load_variants() -> list[str]:
     from benchmarks.torch.model_zoo.segformer import BENCHMARKS
 
     return [v for v in BENCHMARKS.keys() if v not in ("default")]
+
+
+def _variant_stage(variant: str) -> int | None:
+    """Return the encoder stage index a variant belongs to, or None."""
+    m = STAGE_RE.search(variant)
+    return int(m.group(1)) if m else None
 
 
 def _parse_times(output: str) -> list[float]:
@@ -122,7 +132,18 @@ def main() -> None:
         dest="variants",
         help="Run only the given variant(s); may be repeated. Default: all.",
     )
+    parser.add_argument(
+        "--stage",
+        type=int,
+        action="append",
+        dest="stages",
+        help="Run only the layers within the given encoder stage; may be "
+        "repeated. Cannot be combined with --variant.",
+    )
     args = parser.parse_args()
+
+    if args.variants and args.stages is not None:
+        parser.error("--stage cannot be combined with --variant")
 
     all_variants = _load_variants()
     if args.variants:
@@ -130,6 +151,12 @@ def main() -> None:
         if unknown:
             parser.error(f"unknown variant(s): {', '.join(unknown)}")
         variants = args.variants
+    elif args.stages is not None:
+        stages = set(args.stages)
+        variants = [v for v in all_variants if _variant_stage(v) in stages]
+        if not variants:
+            wanted = ", ".join(str(s) for s in sorted(stages))
+            parser.error(f"no variants found for stage(s): {wanted}")
     else:
         variants = all_variants
 
