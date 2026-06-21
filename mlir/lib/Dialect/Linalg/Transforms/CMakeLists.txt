@@ -16,6 +16,7 @@ add_mlir_dialect_library(MLIRLinalgCustomTransforms
     MLIRIR
     MLIRLinalgCustomDialect
     MLIRLinalgDialect
+    MLIRLinalgTransforms
     MLIRMathDialect
     MLIRPass
     MLIRTensorDialect

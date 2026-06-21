@@ -2,6 +2,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Transforms/CustomTransforms.h"
+#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
@@ -83,6 +84,9 @@ void populateLinalgCustomRemoveRedundantOpsPass(RewritePatternSet& patterns) {
         Linalg2DNchwRemoveLinalgFill<DepthwiseConv2DNchwChwOp, 0x0000000000000000>,
         Linalg2DNchwRemoveLinalgFill<PoolingNchwMaxOp, 0xFFF0000000000000>,
         Linalg2DNchwRemoveLinalgFill<PoolingNchwSumOp, 0x0000000000000000>>(patterns.getContext());
+
+    // DCE for linalg ops: removes dead results (and their init operands) of `linalg.generic`,
+    populateEraseUnusedOperandsAndResultsPatterns(patterns);
 }
 
 } // namespace linalg

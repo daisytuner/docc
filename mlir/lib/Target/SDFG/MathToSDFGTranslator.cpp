@@ -86,7 +86,10 @@ LogicalResult translateMathBinaryOp(SDFGTranslator& translator, Op* op) {
         auto& lhs_container_type = builder.subject().type(lhs_container);
         auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
         auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
-        auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+        // Reuse the same access node when lhs and rhs alias (e.g. `math.atan2 %x, %x`),
+        // otherwise the SDFG validator rejects two distinct access nodes for the same data.
+        auto& rhs_access = (rhs_container == lhs_container) ? lhs_access
+                                                            : builder.add_access(block, rhs_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         auto& libnode = builder.add_library_node<
             ::sdfg::math::cmath::CMathNode>(block, deb_info, function, lhs_container_type.primitive_type());
@@ -117,7 +120,8 @@ LogicalResult translateMathBinaryOp(SDFGTranslator& translator, Op* op) {
 
         auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
         auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
-        auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+        auto& rhs_access = (rhs_container == lhs_container) ? lhs_access
+                                                            : builder.add_access(block, rhs_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         auto& libnode = builder.add_library_node<::sdfg::math::tensor::CMathTensorNode>(
             block, deb_info, function, "_out", std::vector<std::string>({"_in1", "_in2"}), sdfg_tensor->shape()
@@ -202,8 +206,11 @@ LogicalResult translateMathFmaOp(SDFGTranslator& translator, math::FmaOp* fma_op
         is_sdfg_primitive(result.getType())) {
         auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
         auto& a_access = builder.add_access(block, a_container, deb_info);
-        auto& b_access = builder.add_access(block, b_container, deb_info);
-        auto& c_access = builder.add_access(block, c_container, deb_info);
+        // Reuse access nodes when operands alias to satisfy the SDFG no-duplicate-data rule.
+        auto& b_access = (b_container == a_container) ? a_access : builder.add_access(block, b_container, deb_info);
+        auto& c_access = (c_container == a_container)   ? a_access
+                         : (c_container == b_container) ? b_access
+                                                        : builder.add_access(block, c_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         auto& tasklet =
             builder
@@ -232,8 +239,10 @@ LogicalResult translateMathFmaOp(SDFGTranslator& translator, math::FmaOp* fma_op
 
         auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
         auto& a_access = builder.add_access(block, a_container, deb_info);
-        auto& b_access = builder.add_access(block, b_container, deb_info);
-        auto& c_access = builder.add_access(block, c_container, deb_info);
+        auto& b_access = (b_container == a_container) ? a_access : builder.add_access(block, b_container, deb_info);
+        auto& c_access = (c_container == a_container)   ? a_access
+                         : (c_container == b_container) ? b_access
+                                                        : builder.add_access(block, c_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         auto& libnode = builder.add_library_node<::sdfg::math::tensor::TaskletTensorNode>(
             block,
@@ -269,7 +278,8 @@ LogicalResult translateMathFPowIOp(SDFGTranslator& translator, math::FPowIOp* fp
         auto& lhs_container_type = builder.subject().type(lhs_container);
         auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
         auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
-        auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+        auto& rhs_access = (rhs_container == lhs_container) ? lhs_access
+                                                            : builder.add_access(block, rhs_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         auto& libnode = builder.add_library_node<::sdfg::math::cmath::CMathNode>(
             block, deb_info, ::sdfg::math::cmath::CMathFunction::pow, lhs_container_type.primitive_type()
@@ -312,7 +322,8 @@ LogicalResult translateMathFPowIOp(SDFGTranslator& translator, math::FPowIOp* fp
 
         auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
         auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
-        auto& rhs_access = builder.add_access(block, rhs_container, deb_info);
+        auto& rhs_access = (rhs_container == lhs_container) ? lhs_access
+                                                            : builder.add_access(block, rhs_container, deb_info);
         auto& result_access = builder.add_access(block, result_container, deb_info);
         auto& libnode = builder.add_library_node<::sdfg::math::tensor::CMathTensorNode>(
             block,
