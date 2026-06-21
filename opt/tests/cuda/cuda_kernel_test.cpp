@@ -18,7 +18,7 @@ TEST(CUDAKernel, DispatcherTest) {
     auto& root = builder.subject().root();
 
     types::Scalar base_desc(types::PrimitiveType::Float);
-    types::Pointer pointer_type(base_desc);
+    types::Pointer pointer_type(types::StorageType::NV_Generic(), 0, "", base_desc);
     types::Scalar int_desc(types::PrimitiveType::Int32);
 
     auto& indvar = builder.add_container("i", int_desc);
@@ -95,7 +95,7 @@ TEST(CUDAKernel, NestedXYDispatcherTest) {
     auto& root = builder.subject().root();
 
     types::Scalar base_desc(types::PrimitiveType::Float);
-    types::Pointer pointer_type(base_desc);
+    types::Pointer pointer_type(types::StorageType::NV_Generic(), 0, "", base_desc);
     types::Scalar int_desc(types::PrimitiveType::Int32);
 
     auto& indvar = builder.add_container("i", int_desc);
@@ -187,7 +187,7 @@ TEST(CUDAKernel, NestedXZDispatcherTest) {
     auto& root = builder.subject().root();
 
     types::Scalar base_desc(types::PrimitiveType::Float);
-    types::Pointer pointer_type(base_desc);
+    types::Pointer pointer_type(types::StorageType::NV_Generic(), 0, "", base_desc);
     types::Scalar int_desc(types::PrimitiveType::Int32);
 
     auto& indvar = builder.add_container("i", int_desc);
@@ -279,7 +279,7 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
     auto& root = builder.subject().root();
 
     types::Scalar base_desc(types::PrimitiveType::Float);
-    types::Pointer pointer_type(base_desc);
+    types::Pointer pointer_type(types::StorageType::NV_Generic(), 0, "", base_desc);
     types::Scalar int_desc(types::PrimitiveType::Int32);
 
     auto& indvar = builder.add_container("i", int_desc);
@@ -391,7 +391,7 @@ TEST(CudaTransformTest, CudaTransformWithBlocksizeTest) {
     auto& root = builder.subject().root();
 
     types::Scalar base_desc(types::PrimitiveType::Float);
-    types::Pointer pointer_type(base_desc);
+    types::Pointer pointer_type(types::StorageType::NV_Generic(), 0, "", base_desc);
     types::Scalar int_desc(types::PrimitiveType::Int32);
 
     auto& indvar = builder.add_container("i", int_desc);
