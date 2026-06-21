@@ -1442,7 +1442,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                 }
             }
         }
-        analysis_manager.invalidate_preserving<analysis::AssumptionsAnalysis, analysis::LoopAnalysis>();
+        analysis_manager.preserve<analysis::AssumptionsAnalysis, analysis::LoopAnalysis>();
     } else {
         // ConsumerIntoProducer removes the consumer loop node entirely — full invalidation.
         analysis_manager.invalidate_all();
