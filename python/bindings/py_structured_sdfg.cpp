@@ -440,15 +440,17 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     bool promoted = promotion_pass.run(builder, analysis_manager);
 
     if (promoted) {
-        // Cleanup
-        sdfg::passes::ReferencePropagation reference_propagation;
-        reference_propagation.run(builder, analysis_manager);
-        sdfg::passes::DeadReferenceElimination dead_reference_elimination;
-        dead_reference_elimination.run(builder, analysis_manager);
-        sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
-        data_transfer_minimization.run(builder, analysis_manager);
-        sdfg::passes::DeadDataElimination dead_data_elimination;
-        dead_data_elimination.run(builder, analysis_manager);
+        for (int i = 0; i < 2; ++i) {
+            // Cleanup
+            sdfg::passes::ReferencePropagation reference_propagation;
+            reference_propagation.run(builder, analysis_manager);
+            sdfg::passes::DeadReferenceElimination dead_reference_elimination;
+            dead_reference_elimination.run(builder, analysis_manager);
+            sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
+            data_transfer_minimization.run(builder, analysis_manager);
+            sdfg::passes::DeadDataElimination dead_data_elimination;
+            dead_data_elimination.run(builder, analysis_manager);
+        }
     }
 
     return promoted;
