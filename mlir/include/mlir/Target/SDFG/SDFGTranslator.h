@@ -125,6 +125,13 @@ public:
     /// Otherwise return the original container for `output`.
     std::string get_or_copy_output_container(Value output, const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo());
 
+    /// Returns the container of `input` if its buffer can be safely overwritten in place by an
+    /// elementwise consumer producing `result`, otherwise the empty string. Conservatively limited
+    /// to inputs produced by a matmul/batch_matmul: a fresh, fully-written, owned buffer used
+    /// exactly once and matching the result's shape and element type. Lets the consumer reuse that
+    /// buffer instead of allocating a new output, saving a malloc (and its free).
+    std::string try_inplace_reuse_container(Value input, Value result);
+
     std::string store_in_c_order(
         const std::string& container,
         const TensorInfo& tensor_info,

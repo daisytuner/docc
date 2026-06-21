@@ -434,6 +434,37 @@ std::string SDFGTranslator::get_or_copy_output_container(Value output, const ::s
     return copy_container;
 }
 
+std::string SDFGTranslator::try_inplace_reuse_container(Value input, Value result) {
+    // Only reuse the buffer of a matmul/batch_matmul result: it is a fresh, fully-written,
+    // owned transient (offset 0, dense), so overwriting it in place is sound. Other producers
+    // (e.g. transpose/reshape) yield references onto foreign storage and must not be clobbered.
+    Operation* def = input.getDefiningOp();
+    if (def == nullptr || !llvm::isa<linalg::MatmulOp, linalg::BatchMatmulOp>(def)) {
+        return "";
+    }
+
+    // The input must be consumed exactly once (by this consumer), so nothing reads it later.
+    if (!input.hasOneUse()) {
+        return "";
+    }
+
+    // Shapes and element types must match exactly (true elementwise, no broadcast/reshape).
+    auto in_type = llvm::dyn_cast<RankedTensorType>(input.getType());
+    auto res_type = llvm::dyn_cast<RankedTensorType>(result.getType());
+    if (!in_type || !res_type) {
+        return "";
+    }
+    if (in_type.getShape() != res_type.getShape() || in_type.getElementType() != res_type.getElementType()) {
+        return "";
+    }
+
+    if (!this->value_map_.count(input)) {
+        return "";
+    }
+    return *this->value_map_.begin(input);
+}
+
+
 LogicalResult translateOp(SDFGTranslator& translator, Operation* op) {
     if (op->getDialect()->getNamespace() == arith::ArithDialect::getDialectNamespace()) {
         return translateArithOp(translator, op);

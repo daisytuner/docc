@@ -55,7 +55,6 @@ LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, El
     auto& builder = translator.builder();
     auto input1_container = translator.get_or_create_container(input1);
     auto input2_container = translator.get_or_create_container(input2);
-    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
     auto input1_tensor_type = llvm::dyn_cast<TensorType>(input1.getType());
@@ -93,7 +92,18 @@ LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, El
         code = int_code;
     }
 
-    translator.add_reference(output_container, result_container, deb_info);
+    // In-place reuse: if an input is a fresh, single-use matmul output of matching shape, write the
+    // elementwise result into that buffer (e.g. matmul + bias add) instead of allocating a new one.
+    std::string reuse_container = translator.try_inplace_reuse_container(input1, result);
+    if (reuse_container.empty()) {
+        reuse_container = translator.try_inplace_reuse_container(input2, result);
+    }
+    if (!reuse_container.empty()) {
+        translator.add_reference(reuse_container, result_container, deb_info);
+    } else {
+        auto output_container = translator.get_or_copy_output_container(output, deb_info);
+        translator.add_reference(output_container, result_container, deb_info);
+    }
 
     auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
     auto& input1_access = builder.add_access(block, input1_container, deb_info);
@@ -120,7 +130,6 @@ LogicalResult translateLinalgElementwiseCMathOp(SDFGTranslator& translator, Elem
 
     auto& builder = translator.builder();
     auto input_container = translator.get_or_create_container(input);
-    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
     auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
@@ -129,7 +138,15 @@ LogicalResult translateLinalgElementwiseCMathOp(SDFGTranslator& translator, Elem
     auto element_type = translator.convertType(result_tensor_type.getElementType());
     auto sdfg_tensor = tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
 
-    translator.add_reference(output_container, result_container, deb_info);
+    // In-place reuse: if the input is a fresh, single-use matmul output of matching shape, write the
+    // elementwise result into that buffer instead of allocating a new one.
+    std::string reuse_container = translator.try_inplace_reuse_container(input, result);
+    if (!reuse_container.empty()) {
+        translator.add_reference(reuse_container, result_container, deb_info);
+    } else {
+        auto output_container = translator.get_or_copy_output_container(output, deb_info);
+        translator.add_reference(output_container, result_container, deb_info);
+    }
 
     auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
     auto& input_access = builder.add_access(block, input_container, deb_info);
@@ -241,18 +258,36 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
     for (auto input : inputs) {
         input_containers.push_back(translator.get_or_create_container(input));
     }
-    output_containers.reserve(outputs.size());
-    for (auto output : outputs) {
-        output_containers.push_back(translator.get_or_copy_output_container(output, deb_info));
-    }
     result_containers.reserve(results.size());
     for (auto result : results) {
         result_containers.push_back(translator.get_or_create_container(result));
     }
 
-    // Create references
+    // Create references. When the output is written elementwise (identity indexing map), try to
+    // overwrite a fresh, single-use matmul input buffer in place (e.g. matmul + bias add) instead
+    // of allocating a new output, saving a malloc (and its free). The reused input must also be
+    // accessed elementwise (identity indexing map) so the in-place update is correct.
+    output_containers.reserve(outputs.size());
     for (size_t i = 0; i < outputs.size(); i++) {
-        translator.add_reference(output_containers.at(i), result_containers.at(i), deb_info);
+        std::string reuse_container;
+        auto output_map = llvm::cast<AffineMapAttr>(indexing_maps[inputs.size() + i]).getAffineMap();
+        if (output_map.isIdentity()) {
+            for (size_t j = 0; j < inputs.size(); j++) {
+                auto input_map = llvm::cast<AffineMapAttr>(indexing_maps[j]).getAffineMap();
+                if (!input_map.isIdentity()) {
+                    continue;
+                }
+                reuse_container = translator.try_inplace_reuse_container(inputs[j], results[i]);
+                if (!reuse_container.empty()) {
+                    break;
+                }
+            }
+        }
+        if (reuse_container.empty()) {
+            reuse_container = translator.get_or_copy_output_container(outputs[i], deb_info);
+        }
+        output_containers.push_back(reuse_container);
+        translator.add_reference(reuse_container, result_containers.at(i), deb_info);
     }
 
     // Create loops
