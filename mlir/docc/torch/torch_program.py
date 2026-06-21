@@ -271,6 +271,15 @@ class TorchProgram(DoccProgram):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
             sdfg = StructuredSDFG.from_file(sdfg_path)
             self._sdfg = sdfg
+
+            # The cached .so embeds a device-resident (or host) calling
+            # convention chosen at compile time and recorded in the SDFG
+            # metadata. Restore that decision so we marshal arguments the same
+            # way; otherwise a device-resident binary would be fed host pointers
+            # via the host path -> double free.
+            self._device_resident = sdfg.metadata("device_resident") == "1"
+            backend = sdfg.metadata("device_backend")
+            self._device_backend = backend or None
         else:
             # Build SDFG if not already done
             if self._sdfg is None:

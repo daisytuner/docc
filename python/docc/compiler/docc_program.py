@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import sys
 from typing import Any, Dict, Optional
+import json
 import os
 import re
 
@@ -238,7 +239,39 @@ class DoccProgram(ABC):
         if _statistics_enabled_by_env():
             print(_statistics_summary(), file=sys.stderr)
 
+        # Record the device-residency decision in the persisted (py4.norm) SDFG
+        # metadata. It is computed here (not stored in metadata by the pass) and
+        # decides host vs device argument marshalling. Binary-reuse paths
+        # (DOCC_REUSE_BINARIES) load only the cached .so + normalized SDFG and
+        # never re-run scheduling/promotion, so without this they default to
+        # host execution and feed host pointers into a device-resident binary
+        # -> heap corruption / double free.
+        if output_folder:
+            self._persist_device_residency(output_folder, sdfg)
+
         return lib_path
+
+    def _persist_device_residency(
+        self, output_folder: str, sdfg: StructuredSDFG
+    ) -> None:
+        """Stamp the device-residency decision into the persisted SDFG metadata.
+
+        Patches only the ``metadata`` object of the already-written
+        ``py4.norm.json`` (the file the reuse path loads), leaving the SDFG
+        structure and element IDs untouched so instrumentation references stay
+        valid.
+        """
+        json_path = os.path.join(output_folder, f"{sdfg.name}.py4.norm.json")
+        try:
+            with open(json_path) as f:
+                data = json.load(f)
+            metadata = data.setdefault("metadata", {})
+            metadata["device_resident"] = "1" if self._device_resident else "0"
+            metadata["device_backend"] = self._device_backend or ""
+            with open(json_path, "w") as f:
+                json.dump(data, f)
+        except (OSError, ValueError):
+            pass
 
     @abstractmethod
     def to_sdfg(self, *args: Any) -> StructuredSDFG:
