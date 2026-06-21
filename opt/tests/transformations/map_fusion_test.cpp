@@ -3658,13 +3658,15 @@ TEST(MapFusionTest, ScenarioC_BothReadWriteT) {
     EXPECT_TRUE(consumer_reads_tmp) << "Inlined consumer should read from _fused_tmp";
 }
 
-TEST(MapFusionTest, InitPlusReduction_Rejected) {
-    // Init map followed by reduction map with inner For loop must be rejected.
+TEST(MapFusionTest, InitIntoReduction_Hoisted) {
+    // Init map followed by reduction map with inner For loop: fused by HOISTING the init to
+    // the reduction's outer parallel band (Case 2), eliminating the separate init map.
     // Map(i, 0:N) { Map(j, 0:M) { T[i,j] = 0 } }
     // Map(i, 0:N) { Map(j, 0:M) { For(k, 0:K) { T[i,j] = T[i,j] + A[i,j,k] } } }
     //
-    // The consumer reads T inside a For loop (accumulation pattern).
-    // Fusing the init into the For would reset the accumulator every k iteration.
+    // The init writes the accumulator T at [i,j] (loop-invariant w.r.t. k), so it is placed
+    // once per (i,j) before For(k) rather than inlined inside the loop (which would reset the
+    // accumulator every k iteration).
 
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto& sdfg = builder.subject();
@@ -3764,7 +3766,42 @@ TEST(MapFusionTest, InitPlusReduction_Rejected) {
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::MapFusion transformation(map1_outer, map2_outer);
 
-    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+    // Case 2 (init-into-reduction): the zero-init of the accumulator T is loop-invariant
+    // w.r.t. the reduction indvar k and T is the accumulator, so the init is hoisted to the
+    // reduction's outer parallel band (before For(k)), eliminating the separate init map.
+    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+
+    transformation.apply(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.fused");
+
+    // The init must land in the inner parallel-band body (Map(j2)) BEFORE the For(k) loop,
+    // writing the accumulator T (not scalarized), and the reduction loop must be preserved.
+    auto& band_body = map2_inner.root();
+    ASSERT_EQ(band_body.size(), 2u);
+
+    auto* hoisted_init = dynamic_cast<structured_control_flow::Block*>(&band_body.at(0).first);
+    ASSERT_NE(hoisted_init, nullptr);
+    bool writes_T = false;
+    bool reads_A = false;
+    for (auto& node : hoisted_init->dataflow().nodes()) {
+        auto* acc = dynamic_cast<data_flow::AccessNode*>(&node);
+        if (acc == nullptr) {
+            continue;
+        }
+        if (acc->data() == "T" && hoisted_init->dataflow().in_degree(*acc) > 0) {
+            writes_T = true;
+        }
+        if (acc->data() == "A") {
+            reads_A = true;
+        }
+    }
+    EXPECT_TRUE(writes_T); // the hoisted init writes the accumulator array directly
+    EXPECT_FALSE(reads_A); // it is the init, not the reduction body
+
+    auto* preserved = dynamic_cast<structured_control_flow::StructuredLoop*>(&band_body.at(1).first);
+    ASSERT_NE(preserved, nullptr);
+    EXPECT_EQ(dynamic_cast<structured_control_flow::Map*>(preserved), nullptr); // still a sequential For
 }
 
 TEST(MapFusionTest, ElementwiseIntoReduction_Fused) {
@@ -3895,6 +3932,45 @@ TEST(MapFusionTest, ElementwiseIntoReduction_Fused) {
     transformation.apply(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.fused");
+
+    // Verify the scale producer was inlined INSIDE the reduction For loop (streamed
+    // per k2 iteration), scalarized through a _fused_tmp temporary, and that the
+    // reduction body no longer references the materialized array S.
+    auto& fused_body = for_k.root();
+    ASSERT_EQ(fused_body.size(), 2u); // inlined scale block, then the original reduce block
+
+    std::unordered_set<std::string> reads_in_for;
+    std::unordered_set<std::string> writes_in_for;
+    for (size_t bi = 0; bi < fused_body.size(); ++bi) {
+        auto* blk = dynamic_cast<structured_control_flow::Block*>(&fused_body.at(bi).first);
+        ASSERT_NE(blk, nullptr);
+        auto& df = blk->dataflow();
+        for (auto& node : df.nodes()) {
+            auto* acc = dynamic_cast<data_flow::AccessNode*>(&node);
+            if (acc == nullptr) {
+                continue;
+            }
+            if (df.in_degree(*acc) > 0) {
+                writes_in_for.insert(acc->data());
+            }
+            if (df.out_degree(*acc) > 0) {
+                reads_in_for.insert(acc->data());
+            }
+        }
+    }
+    // S (the big intermediate) is fully scalarized away inside the fused loop.
+    EXPECT_EQ(reads_in_for.count("S"), 0u);
+    EXPECT_EQ(writes_in_for.count("S"), 0u);
+    // The inlined scale now reads A directly inside the reduction loop.
+    EXPECT_EQ(reads_in_for.count("A"), 1u);
+    // A fresh per-element scalar temp carries the streamed value.
+    bool has_fused_tmp = false;
+    for (const auto& w : writes_in_for) {
+        if (w.rfind("_fused_tmp", 0) == 0) {
+            has_fused_tmp = true;
+        }
+    }
+    EXPECT_TRUE(has_fused_tmp);
 }
 
 TEST(MapFusionTest, ConsumerHasMoreDimensions) {

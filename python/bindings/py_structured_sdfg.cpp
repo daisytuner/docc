@@ -312,8 +312,9 @@ void PyStructuredSDFG::simplify() {
     dce.run(builder_opt, analysis_manager);
     dataflow_simplification.run(builder_opt, analysis_manager);
 
-    // Fuse maps
-    auto map_fusion = sdfg::passes::normalization::map_fusion();
+    // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
+    // normalize() map-fusion run so loop distribution and fusion do not fight)
+    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
     map_fusion.run(builder_opt, analysis_manager);
 }
 
@@ -363,16 +364,17 @@ void PyStructuredSDFG::normalize() {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
-    // Fuse maps
-    auto map_fusion = sdfg::passes::normalization::map_fusion();
+    // Fuse maps (no init-into-reduction hoisting yet; this run precedes loop distribution)
+    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
     map_fusion.run(builder, analysis_manager);
 
     // Distribute and permute
     auto pipeline = sdfg::passes::normalization::loop_normalization();
     pipeline.run(builder, analysis_manager);
 
-    // Fuse maps
-    map_fusion.run(builder, analysis_manager);
+    // Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
+    auto map_fusion_hoist = sdfg::passes::normalization::map_fusion(true);
+    map_fusion_hoist.run(builder, analysis_manager);
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
