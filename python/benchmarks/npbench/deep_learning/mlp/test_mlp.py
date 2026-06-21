@@ -87,11 +87,23 @@ def test_mlp(target):
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={"CUDA": 16, "FOR": 18, "MAP": 16, "CUDAOffloading": 38}
+            verification={
+                "CUDA": 16,
+                "FOR": 18,
+                "MAP": 16,
+                "CUDAOffloading": 22,
+                "GEMM": 3,
+            }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={"ROCM": 16, "FOR": 18, "MAP": 16, "ROCMOffloading": 38}
+            verification={
+                "ROCM": 16,
+                "FOR": 18,
+                "MAP": 16,
+                "ROCMOffloading": 22,
+                "GEMM": 3,
+            }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
