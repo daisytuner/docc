@@ -144,14 +144,11 @@ void ControlFlowAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     dom_tree_.clear();
     pdom_tree_.clear();
 
-    this->traverse(sdfg_.root());
+    auto [root_start, root_end] = this->traverse(sdfg_.root());
 
-    graph::Vertex entry_vertex = boost::graph_traits<graph::Graph>::null_vertex();
-    for (auto v : boost::make_iterator_range(boost::vertices(graph_))) {
-        if (boost::in_degree(v, graph_) == 0) {
-            assert(entry_vertex == boost::graph_traits<graph::Graph>::null_vertex());
-            entry_vertex = v;
-        }
+    graph::Vertex entry_vertex = root_start;
+    if (entry_vertex == boost::graph_traits<graph::Graph>::null_vertex()) {
+        return;
     }
 
     auto dom_tree = graph::dominator_tree(graph_, entry_vertex);

@@ -194,6 +194,12 @@ void OffloadState::found_offload_node(Block& block, offloading::DataOffloadingNo
         }
     }
 
+    // Record every device-buffer deallocation so a later `T = S` aliasing transform can reconcile the shared
+    // storage's frees (drop the dominated one) instead of leaving a double free.
+    if (ends_dev_lifetime && found_dev_access) {
+        collector_.register_device_free(found_dev_access->data(), &block, &offload);
+    }
+
     if (ends_dev_lifetime || updates_on_host) {
         generated_.emplace(
             offload.element_id(),

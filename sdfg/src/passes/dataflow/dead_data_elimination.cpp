@@ -409,9 +409,25 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
                     for (auto [edge_to_remove, indirect_write] : to_remove) {
                         int removed = 0;
                         if (indirect_write.type == IndirectMemoryAccessFinder::IndirectWriteType::PtrBorrow) {
-                            removed =
-                                builder
-                                    .clear_ptr_borrow_edge(*const_cast<Block*>(indirect_write.block), *edge_to_remove);
+                            auto* block_ptr = const_cast<Block*>(indirect_write.block);
+                            // A dead D2H readback writes its (owned, never-read) host buffer through a write-only
+                            // no-capture borrow. The generic edge-removal path cannot strip it when the D2H is fused
+                            // with a device free (can_remove_in_edge -> NotRemovable), because the device deallocation
+                            // must survive. Demote the node to a standalone free instead, mirroring DTM's
+                            // eliminate_redundant_d2h; a non-fused D2H falls through to the generic RemoveNodeAfter
+                            // path.
+                            auto* offload = dynamic_cast<
+                                offloading::DataOffloadingNode*>(const_cast<data_flow::DataFlowNode*>(&edge_to_remove
+                                                                                                           ->dst()));
+                            if (offload && offload->is_d2h() && offload->is_free()) {
+                                auto& host_access = dynamic_cast<const data_flow::AccessNode&>(edge_to_remove->src());
+                                builder.remove_memlet(*block_ptr, *edge_to_remove);
+                                builder.remove_node(*block_ptr, host_access);
+                                offload->remove_d2h();
+                                removed = 1;
+                            } else {
+                                removed = builder.clear_ptr_borrow_edge(*block_ptr, *edge_to_remove);
+                            }
                         } else if (indirect_write.type == IndirectMemoryAccessFinder::IndirectWriteType::AccessNode) {
                             auto& write_node = dynamic_cast<const data_flow::AccessNode&>(edge_to_remove->dst());
                             removed = builder.clear_node(

@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "sdfg/analysis/analysis.h"
+#include "sdfg/analysis/control_flow_analysis.h"
 #include "sdfg/analysis/data_transfer_elimination_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -33,6 +34,8 @@ protected:
         builder::StructuredSDFGBuilder& builder,
         analysis::OffloadHolder& copy_out,
         analysis::OffloadHolder& copy_in,
+        const analysis::DataTransferEliminationAnalysis& transfer_analysis,
+        analysis::ControlFlowAnalysis& cf_analysis,
         bool remove_d2h = false
     );
     bool eliminate_malloc_first_transfer(
