@@ -15,6 +15,8 @@ void create_blas_handle(codegen::PrettyPrinter& stream, const codegen::LanguageE
     stream << "cublasStatus_t status_create = cublasCreate(&handle);" << std::endl;
     cublas_error_checking(stream, language_extension, "status_create");
     stream.setIndent(stream.indent() - 4);
+    stream << "cublasStatus_t status_mathmode = cublasSetMathMode(handle, CUBLAS_TENSOR_OP_MATH);" << std::endl;
+    cublas_error_checking(stream, language_extension, "status_mathmode");
     stream << "}" << std::endl;
 }
 
