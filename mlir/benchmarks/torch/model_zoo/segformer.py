@@ -39,7 +39,7 @@ def setup_segformer_overlap_patch_embeddings(
         patch_size, stride, num_channels, hidden_size
     )
     model.eval()
-    x = torch.randn(1, num_channels, 512, 512)
+    x = torch.randn(1, num_channels, h, w)
     return model, x
 
 
