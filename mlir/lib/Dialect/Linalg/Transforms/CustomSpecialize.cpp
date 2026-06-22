@@ -8,7 +8,9 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/IR/LinalgCustomOps.h"
 #include "mlir/Dialect/Linalg/Transforms/CustomSpecializeBatchNorm.h"
+#include "mlir/Dialect/Linalg/Transforms/CustomSpecializeSoftmax.h"
 #include "mlir/Dialect/Linalg/Transforms/CustomTransforms.h"
+#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/AffineExpr.h"
@@ -565,7 +567,11 @@ void populateLinalgCustomSpecializeGenericOpsPass(RewritePatternSet& patterns) {
         LinalgGenericToSpecialLinalgDivF,
         LinalgGenericToLinalgCustomReLU,
         LinalgGenericToLinalgCustomSigmoid,
-        LinalgGenericToLinalgCustomBatchNorm2DNchw>(patterns.getContext());
+        LinalgGenericToLinalgCustomBatchNorm2DNchw,
+        LinalgGenericToLinalgSoftmax>(patterns.getContext());
+
+    // DCE for linalg ops: removes dead results (and their init operands) of `linalg.generic`,
+    populateEraseUnusedOperandsAndResultsPatterns(patterns);
 }
 
 } // namespace linalg
