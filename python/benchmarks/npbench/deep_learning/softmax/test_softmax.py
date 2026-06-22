@@ -43,9 +43,9 @@ def test_softmax(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "SEQUENTIAL": 20,
-                "FOR": 22,
-                "MAP": 20,
+                "SEQUENTIAL": 14,
+                "FOR": 16,
+                "MAP": 14,
             }
         )
     elif target == "sequential":

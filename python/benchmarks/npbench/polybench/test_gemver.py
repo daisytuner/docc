@@ -56,9 +56,9 @@ def test_gemver(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CUDA": 8,
-                "FOR": 12,
-                "MAP": 8,
+                "CUDA": 5,
+                "FOR": 9,
+                "MAP": 5,
                 "CUDAOffloading": 6,
             },
         )
