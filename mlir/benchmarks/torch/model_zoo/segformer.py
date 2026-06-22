@@ -850,26 +850,30 @@ if __name__ == "__main__":
 
 
 @pytest.mark.parametrize("target", TARGETS)
-def test_segformer_encoder_path_embeddings_0(target) -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.0"]()
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_path_embeddings_0(target, batch_size) -> None:
+    model, x = BENCHMARKS["segformer.encoder.path_embeddings.0"](batch_size)
     check_backend(model, x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
-def test_segformer_encoder_path_embeddings_1(target) -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.1"]()
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_path_embeddings_1(target, batch_size) -> None:
+    model, x = BENCHMARKS["segformer.encoder.path_embeddings.1"](batch_size)
     check_backend(model, x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
-def test_segformer_encoder_path_embeddings_2(target) -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.2"]()
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_path_embeddings_2(target, batch_size) -> None:
+    model, x = BENCHMARKS["segformer.encoder.path_embeddings.2"](batch_size)
     check_backend(model, x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
-def test_segformer_encoder_path_embeddings_3(target) -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.3"]()
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_path_embeddings_3(target, batch_size) -> None:
+    model, x = BENCHMARKS["segformer.encoder.path_embeddings.3"](batch_size)
     check_backend(model, x, target=target)
 
 
@@ -1680,13 +1684,15 @@ def test_decode_head_linear_c_3(target, batch_size) -> None:
 
 
 @pytest.mark.parametrize("target", TARGETS)
-def test_decode_head(target) -> None:
-    model, x = BENCHMARKS["decode_head"]()
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_decode_head(target, batch_size) -> None:
+    model, x = BENCHMARKS["decode_head"](batch_size)
     check_backend(model, *x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
 @pytest.mark.skip(reason="This test is too slow to run in CI")
-def test_all(target) -> None:
-    model, x = BENCHMARKS["all"]()
+def test_all(target, batch_size) -> None:
+    model, x = BENCHMARKS["all"](batch_size)
     check_backend(model, x, target=target)
