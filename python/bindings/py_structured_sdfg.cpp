@@ -321,21 +321,8 @@ void PyStructuredSDFG::simplify() {
     dce.run(builder_opt, analysis_manager);
     dataflow_simplification.run(builder_opt, analysis_manager);
 
-    // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
-    sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
-    map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
-    // Cleanup of artifacts of MapFusion
-    dde.run(builder_opt, analysis_manager);
-    dce.run(builder_opt, analysis_manager);
-    sdfg::passes::Pipeline block_fusion("BlockFusion");
-    block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
-    block_fusion.run(builder_opt, analysis_manager);
-    sdfg::passes::RedundantLoadEliminationPass rle;
-    rle.run(builder_opt, analysis_manager);
-    dde.run(builder_opt, analysis_manager);
-    sdfg::passes::TaskletFusionPass task_fuse_pass;
-    task_fuse_pass.run(builder_opt, analysis_manager);
     if (use_new_fusion_in_simplify_) {
+        // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
         sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
 
@@ -417,10 +404,6 @@ void PyStructuredSDFG::normalize() {
     auto map_fusion_hoist = sdfg::passes::normalization::map_fusion(true);
     map_fusion_hoist.run(builder, analysis_manager);
 
-    sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
-    map_fusion_by_domain_pass.run(builder, analysis_manager);
-    sdfg::passes::DeadDataElimination dde;
-    sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
     if (use_new_fusion_in_normalize_) {
         sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
         map_fusion_by_domain_pass.run(builder, analysis_manager);
