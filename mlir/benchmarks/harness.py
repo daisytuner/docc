@@ -89,12 +89,14 @@ def run_benchmark(setup_func, name, batch_size=32):
     model = model.eval()
     program = torch.compile(model, fullgraph=True, **compile_kwargs)
 
+    start = time.time()
     model.to(device)
     model.requires_grad_(False)
     x = _prepare_input(model_input, device)
     x = _detach_input(x)
-
     sync_fn()
+    end = time.time()
+    print(f"{name} {backend_label} setup time: {end - start:.6f} seconds")
 
     for i in range(args.n_runs):
         start = time.time()
@@ -104,8 +106,12 @@ def run_benchmark(setup_func, name, batch_size=32):
         end = time.time()
         print(f"{name} {backend_label} execution time: {end - start:.6f} seconds")
 
+    start = time.time()
     if isinstance(out, torch.Tensor):
         out.to("cpu").detach()
+        sync_fn()
+    end = time.time()
+    print(f"{name} {backend_label} output transfer time: {end - start:.6f} seconds")
 
 
 def run_pytest(setup_func, target="none"):
