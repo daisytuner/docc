@@ -87,7 +87,8 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 PyStructuredSDFG::PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg)
-    : docc_context_(ctx), sdfg_(std::move(sdfg)) {}
+    : docc_context_(ctx), sdfg_(std::move(sdfg)), use_new_fusion_in_simplify_(true),
+      use_new_fusion_in_normalize_(false) {}
 
 PyStructuredSDFG PyStructuredSDFG::parse(sdfg::plugins::Context& ctx, const std::string& sdfg_text) {
     json j = json::parse(sdfg_text);
@@ -334,6 +335,23 @@ void PyStructuredSDFG::simplify() {
     dde.run(builder_opt, analysis_manager);
     sdfg::passes::TaskletFusionPass task_fuse_pass;
     task_fuse_pass.run(builder_opt, analysis_manager);
+    if (use_new_fusion_in_simplify_) {
+        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
+        map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
+
+        // Cleanup of artifacts of MapFusion
+        dde.run(builder_opt, analysis_manager);
+        dce.run(builder_opt, analysis_manager);
+        sdfg::passes::Pipeline block_fusion("BlockFusion");
+        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
+        block_fusion.run(builder_opt, analysis_manager);
+
+        sdfg::passes::RedundantLoadEliminationPass rle;
+        rle.run(builder_opt, analysis_manager);
+        dde.run(builder_opt, analysis_manager);
+        sdfg::passes::TaskletFusionPass task_fuse_pass;
+        task_fuse_pass.run(builder_opt, analysis_manager);
+    }
 
     // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
     // normalize() map-fusion run so loop distribution and fusion do not fight)
@@ -403,19 +421,25 @@ void PyStructuredSDFG::normalize() {
     map_fusion_by_domain_pass.run(builder, analysis_manager);
     sdfg::passes::DeadDataElimination dde;
     sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
+    if (use_new_fusion_in_normalize_) {
+        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
+        map_fusion_by_domain_pass.run(builder, analysis_manager);
+        sdfg::passes::DeadDataElimination dde;
+        sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
 
-    // Cleanup of artifacts of MapFusion
-    dde.run(builder, analysis_manager);
-    dce.run(builder, analysis_manager);
-    sdfg::passes::Pipeline block_fusion("BlockFusion");
-    block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
-    block_fusion.run(builder, analysis_manager);
+        // Cleanup of artifacts of MapFusion
+        dde.run(builder, analysis_manager);
+        dce.run(builder, analysis_manager);
+        sdfg::passes::Pipeline block_fusion("BlockFusion");
+        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
+        block_fusion.run(builder, analysis_manager);
 
-    sdfg::passes::RedundantLoadEliminationPass rle;
-    rle.run(builder, analysis_manager);
-    dde.run(builder, analysis_manager);
-    sdfg::passes::TaskletFusionPass task_fuse_pass;
-    task_fuse_pass.run(builder, analysis_manager);
+        sdfg::passes::RedundantLoadEliminationPass rle;
+        rle.run(builder, analysis_manager);
+        dde.run(builder, analysis_manager);
+        sdfg::passes::TaskletFusionPass task_fuse_pass;
+        task_fuse_pass.run(builder, analysis_manager);
+    }
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
