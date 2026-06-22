@@ -6,7 +6,7 @@ compiles it targeting CUDA, runs it, and verifies correctness
 against a NumPy reference implementation.
 """
 
-import tempfile
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -49,7 +49,7 @@ def build_softmax_sdfg(shape, axes):
     return builder.move()
 
 
-def compile_and_run_softmax(shape, axes):
+def compile_and_run_softmax(shape, axes, output_root: Path):
     """Compile a softmax SDFG for CUDA and execute it."""
     sdfg = build_softmax_sdfg(shape, axes)
     sdfg.validate()
@@ -93,17 +93,11 @@ def compile_and_run_softmax(shape, axes):
         "CUDAWithTransfers" in json_str
     ), "SoftmaxNode does not have CUDAWithTransfers implementation type after schedule"
 
-    import os
-
     shape_str = "x".join(str(s) for s in shape)
-    output_dir = f"/tmp/nhagmeyer/DOCC/softmax_test_{shape_str}_axis{axes[0]}"
-    if os.path.exists(output_dir):
-        import shutil
+    output_dir = output_root / f"softmax_test_{shape_str}_axis{axes[0]}"
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-        shutil.rmtree(output_dir)
-    os.makedirs(output_dir, exist_ok=True)
-
-    lib_path = sdfg._compile(output_dir, "cuda")
+    lib_path = sdfg._compile(str(output_dir), "cuda")
     compiled = CompiledSDFG(lib_path, sdfg)
 
     rng = np.random.default_rng(42)
