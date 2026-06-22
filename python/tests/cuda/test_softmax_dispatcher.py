@@ -22,6 +22,9 @@ from docc.sdfg import (
 from docc.compiler.compiled_sdfg import CompiledSDFG
 
 
+pytestmark = pytest.mark.cuda()
+
+
 def numpy_softmax(x, axis=-1):
     """Numerically stable softmax reference implementation."""
     x_max = np.max(x, axis=axis, keepdims=True)
@@ -138,5 +141,6 @@ def compile_and_run_softmax(shape, axes):
         "4d_block3_b16",
     ],
 )
-def test_softmax_cuda(shape, axes):
-    compile_and_run_softmax(shape, axes)
+@pytest.mark.cuda()
+def test_softmax_cuda(shape, axes, tmp_path):
+    compile_and_run_softmax(shape, axes, tmp_path)
