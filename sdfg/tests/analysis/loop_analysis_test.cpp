@@ -948,3 +948,39 @@ TEST(LoopAnalysisTest, CopiedLoop_AsOutermost) {
 
     verify_loop_index_consistency(la);
 }
+
+TEST(LoopAnalysisTest, MapStackDepth_3outers) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    MultiNestBuilder b(builder);
+
+    auto& a0 = b.add_map(b.root, "i0");
+    auto& a1 = b.add_map(a0.root(), "i1");
+    auto& a2 = b.add_map(a1.root(), "i2");
+    auto& a3 = b.add_for(a2.root(), "i3");
+    auto& a4 = b.add_for(a3.root(), "i4");
+    auto& a5 = b.add_for(a4.root(), "i5");
+
+    analysis::AnalysisManager manager(builder.subject());
+    auto& la = manager.get<analysis::LoopAnalysis>();
+
+    EXPECT_EQ(la.loop_info(&a5).map_stack_depth, 0);
+    EXPECT_EQ(la.loop_info(&a4).map_stack_depth, 0);
+    EXPECT_EQ(la.loop_info(&a3).map_stack_depth, 0);
+    EXPECT_EQ(la.loop_info(&a2).map_stack_depth, 1);
+    EXPECT_EQ(la.loop_info(&a1).map_stack_depth, 2);
+    EXPECT_EQ(la.loop_info(&a0).map_stack_depth, 3);
+}
+
+TEST(LoopAnalysisTest, MapStackDepth_just2) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    MultiNestBuilder b(builder);
+
+    auto& a0 = b.add_map(b.root, "i0");
+    auto& a1 = b.add_map(a0.root(), "i1");
+
+    analysis::AnalysisManager manager(builder.subject());
+    auto& la = manager.get<analysis::LoopAnalysis>();
+
+    EXPECT_EQ(la.loop_info(&a1).map_stack_depth, 1);
+    EXPECT_EQ(la.loop_info(&a0).map_stack_depth, 2);
+}
