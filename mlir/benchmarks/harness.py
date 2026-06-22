@@ -20,6 +20,17 @@ def _prepare_input(model_input, device):
     return model_input
 
 
+def _detach_input(model_input):
+    """Detach input(s), recursing into nested tuples/lists."""
+    if isinstance(model_input, torch.Tensor):
+        return model_input.detach()
+    if isinstance(model_input, tuple):
+        return tuple(_detach_input(x) for x in model_input)
+    if isinstance(model_input, list):
+        return [_detach_input(x) for x in model_input]
+    return model_input
+
+
 def _invoke(model, model_input):
     """Call model, unpacking tuple inputs."""
     if isinstance(model_input, tuple):
@@ -51,7 +62,10 @@ def run_benchmark(setup_func, name, batch_size=32):
             sys.exit(1)
         device = torch.device("cuda")
     elif args.device == "docc":
-        device = torch.device("cpu")
+        if args.target == "cuda":
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
     else:
         device = torch.device("cpu")
 
@@ -75,21 +89,23 @@ def run_benchmark(setup_func, name, batch_size=32):
     model = model.eval()
     program = torch.compile(model, fullgraph=True, **compile_kwargs)
 
+    model.to(device)
+    model.requires_grad_(False)
+    x = _prepare_input(model_input, device)
+    x = _detach_input(x)
+
+    sync_fn()
+
     for i in range(args.n_runs):
-        model.to("cpu")
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
-        sync_fn()
         start = time.time()
         with torch.no_grad():
-            model.to(device)
-            x = _prepare_input(model_input, device)
             out = _invoke(program, x)
-            if isinstance(out, torch.Tensor):
-                out.to("cpu").detach()
         sync_fn()
         end = time.time()
         print(f"{name} {backend_label} execution time: {end - start:.6f} seconds")
+
+    if isinstance(out, torch.Tensor):
+        out.to("cpu").detach()
 
 
 def run_pytest(setup_func, target="none"):
