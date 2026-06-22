@@ -436,21 +436,31 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
+    sdfg::passes::ReferencePropagation reference_propagation;
+    sdfg::passes::DeadReferenceElimination dead_reference_elimination;
+    reference_propagation.run(builder, analysis_manager);
+    dead_reference_elimination.run(builder, analysis_manager);
+    reference_propagation.run(builder, analysis_manager);
+    dead_reference_elimination.run(builder, analysis_manager);
+
     sdfg::passes::DeviceResidentArgPromotionPass promotion_pass(is_rocm);
     bool promoted = promotion_pass.run(builder, analysis_manager);
 
     if (promoted) {
-        for (int i = 0; i < 2; ++i) {
-            // Cleanup
-            sdfg::passes::ReferencePropagation reference_propagation;
-            reference_propagation.run(builder, analysis_manager);
-            sdfg::passes::DeadReferenceElimination dead_reference_elimination;
-            dead_reference_elimination.run(builder, analysis_manager);
-            sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
-            data_transfer_minimization.run(builder, analysis_manager);
-            sdfg::passes::DeadDataElimination dead_data_elimination;
-            dead_data_elimination.run(builder, analysis_manager);
-        }
+        sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
+        sdfg::passes::DeadDataElimination dead_data_elimination;
+
+        // 1st round
+        reference_propagation.run(builder, analysis_manager);
+        dead_reference_elimination.run(builder, analysis_manager);
+        data_transfer_minimization.run(builder, analysis_manager);
+        dead_data_elimination.run(builder, analysis_manager);
+
+        // 2nd round
+        reference_propagation.run(builder, analysis_manager);
+        dead_reference_elimination.run(builder, analysis_manager);
+        data_transfer_minimization.run(builder, analysis_manager);
+        dead_data_elimination.run(builder, analysis_manager);
     }
 
     return promoted;

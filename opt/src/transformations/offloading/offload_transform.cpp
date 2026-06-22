@@ -130,7 +130,14 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
 
     auto parent_scope = static_cast<structured_control_flow::Sequence*>(this->map_.get_parent());
 
-    std::string container_prefix = copy_prefix() + std::to_string(parent_scope->element_id()) + "_";
+    // Key the device-buffer names by THIS map's element id so every offloaded loop nest gets its own SSA device
+    // buffer. Keying by the parent scope instead would make two maps under the same sequence that offload the same
+    // host container resolve to one device name, allocated and freed once per map -- a single device name carrying
+    // multiple alloc/free lifetimes. DataTransferMinimization's reuse reconciliation bails on exactly that
+    // (a device buffer with more than one free cannot be proven double-free safe), which blocks the D2H->H2D
+    // device aliasing and leaves a redundant host round-trip. One buffer per loop nest keeps each name single-alloc
+    // single-free, so the reuse fires and DeadDataElimination can drop the now-userless staging container.
+    std::string container_prefix = copy_prefix() + std::to_string(this->map_.element_id()) + "_";
 
     // Allocate arguments and locals
     allocate_locals_on_device_stack(builder, analysis_manager, locals);
