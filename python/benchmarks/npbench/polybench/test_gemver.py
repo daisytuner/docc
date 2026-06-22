@@ -65,9 +65,9 @@ def test_gemver(target):
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 8,
-                "FOR": 12,
-                "MAP": 8,
+                "ROCM": 5,
+                "FOR": 9,
+                "MAP": 5,
                 "ROCMOffloading": 6,
             },
         )
