@@ -19,6 +19,7 @@ class LoopIndirectAccessFinder : public analysis::BaseUserVisitor {
     struct LoopEntry {
         ControlFlowNode* loop;
         analysis::LocalLoopInfo::LoopType type;
+        FusionLoopCandidate& fusion_candidate;
         std::unordered_set<std::string> indvars;
     };
     std::deque<LoopEntry> loop_stack_;
@@ -73,25 +74,38 @@ public:
         : loop_analysis_(loops), fuse_candidates_(fuse_candidates) {}
 
     bool visit(sdfg::structured_control_flow::For& node) override {
-        loop_stack_.emplace_back(&node, analysis::LocalLoopInfo::LoopType::For);
-        loop_stack_.back().indvars.emplace(node.indvar()->get_name());
+        auto cand_it = fuse_candidates_.find(node.element_id());
+        bool is_relevant_loop = cand_it != fuse_candidates_.end();
+        if (is_relevant_loop) {
+            loop_stack_.emplace_back(&node, analysis::LocalLoopInfo::LoopType::For, *cand_it->second.get());
+            loop_stack_.back().indvars.emplace(node.indvar()->get_name());
+        }
         auto res = ActualStructuredSDFGVisitor::visit(node);
-        loop_stack_.pop_back();
+
+        if (is_relevant_loop) {
+            loop_stack_.pop_back();
+        }
+
         return res;
     }
 
     bool visit(sdfg::structured_control_flow::While& node) override {
-        loop_stack_.emplace_back(&node, analysis::LocalLoopInfo::LoopType::For);
+        // far from being supported as fuse candidates, so do the normal stuff
         auto res = ActualStructuredSDFGVisitor::visit(node);
-        loop_stack_.pop_back();
         return res;
     }
 
     bool visit(sdfg::structured_control_flow::Map& node) override {
-        loop_stack_.emplace_back(&node, analysis::LocalLoopInfo::LoopType::For);
-        loop_stack_.back().indvars.emplace(node.indvar()->get_name());
+        auto cand_it = fuse_candidates_.find(node.element_id());
+        bool is_relevant_loop = cand_it != fuse_candidates_.end();
+        if (is_relevant_loop) {
+            loop_stack_.emplace_back(&node, analysis::LocalLoopInfo::LoopType::Map, *cand_it->second.get());
+            loop_stack_.back().indvars.emplace(node.indvar()->get_name());
+        }
         auto res = ActualStructuredSDFGVisitor::visit(node);
-        loop_stack_.pop_back();
+        if (is_relevant_loop) {
+            loop_stack_.pop_back();
+        }
         return res;
     }
 
@@ -107,16 +121,13 @@ public:
     void found_indirect_arg_access(
         const std::string& container, const data_flow::Memlet& edge, LoopEntry* current, bool is_write
     ) {
-        auto cand_it = fuse_candidates_.find(current->loop->element_id());
-        if (cand_it != fuse_candidates_.end()) {
-            auto& cand = *cand_it->second;
-            auto arg_it = cand.args.find(container);
-            if (arg_it != cand.args.end()) {
-                auto& fusion_arg = arg_it->second;
-                merge_fusion_arg_props_into(fusion_arg, edge.subset(), false, symbolic::ExpressionMapping());
-                // propagate_arg_up(current, container, fusion_arg); // may include lower level indvars, in which case
-                // it will block everything
-            }
+        auto& cand = current->fusion_candidate;
+        auto arg_it = cand.args.find(container);
+        if (arg_it != cand.args.end()) {
+            auto& fusion_arg = arg_it->second;
+            merge_fusion_arg_props_into(fusion_arg, edge.subset(), false, symbolic::ExpressionMapping());
+            // propagate_arg_up(current, container, fusion_arg); // may include lower level indvars, in which case
+            // it will block everything
         }
     }
 
@@ -344,6 +355,15 @@ PatternHandler::MatchResult MapFusionHandler::fuse_contents(
 
     state_.fused_count++;
 
+    // static auto count = 0;
+    // std::filesystem::path dir = state_.builder.subject().metadata("output_dir");
+    // visualizer::DotVisualizer::writeToFile(
+    //     state_.builder.subject(),
+    //     dir /
+    //         ("map_fusion_by_domain_pass_dump_" + std::to_string(count++) + "_" + std::to_string(first_elem_id) +
+    //         ".dot")
+    // );
+
     // if there are further loops inside the now fused body, visit those as well
     return {.removed_first = removed_first, .visit_second_body = keep_visiting_second};
 }
@@ -364,48 +384,60 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
     FusionLoopCandidate* second_next = second_it->second.get();
 
     SymEngine::map_basic_basic indvar_mapping;
-    bool level_match;
     int current_level = -1;
     int last_matched_level = -1;
-    auto second_loop_info = state_.loop_analysis->loop_info(&second);
-    auto first_map_stack_depth = state_.loop_analysis->loop_info(&first).map_stack_depth;
-    auto max_map_stack_depth = std::min(first_map_stack_depth, second_loop_info.map_stack_depth) - 1;
-    bool uneven = first_map_stack_depth != second_loop_info.map_stack_depth;
+    auto first_max_stack_depth = state_.loop_analysis->loop_info(&first).map_stack_depth - 1;
+    auto second_max_stack_depth = state_.loop_analysis->loop_info(&second).map_stack_depth - 1;
+    bool more_first = true;
+    bool more_second = true;
+    bool fusing_option = true;
+    bool data_fusible;
+
+    // descend the map stacks down. Last level on which everything matches is the one we can fuse
+    // if one map stack ends, but the other one keeps going, we still need to descend the one that keeps going.
+    // at this point, these are no longer candidates for fusing, but we can only fuse the last level we found,
+    // if we find no subset conflicts. Because if not all subsets of the same structures match,
+    // we cannot guarantee correctness
 
     do {
         ++current_level;
-        indvar_mapping[first_next->loop->indvar()] = second_next->loop->indvar();
-
-        level_match = this->loop_match(*first_next, *second_next, indvar_mapping);
-        if (level_match) {
-            auto res = this->check_ins_outs(*first_next, *second_next, indvar_mapping);
-            level_match = res.no_conflicts;
-            if (uneven && !res.overlap) { // heuristic: do not fuse if there is no memory shared between them
-                return {};
-            }
-            if (res.subset_mismatch) { // heuristic: if we see the actual accesses having a subset conflict, we abort,
-                                       // instead of trying to fuse outer maps
-                // this also likely prevents some incorrect fusings
-                return {};
-            }
+        bool uneven = !more_first || !more_second;
+        if (fusing_option) {
+            indvar_mapping[first_next->loop->indvar()] = second_next->loop->indvar();
+            fusing_option = this->loop_match(*first_next, *second_next, indvar_mapping);
         }
-        bool go_deeper = false;
-        if (level_match) {
+        auto res = this->check_ins_outs(*first_next, *second_next, indvar_mapping);
+        if (!res.no_conflicts) {
+            // will occur on data-dependencies (from consumer to producer) or on subset mismatches
+            fusing_option = false;
+        }
+        if (first_max_stack_depth != second_max_stack_depth && !res.overlap) { // heuristic: do not fuse if there is no
+                                                                               // memory shared between uneven
+                                                                               // candidates
+            return {};
+        }
+        if (res.subset_mismatch) { // If subsets mismatch on any level, we cannot guarantee correctness without much
+                                   // more
+            // extensive checks, like done by the existing map_fusion
+            // Future work: let the previous map_fusion check if it can prove non-conflicting on a more granular level
+            return {};
+        }
+
+        if (fusing_option) {
             last_matched_level = current_level;
             first_current = first_next;
             second_current = second_next;
-            if (current_level < max_map_stack_depth) {
-                go_deeper = true;
-            }
         }
-        if (go_deeper) {
+        more_first = current_level < first_max_stack_depth;
+        more_second = current_level < second_max_stack_depth;
+        if (more_first) {
             first_next = state_.get_next_level_map_stack(*first_next);
-            second_next = state_.get_next_level_map_stack(*second_next);
-        } else {
-            first_next = nullptr;
-            second_next = nullptr;
         }
-    } while (first_next && second_next);
+        if (more_second) {
+            second_next = state_.get_next_level_map_stack(*second_next);
+        }
+        fusing_option &= more_first && more_second;
+    } while (more_first || more_second);
 
     if (last_matched_level >= 0) {
         DEBUG_PRINTLN(
@@ -538,11 +570,10 @@ MapFusionHandler::InOutCheckResult MapFusionHandler::check_ins_outs(
         auto cons_it = second_args.find(name);
         if (cons_it != second_args.end()) {
             auto& cons_meta = cons_it->second;
-            if (prod_meta.arg.is_input &&
-                cons_meta.arg.is_output /* && (!prod_meta.saw_access_locally() || cons_meta.saw_access_locally())*/) {
-                // possibly consumer influencing producer in unsafe ways
-                // if producer does not write the arg itself, this level should still be fine, the conflict would be
-                // deeper down
+            if (prod_meta.arg.is_input && cons_meta.arg.is_output) {
+                // there could be conflicts here. So for now, abort.
+                // Future Work: if both were to strictly match indvars (or never match other iterations),
+                // it would never be a conflict
                 return {false, overlap};
             } else if (prod_meta.arg.is_output && cons_meta.arg.is_input) {
                 overlap = true;

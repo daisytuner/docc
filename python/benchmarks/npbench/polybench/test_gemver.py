@@ -56,18 +56,18 @@ def test_gemver(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CUDA": 5,
-                "FOR": 9,
-                "MAP": 5,
+                "CUDA": 8,
+                "FOR": 12,
+                "MAP": 8,
                 "CUDAOffloading": 6,
             },
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 5,
-                "FOR": 9,
-                "MAP": 5,
+                "ROCM": 8,
+                "FOR": 12,
+                "MAP": 8,
                 "ROCMOffloading": 6,
             },
         )

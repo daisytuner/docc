@@ -211,7 +211,7 @@ LoopAnalysis::AggregatedResult LoopAnalysis::aggregate_loop_info(structured_cont
     info.is_elementwise = is_elementwise && is_perfectly_nested & is_perfectly_parallel;
     info.has_side_effects = has_side_effects;
     if (map_stack_member) {
-        if (!is_perfectly_nested) { // needs to be perfectly nested to form a larger stack
+        if (local.contains_non_perfectly_nested) { // needs to be perfectly nested to form a larger stack
             map_stack_depth = 0;
         }
         info.map_stack_depth = map_stack_depth + 1;
@@ -353,7 +353,7 @@ std::unordered_set<sdfg::structured_control_flow::ControlFlowNode*> LoopAnalysis
     descendants(sdfg::structured_control_flow::ControlFlowNode* loop) const {
     std::unordered_set<sdfg::structured_control_flow::ControlFlowNode*> desc;
     std::list<sdfg::structured_control_flow::ControlFlowNode*> queue = {loop};
-    while (!queue.empty()) {
+    while (!queue.empty()) { // TODO use ordered list directly
         auto current = queue.front();
         queue.pop_front();
         auto& children = this->children(current);

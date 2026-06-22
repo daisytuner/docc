@@ -67,20 +67,20 @@ def test_trmm(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 3,
-                "MAP": 2,
-                "CUDA": 2,
-                "CUDAOffloading": 0,
+                "FOR": 5,
+                "MAP": 4,
+                "CUDA": 4,
+                "CUDAOffloading": 2,
             },
             rtol=5 - 1,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 3,
-                "MAP": 2,
-                "ROCM": 2,
-                "ROCMOffloading": 0,
+                "FOR": 5,
+                "MAP": 4,
+                "ROCM": 4,
+                "ROCMOffloading": 2,
             },
             rtol=5 - 1,
         )
