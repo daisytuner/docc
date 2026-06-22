@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/ScopedHashTable.h>
 #include <memory>
 #include <string>
@@ -81,6 +82,11 @@ class SDFGTranslator {
 
     std::unordered_map<std::string, std::string> alias_map_;
 
+    // Maps a linalg.fill result whose materialization was deferred to the constant scalar value it
+    // fills with, so each consumer can regenerate a freshly-filled array instead of copying from a
+    // single shared buffer.
+    llvm::DenseMap<Value, Value> constant_fill_map_;
+
     std::vector<std::string> output_args_;
 
 public:
@@ -129,6 +135,14 @@ public:
     std::string get_or_copy_output_container(
         Value output, const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo(), bool consumer_overwrites_output = false
     );
+
+    /// Record that `result` is produced by a constant `value` linalg.fill whose materialization is
+    /// deferred. Each consumer regenerates a freshly-filled array on demand instead of copying from
+    /// a single shared buffer (saving the source buffer and turning per-use memcpys into fills).
+    void record_constant_fill(Value result, Value value);
+
+    /// Returns true if `result` was recorded via record_constant_fill.
+    bool is_constant_fill(Value result) const;
 
     /// Returns the container of `input` if its buffer can be safely overwritten in place by an
     /// elementwise consumer producing `result`, otherwise the empty string. Conservatively limited

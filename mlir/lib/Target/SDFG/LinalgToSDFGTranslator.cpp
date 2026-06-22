@@ -867,6 +867,27 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
         });
 }
 
+// Returns true iff every use of `result` is a linalg destination-style init operand and there is
+// more than one such use. In that case each consumer copies the buffer for itself, so the fill's
+// own buffer is never read directly and its materialization can be deferred.
+static bool shouldDeferConstantFill(Value result) {
+    int count = 0;
+    for (OpOperand& use : result.getUses()) {
+        auto dps = dyn_cast<DestinationStyleOpInterface>(use.getOwner());
+        if (!dps) {
+            return false;
+        }
+        auto inits = dps.getDpsInits();
+        unsigned begin = inits.getBeginOperandIndex();
+        unsigned end = begin + static_cast<unsigned>(inits.size());
+        if (use.getOperandNumber() < begin || use.getOperandNumber() >= end) {
+            return false;
+        }
+        count++;
+    }
+    return count > 1;
+}
+
 LogicalResult translateLinalgFillOp(SDFGTranslator& translator, linalg::FillOp* op) {
     auto& sequence = translator.insertion_point();
 
@@ -874,6 +895,14 @@ LogicalResult translateLinalgFillOp(SDFGTranslator& translator, linalg::FillOp* 
     Value output = op->output();
     Value result = op->result();
     auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
+
+    // If the fill writes a constant whose result is consumed only as a linalg destination init by
+    // more than one op, defer materialization: record the fill so each consumer regenerates a
+    // freshly-filled array on demand instead of copying from a single shared buffer.
+    if (dyn_cast_or_null<arith::ConstantOp>(value.getDefiningOp()) && shouldDeferConstantFill(result)) {
+        translator.record_constant_fill(result, value);
+        return success();
+    }
 
     auto value_container = translator.get_or_create_container(value);
     auto output_container = translator.get_or_copy_output_container(output, deb_info);

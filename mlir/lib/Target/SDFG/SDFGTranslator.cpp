@@ -25,6 +25,7 @@
 #include "mlir/Target/SDFG/TensorToSDFGTranslator.h"
 #include "mlir/Target/SDFG/helper.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
@@ -386,6 +387,12 @@ static int count_linalg_output_uses(Value value) {
     return count;
 }
 
+void SDFGTranslator::record_constant_fill(Value result, Value value) {
+    this->constant_fill_map_.insert({result, value});
+}
+
+bool SDFGTranslator::is_constant_fill(Value result) const { return this->constant_fill_map_.count(result) != 0; }
+
 std::string SDFGTranslator::
     get_or_copy_output_container(Value output, const ::sdfg::DebugInfo& deb_info, bool consumer_overwrites_output) {
     auto output_container = this->get_or_create_container(output);
@@ -419,17 +426,38 @@ std::string SDFGTranslator::
     // (e.g. matmul with beta=0), or the output is uninitialized (tensor.empty).
     if (!consumer_overwrites_output &&
         (!output.getDefiningOp() || !llvm::isa<tensor::EmptyOp>(output.getDefiningOp()))) {
-        auto& src_type = builder_.subject().type(output_container);
-        auto& dst_type = builder_.subject().type(copy_container);
-        ::sdfg::stdlib::add_memcpy_block(
-            builder_,
-            this->insertion_point(),
-            output_container,
-            copy_container,
-            byte_count,
-            src_type, // original had dst_type as well. but memcpy needs both same and we do not model read-only
-            deb_info
-        );
+        auto fill_it = this->constant_fill_map_.find(output);
+        if (fill_it != this->constant_fill_map_.end()) {
+            // The source is a deferred constant fill: regenerate a freshly-filled array directly
+            // instead of copying from a shared buffer.
+            auto constant_op = llvm::cast<arith::ConstantOp>(fill_it->second.getDefiningOp());
+            auto sdfg_tensor = tensor_info.get_sdfg_tensor(scalar_type);
+
+            auto& block = this->builder_.add_block(this->insertion_point(), {}, deb_info);
+            auto& in_access = this->builder_.add_constant(
+                block,
+                this->convertTypedAttr(constant_op.getValue()),
+                *this->convertType(constant_op.getType()),
+                deb_info
+            );
+            auto& fill_node =
+                this->builder_.add_library_node<::sdfg::math::tensor::FillNode>(block, deb_info, sdfg_tensor->shape());
+            this->builder_.add_computational_memlet(block, in_access, fill_node, "X", {}, scalar_type, deb_info);
+            auto& out_access = this->builder_.add_access(block, copy_container, deb_info);
+            this->builder_.add_computational_memlet(block, out_access, fill_node, "Y", {}, *sdfg_tensor, deb_info);
+        } else {
+            auto& src_type = builder_.subject().type(output_container);
+            auto& dst_type = builder_.subject().type(copy_container);
+            ::sdfg::stdlib::add_memcpy_block(
+                builder_,
+                this->insertion_point(),
+                output_container,
+                copy_container,
+                byte_count,
+                src_type, // original had dst_type as well. but memcpy needs both same and we do not model read-only
+                deb_info
+            );
+        }
     }
 
     this->tensor_info_map_.insert({copy_container, tensor_info});
