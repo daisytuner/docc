@@ -49,6 +49,7 @@ set(SOURCE_FILES
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
     src/targets/cuda/math/tensor/batchnorm_expander.cpp
     src/targets/cuda/math/tensor/conv_expander.cpp
+    src/targets/cuda/math/tensor/softmax.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/cuda/plugin.cpp
