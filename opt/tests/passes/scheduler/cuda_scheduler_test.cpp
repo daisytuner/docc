@@ -1,6 +1,8 @@
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
+#include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/passes/scheduler/loop_scheduling_pass.h"
 #include "sdfg/passes/scheduler/scheduler_registry.h"
@@ -312,6 +314,42 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
                 << "Container " << name << " has double CUDA prefix, indicating double-offloading";
         }
     }
+}
+
+TEST(CUDASchedulerTest, PostScheduleRunsTransferExtractionWithoutGpuMaps) {
+    builder::StructuredSDFGBuilder builder("softmax_scheduler_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer ptr_type(desc);
+
+    builder.add_container("X", ptr_type, true);
+    builder.add_container("Y", ptr_type, true);
+
+    auto& block = builder.add_block(root);
+    auto& x_node = builder.add_access(block, "X");
+    auto& y_node = builder.add_access(block, "Y");
+
+    std::vector<symbolic::Expression> shape = {symbolic::integer(64), symbolic::integer(128)};
+    std::vector<int64_t> axes = {-1};
+    auto& softmax_node =
+        static_cast<math::tensor::SoftmaxNode&>(builder.add_library_node<
+                                                math::tensor::SoftmaxNode>(block, DebugInfo(), shape, axes, false));
+    softmax_node.implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
+
+    types::Tensor tensor_type(desc, shape);
+    builder.add_computational_memlet(block, y_node, softmax_node, "Y", {}, tensor_type);
+    builder.add_computational_memlet(block, x_node, softmax_node, "X", {}, tensor_type);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::scheduler::CUDAScheduler scheduler;
+    std::vector<structured_control_flow::StructuredLoop*> scheduled_loops;
+
+    scheduler.post_schedule(builder, analysis_manager, scheduled_loops);
+
+    EXPECT_EQ(softmax_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());
 }
 
 // Regression test: When running the CUDA scheduler after another scheduler

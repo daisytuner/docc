@@ -72,6 +72,7 @@ set(SOURCE_FILES
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/rocblas_data_transfer_extraction.cpp
     src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
