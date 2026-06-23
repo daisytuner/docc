@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cassert>
-#include <map>
+#include <cstdint>
 #include <memory>
 #include <sstream>
 #include <string>

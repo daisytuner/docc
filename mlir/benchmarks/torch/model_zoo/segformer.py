@@ -697,16 +697,16 @@ BATCH_SIZES = [1, 4, 16]
 
 BENCHMARKS = {
     "default": setup,
-    "segformer.encoder.path_embeddings.0": partial(
+    "segformer.encoder.patch_embeddings.0": partial(
         setup_segformer_overlap_patch_embeddings, 7, 4, 3, 32, 512, 512
     ),
-    "segformer.encoder.path_embeddings.1": partial(
+    "segformer.encoder.patch_embeddings.1": partial(
         setup_segformer_overlap_patch_embeddings, 3, 2, 32, 64, 128, 128
     ),
-    "segformer.encoder.path_embeddings.2": partial(
+    "segformer.encoder.patch_embeddings.2": partial(
         setup_segformer_overlap_patch_embeddings, 3, 2, 64, 160, 64, 64
     ),
-    "segformer.encoder.path_embeddings.3": partial(
+    "segformer.encoder.patch_embeddings.3": partial(
         setup_segformer_overlap_patch_embeddings, 3, 2, 160, 256, 32, 32
     ),
     "segformer.encoder.block.0.0.attention.self": partial(
@@ -851,29 +851,65 @@ if __name__ == "__main__":
 
 @pytest.mark.parametrize("target", TARGETS)
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
-def test_segformer_encoder_path_embeddings_0(target, batch_size) -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.0"](batch_size)
+def test_segformer_encoder_patch_embeddings_0(target, batch_size) -> None:
+    class SegformerEncoderPatchEmbeddings0(SegformerOverlapPatchEmbeddings):
+        def __init__(self) -> None:
+            super().__init__(7, 4, 3, 32)
+
+        def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+            return SegformerOverlapPatchEmbeddings.forward(self, pixel_values)
+
+    model = SegformerEncoderPatchEmbeddings0()
+    model.eval()
+    x = torch.randn(batch_size, 3, 512, 512)
     check_backend(model, x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
-def test_segformer_encoder_path_embeddings_1(target, batch_size) -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.1"](batch_size)
+def test_segformer_encoder_patch_embeddings_1(target, batch_size) -> None:
+    class SegformerEncoderPatchEmbeddings1(SegformerOverlapPatchEmbeddings):
+        def __init__(self) -> None:
+            super().__init__(3, 2, 32, 64)
+
+        def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+            return SegformerOverlapPatchEmbeddings.forward(self, pixel_values)
+
+    model = SegformerEncoderPatchEmbeddings1()
+    model.eval()
+    x = torch.randn(batch_size, 32, 128, 128)
     check_backend(model, x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
 def test_segformer_encoder_path_embeddings_2(target, batch_size) -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.2"](batch_size)
+    class SegformerEncoderPatchEmbeddings2(SegformerOverlapPatchEmbeddings):
+        def __init__(self) -> None:
+            super().__init__(3, 2, 64, 160)
+
+        def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+            return SegformerOverlapPatchEmbeddings.forward(self, pixel_values)
+
+    model = SegformerEncoderPatchEmbeddings2()
+    model.eval()
+    x = torch.randn(batch_size, 64, 64, 64)
     check_backend(model, x, target=target)
 
 
 @pytest.mark.parametrize("target", TARGETS)
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
-def test_segformer_encoder_path_embeddings_3(target, batch_size) -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.3"](batch_size)
+def test_segformer_encoder_patch_embeddings_3(target, batch_size) -> None:
+    class SegformerEncoderPatchEmbeddings3(SegformerOverlapPatchEmbeddings):
+        def __init__(self) -> None:
+            super().__init__(3, 2, 160, 256)
+
+        def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+            return SegformerOverlapPatchEmbeddings.forward(self, pixel_values)
+
+    model = SegformerEncoderPatchEmbeddings3()
+    model.eval()
+    x = torch.randn(batch_size, 160, 32, 32)
     check_backend(model, x, target=target)
 
 

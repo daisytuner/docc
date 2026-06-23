@@ -32,6 +32,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/pooling_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/element.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -425,6 +426,43 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
         }
     }
     translator.exit_sequence(*current_seq);
+
+    return success();
+}
+
+LogicalResult translateSoftmaxOp(SDFGTranslator& translator, linalg::SoftmaxOp* softmax_op) {
+    Value input = softmax_op->getInput();
+    Value output = softmax_op->getOutput();
+    Value result = softmax_op->getResult()[0];
+    int64_t dim = softmax_op->getDimension();
+    auto deb_info = translator.get_debug_info(softmax_op->getOperationName(), softmax_op->getLoc());
+
+    auto& builder = translator.builder();
+    auto input_container = translator.get_or_create_container(input);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto input_tensor_type = llvm::dyn_cast<TensorType>(input.getType());
+    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input_tensor_type);
+    auto input_element_type = translator.convertType(input_tensor_type.getElementType());
+    auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input_element_type)
+    );
+
+    auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
+    auto result_tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+    auto result_element_type = translator.convertType(result_tensor_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
+    translator.add_reference(output_container, result_container, deb_info);
+
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& input_access = builder.add_access(block, input_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
+    auto& libnode = builder.add_library_node<
+        ::sdfg::math::tensor::SoftmaxNode>(block, deb_info, result_sdfg_tensor->shape(), std::vector<int64_t>({dim}));
+    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "Y", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -846,6 +884,9 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
         })
         .Case<linalg::PoolingNchwSumOp>([&](linalg::PoolingNchwSumOp pool_op) {
             return translateLinalgPoolingNchwOp(translator, &pool_op, ::sdfg::math::tensor::PoolingMode::Sum);
+        })
+        .Case<linalg::SoftmaxOp>([&](linalg::SoftmaxOp softmax_op) {
+            return translateSoftmaxOp(translator, &softmax_op);
         })
         .Case<linalg::custom::ReLUOp>([&](linalg::custom::ReLUOp relu_op) {
             return translateLinalgCustomReLUOp(translator, &relu_op);
