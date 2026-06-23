@@ -72,6 +72,7 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
     auto& a0 = m.add_map(m.root, "a_i");
     auto& a1 = m.add_map(a0.root(), "a_j");
     auto& a2 = m.add_map(a1.root(), "a_k");
+    std::vector<ElementId> a_org_ids{a0.element_id(), a1.element_id(), a2.element_id()};
     auto& a2_block = builder.add_block(a2.root());
     {
         auto& acc_B = builder.add_access(a2_block, "B");
@@ -100,6 +101,7 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
     auto& c0 = m.add_map(m.root, "c_i");
     auto& c1 = m.add_map(c0.root(), "c_j");
     auto& c2 = m.add_map(c1.root(), "c_k");
+    std::vector<ElementId> c_org_ids{c0.element_id(), c1.element_id(), c2.element_id()};
     auto& c2_block = builder.add_block(c2.root());
     {
         auto& acc_A = builder.add_access(c2_block, "A");
@@ -113,9 +115,11 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
             .add_computational_memlet(c2_block, tasklet, "_out", acc_out, {symbolic::parse("c_k+c_j*N+c_i*N*N")}, ptr);
     }
 
+    // 4th stack, to have conflicts with the fused result of stack a-c on _tmp
     auto& d0 = m.add_map(m.root, "d_i");
     auto& d1 = m.add_map(d0.root(), "d_j");
     auto& d2 = m.add_map(d1.root(), "d_k");
+    std::vector<ElementId> d_org_ids{d0.element_id(), d1.element_id(), d2.element_id()};
     auto& d2_block = builder.add_block(d2.root());
     {
         auto& acc_B = builder.add_access(d2_block, "B");
@@ -146,8 +150,38 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
 
     auto& loops2 = analysis_manager.get<analysis::LoopAnalysis>();
     dump_loop_info(loops2, "1.fused");
-    analysis_manager.invalidate_all();
     dump_sdfg(builder.subject(), "1.fused");
+
+    auto& root = builder.subject().root();
+    EXPECT_EQ(root.size(), 3);
+    EXPECT_EQ(&root.at(0).first, &malloc_tmp);
+    EXPECT_EQ(loops2.children(nullptr).size(), 2); // root loops
+
+    EXPECT_FALSE(builder.find_element_by_id(a_org_ids.at(0))); // a0 no longer in the SDFG
+
+    EXPECT_EQ(root.at(1).first.element_id(), c_org_ids.at(0));
+    auto& c_outer = dynamic_cast<Map&>(root.at(1).first);
+    EXPECT_EQ(c_outer.root().size(), 1);
+    EXPECT_EQ(loops2.children(&c_outer).size(), 1);
+    EXPECT_TRUE(loops2.loop_info(&c_outer).is_perfectly_nested);
+    EXPECT_TRUE(loops2.loop_info(&c_outer).is_perfectly_parallel);
+    EXPECT_EQ(c_outer.root().at(0).first.element_id(), c_org_ids.at(1));
+    auto& c_middle = dynamic_cast<Map&>(c_outer.root().at(0).first);
+    EXPECT_EQ(c_middle.root().size(), 1);
+    EXPECT_EQ(c_middle.root().at(0).first.element_id(), c_org_ids.at(2));
+
+    EXPECT_EQ(root.at(2).first.element_id(), d_org_ids.at(0));
+    auto& d_outer = dynamic_cast<Map&>(root.at(2).first);
+    EXPECT_EQ(d_outer.root().size(), 1);
+    EXPECT_EQ(loops2.children(&d_outer).size(), 1);
+    EXPECT_TRUE(loops2.loop_info(&d_outer).is_perfectly_nested);
+    EXPECT_TRUE(loops2.loop_info(&d_outer).is_perfectly_parallel);
+    EXPECT_EQ(d_outer.root().at(0).first.element_id(), d_org_ids.at(1));
+    auto& d_middle = dynamic_cast<Map&>(d_outer.root().at(0).first);
+    EXPECT_EQ(d_middle.root().size(), 1);
+    EXPECT_EQ(d_middle.root().at(0).first.element_id(), d_org_ids.at(2));
+
+    analysis_manager.invalidate_all();
 
     sdfg::passes::DeadDataElimination dde;
     dde.run(builder, analysis_manager);
