@@ -40,7 +40,7 @@ bool RedundantLoadVisitor::visit(sdfg::structured_control_flow::Block& block) {
 
                 const data_flow::Subset* write_subset = nullptr;
                 const types::IType* write_type = nullptr;
-                auto* in_edge = dflow.in_edge(*access_node);
+                auto* in_edge = dflow.in_edge_if_single(*access_node); // not supported for multiple input edges
                 if (in_edge && in_edge->is_dst_pointed_to_write()) {
                     auto* src_node = dynamic_cast<const data_flow::CodeNode*>(&in_edge->src());
                     if (src_node) {
