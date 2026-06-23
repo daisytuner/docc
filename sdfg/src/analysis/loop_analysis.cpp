@@ -4,6 +4,7 @@
 
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_control_flow/while.h"
 #include "sdfg/symbolic/conjunctive_normal_form.h"
@@ -40,14 +41,22 @@ void LoopAnalysis::init_new_loop_info(
         info.second.num_maps = 1;
         info.second.num_fors = 0;
         info.second.num_whiles = 0;
+        info.second.num_reduces = 0;
     } else if (while_loop != nullptr) {
         info.second.num_maps = 0;
         info.second.num_fors = 0;
         info.second.num_whiles = 1;
+        info.second.num_reduces = 0;
+    } else if (dynamic_cast<structured_control_flow::Reduce*>(loop) != nullptr) {
+        info.second.num_maps = 0;
+        info.second.num_fors = 0;
+        info.second.num_whiles = 0;
+        info.second.num_reduces = 1;
     } else {
         info.second.num_maps = 0;
         info.second.num_fors = 1;
         info.second.num_whiles = 0;
+        info.second.num_reduces = 0;
     }
 }
 
@@ -77,6 +86,9 @@ void LoopAnalysis::
         } else if (auto for_stmt = dynamic_cast<structured_control_flow::For*>(current)) {
             new_for = for_stmt;
             new_loop = for_stmt;
+        } else if (auto loop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(current)) {
+            // Generic structured loop (e.g. Reduce) that is neither a Map nor a For.
+            new_loop = loop_stmt;
         }
 
         if (new_loop != nullptr) {
@@ -185,6 +197,7 @@ LoopState& LoopAnalysis::compute_loop_infos(structured_control_flow::ControlFlow
         info.num_maps += sub_info.num_maps;
         info.num_fors += sub_info.num_fors;
         info.num_whiles += sub_info.num_whiles;
+        info.num_reduces += sub_info.num_reduces;
         info.max_depth = std::max(info.max_depth, 1 + sub_info.max_depth);
 
         has_side_effects |= sub_info.has_side_effects;

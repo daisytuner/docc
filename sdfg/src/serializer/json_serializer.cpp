@@ -24,6 +24,7 @@
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/while.h"
@@ -131,6 +132,8 @@ void JSONSerializer::serialize_node(nlohmann::json& j, const structured_control_
         continue_node_to_json(j, *continue_node);
     } else if (auto map_node = dynamic_cast<const structured_control_flow::Map*>(&node)) {
         map_to_json(j, *map_node);
+    } else if (auto reduce_node = dynamic_cast<const structured_control_flow::Reduce*>(&node)) {
+        reduce_to_json(j, *reduce_node);
     } else {
         throw std::runtime_error("Unknown child type");
     }
@@ -311,6 +314,36 @@ void JSONSerializer::map_to_json(nlohmann::json& j, const structured_control_flo
     if (this->recurse_) {
         nlohmann::json body_json;
         sequence_to_json(body_json, map_node.root());
+        j["root"] = body_json;
+    }
+}
+
+void JSONSerializer::reduce_to_json(nlohmann::json& j, const structured_control_flow::Reduce& reduce_node) {
+    j["type"] = "reduce";
+    j["element_id"] = reduce_node.element_id();
+
+    j["debug_info"] = nlohmann::json::object();
+    debug_info_to_json(j["debug_info"], reduce_node.debug_info());
+
+    j["indvar"] = expression(reduce_node.indvar());
+    j["init"] = expression(reduce_node.init());
+    j["condition"] = expression(reduce_node.condition());
+    j["update"] = expression(reduce_node.update());
+
+    j["reductions"] = nlohmann::json::array();
+    for (const auto& reduction : reduce_node.reductions()) {
+        nlohmann::json reduction_json;
+        reduction_json["op"] = structured_control_flow::reduction_operation_to_string(reduction.operation);
+        reduction_json["container"] = reduction.container;
+        j["reductions"].push_back(reduction_json);
+    }
+
+    j["schedule_type"] = nlohmann::json::object();
+    schedule_type_to_json(j["schedule_type"], reduce_node.schedule_type());
+
+    if (this->recurse_) {
+        nlohmann::json body_json;
+        sequence_to_json(body_json, reduce_node.root());
         j["root"] = body_json;
     }
 }
@@ -768,6 +801,8 @@ void JSONSerializer::json_to_sequence(
                 json_to_return_node(child, builder, sequence, assignments);
             } else if (child["type"] == "map") {
                 json_to_map_node(child, builder, sequence, assignments);
+            } else if (child["type"] == "reduce") {
+                json_to_reduce_node(child, builder, sequence, assignments);
             } else if (child["type"] == "sequence") {
                 auto& subseq = builder.add_sequence(sequence, assignments, json_to_debug_info(child["debug_info"]));
                 json_to_sequence(child, builder, subseq);
@@ -967,6 +1002,72 @@ void JSONSerializer::json_to_map_node(
     assert(j["root"]["type"].is_string());
     assert(j["root"]["type"] == "sequence");
     json_to_sequence(j["root"], builder, map_node.root());
+}
+
+void JSONSerializer::json_to_reduce_node(
+    const nlohmann::json& j,
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& parent,
+    control_flow::Assignments& assignments
+) {
+    assert(j.contains("type"));
+    assert(j["type"].is_string());
+    assert(j["type"] == "reduce");
+    assert(j.contains("indvar"));
+    assert(j["indvar"].is_string());
+    assert(j.contains("init"));
+    assert(j["init"].is_string());
+    assert(j.contains("condition"));
+    assert(j["condition"].is_string());
+    assert(j.contains("update"));
+    assert(j["update"].is_string());
+    assert(j.contains("root"));
+    assert(j["root"].is_object());
+    assert(j.contains("reductions"));
+    assert(j["reductions"].is_array());
+    assert(j.contains("schedule_type"));
+    assert(j["schedule_type"].is_object());
+
+    std::vector<structured_control_flow::ReductionInfo> reductions;
+    for (const auto& reduction_json : j["reductions"]) {
+        assert(reduction_json.contains("op"));
+        assert(reduction_json["op"].is_string());
+        assert(reduction_json.contains("container"));
+        assert(reduction_json["container"].is_string());
+        reductions.push_back(structured_control_flow::ReductionInfo{
+            structured_control_flow::reduction_operation_from_string(reduction_json["op"].get<std::string>()),
+            reduction_json["container"].get<std::string>()
+        });
+    }
+
+    structured_control_flow::ScheduleType schedule_type = json_to_schedule_type(j["schedule_type"]);
+
+    symbolic::Symbol indvar = symbolic::symbol(j["indvar"]);
+    auto init = symbolic::parse(j["init"].get<std::string>());
+    auto update = symbolic::parse(j["update"].get<std::string>());
+    auto condition_expr = symbolic::parse(j["condition"].get<std::string>());
+    symbolic::Condition condition = SymEngine::rcp_dynamic_cast<const SymEngine::Boolean>(condition_expr);
+    if (condition.is_null()) {
+        throw InvalidSDFGException("Reduce condition is not a boolean expression");
+    }
+
+    auto& reduce_node = builder.add_reduce(
+        parent,
+        indvar,
+        condition,
+        init,
+        update,
+        reductions,
+        schedule_type,
+        assignments,
+        json_to_debug_info(j["debug_info"])
+    );
+    reduce_node.element_id_ = j["element_id"];
+
+    assert(j["root"].contains("type"));
+    assert(j["root"]["type"].is_string());
+    assert(j["root"]["type"] == "sequence");
+    json_to_sequence(j["root"], builder, reduce_node.root());
 }
 
 void JSONSerializer::json_to_return_node(

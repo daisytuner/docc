@@ -107,6 +107,10 @@ void Visualizer::visualizeNode(const StructuredSDFG& sdfg, const structured_cont
         this->visualizeContinue(sdfg, *continue_node);
         return;
     }
+    if (auto reduce_node = dynamic_cast<const structured_control_flow::Reduce*>(&node)) {
+        this->visualizeReduce(sdfg, *reduce_node);
+        return;
+    }
     if (auto map_node = dynamic_cast<const structured_control_flow::Map*>(&node)) {
         this->visualizeMap(sdfg, *map_node);
         return;

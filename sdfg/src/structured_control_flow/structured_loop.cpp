@@ -13,10 +13,11 @@ StructuredLoop::StructuredLoop(
     symbolic::Symbol indvar,
     symbolic::Expression init,
     symbolic::Expression update,
-    symbolic::Condition condition
+    symbolic::Condition condition,
+    const ScheduleType& schedule_type
 )
     : ControlFlowNode(element_id, debug_info, parent), indvar_(indvar), init_(init), update_(update),
-      condition_(condition) {
+      condition_(condition), schedule_type_(schedule_type) {
     this->root_ = std::unique_ptr<Sequence>(new Sequence(++element_id, debug_info, this));
 }
 
@@ -49,6 +50,8 @@ const symbolic::Expression StructuredLoop::update() const { return this->update_
 const symbolic::Condition StructuredLoop::condition() const { return this->condition_; };
 
 Sequence& StructuredLoop::root() const { return *this->root_; };
+
+const ScheduleType& StructuredLoop::schedule_type() const { return this->schedule_type_; };
 
 void StructuredLoop::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     if (symbolic::eq(this->indvar_, old_expression) && SymEngine::is_a<SymEngine::Symbol>(*new_expression)) {

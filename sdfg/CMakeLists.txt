@@ -62,6 +62,7 @@ set(SOURCE_FILES
     src/codegen/dispatchers/sequence_dispatcher.cpp
     src/codegen/dispatchers/for_dispatcher.cpp
     src/codegen/dispatchers/map_dispatcher.cpp
+    src/codegen/dispatchers/reduce_dispatcher.cpp
     src/codegen/dispatchers/while_dispatcher.cpp
     src/codegen/loop_report.cpp
     src/control_flow/interstate_edge.cpp
@@ -177,6 +178,7 @@ set(SOURCE_FILES
     src/structured_control_flow/for.cpp
     src/structured_control_flow/if_else.cpp
     src/structured_control_flow/map.cpp
+    src/structured_control_flow/reduce.cpp
     src/structured_control_flow/return.cpp
     src/structured_control_flow/sequence.cpp
     src/structured_control_flow/structured_loop.cpp

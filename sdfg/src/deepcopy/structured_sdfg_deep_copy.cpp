@@ -74,6 +74,20 @@ void StructuredSDFGDeepCopy::append(structured_control_flow::Sequence& root, str
             );
             this->node_mapping[map_stmt] = &new_scope;
             this->append(new_scope.root(), map_stmt->root());
+        } else if (auto reduce_stmt = dynamic_cast<structured_control_flow::Reduce*>(&node)) {
+            auto& new_scope = this->builder_.add_reduce(
+                root,
+                reduce_stmt->indvar(),
+                reduce_stmt->condition(),
+                reduce_stmt->init(),
+                reduce_stmt->update(),
+                reduce_stmt->reductions(),
+                reduce_stmt->schedule_type(),
+                trans.assignments(),
+                reduce_stmt->debug_info()
+            );
+            this->node_mapping[reduce_stmt] = &new_scope;
+            this->append(new_scope.root(), reduce_stmt->root());
         } else {
             throw std::runtime_error("Deep copy not implemented");
         }
@@ -142,6 +156,20 @@ void StructuredSDFGDeepCopy::
         );
         this->node_mapping[map_stmt] = &new_scope;
         this->append(new_scope.root(), map_stmt->root());
+    } else if (auto reduce_stmt = dynamic_cast<structured_control_flow::Reduce*>(&source)) {
+        auto& new_scope = this->builder_.add_reduce(
+            root,
+            reduce_stmt->indvar(),
+            reduce_stmt->condition(),
+            reduce_stmt->init(),
+            reduce_stmt->update(),
+            reduce_stmt->reductions(),
+            reduce_stmt->schedule_type(),
+            {},
+            reduce_stmt->debug_info()
+        );
+        this->node_mapping[reduce_stmt] = &new_scope;
+        this->append(new_scope.root(), reduce_stmt->root());
     } else {
         throw std::runtime_error("Deep copy not implemented");
     }
