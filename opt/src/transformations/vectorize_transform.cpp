@@ -30,8 +30,12 @@ void VectorizeTransform::apply(builder::StructuredSDFGBuilder& builder, analysis
 
 void VectorizeTransform::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
-    j["subgraph"] = {{"0", {{"element_id", this->map_.element_id()}, {"type", "map"}}}};
-    j["transformation_type"] = this->name();
+    j["parameters"] = nlohmann::json::object();
+
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], map_);
 }
 
 VectorizeTransform VectorizeTransform::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {

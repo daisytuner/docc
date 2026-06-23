@@ -103,11 +103,37 @@ nlohmann::json JSONSerializer::serialize(
     }
 
     // Walk the SDFG
-    nlohmann::json root_json;
-    sequence_to_json(root_json, sdfg.root());
-    j["root"] = root_json;
+    if (this->recurse_) {
+        nlohmann::json root_json;
+        sequence_to_json(root_json, sdfg.root());
+        j["root"] = root_json;
+    }
 
     return j;
+}
+
+void JSONSerializer::serialize_node(nlohmann::json& j, const structured_control_flow::ControlFlowNode& node) {
+    if (auto block = dynamic_cast<const structured_control_flow::Block*>(&node)) {
+        block_to_json(j, *block);
+    } else if (auto for_node = dynamic_cast<const structured_control_flow::For*>(&node)) {
+        for_to_json(j, *for_node);
+    } else if (auto sequence_node = dynamic_cast<const structured_control_flow::Sequence*>(&node)) {
+        sequence_to_json(j, *sequence_node);
+    } else if (auto condition_node = dynamic_cast<const structured_control_flow::IfElse*>(&node)) {
+        if_else_to_json(j, *condition_node);
+    } else if (auto while_node = dynamic_cast<const structured_control_flow::While*>(&node)) {
+        while_node_to_json(j, *while_node);
+    } else if (auto return_node = dynamic_cast<const structured_control_flow::Return*>(&node)) {
+        return_node_to_json(j, *return_node);
+    } else if (auto break_node = dynamic_cast<const structured_control_flow::Break*>(&node)) {
+        break_node_to_json(j, *break_node);
+    } else if (auto continue_node = dynamic_cast<const structured_control_flow::Continue*>(&node)) {
+        continue_node_to_json(j, *continue_node);
+    } else if (auto map_node = dynamic_cast<const structured_control_flow::Map*>(&node)) {
+        map_to_json(j, *map_node);
+    } else {
+        throw std::runtime_error("Unknown child type");
+    }
 }
 
 void JSONSerializer::dataflow_to_json(nlohmann::json& j, const data_flow::DataFlowGraph& dataflow) {
@@ -191,9 +217,11 @@ void JSONSerializer::block_to_json(nlohmann::json& j, const structured_control_f
     j["debug_info"] = nlohmann::json::object();
     debug_info_to_json(j["debug_info"], block.debug_info());
 
-    nlohmann::json dataflow_json;
-    dataflow_to_json(dataflow_json, block.dataflow());
-    j["dataflow"] = dataflow_json;
+    if (this->recurse_) {
+        nlohmann::json dataflow_json;
+        dataflow_to_json(dataflow_json, block.dataflow());
+        j["dataflow"] = dataflow_json;
+    }
 }
 
 void JSONSerializer::for_to_json(nlohmann::json& j, const structured_control_flow::For& for_node) {
@@ -208,9 +236,11 @@ void JSONSerializer::for_to_json(nlohmann::json& j, const structured_control_flo
     j["condition"] = expression(for_node.condition());
     j["update"] = expression(for_node.update());
 
-    nlohmann::json body_json;
-    sequence_to_json(body_json, for_node.root());
-    j["root"] = body_json;
+    if (this->recurse_) {
+        nlohmann::json body_json;
+        sequence_to_json(body_json, for_node.root());
+        j["root"] = body_json;
+    }
 }
 
 void JSONSerializer::if_else_to_json(nlohmann::json& j, const structured_control_flow::IfElse& if_else_node) {
@@ -224,9 +254,11 @@ void JSONSerializer::if_else_to_json(nlohmann::json& j, const structured_control
     for (size_t i = 0; i < if_else_node.size(); i++) {
         nlohmann::json branch_json;
         branch_json["condition"] = expression(if_else_node.at(i).second);
-        nlohmann::json body_json;
-        sequence_to_json(body_json, if_else_node.at(i).first);
-        branch_json["root"] = body_json;
+        if (this->recurse_) {
+            nlohmann::json body_json;
+            sequence_to_json(body_json, if_else_node.at(i).first);
+            branch_json["root"] = body_json;
+        }
         j["branches"].push_back(branch_json);
     }
 }
@@ -238,9 +270,11 @@ void JSONSerializer::while_node_to_json(nlohmann::json& j, const structured_cont
     j["debug_info"] = nlohmann::json::object();
     debug_info_to_json(j["debug_info"], while_node.debug_info());
 
-    nlohmann::json body_json;
-    sequence_to_json(body_json, while_node.root());
-    j["root"] = body_json;
+    if (this->recurse_) {
+        nlohmann::json body_json;
+        sequence_to_json(body_json, while_node.root());
+        j["root"] = body_json;
+    }
 }
 
 void JSONSerializer::break_node_to_json(nlohmann::json& j, const structured_control_flow::Break& break_node) {
@@ -274,9 +308,11 @@ void JSONSerializer::map_to_json(nlohmann::json& j, const structured_control_flo
     j["schedule_type"] = nlohmann::json::object();
     schedule_type_to_json(j["schedule_type"], map_node.schedule_type());
 
-    nlohmann::json body_json;
-    sequence_to_json(body_json, map_node.root());
-    j["root"] = body_json;
+    if (this->recurse_) {
+        nlohmann::json body_json;
+        sequence_to_json(body_json, map_node.root());
+        j["root"] = body_json;
+    }
 }
 
 void JSONSerializer::return_node_to_json(nlohmann::json& j, const structured_control_flow::Return& return_node) {
@@ -301,36 +337,18 @@ void JSONSerializer::sequence_to_json(nlohmann::json& j, const structured_contro
     j["debug_info"] = nlohmann::json::object();
     debug_info_to_json(j["debug_info"], sequence.debug_info());
 
+    if (!this->recurse_) {
+        return;
+    }
+
     j["children"] = nlohmann::json::array();
     j["transitions"] = nlohmann::json::array();
-
     for (size_t i = 0; i < sequence.size(); i++) {
         nlohmann::json child_json;
         auto& child = sequence.at(i).first;
         auto& transition = sequence.at(i).second;
 
-        if (auto block = dynamic_cast<const structured_control_flow::Block*>(&child)) {
-            block_to_json(child_json, *block);
-        } else if (auto for_node = dynamic_cast<const structured_control_flow::For*>(&child)) {
-            for_to_json(child_json, *for_node);
-        } else if (auto sequence_node = dynamic_cast<const structured_control_flow::Sequence*>(&child)) {
-            sequence_to_json(child_json, *sequence_node);
-        } else if (auto condition_node = dynamic_cast<const structured_control_flow::IfElse*>(&child)) {
-            if_else_to_json(child_json, *condition_node);
-        } else if (auto while_node = dynamic_cast<const structured_control_flow::While*>(&child)) {
-            while_node_to_json(child_json, *while_node);
-        } else if (auto return_node = dynamic_cast<const structured_control_flow::Return*>(&child)) {
-            return_node_to_json(child_json, *return_node);
-        } else if (auto break_node = dynamic_cast<const structured_control_flow::Break*>(&child)) {
-            break_node_to_json(child_json, *break_node);
-        } else if (auto continue_node = dynamic_cast<const structured_control_flow::Continue*>(&child)) {
-            continue_node_to_json(child_json, *continue_node);
-        } else if (auto map_node = dynamic_cast<const structured_control_flow::Map*>(&child)) {
-            map_to_json(child_json, *map_node);
-        } else {
-            throw std::runtime_error("Unknown child type");
-        }
-
+        this->serialize_node(child_json, child);
         j["children"].push_back(child_json);
 
         // Add transition information

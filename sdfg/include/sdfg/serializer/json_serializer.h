@@ -20,14 +20,19 @@ namespace sdfg {
 namespace serializer {
 
 class JSONSerializer {
+private:
+    bool recurse_;
+
 public:
-    JSONSerializer() {}
+    JSONSerializer(bool recurse = true) : recurse_(recurse) {}
 
     virtual nlohmann::json serialize(
         const sdfg::StructuredSDFG& sdfg,
         analysis::AnalysisManager* analysis_manager = nullptr,
         structured_control_flow::Sequence* root = nullptr
     );
+
+    void serialize_node(nlohmann::json& j, const structured_control_flow::ControlFlowNode& node);
 
     std::unique_ptr<sdfg::StructuredSDFG> deserialize(nlohmann::json& j);
 

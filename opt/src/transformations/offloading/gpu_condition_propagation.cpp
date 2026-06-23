@@ -120,22 +120,19 @@ std::string GPUConditionPropagation::name() const { return "GPUConditionPropagat
 
 void GPUConditionPropagation::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
+    j["parameters"] = nlohmann::json::object();
 
-    j["subgraph"] = {{"0", {{"element_id", this->map_.element_id()}, {"type", "map"}}}};
-
-    // Legacy field for backward compatibility
-    j["map_element_id"] = this->map_.element_id();
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], map_);
 }
 
 GPUConditionPropagation GPUConditionPropagation::
     from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     size_t map_id;
-    if (j.contains("subgraph")) {
-        const auto& node_desc = j.at("subgraph").at("0");
-        map_id = node_desc.at("element_id").get<size_t>();
-    } else {
-        map_id = j.at("map_element_id").get<size_t>();
-    }
+    const auto& node_desc = j.at("subgraph").at("0");
+    map_id = node_desc.at("element_id").get<size_t>();
 
     auto element = builder.find_element_by_id(map_id);
     if (!element) {

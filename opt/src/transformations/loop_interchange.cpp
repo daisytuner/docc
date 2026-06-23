@@ -559,21 +559,16 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 };
 
 void LoopInterchange::to_json(nlohmann::json& j) const {
-    std::vector<std::string> loop_types;
-    for (auto* loop : {&(this->outer_loop_), &(this->inner_loop_)}) {
-        if (dynamic_cast<structured_control_flow::For*>(loop)) {
-            loop_types.push_back("for");
-        } else if (dynamic_cast<structured_control_flow::Map*>(loop)) {
-            loop_types.push_back("map");
-        } else {
-            throw InvalidSDFGException("Unsupported loop type for serialization of loop: " + loop->indvar()->get_name());
-        }
-    }
     j["transformation_type"] = this->name();
-    j["subgraph"] = {
-        {"0", {{"element_id", this->outer_loop_.element_id()}, {"type", loop_types[0]}}},
-        {"1", {{"element_id", this->inner_loop_.element_id()}, {"type", loop_types[1]}}}
-    };
+    j["parameters"] = nlohmann::json::object();
+
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], this->outer_loop_);
+
+    j["subgraph"]["1"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["1"], this->inner_loop_);
 };
 
 LoopInterchange LoopInterchange::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {

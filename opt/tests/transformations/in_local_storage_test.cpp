@@ -1382,8 +1382,8 @@ TEST(InLocalStorageTest, JsonSerialization) {
 
     // Verify JSON structure
     EXPECT_EQ(j["transformation_type"], "InLocalStorage");
-    EXPECT_EQ(j["container"], "A");
     EXPECT_TRUE(j.contains("subgraph"));
+    EXPECT_EQ(j["subgraph"].size(), 2);
 
     // Deserialize and verify
     auto deserialized = transformations::InLocalStorage::from_json(builder, j);

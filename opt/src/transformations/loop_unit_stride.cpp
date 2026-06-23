@@ -128,13 +128,13 @@ void LoopUnitStride::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 }
 
 void LoopUnitStride::to_json(nlohmann::json& j) const {
-    std::string loop_type = "for";
-    if (dynamic_cast<const structured_control_flow::Map*>(&loop_)) {
-        loop_type = "map";
-    }
-
     j["transformation_type"] = this->name();
-    j["subgraph"] = {{"0", {{"element_id", loop_.element_id()}, {"type", loop_type}}}};
+    j["parameters"] = nlohmann::json::object();
+
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], loop_);
 }
 
 LoopUnitStride LoopUnitStride::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {

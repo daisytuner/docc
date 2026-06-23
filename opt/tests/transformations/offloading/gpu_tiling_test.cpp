@@ -103,12 +103,6 @@ TEST(GPUTilingTest, json_serialization) {
     ASSERT_TRUE(j["parameters"].is_object());
     ASSERT_TRUE(j["parameters"].contains("size"));
     EXPECT_EQ(j["parameters"]["size"].get<size_t>(), 8u);
-
-    // Legacy fields kept for backward compatibility
-    ASSERT_TRUE(j.contains("loop_element_id"));
-    EXPECT_EQ(j["loop_element_id"].get<size_t>(), loop.element_id());
-    ASSERT_TRUE(j.contains("size"));
-    EXPECT_EQ(j["size"].get<size_t>(), 8u);
 }
 
 TEST(GPUTilingTest, WithOffset) {

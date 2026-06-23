@@ -248,8 +248,8 @@ void CUDAStdlibDataTransferExtraction::apply_memcpy(
 
 void CUDAStdlibDataTransferExtraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
+    j["parameters"] = nlohmann::json::object();
     j["subgraph"] = {{"0", {{"element_id", this->lib_node_.element_id()}, {"type", "unknown"}}}};
-    j["lib_node_element_id"] = this->lib_node_.element_id();
 }
 
 } // namespace cuda

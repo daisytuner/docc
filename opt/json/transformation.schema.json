@@ -1,0 +1,62 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://docc.dev/schemas/transformation.schema.json",
+    "title": "Transformation",
+    "description":
+        "Serialization schema for an SDFG transformation as produced by Transformation::to_json(). A transformation description has exactly three top-level members: the transformation type name, the flat serialization of the constructor subgraph nodes, and any additional parameters used to reconstruct the transformation.",
+    "type": "object",
+    "required": [
+        "transformation_type",
+        "subgraph"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "transformation_type": {
+            "type": "string",
+            "minLength": 1,
+            "description":
+                "The transformation name, equal to Transformation::name() (e.g. \"LoopTiling\"). Used by the Replayer to dispatch to the matching from_json()."
+        },
+        "subgraph": {
+            "type": "object",
+            "description":
+                "Flat serialization of the constructor nodes (a subset of the SDFG). Keys are the contiguous string indices \"0\", \"1\", ... and each value identifies one element the transformation was constructed from.",
+            "patternProperties": {
+                "^[0-9]+$": {
+                    "$ref": "#/$defs/subgraphNode"
+                }
+            },
+            "additionalProperties": false
+        },
+        "parameters": {
+            "type": "object",
+            "description":
+                "Optional. Additional parameters used to build constructor nodes and arguments (potentially via further analysis), e.g. tile sizes or storage types. May be empty or omitted entirely for backward compatibility."
+        }
+    },
+    "$defs": {
+        "subgraphNode": {
+            "type": "object",
+            "description":
+                "A single serialized constructor element, referenced by its stable element id.",
+            "required": [
+                "element_id",
+                "type"
+            ],
+            "properties": {
+                "element_id": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description":
+                        "Stable id resolved back to a live element via StructuredSDFGBuilder::find_element_by_id()."
+                },
+                "type": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description":
+                        "Element kind, e.g. \"access_node\" or a structured control-flow node type."
+                }
+            }
+        }
+    }
+}

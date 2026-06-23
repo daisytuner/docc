@@ -140,8 +140,12 @@ void CollapseToDepth::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
 void CollapseToDepth::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
-    j["subgraph"] = {{"0", {{"element_id", loop_.element_id()}, {"type", "map"}}}};
     j["parameters"] = {{"target_loops", target_loops_}};
+
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], loop_);
 }
 
 CollapseToDepth CollapseToDepth::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {

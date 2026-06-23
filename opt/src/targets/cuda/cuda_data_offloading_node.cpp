@@ -200,7 +200,7 @@ nlohmann::json CUDADataOffloadingNodeSerializer::serialize(const sdfg::data_flow
     const auto& node = static_cast<const CUDADataOffloadingNode&>(library_node);
 
     // Offloading node properties
-    sdfg::serializer::JSONSerializer serializer;
+    serializer::JSONSerializer serializer;
 
     j["device_id"] = serializer.expression(node.device_id());
 

@@ -262,18 +262,13 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 };
 
 void LoopDistribute::to_json(nlohmann::json& j) const {
-    std::string loop_type;
-    if (dynamic_cast<structured_control_flow::For*>(&loop_)) {
-        loop_type = "for";
-    } else if (dynamic_cast<structured_control_flow::Map*>(&loop_)) {
-        loop_type = "map";
-    } else {
-        throw std::runtime_error("Unsupported loop type for serialization of loop: " + loop_.indvar()->get_name());
-    }
+    j["transformation_type"] = this->name();
+    j["parameters"] = nlohmann::json::object();
 
-    j["transformation_type"] = this->name();
-    j["subgraph"] = {{"0", {{"element_id", this->loop_.element_id()}, {"type", loop_type}}}};
-    j["transformation_type"] = this->name();
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], loop_);
 };
 
 LoopDistribute LoopDistribute::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {

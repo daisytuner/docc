@@ -3,6 +3,7 @@
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/structured_sdfg.h>
 #include <sdfg/transformations/transformation.h>
+#include <sdfg/transformations/transformation_schema.h>
 
 #include <concepts>
 #include <nlohmann/json.hpp>
@@ -67,6 +68,16 @@ public:
 
         nlohmann::json desc;
         transformation.to_json(desc);
+
+#ifndef NDEBUG
+        std::string schema_error;
+        if (!validate_transformation_schema(desc, schema_error)) {
+            throw InvalidTransformationDescriptionException(
+                "Transformation '" + transformation.name() + "' produced an invalid description: " + schema_error
+            );
+        }
+#endif
+
         history_.push_back(desc);
 
         transformation.apply(builder, analysis_manager);

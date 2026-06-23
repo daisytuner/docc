@@ -284,7 +284,7 @@ data_flow::LibraryNode& ExternalDataOffloadingNodeSerializer::deserialize(
         throw std::runtime_error("Invalid library node code");
     }
 
-    sdfg::serializer::JSONSerializer serializer;
+    serializer::JSONSerializer serializer;
     DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
 
     std::vector<std::string> inputs = j["inputs"].get<std::vector<std::string>>();
