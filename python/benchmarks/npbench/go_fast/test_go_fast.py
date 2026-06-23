@@ -34,16 +34,24 @@ def test_go_fast(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 2, "Malloc": 0, "CMath": 1, "SEQUENTIAL": 2, "FOR": 3}
+            verification={
+                "MAP": 2,
+                "Malloc": 0,
+                "CMath": 1,
+                "SEQUENTIAL": 3,
+                "FOR": 3,
+                "REDUCE": 1,
+            }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "VECTORIZE": 1,
                 "MAP": 2,
+                "REDUCE": 1,
                 "Malloc": 0,
                 "CMath": 1,
-                "SEQUENTIAL": 1,
+                "SEQUENTIAL": 2,
                 "FOR": 3,
             }
         )
@@ -51,6 +59,7 @@ def test_go_fast(target):
         verifier = SDFGVerification(
             verification={
                 "MAP": 1,
+                "REDUCE": 1,
                 "CPU_PARALLEL": 1,
                 "CMath": 1,
                 "FOR": 2,
@@ -61,6 +70,7 @@ def test_go_fast(target):
             verification={
                 "CUDA": 2,
                 "MAP": 2,
+                "REDUCE": 1,
                 "CUDAOffloading": 4,
                 "CMath": 1,
                 "FOR": 3,
@@ -72,6 +82,7 @@ def test_go_fast(target):
             verification={
                 "ROCM": 2,
                 "MAP": 2,
+                "REDUCE": 1,
                 "ROCMOffloading": 4,
                 "CMath": 1,
                 "FOR": 3,

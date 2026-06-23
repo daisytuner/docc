@@ -8,6 +8,7 @@
 
 #include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/extreme_values.h"
+#include "sdfg/symbolic/polyhedral.h"
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/utils.h"
 
@@ -122,19 +123,14 @@ DependenceDeltas compute_deltas_isl(
         auto& dim1 = expr1_delinearized[i];
         auto& dim2 = expr2_delinearized[i];
         auto maps = expressions_to_intersection_map_str({dim1}, {dim2}, indvar, assums1, assums2);
-        isl_ctx* ctx = isl_ctx_alloc();
-        isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
+        polyhedral::IslCtx ctx;
+        if (!ctx) {
+            continue;
+        }
 
-        isl_map* map_1 = isl_map_read_from_str(ctx, std::get<0>(maps).c_str());
-        isl_map* map_2 = isl_map_read_from_str(ctx, std::get<1>(maps).c_str());
+        polyhedral::IslMap map_1(isl_map_read_from_str(ctx.get(), std::get<0>(maps).c_str()));
+        polyhedral::IslMap map_2(isl_map_read_from_str(ctx.get(), std::get<1>(maps).c_str()));
         if (!map_1 || !map_2) {
-            if (map_1) {
-                isl_map_free(map_1);
-            }
-            if (map_2) {
-                isl_map_free(map_2);
-            }
-            isl_ctx_free(ctx);
             continue;
         }
 
@@ -144,24 +140,13 @@ DependenceDeltas compute_deltas_isl(
         // the combined multi-dimensional analysis, because a single dimension
         // may use a different variable (e.g. inner-loop indvar k) whose valid
         // values span across multiple outer-loop iterations.
-        isl_set* range_1 = isl_map_range(map_1);
-        isl_set* range_2 = isl_map_range(map_2);
+        polyhedral::IslSet range_1(isl_map_range(map_1.release()));
+        polyhedral::IslSet range_2(isl_map_range(map_2.release()));
         if (!range_1 || !range_2) {
-            if (range_1) {
-                isl_set_free(range_1);
-            }
-            if (range_2) {
-                isl_set_free(range_2);
-            }
-            isl_ctx_free(ctx);
             continue;
         }
-        isl_set* overlap = isl_set_intersect(range_1, range_2);
-        bool disjoint = overlap ? isl_set_is_empty(overlap) : false;
-        if (overlap) {
-            isl_set_free(overlap);
-        }
-        isl_ctx_free(ctx);
+        polyhedral::IslSet overlap(isl_set_intersect(range_1.release(), range_2.release()));
+        bool disjoint = overlap ? isl_set_is_empty(overlap.get()) : false;
         if (disjoint) {
             return DependenceDeltas{true, "", {}};
         }
@@ -170,23 +155,15 @@ DependenceDeltas compute_deltas_isl(
     // Build combined analysis on all dimensions together
     auto maps = expressions_to_intersection_map_str(expr1_delinearized, expr2_delinearized, indvar, assums1, assums2);
 
-    isl_ctx* ctx = isl_ctx_alloc();
-    isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
+    polyhedral::IslCtx ctx;
+    if (!ctx) {
+        return DependenceDeltas{false, "", {}};
+    }
 
-    isl_map* map_1 = isl_map_read_from_str(ctx, std::get<0>(maps).c_str());
-    isl_map* map_2 = isl_map_read_from_str(ctx, std::get<1>(maps).c_str());
-    isl_map* map_3 = isl_map_read_from_str(ctx, std::get<2>(maps).c_str());
+    polyhedral::IslMap map_1(isl_map_read_from_str(ctx.get(), std::get<0>(maps).c_str()));
+    polyhedral::IslMap map_2(isl_map_read_from_str(ctx.get(), std::get<1>(maps).c_str()));
+    polyhedral::IslMap map_3(isl_map_read_from_str(ctx.get(), std::get<2>(maps).c_str()));
     if (!map_1 || !map_2 || !map_3) {
-        if (map_1) {
-            isl_map_free(map_1);
-        }
-        if (map_2) {
-            isl_map_free(map_2);
-        }
-        if (map_3) {
-            isl_map_free(map_3);
-        }
-        isl_ctx_free(ctx);
         // Conservative: assume dependence exists when isl can't analyze
         return DependenceDeltas{false, "", {}};
     }
@@ -199,64 +176,48 @@ DependenceDeltas compute_deltas_isl(
     // intersect with reverse(map_3) for the monotonicity constraint.
     // This correctly captures cross-dimensional dependence vectors for both
     // square (n_iter == n_access) and rectangular (n_iter > n_access) cases.
-    isl_map* map_2_inv = isl_map_reverse(map_2);
+    polyhedral::IslMap map_2_inv(isl_map_reverse(map_2.release()));
     if (!map_2_inv) {
-        isl_map_free(map_1);
-        isl_map_free(map_3);
-        isl_ctx_free(ctx);
         return DependenceDeltas{false, "", {}};
     }
-    isl_map* alias_unconstrained = isl_map_apply_range(map_1, map_2_inv);
+    polyhedral::IslMap alias_unconstrained(isl_map_apply_range(map_1.release(), map_2_inv.release()));
     if (!alias_unconstrained) {
-        isl_map_free(map_3);
-        isl_ctx_free(ctx);
         return DependenceDeltas{false, "", {}};
     }
-    isl_map* mono = isl_map_reverse(map_3);
+    polyhedral::IslMap mono(isl_map_reverse(map_3.release()));
     if (!mono) {
-        isl_map_free(alias_unconstrained);
-        isl_ctx_free(ctx);
         return DependenceDeltas{false, "", {}};
     }
-    isl_map* alias_pairs = isl_map_intersect(alias_unconstrained, mono);
+    polyhedral::IslMap alias_pairs(isl_map_intersect(alias_unconstrained.release(), mono.release()));
     if (!alias_pairs) {
-        isl_ctx_free(ctx);
         return DependenceDeltas{false, "", {}};
     }
 
-    if (isl_map_is_empty(alias_pairs)) {
-        isl_map_free(alias_pairs);
-        isl_ctx_free(ctx);
+    if (isl_map_is_empty(alias_pairs.get())) {
         return DependenceDeltas{true, "", {}};
     }
 
     // isl_map_deltas requires matching domain/range dimensions
-    int n_in = isl_map_dim(alias_pairs, isl_dim_in);
-    int n_out = isl_map_dim(alias_pairs, isl_dim_out);
+    int n_in = isl_map_dim(alias_pairs.get(), isl_dim_in);
+    int n_out = isl_map_dim(alias_pairs.get(), isl_dim_out);
     if (n_in != n_out) {
-        isl_map_free(alias_pairs);
-        isl_ctx_free(ctx);
         // Dependence exists but can't compute deltas
         return DependenceDeltas{false, "", {}};
     }
 
     // Compute delta set: {d : exists i1,i2 in alias_pairs, d = i2 - i1}
-    isl_set* deltas = isl_map_deltas(alias_pairs);
-    if (!deltas || isl_set_is_empty(deltas)) {
-        if (deltas) {
-            isl_set_free(deltas);
-        }
-        isl_ctx_free(ctx);
+    polyhedral::IslSet deltas(isl_map_deltas(alias_pairs.release()));
+    if (!deltas || isl_set_is_empty(deltas.get())) {
         // Conservative: if deltas computation fails, assume dependence
         return DependenceDeltas{false, "", {}};
     }
 
     // Extract dimension names from the delta set
-    int n_dims = isl_set_dim(deltas, isl_dim_set);
+    int n_dims = isl_set_dim(deltas.get(), isl_dim_set);
     std::vector<std::string> dimensions;
     dimensions.reserve(n_dims);
     for (int i = 0; i < n_dims; i++) {
-        const char* name = isl_set_get_dim_name(deltas, isl_dim_set, i);
+        const char* name = isl_set_get_dim_name(deltas.get(), isl_dim_set, i);
         if (name) {
             // Delta dim names are like "i_1" — strip the "_1" suffix
             std::string dim_name(name);
@@ -270,17 +231,12 @@ DependenceDeltas compute_deltas_isl(
     }
 
     // Serialize to string
-    char* str = isl_set_to_str(deltas);
+    char* str = isl_set_to_str(deltas.get());
     if (!str) {
-        isl_set_free(deltas);
-        isl_ctx_free(ctx);
         return DependenceDeltas{false, "", {}};
     }
     std::string deltas_str(str);
     free(str);
-
-    isl_set_free(deltas);
-    isl_ctx_free(ctx);
 
     DependenceDeltas result;
     result.empty = false;

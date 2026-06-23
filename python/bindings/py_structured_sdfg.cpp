@@ -36,7 +36,7 @@
 #include <sdfg/passes/scheduler/scheduler_registry.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
-#include <sdfg/passes/structured_control_flow/for2map.h>
+#include <sdfg/passes/structured_control_flow/for_classification.h>
 #include <sdfg/passes/structured_control_flow/pointer_evolution.h>
 #include <sdfg/passes/structured_control_flow/while_to_for_conversion.h>
 #include <sdfg/passes/symbolic/symbol_evolution.h>
@@ -300,8 +300,8 @@ void PyStructuredSDFG::simplify() {
     dce.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
 
-    // Convert for loops into maps
-    sdfg::passes::For2MapPass map_conversion_pass;
+    // Convert for loops into maps and reductions
+    sdfg::passes::ForClassificationPass map_conversion_pass;
     map_conversion_pass.run(builder_opt, analysis_manager);
 
     // Move code out of maps where possible

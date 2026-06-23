@@ -43,26 +43,30 @@ def test_softmax(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "SEQUENTIAL": 20,
+                "SEQUENTIAL": 22,
                 "FOR": 22,
                 "MAP": 20,
+                "REDUCE": 2,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "VECTORIZE": 2,
-                "SEQUENTIAL": 12,
+                "SEQUENTIAL": 14,
                 "FOR": 16,
                 "MAP": 14,
+                "REDUCE": 2,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "CPU_PARALLEL": 4,
+                "SEQUENTIAL": 2,
                 "FOR": 6,
                 "MAP": 4,
+                "REDUCE": 2,
             }
         )
     elif target == "cuda":
@@ -71,6 +75,7 @@ def test_softmax(target):
                 "SEQUENTIAL": 6,
                 "FOR": 14,
                 "MAP": 12,
+                "REDUCE": 2,
                 "CUDA": 6,
                 "CUDAOffloading": 7,
             }
@@ -81,6 +86,7 @@ def test_softmax(target):
                 "SEQUENTIAL": 6,
                 "FOR": 14,
                 "MAP": 12,
+                "REDUCE": 2,
                 "ROCM": 6,
                 "ROCMOffloading": 7,
             }

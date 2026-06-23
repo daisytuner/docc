@@ -7,6 +7,7 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/analysis/users.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/maps.h"
@@ -71,6 +72,16 @@ private:
         dependencies_;
 
     std::unordered_map<structured_control_flow::StructuredLoop*, std::vector<LoopCarriedDependencyPair>> pairs_;
+
+    // Recognized reductions per loop. A loop-carried read-write dependency whose
+    // writer and reader are connected through a single associative/commutative
+    // combine operator acting on a loop-invariant accumulator location is a
+    // *reduction* dependency: it is loop-carried (so the loop is not a plain
+    // Map) yet reorderable (so it can be lowered to a parallel reduction).
+    std::unordered_map<structured_control_flow::StructuredLoop*, std::vector<structured_control_flow::ReductionInfo>>
+        reductions_;
+
+    void detect_reductions(structured_control_flow::StructuredLoop& loop);
 
     // Owned, detailed `DataDependencyAnalysis` instance constructed manually
     // (not through the shared `AnalysisManager` cache). LCDA needs the
@@ -145,6 +156,33 @@ public:
      * parallization
      */
     bool has_loop_carried_hazard(structured_control_flow::StructuredLoop& loop) const;
+
+    /**
+     * @brief Recognized reductions carried by the loop.
+     *
+     * Each entry pairs an associative/commutative operator with the accumulator
+     * container it combines into. A container appears here iff it has a
+     * loop-carried read-write dependency that is realized by a single combine
+     * operator (`acc = acc OP x`) over a loop-invariant accumulator location.
+     * Empty for loops with no recognized reduction (or not analyzed).
+     */
+    const std::vector<structured_control_flow::ReductionInfo>& reductions(structured_control_flow::StructuredLoop& loop
+    ) const;
+
+    /**
+     * @brief True if the loop carries at least one recognized reduction.
+     */
+    bool has_reductions(structured_control_flow::StructuredLoop& loop) const;
+
+    /**
+     * @brief True if every loop-carried hazard (RAW or undefined) of the loop is
+     * a recognized reduction, and at least one reduction exists.
+     *
+     * This is the precise condition under which a parallelizable `For` is a
+     * reduction loop rather than a fully independent (Map) loop: the only
+     * cross-iteration dependencies are reorderable accumulations.
+     */
+    bool is_reduction_only(structured_control_flow::StructuredLoop& loop) const;
 };
 
 } // namespace analysis

@@ -44,7 +44,8 @@ def test_covariance(target):
             verification={
                 "GEMM": 1,
                 "MAP": 12,
-                "SEQUENTIAL": 12,
+                "REDUCE": 1,
+                "SEQUENTIAL": 13,
                 "FOR": 14,
             }
         )
@@ -54,7 +55,8 @@ def test_covariance(target):
                 "GEMM": 1,
                 "VECTORIZE": 7,
                 "MAP": 11,
-                "SEQUENTIAL": 4,
+                "REDUCE": 1,
+                "SEQUENTIAL": 5,
                 "FOR": 13,
             }
         )
@@ -65,6 +67,7 @@ def test_covariance(target):
                 "GEMM": 1,
                 "CPU_PARALLEL": 5,
                 "MAP": 8,
+                "REDUCE": 1,
                 "FOR": 10,
             }
         )
@@ -75,6 +78,7 @@ def test_covariance(target):
                 "CUDAOffloading": 12,
                 "SEQUENTIAL": 4,
                 "MAP": 13,
+                "REDUCE": 1,
                 "FOR": 16,
             }
         )
