@@ -64,7 +64,7 @@ public:
     void return_node_to_json(nlohmann::json& j, const sdfg::structured_control_flow::Return& return_node);
 
     // Includes all sub-types of StructuredLoop (for, map, reduce)
-    void for_to_json(nlohmann::json& j, const sdfg::structured_control_flow::StructuredLoop& loop_node);
+    void structured_loop_to_json(nlohmann::json& j, const sdfg::structured_control_flow::StructuredLoop& loop_node);
 
     void debug_info_to_json(nlohmann::json& j, const sdfg::DebugInfo& debug_info);
 
@@ -121,7 +121,7 @@ public:
         control_flow::Assignments& assignments
     );
     // Includes all sub-types of StructuredLoop (for, map, reduce)
-    void json_to_for_node(
+    void json_to_structured_loop_node(
         const nlohmann::json& j,
         sdfg::builder::StructuredSDFGBuilder& builder,
         sdfg::structured_control_flow::Sequence& parent,

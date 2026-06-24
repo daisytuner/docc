@@ -499,7 +499,7 @@ TEST(JSONSerializerTest, ForNodeToJSON) {
 
     // Serialize the For node to JSON
     nlohmann::json j;
-    serializer.for_to_json(j, scope);
+    serializer.structured_loop_to_json(j, scope);
 
     // Check if the JSON contains the expected keys
     EXPECT_TRUE(j.contains("type"));
@@ -720,7 +720,7 @@ TEST(JSONSerializerTest, MapToJSON) {
 
     // Serialize the Map node to JSON
     nlohmann::json j;
-    serializer.for_to_json(j, map);
+    serializer.structured_loop_to_json(j, map);
 
     // Check if the JSON contains the expected keys
     EXPECT_TRUE(j.contains("type"));
@@ -761,7 +761,7 @@ TEST(JSONSerializerTest, ReduceToJSON) {
     sdfg::serializer::JSONSerializer serializer;
 
     nlohmann::json j;
-    serializer.for_to_json(j, reduce);
+    serializer.structured_loop_to_json(j, reduce);
 
     EXPECT_TRUE(j.contains("type"));
     EXPECT_EQ(j["type"], "for");
@@ -1562,7 +1562,7 @@ TEST(JSONSerializerTest, SerializeDeserialize_forloop) {
 
     // Serialize the DataflowGraph to JSON
 
-    serializer.for_to_json(j, for_loop);
+    serializer.structured_loop_to_json(j, for_loop);
 
     // Deserialize the JSON back into a DataflowGraph object
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
@@ -1572,7 +1572,7 @@ TEST(JSONSerializerTest, SerializeDeserialize_forloop) {
 
     control_flow::Assignments assignments;
 
-    serializer.json_to_for_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root(), assignments);
     auto des_sdfg = des_builder.move();
 
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
@@ -1815,14 +1815,14 @@ TEST(JSONSerializerTest, SerializeDeserialize_Map) {
 
     // Serialize the Sequence node to JSON
     nlohmann::json j;
-    serializer.for_to_json(j, map);
+    serializer.structured_loop_to_json(j, map);
 
     // Deserialize the JSON back into a Sequence node
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
 
     control_flow::Assignments assignments;
 
-    serializer.json_to_for_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root(), assignments);
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 0);
@@ -1857,13 +1857,13 @@ TEST(JSONSerializerTest, SerializeDeserialize_Reduce) {
     sdfg::serializer::JSONSerializer serializer;
 
     nlohmann::json j;
-    serializer.for_to_json(j, reduce);
+    serializer.structured_loop_to_json(j, reduce);
 
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
 
     control_flow::Assignments assignments;
 
-    serializer.json_to_for_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root(), assignments);
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 0);

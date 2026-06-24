@@ -129,7 +129,7 @@ void JSONSerializer::serialize_node(nlohmann::json& j, const structured_control_
     } else if (auto continue_node = dynamic_cast<const structured_control_flow::Continue*>(&node)) {
         continue_node_to_json(j, *continue_node);
     } else if (auto loop_node = dynamic_cast<const structured_control_flow::StructuredLoop*>(&node)) {
-        for_to_json(j, *loop_node);
+        structured_loop_to_json(j, *loop_node);
     } else {
         throw std::runtime_error("Unknown child type");
     }
@@ -223,7 +223,7 @@ void JSONSerializer::block_to_json(nlohmann::json& j, const structured_control_f
     }
 }
 
-void JSONSerializer::for_to_json(nlohmann::json& j, const structured_control_flow::StructuredLoop& for_node) {
+void JSONSerializer::structured_loop_to_json(nlohmann::json& j, const structured_control_flow::StructuredLoop& for_node) {
     j["type"] = "for";
     // Backward compatibility (now encapsulated in sub_type)
     if (dynamic_cast<const structured_control_flow::Map*>(&for_node)) {
@@ -764,7 +764,7 @@ void JSONSerializer::json_to_sequence(
             } else if (child["type"] == "return") {
                 json_to_return_node(child, builder, sequence, assignments);
             } else if (child["type"] == "for" || child["type"] == "map") {
-                json_to_for_node(child, builder, sequence, assignments);
+                json_to_structured_loop_node(child, builder, sequence, assignments);
             } else if (child["type"] == "sequence") {
                 auto& subseq = builder.add_sequence(sequence, assignments, json_to_debug_info(child["debug_info"]));
                 json_to_sequence(child, builder, subseq);
@@ -802,7 +802,7 @@ void JSONSerializer::json_to_block_node(
     }
 }
 
-void JSONSerializer::json_to_for_node(
+void JSONSerializer::json_to_structured_loop_node(
     const nlohmann::json& j,
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Sequence& parent,
