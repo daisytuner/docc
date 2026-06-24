@@ -346,18 +346,16 @@ TEST(LoopAnalysisInfoTest, MixedLoopTypesWithReduce) {
 
     auto info = loop_analysis.loop_info(&loop_for);
     EXPECT_EQ(info.num_loops, 3);
-    EXPECT_EQ(info.num_fors, 1);
+    EXPECT_EQ(info.num_fors, 2);
     EXPECT_EQ(info.num_maps, 1);
     EXPECT_EQ(info.num_whiles, 0);
-    EXPECT_EQ(info.num_reduces, 1);
     EXPECT_EQ(info.max_depth, 3);
 
     // The Reduce subtree reports itself
     auto info_reduce = loop_analysis.loop_info(&loop_reduce);
     EXPECT_EQ(info_reduce.num_loops, 1);
-    EXPECT_EQ(info_reduce.num_reduces, 1);
     EXPECT_EQ(info_reduce.num_maps, 0);
-    EXPECT_EQ(info_reduce.num_fors, 0);
+    EXPECT_EQ(info_reduce.num_fors, 1);
 
     // A Reduce is not classified as a parallel map
     EXPECT_FALSE(loop_analysis.loop_info_local(&loop_reduce).is_map);

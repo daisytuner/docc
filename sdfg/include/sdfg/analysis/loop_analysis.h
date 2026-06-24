@@ -29,7 +29,6 @@ struct DFSLoopComparator {
     X(size_t, num_maps, 0)                \
     X(size_t, num_fors, 0)                \
     X(size_t, num_whiles, 0)              \
-    X(size_t, num_reduces, 0)             \
     X(size_t, max_depth, 0)               \
     X(bool, is_perfectly_nested, false)   \
     X(bool, is_perfectly_parallel, false) \
@@ -61,7 +60,6 @@ struct LoopInfo {
  * And to allow for separate allocation in the future
  */
 struct LocalLoopInfo {
-    enum class LoopType : uint8_t { While, For, Map, Reduce };
     /**
      * Unique ID for each loop, not just loop nests. Numbered in  pre-order DFS (children will always have higher
      * numbers than their parents)
@@ -96,7 +94,6 @@ inline nlohmann::json loop_info_to_json(LoopInfo info) {
         {"num_maps", info.num_maps},
         {"num_fors", info.num_fors},
         {"num_whiles", info.num_whiles},
-        {"num_reduces", info.num_reduces},
         {"max_depth", info.max_depth},
         {"is_perfectly_nested", info.is_perfectly_nested},
         {"is_perfectly_parallel", info.is_perfectly_parallel},

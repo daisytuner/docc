@@ -41,22 +41,14 @@ void LoopAnalysis::init_new_loop_info(
         info.second.num_maps = 1;
         info.second.num_fors = 0;
         info.second.num_whiles = 0;
-        info.second.num_reduces = 0;
     } else if (while_loop != nullptr) {
         info.second.num_maps = 0;
         info.second.num_fors = 0;
         info.second.num_whiles = 1;
-        info.second.num_reduces = 0;
-    } else if (dynamic_cast<structured_control_flow::Reduce*>(loop) != nullptr) {
-        info.second.num_maps = 0;
-        info.second.num_fors = 0;
-        info.second.num_whiles = 0;
-        info.second.num_reduces = 1;
     } else {
         info.second.num_maps = 0;
         info.second.num_fors = 1;
         info.second.num_whiles = 0;
-        info.second.num_reduces = 0;
     }
 }
 
@@ -197,7 +189,6 @@ LoopState& LoopAnalysis::compute_loop_infos(structured_control_flow::ControlFlow
         info.num_maps += sub_info.num_maps;
         info.num_fors += sub_info.num_fors;
         info.num_whiles += sub_info.num_whiles;
-        info.num_reduces += sub_info.num_reduces;
         info.max_depth = std::max(info.max_depth, 1 + sub_info.max_depth);
 
         has_side_effects |= sub_info.has_side_effects;
