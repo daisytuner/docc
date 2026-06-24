@@ -272,7 +272,7 @@ LogicalResult LinalgGenericToLinalgCustomBatchNorm2DNchw::matchAndRewrite(Generi
         generic_op, generic_op.getResults()[0].getType(), x, e, var, gamma, beta, generic_op.getOutputs()[0], eps
     );
 
-    return failure();
+    return success();
 }
 
 } // namespace linalg

@@ -38,16 +38,19 @@ bool SoftmaxNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
     auto& dataflow = this->get_parent();
     auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
 
-    if (dataflow.in_degree(*this) != 1 || dataflow.out_degree(*this) != 1) {
+    if (dataflow.in_degree(*this) != 2) {
         return false;
     }
 
     auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
 
-    auto& in_edge = *dataflow.in_edges(*this).begin();
-    auto& out_edge = *dataflow.out_edges(*this).begin();
-    auto& in_node = static_cast<data_flow::AccessNode&>(in_edge.src());
-    auto& out_node = static_cast<data_flow::AccessNode&>(out_edge.dst());
+    auto* in_edge = dataflow.in_edge_for_connector(*this, "X");
+    auto* out_edge = dataflow.in_edge_for_connector(*this, "Y");
+    if (!in_edge || !out_edge) {
+        return false;
+    }
+    auto& in_node = static_cast<const data_flow::AccessNode&>(in_edge->src());
+    auto& out_node = static_cast<const data_flow::AccessNode&>(out_edge->src());
 
     // Calculate reduced shape (for Max and Sum)
     std::vector<symbolic::Expression> reduced_shape;
@@ -155,9 +158,9 @@ bool SoftmaxNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         auto& out_access = builder.add_access(max_block, tmp_max_name);
 
         builder
-            .add_computational_memlet(max_block, in_access, max_node, "X", {}, in_edge.base_type(), this->debug_info());
+            .add_computational_memlet(max_block, in_access, max_node, "X", {}, in_edge->base_type(), this->debug_info());
         builder
-            .add_computational_memlet(max_block, max_node, "Y", out_access, {}, reduced_tensor_type, this->debug_info());
+            .add_computational_memlet(max_block, out_access, max_node, "Y", {}, reduced_tensor_type, this->debug_info());
     }
 
     // 2. Sub(X, TmpMaxBcast) -> TmpSub
@@ -170,11 +173,11 @@ bool SoftmaxNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         auto& out_access = builder.add_access(sub_block, tmp_sub_name);
 
         builder
-            .add_computational_memlet(sub_block, in1_access, sub_node, "A", {}, in_edge.base_type(), this->debug_info());
+            .add_computational_memlet(sub_block, in1_access, sub_node, "A", {}, in_edge->base_type(), this->debug_info());
         builder
             .add_computational_memlet(sub_block, in2_access, sub_node, "B", {}, broadcast_tensor_type, this->debug_info());
         builder
-            .add_computational_memlet(sub_block, sub_node, "C", out_access, {}, in_edge.base_type(), this->debug_info());
+            .add_computational_memlet(sub_block, out_access, sub_node, "C", {}, in_edge->base_type(), this->debug_info());
     }
 
     // 3. Exp(TmpSub) -> TmpExp
@@ -186,9 +189,9 @@ bool SoftmaxNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         auto& out_access = builder.add_access(exp_block, tmp_exp_name);
 
         builder
-            .add_computational_memlet(exp_block, in_access, exp_node, "X", {}, in_edge.base_type(), this->debug_info());
+            .add_computational_memlet(exp_block, in_access, exp_node, "X", {}, in_edge->base_type(), this->debug_info());
         builder
-            .add_computational_memlet(exp_block, exp_node, "Y", out_access, {}, in_edge.base_type(), this->debug_info());
+            .add_computational_memlet(exp_block, out_access, exp_node, "Y", {}, in_edge->base_type(), this->debug_info());
     }
 
     // 4. Sum(TmpExp) -> TmpSum
@@ -201,9 +204,9 @@ bool SoftmaxNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         auto& out_access = builder.add_access(sum_block, tmp_sum_name);
 
         builder
-            .add_computational_memlet(sum_block, in_access, sum_node, "X", {}, in_edge.base_type(), this->debug_info());
+            .add_computational_memlet(sum_block, in_access, sum_node, "X", {}, in_edge->base_type(), this->debug_info());
         builder
-            .add_computational_memlet(sum_block, sum_node, "Y", out_access, {}, reduced_tensor_type, this->debug_info());
+            .add_computational_memlet(sum_block, out_access, sum_node, "Y", {}, reduced_tensor_type, this->debug_info());
     }
 
     // 5. Div(TmpExp, TmpSum) -> Output
@@ -216,16 +219,16 @@ bool SoftmaxNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         auto& out_access = builder.add_access(div_block, out_node.data());
 
         builder
-            .add_computational_memlet(div_block, in1_access, div_node, "A", {}, in_edge.base_type(), this->debug_info());
+            .add_computational_memlet(div_block, in1_access, div_node, "A", {}, in_edge->base_type(), this->debug_info());
         builder
             .add_computational_memlet(div_block, in2_access, div_node, "B", {}, broadcast_tensor_type, this->debug_info());
         builder
-            .add_computational_memlet(div_block, div_node, "C", out_access, {}, out_edge.base_type(), this->debug_info());
+            .add_computational_memlet(div_block, out_access, div_node, "C", {}, out_edge->base_type(), this->debug_info());
     }
 
     // Cleanup
-    builder.remove_memlet(block, in_edge);
-    builder.remove_memlet(block, out_edge);
+    builder.remove_memlet(block, *in_edge);
+    builder.remove_memlet(block, *out_edge);
     builder.remove_node(block, in_node);
     builder.remove_node(block, out_node);
     builder.remove_node(block, *this);
