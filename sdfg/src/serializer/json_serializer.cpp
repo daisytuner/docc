@@ -116,8 +116,6 @@ nlohmann::json JSONSerializer::serialize(
 void JSONSerializer::serialize_node(nlohmann::json& j, const structured_control_flow::ControlFlowNode& node) {
     if (auto block = dynamic_cast<const structured_control_flow::Block*>(&node)) {
         block_to_json(j, *block);
-    } else if (auto for_node = dynamic_cast<const structured_control_flow::For*>(&node)) {
-        for_to_json(j, *for_node);
     } else if (auto sequence_node = dynamic_cast<const structured_control_flow::Sequence*>(&node)) {
         sequence_to_json(j, *sequence_node);
     } else if (auto condition_node = dynamic_cast<const structured_control_flow::IfElse*>(&node)) {
@@ -130,10 +128,8 @@ void JSONSerializer::serialize_node(nlohmann::json& j, const structured_control_
         break_node_to_json(j, *break_node);
     } else if (auto continue_node = dynamic_cast<const structured_control_flow::Continue*>(&node)) {
         continue_node_to_json(j, *continue_node);
-    } else if (auto map_node = dynamic_cast<const structured_control_flow::Map*>(&node)) {
-        map_to_json(j, *map_node);
-    } else if (auto reduce_node = dynamic_cast<const structured_control_flow::Reduce*>(&node)) {
-        reduce_to_json(j, *reduce_node);
+    } else if (auto loop_node = dynamic_cast<const structured_control_flow::StructuredLoop*>(&node)) {
+        for_to_json(j, *loop_node);
     } else {
         throw std::runtime_error("Unknown child type");
     }
@@ -227,10 +223,14 @@ void JSONSerializer::block_to_json(nlohmann::json& j, const structured_control_f
     }
 }
 
-void JSONSerializer::for_to_json(nlohmann::json& j, const structured_control_flow::For& for_node) {
+void JSONSerializer::for_to_json(nlohmann::json& j, const structured_control_flow::StructuredLoop& for_node) {
     j["type"] = "for";
-    j["element_id"] = for_node.element_id();
+    // Backward compatibility (now encapsulated in sub_type)
+    if (dynamic_cast<const structured_control_flow::Map*>(&for_node)) {
+        j["type"] = "map";
+    }
 
+    j["element_id"] = for_node.element_id();
     j["debug_info"] = nlohmann::json::object();
     debug_info_to_json(j["debug_info"], for_node.debug_info());
 
@@ -238,6 +238,24 @@ void JSONSerializer::for_to_json(nlohmann::json& j, const structured_control_flo
     j["init"] = expression(for_node.init());
     j["condition"] = expression(for_node.condition());
     j["update"] = expression(for_node.update());
+
+    j["schedule_type"] = nlohmann::json::object();
+    schedule_type_to_json(j["schedule_type"], for_node.schedule_type());
+
+    j["sub_type"] = "for";
+    if (dynamic_cast<const structured_control_flow::Map*>(&for_node)) {
+        j["sub_type"] = "map";
+    } else if (dynamic_cast<const structured_control_flow::Reduce*>(&for_node)) {
+        j["sub_type"] = "reduce";
+        j["reductions"] = nlohmann::json::array();
+        const auto& reduce_node = dynamic_cast<const structured_control_flow::Reduce&>(for_node);
+        for (const auto& reduction : reduce_node.reductions()) {
+            nlohmann::json reduction_json;
+            reduction_json["op"] = structured_control_flow::reduction_operation_to_string(reduction.operation);
+            reduction_json["container"] = reduction.container;
+            j["reductions"].push_back(reduction_json);
+        }
+    }
 
     if (this->recurse_) {
         nlohmann::json body_json;
@@ -294,58 +312,6 @@ void JSONSerializer::continue_node_to_json(nlohmann::json& j, const structured_c
 
     j["debug_info"] = nlohmann::json::object();
     debug_info_to_json(j["debug_info"], continue_node.debug_info());
-}
-
-void JSONSerializer::map_to_json(nlohmann::json& j, const structured_control_flow::Map& map_node) {
-    j["type"] = "map";
-    j["element_id"] = map_node.element_id();
-
-    j["debug_info"] = nlohmann::json::object();
-    debug_info_to_json(j["debug_info"], map_node.debug_info());
-
-    j["indvar"] = expression(map_node.indvar());
-    j["init"] = expression(map_node.init());
-    j["condition"] = expression(map_node.condition());
-    j["update"] = expression(map_node.update());
-
-    j["schedule_type"] = nlohmann::json::object();
-    schedule_type_to_json(j["schedule_type"], map_node.schedule_type());
-
-    if (this->recurse_) {
-        nlohmann::json body_json;
-        sequence_to_json(body_json, map_node.root());
-        j["root"] = body_json;
-    }
-}
-
-void JSONSerializer::reduce_to_json(nlohmann::json& j, const structured_control_flow::Reduce& reduce_node) {
-    j["type"] = "reduce";
-    j["element_id"] = reduce_node.element_id();
-
-    j["debug_info"] = nlohmann::json::object();
-    debug_info_to_json(j["debug_info"], reduce_node.debug_info());
-
-    j["indvar"] = expression(reduce_node.indvar());
-    j["init"] = expression(reduce_node.init());
-    j["condition"] = expression(reduce_node.condition());
-    j["update"] = expression(reduce_node.update());
-
-    j["reductions"] = nlohmann::json::array();
-    for (const auto& reduction : reduce_node.reductions()) {
-        nlohmann::json reduction_json;
-        reduction_json["op"] = structured_control_flow::reduction_operation_to_string(reduction.operation);
-        reduction_json["container"] = reduction.container;
-        j["reductions"].push_back(reduction_json);
-    }
-
-    j["schedule_type"] = nlohmann::json::object();
-    schedule_type_to_json(j["schedule_type"], reduce_node.schedule_type());
-
-    if (this->recurse_) {
-        nlohmann::json body_json;
-        sequence_to_json(body_json, reduce_node.root());
-        j["root"] = body_json;
-    }
 }
 
 void JSONSerializer::return_node_to_json(nlohmann::json& j, const structured_control_flow::Return& return_node) {
@@ -787,8 +753,6 @@ void JSONSerializer::json_to_sequence(
 
             if (child["type"] == "block") {
                 json_to_block_node(child, builder, sequence, assignments);
-            } else if (child["type"] == "for") {
-                json_to_for_node(child, builder, sequence, assignments);
             } else if (child["type"] == "if_else") {
                 json_to_if_else_node(child, builder, sequence, assignments);
             } else if (child["type"] == "while") {
@@ -799,10 +763,8 @@ void JSONSerializer::json_to_sequence(
                 json_to_continue_node(child, builder, sequence, assignments);
             } else if (child["type"] == "return") {
                 json_to_return_node(child, builder, sequence, assignments);
-            } else if (child["type"] == "map") {
-                json_to_map_node(child, builder, sequence, assignments);
-            } else if (child["type"] == "reduce") {
-                json_to_reduce_node(child, builder, sequence, assignments);
+            } else if (child["type"] == "for" || child["type"] == "map") {
+                json_to_for_node(child, builder, sequence, assignments);
             } else if (child["type"] == "sequence") {
                 auto& subseq = builder.add_sequence(sequence, assignments, json_to_debug_info(child["debug_info"]));
                 json_to_sequence(child, builder, subseq);
@@ -846,6 +808,23 @@ void JSONSerializer::json_to_for_node(
     structured_control_flow::Sequence& parent,
     control_flow::Assignments& assignments
 ) {
+    // Backward compatibility: if the type is "map"
+    if (j["type"] == "map") {
+        json_to_map_node(j, builder, parent, assignments);
+        return;
+    }
+    // Sub types
+    if (j.contains("sub_type")) {
+        std::string sub_type = j["sub_type"];
+        if (sub_type == "map") {
+            json_to_map_node(j, builder, parent, assignments);
+            return;
+        } else if (sub_type == "reduce") {
+            json_to_reduce_node(j, builder, parent, assignments);
+            return;
+        }
+    }
+
     assert(j.contains("type"));
     assert(j["type"].is_string());
     assert(j.contains("indvar"));
@@ -1012,7 +991,10 @@ void JSONSerializer::json_to_reduce_node(
 ) {
     assert(j.contains("type"));
     assert(j["type"].is_string());
-    assert(j["type"] == "reduce");
+    assert(j["type"] == "for");
+    assert(j.contains("sub_type"));
+    assert(j["sub_type"].is_string());
+    assert(j["sub_type"] == "reduce");
     assert(j.contains("indvar"));
     assert(j["indvar"].is_string());
     assert(j.contains("init"));

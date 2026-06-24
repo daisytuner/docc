@@ -23,6 +23,21 @@ class JSONSerializer {
 private:
     bool recurse_;
 
+    // Sub-type of structured loops
+    void json_to_map_node(
+        const nlohmann::json& j,
+        sdfg::builder::StructuredSDFGBuilder& builder,
+        sdfg::structured_control_flow::Sequence& parent,
+        control_flow::Assignments& assignments
+    );
+
+    void json_to_reduce_node(
+        const nlohmann::json& j,
+        sdfg::builder::StructuredSDFGBuilder& builder,
+        sdfg::structured_control_flow::Sequence& parent,
+        control_flow::Assignments& assignments
+    );
+
 public:
     JSONSerializer(bool recurse = true) : recurse_(recurse) {}
 
@@ -42,14 +57,14 @@ public:
 
     void sequence_to_json(nlohmann::json& j, const sdfg::structured_control_flow::Sequence& sequence);
     void block_to_json(nlohmann::json& j, const sdfg::structured_control_flow::Block& block);
-    void for_to_json(nlohmann::json& j, const sdfg::structured_control_flow::For& for_node);
     void if_else_to_json(nlohmann::json& j, const sdfg::structured_control_flow::IfElse& if_else_node);
     void while_node_to_json(nlohmann::json& j, const sdfg::structured_control_flow::While& while_node);
     void break_node_to_json(nlohmann::json& j, const sdfg::structured_control_flow::Break& break_node);
     void continue_node_to_json(nlohmann::json& j, const sdfg::structured_control_flow::Continue& continue_node);
     void return_node_to_json(nlohmann::json& j, const sdfg::structured_control_flow::Return& return_node);
-    void map_to_json(nlohmann::json& j, const sdfg::structured_control_flow::Map& map_node);
-    void reduce_to_json(nlohmann::json& j, const sdfg::structured_control_flow::Reduce& reduce_node);
+
+    // Includes all sub-types of StructuredLoop (for, map, reduce)
+    void for_to_json(nlohmann::json& j, const sdfg::structured_control_flow::StructuredLoop& loop_node);
 
     void debug_info_to_json(nlohmann::json& j, const sdfg::DebugInfo& debug_info);
 
@@ -70,12 +85,6 @@ public:
         sdfg::structured_control_flow::Sequence& sequence
     );
     void json_to_block_node(
-        const nlohmann::json& j,
-        sdfg::builder::StructuredSDFGBuilder& builder,
-        sdfg::structured_control_flow::Sequence& parent,
-        control_flow::Assignments& assignments
-    );
-    void json_to_for_node(
         const nlohmann::json& j,
         sdfg::builder::StructuredSDFGBuilder& builder,
         sdfg::structured_control_flow::Sequence& parent,
@@ -111,13 +120,8 @@ public:
         sdfg::structured_control_flow::Sequence& parent,
         control_flow::Assignments& assignments
     );
-    void json_to_map_node(
-        const nlohmann::json& j,
-        sdfg::builder::StructuredSDFGBuilder& builder,
-        sdfg::structured_control_flow::Sequence& parent,
-        control_flow::Assignments& assignments
-    );
-    void json_to_reduce_node(
+    // Includes all sub-types of StructuredLoop (for, map, reduce)
+    void json_to_for_node(
         const nlohmann::json& j,
         sdfg::builder::StructuredSDFGBuilder& builder,
         sdfg::structured_control_flow::Sequence& parent,

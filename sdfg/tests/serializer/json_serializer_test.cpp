@@ -720,11 +720,13 @@ TEST(JSONSerializerTest, MapToJSON) {
 
     // Serialize the Map node to JSON
     nlohmann::json j;
-    serializer.map_to_json(j, map);
+    serializer.for_to_json(j, map);
 
     // Check if the JSON contains the expected keys
     EXPECT_TRUE(j.contains("type"));
     EXPECT_EQ(j["type"], "map");
+    EXPECT_TRUE(j.contains("sub_type"));
+    EXPECT_EQ(j["sub_type"], "map");
     EXPECT_TRUE(j.contains("indvar"));
     EXPECT_EQ(j["indvar"], "i");
     EXPECT_TRUE(j.contains("init"));
@@ -759,10 +761,12 @@ TEST(JSONSerializerTest, ReduceToJSON) {
     sdfg::serializer::JSONSerializer serializer;
 
     nlohmann::json j;
-    serializer.reduce_to_json(j, reduce);
+    serializer.for_to_json(j, reduce);
 
     EXPECT_TRUE(j.contains("type"));
-    EXPECT_EQ(j["type"], "reduce");
+    EXPECT_EQ(j["type"], "for");
+    EXPECT_TRUE(j.contains("sub_type"));
+    EXPECT_EQ(j["sub_type"], "reduce");
     EXPECT_TRUE(j.contains("indvar"));
     EXPECT_EQ(j["indvar"], "i");
     EXPECT_TRUE(j.contains("init"));
@@ -1811,14 +1815,14 @@ TEST(JSONSerializerTest, SerializeDeserialize_Map) {
 
     // Serialize the Sequence node to JSON
     nlohmann::json j;
-    serializer.map_to_json(j, map);
+    serializer.for_to_json(j, map);
 
     // Deserialize the JSON back into a Sequence node
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
 
     control_flow::Assignments assignments;
 
-    serializer.json_to_map_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_for_node(j, des_builder, des_builder.subject().root(), assignments);
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 0);
@@ -1853,13 +1857,13 @@ TEST(JSONSerializerTest, SerializeDeserialize_Reduce) {
     sdfg::serializer::JSONSerializer serializer;
 
     nlohmann::json j;
-    serializer.reduce_to_json(j, reduce);
+    serializer.for_to_json(j, reduce);
 
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
 
     control_flow::Assignments assignments;
 
-    serializer.json_to_reduce_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_for_node(j, des_builder, des_builder.subject().root(), assignments);
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 0);
