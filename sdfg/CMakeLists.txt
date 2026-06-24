@@ -64,6 +64,7 @@ set(SOURCE_FILES
     src/codegen/dispatchers/map_dispatcher.cpp
     src/codegen/dispatchers/while_dispatcher.cpp
     src/codegen/loop_report.cpp
+    src/context/docc_context.cpp
     src/control_flow/interstate_edge.cpp
     src/control_flow/state.cpp
     src/cutouts/cutout_serializer.cpp
