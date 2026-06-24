@@ -24,6 +24,8 @@ steps:
     pip install --no-build-isolation -e mlir/
 
     pip install -r mlir/requirements.txt
+    pip uninstall -y torch torchvision
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
     # Warm start
 

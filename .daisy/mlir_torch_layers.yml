@@ -24,36 +24,38 @@ steps:
     pip install --no-build-isolation -e mlir/
 
     pip install -r mlir/requirements.txt
+    pip uninstall -y torch torchvision
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=none
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=sequential
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=openmp
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --docc --target=cuda
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --device docc --target=none
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --device docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --device docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --n_runs=1 --device docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=none
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=sequential
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=openmp
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --docc --target=cuda
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --device docc --target=none
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --device docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --device docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --n_runs=1 --device docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=none
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=sequential
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=openmp
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --docc --target=cuda
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --device docc --target=none
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --device docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --device docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --n_runs=1 --device docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=none
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=sequential
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=openmp
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --docc --target=cuda
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --device docc --target=none
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --device docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --device docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --n_runs=1 --device docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=none
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=sequential
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=openmp
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --docc --target=cuda
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --device docc --target=none
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --device docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --device docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --n_runs=1 --device docc --target=cuda
 
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=none
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=sequential
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=openmp
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --docc --target=cuda
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --device docc --target=none
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --device docc --target=sequential
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --device docc --target=openmp
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --n_runs=1 --device docc --target=cuda
 
   run:
 
@@ -64,25 +66,25 @@ steps:
       energy: true
       measurements: 3
     batchnorm_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --docc --target=none
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=none
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     batchnorm_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --docc --target=sequential
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=sequential
       energy: true
       env:
         DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     batchnorm_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --docc --target=openmp
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=openmp
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     batchnorm_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --docc --target=cuda
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=cuda
       energy: true
       env:
         DOCC_CI: regions
@@ -95,25 +97,25 @@ steps:
       energy: true
       measurements: 3
     # conv2d_run_none:
-    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --docc --target=none
+    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=none
     #   energy: true
     #   env:
     #     DOCC_CI: regions
     #     DOCC_REUSE_BINARIES: 1
     # conv2d_run_sequential:
-    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --docc --target=sequential
+    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=sequential
     #   energy: true
     #   env:
     #     DOCC_CI: regions
     #     DOCC_REUSE_BINARIES: 1
     conv2d_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --docc --target=openmp
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=openmp
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     conv2d_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --docc --target=cuda
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=cuda
       energy: true
       env:
         DOCC_CI: regions
@@ -126,25 +128,25 @@ steps:
       energy: true
       measurements: 3
     linear_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --docc --target=none
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=none
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     linear_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --docc --target=sequential
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=sequential
       energy: true
       env:
         DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     linear_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --docc --target=openmp
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=openmp
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     linear_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --docc --target=cuda
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=cuda
       energy: true
       env:
         DOCC_CI: regions
@@ -157,25 +159,25 @@ steps:
       energy: true
       measurements: 3
     matmul_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --docc --target=none
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=none
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     matmul_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --docc --target=sequential
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=sequential
       energy: true
       env:
         DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     matmul_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --docc --target=openmp
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=openmp
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     matmul_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --docc --target=cuda
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=cuda
       energy: true
       env:
         DOCC_CI: regions
@@ -188,25 +190,25 @@ steps:
       energy: true
       measurements: 3
     pooling_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --docc --target=none
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=none
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     pooling_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --docc --target=sequential
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=sequential
       energy: true
       env:
         DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     pooling_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --docc --target=openmp
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=openmp
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     pooling_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --docc --target=cuda
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=cuda
       energy: true
       env:
         DOCC_CI: regions
@@ -219,25 +221,25 @@ steps:
       energy: true
       measurements: 3
     relu_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --docc --target=none
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=none
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     relu_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --docc --target=sequential
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=sequential
       energy: true
       env:
         DOCC_CI: true
         DOCC_REUSE_BINARIES: 1
     relu_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --docc --target=openmp
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=openmp
       energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
     relu_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --docc --target=cuda
+      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=cuda
       energy: true
       env:
         DOCC_CI: regions
