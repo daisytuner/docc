@@ -579,5 +579,31 @@ void canonicalize_map_dims(isl_map* map, const std::string& in_prefix, const std
     }
 }
 
+bool vectors_of_expressions_match(const std::vector<Expression>& a, const std::vector<Expression>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); i++) {
+        if (!symbolic::eq(a.at(i), b.at(i))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool vectors_of_expressions_match(
+    const std::vector<Expression>& a, const std::vector<Expression>& b, const ExpressionMapping& replacements
+) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); i++) {
+        if (!symbolic::eq(SymEngine::subs(a.at(i), replacements), b.at(i))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace symbolic
 } // namespace sdfg

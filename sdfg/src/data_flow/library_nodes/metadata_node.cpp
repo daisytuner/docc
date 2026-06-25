@@ -36,6 +36,11 @@ void MetadataNode::replace(const symbolic::Expression old_expression, const symb
     return;
 }
 
+void MetadataNode::replace(const symbolic::ExpressionMapping& replacements) {
+    // Do nothing
+    return;
+}
+
 nlohmann::json MetadataNodeSerializer::serialize(const LibraryNode& library_node) {
     const MetadataNode& metadata_node = static_cast<const MetadataNode&>(library_node);
     nlohmann::json j;

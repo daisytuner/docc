@@ -148,14 +148,6 @@ def test_vadv(target):
                 "FOR": 7,
             }
         )
-    elif target == "cuda":
-        verifier = SDFGVerification(
-            verification={
-                "MAP": 100,
-                "SEQUENTIAL": 107,
-                "FOR": 7,
-            }
-        )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={

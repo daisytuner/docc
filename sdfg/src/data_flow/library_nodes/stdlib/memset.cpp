@@ -59,6 +59,11 @@ void MemsetNode::replace(const symbolic::Expression old_expression, const symbol
     this->num_ = symbolic::subs(this->num_, old_expression, new_expression);
 }
 
+void MemsetNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->value_ = symbolic::subs(this->value_, replacements);
+    this->num_ = symbolic::subs(this->num_, replacements);
+}
+
 nlohmann::json MemsetNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const MemsetNode& node = static_cast<const MemsetNode&>(library_node);
 

@@ -33,6 +33,8 @@ public:
 
     void replace(const symbolic::Expression old_ex, const symbolic::Expression new_ex) override;
 
+    void replace(const symbolic::ExpressionMapping& replacements) override;
+
     std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent)
         const override {
         return std::unique_ptr<DataFlowNode>(new TransposeNode(element_id, debug_info(), vertex, parent, shape_, perm_)

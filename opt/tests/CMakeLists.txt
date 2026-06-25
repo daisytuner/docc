@@ -35,6 +35,8 @@ set(TEST_FILES
     optimizations/diamond_tiling_test.cpp
     optimizations/blocking_test.cpp
     optimizations/gpu_kernels_test.cpp
+    passes/map_fusion_by_domain_pass_test.cpp
+    passes/redundant_load_elimination_pass_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
     passes/offloading/rocm_library_node_expand_tests.cpp

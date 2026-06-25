@@ -348,6 +348,8 @@ void CUDAMapDispatcher::dispatch_kernel_preamble(
     auto y_maps = gpu::get_gpu_maps<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Y);
     auto z_maps = gpu::get_gpu_maps<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Z);
 
+    std::unordered_map<std::string, symbolic::Expression> indvars;
+
     auto emit_indvar = [&](structured_control_flow::Map* map, const std::string& flat_id_var) {
         symbolic::Expression value = symbolic::symbol(flat_id_var);
         auto stride = map->stride();
@@ -358,8 +360,21 @@ void CUDAMapDispatcher::dispatch_kernel_preamble(
         if (!symbolic::eq(init, symbolic::zero())) {
             value = symbolic::add(init, value);
         }
-        library_stream << "int " << map->indvar()->get_name() << " = " << this->language_extension_.expression(value)
-                       << ";" << std::endl;
+        auto indvar_name = map->indvar()->get_name();
+        auto it = indvars.find(indvar_name);
+        if (it != indvars.end()) {
+            if (!symbolic::eq(it->second, value)) {
+                throw InvalidSDFGException(
+                    "Conflicting expressions for Map #" + std::to_string(node_.element_id()) + " indvar " +
+                    map->indvar()->get_name() + ": " + this->language_extension_.expression(it->second) + " vs " +
+                    this->language_extension_.expression(value)
+                );
+            }
+        } else {
+            library_stream << "int " << indvar_name << " = " << this->language_extension_.expression(value) << ";"
+                           << std::endl;
+            indvars.emplace(indvar_name, value);
+        }
     };
 
     for (auto* map : x_maps) {

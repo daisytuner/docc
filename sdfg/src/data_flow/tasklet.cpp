@@ -286,6 +286,8 @@ std::unique_ptr<DataFlowNode> Tasklet::clone(size_t element_id, const graph::Ver
 
 void Tasklet::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
 
+void Tasklet::replace(const symbolic::ExpressionMapping& replacements) {}
+
 EdgeRemoveOption Tasklet::can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const {
     if (graph.out_edges_for_connector(*this, memlet->src_conn()).size() > 1) {
         return EdgeRemoveOption::Trivially;

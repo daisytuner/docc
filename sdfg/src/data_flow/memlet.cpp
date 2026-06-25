@@ -6,6 +6,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 #include "sdfg/types/utils.h"
+#include "symengine/subs.h"
 
 namespace sdfg {
 namespace data_flow {
@@ -470,6 +471,14 @@ void Memlet::replace(const symbolic::Expression old_expression, const symbolic::
     Subset new_subset;
     for (auto& dim : this->subset_) {
         new_subset.push_back(symbolic::subs(dim, old_expression, new_expression));
+    }
+    this->subset_ = new_subset;
+}
+
+void Memlet::replace(const symbolic::ExpressionMapping& replacements) {
+    Subset new_subset;
+    for (auto& dim : this->subset_) {
+        new_subset.push_back(SymEngine::subs(dim, replacements));
     }
     this->subset_ = new_subset;
 };

@@ -102,6 +102,14 @@ void CallNode::replace(const symbolic::Expression old_expression, const symbolic
     }
 }
 
+void CallNode::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& meta : ptr_access_meta_) {
+        if (meta) {
+            meta->replace(replacements);
+        }
+    }
+}
+
 nlohmann::json CallNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const CallNode& node = static_cast<const CallNode&>(library_node);
 

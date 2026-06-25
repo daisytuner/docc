@@ -23,6 +23,10 @@ void TrapNode::replace(const symbolic::Expression old_expression, const symbolic
     this->size_ = symbolic::subs(this->size_, old_expression, new_expression);
 }
 
+void TrapNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->size_ = symbolic::subs(this->size_, replacements);
+}
+
 nlohmann::json TrapNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const TrapNode& node = static_cast<const TrapNode&>(library_node);
 

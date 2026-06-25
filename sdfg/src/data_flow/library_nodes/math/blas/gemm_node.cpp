@@ -89,6 +89,15 @@ void GEMMNode::replace(const symbolic::Expression old_expression, const symbolic
     this->ldc_ = symbolic::subs(this->ldc_, old_expression, new_expression);
 };
 
+void GEMMNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->m_ = symbolic::subs(this->m_, replacements);
+    this->n_ = symbolic::subs(this->n_, replacements);
+    this->k_ = symbolic::subs(this->k_, replacements);
+    this->lda_ = symbolic::subs(this->lda_, replacements);
+    this->ldb_ = symbolic::subs(this->ldb_, replacements);
+    this->ldc_ = symbolic::subs(this->ldc_, replacements);
+};
+
 void GEMMNode::validate(const Function& function) const { BLASNode::validate(function); }
 
 bool GEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

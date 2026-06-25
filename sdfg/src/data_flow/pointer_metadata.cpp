@@ -78,6 +78,10 @@ void PointerReadOnly::replace(const symbolic::Expression old_expression, const s
     size_ = symbolic::subs(size_, old_expression, new_expression);
 }
 
+void PointerReadOnly::replace(const symbolic::ExpressionMapping& replacements) {
+    size_ = SymEngine::subs(size_, replacements);
+}
+
 PointerAccessType PointerReadOnly::clone() const { return PointerAccessType(new PointerReadOnly(size_, no_capture_)); }
 
 void PointerReadOnly::serialize_to_json(nlohmann::json& entry) {
@@ -102,6 +106,10 @@ MemoryAccessPatternType PointerFullWriteOnly::access_read_pattern() const { retu
 
 void PointerFullWriteOnly::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     size_ = symbolic::subs(size_, old_expression, new_expression);
+}
+
+void PointerFullWriteOnly::replace(const symbolic::ExpressionMapping& replacements) {
+    size_ = SymEngine::subs(size_, replacements);
 }
 
 PointerAccessType PointerFullWriteOnly::clone() const {
@@ -137,6 +145,15 @@ void PointerGenericAccess::replace(const symbolic::Expression old_expression, co
     }
     if (write_pattern_) {
         write_pattern_->replace(old_expression, new_expression);
+    }
+}
+
+void PointerGenericAccess::replace(const symbolic::ExpressionMapping& replacements) {
+    if (read_pattern_) {
+        read_pattern_->replace(replacements);
+    }
+    if (write_pattern_) {
+        write_pattern_->replace(replacements);
     }
 }
 

@@ -85,6 +85,8 @@ public:
 
     virtual void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
+    virtual void replace(const symbolic::ExpressionMapping& replacements) override;
+
     virtual std::string toStr() const override;
 
     virtual symbolic::Expression flop() const override;

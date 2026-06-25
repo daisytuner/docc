@@ -31,6 +31,10 @@ void UnreachableNode::replace(const symbolic::Expression old_expression, const s
     this->size_ = symbolic::subs(this->size_, old_expression, new_expression);
 }
 
+void UnreachableNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->size_ = symbolic::subs(this->size_, replacements);
+}
+
 nlohmann::json UnreachableNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const UnreachableNode& node = static_cast<const UnreachableNode&>(library_node);
 

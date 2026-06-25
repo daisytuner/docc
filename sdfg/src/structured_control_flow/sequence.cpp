@@ -164,6 +164,16 @@ void Sequence::replace(const symbolic::Expression old_expression, const symbolic
     for (auto& trans : this->transitions_) {
         trans->replace(old_expression, new_expression);
     }
+}
+
+void Sequence::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& child : this->children_) {
+        child->replace(replacements);
+    }
+
+    for (auto& trans : this->transitions_) {
+        trans->replace(replacements);
+    }
 };
 
 } // namespace structured_control_flow

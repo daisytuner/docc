@@ -23,7 +23,9 @@ data_flow::DataFlowGraph& Block::dataflow() { return *this->dataflow_; };
 
 void Block::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     this->dataflow_->replace(old_expression, new_expression);
-};
+}
+
+void Block::replace(const symbolic::ExpressionMapping& replacements) { this->dataflow_->replace(replacements); }
 
 } // namespace structured_control_flow
 } // namespace sdfg

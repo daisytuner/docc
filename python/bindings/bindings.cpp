@@ -264,6 +264,12 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("threads") = 0 // means hardware-threads
         )
         .def("metadata", &PyStructuredSDFG::metadata, py::arg("key"), "Get metadata value")
+        .def_property(
+            "output_dir",
+            [](PyStructuredSDFG* self) { return self->metadata("output_dir"); },
+            [](PyStructuredSDFG* self, const std::string& path) { self->set_output_dir(path); },
+            "Get or set the output directory metadata"
+        )
         .def("loop_report", &PyStructuredSDFG::loop_report, "Get loop statistics from the SDFG")
         .def("to_json", &PyStructuredSDFG::to_json, "Serialize the SDFG to a JSON string")
         .def("to_dot", &PyStructuredSDFG::to_dot, "Serialize the SDFG to a DOT graph string")

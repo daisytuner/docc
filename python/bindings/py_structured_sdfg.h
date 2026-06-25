@@ -16,6 +16,8 @@ class PyStructuredSDFG {
 private:
     sdfg::plugins::Context& docc_context_;
     std::unique_ptr<sdfg::StructuredSDFG> sdfg_;
+    bool use_new_fusion_in_simplify_;
+    bool use_new_fusion_in_normalize_;
 
     PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg);
 
@@ -33,6 +35,8 @@ public:
     static PyStructuredSDFG from_sdfg(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG> sdfg);
 
     std::string name() const;
+
+    void set_output_dir(const std::filesystem::path& dir);
 
     sdfg::plugins::Context& docc_context() const;
 
