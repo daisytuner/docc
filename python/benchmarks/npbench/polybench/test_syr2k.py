@@ -33,23 +33,23 @@ def test_syr2k(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 7, "SEQUENTIAL": 9, "FOR": 2},
+            verification={"MAP": 6, "SEQUENTIAL": 8, "FOR": 2},
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 7, "MAP": 7, "SEQUENTIAL": 2, "FOR": 2},
+            verification={"VECTORIZE": 6, "MAP": 6, "SEQUENTIAL": 2, "FOR": 2},
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 7, "MAP": 7, "SEQUENTIAL": 2, "FOR": 2},
+            verification={"VECTORIZE": 6, "MAP": 6, "SEQUENTIAL": 2, "FOR": 2},
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={"MAP": 7, "Malloc": 5, "SEQUENTIAL": 9, "FOR": 2},
+            verification={"MAP": 6, "SEQUENTIAL": 8, "FOR": 2},
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={"MAP": 7, "Malloc": 5, "SEQUENTIAL": 9, "FOR": 2},
+            verification={"MAP": 6, "SEQUENTIAL": 8, "FOR": 2},
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

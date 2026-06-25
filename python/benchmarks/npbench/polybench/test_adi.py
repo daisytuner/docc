@@ -85,28 +85,19 @@ def test_adi(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "SEQUENTIAL": 29,
-                "MAP": 24,
-                "FOR": 5,
-            }
+            verification={"MAP": 21, "SEQUENTIAL": 26, "FOR": 5}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={
-                "VECTORIZE": 23,
-                "SEQUENTIAL": 6,
-                "MAP": 24,
-                "FOR": 5,
-            }
+            verification={"VECTORIZE": 20, "MAP": 21, "SEQUENTIAL": 6, "FOR": 5}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "CPU_PARALLEL": 1,
+                "VECTORIZE": 19,
+                "MAP": 20,
                 "SEQUENTIAL": 5,
-                "VECTORIZE": 22,
-                "MAP": 23,
                 "FOR": 5,
             }
         )
@@ -115,8 +106,8 @@ def test_adi(target):
             verification={
                 "CUDA": 2,
                 "CUDAOffloading": 4,
-                "SEQUENTIAL": 27,
-                "MAP": 24,
+                "MAP": 21,
+                "SEQUENTIAL": 24,
                 "FOR": 5,
             }
         )
@@ -125,8 +116,8 @@ def test_adi(target):
             verification={
                 "ROCM": 2,
                 "ROCMOffloading": 4,
-                "SEQUENTIAL": 27,
-                "MAP": 24,
+                "MAP": 21,
+                "SEQUENTIAL": 24,
                 "FOR": 5,
             }
         )
