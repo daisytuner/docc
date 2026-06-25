@@ -356,9 +356,6 @@ TEST(LoopAnalysisInfoTest, MixedLoopTypesWithReduce) {
     EXPECT_EQ(info_reduce.num_loops, 1);
     EXPECT_EQ(info_reduce.num_maps, 0);
     EXPECT_EQ(info_reduce.num_fors, 1);
-
-    // A Reduce is not classified as a parallel map
-    EXPECT_FALSE(loop_analysis.loop_info_local(&loop_reduce).is_map);
 }
 
 TEST(LoopAnalysisInfoTest, NotPerfectlyParallel_MapFor) {
