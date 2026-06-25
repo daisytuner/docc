@@ -60,6 +60,7 @@ static std::string dispatch_softmax(
         serializer::LibraryNodeSerializerRegistry::instance(),
         codegen::NodeDispatcherRegistry::instance(),
         codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
         passes::scheduler::SchedulerRegistry::instance()
     };
@@ -176,6 +177,7 @@ TEST(SoftmaxDispatcherTest, WithoutTransfers_KernelFileGenerated) {
         serializer::LibraryNodeSerializerRegistry::instance(),
         codegen::NodeDispatcherRegistry::instance(),
         codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
         passes::scheduler::SchedulerRegistry::instance()
     };
@@ -218,6 +220,7 @@ TEST(SoftmaxDispatcherTest, RegistrationKeys) {
         serializer::LibraryNodeSerializerRegistry::instance(),
         codegen::NodeDispatcherRegistry::instance(),
         codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
         passes::scheduler::SchedulerRegistry::instance()
     };

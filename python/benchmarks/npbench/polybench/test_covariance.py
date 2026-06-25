@@ -47,23 +47,23 @@ def test_covariance(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 6,
+                "VECTORIZE": 7,
                 "REDUCE": 1,
                 "MAP": 10,
                 "FOR": 1,
-                "SEQUENTIAL": 6,
+                "SEQUENTIAL": 5,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 2,
                 "GEMM": 1,
+                "VECTORIZE": 3,
                 "REDUCE": 1,
                 "CPU_PARALLEL": 5,
                 "MAP": 7,
+                "SEQUENTIAL": 1,
                 "FOR": 1,
-                "SEQUENTIAL": 2,
             }
         )
     elif target == "cuda":

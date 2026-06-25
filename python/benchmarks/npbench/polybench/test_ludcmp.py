@@ -50,10 +50,10 @@ def test_ludcmp(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 1,
                 "MAP": 2,
+                "VECTORIZE": 5,
                 "REDUCE": 4,
-                "SEQUENTIAL": 9,
+                "SEQUENTIAL": 5,
                 "FOR": 4,
             }
         )
@@ -62,8 +62,9 @@ def test_ludcmp(target):
             verification={
                 "CPU_PARALLEL": 1,
                 "MAP": 2,
+                "VECTORIZE": 4,
                 "REDUCE": 4,
-                "SEQUENTIAL": 9,
+                "SEQUENTIAL": 5,
                 "FOR": 4,
             }
         )

@@ -61,10 +61,10 @@ def test_spmv(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "SEQUENTIAL": 2,
-                "VECTORIZE": 4,
-                "MAP": 4,
                 "REDUCE": 1,
+                "VECTORIZE": 5,
+                "MAP": 4,
+                "SEQUENTIAL": 1,
                 "FOR": 1,
             }
         )
@@ -72,10 +72,10 @@ def test_spmv(target):
         verifier = SDFGVerification(
             verification={
                 "CPU_PARALLEL": 1,
-                "VECTORIZE": 3,
-                "SEQUENTIAL": 2,
-                "MAP": 4,
                 "REDUCE": 1,
+                "VECTORIZE": 4,
+                "MAP": 4,
+                "SEQUENTIAL": 1,
                 "FOR": 1,
             }
         )

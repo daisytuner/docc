@@ -54,18 +54,15 @@ def test_cholesky(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 2,
-                "REDUCE": 2,
-                "SEQUENTIAL": 4,
-            }
+            verification={"VECTORIZE": 2, "REDUCE": 2, "SEQUENTIAL": 2, "FOR": 2}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
+                "VECTORIZE": 2,
                 "REDUCE": 2,
-                "SEQUENTIAL": 4,
+                "SEQUENTIAL": 2,
+                "FOR": 2,
             }
         )
     elif target == "cuda":

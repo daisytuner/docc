@@ -64,10 +64,10 @@ def test_mlp(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 7,
-                "SEQUENTIAL": 11,
-                "MAP": 16,
                 "REDUCE": 2,
+                "VECTORIZE": 9,
+                "SEQUENTIAL": 9,
+                "MAP": 16,
                 "GEMM": 3,
             }
         )
