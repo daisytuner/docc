@@ -279,6 +279,10 @@ std::optional<structured_control_flow::ReductionOperation> combine_operator(cons
             case data_flow::TaskletCode::fp_add:
             case data_flow::TaskletCode::int_add:
                 return ReductionOperation::Add;
+            case data_flow::TaskletCode::fp_fma:
+                // Fused multiply-add `_out = _in0 * _in1 + _in2` is an additive
+                // reduction over its addend operand.
+                return ReductionOperation::Add;
             case data_flow::TaskletCode::fp_mul:
             case data_flow::TaskletCode::int_mul:
                 return ReductionOperation::Mul;
@@ -298,8 +302,26 @@ std::optional<structured_control_flow::ReductionOperation> combine_operator(cons
                 return ReductionOperation::Max;
             case math::cmath::CMathFunction::fmin:
                 return ReductionOperation::Min;
+            case math::cmath::CMathFunction::fma:
+                // `fma(x, y, z) = x * y + z`: additive reduction over the addend
+                // operand `z`
+                return ReductionOperation::Add;
             default:
                 return std::nullopt;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> fma_addend_connector(const data_flow::DataFlowNode& node) {
+    if (auto* tasklet = dynamic_cast<const data_flow::Tasklet*>(&node)) {
+        if (tasklet->code() == data_flow::TaskletCode::fp_fma) {
+            return tasklet->inputs().at(2);
+        }
+    }
+    if (auto* cmath = dynamic_cast<const math::cmath::CMathNode*>(&node)) {
+        if (cmath->function() == math::cmath::CMathFunction::fma) {
+            return cmath->inputs().at(2);
         }
     }
     return std::nullopt;
@@ -519,16 +541,28 @@ void LoopCarriedDependencyAnalysis::detect_reductions(structured_control_flow::S
             }
 
             // The combine must read the same accumulator back (acc = acc OP x).
+            // For a fused multiply-add the accumulator must be the addend
+            // operand; if it feeds a multiplicand the update is acc = acc * b + c,
+            // which is not a reorderable reduction and is rejected.
+            auto fma_addend = fma_addend_connector(combine);
             const data_flow::Memlet* read_edge = nullptr;
+            bool acc_on_non_addend = false;
             for (auto& edge : graph.in_edges(combine)) {
-                if (auto* read_node = dynamic_cast<const data_flow::AccessNode*>(&edge.src())) {
-                    if (read_node->data() == container) {
-                        read_edge = &edge;
-                        break;
-                    }
+                auto* read_node = dynamic_cast<const data_flow::AccessNode*>(&edge.src());
+                if (read_node == nullptr || read_node->data() != container) {
+                    continue;
+                }
+                if (fma_addend.has_value() && edge.dst_conn() != fma_addend.value()) {
+                    // Accumulator feeds a multiplicand of the fma.
+                    acc_on_non_addend = true;
+                    continue;
+                }
+                read_edge = &edge;
+                if (!fma_addend.has_value()) {
+                    break;
                 }
             }
-            if (read_edge == nullptr) {
+            if (read_edge == nullptr || acc_on_non_addend) {
                 rejected.insert(container);
                 continue;
             }

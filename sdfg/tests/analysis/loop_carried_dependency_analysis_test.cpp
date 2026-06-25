@@ -117,6 +117,114 @@ TEST(LoopCarriedDependencyAnalysisTest, Sum_RawOnScalar) {
     EXPECT_TRUE(lcd.is_reduction_only(loop));
 }
 
+// for (i = 0; i < N; ++i) { B = A[i] * C[i] + B; }
+// Fused multiply-add (_out = _in1 * _in2 + _in3) with the accumulator B as the
+// addend operand is an additive reduction.
+TEST(LoopCarriedDependencyAnalysisTest, Fma_AddendAccumulator_IsReduction) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer edge_desc(base_desc);
+    types::Pointer ptr_desc;
+
+    builder.add_container("A", ptr_desc, true);
+    builder.add_container("C", ptr_desc, true);
+    builder.add_container("B", base_desc, true);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+
+    auto bound = symbolic::symbol("N");
+    auto indvar = symbolic::symbol("i");
+    auto init = symbolic::integer(0);
+    auto condition = symbolic::Lt(indvar, bound);
+    auto update = symbolic::add(indvar, symbolic::integer(1));
+
+    auto& loop = builder.add_for(root, indvar, condition, init, update);
+    auto& body = loop.root();
+
+    auto& block = builder.add_block(body);
+    auto& a1 = builder.add_access(block, "A");
+    auto& c1 = builder.add_access(block, "C");
+    auto& b_in = builder.add_access(block, "B");
+    auto& b_out = builder.add_access(block, "B");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+    builder.add_computational_memlet(block, a1, tasklet, "_in1", {indvar}, edge_desc);
+    builder.add_computational_memlet(block, c1, tasklet, "_in2", {indvar}, edge_desc);
+    builder.add_computational_memlet(block, b_in, tasklet, "_in3", {});
+    builder.add_computational_memlet(block, tasklet, "_out", b_out, {});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+
+    auto& deps = lcd.dependencies(loop);
+    ASSERT_EQ(deps.count("B"), 1u);
+    EXPECT_EQ(deps.at("B").type, analysis::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+
+    ASSERT_TRUE(lcd.has_reductions(loop));
+    auto& reductions = lcd.reductions(loop);
+    ASSERT_EQ(reductions.size(), 1u);
+    EXPECT_EQ(reductions[0].operation, structured_control_flow::ReductionOperation::Add);
+    EXPECT_EQ(reductions[0].container, "B");
+    EXPECT_TRUE(lcd.is_reduction_only(loop));
+}
+
+// for (i = 0; i < N; ++i) { B = B * A[i] + C[i]; }
+// Fused multiply-add with the accumulator B as a *multiplicand* is not a
+// reorderable reduction (the update is acc = acc * b + c).
+TEST(LoopCarriedDependencyAnalysisTest, Fma_MultiplicandAccumulator_NotReduction) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer edge_desc(base_desc);
+    types::Pointer ptr_desc;
+
+    builder.add_container("A", ptr_desc, true);
+    builder.add_container("C", ptr_desc, true);
+    builder.add_container("B", base_desc, true);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+
+    auto bound = symbolic::symbol("N");
+    auto indvar = symbolic::symbol("i");
+    auto init = symbolic::integer(0);
+    auto condition = symbolic::Lt(indvar, bound);
+    auto update = symbolic::add(indvar, symbolic::integer(1));
+
+    auto& loop = builder.add_for(root, indvar, condition, init, update);
+    auto& body = loop.root();
+
+    auto& block = builder.add_block(body);
+    auto& b_in = builder.add_access(block, "B");
+    auto& a1 = builder.add_access(block, "A");
+    auto& c1 = builder.add_access(block, "C");
+    auto& b_out = builder.add_access(block, "B");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+    builder.add_computational_memlet(block, b_in, tasklet, "_in1", {});
+    builder.add_computational_memlet(block, a1, tasklet, "_in2", {indvar}, edge_desc);
+    builder.add_computational_memlet(block, c1, tasklet, "_in3", {indvar}, edge_desc);
+    builder.add_computational_memlet(block, tasklet, "_out", b_out, {});
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+
+    auto& deps = lcd.dependencies(loop);
+    ASSERT_EQ(deps.count("B"), 1u);
+    EXPECT_EQ(deps.at("B").type, analysis::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+
+    // Accumulator on a multiplicand port => not a reduction.
+    EXPECT_FALSE(lcd.has_reductions(loop));
+    EXPECT_TRUE(lcd.reductions(loop).empty());
+    EXPECT_FALSE(lcd.is_reduction_only(loop));
+}
+
 // for (i = 0; i < N; ++i) { A[i] = ...; }
 // No loop-carried dependency: each iter writes a distinct element.
 TEST(LoopCarriedDependencyAnalysisTest, IndependentArrayWrite_NoCarry) {
@@ -2418,6 +2526,55 @@ TEST(LoopCarriedDependencyAnalysisTest, CMathFloatMaxReduction) {
     ASSERT_EQ(lcd.reductions(loop).size(), 1u);
     EXPECT_EQ(lcd.reductions(loop)[0].operation, structured_control_flow::ReductionOperation::Max);
     EXPECT_EQ(lcd.reductions(loop)[0].container, "m");
+    EXPECT_TRUE(lcd.is_reduction_only(loop));
+}
+
+// for (i) { s = fma(A[i], C[i], s); }  CMath fma (a*b + c) with the accumulator
+// as the addend operand -> additive reduction.
+TEST(LoopCarriedDependencyAnalysisTest, CMathFmaAddendReduction) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer opaque_desc;
+
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("C", opaque_desc, true);
+    builder.add_container("s", base_desc, true);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+
+    auto indvar = symbolic::symbol("i");
+    auto& loop = builder.add_for(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(indvar, symbolic::integer(1))
+    );
+    auto& block = builder.add_block(loop.root());
+    auto& a = builder.add_access(block, "A");
+    auto& c = builder.add_access(block, "C");
+    auto& s_in = builder.add_access(block, "s");
+    auto& s_out = builder.add_access(block, "s");
+    auto& node = static_cast<math::cmath::CMathNode&>(builder.add_library_node<math::cmath::CMathNode>(
+        block, DebugInfo(), math::cmath::CMathFunction::fma, types::PrimitiveType::Float
+    ));
+    builder.add_computational_memlet(block, a, node, "_in1", {indvar}, desc);
+    builder.add_computational_memlet(block, c, node, "_in2", {indvar}, desc);
+    builder.add_computational_memlet(block, s_in, node, "_in3", {}, base_desc);
+    builder.add_computational_memlet(block, node, "_out", s_out, {}, base_desc);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+
+    ASSERT_TRUE(lcd.has_reductions(loop));
+    ASSERT_EQ(lcd.reductions(loop).size(), 1u);
+    EXPECT_EQ(lcd.reductions(loop)[0].operation, structured_control_flow::ReductionOperation::Add);
+    EXPECT_EQ(lcd.reductions(loop)[0].container, "s");
     EXPECT_TRUE(lcd.is_reduction_only(loop));
 }
 
