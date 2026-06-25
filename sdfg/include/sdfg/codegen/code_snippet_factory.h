@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include "utils.h"
+#include <optional>
 
 namespace sdfg {
 namespace codegen {

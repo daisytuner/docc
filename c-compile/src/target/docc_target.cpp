@@ -1,4 +1,5 @@
 #include "docc/target/docc_target.h"
+#include <cstdlib>
 #include <filesystem>
 
 #include "docc/compile/src_file_compiler_builder.h"
@@ -45,7 +46,10 @@ static DoccTarget rocm_target = {
     .short_name = "rocm",
     .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
         builder.add_compile_option("-x hip");
-        std::string rocm_dev = "gfx1201";
+        // ISSUE: hardcoded arch causes segfaults if it doesn't match the actual GPU.
+        // FIX: add a override variable to specify arch 
+        const char* arch_env = std::getenv("DOCC_ROCM_ARCH");
+        std::string rocm_dev = (arch_env && *arch_env) ? arch_env : "gfx1200";
         builder.add_compile_option("--offload-arch=" + rocm_dev);
         std::filesystem::path rocm_path = "/opt/rocm";
         builder.add_compile_option("--offload-host-only");
@@ -60,6 +64,11 @@ static DoccTarget rocm_target = {
         compile::SrcFileCompilerBuilder b;
         b.inherit(builder, true);
         b.remove_compile_option("--offload-host-only");
+        // Use ROCm's own bundled clang so its LLVM version matches the
+        // bitcode device libraries in /opt/rocm/amdgcn/bitcode/ (ocml.bc etc).
+        // The apt-installed clang-19 is LLVM 19 but ROCm ships LLVM 22 bitcode,
+        // causing "Unknown attribute kind" errors.
+        b.set_compiler("/opt/rocm/llvm/bin/clang++");
 
         builder.redirect_snippet("rocm.cpp", std::move(b));
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <condition_variable>
+#include <exception>
 #include <list>
 #include <memory>
 #include <queue>
@@ -38,6 +39,7 @@ private:
     std::condition_variable queue_cv_;
     std::condition_variable done_cv_;
     bool stop_ = false;
+    std::exception_ptr last_exception_;
 
     void worker_loop();
 

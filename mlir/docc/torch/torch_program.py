@@ -124,6 +124,7 @@ class TorchProgram(DoccProgram):
 
         # Compile if necessary
         if self._compiled is None:
+            self.example_input = args
             self._compiled = self.compile()
 
         # Prepend frozen buffer values (e.g. BatchNorm running_mean/var) that
@@ -376,6 +377,19 @@ class TorchProgram(DoccProgram):
         )
         torch_mlir = str(torch_mlir)
 
+        # Unconditional debug dump of the imported linalg MLIR so we can inspect
+        # which constants/ops are produced (e.g. frozen-weight dense constants).
+        _docc_dump_dir = os.environ.get("DOCC_DUMP_DIR", "/vllm-workspace/output")
+        if _docc_dump_dir:
+            try:
+                os.makedirs(_docc_dump_dir, exist_ok=True)
+                with open(
+                    f"{_docc_dump_dir}/{self.name}_imported.mlir", "w"
+                ) as _f:
+                    _f.write(torch_mlir)
+            except OSError:
+                pass
+
         # Dump the MLIR code to a file for inspection
         if self.debug_dump and output_folder is not None:
             os.makedirs(output_folder, exist_ok=True)
@@ -545,6 +559,7 @@ def _docc_dynamo_compiler(gm, example_inputs, backend_options):
     )
 
     def compiled_fn(*args):
+        print(f"docc compiled_fn called with args: {[type(a) for a in args]}")
         result = program(*args)
         if isinstance(result, (tuple, list)):
             return result
