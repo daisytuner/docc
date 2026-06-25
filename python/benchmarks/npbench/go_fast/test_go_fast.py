@@ -43,15 +43,22 @@ def test_go_fast(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 1,
+                "SEQUENTIAL": 1,
                 "MAP": 2,
+                "CMath": 1,
+                "VECTORIZE": 2,
                 "REDUCE": 1,
-                "SEQUENTIAL": 2,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"MAP": 1, "CPU_PARALLEL": 1, "SEQUENTIAL": 1, "REDUCE": 1}
+            verification={
+                "MAP": 1,
+                "CPU_PARALLEL": 1,
+                "CMath": 1,
+                "VECTORIZE": 1,
+                "REDUCE": 1,
+            }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
