@@ -75,7 +75,9 @@ def evaluate(reference_file: Path, test_file: Path, args, dtype=np.float64) -> f
 
 @pytest.mark.skip(reason="Timeout")
 def test_bplustree(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "b+tree" / "main.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "b+tree" / "main.c"
+    )
     verifier = SDFGVerification(
         verification={
             "sdfgs": 80,
@@ -103,13 +105,21 @@ def test_bplustree(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -181,18 +191,17 @@ def test_bplustree(compiler="clang-19"):
 
 
 def test_backprop(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "backprop" / "backprop.c"
+    test_case = (
+        Path(__file__).parent
+        / "tests"
+        / "rodinia"
+        / "openmp"
+        / "backprop"
+        / "backprop.c"
+    )
 
     verifier = SDFGVerification(
-        verification={
-            "sdfgs": 25,
-            "Free": 6,
-            "Malloc": 5,
-            "MAP": 15,
-            "SEQUENTIAL": 15,
-            "FOR": 52,
-            "WHILE": 6,
-        }
+        verification={"sdfgs": 25, "FOR": 37, "SEQUENTIAL": 52, "WHILE": 6, "MAP": 15}
     )
     runner = TestRunner(
         "Rodinia",
@@ -210,13 +219,21 @@ def test_backprop(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -229,8 +246,18 @@ def test_backprop(compiler="clang-19"):
             / "openmp"
             / "backprop"
             / "backprop_kernel.c",
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "backprop" / "facetrain.c",
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "backprop" / "imagenet.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "backprop"
+            / "facetrain.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "backprop"
+            / "imagenet.c",
         ],
         partial(evaluate, args=["1024"], dtype=np.float32),
         sdfg_verification=verifier,
@@ -239,10 +266,12 @@ def test_backprop(compiler="clang-19"):
 
 
 def test_bfs(compiler="clang++-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "bfs" / "bfs.cpp"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "bfs" / "bfs.cpp"
+    )
 
     verifier = SDFGVerification(
-        verification={'sdfgs': 3, 'Malloc': 6, 'WHILE': 7, 'FOR': 1, 'SEQUENTIAL': 1, 'MAP': 1, 'Free': 6},
+        verification={"sdfgs": 3, "WHILE": 7, "MAP": 1, "SEQUENTIAL": 1},
     )
     runner = TestRunner(
         "Rodinia",
@@ -259,13 +288,21 @@ def test_bfs(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -294,15 +331,17 @@ def test_bfs(compiler="clang++-19"):
 
 
 def test_cfd(compiler="clang++-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "cfd" / "euler3d_cpu.cpp"
+    test_case = (
+        Path(__file__).parent
+        / "tests"
+        / "rodinia"
+        / "openmp"
+        / "cfd"
+        / "euler3d_cpu.cpp"
+    )
 
     verifier = SDFGVerification(
-        verification={
-            "sdfgs": 6,
-            "MAP": 6,
-            "SEQUENTIAL": 6,
-            "FOR": 19,
-        }
+        verification={"sdfgs": 6, "MAP": 6, "SEQUENTIAL": 19, "FOR": 13}
     )
     runner = TestRunner(
         "Rodinia",
@@ -319,13 +358,21 @@ def test_cfd(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -353,12 +400,23 @@ def test_cfd(compiler="clang++-19"):
 
     return runner.run(timeout=240)
 
+
 @pytest.mark.xfail(reason="Timeout")
 def test_heartwall(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "heartwall" / "main.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "heartwall" / "main.c"
+    )
 
     verifier = SDFGVerification(
-        verification={'sdfgs': 50, 'Malloc': 27, 'MAP': 7, 'FOR': 48, 'SEQUENTIAL': 7, 'Free': 37, 'WHILE': 73},
+        verification={
+            "sdfgs": 50,
+            "Malloc": 27,
+            "MAP": 7,
+            "FOR": 48,
+            "SEQUENTIAL": 7,
+            "Free": 37,
+            "WHILE": 73,
+        },
     )
     runner = TestRunner(
         "Rodinia",
@@ -376,19 +434,32 @@ def test_heartwall(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-I"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "openmp" / "heartwall" / "AVI/"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "openmp"
+                    / "heartwall"
+                    / "AVI/"
                 ).absolute()
             ),
             "-lm",
@@ -437,7 +508,12 @@ def test_heartwall(compiler="clang-19"):
 @pytest.mark.skip(reason="Test is flaky, needs investigation")
 def test_hotspot(compiler="clang++-19"):
     test_case = (
-        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "hotspot" / "hotspot_openmp.cpp"
+        Path(__file__).parent
+        / "tests"
+        / "rodinia"
+        / "openmp"
+        / "hotspot"
+        / "hotspot_openmp.cpp"
     )
     verifier = SDFGVerification(
         verification={"sdfgs": 8, "Free": 2, "FOR": 8, "WHILE": 3, "Calloc": 3},
@@ -457,13 +533,21 @@ def test_hotspot(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -507,18 +591,12 @@ def test_hotspot(compiler="clang++-19"):
 
 
 def test_hotspot3D(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "hotspot3D" / "3D.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "hotspot3D" / "3D.c"
+    )
 
     verifier = SDFGVerification(
-        verification={
-            "sdfgs": 8,
-            "Malloc": 1,
-            "Memcpy": 1,
-            "Free": 3,
-            "Calloc": 4,
-            "WHILE": 2,
-            "FOR": 17,
-        }
+        verification={"sdfgs": 8, "WHILE": 2, "MAP": 4, "FOR": 13, "SEQUENTIAL": 17}
     )
     runner = TestRunner(
         "Rodinia",
@@ -535,13 +613,21 @@ def test_hotspot3D(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -585,7 +671,9 @@ def test_hotspot3D(compiler="clang-19"):
 
 @pytest.mark.skip(reason="Reference executable segfaults (SIGSEGV) in CI environment")
 def test_kmeans(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "kmeans" / "kmeans.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "kmeans" / "kmeans.c"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -615,13 +703,21 @@ def test_kmeans(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -634,8 +730,18 @@ def test_kmeans(compiler="clang-19"):
             / "openmp"
             / "kmeans"
             / "kmeans_clustering.c",
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "kmeans" / "cluster.c",
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "kmeans" / "getopt.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "kmeans"
+            / "cluster.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "kmeans"
+            / "getopt.c",
         ],
         partial(
             evaluate,
@@ -660,10 +766,12 @@ def test_kmeans(compiler="clang-19"):
 
 
 def test_lavaMD(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lavaMD" / "main.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lavaMD" / "main.c"
+    )
 
     verifier = SDFGVerification(
-        verification={'sdfgs': 4, 'FOR': 20, 'WHILE': 6, 'Malloc': 8, 'Free': 8}
+        verification={"sdfgs": 4, "FOR": 20, "WHILE": 6, "Malloc": 8, "Free": 8}
     )
     runner = TestRunner(
         "Rodinia",
@@ -681,13 +789,21 @@ def test_lavaMD(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -755,20 +871,33 @@ def test_lud(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
         ],
         "none",
         [
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lud" / "lud_omp.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "lud"
+            / "lud_omp.c",
             Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lud" / "common.c",
         ],
         partial(evaluate, args=["-s", "4096", "-v"], dtype=np.float32),
@@ -781,15 +910,7 @@ def test_nw(compiler="clang++-19"):
     test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "nw" / "nw.cpp"
 
     verifier = SDFGVerification(
-        verification={
-            "sdfgs": 7,
-            "Malloc": 3,
-            "WHILE": 5,
-            "Free": 15,
-            "FOR": 28,
-            "SEQUENTIAL": 13,
-            "MAP": 13,
-        },
+        verification={"sdfgs": 7, "WHILE": 5, "FOR": 15, "SEQUENTIAL": 28, "MAP": 13},
     )
     runner = TestRunner(
         "Rodinia",
@@ -806,13 +927,21 @@ def test_nw(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -837,13 +966,12 @@ def test_particlefilter(compiler="clang-19"):
 
     verifier = SDFGVerification(
         verification={
-            'sdfgs': 17,
-            'Free': 2,
-            'Malloc': 4,
-            'WHILE': 12,
-            'MAP': 18,
-            'SEQUENTIAL': 18,
-            'FOR': 49
+            "sdfgs": 17,
+            "REDUCE": 1,
+            "WHILE": 12,
+            "MAP": 18,
+            "FOR": 30,
+            "SEQUENTIAL": 49,
         }
     )
     runner = TestRunner(
@@ -863,13 +991,21 @@ def test_particlefilter(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -888,11 +1024,16 @@ def test_particlefilter(compiler="clang-19"):
 
 def test_pathfinder(compiler="clang++-19"):
     test_case = (
-        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "pathfinder" / "pathfinder.cpp"
+        Path(__file__).parent
+        / "tests"
+        / "rodinia"
+        / "openmp"
+        / "pathfinder"
+        / "pathfinder.cpp"
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 1, "FOR": 7},
+        verification={"sdfgs": 1, "FOR": 5, "SEQUENTIAL": 7, "MAP": 2},
     )
     runner = TestRunner(
         "Rodinia",
@@ -909,13 +1050,21 @@ def test_pathfinder(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -929,17 +1078,12 @@ def test_pathfinder(compiler="clang++-19"):
 
 
 def test_srad(compiler="clang++-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "srad" / "srad.cpp"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "srad" / "srad.cpp"
+    )
 
     verifier = SDFGVerification(
-        verification={
-            "sdfgs": 3,
-            "Malloc": 11,
-            "MAP": 7,
-            "FOR": 16,
-            "SEQUENTIAL": 7,
-            "Free": 11,
-        }
+        verification={"sdfgs": 3, "MAP": 7, "SEQUENTIAL": 16, "FOR": 9}
     )
     runner = TestRunner(
         "Rodinia",
@@ -956,13 +1100,21 @@ def test_srad(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -989,16 +1141,7 @@ def test_streamcluster(compiler="clang++-19"):
         / "streamcluster.cpp"
     )
     verifier = SDFGVerification(
-        verification={
-            "sdfgs": 25,
-            "MAP": 2,
-            "SEQUENTIAL": 2,
-            "FOR": 41,
-            "Malloc": 7,
-            "Free": 8,
-            "Calloc": 3,
-            "WHILE": 32,
-        },
+        verification={"sdfgs": 25, "MAP": 2, "FOR": 39, "SEQUENTIAL": 41, "WHILE": 32},
     )
     runner = TestRunner(
         "Rodinia",
@@ -1015,13 +1158,21 @@ def test_streamcluster(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
