@@ -48,11 +48,11 @@ def test_mvt(target):
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 2, "REDUCE": 2, "CUDA": 2, "MAP": 2},
+            verification={"SEQUENTIAL": 2, "REDUCE": 2, "CUDA": 1, "MAP": 1},
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 2, "REDUCE": 2, "ROCM": 2, "MAP": 2}
+            verification={"SEQUENTIAL": 2, "REDUCE": 2, "ROCM": 1, "MAP": 1}
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

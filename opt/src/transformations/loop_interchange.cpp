@@ -421,6 +421,8 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
     auto* inner_map = dynamic_cast<structured_control_flow::Map*>(&inner_loop_);
     auto* outer_map = dynamic_cast<structured_control_flow::Map*>(&outer_loop_);
+    auto* inner_reduce = dynamic_cast<structured_control_flow::Reduce*>(&inner_loop_);
+    auto* outer_reduce = dynamic_cast<structured_control_flow::Reduce*>(&outer_loop_);
 
     bool dependent = !inner_map && !outer_map &&
                      (symbolic::uses(inner_loop_.init(), outer_loop_.indvar()->get_name()) ||
@@ -468,27 +470,57 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         auto new_inner_bound = symbolic::min(outer_bound, upper_from_init);
         auto new_inner_cond = symbolic::Lt(outer_indvar, new_inner_bound);
 
-        new_outer_loop = &builder.add_for_after(
-            outer_scope,
-            this->outer_loop_,
-            inner_indvar,
-            new_outer_cond,
-            new_outer_init,
-            this->inner_loop_.update(),
-            outer_transition.assignments(),
-            this->inner_loop_.debug_info()
-        );
+        if (inner_reduce) {
+            new_outer_loop = &builder.add_reduce_after(
+                outer_scope,
+                this->outer_loop_,
+                inner_indvar,
+                new_outer_cond,
+                new_outer_init,
+                this->inner_loop_.update(),
+                inner_reduce->reductions(),
+                this->inner_loop_.schedule_type(),
+                outer_transition.assignments(),
+                this->inner_loop_.debug_info()
+            );
+        } else {
+            new_outer_loop = &builder.add_for_after(
+                outer_scope,
+                this->outer_loop_,
+                inner_indvar,
+                new_outer_cond,
+                new_outer_init,
+                this->inner_loop_.update(),
+                outer_transition.assignments(),
+                this->inner_loop_.debug_info()
+            );
+        }
 
-        new_inner_loop = &builder.add_for_after(
-            inner_scope,
-            this->inner_loop_,
-            outer_indvar,
-            new_inner_cond,
-            new_inner_init,
-            this->outer_loop_.update(),
-            {},
-            this->outer_loop_.debug_info()
-        );
+        if (outer_reduce) {
+            new_inner_loop = &builder.add_reduce_after(
+                inner_scope,
+                this->inner_loop_,
+                outer_indvar,
+                new_inner_cond,
+                new_inner_init,
+                this->outer_loop_.update(),
+                outer_reduce->reductions(),
+                this->outer_loop_.schedule_type(),
+                {},
+                this->outer_loop_.debug_info()
+            );
+        } else {
+            new_inner_loop = &builder.add_for_after(
+                inner_scope,
+                this->inner_loop_,
+                outer_indvar,
+                new_inner_cond,
+                new_inner_init,
+                this->outer_loop_.update(),
+                {},
+                this->outer_loop_.debug_info()
+            );
+        }
     } else {
         // Standard case: just swap loop headers
         if (inner_map) {
@@ -500,6 +532,19 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 inner_map->init(),
                 inner_map->update(),
                 inner_map->schedule_type(),
+                outer_transition.assignments(),
+                this->inner_loop_.debug_info()
+            );
+        } else if (inner_reduce) {
+            new_outer_loop = &builder.add_reduce_after(
+                outer_scope,
+                this->outer_loop_,
+                this->inner_loop_.indvar(),
+                this->inner_loop_.condition(),
+                this->inner_loop_.init(),
+                this->inner_loop_.update(),
+                inner_reduce->reductions(),
+                this->inner_loop_.schedule_type(),
                 outer_transition.assignments(),
                 this->inner_loop_.debug_info()
             );
@@ -525,6 +570,19 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 outer_map->init(),
                 outer_map->update(),
                 outer_map->schedule_type(),
+                {},
+                this->outer_loop_.debug_info()
+            );
+        } else if (outer_reduce) {
+            new_inner_loop = &builder.add_reduce_after(
+                inner_scope,
+                this->inner_loop_,
+                this->outer_loop_.indvar(),
+                this->outer_loop_.condition(),
+                this->outer_loop_.init(),
+                this->outer_loop_.update(),
+                outer_reduce->reductions(),
+                this->outer_loop_.schedule_type(),
                 {},
                 this->outer_loop_.debug_info()
             );

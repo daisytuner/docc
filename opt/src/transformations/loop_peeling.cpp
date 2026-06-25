@@ -299,6 +299,18 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 {},
                 loop->debug_info()
             );
+        } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(loop)) {
+            new_loop = &builder.add_reduce(
+                *current_parent,
+                indvar,
+                zero_condition,
+                zero_init,
+                loop->update(),
+                reduce->reductions(),
+                loop->schedule_type(),
+                {},
+                loop->debug_info()
+            );
         } else {
             new_loop =
                 &builder
@@ -342,6 +354,18 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 loop->init(),
                 loop->update(),
                 map->schedule_type(),
+                {},
+                loop->debug_info()
+            );
+        } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(loop)) {
+            new_loop = &builder.add_reduce(
+                *current_parent,
+                loop->indvar(),
+                loop->condition(),
+                loop->init(),
+                loop->update(),
+                reduce->reductions(),
+                loop->schedule_type(),
                 {},
                 loop->debug_info()
             );

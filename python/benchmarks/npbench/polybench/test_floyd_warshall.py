@@ -36,12 +36,7 @@ def test_floyd_warshall(target):
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={
-                "CPU_PARALLEL": 2,
-                "SEQUENTIAL": 1,
-                "MAP": 2,
-                "FOR": 3,
-            }
+            verification={"CPU_PARALLEL": 2, "MAP": 2, "SEQUENTIAL": 1, "FOR": 1}
         )
     elif target == "cuda":
         verifier = SDFGVerification(

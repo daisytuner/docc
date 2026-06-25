@@ -51,21 +51,16 @@ def test_go_fast(target):
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={
-                "MAP": 1,
-                "REDUCE": 1,
-                "CPU_PARALLEL": 1,
-                "FOR": 2,
-            }
+            verification={"MAP": 1, "CPU_PARALLEL": 1, "SEQUENTIAL": 1, "REDUCE": 1}
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
                 "CUDA": 2,
                 "MAP": 2,
-                "REDUCE": 1,
                 "CUDAOffloading": 4,
-                "FOR": 3,
+                "SEQUENTIAL": 1,
+                "REDUCE": 1,
             }
         )
     elif target == "rocm":
@@ -73,9 +68,9 @@ def test_go_fast(target):
             verification={
                 "ROCM": 2,
                 "MAP": 2,
-                "REDUCE": 1,
                 "ROCMOffloading": 4,
-                "FOR": 3,
+                "SEQUENTIAL": 1,
+                "REDUCE": 1,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

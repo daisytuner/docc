@@ -48,6 +48,19 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
             transition.assignments(),
             loop_.debug_info()
         );
+    } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(&loop_)) {
+        outer_loop = &builder.add_reduce_before(
+            *parent,
+            loop_,
+            outer_indvar,
+            outer_condition,
+            loop_.init(),
+            outer_update,
+            reduce->reductions(),
+            reduce->schedule_type(),
+            transition.assignments(),
+            loop_.debug_info()
+        );
     } else {
         outer_loop = &builder.add_for_before(
             *parent,
