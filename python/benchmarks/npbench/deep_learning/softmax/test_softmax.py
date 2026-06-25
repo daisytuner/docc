@@ -44,7 +44,6 @@ def test_softmax(target):
         verifier = SDFGVerification(
             verification={
                 "SEQUENTIAL": 22,
-                "FOR": 22,
                 "MAP": 20,
                 "REDUCE": 2,
             }
@@ -54,7 +53,6 @@ def test_softmax(target):
             verification={
                 "VECTORIZE": 2,
                 "SEQUENTIAL": 14,
-                "FOR": 16,
                 "MAP": 14,
                 "REDUCE": 2,
             }
@@ -64,7 +62,6 @@ def test_softmax(target):
             verification={
                 "CPU_PARALLEL": 4,
                 "SEQUENTIAL": 2,
-                "FOR": 6,
                 "MAP": 4,
                 "REDUCE": 2,
             }
@@ -73,7 +70,6 @@ def test_softmax(target):
         verifier = SDFGVerification(
             verification={
                 "SEQUENTIAL": 6,
-                "FOR": 14,
                 "MAP": 12,
                 "REDUCE": 2,
                 "CUDA": 6,
@@ -84,7 +80,6 @@ def test_softmax(target):
         verifier = SDFGVerification(
             verification={
                 "SEQUENTIAL": 6,
-                "FOR": 14,
                 "MAP": 12,
                 "REDUCE": 2,
                 "ROCM": 6,

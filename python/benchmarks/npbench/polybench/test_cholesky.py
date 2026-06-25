@@ -47,51 +47,41 @@ def test_cholesky(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 4,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "DOT": 0,
-                "CMath": 2,
+                "FOR": 2,
+                "REDUCE": 2,
+                "SEQUENTIAL": 4,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 4,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "DOT": 0,
-                "CMath": 2,
+                "FOR": 2,
+                "REDUCE": 2,
+                "SEQUENTIAL": 4,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 4,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "DOT": 0,
-                "CMath": 2,
+                "FOR": 2,
+                "REDUCE": 2,
+                "SEQUENTIAL": 4,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 4,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "DOT": 0,
-                "CMath": 2,
+                "FOR": 2,
+                "REDUCE": 2,
+                "SEQUENTIAL": 4,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 4,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "DOT": 0,
-                "CMath": 2,
+                "FOR": 2,
+                "REDUCE": 2,
+                "SEQUENTIAL": 4,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

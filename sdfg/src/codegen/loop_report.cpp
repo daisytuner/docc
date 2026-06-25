@@ -26,6 +26,11 @@ bool LoopReport::accept(sdfg::structured_control_flow::For& node) {
     }
     this->report_["FOR"]++;
 
+    if (this->report_.find(node.schedule_type().value()) == this->report_.end()) {
+        this->report_[node.schedule_type().value()] = 0;
+    }
+    this->report_[node.schedule_type().value()]++;
+
     return false;
 }
 
@@ -44,11 +49,6 @@ bool LoopReport::accept(sdfg::structured_control_flow::Map& node) {
     }
     this->report_["MAP"]++;
 
-    if (this->report_.find("FOR") == this->report_.end()) {
-        this->report_["FOR"] = 0;
-    }
-    this->report_["FOR"]++;
-
     if (this->report_.find(node.schedule_type().value()) == this->report_.end()) {
         this->report_[node.schedule_type().value()] = 0;
     }
@@ -62,11 +62,6 @@ bool LoopReport::accept(sdfg::structured_control_flow::Reduce& node) {
         this->report_["REDUCE"] = 0;
     }
     this->report_["REDUCE"]++;
-
-    if (this->report_.find("FOR") == this->report_.end()) {
-        this->report_["FOR"] = 0;
-    }
-    this->report_["FOR"]++;
 
     if (this->report_.find(node.schedule_type().value()) == this->report_.end()) {
         this->report_[node.schedule_type().value()] = 0;

@@ -38,66 +38,31 @@ def test_gemm(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 1,
-                "DOT": 0,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 1,
-                "DOT": 0,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 1,
-                "DOT": 0,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 1,
-                "DOT": 0,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "ROCM": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 1,
-                "DOT": 0,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

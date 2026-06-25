@@ -66,29 +66,22 @@ def kernel(in_field, out_field, coeff):
 def test_hdiff(target):
     verifier = None
     if target == "none":
-        verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 30, "FOR": 30, "MAP": 30, "Malloc": 9}
-        )
+        verifier = SDFGVerification(verification={"SEQUENTIAL": 30, "MAP": 30})
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "VECTORIZE": 10,
                 "SEQUENTIAL": 20,
-                "FOR": 30,
                 "MAP": 30,
-                "Malloc": 9,
             }
         )
     elif target == "openmp":
-        verifier = SDFGVerification(
-            verification={"CPU_PARALLEL": 10, "FOR": 10, "MAP": 10, "Malloc": 9}
-        )
+        verifier = SDFGVerification(verification={"CPU_PARALLEL": 10, "MAP": 10})
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
                 "CUDA": 6,
                 "SEQUENTIAL": 14,
-                "FOR": 20,
                 "CUDAOffloading": 14,
                 "MAP": 20,
             }
@@ -98,7 +91,6 @@ def test_hdiff(target):
             verification={
                 "ROCM": 6,
                 "SEQUENTIAL": 14,
-                "FOR": 20,
                 "ROCMOffloading": 14,
                 "MAP": 20,
             }

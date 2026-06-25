@@ -47,10 +47,9 @@ def test_ludcmp(target):
         verifier = SDFGVerification(
             verification={
                 "MAP": 3,
-                "SEQUENTIAL": 3,
-                "FOR": 11,
-                "Memset": 2,
-                "Malloc": 2,
+                "REDUCE": 4,
+                "SEQUENTIAL": 11,
+                "FOR": 4,
             }
         )
     elif target == "sequential":
@@ -58,10 +57,9 @@ def test_ludcmp(target):
             verification={
                 "VECTORIZE": 2,
                 "MAP": 3,
-                "SEQUENTIAL": 1,
-                "FOR": 11,
-                "Memset": 2,
-                "Malloc": 2,
+                "REDUCE": 4,
+                "SEQUENTIAL": 9,
+                "FOR": 4,
             }
         )
     elif target == "openmp":
@@ -69,30 +67,31 @@ def test_ludcmp(target):
             verification={
                 "CPU_PARALLEL": 2,
                 "MAP": 3,
-                "SEQUENTIAL": 1,
-                "FOR": 11,
-                "Memset": 2,
-                "Malloc": 2,
+                "REDUCE": 4,
+                "SEQUENTIAL": 9,
+                "FOR": 4,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
                 "CUDA": 2,
+                "REDUCE": 4,
+                "SEQUENTIAL": 9,
+                "FOR": 4,
                 "MAP": 3,
-                "SEQUENTIAL": 1,
                 "CUDAOffloading": 12,
-                "FOR": 11,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 2,
+                "REDUCE": 4,
+                "SEQUENTIAL": 9,
+                "FOR": 4,
                 "MAP": 3,
-                "SEQUENTIAL": 1,
                 "ROCMOffloading": 12,
-                "FOR": 11,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

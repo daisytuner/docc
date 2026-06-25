@@ -29,46 +29,22 @@ def kernel(alpha, beta, C, A):
 def test_syrk(target):
     verifier = None
     if target == "none":
-        verifier = SDFGVerification(
-            verification={"MAP": 2, "SEQUENTIAL": 2, "FOR": 4}, non_critical=True
-        )
+        verifier = SDFGVerification(verification={"MAP": 4, "SEQUENTIAL": 6, "FOR": 2})
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 1, "SEQUENTIAL": 2, "FOR": 5, "MAP": 3},
-            non_critical=True,
+            verification={"VECTORIZE": 4, "MAP": 4, "SEQUENTIAL": 2, "FOR": 2}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={
-                "VECTORIZE": 1,
-                "CPU_PARALLEL": 1,
-                "SEQUENTIAL": 1,
-                "FOR": 5,
-                "MAP": 3,
-            },
-            non_critical=True,
+            verification={"VECTORIZE": 4, "MAP": 4, "SEQUENTIAL": 2, "FOR": 2},
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "CUDA": 1,
-                "SEQUENTIAL": 2,
-                "FOR": 5,
-                "MAP": 3,
-                "CUDAOffloading": 2,
-            },
-            non_critical=True,
+            verification={"MAP": 4, "SEQUENTIAL": 6, "FOR": 2},
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={
-                "ROCM": 1,
-                "SEQUENTIAL": 2,
-                "FOR": 5,
-                "MAP": 3,
-                "ROCMOffloading": 2,
-            },
-            non_critical=True,
+            verification={"MAP": 4, "SEQUENTIAL": 6, "FOR": 2},
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

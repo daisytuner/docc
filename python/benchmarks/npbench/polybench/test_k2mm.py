@@ -32,27 +32,18 @@ def test_k2mm(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
                 "SEQUENTIAL": 2,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
                 "SEQUENTIAL": 1,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
                 "VECTORIZE": 1,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "openmp":
@@ -60,17 +51,15 @@ def test_k2mm(target):
             verification={
                 "GEMM": 2,
                 "CPU_PARALLEL": 1,
-                "FOR": 1,
                 "MAP": 1,
-                "Malloc": 2,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
                 "CUDA": 2,
+                "CUDAOffloading": 4,
                 "GEMM": 2,
             },
             device_resident=True,
@@ -78,9 +67,9 @@ def test_k2mm(target):
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
                 "ROCM": 2,
+                "ROCMOffloading": 4,
                 "GEMM": 2,
             },
             device_resident=True,

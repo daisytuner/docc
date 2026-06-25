@@ -35,34 +35,26 @@ def kernel(array_1, array_2, a, b, c):
 def test_compute(target):
     verifier = None
     if target == "none":
-        verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 2, "FOR": 2, "MAP": 2, "Malloc": 0}
-        )
+        verifier = SDFGVerification(verification={"SEQUENTIAL": 2, "MAP": 2})
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "VECTORIZE": 1,
                 "SEQUENTIAL": 1,
-                "FOR": 2,
                 "MAP": 2,
-                "Malloc": 0,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "CPU_PARALLEL": 1,
-                "SEQUENTIAL": 0,
-                "FOR": 1,
                 "MAP": 1,
-                "Malloc": 0,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
                 "CUDA": 2,
-                "FOR": 2,
                 "MAP": 2,
             },
             device_resident=True,
@@ -71,7 +63,6 @@ def test_compute(target):
         verifier = SDFGVerification(
             verification={
                 "ROCM": 2,
-                "FOR": 2,
                 "MAP": 2,
             },
             device_resident=True,

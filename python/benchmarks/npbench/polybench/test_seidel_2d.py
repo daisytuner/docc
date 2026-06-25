@@ -40,25 +40,19 @@ def kernel(TSTEPS, N, A):
 def test_seidel_2d(target):
     verifier = None
     if target == "none":
-        verifier = SDFGVerification(
-            verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4}, non_critical=True
-        )
+        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 5, "FOR": 3})
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 1, "MAP": 1, "FOR": 4}, non_critical=True
+            verification={"VECTORIZE": 2, "MAP": 2, "SEQUENTIAL": 3, "FOR": 3}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 1, "MAP": 1, "FOR": 4}, non_critical=True
+            verification={"VECTORIZE": 2, "MAP": 2, "SEQUENTIAL": 3, "FOR": 3}
         )
     elif target == "cuda":
-        verifier = SDFGVerification(
-            verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4}, non_critical=True
-        )
+        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 5, "FOR": 3})
     elif target == "rocm":
-        verifier = SDFGVerification(
-            verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 4}, non_critical=True
-        )
+        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 5, "FOR": 3})
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
 
