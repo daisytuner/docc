@@ -21,7 +21,7 @@ def test_scheduling_tt_matmul_large():
     N = 1024
     K = 1024
     A = np.random.rand(M, K).astype(np.float32)
-    B = np.random.rand(K, N).astype(np.float32)
+    B = np.random.rand(K, N).astype(np.float32)   
     C = np.zeros((M, N), dtype=np.float32)
 
     matmul_tt(A, B, C)

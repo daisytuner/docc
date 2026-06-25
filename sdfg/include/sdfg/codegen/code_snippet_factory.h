@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "utils.h"
+#include <optional>
 
 namespace sdfg {
 namespace codegen {
