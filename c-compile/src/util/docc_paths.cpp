@@ -28,7 +28,9 @@ std::unique_ptr<DefaultDoccPaths> DefaultDoccPaths::from_lib_location(std::optio
 ) {
     if (lib_location) {
         auto str = lib_location->string();
-        std::regex pip_matcher(".*/python3\\.[0-9]+/site-packages/.*");
+        //ISSUE: cant find dist-packages
+        //FIX: updated regex pattern to locate package system wide.
+        std::regex pip_matcher(".*/python3\\.[0-9]+/(site-packages|dist-packages)/.*");
         if (std::regex_match(str, pip_matcher)) {
             auto parent = lib_location->parent_path();
             while (!parent.empty() && parent.has_parent_path() && parent.stem().string() != "docc") {
@@ -69,6 +71,23 @@ std::unique_ptr<DefaultDoccPaths> DefaultDoccPaths::from_lib_location(std::optio
                     }
                 }
             } while (!is_build_dir && !parent.empty());
+        }
+
+        // Issue: Cant find the rtl libraries from inside the docker shell because docc tries to autodetect but we use a syslink
+        // Fix: Add a fallback for editable pip installations where libdocc.so is inside the source tree
+        auto parent = lib_location->parent_path();
+        while (!parent.empty() && parent.has_parent_path()) {
+            if (std::filesystem::exists(parent / "rtl" / "include" / "daisy_rtl" / "daisy_rtl.h")) {
+                std::filesystem::path bin_root = parent / "python" / "build-Debug";
+                if (!std::filesystem::exists(bin_root)) {
+                    bin_root = parent;
+                }
+                return std::make_unique<DefaultDoccPaths>(bin_root, parent, DoccRootMode::CMake);
+            }
+            if (parent == parent.parent_path()) {
+                break;
+            }
+            parent = parent.parent_path();
         }
     }
 

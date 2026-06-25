@@ -1,5 +1,6 @@
 #pragma once
 #include <condition_variable>
+#include <exception>
 #include <list>
 #include <map>
 #include <memory>
@@ -47,6 +48,7 @@ private:
     std::condition_variable cv_;
     std::condition_variable done_cv_;
     bool stop_ = false;
+    std::exception_ptr last_exception_;
 
     void worker_loop();
 

@@ -1,5 +1,4 @@
 #include "docc/target/docc_target.h"
-
 #include <filesystem>
 #include <memory>
 
