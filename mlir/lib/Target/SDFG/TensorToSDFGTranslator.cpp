@@ -27,6 +27,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
+#include "sdfg/types/type.h"
 
 namespace mlir {
 namespace sdfg {
