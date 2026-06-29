@@ -8,6 +8,7 @@
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_skewing.h>
 #include <sdfg/transformations/loop_tiling.h>
+#include <sdfg/transformations/map_collapse.h>
 #include <sdfg/transformations/map_fusion.h>
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/recorder.h>
@@ -155,6 +156,29 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const OutLocalStorage& t) {
             std::ostringstream oss;
             oss << "<OutLocalStorage name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // MapCollapse transformation
+    py::class_<MapCollapse, Transformation>(m, "MapCollapse")
+        .def(
+            py::init<Map&, size_t>(),
+            py::arg("loop"),
+            py::arg("count"),
+            "Create a map collapse transformation.\n\n"
+            "Args:\n"
+            "    loop: The outermost map of the nest to collapse\n"
+            "    count: The number of maps to collapse (must be >= 2)"
+        )
+        .def_property_readonly(
+            "collapsed_loop",
+            &MapCollapse::collapsed_loop,
+            py::return_value_policy::reference,
+            "Get the collapsed map after apply"
+        )
+        .def("__repr__", [](const MapCollapse& t) {
+            std::ostringstream oss;
+            oss << "<MapCollapse name='" << t.name() << "'>";
             return oss.str();
         });
 

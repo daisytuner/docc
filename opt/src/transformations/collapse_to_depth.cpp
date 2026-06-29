@@ -59,6 +59,14 @@ bool CollapseToDepth::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 
     size_t depth = perfectly_nested_map_depth(loop_);
     if (depth <= target_loops_) {
+        // The outer map is not perfectly nested deeply enough for the standard
+        // product-space collapse. If it is imperfectly nested (its body contains
+        // sibling maps), fall back to a CUDA-style one-level collapse that
+        // flattens the outer map together with the sibling maps in its body.
+        if (depth == 1) {
+            MapCollapse t(loop_, 2);
+            return t.can_be_applied(builder, analysis_manager);
+        }
         return false;
     }
 
@@ -96,6 +104,17 @@ bool CollapseToDepth::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 
 void CollapseToDepth::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     size_t depth = perfectly_nested_map_depth(loop_);
+
+    if (depth <= target_loops_) {
+        // Imperfectly-nested fallback (see can_be_applied): flatten the outer map
+        // together with the sibling maps in its body into a single map.
+        MapCollapse t(loop_, 2);
+        t.apply(builder, analysis_manager);
+        outer_loop_ = t.collapsed_loop();
+        inner_loop_ = nullptr;
+        applied_ = true;
+        return;
+    }
 
     if (target_loops_ == 1) {
         MapCollapse t(loop_, depth);

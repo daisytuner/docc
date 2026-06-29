@@ -248,6 +248,62 @@ void PyStructuredSDFGBuilder::end_for() {
     scope_stack.pop_back();
 }
 
+sdfg::structured_control_flow::Map& PyStructuredSDFGBuilder::begin_map(
+    const std::string& var,
+    const std::string& start,
+    const std::string& end,
+    const std::string& step,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& parent = current_sequence();
+    auto var_sym = sdfg::symbolic::symbol(var);
+    auto start_expr = parse_and_expand(start);
+    auto end_expr = parse_and_expand(end);
+    auto step_expr = parse_and_expand(step);
+
+    bool is_negative = false;
+    if (SymEngine::is_a<SymEngine::Integer>(*step_expr)) {
+        auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(step_expr);
+        if (i->is_negative()) is_negative = true;
+    } else if (SymEngine::is_a<SymEngine::RealDouble>(*step_expr)) {
+        auto d = SymEngine::rcp_static_cast<const SymEngine::RealDouble>(step_expr);
+        if (d->as_double() < 0) is_negative = true;
+    }
+
+    SymEngine::RCP<const SymEngine::Boolean> condition;
+    if (is_negative) {
+        condition = SymEngine::Gt(var_sym, end_expr);
+    } else {
+        condition = SymEngine::Lt(var_sym, end_expr);
+    }
+
+    auto update = SymEngine::add(var_sym, step_expr);
+
+    auto& map_node = builder_.add_map(
+        parent,
+        var_sym,
+        condition,
+        start_expr,
+        update,
+        sdfg::structured_control_flow::ScheduleType_Sequential::create(),
+        {},
+        debug_info
+    );
+
+    scope_stack.push_back({&map_node.root(), &map_node, 0});
+
+    return map_node;
+}
+
+void PyStructuredSDFGBuilder::end_map() {
+    auto current = scope_stack.back();
+    auto* map_node = dynamic_cast<sdfg::structured_control_flow::Map*>(current.node);
+    if (!map_node) {
+        throw std::runtime_error("Cannot end_map: not in a map loop");
+    }
+    scope_stack.pop_back();
+}
+
 void PyStructuredSDFGBuilder::
     add_transition(const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info) {
     auto& parent = current_sequence();

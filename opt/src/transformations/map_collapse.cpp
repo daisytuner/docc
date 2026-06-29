@@ -1,8 +1,14 @@
 #include "sdfg/transformations/map_collapse.h"
 
-#include "sdfg/analysis/loop_analysis.h"
+#include <string>
+#include <unordered_set>
+#include <vector>
+
+#include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 
@@ -19,6 +25,20 @@ bool MapCollapse::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
         return false;
     }
 
+    // Fast path: a chain of perfectly-nested maps.
+    if (this->check_perfect_nest()) {
+        return true;
+    }
+
+    // Imperfect (CUDA-style) collapse is performed one level at a time.
+    if (count_ == 2 && this->check_imperfect(analysis_manager)) {
+        return true;
+    }
+
+    return false;
+}
+
+bool MapCollapse::check_perfect_nest() {
     // Collect the chain of count_ perfectly-nested maps
     std::vector<structured_control_flow::Map*> maps;
     maps.push_back(&loop_);
@@ -87,7 +107,150 @@ bool MapCollapse::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
     return true;
 }
 
+bool MapCollapse::is_collapsible_inner_map(structured_control_flow::Map& map, const symbolic::Symbol& outer_indvar) {
+    // Must increment by exactly 1 to participate in the flattened iteration space
+    if (!map.is_contiguous()) {
+        return false;
+    }
+
+    // Init may not depend on the outer induction variable
+    if (symbolic::uses(map.init(), outer_indvar)) {
+        return false;
+    }
+
+    // A closed-form bound is required and may not depend on the outer indvar
+    auto bound = map.canonical_bound();
+    if (bound.is_null()) {
+        return false;
+    }
+    if (symbolic::uses(bound, outer_indvar)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool MapCollapse::check_imperfect(analysis::AnalysisManager& analysis_manager) {
+    // The outer map must itself be collapsible (contiguous, closed-form bound
+    // that does not depend on its own induction variable).
+    auto outer_indvar = loop_.indvar();
+    if (!loop_.is_contiguous()) {
+        return false;
+    }
+    if (symbolic::uses(loop_.init(), outer_indvar)) {
+        return false;
+    }
+    auto outer_bound = loop_.canonical_bound();
+    if (outer_bound.is_null()) {
+        return false;
+    }
+    if (symbolic::uses(outer_bound, outer_indvar)) {
+        return false;
+    }
+
+    auto& body = loop_.root();
+    const size_t n = body.size();
+
+    std::vector<bool> is_collapsible(n, false);
+    size_t num_collapsible = 0;
+    for (size_t idx = 0; idx < n; ++idx) {
+        // Criterion (v1): transitions between body elements must be empty. Any
+        // inter-element assignments would need to be re-guarded, which is not
+        // handled yet.
+        if (!body.at(idx).second.empty()) {
+            return false;
+        }
+
+        auto* map = dynamic_cast<structured_control_flow::Map*>(&body.at(idx).first);
+        if (map != nullptr && this->is_collapsible_inner_map(*map, outer_indvar)) {
+            is_collapsible[idx] = true;
+            ++num_collapsible;
+        }
+        // Everything else (blocks, if-else, loops, non-collapsible maps) is a
+        // "skipped" element that will be replicated on every inner thread.
+    }
+
+    // Need at least one collapsible inner map to flatten against.
+    if (num_collapsible < 1) {
+        return false;
+    }
+
+    // Data-dependency safety gate (replication model).
+    //
+    // The collapse flattens the outer map together with one inner level into a
+    // single parallel iteration space. Collapsible inner maps run for the valid
+    // portion of the flattened inner index (`inner < bound`); every other
+    // ("skipped") body element is *replicated* on every inner thread.
+    //
+    // Replication is safe for a skipped element because it is a sibling of the
+    // inner maps and therefore cannot reference the inner induction variable: its
+    // reads and writes are identical for all inner threads of the same outer
+    // iteration. Hence a value produced by a skipped element and consumed by a
+    // later element (RAW) is reproduced independently on each thread - there is no
+    // cross-thread dependency.
+    //
+    // What replication cannot make safe, and is therefore rejected:
+    //   * A container written by a *collapsible* map and accessed (read or
+    //     written) by any other body element: collapsible writes vary across the
+    //     inner index, so the consumer would observe another thread's data
+    //     without synchronization (covers RAW, WAR, WAW against collapsible maps).
+    //   * A write-write conflict between two different body elements on the same
+    //     container: ordering across threads is no longer guaranteed.
+    auto& users = analysis_manager.get<analysis::Users>();
+
+    std::vector<std::unordered_set<std::string>> writes(n);
+    std::vector<std::unordered_set<std::string>> reads(n);
+    for (size_t idx = 0; idx < n; ++idx) {
+        analysis::UsersView view(users, body.at(idx).first);
+        for (auto* u : view.writes()) {
+            writes[idx].insert(u->container());
+        }
+        for (auto* u : view.moves()) {
+            writes[idx].insert(u->container());
+        }
+        // Views alias memory; treat conservatively as both a read and a write.
+        for (auto* u : view.views()) {
+            writes[idx].insert(u->container());
+            reads[idx].insert(u->container());
+        }
+        for (auto* u : view.reads()) {
+            reads[idx].insert(u->container());
+        }
+    }
+
+    for (size_t a = 0; a < n; ++a) {
+        for (size_t b = 0; b < n; ++b) {
+            if (a == b) {
+                continue;
+            }
+            for (const auto& container : writes[a]) {
+                const bool accessed_by_b = writes[b].count(container) != 0 || reads[b].count(container) != 0;
+                if (!accessed_by_b) {
+                    continue;
+                }
+                // Unsafe if the writer is a collapsible map (inner-varying write
+                // shared with another element), or if both elements write the same
+                // container (write-write conflict). A skipped writer feeding a
+                // pure reader (RAW) is safe under replication and allowed.
+                if (is_collapsible[a] || writes[b].count(container) != 0) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
 void MapCollapse::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (this->check_perfect_nest()) {
+        this->apply_perfect(builder, analysis_manager);
+    } else {
+        this->apply_imperfect(builder, analysis_manager);
+    }
+}
+
+void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
 
     // Step 1: Gather the maps to collapse and their bounds
@@ -186,6 +349,117 @@ void MapCollapse::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
 
     applied_ = true;
     collapsed_loop_ = &collapsed_map;
+}
+
+void MapCollapse::apply_imperfect(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    auto& sdfg = builder.subject();
+    auto& outer = loop_;
+    auto outer_indvar = outer.indvar();
+    auto& body = outer.root();
+
+    // Step 1: Classify the outer body children (in order) and gather the bounds
+    // of the collapsible inner maps.
+    struct BodyItem {
+        structured_control_flow::ControlFlowNode* node;
+        structured_control_flow::Map* map; // non-null only if collapsible
+        symbolic::Expression bound; // valid only if collapsible
+    };
+
+    std::vector<BodyItem> items;
+    std::vector<symbolic::Expression> collapsible_bounds;
+    for (size_t idx = 0; idx < body.size(); ++idx) {
+        auto& child = body.at(idx).first;
+        auto* map = dynamic_cast<structured_control_flow::Map*>(&child);
+        if (map != nullptr && this->is_collapsible_inner_map(*map, outer_indvar)) {
+            auto bound = map->canonical_bound();
+            items.push_back({&child, map, bound});
+            collapsible_bounds.push_back(bound);
+        } else {
+            items.push_back({&child, nullptr, SymEngine::null});
+        }
+    }
+
+    // Step 2: Virtual inner extent = max of all collapsible bounds.
+    symbolic::Expression inner_extent = collapsible_bounds[0];
+    for (size_t i = 1; i < collapsible_bounds.size(); ++i) {
+        inner_extent = symbolic::max(inner_extent, collapsible_bounds[i]);
+    }
+
+    auto outer_bound = outer.canonical_bound();
+    auto total_bound = symbolic::mul(outer_bound, inner_extent);
+
+    // Step 3: Create the collapsed induction variable and the virtual inner index.
+    auto civ_name = builder.find_new_name(outer_indvar->get_name() + "_collapsed");
+    builder.add_container(civ_name, sdfg.type(outer_indvar->get_name()));
+    auto civ = symbolic::symbol(civ_name);
+
+    auto inner_name = builder.find_new_name(outer_indvar->get_name() + "_inner");
+    builder.add_container(inner_name, sdfg.type(outer_indvar->get_name()));
+    auto inner_index = symbolic::symbol(inner_name);
+
+    // Step 4: Find the parent sequence of the outer map.
+    auto parent = static_cast<structured_control_flow::Sequence*>(outer.get_parent());
+    size_t index = parent->index(outer);
+    auto& transition = parent->at(index).second;
+
+    // Step 5: Create the collapsed map before the original outer map.
+    auto& collapsed_map = builder.add_map_before(
+        *parent,
+        outer,
+        civ,
+        symbolic::Lt(civ, total_bound),
+        symbolic::integer(0),
+        symbolic::add(civ, symbolic::integer(1)),
+        outer.schedule_type(),
+        transition.assignments(),
+        outer.debug_info()
+    );
+
+    // Step 6: Recovery block defining the outer index and the virtual inner index:
+    //   outer_indvar = civ / inner_extent
+    //   inner_index  = civ % inner_extent
+    builder.add_block(collapsed_map.root());
+    auto& recovery_transition = collapsed_map.root().at(0).second;
+    recovery_transition.assignments()[outer_indvar] = symbolic::div(civ, inner_extent);
+    recovery_transition.assignments()[inner_index] = symbolic::mod(civ, inner_extent);
+
+    // Step 7: Move the outer body into the collapsed map (after the recovery block),
+    // preserving order.
+    builder.move_children(outer.root(), collapsed_map.root());
+
+    // Step 8: Process each original body element. Collapsible maps run for the
+    // valid portion of the inner extent (`inner_index < bound`). Every other
+    // ("skipped") element is replicated: it stays a direct child of the collapsed
+    // body and therefore runs on every inner thread. Because a skipped element is
+    // a sibling of the inner maps it cannot reference the inner index, so all
+    // inner threads of an outer iteration execute it identically.
+    for (auto& item : items) {
+        auto* child = item.node;
+        if (item.map != nullptr) {
+            auto inner_iv = item.map->indvar();
+
+            auto& if_else = builder.add_if_else_before(collapsed_map.root(), *child, {}, outer.debug_info());
+            auto& branch = builder.add_case(if_else, symbolic::Lt(inner_index, item.bound), outer.debug_info());
+
+            // Recover the inner induction variable from the virtual index.
+            builder.add_block(branch);
+            branch.at(0).second.assignments()[inner_iv] = inner_index;
+
+            // Move the map body into the guarded branch and drop the empty map shell.
+            builder.move_children(item.map->root(), branch);
+            builder.remove_child(collapsed_map.root(), collapsed_map.root().index(*child));
+        }
+        // Skipped elements are left in place (replicated on every inner thread).
+    }
+
+    // Step 9: Remove the original outer map.
+    transition.assignments().clear();
+    builder.remove_child(*parent, parent->index(outer));
+
+    applied_ = true;
+    collapsed_loop_ = &collapsed_map;
+
+    analysis_manager.invalidate_all();
 }
 
 void MapCollapse::to_json(nlohmann::json& j) const {

@@ -389,6 +389,17 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def("end_for", &PyStructuredSDFGBuilder::end_for)
         .def(
+            "begin_map",
+            &PyStructuredSDFGBuilder::begin_map,
+            py::arg("var"),
+            py::arg("start"),
+            py::arg("end"),
+            py::arg("step"),
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
+        )
+        .def("end_map", &PyStructuredSDFGBuilder::end_map)
+        .def(
             "add_transition",
             &PyStructuredSDFGBuilder::add_transition,
             py::arg("lhs"),

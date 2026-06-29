@@ -95,6 +95,16 @@ public:
 
     void end_for();
 
+    sdfg::structured_control_flow::Map& begin_map(
+        const std::string& var,
+        const std::string& start,
+        const std::string& end,
+        const std::string& step,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void end_map();
+
     void add_transition(
         const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
