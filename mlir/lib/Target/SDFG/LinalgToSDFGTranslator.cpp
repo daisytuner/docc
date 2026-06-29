@@ -32,6 +32,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/pooling_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/element.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -55,7 +56,6 @@ LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, El
     auto& builder = translator.builder();
     auto input1_container = translator.get_or_create_container(input1);
     auto input2_container = translator.get_or_create_container(input2);
-    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
     auto input1_tensor_type = llvm::dyn_cast<TensorType>(input1.getType());
@@ -93,7 +93,18 @@ LogicalResult translateLinalgElementwiseTaskletOp(SDFGTranslator& translator, El
         code = int_code;
     }
 
-    translator.add_reference(output_container, result_container, deb_info);
+    // In-place reuse: if an input is a fresh, single-use matmul output of matching shape, write the
+    // elementwise result into that buffer (e.g. matmul + bias add) instead of allocating a new one.
+    std::string reuse_container = translator.try_inplace_reuse_container(input1, result);
+    if (reuse_container.empty()) {
+        reuse_container = translator.try_inplace_reuse_container(input2, result);
+    }
+    if (!reuse_container.empty()) {
+        translator.add_reference(reuse_container, result_container, deb_info);
+    } else {
+        auto output_container = translator.get_or_copy_output_container(output, deb_info);
+        translator.add_reference(output_container, result_container, deb_info);
+    }
 
     auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
     auto& input1_access = builder.add_access(block, input1_container, deb_info);
@@ -120,7 +131,6 @@ LogicalResult translateLinalgElementwiseCMathOp(SDFGTranslator& translator, Elem
 
     auto& builder = translator.builder();
     auto input_container = translator.get_or_create_container(input);
-    auto output_container = translator.get_or_copy_output_container(output, deb_info);
     auto result_container = translator.get_or_create_container(result);
 
     auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
@@ -129,7 +139,15 @@ LogicalResult translateLinalgElementwiseCMathOp(SDFGTranslator& translator, Elem
     auto element_type = translator.convertType(result_tensor_type.getElementType());
     auto sdfg_tensor = tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*element_type));
 
-    translator.add_reference(output_container, result_container, deb_info);
+    // In-place reuse: if the input is a fresh, single-use matmul output of matching shape, write the
+    // elementwise result into that buffer instead of allocating a new one.
+    std::string reuse_container = translator.try_inplace_reuse_container(input, result);
+    if (!reuse_container.empty()) {
+        translator.add_reference(reuse_container, result_container, deb_info);
+    } else {
+        auto output_container = translator.get_or_copy_output_container(output, deb_info);
+        translator.add_reference(output_container, result_container, deb_info);
+    }
 
     auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
     auto& input_access = builder.add_access(block, input_container, deb_info);
@@ -241,18 +259,36 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
     for (auto input : inputs) {
         input_containers.push_back(translator.get_or_create_container(input));
     }
-    output_containers.reserve(outputs.size());
-    for (auto output : outputs) {
-        output_containers.push_back(translator.get_or_copy_output_container(output, deb_info));
-    }
     result_containers.reserve(results.size());
     for (auto result : results) {
         result_containers.push_back(translator.get_or_create_container(result));
     }
 
-    // Create references
+    // Create references. When the output is written elementwise (identity indexing map), try to
+    // overwrite a fresh, single-use matmul input buffer in place (e.g. matmul + bias add) instead
+    // of allocating a new output, saving a malloc (and its free). The reused input must also be
+    // accessed elementwise (identity indexing map) so the in-place update is correct.
+    output_containers.reserve(outputs.size());
     for (size_t i = 0; i < outputs.size(); i++) {
-        translator.add_reference(output_containers.at(i), result_containers.at(i), deb_info);
+        std::string reuse_container;
+        auto output_map = llvm::cast<AffineMapAttr>(indexing_maps[inputs.size() + i]).getAffineMap();
+        if (output_map.isIdentity()) {
+            for (size_t j = 0; j < inputs.size(); j++) {
+                auto input_map = llvm::cast<AffineMapAttr>(indexing_maps[j]).getAffineMap();
+                if (!input_map.isIdentity()) {
+                    continue;
+                }
+                reuse_container = translator.try_inplace_reuse_container(inputs[j], results[i]);
+                if (!reuse_container.empty()) {
+                    break;
+                }
+            }
+        }
+        if (reuse_container.empty()) {
+            reuse_container = translator.get_or_copy_output_container(outputs[i], deb_info);
+        }
+        output_containers.push_back(reuse_container);
+        translator.add_reference(reuse_container, result_containers.at(i), deb_info);
     }
 
     // Create loops
@@ -390,6 +426,43 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
         }
     }
     translator.exit_sequence(*current_seq);
+
+    return success();
+}
+
+LogicalResult translateSoftmaxOp(SDFGTranslator& translator, linalg::SoftmaxOp* softmax_op) {
+    Value input = softmax_op->getInput();
+    Value output = softmax_op->getOutput();
+    Value result = softmax_op->getResult()[0];
+    int64_t dim = softmax_op->getDimension();
+    auto deb_info = translator.get_debug_info(softmax_op->getOperationName(), softmax_op->getLoc());
+
+    auto& builder = translator.builder();
+    auto input_container = translator.get_or_create_container(input);
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto input_tensor_type = llvm::dyn_cast<TensorType>(input.getType());
+    auto input_tensor_info = translator.get_or_create_tensor_info(input_container, input_tensor_type);
+    auto input_element_type = translator.convertType(input_tensor_type.getElementType());
+    auto input_sdfg_tensor = input_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*input_element_type)
+    );
+
+    auto result_tensor_type = llvm::dyn_cast<TensorType>(result.getType());
+    auto result_tensor_info = translator.get_or_create_tensor_info(result_container, result_tensor_type);
+    auto result_element_type = translator.convertType(result_tensor_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
+    translator.add_reference(output_container, result_container, deb_info);
+
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& input_access = builder.add_access(block, input_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
+    auto& libnode = builder.add_library_node<
+        ::sdfg::math::tensor::SoftmaxNode>(block, deb_info, result_sdfg_tensor->shape(), std::vector<int64_t>({dim}));
+    builder.add_computational_memlet(block, input_access, libnode, "X", {}, *input_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "Y", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -812,6 +885,9 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
         .Case<linalg::PoolingNchwSumOp>([&](linalg::PoolingNchwSumOp pool_op) {
             return translateLinalgPoolingNchwOp(translator, &pool_op, ::sdfg::math::tensor::PoolingMode::Sum);
         })
+        .Case<linalg::SoftmaxOp>([&](linalg::SoftmaxOp softmax_op) {
+            return translateSoftmaxOp(translator, &softmax_op);
+        })
         .Case<linalg::custom::ReLUOp>([&](linalg::custom::ReLUOp relu_op) {
             return translateLinalgCustomReLUOp(translator, &relu_op);
         })
@@ -832,6 +908,27 @@ LogicalResult translateLinalgOp(SDFGTranslator& translator, Operation* op) {
         });
 }
 
+// Returns true iff every use of `result` is a linalg destination-style init operand and there is
+// more than one such use. In that case each consumer copies the buffer for itself, so the fill's
+// own buffer is never read directly and its materialization can be deferred.
+static bool shouldDeferConstantFill(Value result) {
+    int count = 0;
+    for (OpOperand& use : result.getUses()) {
+        auto dps = dyn_cast<DestinationStyleOpInterface>(use.getOwner());
+        if (!dps) {
+            return false;
+        }
+        auto inits = dps.getDpsInits();
+        unsigned begin = inits.getBeginOperandIndex();
+        unsigned end = begin + static_cast<unsigned>(inits.size());
+        if (use.getOperandNumber() < begin || use.getOperandNumber() >= end) {
+            return false;
+        }
+        count++;
+    }
+    return count > 1;
+}
+
 LogicalResult translateLinalgFillOp(SDFGTranslator& translator, linalg::FillOp* op) {
     auto& sequence = translator.insertion_point();
 
@@ -839,6 +936,14 @@ LogicalResult translateLinalgFillOp(SDFGTranslator& translator, linalg::FillOp* 
     Value output = op->output();
     Value result = op->result();
     auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
+
+    // If the fill writes a constant whose result is consumed only as a linalg destination init by
+    // more than one op, defer materialization: record the fill so each consumer regenerates a
+    // freshly-filled array on demand instead of copying from a single shared buffer.
+    if (dyn_cast_or_null<arith::ConstantOp>(value.getDefiningOp()) && shouldDeferConstantFill(result)) {
+        translator.record_constant_fill(result, value);
+        return success();
+    }
 
     auto value_container = translator.get_or_create_container(value);
     auto output_container = translator.get_or_copy_output_container(output, deb_info);
@@ -889,7 +994,9 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
     auto result = op->getResult(0);
     auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
 
-    auto output_container = translator.get_or_copy_output_container(output, deb_info);
+    // The matmul fully overwrites its output (beta=0), so the init copy is dead.
+    auto output_container =
+        translator.get_or_copy_output_container(output, deb_info, /*consumer_overwrites_output=*/true);
     auto result_container = translator.get_or_create_container(result);
 
     translator.add_reference(output_container, result_container, deb_info);
@@ -975,93 +1082,89 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
     return success();
 }
 
-LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::BatchMatmulOp* op) {
-    auto& sequence = translator.insertion_point();
+LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::BatchMatmulOp* batch_matmul_op) {
+    Value lhs = batch_matmul_op->getInputs()[0];
+    Value rhs = batch_matmul_op->getInputs()[1];
+    Value output = batch_matmul_op->getOutputs()[0];
+    Value result = batch_matmul_op->getResults()[0];
+    auto deb_info = translator.get_debug_info(batch_matmul_op->getOperationName(), batch_matmul_op->getLoc());
 
-    auto output = op->getOutputs()[0];
-    auto result = op->getResult(0);
-    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
-
-    auto output_container = translator.get_or_copy_output_container(output, deb_info);
+    // The batch matmul fully overwrites its output (beta=0), so the init copy is dead.
+    auto lhs_container = translator.get_or_create_container(lhs);
+    auto rhs_container = translator.get_or_create_container(rhs);
+    auto output_container =
+        translator.get_or_copy_output_container(output, deb_info, /*consumer_overwrites_output=*/true);
     auto result_container = translator.get_or_create_container(result);
+
+    // Handle LHS tensor info
+    auto lhs_type = llvm::dyn_cast_or_null<TensorType>(lhs.getType());
+    if (!lhs_type || lhs_type.getRank() != 3) {
+        return batch_matmul_op->emitOpError("lhs only supports 3D tensors for now");
+    }
+    auto& lhs_tensor_info = translator.get_or_create_tensor_info(lhs_container, lhs_type);
+    if (lhs_tensor_info.offset() != 0) {
+        return batch_matmul_op->emitOpError("lhs only supports zero offset for now");
+    }
+    auto lhs_element_type = translator.convertType(lhs_type.getElementType());
+    if (!lhs_tensor_info.has_basic_strides() && !lhs_tensor_info.has_transposed_strides_last_two_dims()) {
+        // Only basic strides or transposed in the last two dimensions are supported
+        lhs_container = translator.store_in_c_order(
+            lhs_container, lhs_tensor_info, static_cast<::sdfg::types::Scalar&>(*lhs_element_type), deb_info
+        );
+        lhs_tensor_info = translator.get_or_create_tensor_info(lhs_container, lhs_type);
+        lhs_element_type = translator.convertType(lhs_type.getElementType());
+    }
+    auto lhs_sdfg_tensor = lhs_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*lhs_element_type));
+
+    // Handle RHS tensor info
+    auto rhs_type = llvm::dyn_cast_or_null<TensorType>(rhs.getType());
+    if (!rhs_type || rhs_type.getRank() != 3) {
+        return batch_matmul_op->emitOpError("rhs only supports 3D tensors for now");
+    }
+    auto& rhs_tensor_info = translator.get_or_create_tensor_info(rhs_container, rhs_type);
+    if (rhs_tensor_info.offset() != 0) {
+        return batch_matmul_op->emitOpError("rhs only supports zero offset for now");
+    }
+    auto rhs_element_type = translator.convertType(rhs_type.getElementType());
+    if (!rhs_tensor_info.has_basic_strides() && !rhs_tensor_info.has_transposed_strides_last_two_dims()) {
+        // Only basic strides or transposed in the last two dimensions are supported
+        rhs_container = translator.store_in_c_order(
+            rhs_container, rhs_tensor_info, static_cast<::sdfg::types::Scalar&>(*rhs_element_type), deb_info
+        );
+        rhs_tensor_info = translator.get_or_create_tensor_info(rhs_container, rhs_type);
+        rhs_element_type = translator.convertType(rhs_type.getElementType());
+    }
+    auto rhs_sdfg_tensor = rhs_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*rhs_element_type));
+
+    // Handle result tensor info
+    auto result_type = llvm::dyn_cast_or_null<TensorType>(result.getType());
+    if (!result_type || result_type.getRank() != 3) {
+        return batch_matmul_op->emitOpError("result only supports 3D tensors for now");
+    }
+    auto& result_tensor_info = translator.get_or_create_tensor_info(result_container, result_type);
+    if (result_tensor_info.offset() != 0) {
+        return batch_matmul_op->emitOpError("result only supports zero offset for now");
+    }
+    auto result_element_type = translator.convertType(result_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
 
     translator.add_reference(output_container, result_container, deb_info);
 
-    auto lhs_type = dyn_cast_or_null<RankedTensorType>(op->getOperand(0).getType());
-    auto rhs_type = dyn_cast_or_null<RankedTensorType>(op->getOperand(1).getType());
-    auto output_type = dyn_cast_or_null<RankedTensorType>(op->getResult(0).getType());
-    if (!lhs_type || !rhs_type || !output_type || lhs_type.getRank() != 3 || rhs_type.getRank() != 3 ||
-        output_type.getRank() != 3) {
-        return op->emitError("Only 3D batch matmul is supported for now");
-    }
-
-    auto in_container_lhs = translator.get_or_create_container(op->getOperand(0));
-    auto in_container_rhs = translator.get_or_create_container(op->getOperand(1));
-    auto out_container = translator.get_or_create_container(op->getResult(0));
-
     auto& builder = translator.builder();
-    auto& block = builder.add_block(sequence, {}, deb_info);
-
-    ::sdfg::data_flow::AccessNode* lhs_access = &builder.add_access(block, in_container_lhs, deb_info);
-    ::sdfg::data_flow::AccessNode* rhs_access;
-
-    if (in_container_lhs == in_container_rhs) {
-        rhs_access = lhs_access;
-    } else {
-        rhs_access = &builder.add_access(block, in_container_rhs, deb_info);
-    }
-
-    // Get tensor info after possible reordering
-    auto& tensor_info_lhs = translator.get_or_create_tensor_info(in_container_lhs, lhs_type);
-    auto& tensor_info_rhs = translator.get_or_create_tensor_info(in_container_rhs, rhs_type);
-    auto& tensor_info_out = translator.get_or_create_tensor_info(out_container, output_type);
-
-    if (tensor_info_lhs.offset() != 0 || tensor_info_rhs.offset() != 0 || tensor_info_out.offset() != 0) {
-        return op->emitError("Only tensors with 0 offset are supported for now");
-    }
-
-    ::sdfg::symbolic::MultiExpression shape_lhs;
-    for (auto entry : tensor_info_lhs.shape()) {
-        shape_lhs.push_back(::sdfg::symbolic::integer(entry));
-    }
-    ::sdfg::symbolic::MultiExpression shape_rhs;
-    for (auto entry : tensor_info_rhs.shape()) {
-        shape_rhs.push_back(::sdfg::symbolic::integer(entry));
-    }
-    ::sdfg::symbolic::MultiExpression shape_out;
-    for (auto entry : tensor_info_out.shape()) {
-        shape_out.push_back(::sdfg::symbolic::integer(entry));
-    }
-
-    ::sdfg::symbolic::MultiExpression strides_lhs;
-    for (auto entry : tensor_info_lhs.strides()) {
-        strides_lhs.push_back(::sdfg::symbolic::integer(entry));
-    }
-    ::sdfg::symbolic::MultiExpression strides_rhs;
-    for (auto entry : tensor_info_rhs.strides()) {
-        strides_rhs.push_back(::sdfg::symbolic::integer(entry));
-    }
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
+    auto& rhs_access = (lhs_container == rhs_container) ? lhs_access
+                                                        : builder.add_access(block, rhs_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
 
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::MatMulNode>(
-        block,
-        deb_info,
-        ::sdfg::math::tensor::TensorLayout(shape_lhs, strides_lhs),
-        ::sdfg::math::tensor::TensorLayout(shape_rhs, strides_rhs)
+        block, deb_info, lhs_tensor_info.get_tensor_layout(), rhs_tensor_info.get_tensor_layout()
     );
 
-    auto lhs_primitive_type = translator.convertType(lhs_type)->primitive_type();
-    ::sdfg::types::Tensor lhs_tensor_type(lhs_primitive_type, shape_lhs, strides_lhs);
-    auto rhs_primitive_type = translator.convertType(rhs_type)->primitive_type();
-    ::sdfg::types::Tensor rhs_tensor_type(rhs_primitive_type, shape_rhs, strides_rhs);
-    auto output_primitive_type = translator.convertType(output_type)->primitive_type();
-    ::sdfg::types::Tensor output_tensor_type(output_primitive_type, shape_out);
-
-    builder.add_computational_memlet(block, *lhs_access, libnode, "A", {}, lhs_tensor_type, deb_info);
-    builder.add_computational_memlet(block, *rhs_access, libnode, "B", {}, rhs_tensor_type, deb_info);
-
-    auto& write_access = builder.add_access(block, out_container, deb_info);
-
-    builder.add_computational_memlet(block, write_access, libnode, "Y", {}, output_tensor_type, deb_info);
+    builder.add_computational_memlet(block, lhs_access, libnode, "A", {}, *lhs_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, rhs_access, libnode, "B", {}, *rhs_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "Y", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }

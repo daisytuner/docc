@@ -46,64 +46,46 @@ def test_nussinov(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 5,
                 "MAP": 2,
-                "SEQUENTIAL": 2,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "SEQUENTIAL": 5,
+                "FOR": 3,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 5,
-                "MAP": 2,
-                "SEQUENTIAL": 1,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
                 "VECTORIZE": 1,
-                "GEMM": 0,
-                "DOT": 0,
+                "MAP": 2,
+                "SEQUENTIAL": 4,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "Free": 1,
                 "CPU_PARALLEL": 1,
                 "MAP": 1,
-                "FOR": 4,
-                "Memset": 1,
-                "Malloc": 1,
+                "SEQUENTIAL": 3,
+                "FOR": 3,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 5,
-                "MAP": 2,
-                "SEQUENTIAL": 0,
                 "CUDA": 2,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "SEQUENTIAL": 3,
+                "FOR": 3,
+                "MAP": 2,
+                "CUDAOffloading": 6,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 5,
-                "MAP": 2,
-                "SEQUENTIAL": 0,
                 "ROCM": 2,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "SEQUENTIAL": 3,
+                "FOR": 3,
+                "MAP": 2,
+                "ROCMOffloading": 6,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

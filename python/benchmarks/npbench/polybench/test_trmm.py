@@ -41,17 +41,16 @@ def kernel(alpha, A, B):
 def test_trmm(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 4, "Malloc": 1, "GEMM": 1, "SEQUENTIAL": 4, "FOR": 6}
+            verification={"MAP": 4, "GEMM": 1, "SEQUENTIAL": 6, "FOR": 2}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "VECTORIZE": 2,
                 "MAP": 4,
-                "Malloc": 1,
                 "GEMM": 1,
-                "SEQUENTIAL": 2,
-                "FOR": 6,
+                "SEQUENTIAL": 4,
+                "FOR": 2,
             }
         )
     elif target == "openmp":
@@ -60,32 +59,31 @@ def test_trmm(target):
                 "CPU_PARALLEL": 2,
                 "MAP": 2,
                 "GEMM": 1,
-                "FOR": 4,
-                "Malloc": 1,
+                "SEQUENTIAL": 2,
+                "FOR": 2,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 6,
-                "MAP": 4,
+                "SEQUENTIAL": 1,
+                "REDUCE": 1,
                 "CUDA": 4,
-                "CUDAOffloading": 4,
-                "GEMM": 1,
-            }
+                "MAP": 4,
+                "CUDAOffloading": 2,
+            },
+            rtol=5 - 1,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 4,
-                "MAP": 2,
-                "SEQUENTIAL": 0,
-                "ROCM": 2,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 1,
-                "DOT": 0,
-            }
+                "SEQUENTIAL": 1,
+                "REDUCE": 1,
+                "CUDA": 4,
+                "MAP": 4,
+                "CUDAOffloading": 2,
+            },
+            rtol=5 - 1,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

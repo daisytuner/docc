@@ -45,6 +45,7 @@ def evaluate_hpccg(reference_file: Path, test_file: Path, args) -> float:
     test_final_residual = float(header.split(":")[1].strip())
     assert np.abs(test_final_residual - ref_final_residual) <= 1e-19
 
+
 @pytest.mark.skip(reason="Flaky test")
 def test_HPCCG():
     test_case = Path(__file__).parent / "tests" / "apps" / "HPCCG" / "main.cpp"
@@ -69,7 +70,11 @@ def test_HPCCG():
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "compute_residual.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "ddot.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "generate_matrix.cpp",
-            Path(__file__).parent / "tests" / "apps" / "HPCCG" / "HPC_Sparse_Matrix.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "HPCCG"
+            / "HPC_Sparse_Matrix.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "HPC_sparsemv.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "HPCCG.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "mytimer.cpp",
@@ -210,8 +215,16 @@ def evaluate_miniFE(reference_file: Path, test_file: Path, args) -> float:
 @pytest.mark.parametrize(
     "data_layout, precision",
     [
-        pytest.param("MINIFE_CSR_MATRIX", "float", marks=pytest.mark.xfail(reason="Compilation segfaults")),
-        pytest.param("MINIFE_ELL_MATRIX", "float", marks=pytest.mark.xfail(reason="Compilation segfaults")),
+        pytest.param(
+            "MINIFE_CSR_MATRIX",
+            "float",
+            marks=pytest.mark.xfail(reason="Compilation segfaults"),
+        ),
+        pytest.param(
+            "MINIFE_ELL_MATRIX",
+            "float",
+            marks=pytest.mark.xfail(reason="Compilation segfaults"),
+        ),
     ],
 )
 def test_miniFE(data_layout, precision):
@@ -249,11 +262,19 @@ def test_miniFE(data_layout, precision):
             "-g",
             "-fopenmp",
             "-I"
-            + str((Path(__file__).parent / "tests" / "apps" / "miniFE" / "src").absolute()),
+            + str(
+                (Path(__file__).parent / "tests" / "apps" / "miniFE" / "src").absolute()
+            ),
             "-I"
-            + str((Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils").absolute()),
+            + str(
+                (
+                    Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils"
+                ).absolute()
+            ),
             "-I"
-            + str((Path(__file__).parent / "tests" / "apps" / "miniFE" / "fem").absolute()),
+            + str(
+                (Path(__file__).parent / "tests" / "apps" / "miniFE" / "fem").absolute()
+            ),
             "-DMINIFE_SCALAR=" + precision,
             "-DMINIFE_LOCAL_ORDINAL=int",
             "-DMINIFE_GLOBAL_ORDINAL=int",
@@ -263,12 +284,37 @@ def test_miniFE(data_layout, precision):
         ],
         "openmp",
         [
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils" / "param_utils.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "utils"
+            / "param_utils.cpp",
             Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils" / "utils.cpp",
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils" / "mytimer.cpp",
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "src" / "YAML_Element.cpp",
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "src" / "YAML_Doc.cpp",
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "basic" / "BoxPartition.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "utils"
+            / "mytimer.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "src"
+            / "YAML_Element.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "src"
+            / "YAML_Doc.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "basic"
+            / "BoxPartition.cpp",
         ],
         partial(
             evaluate_miniFE,
@@ -278,6 +324,7 @@ def test_miniFE(data_layout, precision):
         docc_flags=["-docc-lower-invoke"],
     )
     runner.run(timeout=1500)
+
 
 def evaluate_miniAMR2(reference_file: Path, test_file: Path, args) -> float:
     cmd = [reference_file] + args
@@ -382,9 +429,10 @@ def test_miniAMR2():
                 "16",
             ],
         ),
-        sdfg_verification=verifier
+        sdfg_verification=verifier,
     )
     runner.run()
+
 
 def evaluate_cloudsc(reference_file: Path, test_file: Path, args) -> float:
     cmd = [reference_file] + args
@@ -407,19 +455,21 @@ def evaluate_cloudsc(reference_file: Path, test_file: Path, args) -> float:
     stdout, stderr = process.communicate()
     assert process.returncode == 0
 
+
 @pytest.mark.skip(reason="Compile time")
 def test_cloudsc():
-    test_case = Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "dwarf_cloudsc.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "dwarf_cloudsc.c"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 48,
-            "MAP": 3,
-            "FOR": 57,
-            "WHILE": 24,
-            "SEQUENTIAL": 3,
-            "Malloc": 13,
-            "Free": 7,
+            "WHILE": 59,
+            "FOR": 21,
+            "SEQUENTIAL": 21,
+            "MAP": 1,
+            "CPU_PARALLEL": 1,
         }
     )
     runner = TestRunner(
@@ -427,17 +477,64 @@ def test_cloudsc():
         test_case,
         "docc",
         "clang-19",
-        ["-O3", "-g", "-fopenmp", "-DHAVE_HDF5", "-I/usr/include/hdf5/serial", "-lhdf5_serial"],
+        [
+            "-O3",
+            "-g",
+            "-fopenmp",
+            "-DHAVE_HDF5",
+            "-I/usr/include/hdf5/serial",
+            "-lhdf5_serial",
+        ],
         "openmp",
         [
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "cloudsc_c.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "cloudsc_driver.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "cloudsc_validate.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "load_state.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "mycpu.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "yoecldp_c.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "yoethf_c.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "yomcst_c.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "cloudsc_c.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "cloudsc_driver.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "cloudsc_validate.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "load_state.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "mycpu.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "yoecldp_c.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "yoethf_c.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "yomcst_c.c",
         ],
         partial(
             evaluate_cloudsc,
@@ -447,6 +544,6 @@ def test_cloudsc():
                 "128",
             ],
         ),
-        sdfg_verification=verifier
+        sdfg_verification=verifier,
     )
     runner.run()

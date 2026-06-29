@@ -85,6 +85,12 @@ size_t Element::element_id() const { return this->element_id_; };
 
 const DebugInfo& Element::debug_info() const { return this->debug_info_; };
 
-void Element::set_debug_info(const DebugInfo& debug_info) { this->debug_info_ = debug_info; };
+void Element::set_debug_info(const DebugInfo& debug_info) { this->debug_info_ = debug_info; }
+
+void Element::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& pair : replacements) {
+        replace(pair.first, pair.second);
+    }
+};
 
 } // namespace sdfg

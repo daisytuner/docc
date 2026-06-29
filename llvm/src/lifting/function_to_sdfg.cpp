@@ -819,11 +819,11 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
 
     dump_structured_sdfg(builder_opt.subject(), "14.dde");
 
-    // Convert for loops into maps
-    sdfg::passes::For2MapPass map_conversion_pass;
+    // Convert for loops into maps and reductions
+    sdfg::passes::ForClassificationPass map_conversion_pass;
     map_conversion_pass.run(builder_opt, analysis_manager);
 
-    dump_structured_sdfg(builder_opt.subject(), "15.for2map");
+    dump_structured_sdfg(builder_opt.subject(), "15.for_classification");
 
     // Move code out of maps where possible
     code_motion.run(builder_opt, analysis_manager);

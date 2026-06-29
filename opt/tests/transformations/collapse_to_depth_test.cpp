@@ -5,6 +5,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/symbolic/symbolic.h"
 
 using namespace sdfg;
 
@@ -380,8 +381,8 @@ TEST(CollapseToDepthTest, Apply_3D_Target2_Structure) {
 }
 
 TEST(CollapseToDepthTest, Apply_4D_Target2_Structure) {
-    // 4D → 2 loops: outer_count = (4+1)/2 = 2, inner_count = 2 (even split)
-    // Outer (i,j) collapsed, inner (k,l) collapsed.
+    // 4D → 2 loops: outer_count = ceil((4+1)/2) = 3, inner_count = 1 (uneven split)
+    // Outer (i,j,k) collapsed, inner (l) collapsed.
     builder::StructuredSDFGBuilder builder("test", FunctionType_CPU);
     auto& outer = build_4d_nest(builder);
 
@@ -404,13 +405,14 @@ TEST(CollapseToDepthTest, Apply_4D_Target2_Structure) {
     EXPECT_EQ(builder.subject().root().size(), 1);
     EXPECT_EQ(&builder.subject().root().at(0).first, outer_result);
 
-    // Outer range: [0, N*M)
+    // Outer range: [0, N*M*P)
     auto civ_outer = outer_result->indvar();
-    EXPECT_TRUE(symbolic::eq(outer_result->condition(), symbolic::Lt(civ_outer, symbolic::mul(N, M))));
+    EXPECT_TRUE(symbolic::eq(outer_result->condition(), symbolic::Lt(civ_outer, symbolic::mul(symbolic::mul(N, M), P)))
+    );
 
-    // Inner range: [0, P*Q)
+    // Inner range: [0, Q)
     auto civ_inner = inner_result->indvar();
-    EXPECT_TRUE(symbolic::eq(inner_result->condition(), symbolic::Lt(civ_inner, symbolic::mul(P, Q))));
+    EXPECT_TRUE(symbolic::eq(inner_result->condition(), symbolic::Lt(civ_inner, Q)));
 
     // Outer body: empty recovery block + inner collapsed map
     EXPECT_EQ(outer_result->root().size(), 2);
@@ -418,30 +420,22 @@ TEST(CollapseToDepthTest, Apply_4D_Target2_Structure) {
     ASSERT_NE(inner_map, nullptr);
     EXPECT_EQ(inner_map, inner_result);
 
-    // Inner body: empty recovery block + original block
-    EXPECT_EQ(inner_result->root().size(), 2);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&inner_result->root().at(1).first) != nullptr);
+    // Inner body: original block (single loop, not collapsed)
+    EXPECT_EQ(inner_result->root().size(), 1);
+    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&inner_result->root().at(0).first) != nullptr);
 
-    // Outer indvar recovery: i = civ_outer / M, j = civ_outer % M
+    // Outer indvar recovery: i = civ_outer / (M*P), j = (civ_outer / P) % M, k = civ_outer % P
     auto i = symbolic::symbol("i");
     auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
     {
         const auto& asgn = outer_result->root().at(0).second.assignments();
         ASSERT_TRUE(asgn.count(i));
         ASSERT_TRUE(asgn.count(j));
-        EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ_outer, M)));
-        EXPECT_TRUE(symbolic::eq(asgn.at(j), symbolic::mod(civ_outer, M)));
-    }
-
-    // Inner indvar recovery: k = civ_inner / Q, l = civ_inner % Q
-    auto k = symbolic::symbol("k");
-    auto l = symbolic::symbol("l");
-    {
-        const auto& asgn = inner_result->root().at(0).second.assignments();
         ASSERT_TRUE(asgn.count(k));
-        ASSERT_TRUE(asgn.count(l));
-        EXPECT_TRUE(symbolic::eq(asgn.at(k), symbolic::div(civ_inner, Q)));
-        EXPECT_TRUE(symbolic::eq(asgn.at(l), symbolic::mod(civ_inner, Q)));
+        EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ_outer, symbolic::mul(M, P))));
+        EXPECT_TRUE(symbolic::eq(asgn.at(j), symbolic::mod(symbolic::div(civ_outer, P), M)));
+        EXPECT_TRUE(symbolic::eq(asgn.at(k), symbolic::mod(civ_outer, P)));
     }
 }
 

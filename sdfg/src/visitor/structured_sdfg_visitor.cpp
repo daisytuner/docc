@@ -51,6 +51,14 @@ bool StructuredSDFGVisitor::visit_internal(structured_control_flow::Sequence& pa
             if (this->visit_internal(map_stmt->root())) {
                 return true;
             }
+        } else if (auto reduce_stmt = dynamic_cast<structured_control_flow::Reduce*>(&current)) {
+            if (this->accept(*reduce_stmt)) {
+                return true;
+            }
+
+            if (this->visit_internal(reduce_stmt->root())) {
+                return true;
+            }
         } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&current)) {
             if (this->accept(*while_stmt)) {
                 return true;
@@ -95,6 +103,8 @@ bool StructuredSDFGVisitor::accept(structured_control_flow::For& node) { return 
 
 bool StructuredSDFGVisitor::accept(structured_control_flow::Map& node) { return false; };
 
+bool StructuredSDFGVisitor::accept(structured_control_flow::Reduce& node) { return false; };
+
 NonStoppingStructuredSDFGVisitor::NonStoppingStructuredSDFGVisitor(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
 )
@@ -127,6 +137,9 @@ bool NonStoppingStructuredSDFGVisitor::visit_internal(structured_control_flow::S
         } else if (auto map_stmt = dynamic_cast<structured_control_flow::Map*>(&current)) {
             applied_ |= this->accept(*map_stmt);
             this->visit_internal(map_stmt->root());
+        } else if (auto reduce_stmt = dynamic_cast<structured_control_flow::Reduce*>(&current)) {
+            applied_ |= this->accept(*reduce_stmt);
+            this->visit_internal(reduce_stmt->root());
         } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&current)) {
             applied_ |= this->accept(*while_stmt);
             this->visit_internal(while_stmt->root());
@@ -156,6 +169,8 @@ bool ActualStructuredSDFGVisitor::dispatch(ControlFlowNode& node) {
         return this->visit(*for_stmt);
     } else if (auto map_stmt = dynamic_cast<structured_control_flow::Map*>(&node)) {
         return this->visit(*map_stmt);
+    } else if (auto reduce_stmt = dynamic_cast<structured_control_flow::Reduce*>(&node)) {
+        return this->visit(*reduce_stmt);
     } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&node)) {
         return this->visit(*while_stmt);
     } else if (auto continue_stmt = dynamic_cast<structured_control_flow::Continue*>(&node)) {
@@ -190,6 +205,7 @@ bool ActualStructuredSDFGVisitor::visit(IfElse& node) {
 }
 bool ActualStructuredSDFGVisitor::visit(For& node) { return handleStructuredLoop(node); }
 bool ActualStructuredSDFGVisitor::visit(Map& node) { return handleStructuredLoop(node); }
+bool ActualStructuredSDFGVisitor::visit(Reduce& node) { return handleStructuredLoop(node); }
 bool ActualStructuredSDFGVisitor::handleStructuredLoop(StructuredLoop& loop) { return visit(loop.root()); }
 bool ActualStructuredSDFGVisitor::visit(While& node) { return visit(node.root()); }
 bool ActualStructuredSDFGVisitor::visit(Continue& node) { return false; }

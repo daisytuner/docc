@@ -11,6 +11,7 @@ option(DOCC_TESTS_ENABLE_DUMP "Enable dumping intermediary files of test cases" 
 set(TEST_FILES
     cuda/blas/cublas_test.cpp
     cuda/cuda_kernel_test.cpp
+    cuda/softmax_dispatcher_test.cpp
     rocm/blas/rocblas_test.cpp
     rocm/rocm_library_nodes_test.cpp
     cuda/cuda_library_nodes_test.cpp
@@ -34,8 +35,11 @@ set(TEST_FILES
     optimizations/diamond_tiling_test.cpp
     optimizations/blocking_test.cpp
     optimizations/gpu_kernels_test.cpp
+    passes/map_fusion_by_domain_pass_test.cpp
+    passes/redundant_load_elimination_pass_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
+    passes/offloading/rocm_library_node_expand_tests.cpp
     passes/offloading/rocm_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_rewriter_pass_test.cpp
     passes/offloading/rocm_library_node_rewriter_pass_test.cpp

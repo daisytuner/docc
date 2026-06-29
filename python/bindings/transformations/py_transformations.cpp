@@ -218,6 +218,21 @@ void register_transformations(py::module& m) {
                 // Record the transformation
                 nlohmann::json desc;
                 transformation.to_json(desc);
+
+                // Enrich each subgraph loop entry with loop_level and map_stack_depth
+                if (desc.contains("subgraph")) {
+                    auto& loop_analysis = analysis_manager.manager().get<sdfg::analysis::LoopAnalysis>();
+                    for (auto& [key, value] : desc["subgraph"].items()) {
+                        if (!value.contains("element_id")) continue;
+                        auto element_id = value["element_id"].get<size_t>();
+                        auto* elem = builder.builder().find_element_by_id(element_id);
+                        if (dynamic_cast<sdfg::structured_control_flow::StructuredLoop*>(elem) == nullptr) continue;
+                        auto* loop = static_cast<sdfg::structured_control_flow::ControlFlowNode*>(elem);
+                        auto loop_info = loop_analysis.loop_info(loop);
+                        value["loop_info"] = loop_info_to_json(loop_info);
+                    }
+                }
+
                 self.history().push_back(desc);
 
                 // Apply the transformation

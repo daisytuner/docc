@@ -198,6 +198,7 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers_DoublePrecisionNoThrow) {
         serializer::LibraryNodeSerializerRegistry::instance(),
         codegen::NodeDispatcherRegistry::instance(),
         codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
         passes::scheduler::SchedulerRegistry::instance()
     };
@@ -267,6 +268,7 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers_SinglePrecisionUsesHandTuned) {
         serializer::LibraryNodeSerializerRegistry::instance(),
         codegen::NodeDispatcherRegistry::instance(),
         codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
         passes::scheduler::SchedulerRegistry::instance()
     };

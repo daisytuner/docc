@@ -7,24 +7,24 @@ namespace sdfg {
 namespace transformations {
 
 /**
- * @brief VectorizeTransform transformation for Map nodes
+ * @brief VectorizeTransform transformation for StructuredLoop nodes
  *
- * This transformation changes the schedule type of a Map from sequential
+ * This transformation changes the schedule type of a StructuredLoop from sequential
  * to vectorized execution (Vectorize). This enables the loop iterations
  * to be executed in a vectorized manner, potentially improving performance on
  * processors.
  *
- * @note Only applicable to Maps with sequential schedule type
+ * @note Only applicable to StructuredLoops with sequential schedule type
  */
 class VectorizeTransform : public Transformation {
-    structured_control_flow::Map& map_;
+    structured_control_flow::StructuredLoop& loop_;
 
 public:
     /**
      * @brief Construct a VectorizeTransform transformation
-     * @param map The map to be vectorized
+     * @param loop The loop to be vectorized
      */
-    VectorizeTransform(structured_control_flow::Map& map);
+    VectorizeTransform(structured_control_flow::StructuredLoop& loop);
 
     /**
      * @brief Get the name of this transformation

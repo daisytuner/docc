@@ -23,6 +23,18 @@ public:
         analysis::AnalysisManager& analysis_manager,
         math::tensor::ConvNode& node
     );
+
+    static bool expand_conv_naive(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        math::tensor::ConvNode& node
+    );
+
+    static bool expand_conv_im2row(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        math::tensor::ConvNode& node
+    );
 };
 } // namespace offloading
 } // namespace sdfg

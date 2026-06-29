@@ -51,6 +51,14 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
             if (this->visit_internal(map_stmt->root())) {
                 return true;
             }
+        } else if (auto reduce_stmt = dynamic_cast<structured_control_flow::Reduce*>(&current)) {
+            if (this->accept(*reduce_stmt)) {
+                return true;
+            }
+
+            if (this->visit_internal(reduce_stmt->root())) {
+                return true;
+            }
         } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&current)) {
             if (this->accept(*while_stmt)) {
                 return true;
@@ -94,6 +102,8 @@ bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Break& node
 bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::For& node) { return false; };
 
 bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Map& node) { return false; };
+
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Reduce& node) { return false; };
 
 } // namespace visitor
 } // namespace sdfg

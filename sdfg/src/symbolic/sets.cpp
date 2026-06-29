@@ -6,6 +6,7 @@
 #include <isl/space.h>
 
 #include "sdfg/symbolic/delinearization.h"
+#include "sdfg/symbolic/polyhedral.h"
 #include "sdfg/symbolic/utils.h"
 
 namespace sdfg {
@@ -29,57 +30,48 @@ bool run_isl_set_query(
     std::string map_1_str = expression_to_map_str(expr1_delinearized, assums1);
     std::string map_2_str = expression_to_map_str(expr2_delinearized, assums2);
 
-    isl_ctx* ctx = isl_ctx_alloc();
-    isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
-
-    isl_map* map_1 = isl_map_read_from_str(ctx, map_1_str.c_str());
-    isl_map* map_2 = isl_map_read_from_str(ctx, map_2_str.c_str());
-    if (!map_1 || !map_2) {
-        if (map_1) {
-            isl_map_free(map_1);
-        }
-        if (map_2) {
-            isl_map_free(map_2);
-        }
-        isl_ctx_free(ctx);
+    polyhedral::IslCtx ctx;
+    if (!ctx) {
         return false;
     }
-    isl_space* params_map1 = isl_space_params(isl_map_get_space(map_1));
-    isl_space* params_map2 = isl_space_params(isl_map_get_space(map_2));
+
+    polyhedral::IslMap map_1(isl_map_read_from_str(ctx.get(), map_1_str.c_str()));
+    polyhedral::IslMap map_2(isl_map_read_from_str(ctx.get(), map_2_str.c_str()));
+    if (!map_1 || !map_2) {
+        return false;
+    }
+    polyhedral::IslSpace params_map1(isl_space_params(isl_map_get_space(map_1.get())));
+    polyhedral::IslSpace params_map2(isl_space_params(isl_map_get_space(map_2.get())));
 
     // Align parameters carefully:
-    isl_space* unified_params = isl_space_align_params(isl_space_copy(params_map1), isl_space_copy(params_map2));
+    polyhedral::IslSpace
+        unified_params(isl_space_align_params(isl_space_copy(params_map1.get()), isl_space_copy(params_map2.get())));
 
     // Align maps to unified params:
-    isl_map* aligned_map_1 = isl_map_align_params(map_1, isl_space_copy(unified_params));
-    isl_map* aligned_map_2 = isl_map_align_params(map_2, isl_space_copy(unified_params));
+    polyhedral::IslMap aligned_map_1(isl_map_align_params(map_1.release(), isl_space_copy(unified_params.get())));
+    polyhedral::IslMap aligned_map_2(isl_map_align_params(map_2.release(), isl_space_copy(unified_params.get())));
 
     // Remove parameters explicitly (project them out)
-    aligned_map_1 = isl_map_project_out(aligned_map_1, isl_dim_param, 0, isl_map_dim(aligned_map_1, isl_dim_param));
-    aligned_map_2 = isl_map_project_out(aligned_map_2, isl_dim_param, 0, isl_map_dim(aligned_map_2, isl_dim_param));
+    int n_param_1 = isl_map_dim(aligned_map_1.get(), isl_dim_param);
+    aligned_map_1.reset(isl_map_project_out(aligned_map_1.release(), isl_dim_param, 0, n_param_1));
+    int n_param_2 = isl_map_dim(aligned_map_2.get(), isl_dim_param);
+    aligned_map_2.reset(isl_map_project_out(aligned_map_2.release(), isl_dim_param, 0, n_param_2));
 
-    canonicalize_map_dims(aligned_map_1, "in_", "out_");
-    canonicalize_map_dims(aligned_map_2, "in_", "out_");
+    canonicalize_map_dims(aligned_map_1.get(), "in_", "out_");
+    canonicalize_map_dims(aligned_map_2.get(), "in_", "out_");
 
-    isl_set* set_1 = isl_map_range(aligned_map_1);
-    isl_set* set_2 = isl_map_range(aligned_map_2);
+    polyhedral::IslSet set_1(isl_map_range(aligned_map_1.release()));
+    polyhedral::IslSet set_2(isl_map_range(aligned_map_2.release()));
 
     bool result = false;
     switch (query) {
         case SetQuery::Subset:
-            result = isl_set_is_subset(set_1, set_2) == isl_bool_true;
+            result = isl_set_is_subset(set_1.get(), set_2.get()) == isl_bool_true;
             break;
         case SetQuery::Disjoint:
-            result = isl_set_is_disjoint(set_1, set_2) == isl_bool_true;
+            result = isl_set_is_disjoint(set_1.get(), set_2.get()) == isl_bool_true;
             break;
     }
-
-    isl_map_free(aligned_map_1);
-    isl_map_free(aligned_map_2);
-    isl_space_free(unified_params);
-    isl_space_free(params_map1);
-    isl_space_free(params_map2);
-    isl_ctx_free(ctx);
 
     return result;
 }

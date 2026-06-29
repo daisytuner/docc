@@ -62,6 +62,19 @@ void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::
             transition2.assignments(),
             inner.debug_info()
         );
+    } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(&inner)) {
+        middle_loop = &builder.add_reduce_before(
+            *parent2,
+            inner,
+            middle_indvar,
+            middle_condition,
+            inner.init(),
+            middle_update,
+            reduce->reductions(),
+            reduce->schedule_type(),
+            transition2.assignments(),
+            inner.debug_info()
+        );
     } else {
         middle_loop = &builder.add_for_before(
             *parent2,

@@ -4,5 +4,6 @@ markers = [
     "slow",
     "etsoc",
     "tenstorrent",
-    "cuda"
+    "cuda",
+    "rocm"
 ]

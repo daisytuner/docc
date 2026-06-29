@@ -45,54 +45,49 @@ def kernel(A, b):
 def test_ludcmp(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "MAP": 3,
-                "SEQUENTIAL": 3,
-                "FOR": 11,
-                "Memset": 2,
-                "Malloc": 2,
-            }
+            verification={"MAP": 2, "REDUCE": 4, "SEQUENTIAL": 10, "FOR": 4}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 2,
-                "MAP": 3,
-                "SEQUENTIAL": 1,
-                "FOR": 11,
-                "Memset": 2,
-                "Malloc": 2,
+                "MAP": 2,
+                "VECTORIZE": 5,
+                "REDUCE": 4,
+                "SEQUENTIAL": 5,
+                "FOR": 4,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "CPU_PARALLEL": 2,
-                "MAP": 3,
-                "SEQUENTIAL": 1,
-                "FOR": 11,
-                "Memset": 2,
-                "Malloc": 2,
+                "CPU_PARALLEL": 1,
+                "MAP": 2,
+                "VECTORIZE": 4,
+                "REDUCE": 4,
+                "SEQUENTIAL": 5,
+                "FOR": 4,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CUDA": 2,
-                "MAP": 3,
-                "SEQUENTIAL": 1,
+                "CUDA": 1,
+                "REDUCE": 4,
+                "SEQUENTIAL": 9,
+                "FOR": 4,
+                "MAP": 2,
                 "CUDAOffloading": 12,
-                "FOR": 11,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 2,
-                "MAP": 3,
-                "SEQUENTIAL": 1,
+                "ROCM": 1,
+                "REDUCE": 4,
+                "SEQUENTIAL": 9,
+                "FOR": 4,
+                "MAP": 2,
                 "ROCMOffloading": 12,
-                "FOR": 11,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

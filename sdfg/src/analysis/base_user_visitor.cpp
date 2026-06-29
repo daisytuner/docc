@@ -74,7 +74,7 @@ bool BaseUserVisitor::visit(sdfg::structured_control_flow::Sequence& node) {
             for (auto& atom : symbolic::atoms(entry.second)) {
                 if (!symbolic::is_nullptr(atom)) {
                     use_as_symbol_read(
-                        atom->get_name(), &node, &transition, SymbolReadLocation::Assignment, i, entry.second
+                        atom->get_name(), &node, &transition, SymbolReadLocation::Assignment, i, entry.first
                     );
                 }
             }

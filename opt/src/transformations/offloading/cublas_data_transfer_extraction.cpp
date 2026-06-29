@@ -344,24 +344,15 @@ void CUBLASDataTransferExtraction::
 
 void CUBLASDataTransferExtraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
-
-    // BLAS nodes are not loops; they appear as generic elements in GNN data.
-    // Use type "unknown" to match the feature extractor's classification.
+    j["parameters"] = nlohmann::json::object();
     j["subgraph"] = {{"0", {{"element_id", this->blas_node_.element_id()}, {"type", "unknown"}}}};
-
-    // Legacy field for backward compatibility.
-    j["blas_node_element_id"] = this->blas_node_.element_id();
 }
 
 CUBLASDataTransferExtraction CUBLASDataTransferExtraction::
     from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
-    size_t blas_node_id;
-    if (j.contains("subgraph")) {
-        const auto& node_desc = j.at("subgraph").at("0");
-        blas_node_id = node_desc.at("element_id").get<size_t>();
-    } else {
-        blas_node_id = j.at("blas_node_element_id").get<size_t>();
-    }
+    const auto& node_desc = j.at("subgraph").at("0");
+    size_t blas_node_id = node_desc.at("element_id").get<size_t>();
+
     auto* blas_node_element = builder.find_element_by_id(blas_node_id);
     if (!blas_node_element) {
         throw transformations::

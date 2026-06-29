@@ -3,6 +3,7 @@ add_mlir_dialect_library(MLIRLinalgCustomTransforms
     CustomRemoveRedundant.cpp
     CustomSpecialize.cpp
     CustomSpecializeBatchNorm.cpp
+    CustomSpecializeSoftmax.cpp
 
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include/mlir/Dialect/Linalg
@@ -16,6 +17,7 @@ add_mlir_dialect_library(MLIRLinalgCustomTransforms
     MLIRIR
     MLIRLinalgCustomDialect
     MLIRLinalgDialect
+    MLIRLinalgTransforms
     MLIRMathDialect
     MLIRPass
     MLIRTensorDialect

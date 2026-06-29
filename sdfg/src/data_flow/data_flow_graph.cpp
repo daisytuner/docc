@@ -60,6 +60,19 @@ const data_flow::Memlet* DataFlowGraph::in_edge(const data_flow::AccessNode& nod
     return &edge;
 }
 
+const data_flow::Memlet* DataFlowGraph::in_edge_if_single(const data_flow::AccessNode& node) const {
+    auto edges = in_edges(node);
+    auto it = edges.begin();
+    if (it == edges.end()) {
+        return nullptr;
+    }
+    const auto& edge = *it;
+    if (++it != edges.end()) {
+        return nullptr;
+    }
+    return &edge;
+}
+
 std::vector<data_flow::Memlet*> DataFlowGraph::in_edges_by_connector(const data_flow::CodeNode& node) {
     std::vector<data_flow::Memlet*> in_edges(node.inputs().size(), nullptr);
     for (auto& iedge : this->in_edges(node)) {
@@ -139,7 +152,17 @@ void DataFlowGraph::replace(const symbolic::Expression old_expression, const sym
     for (auto& edge : this->edges_) {
         edge.second->replace(old_expression, new_expression);
     }
-};
+}
+
+void DataFlowGraph::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& node : this->nodes_) {
+        node.second->replace(replacements);
+    }
+
+    for (auto& edge : this->edges_) {
+        edge.second->replace(replacements);
+    }
+}
 
 /***** Section: Analysis *****/
 

@@ -301,6 +301,63 @@ TEST(LoopAnalysisInfoTest, MixedLoopTypes) {
     EXPECT_FALSE(info.is_elementwise);
 }
 
+TEST(LoopAnalysisInfoTest, MixedLoopTypesWithReduce) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
+    builder.add_container("j", types::Scalar(types::PrimitiveType::Int32));
+    builder.add_container("k", types::Scalar(types::PrimitiveType::Int32));
+    builder.add_container("N", types::Scalar(types::PrimitiveType::Int32));
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    // Outer For
+    auto indvar_i = symbolic::symbol("i");
+    auto update_i = symbolic::add(indvar_i, symbolic::one());
+    auto condition_i = symbolic::Lt(indvar_i, symbolic::symbol("N"));
+    auto init_i = symbolic::zero();
+    auto& loop_for = builder.add_for(root, indvar_i, condition_i, init_i, update_i);
+
+    // Inner Map
+    auto indvar_j = symbolic::symbol("j");
+    auto update_j = symbolic::add(indvar_j, symbolic::one());
+    auto condition_j = symbolic::Lt(indvar_j, symbolic::symbol("N"));
+    auto init_j = symbolic::zero();
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+    auto& loop_map = builder.add_map(loop_for.root(), indvar_j, condition_j, init_j, update_j, schedule);
+
+    // Innermost Reduce
+    auto indvar_k = symbolic::symbol("k");
+    auto update_k = symbolic::add(indvar_k, symbolic::one());
+    auto condition_k = symbolic::Lt(indvar_k, symbolic::symbol("N"));
+    auto init_k = symbolic::zero();
+    auto& loop_reduce = builder.add_reduce(
+        loop_map.root(),
+        indvar_k,
+        condition_k,
+        init_k,
+        update_k,
+        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "k"}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    analysis::AnalysisManager manager(sdfg);
+    auto& loop_analysis = manager.get<analysis::LoopAnalysis>();
+
+    auto info = loop_analysis.loop_info(&loop_for);
+    EXPECT_EQ(info.num_loops, 3);
+    EXPECT_EQ(info.num_fors, 2);
+    EXPECT_EQ(info.num_maps, 1);
+    EXPECT_EQ(info.num_whiles, 0);
+    EXPECT_EQ(info.max_depth, 3);
+
+    // The Reduce subtree reports itself
+    auto info_reduce = loop_analysis.loop_info(&loop_reduce);
+    EXPECT_EQ(info_reduce.num_loops, 1);
+    EXPECT_EQ(info_reduce.num_maps, 0);
+    EXPECT_EQ(info_reduce.num_fors, 1);
+}
+
 TEST(LoopAnalysisInfoTest, NotPerfectlyParallel_MapFor) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));

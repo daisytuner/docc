@@ -51,27 +51,32 @@ def test_spmv(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
-            verification={"DOT": 0, "MAP": 4, "SEQUENTIAL": 4, "FOR": 6, "Malloc": 4}
+            verification={
+                "SEQUENTIAL": 6,
+                "MAP": 4,
+                "REDUCE": 1,
+                "FOR": 1,
+            }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "DOT": 0,
-                "VECTORIZE": 4,
+                "REDUCE": 1,
+                "VECTORIZE": 5,
                 "MAP": 4,
-                "FOR": 6,
-                "Malloc": 4,
+                "SEQUENTIAL": 1,
+                "FOR": 1,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "DOT": 0,
                 "CPU_PARALLEL": 1,
-                "VECTORIZE": 3,
+                "REDUCE": 1,
+                "VECTORIZE": 4,
                 "MAP": 4,
-                "FOR": 6,
-                "Malloc": 4,
+                "SEQUENTIAL": 1,
+                "FOR": 1,
             }
         )
     elif target == "cuda":
@@ -79,9 +84,10 @@ def test_spmv(target):
             verification={
                 "CUDA": 1,
                 "MAP": 4,
+                "REDUCE": 1,
+                "FOR": 1,
                 "CUDAOffloading": 4,
-                "SEQUENTIAL": 3,
-                "FOR": 6,
+                "SEQUENTIAL": 5,
             }
         )
     elif target == "rocm":
@@ -89,9 +95,10 @@ def test_spmv(target):
             verification={
                 "ROCM": 1,
                 "MAP": 4,
+                "REDUCE": 1,
+                "FOR": 1,
                 "ROCMOffloading": 4,
-                "SEQUENTIAL": 3,
-                "FOR": 6,
+                "SEQUENTIAL": 5,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

@@ -24,47 +24,41 @@ def kernel(path):
 def test_floyd_warshall(target):
     verifier = None
     if target == "none":
-        verifier = SDFGVerification(
-            verification={"MAP": 4, "Malloc": 1, "SEQUENTIAL": 4, "FOR": 5}
-        )
+        verifier = SDFGVerification(verification={"MAP": 4, "SEQUENTIAL": 5, "FOR": 1})
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "VECTORIZE": 2,
+                "SEQUENTIAL": 3,
                 "MAP": 4,
-                "SEQUENTIAL": 2,
-                "FOR": 5,
-                "Malloc": 1,
+                "FOR": 1,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={
-                "CPU_PARALLEL": 2,
-                "MAP": 2,
-                "FOR": 3,
-                "Malloc": 1,
-            }
+            verification={"CPU_PARALLEL": 2, "MAP": 2, "SEQUENTIAL": 1, "FOR": 1}
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
                 "CUDA": 4,
+                "SEQUENTIAL": 1,
                 "MAP": 4,
-                "CUDAOffloading": 6,
-                "FOR": 5,
-                "Malloc": 0,
-            }
+                "CUDAOffloading": 2,
+                "FOR": 1,
+            },
+            device_resident=True,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 4,
+                "SEQUENTIAL": 1,
                 "MAP": 4,
-                "ROCMOffloading": 6,
-                "FOR": 5,
-                "Malloc": 0,
-            }
+                "ROCMOffloading": 2,
+                "FOR": 1,
+            },
+            device_resident=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

@@ -3,7 +3,6 @@ import numpy as np
 
 from docc.python import native
 
-
 # =============================================================================
 # Test: Python literals adapt to array (no promotion)
 # =============================================================================

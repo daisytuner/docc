@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "sdfg/symbolic/symbolic.h"
+#include "symengine/subs.h"
 
 namespace sdfg::data_flow {
 
@@ -48,6 +49,7 @@ public:
     MemoryAccessPatternType ref() const;
 
     virtual void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) = 0;
+    virtual void replace(const symbolic::ExpressionMapping& replacements) = 0;
 
     virtual MemoryAccessPatternType clone() const = 0;
 
@@ -71,6 +73,9 @@ public:
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {
         size_ = symbolic::subs(size_, old_expression, new_expression);
     }
+    void replace(const symbolic::ExpressionMapping& replacements) override {
+        size_ = SymEngine::subs(size_, replacements);
+    }
 
     MemoryAccessPatternType clone() const override;
 
@@ -89,6 +94,7 @@ public:
     bool every_element_accessed() const override { return true; }
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {}
+    void replace(const symbolic::ExpressionMapping& replacements) override {}
 
     static MemoryAccessPatternType instance();
 
@@ -134,6 +140,7 @@ public:
     PointerAccessType ref() const;
 
     virtual void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) = 0;
+    virtual void replace(const symbolic::ExpressionMapping& replacements) = 0;
 
     virtual PointerAccessType clone() const = 0;
 
@@ -179,6 +186,7 @@ public:
     MemoryAccessPatternType access_write_pattern() const override;
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
+    void replace(const symbolic::ExpressionMapping& replacements) override;
 
     PointerAccessType clone() const override;
 
@@ -212,6 +220,7 @@ public:
     bool invalidated_after() const override { return false; }
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
+    void replace(const symbolic::ExpressionMapping& replacements) override;
 
     PointerAccessType clone() const override;
 
@@ -249,6 +258,7 @@ public:
     bool invalidated_after() const override { return false; }
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
+    void replace(const symbolic::ExpressionMapping& replacements) override;
 
     PointerAccessType clone() const override;
 
@@ -274,6 +284,7 @@ public:
     MemoryAccessPatternType access_write_pattern() const override { return NoAccessPattern::instance(); }
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {}
+    void replace(const symbolic::ExpressionMapping& replacements) override {}
 
     PointerAccessType clone() const override;
 

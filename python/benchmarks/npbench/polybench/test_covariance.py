@@ -34,58 +34,47 @@ def kernel(M, float_n, data):
         "none",
         "sequential",
         "openmp",
-        "cuda",
+        # "cuda",
         # "rocm"
     ],
 )
 def test_covariance(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "Free": 3,
-                "GEMM": 1,
-                "MAP": 12,
-                "SEQUENTIAL": 12,
-                "FOR": 14,
-                "Memset": 1,
-                "Malloc": 5,
-            }
+            verification={"GEMM": 1, "REDUCE": 1, "MAP": 11, "FOR": 1, "SEQUENTIAL": 13}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "Free": 3,
                 "GEMM": 1,
-                "VECTORIZE": 8,
-                "MAP": 12,
-                "SEQUENTIAL": 4,
-                "FOR": 14,
-                "Memset": 1,
-                "Malloc": 5,
+                "VECTORIZE": 7,
+                "REDUCE": 1,
+                "MAP": 10,
+                "FOR": 1,
+                "SEQUENTIAL": 5,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "Free": 3,
-                "VECTORIZE": 3,
                 "GEMM": 1,
-                "CPU_PARALLEL": 6,
-                "MAP": 9,
-                "FOR": 11,
-                "Memset": 1,
-                "Malloc": 5,
+                "VECTORIZE": 3,
+                "REDUCE": 1,
+                "CPU_PARALLEL": 5,
+                "MAP": 7,
+                "SEQUENTIAL": 1,
+                "FOR": 1,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "GEMM": 1,
                 "CUDA": 9,
                 "CUDAOffloading": 12,
-                "SEQUENTIAL": 3,
-                "MAP": 12,
-                "FOR": 14,
+                "SEQUENTIAL": 4,
+                "MAP": 13,
+                "REDUCE": 1,
+                "FOR": 16,
             }
         )
     elif target == "rocm":

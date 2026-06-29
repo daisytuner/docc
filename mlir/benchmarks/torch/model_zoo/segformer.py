@@ -1,3 +1,5 @@
+import pytest
+
 import torch
 import torch.nn as nn
 import transformers
@@ -37,7 +39,7 @@ def setup_segformer_overlap_patch_embeddings(
         patch_size, stride, num_channels, hidden_size
     )
     model.eval()
-    x = torch.randn(1, num_channels, 512, 512)
+    x = torch.randn(1, num_channels, h, w)
     return model, x
 
 
@@ -601,7 +603,7 @@ class SegformerDecodeHead(nn.Module):
 
 def setup_segformer_decode_head() -> tuple[
     SegformerDecodeHead,
-    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+    tuple[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
 ]:
     model = SegformerDecodeHead()
     model.eval()
@@ -609,7 +611,7 @@ def setup_segformer_decode_head() -> tuple[
     x = torch.randn(1, 64, 64, 64)
     y = torch.randn(1, 160, 32, 32)
     z = torch.randn(1, 256, 16, 16)
-    return model, (w, x, y, z)
+    return model, ((w, x, y, z),)
 
 
 class SegformerForSemanticSegmentation(nn.Module):
@@ -673,18 +675,22 @@ def setup() -> tuple[transformers.SegformerForSemanticSegmentation, torch.Tensor
     return model, x
 
 
+TARGETS = ["sequential", "openmp", "cuda", "rocm"]
+BATCH_SIZES = [1, 4, 16]
+
+
 BENCHMARKS = {
     "default": setup,
-    "segformer.encoder.path_embeddings.0": partial(
+    "segformer.encoder.patch_embeddings.0": partial(
         setup_segformer_overlap_patch_embeddings, 7, 4, 3, 32, 512, 512
     ),
-    "segformer.encoder.path_embeddings.1": partial(
+    "segformer.encoder.patch_embeddings.1": partial(
         setup_segformer_overlap_patch_embeddings, 3, 2, 32, 64, 128, 128
     ),
-    "segformer.encoder.path_embeddings.2": partial(
+    "segformer.encoder.patch_embeddings.2": partial(
         setup_segformer_overlap_patch_embeddings, 3, 2, 64, 160, 64, 64
     ),
-    "segformer.encoder.path_embeddings.3": partial(
+    "segformer.encoder.patch_embeddings.3": partial(
         setup_segformer_overlap_patch_embeddings, 3, 2, 160, 256, 32, 32
     ),
     "segformer.encoder.block.0.0.attention.self": partial(
@@ -824,27 +830,69 @@ if __name__ == "__main__":
     run_benchmark(BENCHMARKS[args.variant], f"segformer {args.variant}")
 
 
-def test_segformer_encoder_path_embeddings_0() -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.0"]()
-    check_backend(model, x)
+@pytest.mark.parametrize("target", TARGETS)
+def test_segformer_encoder_patch_embeddings_0(target) -> None:
+    class SegformerEncoderPatchEmbeddings0(SegformerOverlapPatchEmbeddings):
+        def __init__(self) -> None:
+            super().__init__(7, 4, 3, 32)
+
+        def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+            return SegformerOverlapPatchEmbeddings.forward(self, pixel_values)
+
+    model = SegformerEncoderPatchEmbeddings0()
+    model.eval()
+    x = torch.randn(1, 3, 512, 512)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_path_embeddings_1() -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.1"]()
-    check_backend(model, x)
+@pytest.mark.parametrize("target", TARGETS)
+def test_segformer_encoder_patch_embeddings_1(target) -> None:
+    class SegformerEncoderPatchEmbeddings1(SegformerOverlapPatchEmbeddings):
+        def __init__(self) -> None:
+            super().__init__(3, 2, 32, 64)
+
+        def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+            return SegformerOverlapPatchEmbeddings.forward(self, pixel_values)
+
+    model = SegformerEncoderPatchEmbeddings1()
+    model.eval()
+    x = torch.randn(1, 32, 128, 128)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_path_embeddings_2() -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.2"]()
-    check_backend(model, x)
+@pytest.mark.parametrize("target", TARGETS)
+def test_segformer_encoder_patch_embeddings_2(target) -> None:
+    class SegformerEncoderPatchEmbeddings2(SegformerOverlapPatchEmbeddings):
+        def __init__(self) -> None:
+            super().__init__(3, 2, 64, 160)
+
+        def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+            return SegformerOverlapPatchEmbeddings.forward(self, pixel_values)
+
+    model = SegformerEncoderPatchEmbeddings2()
+    model.eval()
+    x = torch.randn(1, 64, 64, 64)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_path_embeddings_3() -> None:
-    model, x = BENCHMARKS["segformer.encoder.path_embeddings.3"]()
-    check_backend(model, x)
+@pytest.mark.parametrize("target", TARGETS)
+def test_segformer_encoder_patch_embeddings_3(target) -> None:
+    class SegformerEncoderPatchEmbeddings3(SegformerOverlapPatchEmbeddings):
+        def __init__(self) -> None:
+            super().__init__(3, 2, 160, 256)
+
+        def forward(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+            return SegformerOverlapPatchEmbeddings.forward(self, pixel_values)
+
+    model = SegformerEncoderPatchEmbeddings3()
+    model.eval()
+    x = torch.randn(1, 160, 32, 32)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_block_0_0_attention_self() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_0_0_attention_self(target, batch_size) -> None:
     class SegformerEncoderBlock00AttentionSelf(SegformerEfficientSelfAttention):
         def __init__(self) -> None:
             super().__init__(32, 1, 8)
@@ -862,11 +910,13 @@ def test_segformer_encoder_block_0_0_attention_self() -> None:
 
     model = SegformerEncoderBlock00AttentionSelf()
     model.eval()
-    x = (torch.randn(1, 16384, 32), 128, 128)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 16384, 32), 128, 128)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_1_0_attention_self() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_1_0_attention_self(target, batch_size) -> None:
     class SegformerEncoderBlock10AttentionSelf(SegformerEfficientSelfAttention):
         def __init__(self) -> None:
             super().__init__(64, 2, 4)
@@ -884,11 +934,13 @@ def test_segformer_encoder_block_1_0_attention_self() -> None:
 
     model = SegformerEncoderBlock10AttentionSelf()
     model.eval()
-    x = (torch.randn(1, 4096, 64), 64, 64)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 4096, 64), 64, 64)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_2_0_attention_self() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_2_0_attention_self(target, batch_size) -> None:
     class SegformerEncoderBlock20AttentionSelf(SegformerEfficientSelfAttention):
         def __init__(self) -> None:
             super().__init__(160, 5, 2)
@@ -906,11 +958,13 @@ def test_segformer_encoder_block_2_0_attention_self() -> None:
 
     model = SegformerEncoderBlock20AttentionSelf()
     model.eval()
-    x = (torch.randn(1, 1024, 160), 32, 32)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 1024, 160), 32, 32)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_3_0_attention_self() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_3_0_attention_self(target, batch_size) -> None:
     class SegformerEncoderBlock30AttentionSelf(SegformerEfficientSelfAttention):
         def __init__(self) -> None:
             super().__init__(256, 8, 1)
@@ -928,11 +982,13 @@ def test_segformer_encoder_block_3_0_attention_self() -> None:
 
     model = SegformerEncoderBlock30AttentionSelf()
     model.eval()
-    x = (torch.randn(1, 256, 256), 16, 16)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 256, 256), 16, 16)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_0_0_attention_output() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_0_0_attention_output(target, batch_size) -> None:
     class SegformerEncoderBlock00AttentionOutput(SegformerSelfOutput):
         def __init__(self) -> None:
             super().__init__(32)
@@ -944,11 +1000,13 @@ def test_segformer_encoder_block_0_0_attention_output() -> None:
 
     model = SegformerEncoderBlock00AttentionOutput()
     model.eval()
-    x = (torch.randn(1, 16384, 32), torch.randn(1, 16384, 32))
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 16384, 32), torch.randn(batch_size, 16384, 32))
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_1_0_attention_output() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_1_0_attention_output(target, batch_size) -> None:
     class SegformerEncoderBlock10AttentionOutput(SegformerSelfOutput):
         def __init__(self) -> None:
             super().__init__(64)
@@ -960,11 +1018,13 @@ def test_segformer_encoder_block_1_0_attention_output() -> None:
 
     model = SegformerEncoderBlock10AttentionOutput()
     model.eval()
-    x = (torch.randn(1, 4096, 64), torch.randn(1, 4096, 64))
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 4096, 64), torch.randn(batch_size, 4096, 64))
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_2_0_attention_output() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_2_0_attention_output(target, batch_size) -> None:
     class SegformerEncoderBlock20AttentionOutput(SegformerSelfOutput):
         def __init__(self) -> None:
             super().__init__(160)
@@ -976,11 +1036,13 @@ def test_segformer_encoder_block_2_0_attention_output() -> None:
 
     model = SegformerEncoderBlock20AttentionOutput()
     model.eval()
-    x = (torch.randn(1, 1024, 160), torch.randn(1, 1024, 160))
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 1024, 160), torch.randn(batch_size, 1024, 160))
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_3_0_attention_output() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_3_0_attention_output(target, batch_size) -> None:
     class SegformerEncoderBlock30AttentionOutput(SegformerSelfOutput):
         def __init__(self) -> None:
             super().__init__(256)
@@ -992,11 +1054,13 @@ def test_segformer_encoder_block_3_0_attention_output() -> None:
 
     model = SegformerEncoderBlock30AttentionOutput()
     model.eval()
-    x = (torch.randn(1, 256, 256), torch.randn(1, 256, 256))
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 256, 256), torch.randn(batch_size, 256, 256))
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_0_0_attention() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_0_0_attention(target, batch_size) -> None:
     class SegformerEncoderBlock00Attention(SegformerAttention):
         def __init__(self) -> None:
             super().__init__(32, 1, 8)
@@ -1014,11 +1078,13 @@ def test_segformer_encoder_block_0_0_attention() -> None:
 
     model = SegformerEncoderBlock00Attention()
     model.eval()
-    x = (torch.randn(1, 16384, 32), 128, 128)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 16384, 32), 128, 128)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_1_0_attention() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_1_0_attention(target, batch_size) -> None:
     class SegformerEncoderBlock10Attention(SegformerAttention):
         def __init__(self) -> None:
             super().__init__(64, 2, 4)
@@ -1036,11 +1102,13 @@ def test_segformer_encoder_block_1_0_attention() -> None:
 
     model = SegformerEncoderBlock10Attention()
     model.eval()
-    x = (torch.randn(1, 4096, 64), 64, 64)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 4096, 64), 64, 64)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_2_0_attention() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_2_0_attention(target, batch_size) -> None:
     class SegformerEncoderBlock20Attention(SegformerAttention):
         def __init__(self) -> None:
             super().__init__(160, 5, 2)
@@ -1058,11 +1126,13 @@ def test_segformer_encoder_block_2_0_attention() -> None:
 
     model = SegformerEncoderBlock20Attention()
     model.eval()
-    x = (torch.randn(1, 1024, 160), 32, 32)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 1024, 160), 32, 32)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_3_0_attention() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_3_0_attention(target, batch_size) -> None:
     class SegformerEncoderBlock30Attention(SegformerAttention):
         def __init__(self) -> None:
             super().__init__(256, 8, 1)
@@ -1080,11 +1150,13 @@ def test_segformer_encoder_block_3_0_attention() -> None:
 
     model = SegformerEncoderBlock30Attention()
     model.eval()
-    x = (torch.randn(1, 256, 256), 16, 16)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 256, 256), 16, 16)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_0_0_drop_path() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_0_0_drop_path(target, batch_size) -> None:
     class SegformerEncoderBlock00DropPath(SegformerDropPath):
         def __init__(self) -> None:
             super().__init__(0 * (0.1 / 7))
@@ -1094,11 +1166,13 @@ def test_segformer_encoder_block_0_0_drop_path() -> None:
 
     model = SegformerEncoderBlock00DropPath()
     model.eval()
-    x = torch.randn(1, 16384, 32)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 16384, 32)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_block_0_1_drop_path() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_0_1_drop_path(target, batch_size) -> None:
     class SegformerEncoderBlock01DropPath(SegformerDropPath):
         def __init__(self) -> None:
             super().__init__(1 * (0.1 / 7))
@@ -1108,11 +1182,13 @@ def test_segformer_encoder_block_0_1_drop_path() -> None:
 
     model = SegformerEncoderBlock01DropPath()
     model.eval()
-    x = torch.randn(1, 16384, 32)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 16384, 32)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_block_1_0_drop_path() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_1_0_drop_path(target, batch_size) -> None:
     class SegformerEncoderBlock10DropPath(SegformerDropPath):
         def __init__(self) -> None:
             super().__init__(2 * (0.1 / 7))
@@ -1122,11 +1198,13 @@ def test_segformer_encoder_block_1_0_drop_path() -> None:
 
     model = SegformerEncoderBlock10DropPath()
     model.eval()
-    x = torch.randn(1, 4096, 64)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 4096, 64)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_block_1_1_drop_path() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_1_1_drop_path(target, batch_size) -> None:
     class SegformerEncoderBlock11DropPath(SegformerDropPath):
         def __init__(self) -> None:
             super().__init__(3 * (0.1 / 7))
@@ -1136,11 +1214,13 @@ def test_segformer_encoder_block_1_1_drop_path() -> None:
 
     model = SegformerEncoderBlock11DropPath()
     model.eval()
-    x = torch.randn(1, 4096, 64)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 4096, 64)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_block_2_0_drop_path() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_2_0_drop_path(target, batch_size) -> None:
     class SegformerEncoderBlock20DropPath(SegformerDropPath):
         def __init__(self) -> None:
             super().__init__(4 * (0.1 / 7))
@@ -1150,11 +1230,13 @@ def test_segformer_encoder_block_2_0_drop_path() -> None:
 
     model = SegformerEncoderBlock20DropPath()
     model.eval()
-    x = torch.randn(1, 1024, 160)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 1024, 160)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_block_2_1_drop_path() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_2_1_drop_path(target, batch_size) -> None:
     class SegformerEncoderBlock21DropPath(SegformerDropPath):
         def __init__(self) -> None:
             super().__init__(5 * (0.1 / 7))
@@ -1164,11 +1246,13 @@ def test_segformer_encoder_block_2_1_drop_path() -> None:
 
     model = SegformerEncoderBlock21DropPath()
     model.eval()
-    x = torch.randn(1, 1024, 160)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 1024, 160)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_block_3_0_drop_path() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_3_0_drop_path(target, batch_size) -> None:
     class SegformerEncoderBlock30DropPath(SegformerDropPath):
         def __init__(self) -> None:
             super().__init__(6 * (0.1 / 7))
@@ -1178,11 +1262,13 @@ def test_segformer_encoder_block_3_0_drop_path() -> None:
 
     model = SegformerEncoderBlock30DropPath()
     model.eval()
-    x = torch.randn(1, 256, 256)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 256, 256)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_block_3_1_drop_path() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_3_1_drop_path(target, batch_size) -> None:
     class SegformerEncoderBlock31DropPath(SegformerDropPath):
         def __init__(self) -> None:
             super().__init__(7 * (0.1 / 7))
@@ -1192,11 +1278,13 @@ def test_segformer_encoder_block_3_1_drop_path() -> None:
 
     model = SegformerEncoderBlock31DropPath()
     model.eval()
-    x = torch.randn(1, 256, 256)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 256, 256)
+    check_backend(model, x, target=target)
 
 
-def test_segformer_encoder_block_0_0_mlp_dwconv() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_0_0_mlp_dwconv(target, batch_size) -> None:
     class SegformerEncoderBlock00MlpDwconv(SegformerDWConv):
         def __init__(self) -> None:
             super().__init__(128)
@@ -1208,11 +1296,13 @@ def test_segformer_encoder_block_0_0_mlp_dwconv() -> None:
 
     model = SegformerEncoderBlock00MlpDwconv()
     model.eval()
-    x = (torch.randn(1, 16384, 128), 128, 128)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 16384, 128), 128, 128)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_1_0_mlp_dwconv() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_1_0_mlp_dwconv(target, batch_size) -> None:
     class SegformerEncoderBlock10MlpDwconv(SegformerDWConv):
         def __init__(self) -> None:
             super().__init__(256)
@@ -1224,11 +1314,13 @@ def test_segformer_encoder_block_1_0_mlp_dwconv() -> None:
 
     model = SegformerEncoderBlock10MlpDwconv()
     model.eval()
-    x = (torch.randn(1, 4096, 256), 64, 64)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 4096, 256), 64, 64)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_2_0_mlp_dwconv() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_2_0_mlp_dwconv(target, batch_size) -> None:
     class SegformerEncoderBlock20MlpDwconv(SegformerDWConv):
         def __init__(self) -> None:
             super().__init__(640)
@@ -1240,11 +1332,13 @@ def test_segformer_encoder_block_2_0_mlp_dwconv() -> None:
 
     model = SegformerEncoderBlock20MlpDwconv()
     model.eval()
-    x = (torch.randn(1, 1024, 640), 32, 32)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 1024, 640), 32, 32)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_3_0_mlp_dwconv() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_3_0_mlp_dwconv(target, batch_size) -> None:
     class SegformerEncoderBlock30MlpDwconv(SegformerDWConv):
         def __init__(self) -> None:
             super().__init__(1024)
@@ -1256,11 +1350,13 @@ def test_segformer_encoder_block_3_0_mlp_dwconv() -> None:
 
     model = SegformerEncoderBlock30MlpDwconv()
     model.eval()
-    x = (torch.randn(1, 256, 1024), 16, 16)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 256, 1024), 16, 16)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_0_0_mlp() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_0_0_mlp(target, batch_size) -> None:
     class SegformerEncoderBlock00Mlp(SegformerMixFFN):
         def __init__(self) -> None:
             super().__init__(32, 128)
@@ -1272,11 +1368,13 @@ def test_segformer_encoder_block_0_0_mlp() -> None:
 
     model = SegformerEncoderBlock00Mlp()
     model.eval()
-    x = (torch.randn(1, 16384, 32), 128, 128)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 16384, 32), 128, 128)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_1_0_mlp() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_1_0_mlp(target, batch_size) -> None:
     class SegformerEncoderBlock10Mlp(SegformerMixFFN):
         def __init__(self) -> None:
             super().__init__(64, 256)
@@ -1288,11 +1386,13 @@ def test_segformer_encoder_block_1_0_mlp() -> None:
 
     model = SegformerEncoderBlock10Mlp()
     model.eval()
-    x = (torch.randn(1, 4096, 64), 64, 64)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 4096, 64), 64, 64)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_2_0_mlp() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_2_0_mlp(target, batch_size) -> None:
     class SegformerEncoderBlock20Mlp(SegformerMixFFN):
         def __init__(self) -> None:
             super().__init__(160, 640)
@@ -1304,11 +1404,13 @@ def test_segformer_encoder_block_2_0_mlp() -> None:
 
     model = SegformerEncoderBlock20Mlp()
     model.eval()
-    x = (torch.randn(1, 1024, 160), 32, 32)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 1024, 160), 32, 32)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_3_0_mlp() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_3_0_mlp(target, batch_size) -> None:
     class SegformerEncoderBlock30Mlp(SegformerMixFFN):
         def __init__(self) -> None:
             super().__init__(256, 1024)
@@ -1320,11 +1422,13 @@ def test_segformer_encoder_block_3_0_mlp() -> None:
 
     model = SegformerEncoderBlock30Mlp()
     model.eval()
-    x = (torch.randn(1, 256, 256), 16, 16)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 256, 256), 16, 16)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_0_0() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_0_0(target, batch_size) -> None:
     class SegformerEncoderBlock00(SegformerLayer):
         def __init__(self) -> None:
             super().__init__(32, 1, 0 * (0.1 / 7), 8, 4)
@@ -1342,11 +1446,13 @@ def test_segformer_encoder_block_0_0() -> None:
 
     model = SegformerEncoderBlock00()
     model.eval()
-    x = (torch.randn(1, 16384, 32), 128, 128)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 16384, 32), 128, 128)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_0_1() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_0_1(target, batch_size) -> None:
     class SegformerEncoderBlock01(SegformerLayer):
         def __init__(self) -> None:
             super().__init__(32, 1, 1 * (0.1 / 7), 8, 4)
@@ -1364,11 +1470,13 @@ def test_segformer_encoder_block_0_1() -> None:
 
     model = SegformerEncoderBlock01()
     model.eval()
-    x = (torch.randn(1, 16384, 32), 128, 128)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 16384, 32), 128, 128)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_1_0() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_1_0(target, batch_size) -> None:
     class SegformerEncoderBlock10(SegformerLayer):
         def __init__(self) -> None:
             super().__init__(64, 2, 2 * (0.1 / 7), 4, 4)
@@ -1386,11 +1494,13 @@ def test_segformer_encoder_block_1_0() -> None:
 
     model = SegformerEncoderBlock10()
     model.eval()
-    x = (torch.randn(1, 4096, 64), 64, 64)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 4096, 64), 64, 64)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_1_1() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_1_1(target, batch_size) -> None:
     class SegformerEncoderBlock11(SegformerLayer):
         def __init__(self) -> None:
             super().__init__(64, 2, 3 * (0.1 / 7), 4, 4)
@@ -1408,11 +1518,13 @@ def test_segformer_encoder_block_1_1() -> None:
 
     model = SegformerEncoderBlock11()
     model.eval()
-    x = (torch.randn(1, 4096, 64), 64, 64)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 4096, 64), 64, 64)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_2_0() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_2_0(target, batch_size) -> None:
     class SegformerEncoderBlock20(SegformerLayer):
         def __init__(self) -> None:
             super().__init__(160, 5, 4 * (0.1 / 7), 2, 4)
@@ -1430,11 +1542,13 @@ def test_segformer_encoder_block_2_0() -> None:
 
     model = SegformerEncoderBlock20()
     model.eval()
-    x = (torch.randn(1, 1024, 160), 32, 32)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 1024, 160), 32, 32)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_2_1() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_2_1(target, batch_size) -> None:
     class SegformerEncoderBlock21(SegformerLayer):
         def __init__(self) -> None:
             super().__init__(160, 5, 5 * (0.1 / 7), 2, 4)
@@ -1452,11 +1566,13 @@ def test_segformer_encoder_block_2_1() -> None:
 
     model = SegformerEncoderBlock21()
     model.eval()
-    x = (torch.randn(1, 1024, 160), 32, 32)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 1024, 160), 32, 32)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_3_0() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_3_0(target, batch_size) -> None:
     class SegformerEncoderBlock30(SegformerLayer):
         def __init__(self) -> None:
             super().__init__(256, 8, 6 * (0.1 / 7), 1, 4)
@@ -1474,11 +1590,13 @@ def test_segformer_encoder_block_3_0() -> None:
 
     model = SegformerEncoderBlock30()
     model.eval()
-    x = (torch.randn(1, 256, 256), 16, 16)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 256, 256), 16, 16)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder_block_3_1() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_segformer_encoder_block_3_1(target, batch_size) -> None:
     class SegformerEncoderBlock31(SegformerLayer):
         def __init__(self) -> None:
             super().__init__(256, 8, 7 * (0.1 / 7), 1, 4)
@@ -1496,21 +1614,27 @@ def test_segformer_encoder_block_3_1() -> None:
 
     model = SegformerEncoderBlock31()
     model.eval()
-    x = (torch.randn(1, 256, 256), 16, 16)
-    check_backend(model, *x)
+    x = (torch.randn(batch_size, 256, 256), 16, 16)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer_encoder() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.skip(reason="This test is too slow to run in CI")
+def test_segformer_encoder(target) -> None:
     model, x = BENCHMARKS["segformer.encoder"]()
-    check_backend(model, *x)
+    check_backend(model, *x, target=target)
 
 
-def test_segformer() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.skip(reason="This test is too slow to run in CI")
+def test_segformer(target) -> None:
     model, x = BENCHMARKS["segformer"]()
-    check_backend(model, *x)
+    check_backend(model, *x, target=target)
 
 
-def test_decode_head_linear_c_0() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_decode_head_linear_c_0(target, batch_size) -> None:
     class DecodeHeadLinearC0(SegformerMLP):
         def __init__(self) -> None:
             super().__init__(32)
@@ -1520,11 +1644,13 @@ def test_decode_head_linear_c_0() -> None:
 
     model = DecodeHeadLinearC0()
     model.eval()
-    x = torch.randn(1, 32, 128, 128)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 32, 128, 128)
+    check_backend(model, x, target=target)
 
 
-def test_decode_head_linear_c_1() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_decode_head_linear_c_1(target, batch_size) -> None:
     class DecodeHeadLinearC1(SegformerMLP):
         def __init__(self) -> None:
             super().__init__(64)
@@ -1534,11 +1660,13 @@ def test_decode_head_linear_c_1() -> None:
 
     model = DecodeHeadLinearC1()
     model.eval()
-    x = torch.randn(1, 64, 64, 64)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 64, 64, 64)
+    check_backend(model, x, target=target)
 
 
-def test_decode_head_linear_c_2() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_decode_head_linear_c_2(target, batch_size) -> None:
     class DecodeHeadLinearC2(SegformerMLP):
         def __init__(self) -> None:
             super().__init__(160)
@@ -1548,11 +1676,13 @@ def test_decode_head_linear_c_2() -> None:
 
     model = DecodeHeadLinearC2()
     model.eval()
-    x = torch.randn(1, 160, 32, 32)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 160, 32, 32)
+    check_backend(model, x, target=target)
 
 
-def test_decode_head_linear_c_3() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_decode_head_linear_c_3(target, batch_size) -> None:
     class DecodeHeadLinearC3(SegformerMLP):
         def __init__(self) -> None:
             super().__init__(256)
@@ -1562,15 +1692,18 @@ def test_decode_head_linear_c_3() -> None:
 
     model = DecodeHeadLinearC3()
     model.eval()
-    x = torch.randn(1, 256, 16, 16)
-    check_backend(model, x)
+    x = torch.randn(batch_size, 256, 16, 16)
+    check_backend(model, x, target=target)
 
 
-def test_decode_head() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+def test_decode_head(target) -> None:
     model, x = BENCHMARKS["decode_head"]()
-    check_backend(model, x)
+    check_backend(model, *x, target=target)
 
 
-def test_all() -> None:
+@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.skip(reason="This test is too slow to run in CI")
+def test_all(target) -> None:
     model, x = BENCHMARKS["all"]()
-    check_backend(model, x)
+    check_backend(model, x, target=target)

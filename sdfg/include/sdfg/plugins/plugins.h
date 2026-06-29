@@ -6,6 +6,7 @@
 
 #include "sdfg/codegen/dispatchers/map_dispatcher.h"
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
+#include "sdfg/codegen/dispatchers/reduce_dispatcher.h"
 #include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/plugins/targets.h"
 #include "sdfg/serializer/json_serializer.h"
@@ -21,6 +22,7 @@ struct Context {
     // Dispatchers
     codegen::NodeDispatcherRegistry& node_dispatcher_registry;
     codegen::MapDispatcherRegistry& map_dispatcher_registry;
+    codegen::ReduceDispatcherRegistry& reduce_dispatcher_registry;
     codegen::LibraryNodeDispatcherRegistry& library_node_dispatcher_registry;
 
     // Schedulers
@@ -33,6 +35,7 @@ struct Context {
             serializer::LibraryNodeSerializerRegistry::instance(),
             codegen::NodeDispatcherRegistry::instance(),
             codegen::MapDispatcherRegistry::instance(),
+            codegen::ReduceDispatcherRegistry::instance(),
             codegen::LibraryNodeDispatcherRegistry::instance(),
             passes::scheduler::SchedulerRegistry::instance()
         };

@@ -197,7 +197,7 @@ nlohmann::json ROCMDataOffloadingNodeSerializer::serialize(const sdfg::data_flow
     auto j = offloading::DataOffloadingNodeSerializer::serialize(library_node);
 
     // Offloading node properties
-    sdfg::serializer::JSONSerializer serializer;
+    serializer::JSONSerializer serializer;
     j["device_id"] = serializer.expression(node.device_id());
 
     return j;

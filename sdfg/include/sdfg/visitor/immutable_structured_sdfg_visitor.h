@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdfg/analysis/analysis.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_sdfg.h"
 
 namespace sdfg {
@@ -37,6 +38,8 @@ public:
     virtual bool accept(structured_control_flow::Break& node);
 
     virtual bool accept(structured_control_flow::Map& node);
+
+    virtual bool accept(structured_control_flow::Reduce& node);
 };
 
 } // namespace visitor

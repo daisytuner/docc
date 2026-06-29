@@ -345,6 +345,7 @@ public:
      * Replaces occurrences in the subset vector.
      */
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
+    void replace(const symbolic::ExpressionMapping& replacements) override;
 };
 } // namespace data_flow
 } // namespace sdfg

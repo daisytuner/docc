@@ -32,6 +32,7 @@ set(TEST_FILES
     codegen/dispatchers/for_dispatcher_test.cpp
     codegen/dispatchers/if_else_dispatcher_test.cpp
     codegen/dispatchers/map_dispatcher_test.cpp
+    codegen/dispatchers/reduce_dispatcher_test.cpp
     codegen/dispatchers/node_dispatcher_factory_test.cpp
     codegen/dispatchers/node_dispatcher_test.cpp
     codegen/dispatchers/sequence_dispatcher_test.cpp
@@ -84,7 +85,7 @@ set(TEST_FILES
     passes/structured_control_flow/block_fusion_test.cpp
     passes/structured_control_flow/condition_elimination_test.cpp
     passes/structured_control_flow/dead_cfg_elimination_test.cpp
-    passes/structured_control_flow/for2map_test.cpp
+    passes/structured_control_flow/for_classification_test.cpp
     passes/structured_control_flow/pointer_evolution_test.cpp
     passes/debug_info_propagation_test.cpp
     passes/symbolic/symbol_evolution_test.cpp
@@ -103,6 +104,7 @@ set(TEST_FILES
     symbolic/conjunctive_normal_form_test.cpp
     symbolic/extreme_values_test.cpp
     symbolic/maps_test.cpp
+    symbolic/polyhedral_test.cpp
     symbolic/polynomials_test.cpp
     symbolic/symbolic_test.cpp
     symbolic/sets_test.cpp

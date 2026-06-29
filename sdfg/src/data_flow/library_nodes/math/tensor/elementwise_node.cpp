@@ -149,6 +149,12 @@ void ElementWiseDataflowTensorNode::
     }
 }
 
+void ElementWiseDataflowTensorNode::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& dim : shape_) {
+        dim = symbolic::subs(dim, replacements);
+    }
+}
+
 std::pair<structured_control_flow::Sequence*, std::vector<symbolic::Expression>> ElementWiseDataflowTensorNode::
     add_eltwise_scope(
         builder::StructuredSDFGBuilder& builder,

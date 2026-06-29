@@ -54,7 +54,8 @@ nlohmann::json CutoutSerializer::serialize(
         std::string& container = use->container();
 
 
-        if ((arguments.find(container) != arguments.end()) && (arguments.at(container).is_scalar)) {
+        if ((arguments.find(container) != arguments.end()) && (arguments.at(container).is_scalar) &&
+            (arguments.at(container).is_output)) {
             type_to_json(desc, sdfg::codegen::Reference(sdfg.type(container)));
         } else {
             type_to_json(desc, sdfg.type(container));

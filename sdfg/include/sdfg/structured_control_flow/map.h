@@ -16,81 +16,6 @@ class StructuredSDFGBuilder;
 namespace structured_control_flow {
 
 /**
- * @brief Categories of schedule types for Map nodes
- * Defines the high-level classification of scheduling strategies.
- */
-enum class ScheduleTypeCategory { Offloader, Parallelizer, Vectorizer, None };
-
-/**
- * @brief Represents a schedule type for Map nodes
- *
- * ScheduleType encapsulates the execution schedule for Map loops, including
- * the scheduling strategy and associated properties. Different schedule types
- * control how loop iterations are distributed and executed.
- */
-class ScheduleType {
-private:
-    std::unordered_map<std::string, std::string> properties_;
-    std::string value_;
-    ScheduleTypeCategory category_;
-
-public:
-    ScheduleType(std::string value, ScheduleTypeCategory category) : value_(value), category_(category) {}
-
-    /**
-     * @brief Get the schedule type identifier
-     * @return Schedule type string (e.g., "SEQUENTIAL", "CPU_PARALLEL")
-     */
-    const std::string& value() const { return value_; }
-
-    /**
-     * @brief Get all schedule properties
-     * @return Map of property names to values
-     */
-    const std::unordered_map<std::string, std::string>& properties() const { return properties_; }
-
-    /**
-     * @brief Get the schedule type category
-     * @return Schedule type category enum
-     */
-    ScheduleTypeCategory category() const { return category_; }
-
-    /**
-     * @brief Set a schedule property
-     * @param key Property name
-     * @param value Property value
-     */
-    void set_property(const std::string& key, const std::string& value) {
-        if (properties_.find(key) == properties_.end()) {
-            properties_.insert({key, value});
-            return;
-        }
-        properties_.at(key) = value;
-    }
-
-    void operator=(const ScheduleType& rhs) {
-        value_ = rhs.value_;
-        properties_.clear();
-        for (const auto& entry : rhs.properties_) {
-            properties_.insert(entry);
-        }
-        category_ = rhs.category_;
-    }
-};
-
-
-/**
- * @brief Sequential schedule type for Map nodes
- *
- * Indicates that loop iterations execute sequentially in order.
- */
-class ScheduleType_Sequential {
-public:
-    static const std::string value() { return "SEQUENTIAL"; }
-    static ScheduleType create() { return ScheduleType(value(), ScheduleTypeCategory::None); }
-};
-
-/**
  * @brief Represents a parallel map loop with configurable scheduling
  *
  * A Map is a special type of structured loop that can be executed in parallel.
@@ -123,8 +48,6 @@ class Map : public StructuredLoop {
     friend class sdfg::builder::StructuredSDFGBuilder;
 
 private:
-    ScheduleType schedule_type_;
-
     Map(size_t element_id,
         const DebugInfo& debug_info,
         ControlFlowNode* parent,
@@ -141,12 +64,6 @@ public:
     Map& operator=(const Map&) = delete;
 
     void validate(const Function& function) const override;
-
-    /**
-     * @brief Get the scheduling strategy for this Map
-     * @return The schedule type (sequential, parallel, etc.)
-     */
-    const ScheduleType& schedule_type() const;
 };
 
 } // namespace structured_control_flow

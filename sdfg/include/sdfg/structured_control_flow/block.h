@@ -72,6 +72,7 @@ public:
      * @param new_expression Expression to replace with
      */
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
+    void replace(const symbolic::ExpressionMapping& replacements) override;
 
     template<typename T>
     T* is_a_library_node() {

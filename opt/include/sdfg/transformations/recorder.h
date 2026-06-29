@@ -1,8 +1,11 @@
 #pragma once
 
 #include <sdfg/analysis/analysis.h>
+#include <sdfg/analysis/loop_analysis.h>
+#include <sdfg/structured_control_flow/control_flow_node.h>
 #include <sdfg/structured_sdfg.h>
 #include <sdfg/transformations/transformation.h>
+#include <sdfg/transformations/transformation_schema.h>
 
 #include <concepts>
 #include <nlohmann/json.hpp>
@@ -67,6 +70,27 @@ public:
 
         nlohmann::json desc;
         transformation.to_json(desc);
+
+#ifndef NDEBUG
+        std::string schema_error;
+        if (!validate_transformation_schema(desc, schema_error)) {
+            throw InvalidTransformationDescriptionException(
+                "Transformation '" + transformation.name() + "' produced an invalid description: " + schema_error
+            );
+        }
+#endif
+        // Enrich each subgraph loop entry with loop_info
+        auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+        for (auto& [key, value] : desc["subgraph"].items()) {
+            if (!value.contains("element_id")) continue;
+            auto element_id = value["element_id"].get<size_t>();
+            auto* elem = builder.find_element_by_id(element_id);
+            if (dynamic_cast<structured_control_flow::StructuredLoop*>(elem) == nullptr) continue;
+            auto* loop = static_cast<structured_control_flow::ControlFlowNode*>(elem);
+            auto loop_info = loop_analysis.loop_info(loop);
+            value["loop_info"] = loop_info_to_json(loop_info);
+        }
+
         history_.push_back(desc);
 
         transformation.apply(builder, analysis_manager);

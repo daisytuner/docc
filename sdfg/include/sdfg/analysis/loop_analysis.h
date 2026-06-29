@@ -9,19 +9,6 @@ namespace analysis {
 
 class AssumptionsAnalysis;
 
-struct DFSLoopComparator {
-    const std::vector<structured_control_flow::ControlFlowNode*>* loops_order_;
-
-    DFSLoopComparator(const std::vector<structured_control_flow::ControlFlowNode*>* loops_order)
-        : loops_order_(loops_order) {}
-
-    bool operator()(const structured_control_flow::ControlFlowNode* lhs, const structured_control_flow::ControlFlowNode* rhs)
-        const {
-        return std::find(loops_order_->begin(), loops_order_->end(), lhs) <
-               std::find(loops_order_->begin(), loops_order_->end(), rhs);
-    }
-};
-
 #define LOOP_INFO_PROPERTIES              \
     X(int, loopnest_index, -1)            \
     X(sdfg::ElementId, element_id, 0)     \
@@ -60,6 +47,7 @@ struct LoopInfo {
  * And to allow for separate allocation in the future
  */
 struct LocalLoopInfo {
+    enum class LoopType : uint8_t { While, For, Map };
     /**
      * Unique ID for each loop, not just loop nests. Numbered in  pre-order DFS (children will always have higher
      * numbers than their parents)
@@ -71,7 +59,7 @@ struct LocalLoopInfo {
      */
     uint32_t last_child_id;
     uint32_t loop_level;
-    bool is_map;
+    LoopType type;
     bool is_elementwise;
     /**
      * The loop contains anything other than a direct child loop. Be it a block, an additional sequence or multiple
@@ -83,8 +71,6 @@ struct LocalLoopInfo {
      */
     bool contains_side_effects;
 };
-
-typedef std::pair<LocalLoopInfo, LoopInfo> LoopState;
 
 inline nlohmann::json loop_info_to_json(LoopInfo info) {
     nlohmann::json j = nlohmann::json{
@@ -105,6 +91,8 @@ inline nlohmann::json loop_info_to_json(LoopInfo info) {
     return j;
 }
 
+void loop_info_local_to_json(nlohmann::json& j, const LocalLoopInfo& info);
+
 /**
  * A perfectly nested, perfectly parallel loop-nest (only maps, 1 map per level, no instructions other then inside the
  * innermost map) Because you likely want to look at multiple dimensions at once to be more efficient. The stack ends at
@@ -120,12 +108,19 @@ struct MapStack {
 };
 
 class LoopAnalysis : public Analysis {
-private:
-    uint32_t next_loop_id_ = 0;
+public:
+    struct LoopState {
+        LocalLoopInfo local;
+        LoopInfo nest;
+    };
+    struct AggregatedResult {
+        uint32_t last_child_id;
+        LoopInfo nest;
+    };
 
-    std::vector<structured_control_flow::ControlFlowNode*> loops_;
-    std::map<structured_control_flow::ControlFlowNode*, structured_control_flow::ControlFlowNode*, DFSLoopComparator>
-        loop_tree_;
+private:
+    std::vector<structured_control_flow::ControlFlowNode*> loops_; // currently required in Pre-order
+    std::unordered_map<structured_control_flow::ControlFlowNode*, structured_control_flow::ControlFlowNode*> loop_tree_;
     std::unordered_map<structured_control_flow::ControlFlowNode*, std::vector<structured_control_flow::ControlFlowNode*>>
         loop_children_;
 
@@ -141,6 +136,7 @@ private:
      */
     void init_new_loop_info(
         LoopState& info,
+        uint32_t id,
         uint32_t loop_level,
         structured_control_flow::ControlFlowNode* loop,
         structured_control_flow::Map* map,
@@ -156,13 +152,49 @@ private:
 
     std::list<std::vector<sdfg::structured_control_flow::ControlFlowNode*>> loop_tree_paths(
         sdfg::structured_control_flow::ControlFlowNode* loop,
-        const std::map<
+        const std::unordered_map<
             sdfg::structured_control_flow::ControlFlowNode*,
-            sdfg::structured_control_flow::ControlFlowNode*,
-            DFSLoopComparator>& tree
+            sdfg::structured_control_flow::ControlFlowNode*>& tree
     ) const;
 
     LoopState& compute_loop_infos(structured_control_flow::ControlFlowNode* loop);
+
+    /**
+     * Combine the local state of a loop with the already-computed loop-nest infos of its direct
+     * children into a fresh LoopInfo. Does not recurse: all children must already hold up-to-date infos.
+     */
+    AggregatedResult aggregate_loop_info(structured_control_flow::ControlFlowNode* loop) const;
+
+    void reindex_loop_nest_idx();
+
+    /**
+     * Translate a requested child position under `new_parent` into the corresponding index in the
+     * pre-order `loops_` vector where a subtree should be inserted.
+     *
+     * The API only exposes front/back (`start_not_end`), but internally this maps an iterator on the
+     * parent's child list to a `loops_` index, so inserting at an arbitrary child position is a matter
+     * of passing a different iterator. `new_parent` may be nullptr (root / outermost level).
+     */
+    uint32_t child_insertion_index(structured_control_flow::ControlFlowNode* new_parent, bool start_not_end) const;
+
+    /**
+     * Update the indices of the loops in the range of the iterators
+     * Iterators must be from loop_
+     *
+     * Following the insert of removal of loops, the following loops will have wrong loop_idx
+     */
+    void reindex(
+        std::vector<structured_control_flow::ControlFlowNode*>::iterator start,
+        std::vector<structured_control_flow::ControlFlowNode*>::iterator end
+    );
+
+    /**
+     * Propagate changes to the cross-loop infos up to their parents, starting at the given loop and ending at the root
+     * (nullptr). Only changes of top and underneath are expected. And top all children of top are expected to have
+     * already up-to-date loop nest infos
+     * @param top
+     */
+    void propagate_changed_nest_info(std::vector<structured_control_flow::ControlFlowNode*>::iterator top);
 
 public:
     LoopAnalysis(StructuredSDFG& sdfg);
@@ -171,9 +203,22 @@ public:
 
     void run(analysis::AnalysisManager& analysis_manager) override;
 
+    /**
+     * Currently guaranteed to be in Pre-Order
+     */
     const std::vector<structured_control_flow::ControlFlowNode*> loops() const;
 
-    const std::map<structured_control_flow::ControlFlowNode*, structured_control_flow::ControlFlowNode*, DFSLoopComparator>&
+    /**
+     * Loops in Pre-order.
+     * @return This is a live vector. It will change if modifications to LoopAnalysis are processed
+     */
+    const std::vector<structured_control_flow::ControlFlowNode*>& loops_in_pre_order() const;
+
+    /**
+     * Tree of parents of nodes. Not in any stable order. Do NEVER iterate over this.
+     * If you need to iterate over `loops()`
+     */
+    const std::unordered_map<structured_control_flow::ControlFlowNode*, structured_control_flow::ControlFlowNode*>&
     loop_tree() const;
 
     LoopInfo loop_info(structured_control_flow::ControlFlowNode* loop) const;
@@ -200,6 +245,33 @@ public:
     descendants(sdfg::structured_control_flow::ControlFlowNode* loop) const;
 
     void dump_to_file(std::filesystem::path file) const;
+
+    // update with changes
+
+    void copied_loop(
+        structured_control_flow::ControlFlowNode* existing_loop,
+        structured_control_flow::ControlFlowNode* new_parent_loop,
+        structured_control_flow::ControlFlowNode* new_loop,
+        bool start_not_end = false
+
+    );
+
+    void moved_loop(
+        structured_control_flow::ControlFlowNode* existing_loop,
+        structured_control_flow::StructuredLoop* new_parent,
+        bool start_not_end = false
+    );
+
+    void removed_loop(structured_control_flow::ControlFlowNode* existing_loop);
+
+    /**
+     *
+     * @param loop the loop to modify
+     * @param side_effects elements that have sideffects were added to the body of this loop (and not its children)
+     * @param non_perfectly_nested elements other than a loop were added to the body of this loop (block, another
+     * sequence etc.)
+     */
+    void added_local_contents(structured_control_flow::ControlFlowNode* loop, bool side_effects, bool non_perfectly_nested);
 };
 
 } // namespace analysis

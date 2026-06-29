@@ -50,6 +50,7 @@
 #include "sdfg/codegen/instrumentation/arg_capture_plan.h"
 #include "sdfg/codegen/instrumentation/instrumentation_plan.h"
 #include "sdfg/codegen/language_extension.h"
+#include "sdfg/structured_control_flow/reduce.h"
 
 namespace sdfg {
 namespace codegen {
@@ -127,6 +128,48 @@ public:
     }
 
     MapDispatcherFn get_map_dispatcher(std::string schedule_type) const {
+        auto it = factory_map_.find(schedule_type);
+        if (it != factory_map_.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
+    size_t size() const { return factory_map_.size(); }
+};
+
+using ReduceDispatcherFn = std::function<std::unique_ptr<
+    NodeDispatcher>(LanguageExtension&, StructuredSDFG&, analysis::AnalysisManager&, structured_control_flow::Reduce&, InstrumentationPlan&, ArgCapturePlan&)>;
+
+/**
+ * @class ReduceDispatcherRegistry
+ * @brief Registry for reduce-specific dispatchers based on schedule type
+ *
+ * Mirrors @ref MapDispatcherRegistry. A @ref structured_control_flow::Reduce
+ * carries a schedule type (sequential, OpenMP, ...) and this registry maps that
+ * schedule type string to the dispatcher factory that knows how to lower the
+ * reduction for that target.
+ */
+class ReduceDispatcherRegistry {
+private:
+    mutable std::mutex mutex_;
+    std::unordered_map<std::string, ReduceDispatcherFn> factory_map_;
+
+public:
+    static ReduceDispatcherRegistry& instance() {
+        static ReduceDispatcherRegistry registry;
+        return registry;
+    }
+
+    void register_reduce_dispatcher(std::string schedule_type, ReduceDispatcherFn fn) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (factory_map_.find(schedule_type) != factory_map_.end()) {
+            return;
+        }
+        factory_map_[schedule_type] = std::move(fn);
+    }
+
+    ReduceDispatcherFn get_reduce_dispatcher(std::string schedule_type) const {
         auto it = factory_map_.find(schedule_type);
         if (it != factory_map_.end()) {
             return it->second;

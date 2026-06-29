@@ -245,6 +245,36 @@ void DotVisualizer::visualizeMap(const StructuredSDFG& sdfg, const structured_co
     this->last_comp_name_cluster_ = "cluster_" + id;
 }
 
+void DotVisualizer::visualizeReduce(const StructuredSDFG& sdfg, const structured_control_flow::Reduce& reduce_node) {
+    auto id = escapeDotId(reduce_node.element_id(), "reduce_");
+    this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
+    this->stream_.setIndent(this->stream_.indent() + 4);
+    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"";
+    if (show_block_ids) {
+        this->stream_ << "#" << reduce_node.element_id() << " ";
+    }
+    this->stream_ << "reduce [" << reduce_node.schedule_type().value() << "]";
+    bool comma_sep = false;
+    this->stream_ << " {";
+    for (auto& reduction : reduce_node.reductions()) {
+        if (comma_sep) {
+            this->stream_ << ", ";
+        }
+        comma_sep = true;
+        this->stream_ << structured_control_flow::reduction_operation_to_string(reduction.operation) << ": "
+                      << reduction.container;
+    }
+    this->stream_ << "}: ";
+    this->visualizeForBounds(reduce_node.indvar(), reduce_node.init(), reduce_node.condition(), reduce_node.update());
+
+    this->stream_ << "\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    this->visualizeSequence(sdfg, reduce_node.root());
+    this->stream_.setIndent(this->stream_.indent() - 4);
+    this->stream_ << "}" << std::endl;
+    this->last_comp_name_ = id;
+    this->last_comp_name_cluster_ = "cluster_" + id;
+}
+
 void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flow::DataFlowGraph& dfg) {
     this->last_comp_name_cluster_ = "cluster_" + id;
     if (dfg.nodes().empty()) {

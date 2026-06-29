@@ -3,6 +3,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_control_flow/while.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -205,6 +206,126 @@ TEST(MapTest, ScheduleType) {
     );
 
     EXPECT_EQ(map_par.schedule_type().value(), ScheduleType_Sequential::value());
+}
+
+// Test Reduce loop structure and pointers
+TEST(ReduceTest, BasicStructure) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+
+    auto& root = builder.subject().root();
+
+    auto& reduce = builder.add_reduce(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        {ReductionInfo{ReductionOperation::Add, "i"}},
+        ScheduleType_Sequential::create()
+    );
+
+    // Verify reduce is a StructuredLoop
+    EXPECT_TRUE(dynamic_cast<const StructuredLoop*>(&reduce) != nullptr);
+
+    // Verify reduce is a Reduce
+    EXPECT_TRUE(dynamic_cast<const Reduce*>(&reduce) != nullptr);
+}
+
+// Test Reduce parameters
+TEST(ReduceTest, LoopParameters) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+
+    auto& root = builder.subject().root();
+
+    auto indvar = symbolic::symbol("i");
+    auto init = symbolic::integer(0);
+    auto update = symbolic::add(symbolic::symbol("i"), symbolic::integer(1));
+    auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
+
+    auto& reduce = builder.add_reduce(
+        root,
+        indvar,
+        condition,
+        init,
+        update,
+        {ReductionInfo{ReductionOperation::Mul, "i"}},
+        ScheduleType_Sequential::create()
+    );
+
+    // Verify parameters
+    EXPECT_TRUE(symbolic::eq(reduce.indvar(), indvar));
+    EXPECT_TRUE(symbolic::eq(reduce.init(), init));
+    EXPECT_TRUE(symbolic::eq(reduce.update(), update));
+    EXPECT_TRUE(symbolic::eq(reduce.condition(), condition));
+}
+
+// Test Reduce reduction operation
+TEST(ReduceTest, ReductionOperationAccessor) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+
+    auto& root = builder.subject().root();
+
+    auto indvar = symbolic::symbol("i");
+    auto init = symbolic::integer(0);
+    auto update = symbolic::add(symbolic::symbol("i"), symbolic::integer(1));
+    auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10));
+
+    auto& reduce_add = builder.add_reduce(
+        root,
+        indvar,
+        condition,
+        init,
+        update,
+        {ReductionInfo{ReductionOperation::Add, "i"}},
+        ScheduleType_Sequential::create()
+    );
+    ASSERT_EQ(reduce_add.reductions().size(), 1u);
+    EXPECT_EQ(reduce_add.reductions()[0].operation, ReductionOperation::Add);
+    EXPECT_EQ(reduce_add.reductions()[0].container, "i");
+
+    auto& reduce_max = builder.add_reduce(
+        root,
+        indvar,
+        condition,
+        init,
+        update,
+        {ReductionInfo{ReductionOperation::Max, "i"}},
+        ScheduleType_Sequential::create()
+    );
+    ASSERT_EQ(reduce_max.reductions().size(), 1u);
+    EXPECT_EQ(reduce_max.reductions()[0].operation, ReductionOperation::Max);
+    EXPECT_EQ(reduce_max.reductions()[0].container, "i");
+}
+
+// Test Reduce schedule type
+TEST(ReduceTest, ScheduleType) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+
+    auto& root = builder.subject().root();
+
+    auto& reduce_seq = builder.add_reduce(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        {ReductionInfo{ReductionOperation::Add, "i"}},
+        ScheduleType_Sequential::create()
+    );
+
+    EXPECT_EQ(reduce_seq.schedule_type().value(), ScheduleType_Sequential::value());
 }
 
 // Test Break and Continue structures

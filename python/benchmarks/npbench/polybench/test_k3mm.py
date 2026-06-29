@@ -37,65 +37,47 @@ def test_k3mm(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
                 "SEQUENTIAL": 2,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 3,
-                "DOT": 0,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
                 "SEQUENTIAL": 1,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
                 "VECTORIZE": 1,
                 "GEMM": 3,
-                "DOT": 0,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "Free": 3,
                 "CPU_PARALLEL": 1,
-                "FOR": 1,
                 "MAP": 1,
                 "GEMM": 3,
-                "Malloc": 3,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
-                "SEQUENTIAL": 0,
                 "CUDA": 2,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
+                "CUDAOffloading": 6,
                 "GEMM": 3,
-                "DOT": 0,
-            }
+            },
+            device_resident=True,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
-                "SEQUENTIAL": 0,
                 "ROCM": 2,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
+                "ROCMOffloading": 6,
                 "GEMM": 3,
-                "DOT": 0,
-            }
+            },
+            device_resident=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

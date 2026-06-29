@@ -114,6 +114,33 @@ void register_cuda_plugin(plugins::Context& context) {
     );
 
 
+    // Softmax - CUDA with data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        sdfg::math::tensor::LibraryNodeType_Softmax.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::SoftmaxNodeDispatcher_CUDAWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::math::tensor::SoftmaxNode&>(node)
+            );
+        }
+    );
+    // Softmax - CUDA without data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        sdfg::math::tensor::LibraryNodeType_Softmax.value() +
+            "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::SoftmaxNodeDispatcher_CUDAWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::math::tensor::SoftmaxNode&>(node)
+            );
+        }
+    );
+
+
     // Memset - CUDA with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
         sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),

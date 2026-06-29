@@ -50,6 +50,8 @@ public:
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 
     virtual void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
+
+    virtual void replace(const symbolic::ExpressionMapping& replacements) override;
 };
 
 class AssertNodeSerializer : public serializer::LibraryNodeSerializer {

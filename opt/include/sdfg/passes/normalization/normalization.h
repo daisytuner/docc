@@ -23,10 +23,10 @@ inline passes::Pipeline loop_normalization() {
     return pipeline;
 }
 
-inline passes::Pipeline map_fusion() {
+inline passes::Pipeline map_fusion(bool allow_init_hoist = true) {
     passes::Pipeline p("MapFusion");
 
-    p.register_pass<normalization::MapFusionPass>();
+    p.register_pass<normalization::MapFusionPass>(allow_init_hoist);
     p.register_pass<passes::BlockFusionPass>();
     p.register_pass<passes::DeadDataElimination>(true);
     p.register_pass<passes::DeadCFGElimination>(true);

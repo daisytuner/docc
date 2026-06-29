@@ -94,6 +94,32 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
 
+    // BatchedGEMM - ROCMBLAS with data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::blas::LibraryNodeType_BatchedGEMM.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<blas::BatchedGEMMNodeDispatcher_ROCMBLASWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::BatchedGEMMNode&>(node)
+            );
+        }
+    );
+    // BatchedGEMM - ROCMBLAS without data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::blas::LibraryNodeType_BatchedGEMM.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<blas::BatchedGEMMNodeDispatcher_ROCMBLASWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::BatchedGEMMNode&>(node)
+            );
+        }
+    );
+
+
     // Memset - ROCM with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
         sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
@@ -115,6 +141,32 @@ void register_rocm_plugin(plugins::Context& context) {
            const data_flow::LibraryNode& node) {
             return std::make_unique<rocm::stdlib::MemsetNodeDispatcher_ROCMWithoutTransfers>(
                 language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemsetNode&>(node)
+            );
+        }
+    );
+
+
+    // Memcpy - ROCM with data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        sdfg::stdlib::LibraryNodeType_Memcpy.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<rocm::stdlib::MemcpyNodeDispatcher_ROCMWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemcpyNode&>(node)
+            );
+        }
+    );
+    // Memcpy - ROCM without data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        sdfg::stdlib::LibraryNodeType_Memcpy.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<rocm::stdlib::MemcpyNodeDispatcher_ROCMWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemcpyNode&>(node)
             );
         }
     );

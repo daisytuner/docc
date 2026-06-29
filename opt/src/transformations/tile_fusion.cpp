@@ -1022,11 +1022,15 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
 void TileFusion::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
-    j["subgraph"] = {
-        {"0", {{"element_id", first_map_.element_id()}, {"type", "map"}}},
-        {"1", {{"element_id", second_map_.element_id()}, {"type", "map"}}}
-    };
-    j["parameters"] = {{"radius", radius_}};
+    j["parameters"] = nlohmann::json::object();
+
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], first_map_);
+
+    j["subgraph"]["1"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["1"], second_map_);
 }
 
 TileFusion TileFusion::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {

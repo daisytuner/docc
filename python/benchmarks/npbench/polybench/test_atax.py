@@ -29,63 +29,44 @@ def test_atax(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 1,
                 "MAP": 1,
                 "SEQUENTIAL": 1,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 1,
                 "MAP": 1,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
                 "VECTORIZE": 1,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 1,
                 "MAP": 1,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
                 "CPU_PARALLEL": 1,
-                "VECTORIZE": 0,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CUDA": 1,
-                "FOR": 1,
-                "MAP": 1,
+                "CUDA": 2,
+                "MAP": 2,
+                "REDUCE": 2,
                 "CUDAOffloading": 4,
-                "GEMM": 2,
-                "Malloc": 2,
-            }
+            },
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 1,
-                "FOR": 1,
-                "MAP": 1,
+                "ROCM": 2,
+                "MAP": 2,
+                "REDUCE": 2,
                 "ROCMOffloading": 4,
-                "GEMM": 2,
-                "Malloc": 2,
-            }
+            },
         )
     run_pytest(initialize, kernel, PARAMETERS, target=target, verifier=verifier)
 

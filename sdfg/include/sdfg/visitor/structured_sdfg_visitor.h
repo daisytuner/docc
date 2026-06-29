@@ -2,6 +2,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/structured_control_flow/reduce.h"
 
 namespace sdfg {
 namespace visitor {
@@ -43,6 +44,8 @@ public:
     virtual bool accept(structured_control_flow::Break& node);
 
     virtual bool accept(structured_control_flow::Map& node);
+
+    virtual bool accept(structured_control_flow::Reduce& node);
 };
 
 class NonStoppingStructuredSDFGVisitor : public StructuredSDFGVisitor {
@@ -88,6 +91,8 @@ public:
     virtual bool visit(sdfg::structured_control_flow::For& node);
 
     virtual bool visit(sdfg::structured_control_flow::Map& node);
+
+    virtual bool visit(sdfg::structured_control_flow::Reduce& node);
 
     virtual bool handleStructuredLoop(sdfg::structured_control_flow::StructuredLoop& loop);
 

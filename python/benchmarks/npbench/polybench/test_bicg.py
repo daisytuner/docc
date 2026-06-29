@@ -28,63 +28,44 @@ def test_bicg(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
                 "SEQUENTIAL": 2,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
                 "VECTORIZE": 2,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 2,
                 "MAP": 2,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
                 "CPU_PARALLEL": 2,
-                "VECTORIZE": 0,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "CUDA": 2,
-                "FOR": 2,
-                "MAP": 2,
-                "CUDAOffloading": 8,
-                "GEMM": 2,
-                "Malloc": 2,
-            }
+                "CUDA": 4,
+                "REDUCE": 2,
+                "MAP": 4,
+                "CUDAOffloading": 4,
+            },
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "ROCM": 2,
-                "FOR": 2,
-                "MAP": 2,
-                "ROCMOffloading": 8,
-                "GEMM": 2,
-                "Malloc": 2,
-            }
+                "ROCM": 4,
+                "REDUCE": 2,
+                "MAP": 4,
+                "ROCMOffloading": 4,
+            },
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

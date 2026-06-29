@@ -60,15 +60,45 @@ struct ExposedOffload {
     int read_count = 0;
 };
 
+/**
+ * @brief A device-buffer deallocation site: the FREE-lifecycle offloading node together with the block it lives in.
+ *
+ * Collected for every device container so that a transform aliasing one device buffer onto another (`T = S`) can
+ * reconcile the now-shared storage's deallocations and avoid a double free.
+ */
+struct DeviceFreeSite {
+    structured_control_flow::Block* block;
+    offloading::DataOffloadingNode* node;
+};
+
 class DataTransferEliminationCandidateCollector {
 protected:
     std::vector<std::pair<ExposedOffload, OffloadHolder&>> transfer_reuse_candidates_;
     std::vector<std::pair<ExposedOffload, OffloadHolder&>> empty_malloc_candidates_;
     std::vector<std::pair<ExposedOffload, OffloadHolder&>> redundant_d2h_candidates_;
+    std::unordered_map<std::string, std::vector<DeviceFreeSite>> device_free_sites_;
 
 public:
     void found_transfer_reuse_pair(const ExposedOffload& src, OffloadHolder& dst) {
         transfer_reuse_candidates_.emplace_back(src, dst);
+    }
+
+    void register_device_free(
+        const std::string& container, structured_control_flow::Block* block, offloading::DataOffloadingNode* node
+    ) {
+        auto& sites = device_free_sites_[container];
+        for (const auto& site : sites) {
+            if (site.node == node) {
+                return; // deduplicate: the collecting visitor may see a node more than once
+            }
+        }
+        sites.push_back({block, node});
+    }
+
+    /// All device-buffer free sites for `container`, or nullptr if it is never freed on device.
+    const std::vector<DeviceFreeSite>* device_frees(const std::string& container) const {
+        auto it = device_free_sites_.find(container);
+        return it == device_free_sites_.end() ? nullptr : &it->second;
     }
 
     void found_empty_host_malloc(const ExposedOffload& malloc, OffloadHolder& h2d_transfer) {

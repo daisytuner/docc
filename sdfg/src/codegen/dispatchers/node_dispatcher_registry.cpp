@@ -6,6 +6,7 @@
 #include "sdfg/codegen/dispatchers/for_dispatcher.h"
 #include "sdfg/codegen/dispatchers/if_else_dispatcher.h"
 #include "sdfg/codegen/dispatchers/map_dispatcher.h"
+#include "sdfg/codegen/dispatchers/reduce_dispatcher.h"
 #include "sdfg/codegen/dispatchers/sequence_dispatcher.h"
 #include "sdfg/codegen/dispatchers/while_dispatcher.h"
 
@@ -146,6 +147,24 @@ void register_default_dispatchers() {
         }
     );
     NodeDispatcherRegistry::instance().register_dispatcher(
+        typeid(structured_control_flow::Reduce),
+        [](LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::ControlFlowNode& node,
+           InstrumentationPlan& instrumentation,
+           ArgCapturePlan& arg_capture) {
+            return std::make_unique<SchedTypeReduceDispatcher>(
+                language_extension,
+                sdfg,
+                analysis_manager,
+                static_cast<structured_control_flow::Reduce&>(node),
+                instrumentation,
+                arg_capture
+            );
+        }
+    );
+    NodeDispatcherRegistry::instance().register_dispatcher(
         typeid(structured_control_flow::Return),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -211,6 +230,21 @@ void register_default_dispatchers() {
            ArgCapturePlan& arg_capture) {
             return std::make_unique<
                 SequentialMapDispatcher>(language_extension, sdfg, analysis_manager, node, instrumentation, arg_capture);
+        }
+    );
+
+    /* Reduce dispatchers */
+    ReduceDispatcherRegistry::instance().register_reduce_dispatcher(
+        structured_control_flow::ScheduleType_Sequential::value(),
+        [](LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::Reduce& node,
+           InstrumentationPlan& instrumentation,
+           ArgCapturePlan& arg_capture) {
+            return std::make_unique<SequentialReduceDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation, arg_capture
+            );
         }
     );
 

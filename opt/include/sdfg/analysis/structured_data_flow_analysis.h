@@ -240,11 +240,8 @@ private:
         if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
             return solve(*if_else, in);
         }
-        if (auto* for_loop = dynamic_cast<structured_control_flow::For*>(&node)) {
-            return solve_loop(*for_loop, in);
-        }
-        if (auto* map_loop = dynamic_cast<structured_control_flow::Map*>(&node)) {
-            return solve_loop(*map_loop, in);
+        if (auto* sloop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+            return solve_loop(*sloop, in);
         }
         if (auto* while_loop = dynamic_cast<structured_control_flow::While*>(&node)) {
             return solve(*while_loop, in);

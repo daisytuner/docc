@@ -824,3 +824,50 @@ TEST(DotVisualizerTest, UnstructuredSDFG) {
     visualizer::DotVisualizer viz(sdfg);
     EXPECT_NO_THROW(viz.visualize());
 }
+
+TEST(DotVisualizerTest, reduce) {
+    builder::StructuredSDFGBuilder builder("reduce_sdfg", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("sum", base_desc, true);
+
+    auto indvar = symbolic::symbol("i");
+    auto& reduce = builder.add_reduce(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(indvar, symbolic::integer(1)),
+        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "sum"}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block = builder.add_block(reduce.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& sum_in = builder.add_access(block, "sum");
+    auto& sum_out = builder.add_access(block, "sum");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in1", {indvar}, types::Pointer(base_desc));
+    builder.add_computational_memlet(block, sum_in, tasklet, "_in2", {});
+    builder.add_computational_memlet(block, tasklet, "_out", sum_out, {});
+
+    auto sdfg2 = builder.move();
+
+    visualizer::DotVisualizer dot(*sdfg2);
+    // Previously a Reduce node fell through visualizeNode and threw
+    // "Unsupported control flow node".
+    ASSERT_NO_THROW(dot.visualize());
+
+    const std::string out = dot.getStream().str();
+    EXPECT_NE(out.find("subgraph cluster_" + escapeDotId(reduce.element_id(), "reduce_")), std::string::npos);
+    EXPECT_NE(out.find("reduce [SEQUENTIAL] {add: sum}: i = 0; i < N; i = 1 + i"), std::string::npos);
+}

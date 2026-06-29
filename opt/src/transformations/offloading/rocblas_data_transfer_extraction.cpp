@@ -9,6 +9,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
@@ -208,6 +209,8 @@ bool ROCBLASDataTransferExtraction::
         return true;
     } else if (dynamic_cast<math::blas::GEMMNode*>(&this->blas_node_)) {
         return true;
+    } else if (dynamic_cast<math::blas::BatchedGEMMNode*>(&this->blas_node_)) {
+        return true;
     } else {
         return false;
     }
@@ -301,6 +304,35 @@ void ROCBLASDataTransferExtraction::
         in_access.at("__A").data(dA);
         in_access.at("__B").data(dB);
         in_access.at("__C").data(dC);
+    } else if (auto* batched_gemm_node = dynamic_cast<math::blas::BatchedGEMMNode*>(&this->blas_node_)) {
+        auto elem_size = types::get_contiguous_element_size(type, true);
+        auto a_size =
+            symbolic::mul(symbolic::mul(batched_gemm_node->batch_count(), batched_gemm_node->stride_a()), elem_size);
+        auto b_size =
+            symbolic::mul(symbolic::mul(batched_gemm_node->batch_count(), batched_gemm_node->stride_b()), elem_size);
+        auto c_size =
+            symbolic::mul(symbolic::mul(batched_gemm_node->batch_count(), batched_gemm_node->stride_c()), elem_size);
+
+        auto dA = this->create_device_container(builder, type, a_size);
+        auto dB = this->create_device_container(builder, type, b_size);
+        auto dC = this->create_device_container(builder, type, c_size);
+
+        this->create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__A").data(), dA, a_size, type
+        );
+        this->create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__B").data(), dB, b_size, type
+        );
+        auto c_ptr = in_access.at("__C").data();
+        this->create_copy_to_device_with_allocation(builder, *sequence, *block, c_ptr, dC, c_size, type);
+
+        this->create_copy_from_device_with_deallocation(builder, *sequence, *block, c_ptr, dC, c_size, type);
+        this->create_deallocate(builder, *sequence, *block, dA, type);
+        this->create_deallocate(builder, *sequence, *block, dB, type);
+
+        in_access.at("__A").data(dA);
+        in_access.at("__B").data(dB);
+        in_access.at("__C").data(dC);
     } else {
         throw InvalidSDFGException("ROCBLASDataTransferExtraction: Unsupported BLAS type");
     }
@@ -311,24 +343,16 @@ void ROCBLASDataTransferExtraction::
 
 void ROCBLASDataTransferExtraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
-
-    // BLAS nodes are not loops; they appear as generic elements in GNN data.
-    // Use type "unknown" to match the feature extractor's classification.
+    j["parameters"] = nlohmann::json::object();
     j["subgraph"] = {{"0", {{"element_id", this->blas_node_.element_id()}, {"type", "unknown"}}}};
-
-    // Legacy field for backward compatibility.
-    j["blas_node_element_id"] = this->blas_node_.element_id();
 }
 
 ROCBLASDataTransferExtraction ROCBLASDataTransferExtraction::
     from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     size_t blas_node_id;
-    if (j.contains("subgraph")) {
-        const auto& node_desc = j.at("subgraph").at("0");
-        blas_node_id = node_desc.at("element_id").get<size_t>();
-    } else {
-        blas_node_id = j.at("blas_node_element_id").get<size_t>();
-    }
+    const auto& node_desc = j.at("subgraph").at("0");
+    blas_node_id = node_desc.at("element_id").get<size_t>();
+
     auto* blas_node_element = builder.find_element_by_id(blas_node_id);
     if (!blas_node_element) {
         throw transformations::

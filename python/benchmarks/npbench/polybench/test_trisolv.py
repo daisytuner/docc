@@ -28,68 +28,23 @@ def kernel(L, x, b):
 def test_trisolv(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 2,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"REDUCE": 1, "SEQUENTIAL": 2, "FOR": 1}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 2,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"VECTORIZE": 1, "REDUCE": 1, "SEQUENTIAL": 1, "FOR": 1}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 2,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"VECTORIZE": 1, "REDUCE": 1, "SEQUENTIAL": 1, "FOR": 1}
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 2,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"REDUCE": 1, "SEQUENTIAL": 2, "FOR": 1}
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 2,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "ROCM": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"REDUCE": 1, "SEQUENTIAL": 2, "FOR": 1}
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

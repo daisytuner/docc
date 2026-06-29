@@ -62,6 +62,7 @@ set(SOURCE_FILES
     src/codegen/dispatchers/sequence_dispatcher.cpp
     src/codegen/dispatchers/for_dispatcher.cpp
     src/codegen/dispatchers/map_dispatcher.cpp
+    src/codegen/dispatchers/reduce_dispatcher.cpp
     src/codegen/dispatchers/while_dispatcher.cpp
     src/codegen/loop_report.cpp
     src/control_flow/interstate_edge.cpp
@@ -165,7 +166,7 @@ set(SOURCE_FILES
     src/passes/structured_control_flow/common_assignment_elimination.cpp
     src/passes/structured_control_flow/condition_elimination.cpp
     src/passes/structured_control_flow/dead_cfg_elimination.cpp
-    src/passes/structured_control_flow/for2map.cpp
+    src/passes/structured_control_flow/for_classification.cpp
     src/passes/structured_control_flow/pointer_evolution.cpp
     src/passes/structured_control_flow/sequence_fusion.cpp
     src/passes/structured_control_flow/unify_loop_exits.cpp
@@ -177,6 +178,7 @@ set(SOURCE_FILES
     src/structured_control_flow/for.cpp
     src/structured_control_flow/if_else.cpp
     src/structured_control_flow/map.cpp
+    src/structured_control_flow/reduce.cpp
     src/structured_control_flow/return.cpp
     src/structured_control_flow/sequence.cpp
     src/structured_control_flow/structured_loop.cpp
@@ -186,6 +188,7 @@ set(SOURCE_FILES
     src/symbolic/delinearization.cpp
     src/symbolic/extreme_values.cpp
     src/symbolic/maps.cpp
+    src/symbolic/polyhedral.cpp
     src/symbolic/polynomials.cpp
     src/symbolic/sets.cpp
     src/symbolic/symbolic.cpp

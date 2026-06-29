@@ -24,6 +24,40 @@ TEST(SymbolReplaceTest, AccessNodeTest) {
     EXPECT_EQ(access_node.data(), "scalar_2");
 }
 
+TEST(SymbolReplaceTest, BatchReplaceSequenceToSubsetTest) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    types::Scalar scalar(types::PrimitiveType::Int32);
+    types::Pointer ptr(scalar);
+    builder.add_container("ptr_1", ptr, true);
+    builder.add_container("ptr_2", ptr, true);
+    builder.add_container("a0", scalar, true);
+    builder.add_container("a1", scalar, true);
+    builder.add_container("b0", scalar, true);
+    builder.add_container("b1", scalar, true);
+
+    auto& sdfg = builder.subject();
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& src_node = builder.add_access(block, "ptr_1");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto& dst_node = builder.add_access(block, "ptr_2");
+    auto& memlet_src =
+        builder.add_computational_memlet(block, src_node, tasklet, "_in", {symbolic::parse("3*a0+5-a1")}, ptr);
+    auto& memlet_dst =
+        builder.add_computational_memlet(block, tasklet, "_out", dst_node, {symbolic::parse("5+a0")}, ptr);
+
+    symbolic::ExpressionMapping mapping{
+        {symbolic::symbol("a0"), symbolic::symbol("b0")},
+        {symbolic::symbol("a1"), symbolic::mul(symbolic::symbol("b1"), symbolic::integer(2))}
+    };
+
+    sdfg.root().replace(mapping);
+
+    EXPECT_TRUE(symbolic::eq(memlet_src.subset().at(0), symbolic::parse("3*b0+5-(b1*2)")));
+    EXPECT_TRUE(symbolic::eq(memlet_dst.subset().at(0), symbolic::parse("5+b0")));
+}
+
 /*
 TEST(SymbolReplaceTest, TaskletTest) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);

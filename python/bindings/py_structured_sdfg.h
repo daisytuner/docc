@@ -16,6 +16,8 @@ class PyStructuredSDFG {
 private:
     sdfg::plugins::Context& docc_context_;
     std::unique_ptr<sdfg::StructuredSDFG> sdfg_;
+    bool use_new_fusion_in_simplify_;
+    bool use_new_fusion_in_normalize_;
 
     PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg);
 
@@ -33,6 +35,8 @@ public:
     static PyStructuredSDFG from_sdfg(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG> sdfg);
 
     std::string name() const;
+
+    void set_output_dir(const std::filesystem::path& dir);
 
     sdfg::plugins::Context& docc_context() const;
 
@@ -77,6 +81,18 @@ public:
 
     void schedule(const std::string& target, const std::string& category, bool remote_tuning = false);
     void schedule(const docc::target::TargetOptions& options);
+
+    /**
+     * Run the device-resident argument promotion pass.
+     *
+     * Must be called after scheduling (offloading). If every pointer argument is only used by
+     * boundary offloading nodes, all pointer arguments are flipped to device-resident storage so
+     * that the generated code keeps the data on device (emitting device-to-device transfers).
+     *
+     * @param is_rocm select the ROCm (AMD) backend storage instead of CUDA (NVIDIA)
+     * @return true if the SDFG was promoted to device residency, false otherwise
+     */
+    bool promote_device_residency(bool is_rocm);
 
     /**
      * Build the shared library containing the SDFG
