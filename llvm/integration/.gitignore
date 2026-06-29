@@ -1,3 +1,4 @@
 llvm-test-suite/
 __pycache__
 *.log
+pytestOut/
