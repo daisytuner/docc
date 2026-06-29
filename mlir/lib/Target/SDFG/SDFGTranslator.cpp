@@ -75,6 +75,19 @@ TensorInfo TensorInfo::from_tensor_type(TensorType type) {
     return TensorInfo(std::move(shape), std::move(strides), 0);
 }
 
+bool TensorInfo::has_basic_strides(ArrayRef<int64_t> shape, ArrayRef<int64_t> strides) {
+    auto expected_strides = compute_strides(shape);
+    if (expected_strides.size() != strides.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < expected_strides.size(); ++i) {
+        if (expected_strides[i] != strides[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 TensorInfo TensorInfo::transpose(ArrayRef<int64_t> permutation) const {
     std::vector<int64_t> new_shape;
     std::vector<int64_t> new_strides;
@@ -112,17 +125,24 @@ bool TensorInfo::is_reshape_valid(ArrayRef<int64_t> new_shape) const {
     return has_basic_strides();
 }
 
-bool TensorInfo::has_basic_strides() const {
-    auto expected_strides = compute_strides(shape_);
-    if (expected_strides.size() != strides_.size()) {
+bool TensorInfo::has_basic_strides() const { return has_basic_strides(shape_, strides_); }
+
+bool TensorInfo::has_transposed_strides_last_two_dims() const {
+    auto rank = shape_.size();
+    if (rank < 2) {
         return false;
     }
-    for (size_t i = 0; i < expected_strides.size(); ++i) {
-        if (expected_strides[i] != strides_[i]) {
-            return false;
-        }
+    std::vector<int64_t> new_shape;
+    new_shape.reserve(rank);
+    for (size_t i = 0; i < rank - 2; i++) {
+        new_shape.push_back(shape_[i]);
     }
-    return true;
+    new_shape.push_back(shape_[rank - 1]);
+    new_shape.push_back(shape_[rank - 2]);
+    std::vector<int64_t> transposed_strides(strides_);
+    transposed_strides[rank - 2] = strides_[rank - 1];
+    transposed_strides[rank - 1] = strides_[rank - 2];
+    return has_basic_strides(new_shape, transposed_strides);
 }
 
 TensorInfo TensorInfo::reshape(ArrayRef<int64_t> new_shape) const {
@@ -132,6 +152,10 @@ TensorInfo TensorInfo::reshape(ArrayRef<int64_t> new_shape) const {
 }
 
 std::unique_ptr<::sdfg::types::Tensor> TensorInfo::get_sdfg_tensor(const ::sdfg::types::Scalar& element_type) const {
+    return std::make_unique<::sdfg::types::Tensor>(element_type, get_tensor_layout());
+}
+
+::sdfg::math::tensor::TensorLayout TensorInfo::get_tensor_layout() const {
     ::sdfg::symbolic::MultiExpression shape, strides;
     for (int64_t dim : this->shape_) {
         shape.push_back(::sdfg::symbolic::integer(dim));
@@ -140,7 +164,7 @@ std::unique_ptr<::sdfg::types::Tensor> TensorInfo::get_sdfg_tensor(const ::sdfg:
         strides.push_back(::sdfg::symbolic::integer(stride));
     }
     ::sdfg::symbolic::Expression offset = ::sdfg::symbolic::integer(this->offset_);
-    return std::make_unique<::sdfg::types::Tensor>(element_type, shape, strides, offset);
+    return ::sdfg::math::tensor::TensorLayout(shape, strides, offset);
 }
 
 std::string TensorInfo::shape_str() const {

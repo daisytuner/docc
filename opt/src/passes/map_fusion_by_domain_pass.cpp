@@ -4,6 +4,7 @@
 #include "sdfg/analysis/base_user_visitor.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
+#include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/utils.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
 #include "sdfg/visualizer/dot_visualizer.h"
@@ -14,6 +15,7 @@ namespace sdfg::passes {
 static const symbolic::Symbol lower_indvar_placeholder = symbolic::symbol("__lower_it");
 
 class LoopIndirectAccessFinder : public analysis::BaseUserVisitor {
+    const StructuredSDFG& sdfg_;
     analysis::LoopAnalysis& loop_analysis_;
     std::unordered_map<analysis::ElementId, std::unique_ptr<FusionLoopCandidate>>& fuse_candidates_;
     struct LoopEntry {
@@ -68,10 +70,11 @@ class LoopIndirectAccessFinder : public analysis::BaseUserVisitor {
 
 public:
     LoopIndirectAccessFinder(
+        const StructuredSDFG& sdfg,
         analysis::LoopAnalysis& loops,
         std::unordered_map<analysis::ElementId, std::unique_ptr<FusionLoopCandidate>>& fuse_candidates
     )
-        : loop_analysis_(loops), fuse_candidates_(fuse_candidates) {}
+        : sdfg_(sdfg), loop_analysis_(loops), fuse_candidates_(fuse_candidates) {}
 
     bool visit(sdfg::structured_control_flow::For& node) override {
         auto cand_it = fuse_candidates_.find(node.element_id());
@@ -189,7 +192,9 @@ public:
         const Block& block
     ) override {
         auto current = get_current_loop();
-        if (current && edge.is_src_pointed_to_read()) {
+        if (current && (edge.is_src_address_leak() || edge.is_src_pointed_to_address_leak(sdfg_.type(container)))) {
+            current->fusion_candidate.aliasing_encountered();
+        } else if (current && edge.is_src_pointed_to_read()) {
             found_indirect_arg_access(container, edge, current, false);
         }
     }
@@ -248,7 +253,7 @@ bool MapFusionByDomainPass::run_pass(builder::StructuredSDFGBuilder& builder, an
         }
     }
 
-    LoopIndirectAccessFinder indirect_access_finder(*state.loop_analysis, state.fuse_candidates);
+    LoopIndirectAccessFinder indirect_access_finder(builder.subject(), *state.loop_analysis, state.fuse_candidates);
     indirect_access_finder.dispatch(builder.subject().root());
 
     const std::string* dir = nullptr;
@@ -386,8 +391,16 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
     SymEngine::map_basic_basic indvar_mapping;
     int current_level = -1;
     int last_matched_level = -1;
-    auto first_max_stack_depth = state_.loop_analysis->loop_info(&first).map_stack_depth - 1;
-    auto second_max_stack_depth = state_.loop_analysis->loop_info(&second).map_stack_depth - 1;
+    auto first_info = state_.loop_analysis->loop_info(&first);
+    auto second_info = state_.loop_analysis->loop_info(&second);
+
+    // Skip if both have side effects
+    if (first_info.has_side_effects && second_info.has_side_effects) {
+        return {};
+    }
+
+    auto first_max_stack_depth = first_info.map_stack_depth - 1;
+    auto second_max_stack_depth = second_info.map_stack_depth - 1;
     bool more_first = true;
     bool more_second = true;
     bool fusing_option = true;
@@ -467,9 +480,9 @@ bool MapFusionHandler::
 
 bool MapFusionHandler::
     loop_match(FusionLoopCandidate& first, FusionLoopCandidate& second, SymEngine::map_basic_basic& canonical_indvars) {
-    // if (first.incompatible || second.incompatible) {
-    //     return false;
-    // }
+    if (first.incompatible || second.incompatible) {
+        return false;
+    }
 
     bool lower_match =
         symbolic::eq(first.indvar_boundaries->tight_lower_bound(), second.indvar_boundaries->tight_lower_bound());
@@ -602,6 +615,8 @@ void MapFusionHandler::update_fused_seq(Sequence& sequence, const symbolic::Expr
 bool FusionArg::saw_access_locally() const { return not_understood || subset.has_value(); }
 
 void FusionLoopCandidate::non_indvar_writes() { this->incompatible = true; }
+
+void FusionLoopCandidate::aliasing_encountered() { this->incompatible = true; }
 
 void FusionLoopCandidate::replace(const symbolic::ExpressionMapping& mapping) {
     for (auto& [name, arg] : args) {

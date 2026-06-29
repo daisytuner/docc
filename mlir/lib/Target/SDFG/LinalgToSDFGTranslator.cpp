@@ -1082,95 +1082,89 @@ LogicalResult translateLinalgMatmulOp(SDFGTranslator& translator, linalg::Matmul
     return success();
 }
 
-LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::BatchMatmulOp* op) {
-    auto& sequence = translator.insertion_point();
-
-    auto output = op->getOutputs()[0];
-    auto result = op->getResult(0);
-    auto deb_info = translator.get_debug_info(op->getOperationName(), op->getLoc());
+LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::BatchMatmulOp* batch_matmul_op) {
+    Value lhs = batch_matmul_op->getInputs()[0];
+    Value rhs = batch_matmul_op->getInputs()[1];
+    Value output = batch_matmul_op->getOutputs()[0];
+    Value result = batch_matmul_op->getResults()[0];
+    auto deb_info = translator.get_debug_info(batch_matmul_op->getOperationName(), batch_matmul_op->getLoc());
 
     // The batch matmul fully overwrites its output (beta=0), so the init copy is dead.
+    auto lhs_container = translator.get_or_create_container(lhs);
+    auto rhs_container = translator.get_or_create_container(rhs);
     auto output_container =
         translator.get_or_copy_output_container(output, deb_info, /*consumer_overwrites_output=*/true);
     auto result_container = translator.get_or_create_container(result);
 
+    // Handle LHS tensor info
+    auto lhs_type = llvm::dyn_cast_or_null<TensorType>(lhs.getType());
+    if (!lhs_type || lhs_type.getRank() != 3) {
+        return batch_matmul_op->emitOpError("lhs only supports 3D tensors for now");
+    }
+    auto& lhs_tensor_info = translator.get_or_create_tensor_info(lhs_container, lhs_type);
+    if (lhs_tensor_info.offset() != 0) {
+        return batch_matmul_op->emitOpError("lhs only supports zero offset for now");
+    }
+    auto lhs_element_type = translator.convertType(lhs_type.getElementType());
+    if (!lhs_tensor_info.has_basic_strides() && !lhs_tensor_info.has_transposed_strides_last_two_dims()) {
+        // Only basic strides or transposed in the last two dimensions are supported
+        lhs_container = translator.store_in_c_order(
+            lhs_container, lhs_tensor_info, static_cast<::sdfg::types::Scalar&>(*lhs_element_type), deb_info
+        );
+        lhs_tensor_info = translator.get_or_create_tensor_info(lhs_container, lhs_type);
+        lhs_element_type = translator.convertType(lhs_type.getElementType());
+    }
+    auto lhs_sdfg_tensor = lhs_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*lhs_element_type));
+
+    // Handle RHS tensor info
+    auto rhs_type = llvm::dyn_cast_or_null<TensorType>(rhs.getType());
+    if (!rhs_type || rhs_type.getRank() != 3) {
+        return batch_matmul_op->emitOpError("rhs only supports 3D tensors for now");
+    }
+    auto& rhs_tensor_info = translator.get_or_create_tensor_info(rhs_container, rhs_type);
+    if (rhs_tensor_info.offset() != 0) {
+        return batch_matmul_op->emitOpError("rhs only supports zero offset for now");
+    }
+    auto rhs_element_type = translator.convertType(rhs_type.getElementType());
+    if (!rhs_tensor_info.has_basic_strides() && !rhs_tensor_info.has_transposed_strides_last_two_dims()) {
+        // Only basic strides or transposed in the last two dimensions are supported
+        rhs_container = translator.store_in_c_order(
+            rhs_container, rhs_tensor_info, static_cast<::sdfg::types::Scalar&>(*rhs_element_type), deb_info
+        );
+        rhs_tensor_info = translator.get_or_create_tensor_info(rhs_container, rhs_type);
+        rhs_element_type = translator.convertType(rhs_type.getElementType());
+    }
+    auto rhs_sdfg_tensor = rhs_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*rhs_element_type));
+
+    // Handle result tensor info
+    auto result_type = llvm::dyn_cast_or_null<TensorType>(result.getType());
+    if (!result_type || result_type.getRank() != 3) {
+        return batch_matmul_op->emitOpError("result only supports 3D tensors for now");
+    }
+    auto& result_tensor_info = translator.get_or_create_tensor_info(result_container, result_type);
+    if (result_tensor_info.offset() != 0) {
+        return batch_matmul_op->emitOpError("result only supports zero offset for now");
+    }
+    auto result_element_type = translator.convertType(result_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
     translator.add_reference(output_container, result_container, deb_info);
 
-    auto lhs_type = dyn_cast_or_null<RankedTensorType>(op->getOperand(0).getType());
-    auto rhs_type = dyn_cast_or_null<RankedTensorType>(op->getOperand(1).getType());
-    auto output_type = dyn_cast_or_null<RankedTensorType>(op->getResult(0).getType());
-    if (!lhs_type || !rhs_type || !output_type || lhs_type.getRank() != 3 || rhs_type.getRank() != 3 ||
-        output_type.getRank() != 3) {
-        return op->emitError("Only 3D batch matmul is supported for now");
-    }
-
-    auto in_container_lhs = translator.get_or_create_container(op->getOperand(0));
-    auto in_container_rhs = translator.get_or_create_container(op->getOperand(1));
-    auto out_container = translator.get_or_create_container(op->getResult(0));
-
     auto& builder = translator.builder();
-    auto& block = builder.add_block(sequence, {}, deb_info);
-
-    ::sdfg::data_flow::AccessNode* lhs_access = &builder.add_access(block, in_container_lhs, deb_info);
-    ::sdfg::data_flow::AccessNode* rhs_access;
-
-    if (in_container_lhs == in_container_rhs) {
-        rhs_access = lhs_access;
-    } else {
-        rhs_access = &builder.add_access(block, in_container_rhs, deb_info);
-    }
-
-    // Get tensor info after possible reordering
-    auto& tensor_info_lhs = translator.get_or_create_tensor_info(in_container_lhs, lhs_type);
-    auto& tensor_info_rhs = translator.get_or_create_tensor_info(in_container_rhs, rhs_type);
-    auto& tensor_info_out = translator.get_or_create_tensor_info(out_container, output_type);
-
-    if (tensor_info_lhs.offset() != 0 || tensor_info_rhs.offset() != 0 || tensor_info_out.offset() != 0) {
-        return op->emitError("Only tensors with 0 offset are supported for now");
-    }
-
-    ::sdfg::symbolic::MultiExpression shape_lhs;
-    for (auto entry : tensor_info_lhs.shape()) {
-        shape_lhs.push_back(::sdfg::symbolic::integer(entry));
-    }
-    ::sdfg::symbolic::MultiExpression shape_rhs;
-    for (auto entry : tensor_info_rhs.shape()) {
-        shape_rhs.push_back(::sdfg::symbolic::integer(entry));
-    }
-    ::sdfg::symbolic::MultiExpression shape_out;
-    for (auto entry : tensor_info_out.shape()) {
-        shape_out.push_back(::sdfg::symbolic::integer(entry));
-    }
-
-    ::sdfg::symbolic::MultiExpression strides_lhs;
-    for (auto entry : tensor_info_lhs.strides()) {
-        strides_lhs.push_back(::sdfg::symbolic::integer(entry));
-    }
-    ::sdfg::symbolic::MultiExpression strides_rhs;
-    for (auto entry : tensor_info_rhs.strides()) {
-        strides_rhs.push_back(::sdfg::symbolic::integer(entry));
-    }
+    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& lhs_access = builder.add_access(block, lhs_container, deb_info);
+    auto& rhs_access = (lhs_container == rhs_container) ? lhs_access
+                                                        : builder.add_access(block, rhs_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
 
     auto& libnode = builder.add_library_node<::sdfg::math::tensor::MatMulNode>(
-        block,
-        deb_info,
-        ::sdfg::math::tensor::TensorLayout(shape_lhs, strides_lhs),
-        ::sdfg::math::tensor::TensorLayout(shape_rhs, strides_rhs)
+        block, deb_info, lhs_tensor_info.get_tensor_layout(), rhs_tensor_info.get_tensor_layout()
     );
 
-    auto lhs_primitive_type = translator.convertType(lhs_type)->primitive_type();
-    ::sdfg::types::Tensor lhs_tensor_type(lhs_primitive_type, shape_lhs, strides_lhs);
-    auto rhs_primitive_type = translator.convertType(rhs_type)->primitive_type();
-    ::sdfg::types::Tensor rhs_tensor_type(rhs_primitive_type, shape_rhs, strides_rhs);
-    auto output_primitive_type = translator.convertType(output_type)->primitive_type();
-    ::sdfg::types::Tensor output_tensor_type(output_primitive_type, shape_out);
-
-    builder.add_computational_memlet(block, *lhs_access, libnode, "A", {}, lhs_tensor_type, deb_info);
-    builder.add_computational_memlet(block, *rhs_access, libnode, "B", {}, rhs_tensor_type, deb_info);
-
-    auto& write_access = builder.add_access(block, out_container, deb_info);
-
-    builder.add_computational_memlet(block, write_access, libnode, "Y", {}, output_tensor_type, deb_info);
+    builder.add_computational_memlet(block, lhs_access, libnode, "A", {}, *lhs_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, rhs_access, libnode, "B", {}, *rhs_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, result_access, libnode, "Y", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
