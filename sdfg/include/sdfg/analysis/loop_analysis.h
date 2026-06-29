@@ -93,20 +93,6 @@ inline nlohmann::json loop_info_to_json(LoopInfo info) {
 
 void loop_info_local_to_json(nlohmann::json& j, const LocalLoopInfo& info);
 
-/**
- * A perfectly nested, perfectly parallel loop-nest (only maps, 1 map per level, no instructions other then inside the
- * innermost map) Because you likely want to look at multiple dimensions at once to be more efficient. The stack ends at
- * the first loop that does not fit the criteria. So there might be further loops inside, but they would then require
- * more complex logic to handle as one
- */
-struct MapStack {
-    std::vector<structured_control_flow::ControlFlowNode*> outer_to_inner;
-    /**
-     * There are no more loops nested inside the innermost of the stack
-     */
-    bool innermost_is_leaf;
-};
-
 class LoopAnalysis : public Analysis {
 public:
     struct LoopState {

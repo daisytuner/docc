@@ -6,7 +6,6 @@
 #include <string>
 
 #include "sdfg/analysis/memory_layout_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"

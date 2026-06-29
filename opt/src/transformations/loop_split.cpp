@@ -1,6 +1,5 @@
 #include "sdfg/transformations/loop_split.h"
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/structured_control_flow/for.h"

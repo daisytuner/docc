@@ -6,7 +6,6 @@
 #include <unordered_set>
 
 #include "sdfg/analysis/assumptions_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/if_else.h"
@@ -329,19 +328,18 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
     //     unfolding ancestor indvars here, the tile gets baked with the
     //     tightest visible facts before merging upward.
     symbolic::SymbolSet excluded_indvars;
-    auto& scope_analysis = analysis_manager.get<ScopeAnalysis>();
     const bool scope_is_loop_body = !loop && [&]() {
-        auto* parent = scope_analysis.parent_scope(&scope);
+        auto* parent = scope.get_parent();
         auto* parent_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(parent);
         return parent_loop && &parent_loop->root() == &scope;
     }();
     if (loop) {
         excluded_indvars.insert(loop->indvar());
     } else if (scope_is_loop_body) {
-        auto* parent_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(scope_analysis.parent_scope(&scope));
+        auto* parent_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(scope.get_parent());
         excluded_indvars.insert(parent_loop->indvar());
     } else {
-        for (auto* cur = scope_analysis.parent_scope(&scope); cur; cur = scope_analysis.parent_scope(cur)) {
+        for (auto* cur = scope.get_parent(); cur; cur = cur->get_parent()) {
             if (auto* l = dynamic_cast<structured_control_flow::StructuredLoop*>(cur)) {
                 excluded_indvars.insert(l->indvar());
             }

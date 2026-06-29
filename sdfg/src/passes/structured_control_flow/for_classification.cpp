@@ -5,7 +5,6 @@
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/loop_carried_dependency_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/passes/pipeline.h"
 
