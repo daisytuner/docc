@@ -1088,11 +1088,21 @@ LogicalResult translateLinalgBatchMatmulOp(SDFGTranslator& translator, linalg::B
     Value result = batch_matmul_op->getResults()[0];
     auto deb_info = translator.get_debug_info(batch_matmul_op->getOperationName(), batch_matmul_op->getLoc());
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+    auto output_container = translator.get_or_copy_output_container(output, deb_info);
+=======
+>>>>>>> 24168437 (Fix PyTorch attention & replication padding)
     // The batch matmul fully overwrites its output (beta=0), so the init copy is dead.
     auto lhs_container = translator.get_or_create_container(lhs);
     auto rhs_container = translator.get_or_create_container(rhs);
     auto output_container =
         translator.get_or_copy_output_container(output, deb_info, /*consumer_overwrites_output=*/true);
+<<<<<<< HEAD
+=======
+>>>>>>> 73a7aa0b (Fix PyTorch attention & replication padding)
+>>>>>>> 24168437 (Fix PyTorch attention & replication padding)
     auto result_container = translator.get_or_create_container(result);
 
     // Handle LHS tensor info
