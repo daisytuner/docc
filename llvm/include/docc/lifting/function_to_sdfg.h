@@ -37,6 +37,8 @@ private:
 
     std::unique_ptr<sdfg::StructuredSDFG> simplify(std::unique_ptr<sdfg::StructuredSDFG>& sdfg);
 
+    void dump_llvm_function() const;
+
     void dump_sdfg(const sdfg::SDFG& sdfg, const std::string& step) const;
 
     void dump_structured_sdfg(const sdfg::StructuredSDFG& sdfg, const std::string& step) const;
