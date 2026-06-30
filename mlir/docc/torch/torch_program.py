@@ -235,9 +235,24 @@ class TorchProgram(DoccProgram):
         # Reuse already built binaries
         docc_reuse_binaries = os.environ.get("DOCC_REUSE_BINARIES")
 
+        # Reuse already generated sources (recompile without regenerating them).
+        # Unlike binary reuse this still runs the full pipeline, but the build
+        # step recompiles the existing source files instead of overwriting them.
+        docc_reuse_sources = os.environ.get("DOCC_REUSE_SOURCES")
+
+        if docc_reuse_binaries or docc_reuse_sources:
+            os.environ["DOCC_DEBUG"] = "dump"
+
+        if not os.path.exists(output_folder) and docc_reuse_sources:
+            docc_reuse_sources = None
+
         if not os.path.exists(output_folder) and docc_reuse_binaries:
             docc_reuse_binaries = None
-        elif os.path.exists(output_folder) and not docc_reuse_binaries:
+        elif (
+            os.path.exists(output_folder)
+            and not docc_reuse_binaries
+            and not docc_reuse_sources
+        ):
             shutil.rmtree(output_folder)
 
         # Populate input info from example input
@@ -280,6 +295,26 @@ class TorchProgram(DoccProgram):
             self._device_resident = sdfg.metadata("device_resident") == "1"
             backend = sdfg.metadata("device_backend")
             self._device_backend = backend or None
+        elif docc_reuse_sources:
+            main_file = f"{output_folder}/{sdfg.name()}.cpp"
+            if not os.path.exists(main_file):
+                raise ValueError(
+                    f"Tried reusing sources '{main_file}' but does not exist"
+                )
+
+            sdfg_path = f"{output_folder}/__docc_{self.name}.py4.norm.json"
+            if not os.path.exists(sdfg_path):
+                raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
+            sdfg = StructuredSDFG.from_file(sdfg_path)
+
+            lib_path = self.sdfg_pipe(
+                sdfg,
+                output_folder,
+                instrumentation_mode,
+                capture_args,
+                remote_tuning,
+                reuse_sources=True,
+            )
         else:
             # Build SDFG if not already done
             if self._sdfg is None:

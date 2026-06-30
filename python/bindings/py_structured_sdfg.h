@@ -110,7 +110,8 @@ public:
         const std::string& instrumentation_mode = "",
         bool capture_args = false,
         bool debug_build = false,
-        int threads = 0
+        int threads = 0,
+        bool reuse_sources = false
     ) const;
 
     std::string metadata(const std::string& key) const;

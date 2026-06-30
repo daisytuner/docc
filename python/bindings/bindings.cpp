@@ -261,7 +261,8 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("instrumentation_mode") = "",
             py::arg("capture_args") = false,
             py::arg("debug_build") = false,
-            py::arg("threads") = 0 // means hardware-threads
+            py::arg("threads") = 0, // means hardware-threads
+            py::arg("reuse_sources") = false
         )
         .def("metadata", &PyStructuredSDFG::metadata, py::arg("key"), "Get metadata value")
         .def_property(

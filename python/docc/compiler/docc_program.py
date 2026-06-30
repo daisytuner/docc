@@ -142,70 +142,89 @@ class DoccProgram(ABC):
         instrumentation_mode: str,
         capture_args: bool,
         remote_tuning: Optional[bool] = None,
+        reuse_sources: bool = False,
     ) -> str:
 
-        if self.debug_dump:
-            sdfg.dump(output_folder, "py0.parsed", dump_dot=True)
+        if not reuse_sources and output_folder:
+            if self.debug_dump:
+                sdfg.dump(output_folder, "py0.parsed", dump_dot=True)
 
-        if not output_folder is None:
-            sdfg.output_dir = output_folder
+            if not output_folder is None:
+                sdfg.output_dir = output_folder
 
-        # Enable statistics if envvar is set
-        if _statistics_enabled_by_env():
-            _enable_statistics()
+            # Enable statistics if envvar is set
+            if _statistics_enabled_by_env():
+                _enable_statistics()
 
-        sdfg.validate()
+            sdfg.validate()
 
-        if remote_tuning is None:
-            remote_tuning = self.remote_tuning
+            if remote_tuning is None:
+                remote_tuning = self.remote_tuning
 
-        target_options = TargetOptions()
-        target_options.target = self.target
-        target_options.category = self.category
-        target_options.remote_tuning = remote_tuning
+            target_options = TargetOptions()
+            target_options.target = self.target
+            target_options.category = self.category
+            target_options.remote_tuning = remote_tuning
 
-        # Einsum detection
-        sdfg.einsum()
-        if self.debug_dump:
-            sdfg.dump(output_folder, "py1.einsum", dump_dot=True)
+            # Einsum detection
+            sdfg.einsum()
+            if self.debug_dump:
+                sdfg.dump(output_folder, "py1.einsum", dump_dot=True)
 
-        # Tensor targets keep tensor nodes
-        custom_expand_fn = get_target_expand_fn(self.target)
-        if custom_expand_fn is not None:
-            custom_expand_fn(sdfg, self.category, {})
-        else:
-            sdfg.expand(target_options)
-        if self.debug_dump:
-            sdfg.dump(output_folder, "py2.expanded", dump_dot=True)
+            sdfg.validate()
 
-        # Simplify pipelines
-        sdfg.simplify()
-        if self.debug_dump:
-            sdfg.dump(output_folder, "py3.opt", dump_dot=True)
+            if remote_tuning is None:
+                remote_tuning = self.remote_tuning
 
-        # Normalization for scheduling
-        if self.target != "none":
-            sdfg.normalize()
+            target_options = TargetOptions()
+            target_options.target = self.target
+            target_options.category = self.category
+            target_options.remote_tuning = remote_tuning
 
-        if self.debug_dump or instrumentation_mode or capture_args:
-            sdfg.dump(
-                output_folder,
-                "py4.norm",
-                dump_dot=self.debug_dump,
-                dump_json=True,
-                record_for_instrumentation=True,
-            )
+            # Einsum detection
+            sdfg.einsum()
+            if self.debug_dump:
+                sdfg.dump(output_folder, "py1.einsum", dump_dot=True)
 
-        # Schedule if target is specified
+            # Tensor targets keep tensor nodes
+            custom_expand_fn = get_target_expand_fn(self.target)
+            if custom_expand_fn is not None:
+                custom_expand_fn(sdfg, self.category, {})
+            else:
+                sdfg.expand(target_options)
+            if self.debug_dump:
+                sdfg.dump(output_folder, "py2.expanded", dump_dot=True)
 
-        custom_schedule_fn = get_target_schedule_fn(self.target)
-        if custom_schedule_fn is not None:
-            custom_schedule_fn(sdfg, self.category, {"remote_tuning": remote_tuning})
-        else:
-            sdfg.schedule(target_options)
+            # Simplify pipelines
+            sdfg.simplify()
+            if self.debug_dump:
+                sdfg.dump(output_folder, "py3.opt", dump_dot=True)
 
-        if self.debug_dump:
-            sdfg.dump(output_folder, "py5.post_sched", dump_dot=True)
+            # Normalization for scheduling
+            if self.target != "none":
+                sdfg.normalize()
+
+            if self.debug_dump or instrumentation_mode or capture_args:
+                sdfg.dump(
+                    output_folder,
+                    "py4.norm",
+                    dump_dot=self.debug_dump,
+                    dump_json=True,
+                    record_for_instrumentation=True,
+                )
+
+            # Schedule if target is specified
+
+            custom_schedule_fn = get_target_schedule_fn(self.target)
+            if custom_schedule_fn is not None:
+                custom_schedule_fn(
+                    sdfg, self.category, {"remote_tuning": remote_tuning}
+                )
+            else:
+                sdfg.schedule(target_options)
+
+            if self.debug_dump:
+                sdfg.dump(output_folder, "py5.post_sched", dump_dot=True)
 
         # Promote pointer arguments to device residency when the whole program keeps
         # data on device. Communicated explicitly via the pass return value (bool),
@@ -236,6 +255,7 @@ class DoccProgram(ABC):
                 capture_args=capture_args,
                 debug_build=self.debug_build,
                 threads=self.build_thread_count,
+                reuse_sources=reuse_sources,
             )
 
         # Dump statistics after compile

@@ -530,7 +530,8 @@ std::string PyStructuredSDFG::compile(
     const std::string& instrumentation_mode,
     bool capture_args,
     bool debug_build,
-    int threads
+    int threads,
+    bool reuse_sources
 ) const {
     fs::path build_path(output_folder);
     if (!fs::exists(build_path)) {
@@ -636,7 +637,7 @@ std::string PyStructuredSDFG::compile(
         global_constructor
     );
 
-    return fcomp_handler->process(generator, pool, "lib" + sdfg_->name());
+    return fcomp_handler->process(generator, pool, "lib" + sdfg_->name(), reuse_sources);
 }
 
 std::string PyStructuredSDFG::metadata(const std::string& key) const {

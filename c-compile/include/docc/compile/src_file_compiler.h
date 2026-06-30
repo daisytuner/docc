@@ -70,6 +70,10 @@ class SrcFileCompiler : public CodegenCompiler, public LinkOptContributor {
     std::vector<std::string> parent_link_opts_;
     sdfg::passes::CodegenStatistics* stats_ = nullptr;
 
+    // When set, existing source files on disk are recompiled as-is instead of
+    // being regenerated (allows recompiling possibly hand-edited sources).
+    bool reuse_sources_ = false;
+
     inline static constexpr auto COMPILE_ONLY_FLAG = "-c";
     inline static constexpr auto OUTPUT_FILE_ARG = "-o";
 
@@ -102,8 +106,12 @@ public:
         std::function<void(std::ostream&)> generator
     );
 
-    std::filesystem::path
-    process(sdfg::codegen::CodeGenerator& generator, CompileExecutor& executor, const std::string& output_file_name);
+    std::filesystem::path process(
+        sdfg::codegen::CodeGenerator& generator,
+        CompileExecutor& executor,
+        const std::string& output_file_name,
+        bool reuse_sources = false
+    );
     std::filesystem::path process(sdfg::codegen::CodeGenerator& generator, CompileExecutor& executor) {
         return process(generator, executor, generator.sdfg().name());
     }
