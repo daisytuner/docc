@@ -297,7 +297,7 @@ class TorchProgram(DoccProgram):
             self._device_backend = backend or None
         elif docc_reuse_sources:
 
-            sdfg_path = f"{output_folder}/__docc_{self.name}.py4.norm.json"
+            sdfg_path = f"{output_folder}/__docc_{self.name}.py5.post_sched.json"
             if not os.path.exists(sdfg_path):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
             sdfg = StructuredSDFG.from_file(sdfg_path)
