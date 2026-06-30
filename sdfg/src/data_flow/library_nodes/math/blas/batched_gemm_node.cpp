@@ -119,6 +119,19 @@ void BatchedGEMMNode::replace(const symbolic::Expression old_expression, const s
     this->stride_c_ = symbolic::subs(this->stride_c_, old_expression, new_expression);
 }
 
+void BatchedGEMMNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->batch_count_ = symbolic::subs(this->batch_count_, replacements);
+    this->m_ = symbolic::subs(this->m_, replacements);
+    this->n_ = symbolic::subs(this->n_, replacements);
+    this->k_ = symbolic::subs(this->k_, replacements);
+    this->lda_ = symbolic::subs(this->lda_, replacements);
+    this->ldb_ = symbolic::subs(this->ldb_, replacements);
+    this->ldc_ = symbolic::subs(this->ldc_, replacements);
+    this->stride_a_ = symbolic::subs(this->stride_a_, replacements);
+    this->stride_b_ = symbolic::subs(this->stride_b_, replacements);
+    this->stride_c_ = symbolic::subs(this->stride_c_, replacements);
+}
+
 void BatchedGEMMNode::validate(const Function& function) const { BLASNode::validate(function); }
 
 symbolic::Expression BatchedGEMMNode::flop() const {

@@ -89,6 +89,12 @@ void ReduceNode::replace(const symbolic::Expression old_expression, const symbol
     }
 }
 
+void ReduceNode::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& dim : shape_) {
+        dim = symbolic::subs(dim, replacements);
+    }
+}
+
 data_flow::PointerAccessType ReduceNode::pointer_access_type(int input_idx) const {
     if (input_idx == 0) {
         return data_flow::PointerAccessMeta::create_full_write_only(symbolic::__nullptr__(), true);

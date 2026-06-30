@@ -33,23 +33,23 @@ def kernel(TSTEPS, A, B):
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_jacobi_2d(target):
     if target == "none":
-        verifier = SDFGVerification(verification={"MAP": 4, "SEQUENTIAL": 4, "FOR": 5})
+        verifier = SDFGVerification(verification={"MAP": 4, "SEQUENTIAL": 5, "FOR": 1})
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 2, "MAP": 4, "SEQUENTIAL": 2, "FOR": 5}
+            verification={"VECTORIZE": 2, "MAP": 4, "SEQUENTIAL": 3, "FOR": 1}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"CPU_PARALLEL": 2, "MAP": 2, "FOR": 3}
+            verification={"CPU_PARALLEL": 2, "SEQUENTIAL": 1, "MAP": 2, "FOR": 1}
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={"CUDA": 4, "MAP": 4, "FOR": 5},
+            verification={"CUDA": 4, "MAP": 4, "FOR": 1, "SEQUENTIAL": 1},
             device_resident=True,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={"ROCM": 4, "MAP": 4, "FOR": 5},
+            verification={"ROCM": 4, "MAP": 4, "FOR": 1, "SEQUENTIAL": 1},
             device_resident=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

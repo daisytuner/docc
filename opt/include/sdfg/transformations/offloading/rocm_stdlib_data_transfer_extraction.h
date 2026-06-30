@@ -5,6 +5,8 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -17,7 +19,7 @@ namespace rocm {
 
 class ROCMStdlibDataTransferExtraction : public transformations::Transformation {
 private:
-    stdlib::MemsetNode& memset_node_;
+    data_flow::LibraryNode& lib_node_;
 
     std::string create_device_container(
         builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
@@ -49,8 +51,34 @@ private:
         const types::Pointer& type
     );
 
+    void create_copy_to_device_with_allocation(
+        builder::StructuredSDFGBuilder& builder,
+        structured_control_flow::Sequence& sequence,
+        structured_control_flow::Block& block,
+        const std::string& host_container,
+        const std::string& device_container,
+        const symbolic::Expression& size,
+        const types::Pointer& type
+    );
+
+    void apply_memset(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        data_flow::DataFlowGraph& dfg,
+        structured_control_flow::Sequence& sequence,
+        structured_control_flow::Block& block
+    );
+
+    void apply_memcpy(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        data_flow::DataFlowGraph& dfg,
+        structured_control_flow::Sequence& sequence,
+        structured_control_flow::Block& block
+    );
+
 public:
-    ROCMStdlibDataTransferExtraction(stdlib::MemsetNode& memset_node);
+    ROCMStdlibDataTransferExtraction(data_flow::LibraryNode& lib_node);
 
     virtual std::string name() const override;
 

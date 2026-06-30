@@ -2,6 +2,7 @@
 
 #include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/polynomials.h"
+#include "symengine/subs.h"
 
 namespace sdfg {
 namespace structured_control_flow {
@@ -13,10 +14,11 @@ StructuredLoop::StructuredLoop(
     symbolic::Symbol indvar,
     symbolic::Expression init,
     symbolic::Expression update,
-    symbolic::Condition condition
+    symbolic::Condition condition,
+    const ScheduleType& schedule_type
 )
     : ControlFlowNode(element_id, debug_info, parent), indvar_(indvar), init_(init), update_(update),
-      condition_(condition) {
+      condition_(condition), schedule_type_(schedule_type) {
     this->root_ = std::unique_ptr<Sequence>(new Sequence(++element_id, debug_info, this));
 }
 
@@ -50,6 +52,8 @@ const symbolic::Condition StructuredLoop::condition() const { return this->condi
 
 Sequence& StructuredLoop::root() const { return *this->root_; };
 
+const ScheduleType& StructuredLoop::schedule_type() const { return this->schedule_type_; };
+
 void StructuredLoop::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     if (symbolic::eq(this->indvar_, old_expression) && SymEngine::is_a<SymEngine::Symbol>(*new_expression)) {
         this->indvar_ = SymEngine::rcp_static_cast<const SymEngine::Symbol>(new_expression);
@@ -59,7 +63,20 @@ void StructuredLoop::replace(const symbolic::Expression old_expression, const sy
     this->condition_ = symbolic::subs(this->condition_, old_expression, new_expression);
 
     this->root_->replace(old_expression, new_expression);
-};
+}
+
+void StructuredLoop::replace(const symbolic::ExpressionMapping& replacements) {
+    auto indvar_repl = replacements.find(this->indvar_);
+    if (indvar_repl != replacements.end()) {
+        this->indvar_ = SymEngine::rcp_static_cast<const SymEngine::Symbol>(indvar_repl->second);
+    }
+
+    this->init_ = SymEngine::subs(this->init_, replacements);
+    this->update_ = SymEngine::subs(this->update_, replacements);
+    this->condition_ = symbolic::subs(this->condition_, replacements);
+
+    this->root_->replace(replacements);
+}
 
 symbolic::Integer StructuredLoop::stride() {
     auto expr = this->update();

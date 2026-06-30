@@ -127,44 +127,23 @@ def test_vadv(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 100, "SEQUENTIAL": 100, "FOR": 107, "Malloc": 40}
+            verification={"MAP": 66, "SEQUENTIAL": 73, "FOR": 7}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={
-                "VECTORIZE": 50,
-                "MAP": 100,
-                "SEQUENTIAL": 50,
-                "FOR": 107,
-                "Malloc": 40,
-            }
+            verification={"VECTORIZE": 34, "MAP": 66, "SEQUENTIAL": 39, "FOR": 7}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={
-                "CPU_PARALLEL": 1,
-                "VECTORIZE": 50,
-                "MAP": 99,
-                "SEQUENTIAL": 48,
-                "FOR": 106,
-                "Malloc": 40,
-            }
+            verification={"VECTORIZE": 34, "MAP": 66, "SEQUENTIAL": 39, "FOR": 7}
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "MAP": 100,
-                "SEQUENTIAL": 100,
-                "FOR": 107,
-            }
+            verification={"MAP": 66, "SEQUENTIAL": 73, "FOR": 7}
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={
-                "MAP": 100,
-                "SEQUENTIAL": 100,
-                "FOR": 107,
-            }
+            verification={"MAP": 66, "SEQUENTIAL": 73, "FOR": 7}
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

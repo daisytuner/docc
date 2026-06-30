@@ -470,6 +470,46 @@ TEST(StructuredSDFGBuilderTest, FindElementById_Block) {
     EXPECT_EQ(builder.find_element_by_id(block.element_id()), &block);
 }
 
+TEST(StructuredSdfgBuilderTest, Sequence_RemoveChild) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int64);
+    builder.add_container("N", desc);
+
+    auto& root = builder.subject().root();
+    auto& block0 = builder.add_block(root);
+    auto& block1 = builder.add_block(root);
+    auto& block2 = builder.add_block(root);
+
+    EXPECT_EQ(root.size(), 3);
+
+    builder.remove_child(root, 1);
+
+    EXPECT_EQ(root.size(), 2);
+    EXPECT_EQ(&root.at(0).first, &block0);
+    EXPECT_EQ(&root.at(1).first, &block2);
+}
+
+TEST(StructuredSdfgBuilderTest, Sequence_RemoveFromParent) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::Int64);
+    builder.add_container("N", desc);
+
+    auto& root = builder.subject().root();
+    auto& block0 = builder.add_block(root);
+    auto& block1 = builder.add_block(root);
+    auto& block2 = builder.add_block(root);
+
+    EXPECT_EQ(root.size(), 3);
+
+    builder.remove_from_parent(block1);
+
+    EXPECT_EQ(root.size(), 2);
+    EXPECT_EQ(&root.at(0).first, &block0);
+    EXPECT_EQ(&root.at(1).first, &block2);
+}
+
 TEST(StructuredSDFGBuilderTest, ClearNode_AccessNode_Unused) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 

@@ -24,6 +24,8 @@ public:
     bool accept(sdfg::structured_control_flow::While& node) override;
 
     bool accept(sdfg::structured_control_flow::Map& node) override;
+
+    bool accept(sdfg::structured_control_flow::Reduce& node) override;
 };
 
 

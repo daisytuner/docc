@@ -13,6 +13,7 @@
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/if_else.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/while.h"
@@ -46,6 +47,7 @@ protected:
     virtual void visualizeBreak(const StructuredSDFG& sdfg, const structured_control_flow::Break& break_node) = 0;
     virtual void visualizeContinue(const StructuredSDFG& sdfg, const structured_control_flow::Continue& continue_node) = 0;
     virtual void visualizeMap(const StructuredSDFG& sdfg, const structured_control_flow::Map& map_node) = 0;
+    virtual void visualizeReduce(const StructuredSDFG& sdfg, const structured_control_flow::Reduce& reduce_node) = 0;
 
     // Data Flow Graph
     virtual void visualizeDataFlowGraph(const std::string& id, const data_flow::DataFlowGraph& dfg) = 0;

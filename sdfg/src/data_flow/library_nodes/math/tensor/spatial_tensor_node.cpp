@@ -97,6 +97,24 @@ void SpatialTensorNode::replace(const symbolic::Expression old_expression, const
     }
 }
 
+void SpatialTensorNode::replace(const symbolic::ExpressionMapping& replacements) {
+    for (auto& expr : shape_) {
+        expr = symbolic::subs(expr, replacements);
+    }
+    for (auto& expr : kernel_shape_) {
+        expr = symbolic::subs(expr, replacements);
+    }
+    for (auto& expr : strides_) {
+        expr = symbolic::subs(expr, replacements);
+    }
+    for (auto& expr : pads_) {
+        expr = symbolic::subs(expr, replacements);
+    }
+    for (auto& expr : dilations_) {
+        expr = symbolic::subs(expr, replacements);
+    }
+}
+
 size_t SpatialTensorNode::num_spatial_dims() const {
     auto& s = shape_;
     assert(s.size() >= 2);

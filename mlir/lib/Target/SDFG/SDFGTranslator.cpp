@@ -25,6 +25,7 @@
 #include "mlir/Target/SDFG/TensorToSDFGTranslator.h"
 #include "mlir/Target/SDFG/helper.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
@@ -74,6 +75,19 @@ TensorInfo TensorInfo::from_tensor_type(TensorType type) {
     return TensorInfo(std::move(shape), std::move(strides), 0);
 }
 
+bool TensorInfo::has_basic_strides(ArrayRef<int64_t> shape, ArrayRef<int64_t> strides) {
+    auto expected_strides = compute_strides(shape);
+    if (expected_strides.size() != strides.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < expected_strides.size(); ++i) {
+        if (expected_strides[i] != strides[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 TensorInfo TensorInfo::transpose(ArrayRef<int64_t> permutation) const {
     std::vector<int64_t> new_shape;
     std::vector<int64_t> new_strides;
@@ -111,17 +125,24 @@ bool TensorInfo::is_reshape_valid(ArrayRef<int64_t> new_shape) const {
     return has_basic_strides();
 }
 
-bool TensorInfo::has_basic_strides() const {
-    auto expected_strides = compute_strides(shape_);
-    if (expected_strides.size() != strides_.size()) {
+bool TensorInfo::has_basic_strides() const { return has_basic_strides(shape_, strides_); }
+
+bool TensorInfo::has_transposed_strides_last_two_dims() const {
+    auto rank = shape_.size();
+    if (rank < 2) {
         return false;
     }
-    for (size_t i = 0; i < expected_strides.size(); ++i) {
-        if (expected_strides[i] != strides_[i]) {
-            return false;
-        }
+    std::vector<int64_t> new_shape;
+    new_shape.reserve(rank);
+    for (size_t i = 0; i < rank - 2; i++) {
+        new_shape.push_back(shape_[i]);
     }
-    return true;
+    new_shape.push_back(shape_[rank - 1]);
+    new_shape.push_back(shape_[rank - 2]);
+    std::vector<int64_t> transposed_strides(strides_);
+    transposed_strides[rank - 2] = strides_[rank - 1];
+    transposed_strides[rank - 1] = strides_[rank - 2];
+    return has_basic_strides(new_shape, transposed_strides);
 }
 
 TensorInfo TensorInfo::reshape(ArrayRef<int64_t> new_shape) const {
@@ -131,6 +152,10 @@ TensorInfo TensorInfo::reshape(ArrayRef<int64_t> new_shape) const {
 }
 
 std::unique_ptr<::sdfg::types::Tensor> TensorInfo::get_sdfg_tensor(const ::sdfg::types::Scalar& element_type) const {
+    return std::make_unique<::sdfg::types::Tensor>(element_type, get_tensor_layout());
+}
+
+::sdfg::math::tensor::TensorLayout TensorInfo::get_tensor_layout() const {
     ::sdfg::symbolic::MultiExpression shape, strides;
     for (int64_t dim : this->shape_) {
         shape.push_back(::sdfg::symbolic::integer(dim));
@@ -139,7 +164,7 @@ std::unique_ptr<::sdfg::types::Tensor> TensorInfo::get_sdfg_tensor(const ::sdfg:
         strides.push_back(::sdfg::symbolic::integer(stride));
     }
     ::sdfg::symbolic::Expression offset = ::sdfg::symbolic::integer(this->offset_);
-    return std::make_unique<::sdfg::types::Tensor>(element_type, shape, strides, offset);
+    return ::sdfg::math::tensor::TensorLayout(shape, strides, offset);
 }
 
 std::string TensorInfo::shape_str() const {
@@ -386,6 +411,12 @@ static int count_linalg_output_uses(Value value) {
     return count;
 }
 
+void SDFGTranslator::record_constant_fill(Value result, Value value) {
+    this->constant_fill_map_.insert({result, value});
+}
+
+bool SDFGTranslator::is_constant_fill(Value result) const { return this->constant_fill_map_.count(result) != 0; }
+
 std::string SDFGTranslator::
     get_or_copy_output_container(Value output, const ::sdfg::DebugInfo& deb_info, bool consumer_overwrites_output) {
     auto output_container = this->get_or_create_container(output);
@@ -419,17 +450,38 @@ std::string SDFGTranslator::
     // (e.g. matmul with beta=0), or the output is uninitialized (tensor.empty).
     if (!consumer_overwrites_output &&
         (!output.getDefiningOp() || !llvm::isa<tensor::EmptyOp>(output.getDefiningOp()))) {
-        auto& src_type = builder_.subject().type(output_container);
-        auto& dst_type = builder_.subject().type(copy_container);
-        ::sdfg::stdlib::add_memcpy_block(
-            builder_,
-            this->insertion_point(),
-            output_container,
-            copy_container,
-            byte_count,
-            src_type, // original had dst_type as well. but memcpy needs both same and we do not model read-only
-            deb_info
-        );
+        auto fill_it = this->constant_fill_map_.find(output);
+        if (fill_it != this->constant_fill_map_.end()) {
+            // The source is a deferred constant fill: regenerate a freshly-filled array directly
+            // instead of copying from a shared buffer.
+            auto constant_op = llvm::cast<arith::ConstantOp>(fill_it->second.getDefiningOp());
+            auto sdfg_tensor = tensor_info.get_sdfg_tensor(scalar_type);
+
+            auto& block = this->builder_.add_block(this->insertion_point(), {}, deb_info);
+            auto& in_access = this->builder_.add_constant(
+                block,
+                this->convertTypedAttr(constant_op.getValue()),
+                *this->convertType(constant_op.getType()),
+                deb_info
+            );
+            auto& fill_node =
+                this->builder_.add_library_node<::sdfg::math::tensor::FillNode>(block, deb_info, sdfg_tensor->shape());
+            this->builder_.add_computational_memlet(block, in_access, fill_node, "X", {}, scalar_type, deb_info);
+            auto& out_access = this->builder_.add_access(block, copy_container, deb_info);
+            this->builder_.add_computational_memlet(block, out_access, fill_node, "Y", {}, *sdfg_tensor, deb_info);
+        } else {
+            auto& src_type = builder_.subject().type(output_container);
+            auto& dst_type = builder_.subject().type(copy_container);
+            ::sdfg::stdlib::add_memcpy_block(
+                builder_,
+                this->insertion_point(),
+                output_container,
+                copy_container,
+                byte_count,
+                src_type, // original had dst_type as well. but memcpy needs both same and we do not model read-only
+                deb_info
+            );
+        }
     }
 
     this->tensor_info_map_.insert({copy_container, tensor_info});

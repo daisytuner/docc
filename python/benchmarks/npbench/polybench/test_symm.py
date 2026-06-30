@@ -49,51 +49,48 @@ def kernel(alpha, beta, C, A, B):
 def test_symm(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"GEMM": 1, "SEQUENTIAL": 7, "FOR": 9, "MAP": 7, "Malloc": 3},
-            non_critical=True,
+            verification={"GEMM": 1, "FOR": 2, "SEQUENTIAL": 11, "MAP": 9},
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 4,
-                "SEQUENTIAL": 3,
-                "FOR": 9,
-                "MAP": 7,
-                "Malloc": 3,
+                "VECTORIZE": 7,
+                "FOR": 2,
+                "SEQUENTIAL": 4,
+                "MAP": 9,
             },
-            non_critical=True,
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 2,
-                "CPU_PARALLEL": 4,
-                "SEQUENTIAL": 1,
-                "FOR": 9,
+                "VECTORIZE": 5,
+                "SEQUENTIAL": 2,
+                "FOR": 2,
+                "CPU_PARALLEL": 2,
                 "MAP": 7,
-                "Malloc": 3,
             },
-            non_critical=True,
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 12,
-                "MAP": 9,
-                "SEQUENTIAL": 5,
+                "REDUCE": 1,
+                "SEQUENTIAL": 8,
+                "FOR": 2,
                 "CUDA": 4,
+                "MAP": 9,
                 "CUDAOffloading": 4,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 12,
-                "MAP": 9,
-                "SEQUENTIAL": 5,
+                "REDUCE": 1,
+                "SEQUENTIAL": 8,
+                "FOR": 2,
                 "ROCM": 4,
+                "MAP": 9,
                 "ROCMOffloading": 4,
             }
         )

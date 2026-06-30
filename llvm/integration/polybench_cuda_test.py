@@ -102,15 +102,19 @@ def verify(reference_file: Path, test_file: Path, dtype, max_ulps):
     ],
 )
 def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 25,
+            "REDUCE": 4,
+            "SEQUENTIAL": 13,
+            "CUDAOffloading": 26,
             "MAP": 17,
-            "SEQUENTIAL": 5,
             "CUDA": 12,
+            "FOR": 4,
         },
     )
     test_case = benchmark_path / "correlation.c"
@@ -125,7 +129,10 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -149,15 +156,19 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 20,
+            "CUDAOffloading": 18,
             "MAP": 13,
-            "SEQUENTIAL": 4,
             "CUDA": 9,
+            "FOR": 4,
+            "SEQUENTIAL": 11,
+            "REDUCE": 3,
         },
     )
     test_case = benchmark_path / "covariance.c"
@@ -172,7 +183,10 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -191,17 +205,33 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param("-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")),
-        pytest.param("-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")),
+        pytest.param(
+            "-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
+        pytest.param(
+            "-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
     ],
 )
 def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "gemm"
     )
 
     verifier = SDFGVerification(
-        verification={'sdfgs': 8, 'Calloc': 3, 'FOR': 17, 'Free': 3, 'barrier_local': 4, 'CUDAOffloading': 8, 'MAP': 10, 'CUDA': 10},
+        verification={
+            "sdfgs": 8,
+            "FOR": 6,
+            "SEQUENTIAL": 6,
+            "CUDAOffloading": 14,
+            "MAP": 10,
+            "CUDA": 10,
+        },
     )
     test_case = benchmark_path / "gemm.c"
     runner = TestRunner(
@@ -215,7 +245,10 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -240,16 +273,23 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemver"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "gemver"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 13,
+            "REDUCE": 4,
+            "CUDAOffloading": 38,
             "MAP": 7,
-            "SEQUENTIAL": 1,
             "CUDA": 6,
+            "FOR": 2,
+            "SEQUENTIAL": 7,
         },
     )
     test_case = benchmark_path / "gemver.c"
@@ -264,7 +304,10 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -289,15 +332,23 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gesummv"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "gesummv"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 10,
+            "REDUCE": 4,
+            "CUDAOffloading": 24,
             "MAP": 5,
             "CUDA": 5,
+            "SEQUENTIAL": 5,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "gesummv.c"
@@ -312,7 +363,10 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -337,16 +391,23 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "symm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "symm"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 14,
+            "REDUCE": 4,
+            "CUDAOffloading": 8,
             "MAP": 7,
-            "SEQUENTIAL": 3,
             "CUDA": 4,
+            "SEQUENTIAL": 10,
+            "FOR": 3,
         },
     )
     test_case = benchmark_path / "symm.c"
@@ -361,7 +422,10 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -386,16 +450,23 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syr2k"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "syr2k"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 14,
+            "REDUCE": 4,
+            "CUDAOffloading": 14,
             "MAP": 8,
-            "SEQUENTIAL": 2,
             "CUDA": 6,
+            "SEQUENTIAL": 8,
+            "FOR": 2,
         },
     )
     test_case = benchmark_path / "syr2k.c"
@@ -410,7 +481,10 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -435,16 +509,23 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syrk"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "syrk"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 14,
+            "REDUCE": 4,
+            "CUDAOffloading": 10,
             "MAP": 8,
-            "SEQUENTIAL": 2,
             "CUDA": 6,
+            "SEQUENTIAL": 8,
+            "FOR": 2,
         },
     )
     test_case = benchmark_path / "syrk.c"
@@ -459,7 +540,10 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -478,13 +562,24 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param("-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed & Program crashes")),
-        pytest.param("-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed & Program crashes")),
+        pytest.param(
+            "-DDATA_TYPE_IS_DOUBLE",
+            marks=pytest.mark.xfail(reason="Verifier changed & Program crashes"),
+        ),
+        pytest.param(
+            "-DDATA_TYPE_IS_FLOAT",
+            marks=pytest.mark.xfail(reason="Verifier changed & Program crashes"),
+        ),
     ],
 )
 def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "trmm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "trmm"
     )
 
     verifier = SDFGVerification(
@@ -508,7 +603,10 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -527,17 +625,33 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param("-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")),
-        pytest.param("-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")),
+        pytest.param(
+            "-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
+        pytest.param(
+            "-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
     ],
 )
 def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "2mm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "2mm"
     )
 
     verifier = SDFGVerification(
-        verification={'sdfgs': 8, 'FOR': 25, 'barrier_local': 8, 'CUDAOffloading': 13, 'MAP': 16, 'CUDA': 16},
+        verification={
+            "sdfgs": 8,
+            "FOR": 25,
+            "barrier_local": 8,
+            "CUDAOffloading": 13,
+            "MAP": 16,
+            "CUDA": 16,
+        },
     )
     test_case = benchmark_path / "2mm.c"
     runner = TestRunner(
@@ -551,7 +665,10 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -570,17 +687,33 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param("-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")),
-        pytest.param("-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")),
+        pytest.param(
+            "-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
+        pytest.param(
+            "-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
     ],
 )
 def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "3mm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "3mm"
     )
 
     verifier = SDFGVerification(
-        verification={'sdfgs': 8, 'FOR': 31, 'barrier_local': 12, 'CUDAOffloading': 17, 'MAP': 20, 'CUDA': 20},
+        verification={
+            "sdfgs": 8,
+            "FOR": 31,
+            "barrier_local": 12,
+            "CUDAOffloading": 17,
+            "MAP": 20,
+            "CUDA": 20,
+        },
     )
     test_case = benchmark_path / "3mm.c"
     runner = TestRunner(
@@ -594,7 +727,10 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -619,16 +755,23 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "atax"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "atax"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 13,
+            "REDUCE": 4,
+            "CUDAOffloading": 14,
             "MAP": 7,
-            "SEQUENTIAL": 1,
             "CUDA": 6,
+            "SEQUENTIAL": 7,
+            "FOR": 2,
         },
     )
     test_case = benchmark_path / "atax.c"
@@ -643,7 +786,10 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -662,13 +808,24 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param("-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed & Output incorrect")),
-        pytest.param("-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed & Output incorrect")),
+        pytest.param(
+            "-DDATA_TYPE_IS_DOUBLE",
+            marks=pytest.mark.xfail(reason="Verifier changed & Output incorrect"),
+        ),
+        pytest.param(
+            "-DDATA_TYPE_IS_FLOAT",
+            marks=pytest.mark.xfail(reason="Verifier changed & Output incorrect"),
+        ),
     ],
 )
 def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "bicg"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "bicg"
     )
 
     verifier = SDFGVerification(
@@ -691,7 +848,10 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -716,16 +876,23 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "doitgen"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "doitgen"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 9,
-            "FOR": 22,
-            "MAP": 10,
-            "SEQUENTIAL": 6,
+            "REDUCE": 3,
+            "SEQUENTIAL": 18,
             "CUDA": 4,
+            "FOR": 9,
+            "CUDAOffloading": 4,
+            "MAP": 10,
         },
     )
     test_case = benchmark_path / "doitgen.c"
@@ -740,7 +907,10 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -765,16 +935,23 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "mvt"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "mvt"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 11,
+            "REDUCE": 4,
+            "CUDAOffloading": 16,
             "MAP": 4,
-            "SEQUENTIAL": 1,
             "CUDA": 3,
+            "SEQUENTIAL": 8,
+            "FOR": 3,
         },
     )
     test_case = benchmark_path / "mvt.c"
@@ -789,7 +966,10 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -814,16 +994,23 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "cholesky"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "cholesky"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 21,
+            "REDUCE": 6,
+            "SEQUENTIAL": 12,
+            "CUDAOffloading": 16,
             "MAP": 11,
-            "SEQUENTIAL": 2,
             "CUDA": 9,
+            "FOR": 4,
         },
     )
     test_case = benchmark_path / "cholesky.c"
@@ -838,7 +1025,10 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -863,7 +1053,12 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "durbin"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "durbin"
     )
 
     verifier = SDFGVerification(
@@ -887,7 +1082,10 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -901,6 +1099,7 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         docc_flags=["-mllvm", "-docc-einsum"],
     )
     return runner.run(timeout=120)
+
 
 @pytest.mark.skip(reason="Wrong results, needs investigation")
 @pytest.mark.parametrize(
@@ -941,7 +1140,10 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -966,16 +1168,23 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "lu"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "lu"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 22,
+            "REDUCE": 6,
+            "SEQUENTIAL": 13,
+            "CUDAOffloading": 16,
             "MAP": 12,
-            "SEQUENTIAL": 3,
             "CUDA": 9,
+            "FOR": 4,
         },
     )
     test_case = benchmark_path / "lu.c"
@@ -990,7 +1199,10 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1015,16 +1227,24 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "ludcmp"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "ludcmp"
     )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 26,
+            "REDUCE": 8,
+            "Call": 18,
+            "SEQUENTIAL": 16,
+            "CUDAOffloading": 22,
             "MAP": 13,
-            "SEQUENTIAL": 3,
             "CUDA": 10,
+            "FOR": 5,
         },
     )
     test_case = benchmark_path / "ludcmp.c"
@@ -1039,7 +1259,10 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1058,13 +1281,24 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param("-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed & Output incorrect")),
-        pytest.param("-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed & Output incorrect")),
+        pytest.param(
+            "-DDATA_TYPE_IS_DOUBLE",
+            marks=pytest.mark.xfail(reason="Verifier changed & Output incorrect"),
+        ),
+        pytest.param(
+            "-DDATA_TYPE_IS_FLOAT",
+            marks=pytest.mark.xfail(reason="Verifier changed & Output incorrect"),
+        ),
     ],
 )
 def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "trisolv"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "trisolv"
     )
 
     verifier = SDFGVerification(
@@ -1088,7 +1322,10 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1107,15 +1344,27 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param("-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")),
-        pytest.param("-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")),
+        pytest.param(
+            "-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
+        pytest.param(
+            "-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
     ],
 )
 def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "medley" / "deriche"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "medley" / "deriche"
+    )
 
     verifier = SDFGVerification(
-        verification={'sdfgs': 8, 'CUDAOffloading': 22, 'MAP': 10, 'FOR': 19, 'CUDA': 10},
+        verification={
+            "sdfgs": 8,
+            "CUDAOffloading": 22,
+            "MAP": 10,
+            "FOR": 19,
+            "CUDA": 10,
+        },
     )
     test_case = benchmark_path / "deriche.c"
     runner = TestRunner(
@@ -1129,7 +1378,10 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1146,15 +1398,19 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 
 
 def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "medley" / "floyd-warshall"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "medley" / "floyd-warshall"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 10,
+            "CUDAOffloading": 2,
             "MAP": 2,
-            "SEQUENTIAL": 0,
             "CUDA": 2,
+            "FOR": 5,
+            "SEQUENTIAL": 8,
+            "REDUCE": 3,
         },
     )
     test_case = benchmark_path / "floyd-warshall.c"
@@ -1169,7 +1425,10 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             "-DDATA_TYPE_IS_INT",
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1182,15 +1441,19 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
 
 
 def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "medley" / "nussinov"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "medley" / "nussinov"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 10,
+            "CUDAOffloading": 4,
             "MAP": 3,
-            "SEQUENTIAL": 0,
             "CUDA": 3,
+            "FOR": 4,
+            "SEQUENTIAL": 7,
+            "REDUCE": 3,
         },
     )
     test_case = benchmark_path / "nussinov.c"
@@ -1205,7 +1468,10 @@ def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             "-DDATA_TYPE_IS_INT",
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1220,15 +1486,25 @@ def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param("-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")),
-        pytest.param("-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")),
+        pytest.param(
+            "-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
+        pytest.param(
+            "-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Verifier changed")
+        ),
     ],
 )
 def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "adi"
 
     verifier = SDFGVerification(
-        verification={'sdfgs': 8, 'FOR': 20, 'CUDAOffloading': 30, 'MAP': 10, 'CUDA': 10},
+        verification={
+            "sdfgs": 8,
+            "FOR": 20,
+            "CUDAOffloading": 30,
+            "MAP": 10,
+            "CUDA": 10,
+        },
     )
     test_case = benchmark_path / "adi.c"
     runner = TestRunner(
@@ -1242,7 +1518,10 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1266,14 +1545,19 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "fdtd-2d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "fdtd-2d"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 20,
+            "REDUCE": 3,
+            "SEQUENTIAL": 10,
+            "CUDAOffloading": 26,
             "MAP": 10,
             "CUDA": 10,
+            "FOR": 7,
         },
     )
     test_case = benchmark_path / "fdtd-2d.c"
@@ -1288,7 +1572,10 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1312,14 +1599,19 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "heat-3d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "heat-3d"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 13,
+            "REDUCE": 3,
+            "SEQUENTIAL": 7,
+            "CUDAOffloading": 12,
             "MAP": 6,
             "CUDA": 6,
+            "FOR": 4,
         },
     )
     test_case = benchmark_path / "heat-3d.c"
@@ -1334,7 +1626,10 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1358,14 +1653,19 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-1d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-1d"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 8,
+            "CUDAOffloading": 12,
             "MAP": 3,
             "CUDA": 3,
+            "FOR": 2,
+            "SEQUENTIAL": 5,
+            "REDUCE": 3,
         },
     )
     test_case = benchmark_path / "jacobi-1d.c"
@@ -1380,7 +1680,10 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1404,14 +1707,19 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-2d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-2d"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 12,
+            "CUDAOffloading": 12,
             "MAP": 6,
             "CUDA": 6,
+            "FOR": 3,
+            "SEQUENTIAL": 6,
+            "REDUCE": 3,
         },
     )
     test_case = benchmark_path / "jacobi-2d.c"
@@ -1426,7 +1734,10 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",
@@ -1450,15 +1761,19 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "seidel-2d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "seidel-2d"
+    )
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 10,
+            "CUDAOffloading": 2,
             "MAP": 2,
-            "SEQUENTIAL": 0,
             "CUDA": 2,
+            "FOR": 5,
+            "SEQUENTIAL": 8,
+            "REDUCE": 3,
         },
     )
     test_case = benchmark_path / "seidel-2d.c"
@@ -1473,7 +1788,10 @@ def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "cuda",

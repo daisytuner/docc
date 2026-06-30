@@ -53,6 +53,10 @@ void MemcpyNode::replace(const symbolic::Expression old_expression, const symbol
     this->count_ = symbolic::subs(this->count_, old_expression, new_expression);
 }
 
+void MemcpyNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->count_ = symbolic::subs(this->count_, replacements);
+}
+
 nlohmann::json MemcpyNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const MemcpyNode& node = static_cast<const MemcpyNode&>(library_node);
 

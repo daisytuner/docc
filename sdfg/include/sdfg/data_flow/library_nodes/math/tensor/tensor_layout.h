@@ -54,6 +54,8 @@ public:
 
     void replace_symbols(const symbolic::Expression& old, const symbolic::Expression& new_expr);
 
+    void replace_symbols(const symbolic::ExpressionMapping& replacements);
+
     /**
      *
      * @param i the dimension / entry in shape. 0 is outermost

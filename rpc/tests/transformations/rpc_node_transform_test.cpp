@@ -1,22 +1,22 @@
 #include <gtest/gtest.h>
 #include <memory>
-#include <unordered_set>
 #include <sdfg/transformations/rpc_node_transform.h>
 #include <sdfg/util/utils_curl.h>
+#include <unordered_set>
 
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/codegen/utils.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/passes/rpc/rpc_context.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/transformations/loop_interchange.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/recorder.h"
-#include "sdfg/codegen/utils.h"
-#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/type.h"
 
@@ -184,9 +184,9 @@ TEST_F(RPCNodeTransformTest, Double_Matmul) {
 
     // Transfer tuning replayer
 
-        sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
-        auto& loop_analysis = analysis_manager.get<sdfg::analysis::LoopAnalysis>();
-        auto outer_loops = loop_analysis.outermost_loops();
+    sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
+    auto& loop_analysis = analysis_manager.get<sdfg::analysis::LoopAnalysis>();
+    auto outer_loops = loop_analysis.outermost_loops();
     EXPECT_EQ(outer_loops.size(), 2);
 
     auto outer_loop = static_cast<structured_control_flow::StructuredLoop*>(outer_loops[0]);
@@ -197,7 +197,6 @@ TEST_F(RPCNodeTransformTest, Double_Matmul) {
     sdfg::analysis::AnalysisManager test_analysis_manager(builder.subject());
 
     auto& test_loop_analysis = test_analysis_manager.get<sdfg::analysis::LoopAnalysis>();
-    auto loop_nest_tree = test_loop_analysis.loop_tree();
 
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("k_tile0"), nullptr);
     EXPECT_NE(test_loop_analysis.find_loop_by_indvar("j_tile0"), nullptr);
@@ -230,7 +229,8 @@ TEST_F(RPCNodeTransformTest, UniqueElementIDs) {
     ASSERT_GE(remaining_outer_loops.size(), 1);
 
     auto* second_outer_loop = static_cast<structured_control_flow::StructuredLoop*>(remaining_outer_loops.back());
-    sdfg::transformations::RPCNodeTransform second_rpc_transform(*second_outer_loop, "sequential", "server", *ctx_, false);
+    sdfg::transformations::RPCNodeTransform
+        second_rpc_transform(*second_outer_loop, "sequential", "server", *ctx_, false);
     ASSERT_TRUE(second_rpc_transform.can_be_applied(main_builder, main_analysis_manager));
     second_rpc_transform.apply(main_builder, main_analysis_manager);
 
@@ -284,7 +284,7 @@ TEST_F(RPCNodeTransformTest, HandleOtherHttpErrors) {
     result.body = R"({"error": "Internal Server Error"})";
     result.error_message = "HTTP error: 500, body: " + result.body;
 
-     sdfg::analysis::AnalysisManager analysis_manager(builder_->subject());
+    sdfg::analysis::AnalysisManager analysis_manager(builder_->subject());
     auto& loop_analysis = analysis_manager.get<sdfg::analysis::LoopAnalysis>();
     auto outer_loops = loop_analysis.outermost_loops();
     EXPECT_EQ(outer_loops.size(), 1);
@@ -325,8 +325,7 @@ TEST_F(RPCNodeTransformTest, ApplyUnwrapsReferenceTypedContainersFromResponse) {
     // Build an RPC context that sends the file path as SDFG-Result-Path header,
     // so the transfer server loads this SDFG as its response (same pattern as matmul tests).
     passes::rpc::SimpleRpcContextBuilder ctx_builder;
-    auto test_ctx = ctx_builder
-                        .initialize_local_default()
+    auto test_ctx = ctx_builder.initialize_local_default()
                         .add_header("SDFG-Result-Path", std::string(std::getenv("SDFG_TEST_SDFG_PATH")))
                         .build();
 

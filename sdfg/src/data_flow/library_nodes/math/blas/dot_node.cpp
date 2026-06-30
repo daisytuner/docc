@@ -63,6 +63,12 @@ void DotNode::replace(const symbolic::Expression old_expression, const symbolic:
     this->incy_ = symbolic::subs(this->incy_, old_expression, new_expression);
 };
 
+void DotNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->n_ = symbolic::subs(this->n_, replacements);
+    this->incx_ = symbolic::subs(this->incx_, replacements);
+    this->incy_ = symbolic::subs(this->incy_, replacements);
+};
+
 void DotNode::validate(const Function& function) const { BLASNode::validate(function); }
 
 bool DotNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

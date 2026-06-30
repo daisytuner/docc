@@ -41,6 +41,10 @@ void MemmoveNode::replace(const symbolic::Expression old_expression, const symbo
     this->count_ = symbolic::subs(this->count_, old_expression, new_expression);
 }
 
+void MemmoveNode::replace(const symbolic::ExpressionMapping& replacements) {
+    this->count_ = symbolic::subs(this->count_, replacements);
+}
+
 nlohmann::json MemmoveNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const MemmoveNode& node = static_cast<const MemmoveNode&>(library_node);
 

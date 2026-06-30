@@ -222,6 +222,8 @@ void CMathNode::replace(const symbolic::Expression old_expression, const symboli
     return;
 }
 
+void CMathNode::replace(const symbolic::ExpressionMapping& replacements) { return; }
+
 void CMathNode::validate(const Function& function) const {
     MathNode::validate(function);
 

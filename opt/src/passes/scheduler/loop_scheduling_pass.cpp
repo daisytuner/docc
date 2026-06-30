@@ -4,6 +4,7 @@
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
 #include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/passes/structured_control_flow/unique_loop_indvars.h"
 #include "sdfg/structured_control_flow/map.h"
 
 namespace sdfg {
@@ -18,6 +19,9 @@ bool LoopSchedulingPass::run_pass_target(
         throw std::runtime_error("Unsupported scheduling target: " + target);
     }
     scheduler->set_report(report_);
+
+    UniqueLoopIndvars unique_indvar_pass;
+    unique_indvar_pass.run_pass(builder, analysis_manager);
 
     // ===== Phase 1: Find all applicable loops =====
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();

@@ -92,5 +92,16 @@ std::string constraint_to_isl_str(const Expression con);
  */
 void canonicalize_map_dims(isl_map* map, const std::string& in_prefix, const std::string& out_prefix);
 
+bool vectors_of_expressions_match(const std::vector<Expression>& a, const std::vector<Expression>& b);
+
+/**
+ * Applies replacement mappings to a before checking
+ * @param replacements mapping from symbols inside a to the symbols used by b
+ * @return
+ */
+bool vectors_of_expressions_match(
+    const std::vector<Expression>& a, const std::vector<Expression>& b, const ExpressionMapping& replacements
+);
+
 } // namespace symbolic
 } // namespace sdfg

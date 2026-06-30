@@ -3,7 +3,6 @@
 #include <unordered_map>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"

@@ -2,6 +2,8 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/batchnorm_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
+#include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/math/tensor/batched_matmul_expander.h"
 #include "sdfg/targets/cuda/math/tensor/batchnorm_expander.h"
 #include "sdfg/targets/cuda/math/tensor/conv_expander.h"
@@ -36,6 +38,9 @@ bool CudaExpansion::accept(structured_control_flow::Block& node) {
             auto& matmul_node = static_cast<math::tensor::MatMulNode&>(*library_node);
             sdfg::offloading::CudaBatchedMatMulExpander expander(matmul_node);
             made_changes |= expander.expand(builder_, analysis_manager_);
+        } else if (lib_node_code == math::tensor::LibraryNodeType_Softmax) {
+            library_node->implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
+            made_changes = true;
         } else {
             continue;
         }

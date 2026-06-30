@@ -11,6 +11,7 @@
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/while.h"
@@ -163,6 +164,8 @@ public:
     [[deprecated("use method with explicit assignments instead")]]
     std::pair<Sequence&, Transition&>
     add_sequence_before(Sequence& parent, ControlFlowNode& block, const DebugInfo& debug_info = DebugInfo());
+
+    void remove_from_parent(ControlFlowNode& child);
 
     void remove_child(Sequence& parent, size_t index);
 
@@ -350,6 +353,44 @@ public:
         const DebugInfo& debug_info = DebugInfo()
     );
 
+    Reduce& add_reduce(
+        Sequence& parent,
+        const symbolic::Symbol indvar,
+        const symbolic::Condition condition,
+        const symbolic::Expression init,
+        const symbolic::Expression update,
+        const std::vector<structured_control_flow::ReductionInfo>& reductions,
+        const ScheduleType& schedule_type,
+        const sdfg::control_flow::Assignments& assignments = {},
+        const DebugInfo& debug_info = DebugInfo()
+    );
+
+    Reduce& add_reduce_before(
+        Sequence& parent,
+        ControlFlowNode& child,
+        const symbolic::Symbol indvar,
+        const symbolic::Condition condition,
+        const symbolic::Expression init,
+        const symbolic::Expression update,
+        const std::vector<structured_control_flow::ReductionInfo>& reductions,
+        const ScheduleType& schedule_type,
+        const sdfg::control_flow::Assignments& assignments = {},
+        const DebugInfo& debug_info = DebugInfo()
+    );
+
+    Reduce& add_reduce_after(
+        Sequence& parent,
+        ControlFlowNode& child,
+        const symbolic::Symbol indvar,
+        const symbolic::Condition condition,
+        const symbolic::Expression init,
+        const symbolic::Expression update,
+        const std::vector<structured_control_flow::ReductionInfo>& reductions,
+        const ScheduleType& schedule_type,
+        const sdfg::control_flow::Assignments& assignments = {},
+        const DebugInfo& debug_info = DebugInfo()
+    );
+
     Continue& add_continue(
         Sequence& parent,
         const sdfg::control_flow::Assignments& assignments = {},
@@ -388,6 +429,10 @@ public:
 
     Map& convert_for(Sequence& parent, For& loop);
 
+    Reduce& convert_for_to_reduce(
+        Sequence& parent, For& loop, const std::vector<structured_control_flow::ReductionInfo>& reductions
+    );
+
     void update_if_else_condition(IfElse& if_else, size_t branch, const symbolic::Condition cond);
 
     void update_loop(
@@ -398,7 +443,7 @@ public:
         const symbolic::Expression update
     );
 
-    void update_schedule_type(Map& map, const ScheduleType& schedule_type);
+    void update_schedule_type(StructuredLoop& loop, const ScheduleType& schedule_type);
 
     /***** Section: Dataflow Graph *****/
 

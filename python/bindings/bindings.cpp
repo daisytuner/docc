@@ -264,6 +264,12 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("threads") = 0 // means hardware-threads
         )
         .def("metadata", &PyStructuredSDFG::metadata, py::arg("key"), "Get metadata value")
+        .def_property(
+            "output_dir",
+            [](PyStructuredSDFG* self) { return self->metadata("output_dir"); },
+            [](PyStructuredSDFG* self, const std::string& path) { self->set_output_dir(path); },
+            "Get or set the output directory metadata"
+        )
         .def("loop_report", &PyStructuredSDFG::loop_report, "Get loop statistics from the SDFG")
         .def("to_json", &PyStructuredSDFG::to_json, "Serialize the SDFG to a JSON string")
         .def("to_dot", &PyStructuredSDFG::to_dot, "Serialize the SDFG to a DOT graph string")
@@ -382,6 +388,17 @@ PYBIND11_MODULE(_sdfg, m) {
             py::return_value_policy::reference
         )
         .def("end_for", &PyStructuredSDFGBuilder::end_for)
+        .def(
+            "begin_map",
+            &PyStructuredSDFGBuilder::begin_map,
+            py::arg("var"),
+            py::arg("start"),
+            py::arg("end"),
+            py::arg("step"),
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
+        )
+        .def("end_map", &PyStructuredSDFGBuilder::end_map)
         .def(
             "add_transition",
             &PyStructuredSDFGBuilder::add_transition,

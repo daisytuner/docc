@@ -167,6 +167,8 @@ public:
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
+    void replace(const symbolic::ExpressionMapping& replacements) override;
+
     bool supports_integer_types() const override { return false; }
 
     std::unique_ptr<data_flow::DataFlowNode>

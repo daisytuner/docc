@@ -59,19 +59,14 @@ def test_mlp(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "SEQUENTIAL": 18,
-                "FOR": 20,
-                "MAP": 18,
-                "GEMM": 3,
-            }
+            verification={"REDUCE": 2, "SEQUENTIAL": 17, "MAP": 15, "GEMM": 3}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 7,
+                "REDUCE": 2,
+                "VECTORIZE": 9,
                 "SEQUENTIAL": 9,
-                "FOR": 18,
                 "MAP": 16,
                 "GEMM": 3,
             }
@@ -80,8 +75,8 @@ def test_mlp(target):
         verifier = SDFGVerification(
             verification={
                 "CPU_PARALLEL": 9,
-                "FOR": 11,
                 "MAP": 9,
+                "REDUCE": 2,
                 "GEMM": 3,
             }
         )
@@ -89,9 +84,9 @@ def test_mlp(target):
         verifier = SDFGVerification(
             verification={
                 "CUDA": 16,
-                "FOR": 18,
                 "MAP": 16,
-                "CUDAOffloading": 22,
+                "REDUCE": 2,
+                "CUDAOffloading": 6,
                 "GEMM": 3,
             }
         )
@@ -99,9 +94,9 @@ def test_mlp(target):
         verifier = SDFGVerification(
             verification={
                 "ROCM": 16,
-                "FOR": 18,
                 "MAP": 16,
-                "ROCMOffloading": 22,
+                "REDUCE": 2,
+                "ROCMOffloading": 6,
                 "GEMM": 3,
             }
         )

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/ScopedHashTable.h>
 #include <memory>
 #include <string>
@@ -41,6 +42,9 @@ public:
     /// Create TensorInfo from a tensor type (assumes C-order contiguous).
     static TensorInfo from_tensor_type(TensorType type);
 
+    /// Returns true iff the tensor has basic C-order contiguous strides.
+    static bool has_basic_strides(ArrayRef<int64_t> shape, ArrayRef<int64_t> strides);
+
     /// Create transposed view: output_strides[i] = input_strides[perm[i]].
     TensorInfo transpose(ArrayRef<int64_t> permutation) const;
 
@@ -53,6 +57,9 @@ public:
     /// Returns true iff the tensor has basic C-order contiguous strides.
     bool has_basic_strides() const;
 
+    /// Returns true iff the tensor is transposed in the last two dimensions.
+    bool has_transposed_strides_last_two_dims() const;
+
     /// Create reshaped view (only valid for contiguous tensors).
     TensorInfo reshape(ArrayRef<int64_t> new_shape) const;
 
@@ -61,6 +68,9 @@ public:
 
     /// Create SDFG tensor type
     std::unique_ptr<::sdfg::types::Tensor> get_sdfg_tensor(const ::sdfg::types::Scalar& element_type) const;
+
+    /// Create SDFG tensor layout
+    ::sdfg::math::tensor::TensorLayout get_tensor_layout() const;
 
     /// Return string representation of tensor info (for debug purposes)
     std::string toStr() const;
@@ -80,6 +90,11 @@ class SDFGTranslator {
     std::unordered_map<::sdfg::structured_control_flow::Sequence*, std::list<std::string>> memory_map_;
 
     std::unordered_map<std::string, std::string> alias_map_;
+
+    // Maps a linalg.fill result whose materialization was deferred to the constant scalar value it
+    // fills with, so each consumer can regenerate a freshly-filled array instead of copying from a
+    // single shared buffer.
+    llvm::DenseMap<Value, Value> constant_fill_map_;
 
     std::vector<std::string> output_args_;
 
@@ -129,6 +144,14 @@ public:
     std::string get_or_copy_output_container(
         Value output, const ::sdfg::DebugInfo& deb_info = ::sdfg::DebugInfo(), bool consumer_overwrites_output = false
     );
+
+    /// Record that `result` is produced by a constant `value` linalg.fill whose materialization is
+    /// deferred. Each consumer regenerates a freshly-filled array on demand instead of copying from
+    /// a single shared buffer (saving the source buffer and turning per-use memcpys into fills).
+    void record_constant_fill(Value result, Value value);
+
+    /// Returns true if `result` was recorded via record_constant_fill.
+    bool is_constant_fill(Value result) const;
 
     /// Returns the container of `input` if its buffer can be safely overwritten in place by an
     /// elementwise consumer producing `result`, otherwise the empty string. Conservatively limited

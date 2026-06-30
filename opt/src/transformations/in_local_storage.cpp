@@ -6,7 +6,6 @@
 #include <string>
 
 #include "sdfg/analysis/memory_layout_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -14,7 +13,6 @@
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/structured_control_flow/sequence_fusion.h"
-#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -61,6 +59,14 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     // Criterion: Container must be read-only within the loop (no writes)
     if (!body_users.writes(this->container_).empty()) {
         return false;
+    }
+
+    // Criterion (GPU path): Loop must not be outermost (shared memory is per-block, not global)
+    if (storage_type_.is_nv_shared()) {
+        auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+        if (loop_analysis.is_outermost_loop(&this->loop_)) {
+            return false;
+        }
     }
 
     // Use MemoryLayoutAnalysis tile group API
@@ -637,24 +643,21 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 }
 
 void InLocalStorage::to_json(nlohmann::json& j) const {
-    std::string loop_type;
-    if (dynamic_cast<structured_control_flow::For*>(&loop_)) {
-        loop_type = "for";
-    } else if (dynamic_cast<structured_control_flow::Map*>(&loop_)) {
-        loop_type = "map";
-    } else {
-        throw std::runtime_error("Unsupported loop type for serialization of loop: " + loop_.indvar()->get_name());
-    }
-    j["subgraph"] = {
-        {"0", {{"element_id", this->loop_.element_id()}, {"type", loop_type}}},
-        {"1", {{"element_id", this->access_node_.element_id()}, {"type", "access_node"}}}
-    };
     j["transformation_type"] = this->name();
-    j["container"] = container_;
-    serializer::JSONSerializer ser;
-    nlohmann::json storage_json = nlohmann::json::object();
-    ser.storage_type_to_json(storage_json, storage_type_);
-    j["storage_type"] = storage_json;
+    j["parameters"] = nlohmann::json::object();
+
+    serializer::JSONSerializer serializer_full;
+    j["parameters"]["storage_type"] = nlohmann::json::object();
+    serializer_full.storage_type_to_json(j["parameters"]["storage_type"], storage_type_);
+
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], loop_);
+
+    j["subgraph"]["1"] = nlohmann::json::object();
+    j["subgraph"]["1"]["element_id"] = access_node_.element_id();
+    j["subgraph"]["1"]["type"] = "access_node";
 }
 
 InLocalStorage InLocalStorage::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
@@ -680,9 +683,9 @@ InLocalStorage InLocalStorage::from_json(builder::StructuredSDFGBuilder& builder
     }
 
     types::StorageType storage_type = types::StorageType::CPU_Stack();
-    if (desc.contains("storage_type")) {
-        serializer::JSONSerializer ser;
-        storage_type = ser.json_to_storage_type(desc.at("storage_type"));
+    if (desc["parameters"].contains("storage_type")) {
+        serializer::JSONSerializer serializer_full;
+        storage_type = serializer_full.json_to_storage_type(desc["parameters"]["storage_type"]);
     }
 
     return InLocalStorage(*loop, *access_node, storage_type);

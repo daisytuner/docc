@@ -42,15 +42,37 @@ def kernel(A):
 )
 def test_lu(target):
     if target == "none":
-        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
+        verifier = SDFGVerification(
+            verification={"MAP": 1, "REDUCE": 2, "SEQUENTIAL": 5, "FOR": 2}
+        )
     elif target == "sequential":
-        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
+        verifier = SDFGVerification(
+            verification={
+                "MAP": 1,
+                "VECTORIZE": 2,
+                "REDUCE": 2,
+                "SEQUENTIAL": 3,
+                "FOR": 2,
+            }
+        )
     elif target == "openmp":
-        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
+        verifier = SDFGVerification(
+            verification={
+                "MAP": 1,
+                "VECTORIZE": 2,
+                "REDUCE": 2,
+                "SEQUENTIAL": 3,
+                "FOR": 2,
+            }
+        )
     elif target == "cuda":
-        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
+        verifier = SDFGVerification(
+            verification={"MAP": 1, "REDUCE": 2, "SEQUENTIAL": 5, "FOR": 2}
+        )
     elif target == "rocm":
-        verifier = SDFGVerification(verification={"MAP": 1, "SEQUENTIAL": 1, "FOR": 5})
+        verifier = SDFGVerification(
+            verification={"MAP": 1, "REDUCE": 2, "SEQUENTIAL": 5, "FOR": 2}
+        )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
 

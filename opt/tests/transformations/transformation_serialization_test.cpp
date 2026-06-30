@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 #include <nlohmann/json.hpp>
 
 #include <sdfg/analysis/analysis.h>
@@ -17,6 +21,7 @@
 #include <sdfg/transformations/loop_skewing.h>
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/out_local_storage.h>
+#include <sdfg/transformations/transformation_schema.h>
 #include <sdfg/types/type.h>
 
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
@@ -36,23 +41,49 @@ using namespace sdfg;
 namespace {
 
 void ValidateSerialization(const nlohmann::json& j, std::size_t expected_subgraph_size) {
-    ASSERT_TRUE(j.contains("transformation_type"));
-    ASSERT_TRUE(j["transformation_type"].is_string());
+    // Strict schema check shared with the runtime invariant in the Recorder/Replayer.
+    std::string schema_error;
+    ASSERT_TRUE(transformations::validate_transformation_schema(j, schema_error)) << schema_error;
 
-    ASSERT_TRUE(j.contains("subgraph"));
-    ASSERT_TRUE(j["subgraph"].is_object());
+    // Additionally pin down the expected number of serialized constructor nodes.
     ASSERT_EQ(j["subgraph"].size(), expected_subgraph_size);
-
-    for (std::size_t i = 0; i < expected_subgraph_size; ++i) {
-        auto key = std::to_string(i);
-        ASSERT_TRUE(j["subgraph"].contains(key));
-        const auto& node = j["subgraph"][key];
-        ASSERT_TRUE(node.contains("element_id"));
-        ASSERT_TRUE(node["element_id"].is_number_unsigned());
-        ASSERT_TRUE(node.contains("type"));
-        ASSERT_TRUE(node["type"].is_string());
-    }
 }
+
+} // namespace
+
+TEST(TransformationSerializationTest, EmbeddedSchemaIsLoadableAndDocumentsContract) {
+    // The schema document (opt/json/transformation.schema.json) is embedded into
+    // the library and must parse as valid JSON.
+    const auto& schema = transformations::transformation_schema();
+    ASSERT_TRUE(schema.is_object());
+    ASSERT_EQ(schema.value("title", ""), "Transformation");
+
+    // The validator's contract must match the keys the schema declares as required.
+    ASSERT_TRUE(schema.contains("required"));
+    const std::vector<std::string> required = schema["required"].get<std::vector<std::string>>();
+    EXPECT_NE(std::find(required.begin(), required.end(), "transformation_type"), required.end());
+    EXPECT_NE(std::find(required.begin(), required.end(), "subgraph"), required.end());
+    // "parameters" is optional for backward compatibility.
+    EXPECT_EQ(std::find(required.begin(), required.end(), "parameters"), required.end());
+
+    // A minimal description that satisfies the schema also passes the validator.
+    nlohmann::json sample = {
+        {"transformation_type", "LoopTiling"},
+        {"subgraph", {{"0", {{"element_id", 0}, {"type", "for"}}}}},
+        {"parameters", {{"tile_size", 4}}},
+    };
+    std::string error;
+    EXPECT_TRUE(transformations::validate_transformation_schema(sample, error)) << error;
+
+    // A description without "parameters" is accepted for backward compatibility.
+    nlohmann::json sample_no_params = {
+        {"transformation_type", "LoopDistribute"},
+        {"subgraph", {{"0", {{"element_id", 0}, {"type", "for"}}}}},
+    };
+    EXPECT_TRUE(transformations::validate_transformation_schema(sample_no_params, error)) << error;
+}
+
+namespace {
 
 // Build a minimal SDFG with one map nest i->j suitable for most loop-based transforms.
 struct LoopFixture {
@@ -133,9 +164,9 @@ TEST(TransformationSerializationTest, CoreLoopTransformationsShape) {
     nlohmann::json jo;
     ols.to_json(jo);
     ValidateSerialization(jo, 2);
-    ASSERT_TRUE(jo.contains("storage_type"));
-    ASSERT_TRUE(jo["storage_type"].is_object());
-    ASSERT_EQ(jo["storage_type"]["value"].get<std::string>(), "CPU_Stack");
+    ASSERT_TRUE(jo["parameters"].contains("storage_type"));
+    ASSERT_TRUE(jo["parameters"]["storage_type"].is_object());
+    ASSERT_EQ(jo["parameters"]["storage_type"]["value"].get<std::string>(), "CPU_Stack");
     auto ols2 = transformations::OutLocalStorage::from_json(f.builder, jo);
     ASSERT_EQ(ols2.name(), ols.name());
 
@@ -144,7 +175,7 @@ TEST(TransformationSerializationTest, CoreLoopTransformationsShape) {
     nlohmann::json jo_sh;
     ols_shared.to_json(jo_sh);
     ValidateSerialization(jo_sh, 2);
-    ASSERT_EQ(jo_sh["storage_type"]["value"].get<std::string>(), "NV_Shared");
+    ASSERT_EQ(jo_sh["parameters"]["storage_type"]["value"].get<std::string>(), "NV_Shared");
     auto ols_shared2 = transformations::OutLocalStorage::from_json(f.builder, jo_sh);
     ASSERT_EQ(ols_shared2.name(), ols_shared.name());
 
@@ -153,11 +184,9 @@ TEST(TransformationSerializationTest, CoreLoopTransformationsShape) {
     nlohmann::json jils;
     ils.to_json(jils);
     ValidateSerialization(jils, 2);
-    ASSERT_TRUE(jils.contains("container"));
-    ASSERT_EQ(jils["container"].get<std::string>(), "A");
-    ASSERT_TRUE(jils.contains("storage_type"));
-    ASSERT_TRUE(jils["storage_type"].is_object());
-    ASSERT_EQ(jils["storage_type"]["value"].get<std::string>(), "CPU_Stack");
+    ASSERT_TRUE(jils["parameters"].contains("storage_type"));
+    ASSERT_TRUE(jils["parameters"]["storage_type"].is_object());
+    ASSERT_EQ(jils["parameters"]["storage_type"]["value"].get<std::string>(), "CPU_Stack");
     auto ils2 = transformations::InLocalStorage::from_json(f.builder, jils);
     ASSERT_EQ(ils2.name(), ils.name());
 
@@ -166,7 +195,7 @@ TEST(TransformationSerializationTest, CoreLoopTransformationsShape) {
     nlohmann::json jils_sh;
     ils_shared.to_json(jils_sh);
     ValidateSerialization(jils_sh, 2);
-    ASSERT_EQ(jils_sh["storage_type"]["value"].get<std::string>(), "NV_Shared");
+    ASSERT_EQ(jils_sh["parameters"]["storage_type"]["value"].get<std::string>(), "NV_Shared");
     auto ils_shared2 = transformations::InLocalStorage::from_json(f.builder, jils_sh);
     ASSERT_EQ(ils_shared2.name(), ils_shared.name());
 

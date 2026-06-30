@@ -36,20 +36,14 @@ def kernel(alpha, beta, A, u1, v1, u2, v2, w, x, y, z):
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_gemver(target):
     if target == "none":
-        verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 3, "FOR": 3, "MAP": 3, "Malloc": 3, "GEMM": 4}
-        )
+        verifier = SDFGVerification(verification={"SEQUENTIAL": 3, "MAP": 3, "GEMM": 4})
     elif target == "sequential":
-        verifier = SDFGVerification(
-            verification={"VECTORIZE": 3, "FOR": 3, "MAP": 3, "Malloc": 3, "GEMM": 4}
-        )
+        verifier = SDFGVerification(verification={"VECTORIZE": 3, "MAP": 3, "GEMM": 4})
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "CPU_PARALLEL": 3,
-                "FOR": 3,
                 "MAP": 3,
-                "Malloc": 3,
                 "GEMM": 4,
             }
         )
@@ -57,7 +51,8 @@ def test_gemver(target):
         verifier = SDFGVerification(
             verification={
                 "CUDA": 8,
-                "FOR": 12,
+                "SEQUENTIAL": 4,
+                "REDUCE": 4,
                 "MAP": 8,
                 "CUDAOffloading": 6,
             },
@@ -66,7 +61,8 @@ def test_gemver(target):
         verifier = SDFGVerification(
             verification={
                 "ROCM": 8,
-                "FOR": 12,
+                "SEQUENTIAL": 4,
+                "REDUCE": 4,
                 "MAP": 8,
                 "ROCMOffloading": 6,
             },

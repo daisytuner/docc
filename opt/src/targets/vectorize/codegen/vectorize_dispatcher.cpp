@@ -1,4 +1,4 @@
-#include "sdfg/targets/vectorize/codegen/vectorize_map_dispatcher.h"
+#include "sdfg/targets/vectorize/codegen/vectorize_dispatcher.h"
 
 #include "sdfg/targets/vectorize/schedule.h"
 
@@ -7,16 +7,16 @@
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/codegen/dispatchers/sequence_dispatcher.h>
 #include <sdfg/codegen/instrumentation/instrumentation_info.h>
-#include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/structured_loop.h>
 
 namespace sdfg {
 namespace vectorize {
 
-VectorizeMapDispatcher::VectorizeMapDispatcher(
+VectorizeDispatcher::VectorizeDispatcher(
     codegen::LanguageExtension& language_extension,
     StructuredSDFG& sdfg,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Map& node,
+    structured_control_flow::StructuredLoop& node,
     codegen::InstrumentationPlan& instrumentation_plan,
     codegen::ArgCapturePlan& arg_capture_plan
 )
@@ -25,13 +25,18 @@ VectorizeMapDispatcher::VectorizeMapDispatcher(
 
       };
 
-void VectorizeMapDispatcher::dispatch_node(
+void VectorizeDispatcher::dispatch_node(
     codegen::PrettyPrinter& main_stream,
     codegen::PrettyPrinter& globals_stream,
     codegen::CodeSnippetFactory& library_snippet_factory
 ) {
     // Generate code
-    main_stream << "// Map" << std::endl;
+    if (dynamic_cast<structured_control_flow::Map*>(&node_)) {
+        main_stream << "// Map" << std::endl;
+    } else if (dynamic_cast<structured_control_flow::Reduce*>(&node_)) {
+        main_stream << "// Reduce" << std::endl;
+    }
+
     main_stream << "#pragma clang loop vectorize(enable) interleave(enable)" << std::endl;
 
     main_stream << "for";
@@ -57,7 +62,7 @@ void VectorizeMapDispatcher::dispatch_node(
     main_stream << "}" << std::endl;
 };
 
-codegen::InstrumentationInfo VectorizeMapDispatcher::instrumentation_info() const {
+codegen::InstrumentationInfo VectorizeDispatcher::instrumentation_info() const {
     auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
     analysis::LoopInfo loop_info = loop_analysis.loop_info(&node_);
 

@@ -5,6 +5,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/serializer/json_serializer.h"
 
 namespace sdfg {
 

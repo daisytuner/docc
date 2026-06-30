@@ -126,21 +126,19 @@ void CUDAScheduler::post_schedule(
         }
     }
 
-    if (gpu_maps.empty()) {
-        return;
+    if (!gpu_maps.empty()) {
+        GPULoopReorderingPass reordering_pass(gpu_maps);
+        reordering_pass.run(builder, analysis_manager);
+        analysis_manager.invalidate_all();
+
+        GPUNestedParallelizationPass nested_pass(gpu_maps, GPUTarget::CUDA, 8);
+        nested_pass.run(builder, analysis_manager);
+        analysis_manager.invalidate_all();
+
+        GPUTilingPass tiling_pass(gpu_maps, 8);
+        tiling_pass.run(builder, analysis_manager);
+        analysis_manager.invalidate_all();
     }
-
-    GPULoopReorderingPass reordering_pass(gpu_maps);
-    reordering_pass.run(builder, analysis_manager);
-    analysis_manager.invalidate_all();
-
-    GPUNestedParallelizationPass nested_pass(gpu_maps, GPUTarget::CUDA, 8);
-    nested_pass.run(builder, analysis_manager);
-    analysis_manager.invalidate_all();
-
-    GPUTilingPass tiling_pass(gpu_maps, 8);
-    tiling_pass.run(builder, analysis_manager);
-    analysis_manager.invalidate_all();
 
     cuda::CudaLibraryNodeTransferExtractionPass transfer_extraction_pass;
     transfer_extraction_pass.run(builder, analysis_manager);

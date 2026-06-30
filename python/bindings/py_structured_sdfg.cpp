@@ -27,6 +27,7 @@
 #include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
+#include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
 #include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
@@ -36,7 +37,7 @@
 #include <sdfg/passes/scheduler/scheduler_registry.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
-#include <sdfg/passes/structured_control_flow/for2map.h>
+#include <sdfg/passes/structured_control_flow/for_classification.h>
 #include <sdfg/passes/structured_control_flow/pointer_evolution.h>
 #include <sdfg/passes/structured_control_flow/while_to_for_conversion.h>
 #include <sdfg/passes/symbolic/symbol_evolution.h>
@@ -55,11 +56,14 @@
 #include "docc/compile/src_file_compiler.h"
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
+#include "sdfg/passes/dataflow/tasklet_fusion.h"
+#include "sdfg/passes/map_fusion_by_domain_pass.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
+#include "sdfg/passes/redundant_load_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
@@ -84,7 +88,8 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 PyStructuredSDFG::PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg)
-    : docc_context_(ctx), sdfg_(std::move(sdfg)) {}
+    : docc_context_(ctx), sdfg_(std::move(sdfg)), use_new_fusion_in_simplify_(true),
+      use_new_fusion_in_normalize_(false) {}
 
 PyStructuredSDFG PyStructuredSDFG::parse(sdfg::plugins::Context& ctx, const std::string& sdfg_text) {
     json j = json::parse(sdfg_text);
@@ -113,6 +118,10 @@ PyStructuredSDFG PyStructuredSDFG::from_sdfg(sdfg::plugins::Context& ctx, std::u
 }
 
 std::string PyStructuredSDFG::name() const { return sdfg_->name(); }
+
+void PyStructuredSDFG::set_output_dir(const std::filesystem::path& dir) {
+    sdfg_->add_metadata("output_dir", dir.string());
+}
 
 sdfg::plugins::Context& PyStructuredSDFG::docc_context() const { return docc_context_; }
 
@@ -300,8 +309,8 @@ void PyStructuredSDFG::simplify() {
     dce.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
 
-    // Convert for loops into maps
-    sdfg::passes::For2MapPass map_conversion_pass;
+    // Convert for loops into maps and reductions
+    sdfg::passes::ForClassificationPass map_conversion_pass;
     map_conversion_pass.run(builder_opt, analysis_manager);
 
     // Move code out of maps where possible
@@ -312,6 +321,25 @@ void PyStructuredSDFG::simplify() {
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
     dataflow_simplification.run(builder_opt, analysis_manager);
+
+    if (use_new_fusion_in_simplify_) {
+        // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
+        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
+        map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
+
+        // Cleanup of artifacts of MapFusion
+        dde.run(builder_opt, analysis_manager);
+        dce.run(builder_opt, analysis_manager);
+        sdfg::passes::Pipeline block_fusion("BlockFusion");
+        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
+        block_fusion.run(builder_opt, analysis_manager);
+
+        sdfg::passes::RedundantLoadEliminationPass rle;
+        rle.run(builder_opt, analysis_manager);
+        dde.run(builder_opt, analysis_manager);
+        sdfg::passes::TaskletFusionPass task_fuse_pass;
+        task_fuse_pass.run(builder_opt, analysis_manager);
+    }
 
     // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
     // normalize() map-fusion run so loop distribution and fusion do not fight)
@@ -376,6 +404,26 @@ void PyStructuredSDFG::normalize() {
     // Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
     auto map_fusion_hoist = sdfg::passes::normalization::map_fusion(true);
     map_fusion_hoist.run(builder, analysis_manager);
+
+    if (use_new_fusion_in_normalize_) {
+        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
+        map_fusion_by_domain_pass.run(builder, analysis_manager);
+        sdfg::passes::DeadDataElimination dde;
+        sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
+
+        // Cleanup of artifacts of MapFusion
+        dde.run(builder, analysis_manager);
+        dce.run(builder, analysis_manager);
+        sdfg::passes::Pipeline block_fusion("BlockFusion");
+        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
+        block_fusion.run(builder, analysis_manager);
+
+        sdfg::passes::RedundantLoadEliminationPass rle;
+        rle.run(builder, analysis_manager);
+        dde.run(builder, analysis_manager);
+        sdfg::passes::TaskletFusionPass task_fuse_pass;
+        task_fuse_pass.run(builder, analysis_manager);
+    }
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
@@ -425,6 +473,8 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
     if (loop_scheduling_changes) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
         data_transfer_minimization_pass.run(builder, analysis_manager);
+        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
+        device_buffer_reuse_pass.run(builder, analysis_manager);
         sdfg::passes::DeadDataElimination dde(false);
         dde.run(builder, analysis_manager);
         sdfg::passes::DeadCFGElimination dead_cfg_elimination;
@@ -449,17 +499,20 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     if (promoted) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
         sdfg::passes::DeadDataElimination dead_data_elimination;
+        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
 
         // 1st round
         reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
         data_transfer_minimization.run(builder, analysis_manager);
+        device_buffer_reuse_pass.run(builder, analysis_manager);
         dead_data_elimination.run(builder, analysis_manager);
 
         // 2nd round
         reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
         data_transfer_minimization.run(builder, analysis_manager);
+        device_buffer_reuse_pass.run(builder, analysis_manager);
         dead_data_elimination.run(builder, analysis_manager);
     }
 

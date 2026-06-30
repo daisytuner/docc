@@ -85,58 +85,40 @@ def test_adi(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "Free": 3,
-                "MAP": 24,
-                "SEQUENTIAL": 24,
-                "FOR": 29,
-                "Malloc": 11,
-            }
+            verification={"MAP": 21, "SEQUENTIAL": 26, "FOR": 5}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={
-                "Free": 3,
-                "VECTORIZE": 23,
-                "MAP": 24,
-                "SEQUENTIAL": 1,
-                "FOR": 29,
-                "Malloc": 11,
-            }
+            verification={"VECTORIZE": 20, "MAP": 21, "SEQUENTIAL": 6, "FOR": 5}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "Free": 3,
                 "CPU_PARALLEL": 1,
-                "VECTORIZE": 22,
-                "MAP": 23,
-                "FOR": 28,
-                "Malloc": 11,
+                "VECTORIZE": 19,
+                "MAP": 20,
+                "SEQUENTIAL": 5,
+                "FOR": 5,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "Free": 3,
                 "CUDA": 2,
                 "CUDAOffloading": 4,
-                "MAP": 24,
-                "SEQUENTIAL": 22,
-                "FOR": 29,
-                "Malloc": 11,
+                "MAP": 21,
+                "SEQUENTIAL": 24,
+                "FOR": 5,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "Free": 3,
                 "ROCM": 2,
                 "ROCMOffloading": 4,
-                "MAP": 24,
-                "SEQUENTIAL": 22,
-                "FOR": 29,
-                "Malloc": 11,
+                "MAP": 21,
+                "SEQUENTIAL": 24,
+                "FOR": 5,
             }
         )
 

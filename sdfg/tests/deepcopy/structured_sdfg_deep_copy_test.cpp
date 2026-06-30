@@ -332,3 +332,48 @@ TEST(StructuredSDFGDeepCopy, Map) {
     EXPECT_TRUE(symbolic::eq(inserted_map->update(), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
     EXPECT_EQ(inserted_map->schedule_type().value(), structured_control_flow::ScheduleType_Sequential::value());
 }
+
+TEST(StructuredSDFGDeepCopy, Reduce) {
+    builder::StructuredSDFGBuilder builder_source("sdfg_source", FunctionType_CPU);
+    auto& sdfg_source = builder_source.subject();
+    auto& root_source = sdfg_source.root();
+
+    auto& reduce = builder_source.add_reduce(
+        root_source,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "i"}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    builder::StructuredSDFGBuilder builder_target("sdfg_target", FunctionType_CPU);
+    auto& sdfg_target = builder_target.subject();
+    auto& root_target = sdfg_target.root();
+
+    deepcopy::StructuredSDFGDeepCopy deep_copy(builder_target, root_target, root_source);
+    deep_copy.copy();
+
+    EXPECT_EQ(root_target.size(), 1);
+    auto inserted = root_target.at(0);
+    EXPECT_EQ(inserted.second.size(), 0);
+    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    EXPECT_TRUE(inserted_root);
+
+    EXPECT_EQ(inserted_root->size(), 1);
+    EXPECT_TRUE(dynamic_cast<structured_control_flow::Reduce*>(&inserted_root->at(0).first));
+
+    auto inserted_reduce = dynamic_cast<structured_control_flow::Reduce*>(&inserted_root->at(0).first);
+    EXPECT_TRUE(inserted_reduce);
+    EXPECT_EQ(inserted_reduce->root().size(), 0);
+
+    EXPECT_TRUE(symbolic::eq(inserted_reduce->indvar(), symbolic::symbol("i")));
+    EXPECT_TRUE(symbolic::eq(inserted_reduce->condition(), symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10))));
+    EXPECT_TRUE(symbolic::eq(inserted_reduce->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(inserted_reduce->update(), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
+    ASSERT_EQ(inserted_reduce->reductions().size(), 1u);
+    EXPECT_EQ(inserted_reduce->reductions()[0].operation, structured_control_flow::ReductionOperation::Add);
+    EXPECT_EQ(inserted_reduce->reductions()[0].container, "i");
+    EXPECT_EQ(inserted_reduce->schedule_type().value(), structured_control_flow::ScheduleType_Sequential::value());
+}

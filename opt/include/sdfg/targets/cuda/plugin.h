@@ -4,6 +4,7 @@
 #include <sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h>
 #include <sdfg/data_flow/library_nodes/math/blas/dot_node.h>
 #include <sdfg/data_flow/library_nodes/math/blas/gemm_node.h>
+#include <sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h>
 #include <sdfg/data_flow/library_nodes/stdlib/memcpy.h>
 #include <sdfg/data_flow/library_nodes/stdlib/memset.h>
 #include <sdfg/plugins/plugins.h>
@@ -18,6 +19,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/cuda/cuda_map_dispatcher.h"
+#include "sdfg/targets/cuda/math/tensor/softmax.h"
 #include "sdfg/targets/cuda/stdlib/memcpy.h"
 #include "sdfg/targets/cuda/stdlib/memset.h"
 

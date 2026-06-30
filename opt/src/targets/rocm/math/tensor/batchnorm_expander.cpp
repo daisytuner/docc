@@ -1,5 +1,4 @@
 #include "sdfg/targets/cuda/math/tensor/batchnorm_expander.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_expansion_utils.h"

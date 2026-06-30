@@ -499,7 +499,7 @@ TEST(JSONSerializerTest, ForNodeToJSON) {
 
     // Serialize the For node to JSON
     nlohmann::json j;
-    serializer.for_to_json(j, scope);
+    serializer.structured_loop_to_json(j, scope);
 
     // Check if the JSON contains the expected keys
     EXPECT_TRUE(j.contains("type"));
@@ -720,11 +720,13 @@ TEST(JSONSerializerTest, MapToJSON) {
 
     // Serialize the Map node to JSON
     nlohmann::json j;
-    serializer.map_to_json(j, map);
+    serializer.structured_loop_to_json(j, map);
 
     // Check if the JSON contains the expected keys
     EXPECT_TRUE(j.contains("type"));
     EXPECT_EQ(j["type"], "map");
+    EXPECT_TRUE(j.contains("sub_type"));
+    EXPECT_EQ(j["sub_type"], "map");
     EXPECT_TRUE(j.contains("indvar"));
     EXPECT_EQ(j["indvar"], "i");
     EXPECT_TRUE(j.contains("init"));
@@ -734,6 +736,52 @@ TEST(JSONSerializerTest, MapToJSON) {
                     eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
     EXPECT_TRUE(j.contains("condition"));
     EXPECT_EQ(j["condition"], "(i < 10)");
+    EXPECT_TRUE(j.contains("root"));
+    EXPECT_EQ(j["root"]["type"], "sequence");
+    EXPECT_EQ(j["root"]["children"].size(), 1);
+}
+
+TEST(JSONSerializerTest, ReduceToJSON) {
+    // Create a sample Reduce node
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    auto& reduce = builder.add_reduce(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "i"}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& body = builder.add_block(reduce.root());
+
+    auto sdfg = builder.move();
+    sdfg::serializer::JSONSerializer serializer;
+
+    nlohmann::json j;
+    serializer.structured_loop_to_json(j, reduce);
+
+    EXPECT_TRUE(j.contains("type"));
+    EXPECT_EQ(j["type"], "for");
+    EXPECT_TRUE(j.contains("sub_type"));
+    EXPECT_EQ(j["sub_type"], "reduce");
+    EXPECT_TRUE(j.contains("indvar"));
+    EXPECT_EQ(j["indvar"], "i");
+    EXPECT_TRUE(j.contains("init"));
+    EXPECT_EQ(j["init"], "0");
+    EXPECT_TRUE(j.contains("update"));
+    EXPECT_TRUE(symbolic::
+                    eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
+    EXPECT_TRUE(j.contains("condition"));
+    EXPECT_EQ(j["condition"], "(i < 10)");
+    EXPECT_TRUE(j.contains("reductions"));
+    EXPECT_TRUE(j["reductions"].is_array());
+    EXPECT_EQ(j["reductions"].size(), 1);
+    EXPECT_EQ(j["reductions"][0]["op"], "add");
+    EXPECT_EQ(j["reductions"][0]["container"], "i");
+    EXPECT_TRUE(j.contains("schedule_type"));
     EXPECT_TRUE(j.contains("root"));
     EXPECT_EQ(j["root"]["type"], "sequence");
     EXPECT_EQ(j["root"]["children"].size(), 1);
@@ -1514,7 +1562,7 @@ TEST(JSONSerializerTest, SerializeDeserialize_forloop) {
 
     // Serialize the DataflowGraph to JSON
 
-    serializer.for_to_json(j, for_loop);
+    serializer.structured_loop_to_json(j, for_loop);
 
     // Deserialize the JSON back into a DataflowGraph object
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
@@ -1524,7 +1572,7 @@ TEST(JSONSerializerTest, SerializeDeserialize_forloop) {
 
     control_flow::Assignments assignments;
 
-    serializer.json_to_for_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root(), assignments);
     auto des_sdfg = des_builder.move();
 
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
@@ -1767,14 +1815,14 @@ TEST(JSONSerializerTest, SerializeDeserialize_Map) {
 
     // Serialize the Sequence node to JSON
     nlohmann::json j;
-    serializer.map_to_json(j, map);
+    serializer.structured_loop_to_json(j, map);
 
     // Deserialize the JSON back into a Sequence node
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
 
     control_flow::Assignments assignments;
 
-    serializer.json_to_map_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root(), assignments);
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 0);
@@ -1789,6 +1837,50 @@ TEST(JSONSerializerTest, SerializeDeserialize_Map) {
     EXPECT_EQ(des_map.schedule_type().value(), structured_control_flow::ScheduleType_Sequential::value());
 
     EXPECT_EQ(des_map.root().size(), 0);
+}
+
+TEST(JSONSerializerTest, SerializeDeserialize_Reduce) {
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    auto& reduce = builder.add_reduce(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Max, "i"}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto sdfg = builder.move();
+    sdfg::serializer::JSONSerializer serializer;
+
+    nlohmann::json j;
+    serializer.structured_loop_to_json(j, reduce);
+
+    auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
+
+    control_flow::Assignments assignments;
+
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root(), assignments);
+    auto des_sdfg = des_builder.move();
+    EXPECT_EQ(des_sdfg->name(), sdfg->name());
+    EXPECT_EQ(des_sdfg->containers().size(), 0);
+    EXPECT_EQ(des_sdfg->root().size(), 1);
+
+    EXPECT_TRUE(dynamic_cast<sdfg::structured_control_flow::Reduce*>(&des_sdfg->root().at(0).first) != nullptr);
+    auto& des_reduce = dynamic_cast<sdfg::structured_control_flow::Reduce&>(des_sdfg->root().at(0).first);
+    EXPECT_TRUE(symbolic::eq(des_reduce.indvar(), symbolic::symbol("i")));
+    EXPECT_TRUE(symbolic::eq(des_reduce.condition(), symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10))));
+    EXPECT_TRUE(symbolic::eq(des_reduce.init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(des_reduce.update(), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
+    ASSERT_EQ(des_reduce.reductions().size(), 1u);
+    EXPECT_EQ(des_reduce.reductions()[0].operation, structured_control_flow::ReductionOperation::Max);
+    EXPECT_EQ(des_reduce.reductions()[0].container, "i");
+    EXPECT_EQ(des_reduce.schedule_type().value(), structured_control_flow::ScheduleType_Sequential::value());
+
+    EXPECT_EQ(des_reduce.root().size(), 0);
 }
 
 TEST(JSONSerializerTest, SerializeDeserialize_return) {

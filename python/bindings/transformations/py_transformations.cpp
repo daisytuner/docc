@@ -8,6 +8,7 @@
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_skewing.h>
 #include <sdfg/transformations/loop_tiling.h>
+#include <sdfg/transformations/map_collapse.h>
 #include <sdfg/transformations/map_fusion.h>
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/recorder.h>
@@ -158,6 +159,29 @@ void register_transformations(py::module& m) {
             return oss.str();
         });
 
+    // MapCollapse transformation
+    py::class_<MapCollapse, Transformation>(m, "MapCollapse")
+        .def(
+            py::init<Map&, size_t>(),
+            py::arg("loop"),
+            py::arg("count"),
+            "Create a map collapse transformation.\n\n"
+            "Args:\n"
+            "    loop: The outermost map of the nest to collapse\n"
+            "    count: The number of maps to collapse (must be >= 2)"
+        )
+        .def_property_readonly(
+            "collapsed_loop",
+            &MapCollapse::collapsed_loop,
+            py::return_value_policy::reference,
+            "Get the collapsed map after apply"
+        )
+        .def("__repr__", [](const MapCollapse& t) {
+            std::ostringstream oss;
+            oss << "<MapCollapse name='" << t.name() << "'>";
+            return oss.str();
+        });
+
     // MapFusion transformation
     py::class_<MapFusion, Transformation>(m, "MapFusion")
         .def(
@@ -218,6 +242,21 @@ void register_transformations(py::module& m) {
                 // Record the transformation
                 nlohmann::json desc;
                 transformation.to_json(desc);
+
+                // Enrich each subgraph loop entry with loop_level and map_stack_depth
+                if (desc.contains("subgraph")) {
+                    auto& loop_analysis = analysis_manager.manager().get<sdfg::analysis::LoopAnalysis>();
+                    for (auto& [key, value] : desc["subgraph"].items()) {
+                        if (!value.contains("element_id")) continue;
+                        auto element_id = value["element_id"].get<size_t>();
+                        auto* elem = builder.builder().find_element_by_id(element_id);
+                        if (dynamic_cast<sdfg::structured_control_flow::StructuredLoop*>(elem) == nullptr) continue;
+                        auto* loop = static_cast<sdfg::structured_control_flow::ControlFlowNode*>(elem);
+                        auto loop_info = loop_analysis.loop_info(loop);
+                        value["loop_info"] = loop_info_to_json(loop_info);
+                    }
+                }
+
                 self.history().push_back(desc);
 
                 // Apply the transformation

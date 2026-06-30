@@ -75,7 +75,9 @@ def evaluate(
 
 @pytest.mark.skip(reason="Timeout & Verifier changed")
 def test_bplustree(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "b+tree" / "main.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "b+tree" / "main.c"
+    )
     verifier = SDFGVerification(
         verification={
             "sdfgs": 80,
@@ -103,13 +105,21 @@ def test_bplustree(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -183,7 +193,14 @@ def test_bplustree(compiler="clang-19"):
 
 @pytest.mark.xfail(reason="Verifier changed")
 def test_backprop(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "backprop" / "backprop.c"
+    test_case = (
+        Path(__file__).parent
+        / "tests"
+        / "rodinia"
+        / "openmp"
+        / "backprop"
+        / "backprop.c"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -216,13 +233,21 @@ def test_backprop(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -235,8 +260,18 @@ def test_backprop(compiler="clang-19"):
             / "openmp"
             / "backprop"
             / "backprop_kernel.c",
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "backprop" / "facetrain.c",
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "backprop" / "imagenet.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "backprop"
+            / "facetrain.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "backprop"
+            / "imagenet.c",
         ],
         partial(evaluate, max_ulps=1e2, args=["1024"], dtype=np.float32),
         sdfg_verification=verifier,
@@ -246,7 +281,9 @@ def test_backprop(compiler="clang-19"):
 
 @pytest.mark.xfail(reason="Verifier changed")
 def test_bfs(compiler="clang++-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "bfs" / "bfs.cpp"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "bfs" / "bfs.cpp"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -278,13 +315,21 @@ def test_bfs(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -315,7 +360,14 @@ def test_bfs(compiler="clang++-19"):
 
 @pytest.mark.xfail(reason="Verifier changed")
 def test_cfd(compiler="clang++-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "cfd" / "euler3d_cpu.cpp"
+    test_case = (
+        Path(__file__).parent
+        / "tests"
+        / "rodinia"
+        / "openmp"
+        / "cfd"
+        / "euler3d_cpu.cpp"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -343,13 +395,21 @@ def test_cfd(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -381,7 +441,9 @@ def test_cfd(compiler="clang++-19"):
 
 @pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_heartwall(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "heartwall" / "main.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "heartwall" / "main.c"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -416,19 +478,32 @@ def test_heartwall(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-I"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "openmp" / "heartwall" / "AVI/"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "openmp"
+                    / "heartwall"
+                    / "AVI/"
                 ).absolute()
             ),
             "-lm",
@@ -474,10 +549,16 @@ def test_heartwall(compiler="clang-19"):
     )
     return runner.run(timeout=350)
 
+
 @pytest.mark.skip(reason="Test is flaky, needs investigation")
 def test_hotspot(compiler="clang++-19"):
     test_case = (
-        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "hotspot" / "hotspot_openmp.cpp"
+        Path(__file__).parent
+        / "tests"
+        / "rodinia"
+        / "openmp"
+        / "hotspot"
+        / "hotspot_openmp.cpp"
     )
 
     verifier = SDFGVerification(
@@ -498,13 +579,21 @@ def test_hotspot(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -549,17 +638,12 @@ def test_hotspot(compiler="clang++-19"):
 
 
 def test_hotspot3D(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "hotspot3D" / "3D.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "hotspot3D" / "3D.c"
+    )
 
     verifier = SDFGVerification(
-        verification={
-            "sdfgs": 8,
-            "Malloc": 1,
-            "Free": 3,
-            "Calloc": 4,
-            "WHILE": 2,
-            "FOR": 17,
-        },
+        verification={"sdfgs": 8, "WHILE": 2, "MAP": 4, "FOR": 13, "SEQUENTIAL": 17},
     )
     runner = TestRunner(
         "Rodinia",
@@ -576,13 +660,21 @@ def test_hotspot3D(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -627,7 +719,9 @@ def test_hotspot3D(compiler="clang-19"):
 
 @pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_kmeans(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "kmeans" / "kmeans.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "kmeans" / "kmeans.c"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -659,13 +753,21 @@ def test_kmeans(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -678,8 +780,18 @@ def test_kmeans(compiler="clang-19"):
             / "openmp"
             / "kmeans"
             / "kmeans_clustering.c",
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "kmeans" / "cluster.c",
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "kmeans" / "getopt.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "kmeans"
+            / "cluster.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "kmeans"
+            / "getopt.c",
         ],
         partial(
             evaluate,
@@ -706,7 +818,9 @@ def test_kmeans(compiler="clang-19"):
 
 @pytest.mark.xfail(reason="Verifier changed")
 def test_lavaMD(compiler="clang-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lavaMD" / "main.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lavaMD" / "main.c"
+    )
 
     verifier = SDFGVerification(
         verification={"sdfgs": 4, "FOR": 21, "WHILE": 5, "Malloc": 8, "Free": 8},
@@ -727,13 +841,21 @@ def test_lavaMD(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -769,6 +891,7 @@ def test_lavaMD(compiler="clang-19"):
     )
     return runner.run(timeout=240)
 
+
 @pytest.mark.skip(reason="Crashes on execution")
 def test_lud(compiler="clang-19"):
     test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lud" / "lud.c"
@@ -802,20 +925,33 @@ def test_lud(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
         ],
         "cuda",
         [
-            Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lud" / "lud_omp.c",
+            Path(__file__).parent
+            / "tests"
+            / "rodinia"
+            / "openmp"
+            / "lud"
+            / "lud_omp.c",
             Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lud" / "common.c",
         ],
         partial(evaluate, max_ulps=1e2, args=["-s", "4096", "-v"], dtype=np.float32),
@@ -856,13 +992,21 @@ def test_nw(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -915,13 +1059,21 @@ def test_particlefilter(compiler="clang-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -942,7 +1094,12 @@ def test_particlefilter(compiler="clang-19"):
 @pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_pathfinder(compiler="clang++-19"):
     test_case = (
-        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "pathfinder" / "pathfinder.cpp"
+        Path(__file__).parent
+        / "tests"
+        / "rodinia"
+        / "openmp"
+        / "pathfinder"
+        / "pathfinder.cpp"
     )
 
     verifier = SDFGVerification(
@@ -970,13 +1127,21 @@ def test_pathfinder(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -991,7 +1156,9 @@ def test_pathfinder(compiler="clang++-19"):
 
 @pytest.mark.xfail(reason="Verifier changed")
 def test_srad(compiler="clang++-19"):
-    test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "srad" / "srad.cpp"
+    test_case = (
+        Path(__file__).parent / "tests" / "rodinia" / "openmp" / "srad" / "srad.cpp"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -1020,13 +1187,21 @@ def test_srad(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",
@@ -1084,13 +1259,21 @@ def test_streamcluster(compiler="clang++-19"):
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_timing.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_timing.h"
                 ).absolute()
             ),
             "-include"
             + str(
                 (
-                    Path(__file__).parent / "tests" / "rodinia" / "common" / "my_verification.h"
+                    Path(__file__).parent
+                    / "tests"
+                    / "rodinia"
+                    / "common"
+                    / "my_verification.h"
                 ).absolute()
             ),
             "-lm",

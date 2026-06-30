@@ -1013,7 +1013,6 @@ TEST(TileFusionTest, Jacobi1D_Serialization) {
 
     // Verify JSON structure
     EXPECT_EQ(j["transformation_type"], "TileFusion");
-    EXPECT_EQ(j["parameters"]["radius"], 1);
     EXPECT_TRUE(j["subgraph"].contains("0"));
     EXPECT_TRUE(j["subgraph"].contains("1"));
 

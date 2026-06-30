@@ -41,31 +41,29 @@ def kernel(M, float_n, data):
 def test_covariance(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={
-                "GEMM": 1,
-                "MAP": 12,
-                "SEQUENTIAL": 12,
-                "FOR": 14,
-            }
+            verification={"GEMM": 1, "REDUCE": 1, "MAP": 11, "FOR": 1, "SEQUENTIAL": 13}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
                 "VECTORIZE": 7,
-                "MAP": 11,
-                "SEQUENTIAL": 4,
-                "FOR": 13,
+                "REDUCE": 1,
+                "MAP": 10,
+                "FOR": 1,
+                "SEQUENTIAL": 5,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 3,
                 "GEMM": 1,
+                "VECTORIZE": 3,
+                "REDUCE": 1,
                 "CPU_PARALLEL": 5,
-                "MAP": 8,
-                "FOR": 10,
+                "MAP": 7,
+                "SEQUENTIAL": 1,
+                "FOR": 1,
             }
         )
     elif target == "cuda":
@@ -75,6 +73,7 @@ def test_covariance(target):
                 "CUDAOffloading": 12,
                 "SEQUENTIAL": 4,
                 "MAP": 13,
+                "REDUCE": 1,
                 "FOR": 16,
             }
         )

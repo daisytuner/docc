@@ -35,6 +35,8 @@ public:
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
+    void replace(const symbolic::ExpressionMapping& replacements) override;
+
     std::string toStr() const override;
 };
 

@@ -21,10 +21,6 @@ SchedulerAction VectorizeScheduler::find(
         return CHILDREN;
     }
 
-    if (dynamic_cast<structured_control_flow::Map*>(&loop)) {
-        return NEXT;
-    }
-
     return NEXT;
 }
 
@@ -49,11 +45,7 @@ bool VectorizeScheduler::can_apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    auto* map = dynamic_cast<structured_control_flow::Map*>(&loop);
-    if (!map) {
-        return false;
-    }
-    transformations::VectorizeTransform vectorize_transform(*map);
+    transformations::VectorizeTransform vectorize_transform(loop);
     return vectorize_transform.can_be_applied(builder, analysis_manager);
 }
 
@@ -63,8 +55,7 @@ void VectorizeScheduler::apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    auto* map = dynamic_cast<structured_control_flow::Map*>(&loop);
-    transformations::VectorizeTransform vectorize_transform(*map);
+    transformations::VectorizeTransform vectorize_transform(loop);
     vectorize_transform.apply(builder, analysis_manager);
 }
 

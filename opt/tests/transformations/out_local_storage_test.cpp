@@ -2374,6 +2374,97 @@ TEST(OutLocalStorageTest, GPU_NoCoop_Rejected) {
 }
 
 /**
+ * Test: OutLocalStorage with NV_Shared rejects when applied to the outermost loop
+ *
+ * Setup:
+ *   Map X (i, 0..N, block_size=32) → Map Y (j, 0..M, block_size=8) → For k = 0..16
+ *   C[j*16 + k] is written — the nested structure is cooperative (i not in base),
+ *   so the inner For would be a valid staging target.
+ *
+ * However, the transformation is applied to the OUTERMOST loop (Map X), which is
+ * the CUDA kernel itself. Staging into shared memory at this level would place the
+ * copy-out loops outside the kernel and force the per-block __shared__ buffer to be
+ * passed across the kernel boundary as an argument — which is illegal in CUDA.
+ * Hence it must be rejected.
+ */
+TEST(OutLocalStorageTest, GPU_OutermostLoop_Rejected) {
+    builder::StructuredSDFGBuilder builder("ols_gpu_outermost", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("N", loop_var, true);
+    builder.add_container("M", loop_var, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    // GPU Map X: i = 0..N (block_size=32) — outermost loop / kernel boundary
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        seq,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), N),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // GPU Map Y: j = 0..M (block_size=8)
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
+    gpu::gpu_block_size(sched_y, symbolic::integer(8));
+    auto& map_y = builder.add_map(
+        map_x.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), M),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        sched_y
+    );
+
+    // For loop: k = 0..16
+    auto& loop = builder.add_for(
+        map_y.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {symbolic::symbol("k")}, ptr);
+    // C[j*16 + k] — base depends on j only; i (the kernel/X dim) is free → cooperative
+    builder.add_computational_memlet(
+        block,
+        tasklet,
+        "_out",
+        c_out,
+        {symbolic::add(symbolic::mul(symbolic::symbol("j"), symbolic::integer(16)), symbolic::symbol("k"))},
+        ptr
+    );
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // Applied to the outermost loop (Map X = kernel) → must be rejected for NV_Shared
+    transformations::OutLocalStorage ols(map_x, c_out, types::StorageType::NV_Shared());
+    EXPECT_FALSE(ols.can_be_applied(builder_opt, am));
+}
+
+/**
  * Test: OutLocalStorage with NV_Shared on a flat pointer with cooperative writeback
  *
  * Setup:

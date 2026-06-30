@@ -11,16 +11,16 @@
 namespace sdfg {
 namespace vectorize {
 
-class VectorizeMapDispatcher : public codegen::NodeDispatcher {
+class VectorizeDispatcher : public codegen::NodeDispatcher {
 private:
-    structured_control_flow::Map& node_;
+    structured_control_flow::StructuredLoop& node_;
 
 public:
-    VectorizeMapDispatcher(
+    VectorizeDispatcher(
         codegen::LanguageExtension& language_extension,
         StructuredSDFG& sdfg,
         analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::Map& node,
+        structured_control_flow::StructuredLoop& node,
         codegen::InstrumentationPlan& instrumentation_plan,
         codegen::ArgCapturePlan& arg_capture_plan
     );

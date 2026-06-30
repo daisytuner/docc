@@ -29,53 +29,46 @@ def test_gesummv(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "Free": 4,
                 "GEMM": 2,
                 "SEQUENTIAL": 5,
-                "FOR": 5,
                 "MAP": 5,
-                "Malloc": 4,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "Free": 4,
                 "GEMM": 2,
                 "VECTORIZE": 3,
                 "SEQUENTIAL": 2,
-                "FOR": 5,
                 "MAP": 5,
-                "Malloc": 4,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "Free": 4,
                 "GEMM": 2,
                 "CPU_PARALLEL": 3,
-                "FOR": 3,
                 "MAP": 3,
-                "Malloc": 4,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
                 "CUDA": 6,
-                "FOR": 8,
+                "SEQUENTIAL": 2,
+                "REDUCE": 2,
                 "MAP": 6,
-                "CUDAOffloading": 8,
+                "CUDAOffloading": 6,
             },
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
                 "ROCM": 6,
-                "FOR": 8,
+                "SEQUENTIAL": 2,
+                "REDUCE": 2,
                 "MAP": 6,
-                "ROCMOffloading": 8,
+                "ROCMOffloading": 6,
             },
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

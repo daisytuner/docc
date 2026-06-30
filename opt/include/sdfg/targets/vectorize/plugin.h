@@ -5,7 +5,7 @@
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 #include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
-#include "sdfg/targets/vectorize/codegen/vectorize_map_dispatcher.h"
+#include "sdfg/targets/vectorize/codegen/vectorize_dispatcher.h"
 #include "sdfg/targets/vectorize/schedule.h"
 
 namespace sdfg {
@@ -20,7 +20,21 @@ inline void register_vectorize_plugin() {
            structured_control_flow::Map& node,
            codegen::InstrumentationPlan& instrumentation_plan,
            codegen::ArgCapturePlan& arg_capture_plan) {
-            return std::make_unique<VectorizeMapDispatcher>(
+            return std::make_unique<VectorizeDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            );
+        }
+    );
+
+    codegen::ReduceDispatcherRegistry::instance().register_reduce_dispatcher(
+        ScheduleType_Vectorize::value(),
+        [](codegen::LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::Reduce& node,
+           codegen::InstrumentationPlan& instrumentation_plan,
+           codegen::ArgCapturePlan& arg_capture_plan) {
+            return std::make_unique<VectorizeDispatcher>(
                 language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
             );
         }

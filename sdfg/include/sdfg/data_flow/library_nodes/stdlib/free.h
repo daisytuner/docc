@@ -24,6 +24,8 @@ public:
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
+    void replace(const symbolic::ExpressionMapping& replacements) override;
+
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 };
 

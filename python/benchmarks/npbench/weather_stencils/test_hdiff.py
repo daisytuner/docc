@@ -66,42 +66,24 @@ def kernel(in_field, out_field, coeff):
 def test_hdiff(target):
     verifier = None
     if target == "none":
-        verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 30, "FOR": 30, "MAP": 30, "Malloc": 9}
-        )
+        verifier = SDFGVerification(verification={"SEQUENTIAL": 17, "MAP": 17})
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 10,
-                "SEQUENTIAL": 20,
-                "FOR": 30,
-                "MAP": 30,
-                "Malloc": 9,
+                "VECTORIZE": 6,
+                "SEQUENTIAL": 12,
+                "MAP": 18,
             }
         )
     elif target == "openmp":
-        verifier = SDFGVerification(
-            verification={"CPU_PARALLEL": 10, "FOR": 10, "MAP": 10, "Malloc": 9}
-        )
+        verifier = SDFGVerification(verification={"CPU_PARALLEL": 6, "MAP": 6})
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "CUDA": 6,
-                "SEQUENTIAL": 14,
-                "FOR": 20,
-                "CUDAOffloading": 14,
-                "MAP": 20,
-            }
+            verification={"CUDA": 4, "SEQUENTIAL": 8, "CUDAOffloading": 12, "MAP": 12}
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={
-                "ROCM": 6,
-                "SEQUENTIAL": 14,
-                "FOR": 20,
-                "ROCMOffloading": 14,
-                "MAP": 20,
-            }
+            verification={"ROCM": 4, "SEQUENTIAL": 8, "ROCMOffloading": 12, "MAP": 12}
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

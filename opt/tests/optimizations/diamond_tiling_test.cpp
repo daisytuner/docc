@@ -262,7 +262,6 @@ TEST(DiamondTilingTest, Jacobi1D) {
     EXPECT_EQ(history[0]["transformation_type"], "LoopTiling");
     EXPECT_EQ(history[1]["transformation_type"], "LoopTiling");
     EXPECT_EQ(history[2]["transformation_type"], "TileFusion");
-    EXPECT_EQ(history[2]["parameters"]["radius"], 1);
     EXPECT_EQ(history[3]["transformation_type"], "LoopSkewing");
     EXPECT_EQ(history[3]["parameters"]["skew_factor"], 32);
     EXPECT_EQ(history[4]["transformation_type"], "LoopInterchange");
@@ -646,7 +645,6 @@ TEST(DiamondTilingTest, Jacobi2D_1DSpatial) {
     EXPECT_EQ(history[0]["transformation_type"], "LoopTiling");
     EXPECT_EQ(history[1]["transformation_type"], "LoopTiling");
     EXPECT_EQ(history[2]["transformation_type"], "TileFusion");
-    EXPECT_EQ(history[2]["parameters"]["radius"], 1); // radius=1 for i-dimension stencil
     EXPECT_EQ(history[3]["transformation_type"], "LoopSkewing");
     EXPECT_EQ(history[3]["parameters"]["skew_factor"], 32);
     EXPECT_EQ(history[4]["transformation_type"], "LoopInterchange");
@@ -913,7 +911,6 @@ TEST(DiamondTilingTest, FDTD2D_1DSpatial) {
     EXPECT_EQ(history[0]["transformation_type"], "LoopTiling");
     EXPECT_EQ(history[1]["transformation_type"], "LoopTiling");
     EXPECT_EQ(history[2]["transformation_type"], "TileFusion");
-    EXPECT_EQ(history[2]["parameters"]["radius"], 0); // radius=0: tiling on i, stencil on j
     EXPECT_EQ(history[3]["transformation_type"], "LoopSkewing");
     EXPECT_EQ(history[3]["parameters"]["skew_factor"], 32);
     EXPECT_EQ(history[4]["transformation_type"], "LoopInterchange");

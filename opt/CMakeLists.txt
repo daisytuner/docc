@@ -7,6 +7,22 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ISL REQUIRED IMPORTED_TARGET isl)
 
+# Embed the transformation serialization schema (documentation + runtime access).
+# The schema document is the single source of truth; it is compiled into the
+# library so it ships with the binary and cannot drift from the install path.
+# Re-run CMake configuration whenever the schema document changes so the embedded
+# copy never goes stale (file(READ) is not tracked as a configure dependency).
+set_property(
+    DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/json/transformation.schema.json"
+)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/json/transformation.schema.json" TRANSFORMATION_SCHEMA_JSON_CONTENT)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/transformation_schema_json.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/transformation_schema_json.h"
+    @ONLY
+)
+
 set(SOURCE_FILES
     src/analysis/data_transfer_elimination_analysis.cpp
     src/passes/einsum.cpp
@@ -20,6 +36,7 @@ set(SOURCE_FILES
     src/passes/offloading/code_motion/block_hoisting.cpp
     src/passes/offloading/code_motion/block_sorting.cpp
     src/passes/offloading/data_transfer_minimization_pass.cpp
+    src/passes/offloading/device_buffer_reuse_pass.cpp
     src/passes/offloading/device_resident_arg_promotion_pass.cpp
     src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_parallelization_pass.cpp
@@ -34,7 +51,9 @@ set(SOURCE_FILES
     src/passes/readonly_transfer_hoisting_pass.cpp
     src/passes/dot_expansion_pass.cpp
     src/passes/gemm_expansion_pass.cpp
+    src/passes/map_fusion_by_domain_pass.cpp
     src/passes/opt_pipeline.cpp
+    src/passes/redundant_load_elimination_pass.cpp
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/rocm_scheduler.cpp
     src/passes/scheduler/vectorize_scheduler.cpp
@@ -49,6 +68,7 @@ set(SOURCE_FILES
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
     src/targets/cuda/math/tensor/batchnorm_expander.cpp
     src/targets/cuda/math/tensor/conv_expander.cpp
+    src/targets/cuda/math/tensor/softmax.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/cuda/plugin.cpp
@@ -57,20 +77,24 @@ set(SOURCE_FILES
     src/targets/rocm/blas/dot.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/gemm_handtuned.cpp
+    src/targets/rocm/blas/batched_gemm.cpp
     src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/math/tensor/batched_matmul_expander.cpp
     src/targets/rocm/math/tensor/batchnorm_expander.cpp
     src/targets/rocm/math/tensor/conv_expander.cpp
     src/targets/rocm/stdlib/memset.cpp
+    src/targets/rocm/stdlib/memcpy.cpp
     src/targets/rocm/plugin.cpp
     src/targets/rocm/rocm.cpp
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/gpu/gpu_map_utils.cpp
-    src/targets/vectorize/codegen/vectorize_map_dispatcher.cpp
+    src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/rocblas_data_transfer_extraction.cpp
     src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
@@ -110,6 +134,7 @@ set(SOURCE_FILES
     src/transformations/in_local_storage.cpp
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
+    src/transformations/transformation_schema.cpp
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
 )
@@ -123,6 +148,8 @@ target_include_directories(sdfgopt
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 target_compile_options(sdfgopt PRIVATE ${SDFG_COMPILE_OPTS})
@@ -162,6 +189,10 @@ install(TARGETS sdfgopt
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(DIRECTORY include/sdfg DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(FILES json/transformation.schema.json
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/docc/schemas
+)
 
 ## CMAKE CONFIGURATION
 

@@ -101,23 +101,17 @@ void LoopSkewing::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
 }
 
 void LoopSkewing::to_json(nlohmann::json& j) const {
-    // Determine loop types for serialization
-    std::string outer_type = "for";
-    std::string inner_type = "for";
-
-    if (dynamic_cast<const structured_control_flow::Map*>(&this->outer_loop_)) {
-        outer_type = "map";
-    }
-    if (dynamic_cast<const structured_control_flow::Map*>(&this->inner_loop_)) {
-        inner_type = "map";
-    }
-
     j["transformation_type"] = this->name();
-    j["subgraph"] = {
-        {"0", {{"element_id", this->outer_loop_.element_id()}, {"type", outer_type}}},
-        {"1", {{"element_id", this->inner_loop_.element_id()}, {"type", inner_type}}}
-    };
+    j["parameters"] = nlohmann::json::object();
     j["parameters"] = {{"skew_factor", this->skew_factor_}};
+
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], outer_loop_);
+
+    j["subgraph"]["1"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["1"], inner_loop_);
 }
 
 LoopSkewing LoopSkewing::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {

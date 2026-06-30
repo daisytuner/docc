@@ -14,6 +14,7 @@ namespace codegen {
 
 typedef StringEnum ElementType;
 inline ElementType ElementType_Map{"map"};
+inline ElementType ElementType_Reduce{"reduce"};
 inline ElementType ElementType_For{"for"};
 inline ElementType ElementType_While{"while"};
 inline ElementType ElementType_Block{"block"};

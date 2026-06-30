@@ -53,7 +53,7 @@ void Return::replace(const symbolic::Expression old_expression, const symbolic::
     if (is_data() && data_ == old_expression->__str__()) {
         data_ = new_expression->__str__();
     }
-};
+}
 
 } // namespace structured_control_flow
 } // namespace sdfg

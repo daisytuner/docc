@@ -15,7 +15,6 @@
 #include "sdfg/passes/dataflow/trivial_array_elimination.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/structured_control_flow/sequence_fusion.h"
-#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/if_else.h"
@@ -592,34 +591,23 @@ void KernelLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis
 
 void KernelLocalStorage::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
+    j["parameters"] = nlohmann::json::object();
+    j["parameters"]["offset"] = serializer::JSONSerializer::expression(offset_);
 
-    std::string loop_type;
-    if (dynamic_cast<structured_control_flow::For*>(&loop_)) {
-        loop_type = "for";
-    } else if (dynamic_cast<structured_control_flow::While*>(&loop_)) {
-        loop_type = "while";
-    } else if (dynamic_cast<structured_control_flow::Map*>(&loop_)) {
-        loop_type = "map";
-    } else {
-        loop_type = "unknown";
-    }
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], loop_);
 
-    j["subgraph"] = {
-        {"0", {{"element_id", this->loop_.element_id()}, {"type", loop_type}}},
-        {"1", {{"element_id", this->access_node_.element_id()}, {"type", "access_node"}}}
-    };
-
-    j["parameters"] = {{"offset", serializer::JSONSerializer::expression(offset_)}};
+    j["subgraph"]["1"] = nlohmann::json::object();
+    j["subgraph"]["1"]["element_id"] = access_node_.element_id();
+    j["subgraph"]["1"]["type"] = "access_node";
 };
 
 KernelLocalStorage KernelLocalStorage::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
     size_t loop_id;
-    if (desc.contains("subgraph")) {
-        const auto& node_desc = desc.at("subgraph").at("0");
-        loop_id = node_desc.at("element_id").get<size_t>();
-    } else {
-        loop_id = desc.at("loop_element_id").get<size_t>();
-    }
+    const auto& node_desc = desc.at("subgraph").at("0");
+    loop_id = node_desc.at("element_id").get<size_t>();
 
     auto element = builder.find_element_by_id(loop_id);
     if (!element) {
@@ -639,14 +627,8 @@ KernelLocalStorage KernelLocalStorage::from_json(builder::StructuredSDFGBuilder&
         );
     }
 
-    nlohmann::json offset_json;
-    std::string container;
-    if (desc.contains("parameters")) {
-        const auto& params = desc.at("parameters");
-        if (params.contains("offset")) {
-            offset_json = params.at("offset");
-        }
-    }
+    const auto& params = desc.at("parameters");
+    nlohmann::json offset_json = params.at("offset");
     auto offset = symbolic::parse(offset_json);
 
     return KernelLocalStorage(*outer_loop, offset, *access_node);

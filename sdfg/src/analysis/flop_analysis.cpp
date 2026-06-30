@@ -8,7 +8,6 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/exceptions.h"

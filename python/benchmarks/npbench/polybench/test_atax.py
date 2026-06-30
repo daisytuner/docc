@@ -29,48 +29,33 @@ def test_atax(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 1,
                 "MAP": 1,
                 "SEQUENTIAL": 1,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 1,
                 "MAP": 1,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
                 "VECTORIZE": 1,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 1,
                 "MAP": 1,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
                 "CPU_PARALLEL": 1,
-                "VECTORIZE": 0,
                 "GEMM": 2,
-                "DOT": 0,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
                 "CUDA": 2,
-                "FOR": 4,
                 "MAP": 2,
+                "REDUCE": 2,
                 "CUDAOffloading": 4,
             },
         )
@@ -78,8 +63,8 @@ def test_atax(target):
         verifier = SDFGVerification(
             verification={
                 "ROCM": 2,
-                "FOR": 4,
                 "MAP": 2,
+                "REDUCE": 2,
                 "ROCMOffloading": 4,
             },
         )

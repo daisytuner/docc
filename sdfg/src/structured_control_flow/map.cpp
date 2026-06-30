@@ -18,11 +18,9 @@ Map::
         symbolic::Expression update,
         symbolic::Condition condition,
         const ScheduleType& schedule_type)
-    : StructuredLoop(element_id, debug_info, parent, indvar, init, update, condition), schedule_type_(schedule_type) {};
+    : StructuredLoop(element_id, debug_info, parent, indvar, init, update, condition, schedule_type) {};
 
 void Map::validate(const Function& function) const { StructuredLoop::validate(function); };
-
-const ScheduleType& Map::schedule_type() const { return this->schedule_type_; };
 
 } // namespace structured_control_flow
 } // namespace sdfg

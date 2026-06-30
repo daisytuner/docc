@@ -15,7 +15,6 @@ using namespace sdfg::structured_control_flow;
 
 namespace sdfg {
 namespace builder {
-
 std::unordered_set<const control_flow::State*> StructuredSDFGBuilder::
     determine_loop_nodes(SDFG& sdfg, const control_flow::State& start, const control_flow::State& end) const {
     std::unordered_set<const control_flow::State*> nodes;
@@ -485,6 +484,8 @@ Element* StructuredSDFGBuilder::find_element_by_id(const size_t& element_id) con
             // Do nothing
         } else if (auto map_stmt = dynamic_cast<structured_control_flow::Map*>(current)) {
             queue.push_back(&map_stmt->root());
+        } else if (auto reduce_stmt = dynamic_cast<structured_control_flow::Reduce*>(current)) {
+            queue.push_back(&reduce_stmt->root());
         }
     }
 
@@ -532,6 +533,20 @@ std::pair<Sequence&, Transition&> StructuredSDFGBuilder::
     }
 
     return insert_node_internal<Sequence>(parent, index, {}, debug_info);
+}
+
+void StructuredSDFGBuilder::remove_from_parent(ControlFlowNode& child) {
+    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(child.get_parent());
+    if (parent == nullptr) {
+        throw InvalidSDFGException(
+            "StructuredSDFGBuilder: Child has no sequence parent: #" + std::to_string(child.element_id())
+        );
+    }
+    auto idx = parent->index(child);
+    if (idx < 0) {
+        throw InvalidSDFGException("StructuredSDFGBuilder: Child not found in parent");
+    }
+    remove_child(*parent, idx);
 }
 
 void StructuredSDFGBuilder::remove_child(Sequence& parent, size_t index) {
@@ -899,6 +914,68 @@ Map& StructuredSDFGBuilder::add_map_after(
         .first;
 }
 
+Reduce& StructuredSDFGBuilder::add_reduce(
+    Sequence& parent,
+    const symbolic::Symbol indvar,
+    const symbolic::Condition condition,
+    const symbolic::Expression init,
+    const symbolic::Expression update,
+    const std::vector<structured_control_flow::ReductionInfo>& reductions,
+    const ScheduleType& schedule_type,
+    const sdfg::control_flow::Assignments& assignments,
+    const DebugInfo& debug_info
+) {
+    return insert_node_internal<Reduce>(
+               parent, INSERT_AT_END, assignments, debug_info, indvar, init, update, condition, reductions, schedule_type
+    )
+        .first;
+}
+
+Reduce& StructuredSDFGBuilder::add_reduce_before(
+    Sequence& parent,
+    ControlFlowNode& child,
+    const symbolic::Symbol indvar,
+    const symbolic::Condition condition,
+    const symbolic::Expression init,
+    const symbolic::Expression update,
+    const std::vector<structured_control_flow::ReductionInfo>& reductions,
+    const ScheduleType& schedule_type,
+    const sdfg::control_flow::Assignments& assignments,
+    const DebugInfo& debug_info
+) {
+    int index = parent.index(child);
+    if (index == -1) {
+        throw InvalidSDFGException("StructuredSDFGBuilder: Child not found");
+    }
+
+    return insert_node_internal<
+               Reduce>(parent, index, assignments, debug_info, indvar, init, update, condition, reductions, schedule_type)
+        .first;
+}
+
+Reduce& StructuredSDFGBuilder::add_reduce_after(
+    Sequence& parent,
+    ControlFlowNode& child,
+    const symbolic::Symbol indvar,
+    const symbolic::Condition condition,
+    const symbolic::Expression init,
+    const symbolic::Expression update,
+    const std::vector<structured_control_flow::ReductionInfo>& reductions,
+    const ScheduleType& schedule_type,
+    const sdfg::control_flow::Assignments& assignments,
+    const DebugInfo& debug_info
+) {
+    int index = parent.index(child);
+    if (index == -1) {
+        throw InvalidSDFGException("StructuredSDFGBuilder: Child not found");
+    }
+
+    return insert_node_internal<Reduce>(
+               parent, index + 1, assignments, debug_info, indvar, init, update, condition, reductions, schedule_type
+    )
+        .first;
+}
+
 Continue& StructuredSDFGBuilder::
     add_continue(Sequence& parent, const sdfg::control_flow::Assignments& assignments, const DebugInfo& debug_info) {
     return insert_node_internal<Continue>(parent, INSERT_AT_END, assignments, debug_info).first;
@@ -994,6 +1071,39 @@ Map& StructuredSDFGBuilder::convert_for(Sequence& parent, For& loop) {
     return map;
 };
 
+Reduce& StructuredSDFGBuilder::convert_for_to_reduce(
+    Sequence& parent, For& loop, const std::vector<structured_control_flow::ReductionInfo>& reductions
+) {
+    int index = parent.index(loop);
+    if (index == -1) {
+        throw InvalidSDFGException("StructuredSDFGBuilder: Child not found");
+    }
+
+    auto iter = parent.children_.begin() + index;
+    auto& new_iter = *parent.children_.insert(
+        iter + 1,
+        std::unique_ptr<Reduce>(new Reduce(
+            this->new_element_id_batch(Reduce::REQUIRED_ELEMENT_IDS),
+            loop.debug_info(),
+            &parent,
+            loop.indvar(),
+            loop.init(),
+            loop.update(),
+            loop.condition(),
+            reductions,
+            ScheduleType_Sequential::create()
+        ))
+    );
+
+    auto& reduce = dynamic_cast<Reduce&>(*new_iter);
+    this->move_children(loop.root(), reduce.root());
+
+    // Remove for loop
+    parent.children_.erase(parent.children_.begin() + index);
+
+    return reduce;
+};
+
 void StructuredSDFGBuilder::update_if_else_condition(IfElse& if_else, size_t index, const symbolic::Condition condition) {
     if (index >= if_else.conditions_.size()) {
         throw InvalidSDFGException("StructuredSDFGBuilder: Index out of range");
@@ -1014,8 +1124,8 @@ void StructuredSDFGBuilder::update_loop(
     loop.update_ = update;
 };
 
-void StructuredSDFGBuilder::update_schedule_type(Map& map, const ScheduleType& schedule_type) {
-    map.schedule_type_ = schedule_type;
+void StructuredSDFGBuilder::update_schedule_type(StructuredLoop& loop, const ScheduleType& schedule_type) {
+    loop.schedule_type_ = schedule_type;
 }
 
 /***** Section: Dataflow Graph *****/

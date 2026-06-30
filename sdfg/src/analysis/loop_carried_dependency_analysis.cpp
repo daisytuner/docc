@@ -1,6 +1,9 @@
 #include "sdfg/analysis/loop_carried_dependency_analysis.h"
 
 #include <cassert>
+#include <map>
+#include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -15,9 +18,16 @@
 #include "sdfg/analysis/memory_layout_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/memlet.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/if_else.h"
+#include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/maps.h"
+#include "sdfg/symbolic/polyhedral.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 
 namespace sdfg {
@@ -259,6 +269,101 @@ bool user_in_subtree(User& user, const structured_control_flow::ControlFlowNode&
     return false;
 }
 
+// Map an associative/commutative combine node (scalar tasklet or CMath library
+// node) to its reduction operator. Returns nullopt for any node that is not a
+// recognized reorderable reduction operator.
+std::optional<structured_control_flow::ReductionOperation> combine_operator(const data_flow::DataFlowNode& node) {
+    using structured_control_flow::ReductionOperation;
+    if (auto* tasklet = dynamic_cast<const data_flow::Tasklet*>(&node)) {
+        switch (tasklet->code()) {
+            case data_flow::TaskletCode::fp_add:
+            case data_flow::TaskletCode::int_add:
+                return ReductionOperation::Add;
+            case data_flow::TaskletCode::fp_fma:
+                // Fused multiply-add `_out = _in0 * _in1 + _in2` is an additive
+                // reduction over its addend operand.
+                return ReductionOperation::Add;
+            case data_flow::TaskletCode::fp_mul:
+            case data_flow::TaskletCode::int_mul:
+                return ReductionOperation::Mul;
+            case data_flow::TaskletCode::int_smin:
+            case data_flow::TaskletCode::int_umin:
+                return ReductionOperation::Min;
+            case data_flow::TaskletCode::int_smax:
+            case data_flow::TaskletCode::int_umax:
+                return ReductionOperation::Max;
+            default:
+                return std::nullopt;
+        }
+    }
+    if (auto* cmath = dynamic_cast<const math::cmath::CMathNode*>(&node)) {
+        switch (cmath->function()) {
+            case math::cmath::CMathFunction::fmax:
+                return ReductionOperation::Max;
+            case math::cmath::CMathFunction::fmin:
+                return ReductionOperation::Min;
+            case math::cmath::CMathFunction::fma:
+                // `fma(x, y, z) = x * y + z`: additive reduction over the addend
+                // operand `z`
+                return ReductionOperation::Add;
+            default:
+                return std::nullopt;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> fma_addend_connector(const data_flow::DataFlowNode& node) {
+    if (auto* tasklet = dynamic_cast<const data_flow::Tasklet*>(&node)) {
+        if (tasklet->code() == data_flow::TaskletCode::fp_fma) {
+            return tasklet->inputs().at(2);
+        }
+    }
+    if (auto* cmath = dynamic_cast<const math::cmath::CMathNode*>(&node)) {
+        if (cmath->function() == math::cmath::CMathFunction::fma) {
+            return cmath->inputs().at(2);
+        }
+    }
+    return std::nullopt;
+}
+
+// Collect the dataflow Blocks directly belonging to `node`'s subtree, descending
+// through Sequences and IfElse branches but NOT into nested loops (those have
+// their own loop-carried analysis). Used to scan a loop body for the combine.
+void collect_body_blocks(
+    const structured_control_flow::ControlFlowNode& node, std::vector<const structured_control_flow::Block*>& out
+) {
+    if (auto* block = dynamic_cast<const structured_control_flow::Block*>(&node)) {
+        out.push_back(block);
+    } else if (auto* seq = dynamic_cast<const structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < seq->size(); i++) {
+            collect_body_blocks(seq->at(i).first, out);
+        }
+    } else if (auto* ifelse = dynamic_cast<const structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < ifelse->size(); i++) {
+            collect_body_blocks(ifelse->at(i).first, out);
+        }
+    }
+    // Stop at nested StructuredLoop / While: their bodies belong to other loops.
+}
+
+// True if the accumulator subset is invariant across the reduction loop: the
+// induction variable does not appear in any index expression. This is a sound
+// (conservative) guard — an accumulator whose address moves with the induction
+// variable is not a single-location reduction. The actual *equality* of the
+// written and read-back addresses is proven separately and precisely by
+// `symbolic::polyhedral::equal_on_domain`.
+bool address_invariant_in_indvar(const data_flow::Subset& subset, const symbolic::Symbol& indvar) {
+    for (auto& dim : subset) {
+        for (auto& atom : symbolic::atoms(dim)) {
+            if (atom->get_name() == indvar->get_name()) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_manager) {
@@ -359,6 +464,134 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                 }
             }
         }
+
+        detect_reductions(*loop);
+    }
+}
+
+void LoopCarriedDependencyAnalysis::detect_reductions(structured_control_flow::StructuredLoop& loop) {
+    // Ensure an entry exists for every analyzed loop so queries on reduction-free
+    // loops return an empty list rather than asserting.
+    auto& result = reductions_[&loop];
+
+    auto dep_it = dependencies_.find(&loop);
+    if (dep_it == dependencies_.end()) {
+        return;
+    }
+    auto& deps = dep_it->second;
+
+    std::vector<const structured_control_flow::Block*> blocks;
+    collect_body_blocks(loop.root(), blocks);
+
+    auto indvar = loop.indvar();
+
+    // Assumptions for the loop body, used by the polyhedral equality test. They
+    // must be taken from the loop body (`loop.root()`), not the loop node, so
+    // that the induction variable's own bounds (e.g. 0 <= i < N) are present in
+    // the domain. The induction variable must additionally be treated as
+    // evolving (a domain dimension) rather than a constant parameter so that
+    // shifted accesses such as A[i] vs A[i-1] are correctly rejected.
+    symbolic::Assumptions assums = detailed_assumptions_->get(loop.root(), true);
+    auto indvar_it = assums.find(indvar);
+    if (indvar_it != assums.end()) {
+        indvar_it->second.constant(false);
+    }
+
+    // Candidate accumulator -> operator. A container is rejected (and stays out
+    // of the result) if any of its writes in the body is not a clean combine.
+    std::map<std::string, structured_control_flow::ReductionOperation> found;
+    std::set<std::string> rejected;
+
+    for (auto* block : blocks) {
+        auto& graph = block->dataflow();
+        for (auto& node : graph.nodes()) {
+            auto* write_node = dynamic_cast<const data_flow::AccessNode*>(&node);
+            if (write_node == nullptr) {
+                continue;
+            }
+
+            std::vector<const data_flow::Memlet*> in_edges;
+            for (auto& edge : graph.in_edges(*write_node)) {
+                in_edges.push_back(&edge);
+            }
+            if (in_edges.empty()) {
+                continue; // not written in this block
+            }
+
+            const std::string& container = write_node->data();
+
+            // Only loop-carried read-write containers can be reductions.
+            auto ci = deps.find(container);
+            if (ci == deps.end() || ci->second.type != LOOP_CARRIED_DEPENDENCY_READ_WRITE) {
+                continue;
+            }
+
+            // A reduction accumulator is produced by exactly one combine node.
+            if (in_edges.size() != 1) {
+                rejected.insert(container);
+                continue;
+            }
+            auto& write_edge = *in_edges.front();
+            auto& combine = write_edge.src();
+
+            auto op = combine_operator(combine);
+            if (!op.has_value()) {
+                rejected.insert(container);
+                continue;
+            }
+
+            // The combine must read the same accumulator back (acc = acc OP x).
+            // For a fused multiply-add the accumulator must be the addend
+            // operand; if it feeds a multiplicand the update is acc = acc * b + c,
+            // which is not a reorderable reduction and is rejected.
+            auto fma_addend = fma_addend_connector(combine);
+            const data_flow::Memlet* read_edge = nullptr;
+            bool acc_on_non_addend = false;
+            for (auto& edge : graph.in_edges(combine)) {
+                auto* read_node = dynamic_cast<const data_flow::AccessNode*>(&edge.src());
+                if (read_node == nullptr || read_node->data() != container) {
+                    continue;
+                }
+                if (fma_addend.has_value() && edge.dst_conn() != fma_addend.value()) {
+                    // Accumulator feeds a multiplicand of the fma.
+                    acc_on_non_addend = true;
+                    continue;
+                }
+                read_edge = &edge;
+                if (!fma_addend.has_value()) {
+                    break;
+                }
+            }
+            if (read_edge == nullptr || acc_on_non_addend) {
+                rejected.insert(container);
+                continue;
+            }
+
+            // The accumulator must address one fixed, loop-invariant location
+            // and the written cell must equal the read-back cell. `equal_on_domain`
+            // proves the latter precisely (parametric/linearized affine forms),
+            // while the invariance guard rejects accumulators that move with the
+            // induction variable.
+            if (!address_invariant_in_indvar(write_edge.subset(), indvar) ||
+                !symbolic::polyhedral::equal_on_domain(write_edge.subset(), read_edge->subset(), indvar, assums)) {
+                rejected.insert(container);
+                continue;
+            }
+
+            auto existing = found.find(container);
+            if (existing != found.end() && existing->second != op.value()) {
+                rejected.insert(container);
+                continue;
+            }
+            found[container] = op.value();
+        }
+    }
+
+    for (auto& entry : found) {
+        if (rejected.count(entry.first) != 0) {
+            continue;
+        }
+        result.push_back(structured_control_flow::ReductionInfo{entry.second, entry.first});
     }
 }
 
@@ -427,6 +660,43 @@ bool LoopCarriedDependencyAnalysis::has_loop_carried_hazard(structured_control_f
         if (p.type != LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) return true;
     }
     return false;
+}
+
+const std::vector<structured_control_flow::ReductionInfo>& LoopCarriedDependencyAnalysis::
+    reductions(structured_control_flow::StructuredLoop& loop) const {
+    auto it = reductions_.find(&loop);
+    assert(it != reductions_.end() && "LoopCarriedDependencyAnalysis: loop not analyzed");
+    return it->second;
+}
+
+bool LoopCarriedDependencyAnalysis::has_reductions(structured_control_flow::StructuredLoop& loop) const {
+    auto it = reductions_.find(&loop);
+    return it != reductions_.end() && !it->second.empty();
+}
+
+bool LoopCarriedDependencyAnalysis::is_reduction_only(structured_control_flow::StructuredLoop& loop) const {
+    auto rit = reductions_.find(&loop);
+    if (rit == reductions_.end() || rit->second.empty()) {
+        return false;
+    }
+    std::set<std::string> reduction_containers;
+    for (auto& reduction : rit->second) {
+        reduction_containers.insert(reduction.container);
+    }
+
+    auto pit = pairs_.find(&loop);
+    if (pit == pairs_.end()) {
+        return false;
+    }
+    for (auto& pair : pit->second) {
+        if (pair.type == LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) {
+            continue;
+        }
+        if (reduction_containers.count(pair.writer->container()) == 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace analysis
