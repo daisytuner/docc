@@ -302,7 +302,7 @@ class TorchProgram(DoccProgram):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
             sdfg = StructuredSDFG.from_file(sdfg_path)
 
-            main_file = f"{output_folder}/{self.name}.cpp"
+            main_file = f"{output_folder}/__docc_{self.name}.cpp"
             if not os.path.exists(main_file):
                 raise ValueError(
                     f"Tried reusing sources '{main_file}' but does not exist"
