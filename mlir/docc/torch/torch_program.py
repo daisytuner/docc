@@ -296,16 +296,17 @@ class TorchProgram(DoccProgram):
             backend = sdfg.metadata("device_backend")
             self._device_backend = backend or None
         elif docc_reuse_sources:
-            main_file = f"{output_folder}/{sdfg.name()}.cpp"
-            if not os.path.exists(main_file):
-                raise ValueError(
-                    f"Tried reusing sources '{main_file}' but does not exist"
-                )
 
             sdfg_path = f"{output_folder}/__docc_{self.name}.py4.norm.json"
             if not os.path.exists(sdfg_path):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
             sdfg = StructuredSDFG.from_file(sdfg_path)
+
+            main_file = f"{output_folder}/{sdfg.name()}.cpp"
+            if not os.path.exists(main_file):
+                raise ValueError(
+                    f"Tried reusing sources '{main_file}' but does not exist"
+                )
 
             lib_path = self.sdfg_pipe(
                 sdfg,
