@@ -396,7 +396,7 @@ def test_miniAMR2():
         verification={
             "sdfgs": 48,
             "MAP": 1,
-            "FOR": 22,
+            "FOR": 21,
             "WHILE": 59,
             "CPU_PARALLEL": 1,
         }
