@@ -2,7 +2,6 @@
 
 #include <unordered_set>
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/structured_control_flow/block.h"

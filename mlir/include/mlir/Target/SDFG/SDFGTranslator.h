@@ -42,6 +42,9 @@ public:
     /// Create TensorInfo from a tensor type (assumes C-order contiguous).
     static TensorInfo from_tensor_type(TensorType type);
 
+    /// Returns true iff the tensor has basic C-order contiguous strides.
+    static bool has_basic_strides(ArrayRef<int64_t> shape, ArrayRef<int64_t> strides);
+
     /// Create transposed view: output_strides[i] = input_strides[perm[i]].
     TensorInfo transpose(ArrayRef<int64_t> permutation) const;
 
@@ -54,6 +57,9 @@ public:
     /// Returns true iff the tensor has basic C-order contiguous strides.
     bool has_basic_strides() const;
 
+    /// Returns true iff the tensor is transposed in the last two dimensions.
+    bool has_transposed_strides_last_two_dims() const;
+
     /// Create reshaped view (only valid for contiguous tensors).
     TensorInfo reshape(ArrayRef<int64_t> new_shape) const;
 
@@ -62,6 +68,9 @@ public:
 
     /// Create SDFG tensor type
     std::unique_ptr<::sdfg::types::Tensor> get_sdfg_tensor(const ::sdfg::types::Scalar& element_type) const;
+
+    /// Create SDFG tensor layout
+    ::sdfg::math::tensor::TensorLayout get_tensor_layout() const;
 
     /// Return string representation of tensor info (for debug purposes)
     std::string toStr() const;

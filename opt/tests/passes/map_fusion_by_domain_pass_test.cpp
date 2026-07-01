@@ -195,9 +195,11 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
 
     sdfg::passes::RedundantLoadEliminationPass rle;
     rle.run(builder, analysis_manager);
+    dump_sdfg(builder.subject(), "3.rle");
+
     dde.run(builder, analysis_manager);
     sdfg::passes::TaskletFusionPass task_fuse_pass;
     task_fuse_pass.run(builder, analysis_manager);
 
-    dump_sdfg(builder.subject(), "3.rle");
+    dump_sdfg(builder.subject(), "4.rle-cleanup");
 }

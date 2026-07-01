@@ -118,6 +118,8 @@ BufferLifecycle DataOffloadingNode::buffer_lifecycle() const { return this->buff
 
 const symbolic::Expression DataOffloadingNode::size() const { return this->size_; }
 
+void DataOffloadingNode::set_size(const symbolic::Expression& size) { this->size_ = size; }
+
 const symbolic::Expression DataOffloadingNode::alloc_size() const { return this->size(); }
 
 symbolic::SymbolSet DataOffloadingNode::symbols() const {

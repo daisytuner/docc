@@ -15,6 +15,7 @@
 #include "sdfg/passes/code_motion/extended_block_sorting.h"
 #include "sdfg/passes/extended_data_transfer_minimization_pass.h"
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
+#include "sdfg/passes/offloading/device_buffer_reuse_pass.h"
 #include "sdfg/passes/offloading/remove_redundant_transfers_pass.h"
 #include "sdfg/passes/pipeline.h"
 #include "sdfg/passes/readonly_transfer_hoisting_pass.h"
@@ -473,6 +474,9 @@ llvm::PreservedAnalyses ArgumentExpansionPass::
             analysis_manager.invalidate_all();
             sdfg::passes::ExtendedDataTransferMinimizationPass data_transfer_minimization_pass;
             data_transfer_minimization_pass.run(builder, analysis_manager);
+
+            sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
+            device_buffer_reuse_pass.run(builder, analysis_manager);
 
             analysis_manager.invalidate_all();
             sdfg::passes::ReadonlyTransferHoistingPass readonly_transfer_hoisting_pass;

@@ -64,7 +64,7 @@ def test_k3mm(target):
             verification={
                 "MAP": 2,
                 "CUDA": 2,
-                "CUDAOffloading": 6,
+                "CUDAOffloading": 4,
                 "GEMM": 3,
             },
             device_resident=True,
@@ -74,7 +74,7 @@ def test_k3mm(target):
             verification={
                 "MAP": 2,
                 "ROCM": 2,
-                "ROCMOffloading": 6,
+                "ROCMOffloading": 4,
                 "GEMM": 3,
             },
             device_resident=True,

@@ -58,7 +58,7 @@ def test_gesummv(target):
                 "SEQUENTIAL": 2,
                 "REDUCE": 2,
                 "MAP": 6,
-                "CUDAOffloading": 8,
+                "CUDAOffloading": 6,
             },
         )
     elif target == "rocm":
@@ -68,7 +68,7 @@ def test_gesummv(target):
                 "SEQUENTIAL": 2,
                 "REDUCE": 2,
                 "MAP": 6,
-                "ROCMOffloading": 8,
+                "ROCMOffloading": 6,
             },
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

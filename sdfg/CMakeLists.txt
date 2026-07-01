@@ -36,7 +36,6 @@ set(SOURCE_FILES
     src/analysis/loop_carried_dependency_analysis.cpp
     src/analysis/memory_layout_analysis.cpp
     src/analysis/reference_analysis.cpp
-    src/analysis/scope_analysis.cpp
     src/analysis/type_analysis.cpp
     src/analysis/users.cpp
     src/builder/function_builder.cpp
@@ -170,6 +169,7 @@ set(SOURCE_FILES
     src/passes/structured_control_flow/pointer_evolution.cpp
     src/passes/structured_control_flow/sequence_fusion.cpp
     src/passes/structured_control_flow/unify_loop_exits.cpp
+    src/passes/structured_control_flow/unique_loop_indvars.cpp
     src/passes/structured_control_flow/while_to_for_conversion.cpp
     src/passes/debug_info_propagation.cpp
     src/serializer/json_serializer.cpp

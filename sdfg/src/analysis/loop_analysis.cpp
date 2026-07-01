@@ -2,7 +2,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/structured_loop.h"

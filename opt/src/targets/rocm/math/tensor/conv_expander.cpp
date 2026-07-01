@@ -1,5 +1,4 @@
 #include "sdfg/targets/cuda/math/tensor/conv_expander.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"

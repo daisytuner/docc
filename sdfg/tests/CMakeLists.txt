@@ -87,6 +87,7 @@ set(TEST_FILES
     passes/structured_control_flow/dead_cfg_elimination_test.cpp
     passes/structured_control_flow/for_classification_test.cpp
     passes/structured_control_flow/pointer_evolution_test.cpp
+    passes/structured_control_flow/unique_loop_indvars_test.cpp
     passes/debug_info_propagation_test.cpp
     passes/symbolic/symbol_evolution_test.cpp
     passes/symbolic/symbol_promotion_test.cpp

@@ -61,6 +61,14 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
         return false;
     }
 
+    // Criterion (GPU path): Loop must not be outermost (shared memory is per-block, not global)
+    if (storage_type_.is_nv_shared()) {
+        auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+        if (loop_analysis.is_outermost_loop(&this->loop_)) {
+            return false;
+        }
+    }
+
     // Determine if container is also read (read-write vs write-only)
     tile_info_.has_read = !body_users.reads(this->container_).empty();
 
@@ -181,6 +189,43 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
         for (auto& ext : tile_info_.dimensions) {
             if (!SymEngine::is_a<SymEngine::Integer>(*ext)) {
                 return false;
+            }
+        }
+
+        // CPU_Stack must not be applied when the loop itself is a
+        // GPU-scheduled outermost map. In that case the init/writeback copies
+        // would be placed on the host while the compute runs on the device.
+        if (auto* self_map = dynamic_cast<structured_control_flow::Map*>(&loop_)) {
+            if (gpu::is_gpu_schedule(self_map->schedule_type())) {
+                auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+                if (loop_analysis.is_outermost_loop(&this->loop_)) {
+                    return false;
+                }
+            }
+        }
+
+        // Criterion: CPU_Stack inside a GPU region is only valid for per-thread
+        // locals (all GPU map indvars appear in the tile bases). If there is a
+        // cooperative dimension (a GPU indvar NOT in the bases), the buffer must
+        // be NV_Shared so all threads in the block can see each other's writes.
+        auto ancestors = ControlFlowNode::parent_chain(loop_);
+        for (auto* node : ancestors) {
+            if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+                if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
+                    continue;
+                }
+                bool appears_in_bases = false;
+                for (auto& base : tile_info_.bases) {
+                    if (symbolic::uses(base, ancestor_map->indvar())) {
+                        appears_in_bases = true;
+                        break;
+                    }
+                }
+                if (!appears_in_bases) {
+                    // Cooperative dimension detected with CPU_Stack — invalid.
+                    // The buffer requires NV_Shared for cross-thread visibility.
+                    return false;
+                }
             }
         }
     }

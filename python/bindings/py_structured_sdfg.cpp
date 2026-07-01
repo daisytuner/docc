@@ -27,6 +27,7 @@
 #include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
+#include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
 #include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
@@ -472,6 +473,8 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
     if (loop_scheduling_changes) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
         data_transfer_minimization_pass.run(builder, analysis_manager);
+        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
+        device_buffer_reuse_pass.run(builder, analysis_manager);
         sdfg::passes::DeadDataElimination dde(false);
         dde.run(builder, analysis_manager);
         sdfg::passes::DeadCFGElimination dead_cfg_elimination;
@@ -496,17 +499,20 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     if (promoted) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
         sdfg::passes::DeadDataElimination dead_data_elimination;
+        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
 
         // 1st round
         reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
         data_transfer_minimization.run(builder, analysis_manager);
+        device_buffer_reuse_pass.run(builder, analysis_manager);
         dead_data_elimination.run(builder, analysis_manager);
 
         // 2nd round
         reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
         data_transfer_minimization.run(builder, analysis_manager);
+        device_buffer_reuse_pass.run(builder, analysis_manager);
         dead_data_elimination.run(builder, analysis_manager);
     }
 

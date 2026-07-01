@@ -96,6 +96,7 @@ public:
     const std::string& host_in_conn() const;
 
     const symbolic::Expression size() const;
+    void set_size(const symbolic::Expression& size);
 
     virtual const symbolic::Expression alloc_size() const;
 

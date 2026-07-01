@@ -36,6 +36,7 @@ set(SOURCE_FILES
     src/passes/offloading/code_motion/block_hoisting.cpp
     src/passes/offloading/code_motion/block_sorting.cpp
     src/passes/offloading/data_transfer_minimization_pass.cpp
+    src/passes/offloading/device_buffer_reuse_pass.cpp
     src/passes/offloading/device_resident_arg_promotion_pass.cpp
     src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_parallelization_pass.cpp

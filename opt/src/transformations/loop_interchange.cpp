@@ -7,7 +7,6 @@
 
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/analysis/loop_carried_dependency_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
