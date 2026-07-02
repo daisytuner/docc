@@ -4,6 +4,7 @@
 #include "docc/lifting/functions/intrinsic_lifting.h"
 #include "docc/lifting/functions/libfunc_lifting.h"
 
+#include <llvm-19/llvm/IR/DebugInfoMetadata.h>
 #include <sdfg/data_flow/library_nodes/call_node.h>
 #include <sdfg/data_flow/library_nodes/invoke_node.h>
 
@@ -134,7 +135,30 @@ sdfg::control_flow::State& FunctionLifting::visit_call(
     if (called_func) {
         callee_name = called_func->getName().str();
     } else if (instruction->getCalledOperand()) {
-        callee_name = utils::get_name(instruction->getCalledOperand());
+        llvm::Value* called_operand = instruction->getCalledOperand()->stripPointerCasts();
+        llvm::FunctionType* callee_llvm_type = instruction->getFunctionType();
+        if (auto* global_alias = llvm::dyn_cast<llvm::GlobalAlias>(called_operand)) {
+            if (auto* called_operand_func = llvm::dyn_cast<llvm::Function>(global_alias->getAliaseeObject())) {
+                // This is not 100% safe but a good heuristic for now: Only replace the aliased function with its
+                // aliasee if the function is guaranteed to never throw an exception.
+                if (called_operand_func->getAttributes().getFnAttrs().hasAttribute(llvm::Attribute::AttrKind::NoUnwind
+                    )) {
+                    called_operand = global_alias->getAliaseeObject();
+                    callee_llvm_type = called_operand_func->getFunctionType();
+                }
+            }
+        }
+        callee_name = utils::get_name(called_operand);
+        if (!this->builder_.subject().exists(callee_name)) {
+            auto callee_type = utils::get_type(
+                this->builder_,
+                this->anonymous_types_mapping_,
+                this->DL_,
+                callee_llvm_type,
+                utils::get_storage_type(this->target_type_, 0)
+            );
+            this->builder_.add_container(callee_name, *callee_type, false, true);
+        }
     } else {
         throw NotImplementedException(
             "Unsupported call instruction with no function or operand",

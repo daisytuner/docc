@@ -8,7 +8,7 @@
 
 using namespace docc;
 
-TEST(FunctionListingTest, VisitCall) {
+TEST(FunctionLiftingTest, VisitCall) {
     const std::string ir = R"(
 ; ModuleID = 'test'
 source_filename = "test.ll"
@@ -76,7 +76,7 @@ entry:
     EXPECT_TRUE(found_call);
 }
 
-TEST(FunctionListingTest, VisitCall_ReadonlyArgs) {
+TEST(FunctionLiftingTest, VisitCall_ReadonlyArgs) {
     const std::string ir = R"(
 ; ModuleID = 'test'
 source_filename = "test.ll"
@@ -154,7 +154,149 @@ entry:
     EXPECT_TRUE(found_call);
 }
 
-TEST(FunctionListingTest, VisitInvoke) {
+TEST(FunctionLiftingTest, VisitCall_alias) {
+    const std::string ir = R"(
+; ModuleID = 'test'
+source_filename = "test.ll"
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+
+declare dso_local void @bar1(ptr)
+
+@bar2 = dso_local unnamed_addr alias void (ptr), ptr @bar1
+
+define void @foo(ptr %p) {
+entry:
+  tail call void @bar2(ptr %p)
+  ret void
+}
+)";
+
+    llvm::LLVMContext context;
+    auto module = loadModuleFromIR(ir, context);
+    ASSERT_NE(module, nullptr);
+
+    // Construct the TargetLibraryInfo required by the lifting pass
+    llvm::TargetLibraryInfoImpl TLIImpl(llvm::Triple(module->getTargetTriple()));
+    llvm::TargetLibraryInfo TLI(TLIImpl);
+
+    llvm::Function* function = module->getFunction("foo");
+    ASSERT_NE(function, nullptr);
+
+    // Run the lifting pass
+    lifting::Lifting lifting(TLI, *function, sdfg::FunctionType_CPU);
+    auto sdfg = lifting.run();
+
+    EXPECT_EQ(sdfg->containers().size(), 2);
+    EXPECT_TRUE(sdfg->exists("p"));
+    EXPECT_TRUE(sdfg->exists("bar2"));
+    EXPECT_TRUE(sdfg->is_external("bar2"));
+
+    bool found_call = false;
+    for (auto& state : sdfg->states()) {
+        if (state.dataflow().nodes().size() == 0) {
+            continue;
+        }
+        EXPECT_FALSE(found_call);
+
+        const sdfg::data_flow::CallNode* call_node = nullptr;
+        for (auto& node : state.dataflow().nodes()) {
+            if (auto lib_node = dynamic_cast<const sdfg::data_flow::CallNode*>(&node)) {
+                call_node = lib_node;
+                found_call = true;
+                break;
+            }
+        }
+        EXPECT_NE(call_node, nullptr);
+        EXPECT_EQ(call_node->callee_name(), "bar2");
+
+        EXPECT_EQ(state.dataflow().in_degree(*call_node), 1);
+        EXPECT_EQ(state.dataflow().out_degree(*call_node), 0);
+
+        auto& iedge = *state.dataflow().in_edges(*call_node).begin();
+        EXPECT_EQ(iedge.src_conn(), "void");
+        EXPECT_EQ(iedge.dst_conn(), "_arg0");
+        EXPECT_EQ(iedge.subset().size(), 0);
+        EXPECT_EQ(iedge.base_type(), sdfg::types::Pointer());
+
+        auto& src = static_cast<const sdfg::data_flow::AccessNode&>(iedge.src());
+        EXPECT_EQ(src.data(), "p");
+    }
+    EXPECT_TRUE(found_call);
+}
+
+TEST(FunctionLiftingTest, VisitCall_alias_nounwind) {
+    const std::string ir = R"(
+; ModuleID = 'test'
+source_filename = "test.ll"
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+
+declare dso_local void @bar1(ptr) nounwind
+
+@bar2 = dso_local unnamed_addr alias void (ptr), ptr @bar1
+
+define void @foo(ptr %p) {
+entry:
+  tail call void @bar2(ptr %p)
+  ret void
+}
+)";
+
+    llvm::LLVMContext context;
+    auto module = loadModuleFromIR(ir, context);
+    ASSERT_NE(module, nullptr);
+
+    // Construct the TargetLibraryInfo required by the lifting pass
+    llvm::TargetLibraryInfoImpl TLIImpl(llvm::Triple(module->getTargetTriple()));
+    llvm::TargetLibraryInfo TLI(TLIImpl);
+
+    llvm::Function* function = module->getFunction("foo");
+    ASSERT_NE(function, nullptr);
+
+    // Run the lifting pass
+    lifting::Lifting lifting(TLI, *function, sdfg::FunctionType_CPU);
+    auto sdfg = lifting.run();
+
+    EXPECT_EQ(sdfg->containers().size(), 2);
+    EXPECT_TRUE(sdfg->exists("p"));
+    EXPECT_TRUE(sdfg->exists("bar1"));
+    EXPECT_TRUE(sdfg->is_external("bar1"));
+
+    bool found_call = false;
+    for (auto& state : sdfg->states()) {
+        if (state.dataflow().nodes().size() == 0) {
+            continue;
+        }
+        EXPECT_FALSE(found_call);
+
+        const sdfg::data_flow::CallNode* call_node = nullptr;
+        for (auto& node : state.dataflow().nodes()) {
+            if (auto lib_node = dynamic_cast<const sdfg::data_flow::CallNode*>(&node)) {
+                call_node = lib_node;
+                found_call = true;
+                break;
+            }
+        }
+        EXPECT_NE(call_node, nullptr);
+        EXPECT_EQ(call_node->callee_name(), "bar1");
+
+        EXPECT_EQ(state.dataflow().in_degree(*call_node), 1);
+        EXPECT_EQ(state.dataflow().out_degree(*call_node), 0);
+
+        auto& iedge = *state.dataflow().in_edges(*call_node).begin();
+        EXPECT_EQ(iedge.src_conn(), "void");
+        EXPECT_EQ(iedge.dst_conn(), "_arg0");
+        EXPECT_EQ(iedge.subset().size(), 0);
+        EXPECT_EQ(iedge.base_type(), sdfg::types::Pointer());
+
+        auto& src = static_cast<const sdfg::data_flow::AccessNode&>(iedge.src());
+        EXPECT_EQ(src.data(), "p");
+    }
+    EXPECT_TRUE(found_call);
+}
+
+TEST(FunctionLiftingTest, VisitInvoke) {
     const std::string ir = R"(
 ; ModuleID = 'test'
 source_filename = "test.ll"
@@ -246,7 +388,7 @@ declare i32 @__gxx_personality_v0(...)
     EXPECT_TRUE(found_unwind);
 }
 
-TEST(FunctionListingTest, VisitCall_ByVal) {
+TEST(FunctionLiftingTest, VisitCall_ByVal) {
     const std::string ir = R"(
 ; ModuleID = 'test'
 source_filename = "test.ll"

@@ -136,19 +136,19 @@ def setup():
     [
         pytest.param("MultiSource/Applications/aha", "aha", "YES", "PASS"),
         pytest.param(
-            "MultiSource/Applications/ALAC/decode", "alacconvert-decode", "SEGFAULT", ""
+            "MultiSource/Applications/ALAC/decode", "alacconvert-decode", "YES", "FAIL"
         ),
         pytest.param(
-            "MultiSource/Applications/ALAC/encode", "alacconvert-encode", "SEGFAULT", ""
+            "MultiSource/Applications/ALAC/encode", "alacconvert-encode", "YES", "FAIL"
         ),
         pytest.param("MultiSource/Applications/ClamAV", "clamscan", "YES", "FAIL"),
         pytest.param("MultiSource/Applications/d", "make_dparser", "TIMEOUT", ""),
         pytest.param("MultiSource/Applications/hbd", "hbd", "YES", "PASS"),
-        pytest.param("MultiSource/Applications/hexxagon", "hexxagon", "SEGFAULT", ""),
+        pytest.param("MultiSource/Applications/hexxagon", "hexxagon", "YES", "TIMEOUT"),
         pytest.param("MultiSource/Applications/JM/ldecod", "ldecod", "YES", "FAIL"),
         pytest.param("MultiSource/Applications/JM/lencod", "lencod", "YES", "FAIL"),
         pytest.param("MultiSource/Applications/kimwitu++", "kc", "TIMEOUT", ""),
-        pytest.param("MultiSource/Applications/lambda-0.1.3", "lambda", "SEGFAULT", ""),
+        pytest.param("MultiSource/Applications/lambda-0.1.3", "lambda", "YES", "PASS"),
         pytest.param("MultiSource/Applications/lua", "lua", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/minisat", "minisat", "YES", "PASS"),
         pytest.param("MultiSource/Applications/obsequi", "Obsequi", "YES", "PASS"),
@@ -160,7 +160,7 @@ def setup():
         pytest.param("MultiSource/Applications/spiff", "spiff", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/sqlite3", "sqlite3", "TIMEOUT", ""),
         pytest.param("MultiSource/Applications/viterbi", "viterbi", "YES", "PASS"),
-        pytest.param("MultiSource/Benchmarks/7zip", "7zip-benchmark", "SEGFAULT", ""),
+        pytest.param("MultiSource/Benchmarks/7zip", "7zip-benchmark", "TIMEOUT", ""),
         pytest.param(
             "MultiSource/Benchmarks/ASC_Sequoia/AMGmk", "AMGmk", "YES", "PASS"
         ),
