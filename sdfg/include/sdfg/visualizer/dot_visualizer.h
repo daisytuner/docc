@@ -17,14 +17,27 @@ namespace visualizer {
 
 class DotVisualizer : public Visualizer {
 private:
-    std::string last_comp_name_;
-    std::string last_comp_name_cluster_;
-    bool show_block_ids = false;
+    struct SeqChainElem {
+        const Element* element;
+        std::string node_id;
+        std::string cluster_id;
+    };
+    struct SeqChainScope {
+        std::optional<SeqChainElem> last_chain_elem;
+        std::optional<SeqChainElem> last2_chain_elem;
+    };
+    std::list<SeqChainScope> seq_scope_stack_{SeqChainScope()};
+    bool show_block_ids = true;
+
+    void register_chain_elem(const Element& element, const std::string& node_id, const std::string& cluster_id);
+    void enter_scope();
+    void exit_scope();
 
     virtual void visualizeSDFG(const SDFG& sdfg) override;
 
     virtual void visualizeStructuredSDFG(const StructuredSDFG& sdfg) override;
     virtual void visualizeBlock(const StructuredSDFG& sdfg, const structured_control_flow::Block& block) override;
+
     virtual void visualizeSequence(const StructuredSDFG& sdfg, const structured_control_flow::Sequence& sequence)
         override;
     virtual void visualizeIfElse(const StructuredSDFG& sdfg, const structured_control_flow::IfElse& if_else) override;
