@@ -840,6 +840,15 @@ sdfg::control_flow::State& Lifting::visit_StoreInst(
                 input_node = &this->builder_.add_constant(current_state, input, *input_type, dbg_info);
             } else {
                 std::string input = utils::find_const_name_to_sdfg_name(this->constants_mapping_, input_operand);
+                if (builder_.subject().type(input).type_id() == sdfg::types::TypeID::Function) {
+                    // LLVM IR provides a pointer to a function but in the SDFG its a function. Currently, we cannot
+                    // handle this.
+                    throw NotImplementedException(
+                        "Storing a function into a pointer currently unsupported",
+                        dbg_info,
+                        ::docc::utils::toIRString(*instruction)
+                    );
+                }
                 input_node = &this->builder_.add_access(current_state, input, dbg_info);
             }
 
@@ -852,9 +861,7 @@ sdfg::control_flow::State& Lifting::visit_StoreInst(
         }
         default:
             throw NotImplementedException(
-                "Unsupported store instruction",
-                ::docc::utils::get_debug_info(*instruction),
-                ::docc::utils::toIRString(*instruction)
+                "Unsupported store instruction", dbg_info, ::docc::utils::toIRString(*instruction)
             );
     }
 };

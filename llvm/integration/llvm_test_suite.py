@@ -141,24 +141,24 @@ def setup():
         pytest.param(
             "MultiSource/Applications/ALAC/encode", "alacconvert-encode", "SEGFAULT", ""
         ),
-        pytest.param("MultiSource/Applications/ClamAV", "clamscan", "SEGFAULT", ""),
+        pytest.param("MultiSource/Applications/ClamAV", "clamscan", "YES", "FAIL"),
         pytest.param("MultiSource/Applications/d", "make_dparser", "TIMEOUT", ""),
         pytest.param("MultiSource/Applications/hbd", "hbd", "YES", "PASS"),
         pytest.param("MultiSource/Applications/hexxagon", "hexxagon", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/JM/ldecod", "ldecod", "YES", "FAIL"),
-        pytest.param("MultiSource/Applications/JM/lencod", "lencod", "SEGFAULT", ""),
+        pytest.param("MultiSource/Applications/JM/lencod", "lencod", "YES", "FAIL"),
         pytest.param("MultiSource/Applications/kimwitu++", "kc", "TIMEOUT", ""),
         pytest.param("MultiSource/Applications/lambda-0.1.3", "lambda", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/lua", "lua", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/minisat", "minisat", "YES", "PASS"),
-        pytest.param("MultiSource/Applications/obsequi", "Obsequi", "SEGFAULT", ""),
+        pytest.param("MultiSource/Applications/obsequi", "Obsequi", "YES", "PASS"),
         pytest.param("MultiSource/Applications/oggenc", "oggenc", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/sgefa", "sgefa", "YES", "TIMEOUT"),
         pytest.param("MultiSource/Applications/SIBsim4", "SIBsim4", "TIMEOUT", ""),
-        pytest.param("MultiSource/Applications/siod", "siod", "SEGFAULT", ""),
+        pytest.param("MultiSource/Applications/siod", "siod", "YES", "PASS"),
         pytest.param("MultiSource/Applications/SPASS", "SPASS", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/spiff", "spiff", "SEGFAULT", ""),
-        pytest.param("MultiSource/Applications/sqlite3", "sqlite3", "SEGFAULT", ""),
+        pytest.param("MultiSource/Applications/sqlite3", "sqlite3", "TIMEOUT", ""),
         pytest.param("MultiSource/Applications/viterbi", "viterbi", "YES", "PASS"),
         pytest.param("MultiSource/Benchmarks/7zip", "7zip-benchmark", "SEGFAULT", ""),
         pytest.param(
@@ -183,7 +183,7 @@ def setup():
         ),
         pytest.param("MultiSource/Benchmarks/Bullet", "bullet", "TIMEOUT", ""),
         pytest.param(
-            "MultiSource/Benchmarks/DOE-ProxyApps-C/CoMD", "CoMD", "SEGFAULT", ""
+            "MultiSource/Benchmarks/DOE-ProxyApps-C/CoMD", "CoMD", "YES", "FAIL"
         ),
         pytest.param(
             "MultiSource/Benchmarks/DOE-ProxyApps-C/miniAMR", "miniAMR", "YES", "PASS"
@@ -290,10 +290,10 @@ def setup():
             "MultiSource/Benchmarks/mediabench/g721/g721encode", "encode", "YES", "FAIL"
         ),
         pytest.param(
-            "MultiSource/Benchmarks/mediabench/gsm/toast", "toast", "SEGFAULT", ""
+            "MultiSource/Benchmarks/mediabench/gsm/toast", "toast", "YES", "FAIL"
         ),
         pytest.param(
-            "MultiSource/Benchmarks/mediabench/jpeg/jpeg-6a", "cjpeg", "SEGFAULT", ""
+            "MultiSource/Benchmarks/mediabench/jpeg/jpeg-6a", "cjpeg", "YES", "FAIL"
         ),
         pytest.param(
             "MultiSource/Benchmarks/mediabench/mpeg2/mpeg2dec",
@@ -322,8 +322,8 @@ def setup():
         pytest.param(
             "MultiSource/Benchmarks/MiBench/consumer-jpeg",
             "consumer-jpeg",
-            "SEGFAULT",
-            "",
+            "YES",
+            "PASS",
         ),
         pytest.param(
             "MultiSource/Benchmarks/MiBench/consumer-lame",
@@ -370,8 +370,8 @@ def setup():
         pytest.param(
             "MultiSource/Benchmarks/MiBench/telecomm-gsm",
             "telecomm-gsm",
-            "SEGFAULT",
-            "",
+            "YES",
+            "FAIL",
         ),
         pytest.param("MultiSource/Benchmarks/nbench", "nbench", "YES", "PASS"),
         pytest.param("MultiSource/Benchmarks/NPB-serial/is", "is", "YES", "FLAKY"),
@@ -393,9 +393,7 @@ def setup():
             "MultiSource/Benchmarks/Prolangs-C/bison", "mybison", "YES", "FAIL"
         ),
         pytest.param("MultiSource/Benchmarks/Prolangs-C/gnugo", "gnugo", "YES", "PASS"),
-        pytest.param(
-            "MultiSource/Benchmarks/Prolangs-C++/city", "city", "SEGFAULT", ""
-        ),
+        pytest.param("MultiSource/Benchmarks/Prolangs-C++/city", "city", "YES", "PASS"),
         pytest.param(
             "MultiSource/Benchmarks/Prolangs-C++/employ", "employ", "YES", "PASS"
         ),
@@ -929,13 +927,13 @@ def setup():
             "SingleSource/Benchmarks/Shootout", "Shootout-matrix", "YES", "PASS"
         ),
         pytest.param(
-            "SingleSource/Benchmarks/Shootout", "Shootout-methcall", "SEGFAULT", ""
+            "SingleSource/Benchmarks/Shootout", "Shootout-methcall", "YES", "PASS"
         ),
         pytest.param(
             "SingleSource/Benchmarks/Shootout", "Shootout-nestedloop", "YES", "PASS"
         ),
         pytest.param(
-            "SingleSource/Benchmarks/Shootout", "Shootout-objinst", "SEGFAULT", ""
+            "SingleSource/Benchmarks/Shootout", "Shootout-objinst", "YES", "PASS"
         ),
         pytest.param(
             "SingleSource/Benchmarks/Shootout", "Shootout-random", "YES", "PASS"
