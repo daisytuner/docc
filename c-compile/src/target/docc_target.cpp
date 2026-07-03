@@ -1,6 +1,5 @@
 #include "docc/target/docc_target.h"
 #include <filesystem>
-#include <stdexcept>
 
 #include "docc/compile/src_file_compiler_builder.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
@@ -46,10 +45,7 @@ static DoccTarget rocm_target = {
     .short_name = "rocm",
     .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
         builder.add_compile_option("-x hip");
-        const char* arch_env = std::getenv("DOCC_ROCM_ARCH");
-        if (!arch_env || !*arch_env) {
-            throw std::runtime_error("DOCC_ROCM_ARCH environment is required but not set");
-        }
+        const char* arch_env = "gfx1201";
         std::string rocm_dev = arch_env;
         builder.add_compile_option("--offload-arch=" + rocm_dev);
         std::filesystem::path rocm_path = "/opt/rocm";
@@ -65,7 +61,6 @@ static DoccTarget rocm_target = {
         compile::SrcFileCompilerBuilder b;
         b.inherit(builder, true);
         b.remove_compile_option("--offload-host-only");
-        b.set_compiler("/opt/rocm/llvm/bin/clang++");
         builder.redirect_snippet("rocm.cpp", std::move(b));
         return true;
     },
