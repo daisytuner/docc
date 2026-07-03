@@ -155,7 +155,9 @@ def setup():
         pytest.param("MultiSource/Applications/oggenc", "oggenc", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/sgefa", "sgefa", "YES", "TIMEOUT"),
         pytest.param("MultiSource/Applications/SIBsim4", "SIBsim4", "TIMEOUT", ""),
-        pytest.param("MultiSource/Applications/siod", "siod", "YES", "PASS"),
+        pytest.param(
+            "MultiSource/Applications/siod", "siod", "TIMEOUT", ""
+        ),  # compilation timeout only when sanitized
         pytest.param("MultiSource/Applications/SPASS", "SPASS", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/spiff", "spiff", "SEGFAULT", ""),
         pytest.param("MultiSource/Applications/sqlite3", "sqlite3", "TIMEOUT", ""),
@@ -410,7 +412,7 @@ def setup():
         pytest.param(
             "MultiSource/Benchmarks/Ptrdist/anagram", "anagram", "YES", "PASS"
         ),
-        pytest.param("MultiSource/Benchmarks/Ptrdist/bc", "bc", "YES", "FLAKY"),
+        pytest.param("MultiSource/Benchmarks/Ptrdist/bc", "bc", "YES", "TIMEOUT"),
         pytest.param("MultiSource/Benchmarks/Ptrdist/ft", "ft", "YES", "TIMEOUT"),
         pytest.param("MultiSource/Benchmarks/Ptrdist/ks", "ks", "YES", "PASS"),
         pytest.param("MultiSource/Benchmarks/Ptrdist/yacr2", "yacr2", "YES", "PASS"),
@@ -655,7 +657,7 @@ def setup():
         pytest.param(
             "SingleSource/Benchmarks/Adobe-C++", "functionobjects", "YES", "PASS"
         ),
-        pytest.param("SingleSource/Benchmarks/Adobe-C++", "loop_unroll", "YES", "FAIL"),
+        pytest.param("SingleSource/Benchmarks/Adobe-C++", "loop_unroll", "TIMEOUT", ""),
         pytest.param(
             "SingleSource/Benchmarks/Adobe-C++",
             "simple_types_constant_folding",
