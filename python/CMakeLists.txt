@@ -40,6 +40,12 @@ target_include_directories(sdfg-py
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bindings>
 )
 
+if(DEFINED DOCC_CXX_COMPILER)
+    target_compile_definitions(sdfg-py PRIVATE
+        DOCC_CXX_COMPILER="${DOCC_CXX_COMPILER}"
+    )
+endif()
+
 target_link_libraries(sdfg-py PRIVATE sdfg::sdfg sdfg::opt sdfg::rpc docc::c-compile nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
 
 if(TARGET docc::target::et)
