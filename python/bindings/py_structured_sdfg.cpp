@@ -89,7 +89,7 @@ using json = nlohmann::json;
 
 PyStructuredSDFG::PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg)
     : docc_context_(ctx), sdfg_(std::move(sdfg)), use_new_fusion_in_simplify_(true),
-      use_new_fusion_in_normalize_(false) {}
+      use_new_fusion_in_normalize_(true) {}
 
 PyStructuredSDFG PyStructuredSDFG::parse(sdfg::plugins::Context& ctx, const std::string& sdfg_text) {
     json j = json::parse(sdfg_text);
