@@ -15,7 +15,7 @@ assignees: ''
 A clear and concise description of what the problem is. Ex. "I'm always frustrated when..."
 
 ## Proposed Solution
-A clear and concise description of what you want to happen. What should the UX/UI look like?
+A clear and concise description of what you want to happen.
 
 ## Implementation To-Do List
 *For maintainers/contributors to track implementation progress:*
