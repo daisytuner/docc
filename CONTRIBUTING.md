@@ -33,11 +33,13 @@ community.
    ```
 3. Install the prerequisites for the component you want to work on. The project
    is organized into modules, each with its own `README.md`:
-   - `sdfg/` — core SDFG intermediate representation, passes, and analyses.
+   - `sdfg/` — core SDFG intermediate representation, interfaces, passes, and analyses.
    - `python/` — Python (JIT) frontend and bindings.
    - `mlir/` — MLIR dialect and PyTorch frontend.
-   - `opt/` — target code generation (Generic, OpenMP, CUDA, ROCm).
+   - `opt/` — optional pass and transformation logic.
    - `rtl/` — runtime libraries for instrumentation.
+   - `targets/` — target-specific code generation and definitions.
+   - `c-compile/` — C/C++ emission, compilation, and linking logic.
 4. `docc` requires `clang-19` (see [LLVM releases](https://apt.llvm.org/)).
 5. Install the developer tooling used for formatting and checks:
    ```bash
