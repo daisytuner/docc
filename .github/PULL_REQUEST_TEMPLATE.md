@@ -20,6 +20,17 @@ A clear and concise description of what this PR does and why.
 ## Quality Checklist
 *Please ensure the following are completed before requesting review:*
 
+* [ ] Runtime-compatible (no externally visible existing method has its parameters changed, was deleted or has its exception behavior changed)
+* [ ] Compile-time compatible (new arguments & properties added have default values, but users need to recompile against the new version to work)
+
+IR:
+* [ ] Introduces new types into the SDFG IR
+* [ ]  Changed / added properties on SDFG IR Elements (LibraryNodes, ControlFlowNodes DataFlowNodes etc.)
+  *  [ ] New / modified types have serialization / deserialization support
+  *  [ ] Deserialization is backward compatible (new serialization can deserialize old format and represent it in the new format if applicable)
+  *  [ ] Serialized format is backward compatible (previous deserializer can read new serialized format without incorrectness (just lacking additional guarantees that are optional or did not exist before)
+  *  [ ] Serializer has an option to emit the previous format
+
 ### Unit Tests
 - [ ] New unit tests have been added for the changes.
 - [ ] Existing unit tests pass locally.
