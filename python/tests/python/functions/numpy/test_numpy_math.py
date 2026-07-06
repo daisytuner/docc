@@ -497,3 +497,45 @@ def test_numpy_maximum():
     assert result.strides == (24, 8)  # Output is contiguous C-order
     assert result.dtype == np.float64
     assert np.array_equal(result, expected)
+
+
+def test_numpy_cbrt():
+    """Test np.cbrt (cube root), including negatives which x**(1/3) can't do."""
+
+    # 1D cbrt, written into an output array
+    @native
+    def cbrt_1d(a, out):
+        out[:] = np.cbrt(a)
+
+    a = np.array([1.0, 8.0, 27.0, -64.0, 0.0], dtype=np.float64)
+    out = np.zeros_like(a)
+    cbrt_1d(a.copy(), out)
+    assert np.allclose(out, np.cbrt(a))
+
+    # cbrt used within a larger expression
+    @native
+    def cbrt_expr(a, out):
+        out[:] = np.cbrt(a) + 1.0
+
+    a2 = np.array([1.0, 8.0, 27.0], dtype=np.float64)
+    out2 = np.zeros_like(a2)
+    cbrt_expr(a2.copy(), out2)
+    assert np.allclose(out2, np.cbrt(a2) + 1.0)
+
+    # 2D cbrt
+    @native
+    def cbrt_2d(a, out):
+        out[:] = np.cbrt(a)
+
+    a3 = np.arange(1.0, 13.0, dtype=np.float64).reshape(3, 4)
+    out3 = np.zeros_like(a3)
+    cbrt_2d(a3.copy(), out3)
+    assert np.allclose(out3, np.cbrt(a3))
+
+    # Scalar cbrt
+    @native
+    def cbrt_scalar(a):
+        return np.cbrt(a[0])
+
+    result = cbrt_scalar(np.array([27.0], dtype=np.float64))
+    assert np.isclose(result, 3.0)

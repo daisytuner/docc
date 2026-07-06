@@ -371,3 +371,51 @@ def test_slicing_view_properties():
     a = np.arange(24, dtype=np.float64).reshape(4, 6)
     chained_view_write(a)
     assert a[0, 0] == 888.0  # Should affect original
+
+
+def test_partial_index_row_assignment_contiguous():
+    """`b[i] = <1-D>` on a 2-D array assigns to row i (== b[i, :])."""
+
+    @native
+    def copy_rows(a, out):
+        b = np.ndarray((4, 3), np.float64)
+        for i in range(4):
+            b[i] = a[i]
+        out[:] = b
+
+    a = np.arange(12, dtype=np.float64).reshape(4, 3)
+    out = np.zeros((4, 3), dtype=np.float64)
+    copy_rows(a, out)
+    assert np.allclose(out, a)
+
+
+def test_partial_index_row_assignment_strided_rhs():
+    """`b[i] = a[:, i]` -- row assigned a strided (column) 1-D view."""
+
+    @native
+    def transpose_into(a, out):
+        b = np.ndarray((4, 3), np.float64)
+        for i in range(4):
+            b[i] = a[:, i]
+        out[:] = b
+
+    a = np.arange(12, dtype=np.float64).reshape(3, 4)
+    out = np.zeros((4, 3), dtype=np.float64)
+    transpose_into(a, out)
+    assert np.allclose(out, a.T)
+
+
+def test_partial_index_row_assignment_3d():
+    """`c[i] = <2-D>` on a 3-D array assigns the whole i-th slab."""
+
+    @native
+    def fill_slabs(a, out):
+        c = np.ndarray((2, 3, 4), np.float64)
+        for i in range(2):
+            c[i] = a[i]
+        out[:] = c
+
+    a = np.arange(24, dtype=np.float64).reshape(2, 3, 4)
+    out = np.zeros((2, 3, 4), dtype=np.float64)
+    fill_slabs(a, out)
+    assert np.allclose(out, a)

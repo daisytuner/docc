@@ -158,6 +158,15 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_dereference_memlet(
+        sdfg::structured_control_flow::Block& block,
+        sdfg::data_flow::AccessNode& src,
+        sdfg::data_flow::AccessNode& dst,
+        bool derefs_src = true,
+        const sdfg::types::IType* type = nullptr,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     /***** Library Nodes *****/
 
     sdfg::data_flow::LibraryNode& add_cmath(

@@ -5,7 +5,10 @@
 #include <cstddef>
 #include <list>
 #include <map>
+#include <set>
 #include <stdexcept>
+#include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -322,7 +325,59 @@ std::unordered_set<const data_flow::DataFlowNode*> DataFlowGraph::successors(con
     return ss;
 };
 
-std::list<const DataFlowNode*> DataFlowGraph::topological_sort() const {
+bool DataFlowGraph::is_valid_topological_order(const std::list<const DataFlowNode*>& order) const {
+    std::unordered_map<const DataFlowNode*, size_t> pos;
+    size_t idx = 0;
+    for (const auto* node : order) {
+        pos[node] = idx++;
+    }
+    for (const auto& edge : this->edges()) {
+        auto src_it = pos.find(&edge.src());
+        auto dst_it = pos.find(&edge.dst());
+        if (src_it == pos.end() || dst_it == pos.end() || src_it->second >= dst_it->second) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool DataFlowGraph::is_valid_topological_order(const std::list<DataFlowNode*>& order) const {
+    std::unordered_map<const DataFlowNode*, size_t> pos;
+    size_t idx = 0;
+    for (const auto* node : order) {
+        pos[node] = idx++;
+    }
+    for (const auto& edge : this->edges()) {
+        auto src_it = pos.find(&edge.src());
+        auto dst_it = pos.find(&edge.dst());
+        if (src_it == pos.end() || dst_it == pos.end() || src_it->second >= dst_it->second) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::list<DataFlowNode*> DataFlowGraph::boost_topological_sort() {
+    auto order_vertices = graph::topological_sort(this->graph_);
+
+    std::list<DataFlowNode*> order;
+    for (const auto& v : order_vertices) {
+        order.push_back(this->nodes_.at(v).get());
+    }
+    return order;
+}
+
+std::list<const DataFlowNode*> DataFlowGraph::boost_topological_sort() const {
+    auto order_vertices = graph::topological_sort(this->graph_);
+
+    std::list<const DataFlowNode*> order;
+    for (const auto& v : order_vertices) {
+        order.push_back(this->nodes_.at(v).get());
+    }
+    return order;
+}
+
+std::list<const DataFlowNode*> DataFlowGraph::semantic_topological_sort() const {
     auto [num_components, components_map] = graph::weakly_connected_components(this->graph_);
 
     // Build deterministic topological sort for each weakly connected component
@@ -579,7 +634,7 @@ std::list<const DataFlowNode*> DataFlowGraph::topological_sort() const {
     return order;
 }
 
-std::list<DataFlowNode*> DataFlowGraph::topological_sort() {
+std::list<DataFlowNode*> DataFlowGraph::semantic_topological_sort() {
     auto [num_components, components_map] = graph::weakly_connected_components(this->graph_);
 
     // Build deterministic topological sort for each weakly connected component
@@ -833,6 +888,22 @@ std::list<DataFlowNode*> DataFlowGraph::topological_sort() {
         order.insert(order.end(), component.begin(), component.end());
     }
 
+    return order;
+}
+
+std::list<const DataFlowNode*> DataFlowGraph::topological_sort() const {
+    auto order = semantic_topological_sort();
+    if (!is_valid_topological_order(order)) {
+        order = boost_topological_sort();
+    }
+    return order;
+}
+
+std::list<DataFlowNode*> DataFlowGraph::topological_sort() {
+    auto order = semantic_topological_sort();
+    if (!is_valid_topological_order(order)) {
+        order = boost_topological_sort();
+    }
     return order;
 }
 

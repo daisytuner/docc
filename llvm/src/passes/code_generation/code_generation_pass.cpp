@@ -690,6 +690,7 @@ bool CodeGenerationPass::compile_to_object_file(
     for (auto& arg : compile_args) {
         cmd.push_back(arg);
     }
+    cmd.push_back("-fno-strict-aliasing");
     cmd.push_back("-fopenmp");
     cmd.push_back("-Wno-parentheses-equality");
     cmd.push_back("-c");
@@ -729,7 +730,7 @@ std::unique_ptr<llvm::Module> CodeGenerationPass::compile_to_ir_in_memory(
     }
 
     cmd << "-fopenmp ";
-
+    cmd << "-fno-strict-aliasing ";
 
     cmd << source_path.string() << " -o -";
 

@@ -33,6 +33,7 @@ classifiers = [
 ]
 
 dependencies = [
+  "sympy>=1.14.0",
   "numpy>=1.19.0",
   "ml_dtypes>=0.5.4",
 ]

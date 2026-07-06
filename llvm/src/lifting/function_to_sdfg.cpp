@@ -1,8 +1,10 @@
 #include "docc/lifting/function_to_sdfg.h"
 
+#include <filesystem>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IntrinsicInst.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/Transforms/Utils/CodeExtractor.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
@@ -540,6 +542,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::apply(llvm::Region& region
     auto& TLI = this->FAM_.getResult<llvm::TargetLibraryAnalysis>(this->function_);
     Lifting lifting(TLI, *external_function, sdfg::FunctionType_CPU);
     std::unique_ptr<sdfg::SDFG> sdfg = lifting.run();
+    dump_llvm_function();
     dump_sdfg(*sdfg, "0");
     sdfg->validate();
 
@@ -586,6 +589,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::apply() {
     auto& TLI = this->FAM_.getResult<llvm::TargetLibraryAnalysis>(this->function_);
     Lifting lifting(TLI, this->function_, sdfg::FunctionType_CPU);
     std::unique_ptr<sdfg::SDFG> sdfg = lifting.run();
+    dump_llvm_function();
     dump_sdfg(*sdfg, "0");
     sdfg->validate();
 
@@ -840,6 +844,30 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
     return builder_opt.move();
 }
 
+void FunctionToSDFG::dump_llvm_function() const {
+    if (args::DOCC_DUMP_SDFG) {
+        auto mod = function_.getParent();
+
+        auto out_dir = analysis::SDFGRegistry::docc_extract_dir(*mod);
+
+        std::filesystem::create_directories(out_dir);
+        std::filesystem::path file = out_dir / (function_.getName().str() + ".ll");
+
+        std::ofstream out(file, std::ofstream::out);
+        if (!out.is_open()) {
+            std::cerr << "Could not open file " << file << " for dumping llvm function." << std::endl;
+            return;
+        }
+        std::string llvm_function_text;
+        llvm::raw_string_ostream llvm_out(llvm_function_text);
+        function_.print(llvm_out);
+        llvm_out.flush();
+
+        out << llvm_function_text << '\n';
+        out.close();
+    }
+}
+
 void FunctionToSDFG::dump_sdfg(const sdfg::SDFG& sdfg, const std::string& step) const {
     if (args::DOCC_DUMP_SDFG) {
         auto mod = function_.getParent();
@@ -861,7 +889,7 @@ void FunctionToSDFG::dump_structured_sdfg(const sdfg::StructuredSDFG& sdfg, cons
         sdfg::serializer::JSONSerializer::writeToFile(sdfg, out_dir / (sdfg.name() + ".pass." + step + ".json"));
         sdfg::visualizer::DotVisualizer::writeToFile(sdfg, out_dir / (sdfg.name() + ".pass." + step + ".dot"));
     }
-};
+}
 
 } // namespace lifting
 } // namespace docc

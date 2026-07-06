@@ -623,6 +623,16 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_dereference_memlet",
+            &PyStructuredSDFGBuilder::add_dereference_memlet,
+            py::arg("block"),
+            py::arg("src"),
+            py::arg("dst"),
+            py::arg("derefs_src") = true,
+            py::arg("type") = nullptr,
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_memlet",
             [](PyStructuredSDFGBuilder& self,
                sdfg::structured_control_flow::Block& block,

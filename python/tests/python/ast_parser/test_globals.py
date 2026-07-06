@@ -89,3 +89,122 @@ def test_global_constant_not_overwritten_by_local():
     arr = np.array([8.0], dtype=np.float64)
     result = global_vs_local(arr)
     assert result == 2.0  # 8.0 * 0.25
+
+
+# Module-level constant array (e.g. LULESH's `gamma`).
+GLOBAL_MATRIX = np.array(
+    [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+    dtype=np.float64,
+)
+GLOBAL_IVEC = np.array([10, 20, 30, 40], dtype=np.int64)
+
+
+def test_global_array_element_access():
+    """A module-global constant array can be indexed element-wise."""
+
+    @native
+    def copy_matrix(out):
+        for i in range(4):
+            for j in range(3):
+                out[i, j] = GLOBAL_MATRIX[i, j]
+
+    out = np.zeros((4, 3), dtype=np.float64)
+    copy_matrix(out)
+    assert np.array_equal(out, GLOBAL_MATRIX)
+
+
+def test_global_array_partial_index_row():
+    """Partial indexing of a global 2-D array yields a row (A[i] == A[i, :])."""
+
+    @native
+    def copy_rows(out):
+        for i in range(4):
+            out[i, :] = GLOBAL_MATRIX[i]
+
+    out = np.zeros((4, 3), dtype=np.float64)
+    copy_rows(out)
+    assert np.array_equal(out, GLOBAL_MATRIX)
+
+
+def test_global_int_array():
+    """A module-global integer constant array is materialized correctly."""
+
+    @native
+    def copy_ivec(out):
+        for i in range(4):
+            out[i] = GLOBAL_IVEC[i]
+
+    out = np.zeros(4, dtype=np.int64)
+    copy_ivec(out)
+    assert np.array_equal(out, GLOBAL_IVEC)
+
+
+def test_global_array_matvec():
+    """A matvec against a row of a global matrix (LULESH hourglass pattern).
+
+    Exercises the offset-operand copy in the matmul lowering: `A @ M[i]`.
+    """
+
+    @native
+    def matvec_rows(a, out):
+        for i in range(4):
+            out[:, i] = a @ GLOBAL_MATRIX[i]
+
+    a = np.arange(15, dtype=np.float64).reshape(5, 3)
+    out = np.zeros((5, 4), dtype=np.float64)
+    matvec_rows(a.copy(), out)
+    exp = np.zeros((5, 4), dtype=np.float64)
+    for i in range(4):
+        exp[:, i] = a @ GLOBAL_MATRIX[i]
+    assert np.allclose(out, exp)
+
+
+# Nested dict of integer bit masks (LULESH XI/ETA/ZETA boundary-condition tables)
+BC_MASKS = {
+    "M": {"mask": 0x007, "SYMM": 0x001, "FREE": 0x002, "COMM": 0x004},
+    "P": {"mask": 0x038, "SYMM": 0x008, "FREE": 0x010, "COMM": 0x020},
+}
+
+
+def test_global_dict_constant_fold():
+    """A subscript chain into a nested global dict of ints folds to a literal
+    at compile time (LULESH XI["M"]["mask"] boundary-condition pattern)."""
+
+    @native
+    def mask_and(bc_mask, out):
+        out[:] = bc_mask & BC_MASKS["M"]["mask"]
+
+    bc_mask = np.array([0x7, 0x3, 0x38, 0x1], dtype=np.int64)
+    out = np.zeros(4, dtype=np.int64)
+    mask_and(bc_mask.copy(), out)
+    assert np.array_equal(out, bc_mask & 0x007)
+
+
+def test_global_dict_constant_scalar():
+    """A folded dict constant is usable as a plain scalar operand."""
+
+    @native
+    def add_symm(arr) -> int:
+        return arr[0] + BC_MASKS["P"]["SYMM"]
+
+    arr = np.array([1], dtype=np.int64)
+    assert add_symm(arr) == 1 + 0x008
+
+
+def _region_mask(bc, bc_mask):
+    # `bc` is bound to a global dict constant via inline substitution.
+    return bc_mask & bc["P"]["mask"]
+
+
+def test_global_dict_constant_inlined():
+    """A global dict constant passed as an argument to an inlined helper is
+    substituted into the body and folded (LULESH _calc_*_region_bc pattern)."""
+
+    @native
+    def use_region(bc_mask, out):
+        out[:] = _region_mask(BC_MASKS, bc_mask)
+
+    bc_mask = np.array([0x7, 0x3, 0x38, 0x1], dtype=np.int64)
+    out = np.zeros(4, dtype=np.int64)
+    use_region(bc_mask.copy(), out)
+    assert np.array_equal(out, bc_mask & 0x038)

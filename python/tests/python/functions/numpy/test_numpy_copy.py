@@ -95,3 +95,38 @@ def test_numpy_copy():
     assert result.shape == (5,)
     assert result.strides == (8,)
     assert np.array_equal(result, expected)
+
+
+def test_numpy_copy_function():
+    """Test np.copy(arr) function form (as opposed to the .copy() method)."""
+
+    @native
+    def copy_func(a):
+        return np.copy(a)
+
+    a = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
+    result = copy_func(a)
+    assert np.array_equal(result, a)
+
+    # Independence: mutating the copy must not affect the source array.
+    @native
+    def copy_func_independent(a):
+        b = np.copy(a)
+        b[:] = b * 2.0
+        return a
+
+    a = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    result = copy_func_independent(a)
+    np.testing.assert_array_equal(result, np.array([1.0, 2.0, 3.0]))
+
+    # np.copy of a gather result.
+    @native
+    def copy_func_gather(x, idx, out):
+        g = np.copy(x[idx])
+        out[:] = g + 1.0
+
+    x = np.arange(5, dtype=np.float64) * 10
+    idx = np.array([2, 0, 4], dtype=np.int64)
+    out = np.zeros(3, dtype=np.float64)
+    copy_func_gather(x, idx, out)
+    np.testing.assert_array_equal(out, x[idx] + 1.0)

@@ -667,6 +667,33 @@ void PyStructuredSDFGBuilder::add_reference_memlet(
     builder_.add_reference_memlet(block, src, dst, indices, *type, debug_info);
 }
 
+void PyStructuredSDFGBuilder::add_dereference_memlet(
+    Block& block,
+    sdfg::data_flow::AccessNode& src,
+    sdfg::data_flow::AccessNode& dst,
+    bool derefs_src,
+    const sdfg::types::IType* type_arg,
+    const sdfg::DebugInfo& debug_info
+) {
+    const sdfg::types::IType* type = type_arg;
+
+    if (!type) {
+        // For a src-dereference the base type is the (pointer) type of the
+        // source container; for a dst-dereference it is the destination's.
+        auto& node = derefs_src ? src : dst;
+        if (auto* constant = dynamic_cast<sdfg::data_flow::ConstantNode*>(&node)) {
+            type = &constant->type();
+        } else {
+            type = &builder_.subject().type(node.data());
+        }
+    }
+    if (!type) {
+        throw std::runtime_error("Could not determine type for dereference memlet");
+    }
+
+    builder_.add_dereference_memlet(block, src, dst, derefs_src, *type, debug_info);
+}
+
 sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_cmath(
     Block& block,
     sdfg::math::cmath::CMathFunction func,
@@ -1068,17 +1095,23 @@ void PyStructuredSDFGBuilder::add_elementwise_op(
         builder_.add_computational_memlet(block, node_c, *node, C_conn, {}, *C_memlet_type, debug_info);
     }
 
+    sdfg::data_flow::AccessNode* a_access = nullptr;
     if (builder_.subject().exists(A)) {
-        auto& node_in = builder_.add_access(block, A, debug_info);
-        builder_.add_computational_memlet(block, node_in, *node, A_conn, {}, *A_memlet_type, debug_info);
+        a_access = &builder_.add_access(block, A, debug_info);
+        builder_.add_computational_memlet(block, *a_access, *node, A_conn, {}, *A_memlet_type, debug_info);
     } else {
         auto& node_in = builder_.add_constant(block, A, A_type.element_type(), debug_info);
         builder_.add_memlet(block, node_in, "void", *node, A_conn, {}, *A_memlet_type, debug_info);
     }
 
     if (builder_.subject().exists(B)) {
-        auto& node_in = builder_.add_access(block, B, debug_info);
-        builder_.add_computational_memlet(block, node_in, *node, B_conn, {}, *B_memlet_type, debug_info);
+        // A code node may not have two distinct access nodes for the same data:
+        // reuse the A access node when B refers to the same container (e.g. a + a).
+        sdfg::data_flow::AccessNode* b_access = a_access;
+        if (b_access == nullptr || B != A) {
+            b_access = &builder_.add_access(block, B, debug_info);
+        }
+        builder_.add_computational_memlet(block, *b_access, *node, B_conn, {}, *B_memlet_type, debug_info);
     } else {
         auto& node_in = builder_.add_constant(block, B, B_type.element_type(), debug_info);
         builder_.add_memlet(block, node_in, "void", *node, B_conn, {}, *B_memlet_type, debug_info);
