@@ -361,3 +361,37 @@ def test_numpy_clip_2d():
 
     # 20.0 clipped to [0, 10] -> 10.0
     assert abs(numpy_clip_2d(3, 3) - 10.0) < 1e-10
+
+
+def test_same_operand_binary_ops():
+    """Binary ops reusing the same array operand (a + a, a * a, ...).
+
+    A code node may not have two distinct access nodes for the same container,
+    so the same access node must be reused for repeated operands.
+    """
+
+    @native
+    def self_add(a, out):
+        out[:] = a + a
+
+    a = np.random.rand(6)
+    out = np.zeros(6)
+    self_add(a, out)
+    np.testing.assert_allclose(out, a + a)
+
+    @native
+    def self_poly(a, out):
+        out[:] = a * a - a
+
+    out2 = np.zeros(6)
+    self_poly(a, out2)
+    np.testing.assert_allclose(out2, a * a - a)
+
+    @native
+    def self_2d(a, out):
+        out[:] = a * a + a
+
+    m = np.random.rand(3, 4)
+    out3 = np.zeros((3, 4))
+    self_2d(m, out3)
+    np.testing.assert_allclose(out3, m * m + m)

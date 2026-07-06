@@ -37,6 +37,18 @@ private:
 
     Element* parent_;
 
+    bool is_valid_topological_order(const std::list<const DataFlowNode*>& order) const;
+
+    bool is_valid_topological_order(const std::list<DataFlowNode*>& order) const;
+
+    std::list<const DataFlowNode*> boost_topological_sort() const;
+
+    std::list<DataFlowNode*> boost_topological_sort();
+
+    std::list<const DataFlowNode*> semantic_topological_sort() const;
+
+    std::list<DataFlowNode*> semantic_topological_sort();
+
 public:
     DataFlowGraph() = default;
     DataFlowGraph(Element* parent);

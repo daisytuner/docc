@@ -258,6 +258,18 @@ void register_control_flow(py::module& m) {
             return oss.str();
         });
 
+    // Reduce class (inherits from StructuredLoop)
+    py::class_<Reduce, StructuredLoop>(m, "Reduce")
+        .def_property_readonly(
+            "schedule_type", &Reduce::schedule_type, py::return_value_policy::reference, "Get the scheduling strategy"
+        )
+        .def("__repr__", [](const Reduce& loop) {
+            std::ostringstream oss;
+            oss << "<Reduce indvar='" << loop.indvar()->__str__() << "' schedule='" << loop.schedule_type().value()
+                << "' id=" << loop.element_id() << ">";
+            return oss.str();
+        });
+
     // While class (inherits from ControlFlowNode)
     py::class_<While, ControlFlowNode>(m, "While")
         .def_property_readonly(

@@ -503,9 +503,6 @@ class TestWhere2DViews:
         expected = np.array([[0.0, 2.0, 0.0], [4.0, 0.0, 6.0]])
         np.testing.assert_array_equal(result, expected)
 
-    @pytest.mark.skip(
-        reason="Memory management bug with column slicing a[:, start:stop] - pre-existing issue"
-    )
     def test_2d_col_slice(self):
         """2D view slicing columns: a[:, 1:-1]"""
 
@@ -574,5 +571,214 @@ class TestWhereChainedOperations:
         np.testing.assert_allclose(result, expected)
 
 
+class TestBooleanMaskAssignment:
+    """Tests for boolean-mask assignment: ``arr[mask] = value``.
+
+    Semantics: elements where the mask is True are set to ``value``; all other
+    elements keep their original value. Lowered as
+    ``arr[:] = np.where(mask, value, arr)``.
+    """
+
+    def test_mask_assign_scalar_1d(self):
+        """arr[arr <= t] = c on a 1D array."""
+
+        @native
+        def mask_assign(a):
+            a[a <= 0.1] = 1.0
+            return a
+
+        a = np.array([0.05, 0.5, 0.1, 0.2, 0.09])
+        expected = a.copy()
+        expected[expected <= 0.1] = 1.0
+        result = mask_assign(a.copy())
+        np.testing.assert_array_equal(result, expected)
+
+    def test_mask_assign_greater(self):
+        """Upper-clip via mask assignment: arr[arr > 1.0] = 1.0."""
+
+        @native
+        def clip_high(a):
+            a[a > 1.0] = 1.0
+            return a
+
+        a = np.array([0.5, 1.5, 2.0, 0.9, 3.0])
+        expected = a.copy()
+        expected[expected > 1.0] = 1.0
+        result = clip_high(a.copy())
+        np.testing.assert_array_equal(result, expected)
+
+    def test_mask_assign_negative_to_zero(self):
+        """In-place ReLU: arr[arr < 0] = 0."""
+
+        @native
+        def relu_inplace(a):
+            a[a < 0.0] = 0.0
+            return a
+
+        a = np.array([1.0, -2.0, 3.0, -4.0, 5.0])
+        expected = a.copy()
+        expected[expected < 0.0] = 0.0
+        result = relu_inplace(a.copy())
+        np.testing.assert_array_equal(result, expected)
+
+    def test_mask_assign_2d(self):
+        """Boolean-mask assignment over a 2D array."""
+
+        @native
+        def mask_2d(a):
+            a[a < 0.0] = 0.0
+            return a
+
+        a = np.array([[1.0, -2.0], [-3.0, 4.0]])
+        expected = a.copy()
+        expected[expected < 0.0] = 0.0
+        result = mask_2d(a.copy())
+        np.testing.assert_array_equal(result, expected)
+
+    def test_mask_assign_bool_array(self):
+        """Mask supplied as a boolean array variable: arr[m] = value."""
+
+        @native
+        def mask_from_array(a, m):
+            a[m] = 5.0
+            return a
+
+        a = np.array([1.0, 2.0, 3.0, 4.0])
+        m = np.array([True, False, True, False])
+        expected = a.copy()
+        expected[m] = 5.0
+        result = mask_from_array(a.copy(), m)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_mask_assign_all_false(self):
+        """No element matches: array is unchanged."""
+
+        @native
+        def mask_none(a):
+            a[a > 100.0] = 0.0
+            return a
+
+        a = np.array([1.0, 2.0, 3.0])
+        expected = a.copy()
+        result = mask_none(a.copy())
+        np.testing.assert_array_equal(result, expected)
+
+    def test_mask_assign_all_true(self):
+        """Every element matches: whole array is set to the value."""
+
+        @native
+        def mask_all(a):
+            a[a > -100.0] = 7.0
+            return a
+
+        a = np.array([1.0, 2.0, 3.0])
+        expected = np.full_like(a, 7.0)
+        result = mask_all(a.copy())
+        np.testing.assert_array_equal(result, expected)
+
+    def test_mask_assign_int_dtype(self):
+        """Boolean-mask assignment on an integer array."""
+
+        @native
+        def mask_int(a):
+            a[a < 0] = 0
+            return a
+
+        a = np.array([1, -2, 3, -4, 5], dtype=np.int64)
+        expected = a.copy()
+        expected[expected < 0] = 0
+        result = mask_int(a.copy())
+        np.testing.assert_array_equal(result, expected)
+
+
+class TestInfConstant:
+    """Tests for the np.inf / np.nan floating-point constants."""
+
+    def test_where_with_inf(self):
+        @native
+        def where_inf(a):
+            return np.where(a > 0, a, np.inf)
+
+        a = np.array([-2.0, 0.5, 3.0, -1.0])
+        compiled = where_inf.compile(a)
+        result = compiled(a)
+        np.testing.assert_array_equal(result, np.where(a > 0, a, np.inf))
+
+    def test_clip_with_neg_inf(self):
+        @native
+        def clip_inf(a, out):
+            out[:] = np.clip(a, -np.inf, 1.0)
+
+        a = np.array([-2.0, 0.5, 3.0, -1.0])
+        out = np.zeros(4)
+        clip_inf(a, out)
+        np.testing.assert_allclose(out, np.clip(a, -np.inf, 1.0))
+
+    def test_min_over_where_inf(self):
+        @native
+        def masked_min(a) -> float:
+            return np.min(np.where(a > 0, a, np.inf))
+
+        a = np.array([-2.0, 0.5, 3.0, -1.0])
+        assert np.isclose(masked_min(a), np.min(np.where(a > 0, a, np.inf)))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_select_basic():
+    """np.select with two conditions and a default, lowered to nested where."""
+
+    @native
+    def sel2(masked, a, b):
+        return np.select(
+            [(masked == 4) | (masked == 0), masked == 1],
+            [a, b],
+            default=0,
+        )
+
+    masked = np.array([4, 0, 1, 2], dtype=np.int64)
+    a = np.array([10.0, 20.0, 30.0, 40.0])
+    b = np.array([100.0, 200.0, 300.0, 400.0])
+
+    compiled = sel2.compile(masked, a, b)
+    result = compiled(masked, a, b)
+    expected = np.select(
+        [(masked == 4) | (masked == 0), masked == 1], [a, b], default=0
+    )
+    np.testing.assert_allclose(result, expected)
+
+
+def test_select_first_match_priority():
+    """Overlapping conditions: the first matching condition must win."""
+
+    @native
+    def sel_prio(cond0, cond1, a, b):
+        return np.select([cond0, cond1], [a, b], default=-1.0)
+
+    cond0 = np.array([True, True, False, False])
+    cond1 = np.array([True, False, True, False])
+    a = np.array([1.0, 2.0, 3.0, 4.0])
+    b = np.array([10.0, 20.0, 30.0, 40.0])
+
+    compiled = sel_prio.compile(cond0, cond1, a, b)
+    result = compiled(cond0, cond1, a, b)
+    expected = np.select([cond0, cond1], [a, b], default=-1.0)
+    np.testing.assert_allclose(result, expected)
+
+
+def test_select_default_positional():
+    """np.select accepts the default as a positional third argument."""
+
+    @native
+    def sel_pos(cond, a):
+        return np.select([cond], [a], 7.0)
+
+    cond = np.array([True, False, True, False])
+    a = np.array([1.0, 2.0, 3.0, 4.0])
+
+    compiled = sel_pos.compile(cond, a)
+    result = compiled(cond, a)
+    expected = np.select([cond], [a], 7.0)
+    np.testing.assert_allclose(result, expected)

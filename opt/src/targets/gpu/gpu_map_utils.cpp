@@ -75,6 +75,8 @@ symbolic::Expression find_nested_gpu_iterations(
     auto loops = loop_analysis.descendants(&node);
     loops.insert(&node);
 
+    symbolic::Expression max_num_iterations = symbolic::one();
+
     for (auto loop : loops) {
         if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
             if (map->schedule_type().value() != ScheduleT::value() &&
@@ -96,10 +98,10 @@ symbolic::Expression find_nested_gpu_iterations(
             if (num_iterations.is_null()) {
                 throw InvalidSDFGException("Cannot determine number of iterations for nested map in GPU kernel");
             }
-            return num_iterations;
+            max_num_iterations = symbolic::max(max_num_iterations, num_iterations);
         }
     }
-    return symbolic::one();
+    return max_num_iterations;
 }
 
 template<typename ScheduleT>

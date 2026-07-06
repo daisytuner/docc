@@ -344,7 +344,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes
+          pip install sympy numpy ml_dtypes scipy
 
       - name: Formatting
         shell: bash
@@ -393,7 +393,7 @@ jobs:
   cuda-tests-linux:
     runs-on:
       group: dahlia
-      labels: cuda
+      labels: RTX5060
     container:
       image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
       options: >-

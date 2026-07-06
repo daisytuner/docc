@@ -30,63 +30,62 @@ def kernel(r):
     return y
 
 
-@pytest.mark.skip(reason="dot with tensor types not implemented")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "none",
+        "sequential",
+        "openmp",
+        # "cuda",
+        # "rocm"
+    ],
+)
 def test_durbin(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"MAP": 4, "SEQUENTIAL": 4, "FOR": 6, "Malloc": 3}
+            verification={"REDUCE": 1, "MAP": 4, "SEQUENTIAL": 6, "FOR": 1}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "REDUCE": 1,
+                "VECTORIZE": 5,
+                "MAP": 4,
+                "SEQUENTIAL": 1,
+                "FOR": 1,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "CPU_PARALLEL": 1,
+                "REDUCE": 1,
+                "VECTORIZE": 4,
+                "MAP": 4,
+                "SEQUENTIAL": 1,
+                "FOR": 1,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "CUDA": 1,
+                "REDUCE": 1,
+                "CUDAOffloading": 4,
+                "MAP": 4,
+                "SEQUENTIAL": 5,
+                "FOR": 1,
             }
         )
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "ROCM": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "ROCM": 1,
+                "REDUCE": 1,
+                "ROCMOffloading": 4,
+                "MAP": 4,
+                "SEQUENTIAL": 5,
+                "FOR": 1,
             }
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

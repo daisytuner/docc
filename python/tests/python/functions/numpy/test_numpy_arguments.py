@@ -352,3 +352,62 @@ def test_ndarray_strides():
     test_mixed_strides_operation()
     test_3d_non_standard_strides()
     test_3d_transposed()
+
+
+def test_ndarray_size():
+    """The `.size` attribute yields the total element count (product of dims)."""
+
+    def test_size_guard_nonempty():
+        @native
+        def size_guard(a, out):
+            if a.size > 0:
+                out[0] = 1.0
+            else:
+                out[0] = -1.0
+
+        a = np.arange(5, dtype=np.float64)
+        out = np.zeros(1, dtype=np.float64)
+        size_guard(a, out)
+        assert out[0] == 1.0
+
+    def test_size_guard_empty():
+        @native
+        def size_guard_e(a, out):
+            if a.size > 0:
+                out[0] = 1.0
+            else:
+                out[0] = -1.0
+
+        a = np.zeros(0, dtype=np.float64)
+        out = np.zeros(1, dtype=np.float64)
+        size_guard_e(a, out)
+        assert out[0] == -1.0
+
+    def test_size_2d():
+        @native
+        def size_2d(a, out):
+            if a.size > 5:
+                out[0] = 1.0
+            else:
+                out[0] = -1.0
+
+        a = np.arange(12, dtype=np.float64).reshape(3, 4)
+        out = np.zeros(1, dtype=np.float64)
+        size_2d(a, out)
+        assert out[0] == 1.0  # 12 > 5
+
+    def test_size_in_range():
+        @native
+        def size_range(a, out):
+            for k in range(a.size):
+                out[k] = 2.0
+
+        a = np.arange(6, dtype=np.float64)
+        out = np.zeros(6, dtype=np.float64)
+        size_range(a, out)
+        assert np.all(out == 2.0)
+
+    test_size_guard_nonempty()
+    test_size_guard_empty()
+    test_size_2d()
+    test_size_in_range()

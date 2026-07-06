@@ -237,3 +237,31 @@ def test_numpy_outer_float32():
     res = np_outer_f32(a, b)
     assert res.dtype == np.float32, f"Expected float32, got {res.dtype}"
     assert np.allclose(res, np.outer(a, b), rtol=1e-5)
+
+
+def test_chained_assignment_slice_matmul():
+    """Chained multi-target assignment with a slice-matmul RHS.
+
+    Regression test for the correlation-kernel pattern. The multi-target temp
+    name previously collided with a container materialized while evaluating the
+    RHS slice bound (e.g. ``i + 1``), leaving a stale scalar type on an array
+    container ("Non-scalar tensors must reference pointer buffers").
+    """
+
+    @native
+    def chained(M, data, corr):
+        for i in range(M - 1):
+            corr[i + 1 : M, i] = corr[i, i + 1 : M] = data[:, i] @ data[:, i + 1 : M]
+        return corr
+
+    M = 6
+    data = np.random.rand(8, M)
+    corr = np.zeros((M, M))
+    res = chained(M, data, corr.copy())
+
+    expected = np.zeros((M, M))
+    for i in range(M - 1):
+        expected[i + 1 : M, i] = expected[i, i + 1 : M] = (
+            data[:, i] @ data[:, i + 1 : M]
+        )
+    assert np.allclose(res, expected)

@@ -168,3 +168,38 @@ def test_einsum_3d_contract():
     # Contracting over j (size 3), result shape is (2, 4, 5)
     expected = np.full((2, 4, 5), 3.0)
     assert np.allclose(result, expected)
+
+
+def test_einsum_batched_transpose_matvec_reserved_indices():
+    """Batched transpose-matvec using index letters that collide with symbolic
+    constants (`e` = Euler's number, `i` = imaginary unit). LULESH hourglass
+    pattern `einsum('eji,ej->ei', ...)`.
+    """
+
+    @native
+    def es_ei(hourgam, xd, out):
+        out[:] = np.einsum("eji,ej->ei", hourgam, xd)
+
+    ne = 5
+    hg = np.arange(ne * 8 * 4, dtype=np.float64).reshape(ne, 8, 4)
+    xd = np.arange(ne * 8, dtype=np.float64).reshape(ne, 8)
+    out = np.zeros((ne, 4), dtype=np.float64)
+    es_ei(hg.copy(), xd.copy(), out)
+    expected = np.einsum("eji,ej->ei", hg, xd)
+    assert np.allclose(out, expected)
+
+
+def test_einsum_batched_matvec_reserved_indices_transpose_back():
+    """The reverse contraction `einsum('eji,ei->ej', ...)` (LULESH)."""
+
+    @native
+    def es_ej(hourgam, hxx, out):
+        out[:] = np.einsum("eji,ei->ej", hourgam, hxx)
+
+    ne = 4
+    hg = np.arange(ne * 8 * 4, dtype=np.float64).reshape(ne, 8, 4)
+    hxx = np.arange(ne * 4, dtype=np.float64).reshape(ne, 4)
+    out = np.zeros((ne, 8), dtype=np.float64)
+    es_ej(hg.copy(), hxx.copy(), out)
+    expected = np.einsum("eji,ei->ej", hg, hxx)
+    assert np.allclose(out, expected)

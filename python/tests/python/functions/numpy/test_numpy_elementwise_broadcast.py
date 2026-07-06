@@ -352,3 +352,29 @@ def test_broadcast_column_vector():
     assert res.shape == (2, 3)
     assert res.dtype == np.float64
     assert np.allclose(res, expected)
+
+
+def test_newaxis_broadcast():
+    """np.newaxis / None indexing inserts a size-1 axis for broadcasting."""
+
+    @native
+    def col_times(a, b, out):
+        # a: (n,), b: (n, m) -> a[:, None] * b : (n, m)
+        out[:] = a[:, None] * b
+
+    n, m = 4, 3
+    a = np.random.rand(n)
+    b = np.random.rand(n, m)
+    out = np.zeros((n, m))
+    col_times(a, b, out)
+    np.testing.assert_allclose(out, a[:, None] * b)
+
+    @native
+    def row_times(a, b, out):
+        # a: (m,), b: (n, m) -> a[None, :] * b : (n, m)
+        out[:] = a[None, :] * b
+
+    am = np.random.rand(m)
+    out2 = np.zeros((n, m))
+    row_times(am, b, out2)
+    np.testing.assert_allclose(out2, am[None, :] * b)

@@ -922,3 +922,46 @@ def test_min_dtypes():
     assert result.strides == (4,)
     assert result.dtype == np.float32
     assert np.allclose(result, expected)
+
+
+def test_numpy_any():
+    """np.any over a boolean mask (logical OR reduction to a scalar)."""
+
+    @native
+    def any_le_zero(v) -> bool:
+        return np.any(v <= 0)
+
+    assert any_le_zero(np.array([1.0, 2.0, 3.0])) == False
+    assert any_le_zero(np.array([1.0, -2.0, 3.0])) == True
+    assert any_le_zero(np.array([0.0, 1.0])) == True
+
+
+def test_numpy_all():
+    """np.all over a boolean mask (logical AND reduction to a scalar)."""
+
+    @native
+    def all_positive(v) -> bool:
+        return np.all(v > 0)
+
+    assert all_positive(np.array([1.0, 2.0, 3.0])) == True
+    assert all_positive(np.array([1.0, -2.0, 3.0])) == False
+    assert all_positive(np.array([0.0, 1.0])) == False
+
+
+def test_numpy_any_in_branch():
+    """np.any used as an if-condition."""
+
+    @native
+    def flag_negative(v, out):
+        if np.any(v < 0):
+            out[0] = 1.0
+        else:
+            out[0] = 0.0
+
+    out = np.zeros(1)
+    flag_negative(np.array([1.0, -2.0, 3.0]), out)
+    assert out[0] == 1.0
+
+    out2 = np.zeros(1)
+    flag_negative(np.array([1.0, 2.0, 3.0]), out2)
+    assert out2[0] == 0.0

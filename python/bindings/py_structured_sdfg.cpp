@@ -580,6 +580,8 @@ std::string PyStructuredSDFG::compile(
         .add_common_option("-fstack-protector-strong")
         .add_common_option("-D_FORTIFY_SOURCE=3")
         .add_common_option("-O3")
+        // C/C++ codegen for memlets may generate code that violates strict aliasing rules, so we disable it.
+        .add_common_option("-fno-strict-aliasing")
         .add_common_option("-march=native")
         .add_common_option("-mtune=native")
         .add_compile_option("-funroll-loops")
