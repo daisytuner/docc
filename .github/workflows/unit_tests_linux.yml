@@ -147,7 +147,7 @@ jobs:
       group: dahlia
       labels: rocm
     container:
-      image: daisytuner/docc-run-env-llvm19-vllm-rocm-ubuntu-22.04:beta-amd64
+      image: daisytuner/docc-run-env-llvm19-vllm-rocm-ubuntu-22.04:latest-amd64
       options: >-
         --cap-add=PERFMON
         --device /dev/kfd
@@ -362,7 +362,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPYTHON_BUILD_FRONTEND=ON \
-            -Dpybind11_DIR=$(python -c "import pybind11; print(pybind11.get_cmake_dir())") \
+            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
             -DMLIR_BUILD_BINDINGS=ON \
             -DMLIR_BUILD_TESTS=ON \
@@ -721,7 +721,7 @@ jobs:
           pytest -v python/tests mlir/integration -m "tenstorrent"
 
   finish:
-    needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux, inference-tests-linux]
+    needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Coveralls Finished

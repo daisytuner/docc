@@ -45,9 +45,11 @@ static DoccTarget rocm_target = {
     .short_name = "rocm",
     .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
         builder.add_compile_option("-x hip");
-        const char* arch_env = "gfx1201";
-        std::string rocm_dev = arch_env;
-        builder.add_compile_option("--offload-arch=" + rocm_dev);
+        const char* arch_env = std::getenv("DOCC_ROCM_ARCH");
+        if (!arch_env) {
+            arch_env = "gfx1201";
+        }
+        builder.add_compile_option("--offload-arch=" + std::string(arch_env));
         std::filesystem::path rocm_path = "/opt/rocm";
         builder.add_compile_option("--offload-host-only");
         builder.add_compile_option("--rocm-path=" + rocm_path.string());
@@ -61,7 +63,9 @@ static DoccTarget rocm_target = {
         compile::SrcFileCompilerBuilder b;
         b.inherit(builder, true);
         b.remove_compile_option("--offload-host-only");
+
         builder.redirect_snippet("rocm.cpp", std::move(b));
+
         return true;
     },
     .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
