@@ -241,6 +241,12 @@ inline void register_analysis(py::module& m) {
         .def_readonly(
             "has_side_effects", &sdfg::analysis::LoopInfo::has_side_effects, "Whether the loop has side effects"
         )
+        .def_readonly("loop_level", &sdfg::analysis::LoopInfo::loop_level, "Nesting level of the loop (0 == outermost)")
+        .def_readonly(
+            "map_stack_depth",
+            &sdfg::analysis::LoopInfo::map_stack_depth,
+            "Layers deep (including this loop) that are perfectly parallel & nested Maps"
+        )
         .def("__repr__", [](const sdfg::analysis::LoopInfo& info) {
             std::ostringstream oss;
             oss << "<LoopInfo element_id=" << info.element_id << " num_loops=" << info.num_loops
