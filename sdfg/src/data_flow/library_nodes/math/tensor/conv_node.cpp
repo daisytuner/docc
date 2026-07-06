@@ -184,9 +184,7 @@ symbolic::MultiExpression ConvNode::get_out_shape() {
 
 bool ConvNode::has_bias() const { return with_bias_; }
 
-bool ConvNode::check_expandable(
-    data_flow::DataFlowGraph& dfg, analysis::AnalysisManager& analysis_manager, ConvExpandPrerequisits& boundary
-) const {
+bool ConvNode::check_expandable(data_flow::DataFlowGraph& dfg, ConvExpandPrerequisits& boundary) const {
     if ((dfg.nodes().size() != 4 || dfg.edges().size() != 3) && (dfg.nodes().size() != 5 || dfg.edges().size() != 4)) {
         return false;
     }
@@ -230,26 +228,43 @@ bool ConvNode::check_expandable(
     return true;
 }
 
-bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+
+passes::LibNodeExpander::ExpandOutcome ConvNode::
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
     // Validate nodes are standalone in the data flow graph
     auto& dfg = this->get_parent();
     ConvExpandPrerequisits b;
-    if (!check_expandable(dfg, analysis_manager, b)) {
-        return false;
+    if (!check_expandable(dfg, b)) {
+        return context.unable();
     }
+
+    constexpr auto Y_INPUT_IDX = 0;
+    constexpr auto X_INPUT_IDX = 1;
+    constexpr auto W_INPUT_IDX = 2;
+    constexpr auto B_INPUT_IDX = 3;
 
     // Determine BLAS precision
 
     types::Scalar base_type(this->primitive_type(dfg));
     blas::BLAS_Precision precision = get_blas_precision(base_type);
     if (precision == blas::BLAS_Precision::invalid) {
-        return false;
+        return context.unable();
+    }
+
+    using Use = passes::LibNodeExpander::InputUse;
+    std::vector<Use> req_inputs = {Use::IndirectReadWrite, Use::IndirectRead, Use::IndirectRead};
+    if (this->with_bias_) {
+        req_inputs.push_back(Use::Scalar);
+    }
+    auto standalone = context.replacement_requires_access_nodes(req_inputs);
+
+    if (!standalone) {
+        return context.unable();
     }
 
     // Create new sequence for expansion
-    auto& new_sequence = builder.add_sequence_before(
-        *b.block_parent, *b.block, b.block_parent->at(b.block_index).second.assignments(), b.block->debug_info()
-    );
+    auto& new_sequence = standalone->replace_with_sequence();
+    auto& builder = standalone->builder();
 
     // Dimensions, i.e., 1D, 2D, 3D, ...
     size_t dims = this->kernel_shape_.size();
@@ -271,7 +286,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         symbolic::add(n, symbolic::one()),
         ScheduleType_Sequential::create(),
         {},
-        b.block->debug_info()
+        block.debug_info()
     );
 
     // Add loop over groups
@@ -286,7 +301,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         symbolic::add(g, symbolic::one()),
         ScheduleType_Sequential::create(),
         {},
-        b.block->debug_info()
+        block.debug_info()
     );
 
     // Add patches container with malloc
@@ -319,7 +334,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         symbolic::add(c, symbolic::one()),
         ScheduleType_Sequential::create(),
         {},
-        b.block->debug_info()
+        block.debug_info()
     );
     current_seq = &loop_c.root();
 
@@ -339,7 +354,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             symbolic::add(k, symbolic::one()),
             ScheduleType_Sequential::create(),
             {},
-            b.block->debug_info()
+            block.debug_info()
         );
         current_seq = &loop_k.root();
     }
@@ -360,7 +375,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             symbolic::add(o, symbolic::one()),
             ScheduleType_Sequential::create(),
             {},
-            b.block->debug_info()
+            block.debug_info()
         );
         current_seq = &loop_o.root();
     }
@@ -382,9 +397,9 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             Or(zero_condition,
                symbolic::Or(symbolic::Ge(i_expr, this->shape_[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
     }
-    auto& branch = builder.add_if_else(*current_seq, {}, b.block->debug_info());
-    auto& copy_case = builder.add_case(branch, copy_condition, b.block->debug_info());
-    auto& zero_case = builder.add_case(branch, zero_condition, b.block->debug_info());
+    auto& branch = builder.add_if_else(*current_seq, {}, block.debug_info());
+    auto& copy_case = builder.add_case(branch, copy_condition, block.debug_info());
+    auto& zero_case = builder.add_case(branch, zero_condition, block.debug_info());
 
     // Determine patches subset & tensor type
     data_flow::Subset patches_subset;
@@ -404,9 +419,9 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     subset_X.insert(subset_X.end(), is.begin(), is.end());
 
     // Add copy from X to patches
-    auto& copy_block = builder.add_block(copy_case, {}, b.block->debug_info());
+    auto& copy_block = builder.add_block(copy_case, {}, block.debug_info());
     {
-        auto& X_access = builder.add_access(copy_block, b.access_X->data(), b.access_X->debug_info());
+        auto& X_access = standalone->add_indirect_read_access(copy_block, X_INPUT_IDX);
         auto& patches_access = builder.add_access(copy_block, patches_container, this->debug_info());
         auto& tasklet =
             builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
@@ -419,7 +434,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     }
 
     // Add zero assignment to patches
-    auto& zero_block = builder.add_block(zero_case, {}, b.block->debug_info());
+    auto& zero_block = builder.add_block(zero_case, {}, block.debug_info());
     {
         auto& constant_zero = builder.add_constant(zero_block, "0.0", base_type, this->debug_info());
         auto& patches_access = builder.add_access(zero_block, patches_container, this->debug_info());
@@ -433,44 +448,44 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
 
     // Add reference to W
     auto ref_W_container = builder.find_new_name("_ref_W");
-    types::Scalar ref_W_base_type(builder.subject().type(b.access_W->data()).primitive_type());
+    auto& ref_W_block = builder.add_block(loop_g.root(), {}, block.debug_info());
+    auto& W_access = standalone->add_scalar_input_access(ref_W_block, W_INPUT_IDX);
+    types::Scalar ref_W_base_type(builder.subject().type(W_access.data()).primitive_type());
     types::Pointer ref_W_type(ref_W_base_type);
     builder.add_container(ref_W_container, ref_W_type);
     auto ref_W_subset = symbolic::mul(symbolic::mul(out_channels, g), in_channels);
     for (size_t i = 0; i < dims; i++) {
         ref_W_subset = symbolic::mul(ref_W_subset, this->kernel_shape_[i]);
     }
-    auto& ref_W_block = builder.add_block(loop_g.root(), {}, b.block->debug_info());
     {
-        auto& W_access = builder.add_access(ref_W_block, b.access_W->data(), b.access_W->debug_info());
-        auto& ref_W_access = builder.add_access(ref_W_block, ref_W_container, b.access_W->debug_info());
+        auto& ref_W_access = builder.add_access(ref_W_block, ref_W_container, W_access.debug_info());
         builder.add_reference_memlet(ref_W_block, W_access, ref_W_access, {ref_W_subset}, ref_W_type);
     }
 
     // Add reference to Y
+    auto& ref_Y_block = builder.add_block(loop_g.root(), {}, block.debug_info());
+    auto& Y_access = standalone->add_scalar_input_access(ref_Y_block, Y_INPUT_IDX);
     auto ref_Y_container = builder.find_new_name("_ref_Y");
-    types::Scalar ref_Y_base_type(builder.subject().type(b.access_Y->data()).primitive_type());
+    types::Scalar ref_Y_base_type(builder.subject().type(Y_access.data()).primitive_type());
     types::Pointer ref_Y_type(ref_Y_base_type);
     builder.add_container(ref_Y_container, ref_Y_type);
     auto ref_Y_subset = symbolic::add(symbolic::mul(this->output_channels_, n), symbolic::mul(out_channels, g));
     for (size_t i = 0; i < dims; i++) {
         ref_Y_subset = symbolic::mul(ref_Y_subset, out_shape[i]);
     }
-    auto& ref_Y_block = builder.add_block(loop_g.root(), {}, b.block->debug_info());
     {
-        auto& Y_access = builder.add_access(ref_Y_block, b.access_Y->data(), b.access_Y->debug_info());
-        auto& ref_Y_access = builder.add_access(ref_Y_block, ref_Y_container, b.access_Y->debug_info());
+        auto& ref_Y_access = builder.add_access(ref_Y_block, ref_Y_container, Y_access.debug_info());
         builder.add_reference_memlet(ref_Y_block, Y_access, ref_Y_access, {ref_Y_subset}, ref_Y_type);
     }
 
     // Add GEMM node
-    auto& gemm_block = builder.add_block(loop_g.root(), {}, b.block->debug_info());
+    auto& gemm_block = builder.add_block(loop_g.root(), {}, block.debug_info());
     {
         auto& alpha = builder.add_constant(gemm_block, "1.0", base_type, this->debug_info());
         auto& beta = builder.add_constant(gemm_block, "0.0", base_type, this->debug_info());
-        auto& ref_W_access = builder.add_access(gemm_block, ref_W_container, b.access_W->debug_info());
+        auto& ref_W_access = builder.add_access(gemm_block, ref_W_container, W_access.debug_info());
         auto& patches_access = builder.add_access(gemm_block, patches_container, this->debug_info());
-        auto& ref_Y_access_in = builder.add_access(gemm_block, ref_Y_container, b.access_Y->debug_info());
+        auto& ref_Y_access_in = builder.add_access(gemm_block, ref_Y_container, Y_access.debug_info());
         symbolic::Expression gemm_m = out_channels;
         symbolic::Expression gemm_n = symbolic::one();
         symbolic::Expression gemm_k = in_channels;
@@ -505,7 +520,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     }
 
     // Add bias if available
-    if (b.has_bias) {
+    if (with_bias_) {
         // Add loop over output channels
         auto l_container = builder.find_new_name("_l");
         builder.add_container(l_container, indvar_type);
@@ -518,7 +533,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             symbolic::add(l, symbolic::one()),
             ScheduleType_Sequential::create(),
             {},
-            b.block->debug_info()
+            block.debug_info()
         );
         current_seq = &loop_l.root();
 
@@ -535,7 +550,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                 symbolic::add(o, symbolic::one()),
                 ScheduleType_Sequential::create(),
                 {},
-                b.block->debug_info()
+                block.debug_info()
             );
             current_seq = &loop_o.root();
             os[i] = o;
@@ -547,11 +562,11 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         Y_subset.push_back(symbolic::add(symbolic::mul(out_channels, g), l));
         Y_subset.insert(Y_subset.end(), os.begin(), os.end());
         auto B_subset = symbolic::add(symbolic::mul(out_channels, g), l);
-        auto& bias_block = builder.add_block(*current_seq, {}, b.block->debug_info());
+        auto& bias_block = builder.add_block(*current_seq, {}, block.debug_info());
         {
-            auto& B_access = builder.add_access(bias_block, b.access_B->data(), b.access_B->debug_info());
-            auto& Y_access_in = builder.add_access(bias_block, b.access_Y->data(), b.access_Y->debug_info());
-            auto& Y_access_out = builder.add_access(bias_block, b.access_Y->data(), b.access_Y->debug_info());
+            auto& B_access = standalone->add_indirect_read_access(bias_block, B_INPUT_IDX);
+            auto& Y_access_in = standalone->add_indirect_read_access(bias_block, Y_INPUT_IDX);
+            auto& Y_access_out = standalone->add_indirect_write_access(bias_block, Y_INPUT_IDX);
             auto& tasklet =
                 builder
                     .add_tasklet(bias_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, this->debug_info());
@@ -568,7 +583,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     }
 
     // Add free for patches container
-    auto& patches_free_block = builder.add_block(loop_g.root(), {}, b.block->debug_info());
+    auto& patches_free_block = builder.add_block(loop_g.root(), {}, block.debug_info());
     {
         auto& patches_access_in = builder.add_access(patches_free_block, patches_container, this->debug_info());
         auto& libnode = builder.add_library_node<stdlib::FreeNode>(patches_free_block, this->debug_info());
@@ -577,12 +592,7 @@ bool ConvNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         );
     }
 
-    // Clean up the original block
-    builder.clear_code_node_legacy(*b.block, *this);
-    // WARNING: this has been deallocated at this point!!
-    builder.remove_child(*b.block_parent, b.block_index + 1);
-
-    return true;
+    return standalone->successfully_expanded();
 }
 
 symbolic::SymbolSet ConvNode::symbols() const {

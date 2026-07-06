@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg);
     sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
 
-    sdfg::passes::MathExpansionPass math_expansion;
+    sdfg::passes::LibraryNodeExpansionPass math_expansion;
     math_expansion.run(builder, analysis_manager);
 
     sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;

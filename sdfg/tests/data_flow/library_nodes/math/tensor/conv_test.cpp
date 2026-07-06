@@ -3,6 +3,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -437,13 +438,11 @@ TEST(ConvNodeTest, Conv2D_SimpleExpansion) {
     EXPECT_NO_THROW(sdfg.validate());
 
     // Try to expand the node - expansion should now succeed for 2D convolution
-    analysis::AnalysisManager analysis_manager(sdfg);
-    bool expanded = conv_node.expand(builder, analysis_manager);
-
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, conv_node);
     dump_sdfg(sdfg, "1.expanded");
 
-    // Expansion should now be implemented and return true
-    EXPECT_TRUE(expanded);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 // Test that expansion is not attempted with unsupported parameters
@@ -490,11 +489,11 @@ TEST(ConvNodeTest, Conv2D_ExpansionNotImplemented) {
     builder.add_computational_memlet(block, weights_node, conv_node, "W", {}, desc_tensor_weights, block.debug_info());
     builder.add_computational_memlet(block, output_node, conv_node, "Y", {}, desc_tensor_input, block.debug_info());
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    bool expanded = conv_node.expand(builder, analysis_manager);
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, conv_node);
+    dump_sdfg(sdfg, "1.expanded");
 
-    // Expansion should succeed for 2D convolutions with stride > 1
-    EXPECT_TRUE(expanded);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 // Test 1D convolution expansion
@@ -539,10 +538,11 @@ TEST(ConvNodeTest, Conv1D_Expansion) {
     EXPECT_NO_THROW(sdfg.validate());
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    bool expanded = conv_node.expand(builder, analysis_manager);
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, conv_node);
+    dump_sdfg(sdfg, "1.expanded");
 
-    // Expansion should succeed for 1D convolutions
-    EXPECT_TRUE(expanded);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 // Test 3D convolution expansion
@@ -599,10 +599,11 @@ TEST(ConvNodeTest, Conv3D_Expansion) {
     EXPECT_NO_THROW(sdfg.validate());
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    bool expanded = conv_node.expand(builder, analysis_manager);
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, conv_node);
+    dump_sdfg(sdfg, "1.expanded");
 
-    // Expansion should succeed for 3D convolutions
-    EXPECT_TRUE(expanded);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 // Test linearization of memlets after expansion
@@ -650,6 +651,9 @@ TEST(ConvNodeTest, LinearizationTest) {
     builder.add_computational_memlet(block, output_node, conv_node, "Y", {}, desc_tensor_input, block.debug_info());
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    bool expanded = conv_node.expand(builder, analysis_manager);
-    EXPECT_TRUE(expanded);
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, conv_node);
+    dump_sdfg(sdfg, "1.expanded");
+
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }

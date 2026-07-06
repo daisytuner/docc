@@ -81,7 +81,7 @@ set(TEST_FILES
     passes/dataflow/tensor_to_pointer_conversion_test.cpp
     passes/memory/allocation_management_test.cpp
     passes/pipeline_test.cpp
-    passes/schedules/expansion_pass_test.cpp
+    passes/expansion/expansion_pass_test.cpp
     passes/structured_control_flow/block_fusion_test.cpp
     passes/structured_control_flow/condition_elimination_test.cpp
     passes/structured_control_flow/dead_cfg_elimination_test.cpp

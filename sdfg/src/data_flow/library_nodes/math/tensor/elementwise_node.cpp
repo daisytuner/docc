@@ -281,25 +281,26 @@ void ElementWiseDataflowTensorNode::create_output(
     );
 }
 
-bool ElementWiseDataflowTensorNode::
-    expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+passes::LibNodeExpander::ExpandOutcome ElementWiseDataflowTensorNode::
+    expand(passes::LibNodeExpander::ExpandContext& context, Block& block) {
     auto& dataflow = this->get_parent();
-    auto& org_block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
 
     auto* output_tensor_iedge = dataflow.in_edge_for_connector(*this, inputs_.at(0));
     if (!output_tensor_iedge) {
-        return false;
+        return context.unable();
     }
     auto& target_tensor = static_cast<const types::Tensor&>(output_tensor_iedge->base_type());
     std::vector<const data_flow::Memlet*> iedges;
     std::vector<const data_flow::AccessNode*> inputs_sa;
     std::vector<std::pair<types::PrimitiveType, const TensorLayout*>> input_types;
     iedges.reserve(inputs_.size() - 1);
+    using Dir = passes::LibNodeExpander::InputUse;
+    std::vector<Dir> access_dirs{Dir::IndirectWrite};
     for (int i = 1; i < this->inputs_.size(); ++i) {
         auto* iedge = dataflow.in_edge_for_connector(*this, inputs_.at(i));
         if (!iedge) {
             if (i < mandatory_input_count()) {
-                return false;
+                return context.unable();
             } else {
                 continue;
             }
@@ -307,13 +308,15 @@ bool ElementWiseDataflowTensorNode::
         iedges.push_back(iedge);
         auto* input_sa = dataflow.find_standalone_entry(iedge);
         if (!input_sa) {
-            return false;
+            return context.unable();
         }
         inputs_sa.push_back(input_sa);
         auto& input_type = iedge->base_type();
         if (input_type.type_id() == types::TypeID::Scalar) {
+            access_dirs.push_back(Dir::Scalar);
             input_types.emplace_back(input_type.primitive_type(), nullptr);
         } else {
+            access_dirs.push_back(Dir::IndirectRead);
             auto& tensor_type = static_cast<const types::Tensor&>(iedge->base_type());
             input_types.emplace_back(input_type.primitive_type(), &tensor_type.layout());
         }
@@ -321,47 +324,47 @@ bool ElementWiseDataflowTensorNode::
 
     auto* output_tensor_sa = dataflow.find_standalone_entry(output_tensor_iedge);
     if (!output_tensor_sa) {
-        return false;
+        return context.unable();
     }
 
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*org_block.get_parent());
-    int index = parent.index(org_block);
-    auto& transition = parent.at(index).second;
+    auto standalone = context.replacement_requires_access_nodes(access_dirs);
 
-    // Add new graph after the current block
-    auto& new_sequence =
-        builder.add_sequence_before(parent, org_block, transition.assignments(), org_block.debug_info());
+    if (standalone) {
+        auto& builder = standalone->builder();
 
-    auto [eltw_scope, loop_vars] = add_eltwise_scope(builder, org_block.debug_info(), new_sequence, shape_);
+        // Add new graph after the current block
+        auto& new_sequence = standalone->replace_with_sequence();
 
-    std::vector<tensor::ElementWiseDataflowTensorNode::ElementInput> eltwise_inputs;
-    eltwise_inputs.reserve(inputs_.size() - 1);
-    for (int i = 0; i < input_types.size(); ++i) {
-        eltwise_inputs.push_back({.required_type = input_types.at(i).first});
+        auto [eltw_scope, loop_vars] = add_eltwise_scope(builder, block.debug_info(), new_sequence, shape_);
+
+        std::vector<tensor::ElementWiseDataflowTensorNode::ElementInput> eltwise_inputs;
+        eltwise_inputs.reserve(inputs_.size() - 1);
+        for (int i = 0; i < input_types.size(); ++i) {
+            eltwise_inputs.push_back({.required_type = input_types.at(i).first});
+        }
+
+        auto& new_block = builder.add_block(*eltw_scope);
+
+        auto produced_output =
+            expand_operation_dataflow(builder, new_block, eltwise_inputs, target_tensor.primitive_type());
+        if (!produced_output.producer) {
+            return context.unable();
+        }
+
+        std::unordered_map<const data_flow::AccessNode*, data_flow::AccessNode*> new_node_mapping;
+
+        // for all old input edge, remove old, create new
+        for (int i = 0; i < iedges.size(); ++i) {
+            create_input(
+                builder, new_block, *inputs_sa.at(i), input_types.at(i), eltwise_inputs.at(i), loop_vars, new_node_mapping
+            );
+        }
+        create_output(builder, new_block, *output_tensor_sa, target_tensor, produced_output, loop_vars);
+
+        return standalone->successfully_expanded();
+    } else {
+        return context.unable();
     }
-
-    auto& new_block = builder.add_block(*eltw_scope);
-
-    auto produced_output =
-        expand_operation_dataflow(builder, analysis_manager, new_block, eltwise_inputs, target_tensor.primitive_type());
-    if (!produced_output.producer) {
-        return false;
-    }
-
-    std::unordered_map<const data_flow::AccessNode*, data_flow::AccessNode*> new_node_mapping;
-
-    // for all old input edge, remove old, create new
-    for (int i = 0; i < iedges.size(); ++i) {
-        create_input(
-            builder, new_block, *inputs_sa.at(i), input_types.at(i), eltwise_inputs.at(i), loop_vars, new_node_mapping
-        );
-    }
-    create_output(builder, new_block, *output_tensor_sa, target_tensor, produced_output, loop_vars);
-    builder.clear_code_node_legacy(org_block, *this);
-    // WARNING: this has been deallocated at this point!!
-    builder.remove_child(parent, index + 1);
-
-    return true;
 }
 
 data_flow::PointerAccessType ElementWiseDataflowTensorNode::pointer_access_type(int input_idx) const {

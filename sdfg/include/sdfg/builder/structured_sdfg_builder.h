@@ -73,7 +73,7 @@ private:
     std::pair<T&, Transition&> insert_node_internal(
         Sequence& parent,
         int32_t insert_idx,
-        const sdfg::control_flow::Assignments& assignments,
+        const sdfg::control_flow::Assignments* assignments,
         const DebugInfo& debug_info,
         Args&&... args
     ) {
@@ -82,8 +82,14 @@ private:
         );
         auto& new_child = *child;
 
-        auto transition =
-            std::unique_ptr<Transition>(new Transition(this->new_element_id(), debug_info, parent, assignments));
+        std::unique_ptr<Transition> transition;
+        if (assignments) {
+            transition =
+                std::unique_ptr<Transition>(new Transition(this->new_element_id(), debug_info, parent, *assignments));
+        } else {
+            Assignments empty;
+            transition = std::unique_ptr<Transition>(new Transition(this->new_element_id(), debug_info, parent, empty));
+        }
         auto& new_transition = *transition;
 
         if (insert_idx == INSERT_AT_END) {
@@ -102,7 +108,7 @@ private:
         Sequence& parent,
         int32_t insert_idx,
         const data_flow::DataFlowGraph* import_from,
-        const sdfg::control_flow::Assignments& assignments,
+        const sdfg::control_flow::Assignments* assignments,
         const DebugInfo& debug_info
     );
 
@@ -110,6 +116,8 @@ protected:
     Function& function() const override;
 
 public:
+    using InsertionPoint = int32_t;
+
     /**
      * To modify an existing SDFG
      */
@@ -159,6 +167,13 @@ public:
         ControlFlowNode& block,
         const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
+    );
+
+    Sequence& add_sequence_at(
+        Sequence& parent,
+        InsertionPoint insertion_point,
+        const DebugInfo& debug_info = DebugInfo(),
+        const sdfg::control_flow::Assignments* assignments = nullptr
     );
 
     [[deprecated("use method with explicit assignments instead")]]
@@ -225,6 +240,13 @@ public:
         data_flow::DataFlowGraph& data_flow_graph,
         const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
+    );
+
+    Block& add_block_at(
+        Sequence& parent,
+        InsertionPoint insertion_point,
+        const DebugInfo& debug_info = DebugInfo(),
+        const sdfg::control_flow::Assignments* assignments = nullptr
     );
 
     [[deprecated("use method with explicit assignments instead")]]
@@ -318,6 +340,18 @@ public:
         const DebugInfo& debug_info = DebugInfo()
     );
 
+    For& add_for_at(
+        Sequence& parent,
+        InsertionPoint insertion_point,
+        const symbolic::Symbol indvar,
+        const symbolic::Condition condition,
+        const symbolic::Expression init,
+        const symbolic::Expression update,
+        const ScheduleType& schedule_type,
+        const DebugInfo& debug_info = DebugInfo(),
+        const sdfg::control_flow::Assignments* assignments = nullptr
+    );
+
     Map& add_map(
         Sequence& parent,
         const symbolic::Symbol indvar,
@@ -351,6 +385,18 @@ public:
         const ScheduleType& schedule_type,
         const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
+    );
+
+    Map& add_map_at(
+        Sequence& parent,
+        InsertionPoint insertion_point,
+        const symbolic::Symbol indvar,
+        const symbolic::Condition condition,
+        const symbolic::Expression init,
+        const symbolic::Expression update,
+        const ScheduleType& schedule_type,
+        const DebugInfo& debug_info = DebugInfo(),
+        const sdfg::control_flow::Assignments* assignments = nullptr
     );
 
     Reduce& add_reduce(

@@ -8,6 +8,7 @@
 #include "sdfg/passes/dataflow/tensor_to_pointer_conversion.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/pipeline.h"
+#include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/math/tensor/softmax.h"
 #include "sdfg/targets/cuda/plugin.h"
@@ -287,7 +288,7 @@ TEST(SoftmaxDispatcherTest, SoftmaxSurvivesCudaPipeline) {
     EXPECT_EQ(node_after_expand->implementation_type().value(), ImplementationType_CUDAWithTransfers.value());
 
     // Step 2: Generic ExpansionPass should skip it (impl_type != NONE)
-    passes::Pipeline expansion = passes::Pipeline::expansion();
+    passes::LibraryNodeExpansionPass expansion;
     expansion.run(builder, analysis_manager);
 
     auto library_nodes_after_generic = block.dataflow().library_nodes();

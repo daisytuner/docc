@@ -15,7 +15,6 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/transpose_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"

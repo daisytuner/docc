@@ -207,11 +207,12 @@ public:
      * Creates nested maps over each dimension with linearized index computation
      * for accessing the flat input/output arrays.
      *
-     * @param builder SDFG builder
-     * @param analysis_manager Analysis manager
-     * @return True if expansion succeeded
+     * @param context way to request isolation of node or add new blocks, loops etc.
+     * @param block the block in which the node is contained
+     * @return outcome of expand, created by context
      */
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    passes::LibNodeExpander::ExpandOutcome
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override;
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 
@@ -222,7 +223,6 @@ protected:
      * All inputs will be single elements. The caller must handle potential broadcasts etc.
      *
      * @param builder
-     * @param analysis_manager
      * @param block
      * @param input_types access nodes for the current element of each of the input tensors in their respective order
      * @param needed_inputs list of inputs and their targets to connect with which scalar type
@@ -231,7 +231,6 @@ protected:
      */
     virtual ElementOutput expand_operation_dataflow(
         builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
         structured_control_flow::Block& block,
         std::vector<ElementInput>& needed_inputs,
         types::PrimitiveType expected_type

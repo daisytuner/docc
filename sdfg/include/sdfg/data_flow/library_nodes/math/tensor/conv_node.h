@@ -156,12 +156,9 @@ public:
      *
      * Supports n-dimensional convolutions (1D, 2D, 3D, and higher) with
      * configurable strides and padding for each spatial dimension.
-     *
-     * @param builder SDFG builder
-     * @param analysis_manager Analysis manager
-     * @return True if expansion succeeded, false for unsupported configurations
      */
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    passes::LibNodeExpander::ExpandOutcome
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override;
 
     symbolic::SymbolSet symbols() const override;
 
@@ -206,9 +203,7 @@ public:
         size_t block_index;
     };
 
-    bool check_expandable(
-        data_flow::DataFlowGraph& dfg, analysis::AnalysisManager& analysis_manager, ConvExpandPrerequisits& boundary
-    ) const;
+    bool check_expandable(data_flow::DataFlowGraph& dfg, ConvExpandPrerequisits& boundary) const;
 };
 
 /**

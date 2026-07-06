@@ -56,33 +56,49 @@ std::unique_ptr<data_flow::DataFlowNode> BatchNormNode::
 
 std::string BatchNormNode::toStr() const { return "BatchNorm(" + layout_.toStr() + ")"; }
 
-bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+passes::LibNodeExpander::ExpandOutcome BatchNormNode::
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
+    auto& dataflow = this->get_parent();
+
+    auto* batch_iedge = dataflow.in_edge_for_connector(*this, "Batch");
+    auto& data_type = batch_iedge->base_type();
+    types::Scalar scalar_type(data_type.primitive_type());
+    types::Tensor tensor_1d(scalar_type, {num_features()}, {symbolic::one()});
+    std::string temp_var_prefix = "_batchn_tmp";
+    int tmp_idx = 0;
+
+    //{"Batch", "Var", "E", "Gamma", "Beta", "epsilon", "B_out"},
+
+    constexpr auto BATCH_IDX = 0;
+    constexpr auto VAR_IDX = 1;
+    constexpr auto E_IDX = 2;
+    constexpr auto GAMMA_IDX = 3;
+    constexpr auto BETA_IDX = 4;
+    constexpr auto EPS_IDX = 5;
+    constexpr auto B_OUT_IDX = 6;
+    using Use = passes::LibNodeExpander::InputUse;
+    auto standalone = context.replacement_requires_access_nodes(
+        {Use::IndirectRead,
+         Use::IndirectRead,
+         Use::IndirectRead,
+         Use::IndirectRead,
+         Use::IndirectRead,
+         Use::Scalar,
+         Use::IndirectWrite}
+    );
+
+    if (!standalone) {
+        return context.unable();
+    }
+
+    auto& new_sequence = standalone->replace_with_sequence();
+    auto& builder = standalone->builder();
+
+    auto loop_dims = create_maps(builder, layout_.shape(), new_sequence);
+
+
     // CPU implementation of batchnorm:
     if (false) {
-        auto& dataflow = this->get_parent();
-        auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
-
-        auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
-        int index = parent.index(block);
-        auto& transition = parent.at(index).second;
-
-        auto batch_in = find_usable_input_access_node(dataflow, *this, "Batch");
-        auto& data_type = batch_in.memlet->base_type();
-        types::Scalar scalar_type(data_type.primitive_type());
-        types::Tensor tensor_1d(scalar_type, {num_features()}, {symbolic::one()}); // TODO verify / get from inputs
-        std::string temp_var_prefix = "_batchn_tmp";
-        int tmp_idx = 0;
-        auto var_in = find_usable_input_access_node(dataflow, *this, "Var");
-        auto e_in = find_usable_input_access_node(dataflow, *this, "E");
-        auto gamma_in = find_usable_input_access_node(dataflow, *this, "Gamma");
-        auto beta_in = find_usable_input_access_node(dataflow, *this, "Beta");
-        auto result_ptr_in = find_usable_input_access_node(dataflow, *this, "B_out");
-        auto eps_in = find_usable_input_access_node(dataflow, *this, "epsilon");
-
-        auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), debug_info());
-
-        auto loop_dims = create_maps(builder, layout_.shape(), new_sequence);
-
         auto& c_dim = loop_dims.at(1);
         std::vector<symbolic::Expression> c_subset{c_dim.indvar};
         auto interm_name = builder.find_new_name("_b_sqrt_div");
@@ -91,10 +107,8 @@ bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
             c_dim.seq, static_cast<structured_control_flow::ControlFlowNode&>(loop_dims.at(2).loop), {}, DebugInfo()
         );
 
-        auto& var_elem_in = builder.add_access(inter_block, var_in.name);
-        data_flow::AccessNode& epsilon_const = eps_in.is_const
-                                                   ? builder.add_constant(inter_block, eps_in.name, scalar_type)
-                                                   : builder.add_access(inter_block, eps_in.name);
+        auto& var_elem_in = standalone->add_indirect_read_access(inter_block, VAR_IDX);
+        data_flow::AccessNode& epsilon_const = standalone->add_scalar_input_access(inter_block, EPS_IDX);
 
         auto& add_eps_op = builder.add_tasklet(inter_block, data_flow::fp_add, "_out", {"var", "eps"}, debug_info());
 
@@ -132,13 +146,13 @@ bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
         }
 
         auto& innermost_block = builder.add_block(innermost_dim.seq);
-        auto& x_in = builder.add_access(innermost_block, batch_in.name);
+        auto& x_in = standalone->add_indirect_read_access(innermost_block, BATCH_IDX);
         auto& interm_in = builder.add_access(innermost_block, interm_name);
-        auto& e_elem_in = builder.add_access(innermost_block, e_in.name);
-        auto& gamma_elem_in = builder.add_access(innermost_block, gamma_in.name);
-        auto& beta_elem_in = builder.add_access(innermost_block, beta_in.name);
+        auto& e_elem_in = standalone->add_indirect_read_access(innermost_block, E_IDX);
+        auto& gamma_elem_in = standalone->add_indirect_read_access(innermost_block, GAMMA_IDX);
+        auto& beta_elem_in = standalone->add_indirect_read_access(innermost_block, BETA_IDX);
 
-        auto& result_ptr_out_elem = builder.add_access(innermost_block, result_ptr_in.name);
+        auto& result_ptr_out_elem = standalone->add_indirect_write_access(innermost_block, B_OUT_IDX);
 
         auto& sub_op = builder.add_tasklet(innermost_block, data_flow::fp_sub, "_out", {"x", "e"}, debug_info());
 
@@ -175,45 +189,10 @@ bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
             innermost_block, add_beta_op, "_out", result_ptr_out_elem, innermost_subset, data_type
         );
 
-        batch_in.remove_old(builder, block);
-        var_in.remove_old(builder, block);
-        e_in.remove_old(builder, block);
-        eps_in.remove_old(builder, block);
-        gamma_in.remove_old(builder, block);
-        beta_in.remove_old(builder, block);
-        result_ptr_in.remove_old(builder, block);
-
-        builder.remove_node(block, *this);
-        assert(dataflow.nodes().size() == 0 && "At expand time, no other nodes may be in the same graph");
-        builder.remove_child(parent, index + 1);
-
-        return true;
+        return standalone->successfully_expanded();
     } else {
         // GPU implementation of batchnorm:
         // Move sqrt and division into the innermost loop to enable more parallelism.
-        auto& dataflow = this->get_parent();
-        auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
-
-        auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
-        int index = parent.index(block);
-        auto& transition = parent.at(index).second;
-
-        auto batch_in = find_usable_input_access_node(dataflow, *this, "Batch");
-        auto& data_type = batch_in.memlet->base_type();
-        types::Scalar scalar_type(data_type.primitive_type());
-        types::Tensor tensor_1d(scalar_type, {num_features()}, {symbolic::one()});
-        std::string temp_var_prefix = "_batchn_tmp";
-        int tmp_idx = 0;
-        auto var_in = find_usable_input_access_node(dataflow, *this, "Var");
-        auto e_in = find_usable_input_access_node(dataflow, *this, "E");
-        auto gamma_in = find_usable_input_access_node(dataflow, *this, "Gamma");
-        auto beta_in = find_usable_input_access_node(dataflow, *this, "Beta");
-        auto result_ptr_in = find_usable_input_access_node(dataflow, *this, "B_out");
-        auto eps_in = find_usable_input_access_node(dataflow, *this, "epsilon");
-
-        auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), debug_info());
-
-        auto loop_dims = create_maps(builder, layout_.shape(), new_sequence);
 
         auto& c_dim = loop_dims.at(1);
         std::vector<symbolic::Expression> c_subset{c_dim.indvar};
@@ -228,15 +207,13 @@ bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
         auto& innermost_block = builder.add_block(innermost_dim.seq);
 
         // Access nodes
-        auto& x_in = builder.add_access(innermost_block, batch_in.name);
-        auto& var_elem_in = builder.add_access(innermost_block, var_in.name);
-        data_flow::AccessNode& epsilon_const = eps_in.is_const
-                                                   ? builder.add_constant(innermost_block, eps_in.name, scalar_type)
-                                                   : builder.add_access(innermost_block, eps_in.name);
-        auto& e_elem_in = builder.add_access(innermost_block, e_in.name);
-        auto& gamma_elem_in = builder.add_access(innermost_block, gamma_in.name);
-        auto& beta_elem_in = builder.add_access(innermost_block, beta_in.name);
-        auto& result_ptr_out_elem = builder.add_access(innermost_block, result_ptr_in.name);
+        auto& x_in = standalone->add_indirect_read_access(innermost_block, BATCH_IDX);
+        auto& var_elem_in = standalone->add_indirect_read_access(innermost_block, VAR_IDX);
+        data_flow::AccessNode& epsilon_const = standalone->add_scalar_input_access(innermost_block, EPS_IDX);
+        auto& e_elem_in = standalone->add_indirect_read_access(innermost_block, E_IDX);
+        auto& gamma_elem_in = standalone->add_indirect_read_access(innermost_block, GAMMA_IDX);
+        auto& beta_elem_in = standalone->add_indirect_read_access(innermost_block, BETA_IDX);
+        auto& result_ptr_out_elem = standalone->add_indirect_write_access(innermost_block, B_OUT_IDX);
 
         // var[c] + eps
         auto& add_eps_op =
@@ -298,19 +275,7 @@ bool BatchNormNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
             innermost_block, add_beta_op, "_out", result_ptr_out_elem, innermost_subset, data_type
         );
 
-        batch_in.remove_old(builder, block);
-        var_in.remove_old(builder, block);
-        e_in.remove_old(builder, block);
-        eps_in.remove_old(builder, block);
-        gamma_in.remove_old(builder, block);
-        beta_in.remove_old(builder, block);
-        result_ptr_in.remove_old(builder, block);
-
-        builder.remove_node(block, *this);
-        assert(dataflow.nodes().size() == 0 && "At expand time, no other nodes may be in the same graph");
-        builder.remove_child(parent, index + 1);
-
-        return true;
+        return standalone->successfully_expanded();
     }
 }
 

@@ -19,6 +19,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sqrt_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 
 using namespace sdfg;
 
@@ -56,8 +57,9 @@ void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
     dump_sdfg(builder.subject(), "0.init");
 
     sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     dump_sdfg(builder.subject(), "1.expanded");
 
@@ -149,7 +151,9 @@ void TestBinary(std::vector<size_t> shape_dims) {
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
 
@@ -330,8 +334,9 @@ void TestCast(std::vector<size_t> shape_dims) {
     builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_target, block.debug_info());
 
     sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
 

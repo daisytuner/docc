@@ -140,6 +140,11 @@ symbolic::SymbolSet EinsumNode::internal_symbols() const {
     return result;
 }
 
+passes::LibNodeExpander::ExpandOutcome EinsumNode::
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
+    return context.unapplicable();
+}
+
 bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get data flow graph and block
     auto& dfg = this->get_parent();

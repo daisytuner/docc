@@ -12,6 +12,7 @@
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/element.h"
 #include "sdfg/function.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -88,8 +89,9 @@ void TestTaskletNode(data_flow::TaskletCode code, std::vector<size_t> shape_dims
 
     EXPECT_NO_THROW(sdfg.validate());
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(tensor_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, tensor_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     EXPECT_NO_THROW(sdfg.validate());
 

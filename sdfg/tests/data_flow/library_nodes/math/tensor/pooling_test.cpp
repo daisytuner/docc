@@ -4,6 +4,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/pooling_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -220,8 +221,9 @@ TEST(PoolingNodeTest, MaxPool2D_Expand_ProducesNestedMaps) {
 
     sdfg.validate();
 
-    analysis::AnalysisManager am(sdfg);
-    EXPECT_TRUE(pool.expand(builder, am));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, pool);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     // After expansion the original block is removed; a new sequence was inserted
     // The root should contain the new sequence
@@ -260,8 +262,9 @@ TEST(PoolingNodeTest, SumPool2D_Expand_Succeeds) {
 
     sdfg.validate();
 
-    analysis::AnalysisManager am(sdfg);
-    EXPECT_TRUE(pool.expand(builder, am));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, pool);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     EXPECT_GE(sdfg.root().size(), 1u);
 }
@@ -286,8 +289,9 @@ TEST(PoolingNodeTest, AvgPool2D_Expand_Succeeds) {
 
     sdfg.validate();
 
-    analysis::AnalysisManager am(sdfg);
-    EXPECT_TRUE(pool.expand(builder, am));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, pool);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     EXPECT_GE(sdfg.root().size(), 1u);
 }
@@ -333,8 +337,9 @@ TEST(PoolingNodeTest, MaxPool_IntegerType_Expand_Succeeds) {
 
     sdfg.validate();
 
-    analysis::AnalysisManager am(sdfg);
-    EXPECT_TRUE(pool.expand(builder, am));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, pool);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 TEST(PoolingNodeTest, MaxPool2D_WithPadding_Expand_Succeeds) {
@@ -365,8 +370,9 @@ TEST(PoolingNodeTest, MaxPool2D_WithPadding_Expand_Succeeds) {
 
     sdfg.validate();
 
-    analysis::AnalysisManager am(sdfg);
-    EXPECT_TRUE(pool.expand(builder, am));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, pool);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 TEST(PoolingNodeTest, MaxPool2D_WithDilations_Expand_Succeeds) {
@@ -395,8 +401,9 @@ TEST(PoolingNodeTest, MaxPool2D_WithDilations_Expand_Succeeds) {
 
     sdfg.validate();
 
-    analysis::AnalysisManager am(sdfg);
-    EXPECT_TRUE(pool.expand(builder, am));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, pool);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 TEST(PoolingNodeTest, MaxPool2D_BatchDim_Expand_ContainsOuterMap) {
@@ -423,8 +430,9 @@ TEST(PoolingNodeTest, MaxPool2D_BatchDim_Expand_ContainsOuterMap) {
 
     sdfg.validate();
 
-    analysis::AnalysisManager am(sdfg);
-    EXPECT_TRUE(pool.expand(builder, am));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, pool);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     // After expansion:  root → new_sequence → map(n) → ...
     EXPECT_GE(sdfg.root().size(), 1u);
@@ -472,8 +480,9 @@ TEST(PoolingNodeTest, MaxPool2D_SymbolicDims_Expand_Succeeds) {
 
     sdfg.validate();
 
-    analysis::AnalysisManager am(sdfg);
-    EXPECT_TRUE(pool.expand(builder, am));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, pool);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 TEST(PoolingNodeTest, MaxPool1D_Expand_Succeeds) {
@@ -514,8 +523,9 @@ TEST(PoolingNodeTest, MaxPool1D_Expand_Succeeds) {
 
     sdfg.validate();
 
-    analysis::AnalysisManager am(sdfg);
-    EXPECT_TRUE(pool.expand(builder, am));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, pool);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     dump_sdfg(builder.subject(), "1.expanded");
 

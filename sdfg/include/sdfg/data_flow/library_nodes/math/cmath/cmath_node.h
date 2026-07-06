@@ -406,9 +406,11 @@ public:
 
     void replace(const symbolic::ExpressionMapping& replacements) override;
 
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override {
-        return false;
-    };
+
+    passes::LibNodeExpander::ExpandOutcome
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override {
+        return context.unable();
+    }
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;

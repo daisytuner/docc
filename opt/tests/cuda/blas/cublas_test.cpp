@@ -5,6 +5,7 @@
 #include "sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/targets/cuda/cuda.h"
 
 using namespace sdfg;
@@ -47,8 +48,9 @@ TEST(CuBlasTest, DotNodeWithDataTransfers) {
 
     EXPECT_EQ(block.dataflow().nodes().size(), 4);
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(dot_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, dot_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 TEST(CuBlasTest, DotNodeWithoutDataTransfers) {
@@ -89,8 +91,9 @@ TEST(CuBlasTest, DotNodeWithoutDataTransfers) {
 
     EXPECT_EQ(block.dataflow().nodes().size(), 4);
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(dot_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, dot_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 TEST(CuBlasTest, GemmNodeWithDataTransfers) {
@@ -147,8 +150,9 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers) {
     EXPECT_EQ(block.dataflow().nodes().size(), 6);
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
     builder.subject().validate();
 
     EXPECT_EQ(sdfg.root().size(), 1);
@@ -257,8 +261,9 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers) {
     EXPECT_EQ(block.dataflow().nodes().size(), 6);
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
     builder.subject().validate();
 
     EXPECT_EQ(sdfg.root().size(), 1);
@@ -372,8 +377,9 @@ TEST(CuBlasTest, BatchedGemmNodeWithDataTransfers) {
     EXPECT_EQ(block.dataflow().nodes().size(), 6);
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(batched_gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, batched_gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
     builder.subject().validate();
 
     // After expansion: root should contain a single sequence
@@ -490,8 +496,9 @@ TEST(CuBlasTest, BatchedGemmNodeWithoutDataTransfers) {
     EXPECT_EQ(block.dataflow().nodes().size(), 6);
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(batched_gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, batched_gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
     builder.subject().validate();
 
     // Same structure as WithTransfers - batch loop wrapping i/j/k

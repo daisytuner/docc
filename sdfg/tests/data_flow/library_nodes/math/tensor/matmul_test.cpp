@@ -6,6 +6,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -68,7 +69,9 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     dump_sdfg(sdfg, "1.expanded");
 
@@ -158,7 +161,9 @@ TEST(MatMulTest, MatMul_3D_Batched) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     // After expansion, should have a map for the batch dimension
     EXPECT_EQ(sdfg.root().size(), 1);
@@ -232,7 +237,9 @@ TEST(MatMulTest, MatMul_WithSymbolicDimensions) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     // Verify GEMM node has symbolic dimensions
     bool found_gemm = false;
@@ -292,7 +299,9 @@ TEST(MatMulTest, MatMul_IntegerType_ReturnsFailure) {
 
     // Test expansion - should fail for integer types
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_FALSE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_FALSE(outcome.expanded);
+    EXPECT_FALSE(outcome.block_removed);
 }
 
 TEST(MatMulTest, MatMul_NoCopyForDefaultStrides) {
@@ -346,7 +355,9 @@ TEST(MatMulTest, MatMul_NoCopyForDefaultStrides) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     // Verify no malloc or free nodes exist (no copies needed)
     EXPECT_EQ(sdfg.root().size(), 1);

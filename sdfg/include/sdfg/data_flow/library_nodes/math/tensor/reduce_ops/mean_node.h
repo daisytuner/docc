@@ -21,11 +21,9 @@ public:
     );
 
     bool expand_reduction(
+        passes::LibNodeExpander::AccessNodeExpand& expansion,
         builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
         structured_control_flow::Sequence& body,
-        const std::string& input_name,
-        const std::string& output_name,
         const types::Tensor& input_type,
         const types::Tensor& output_type,
         const data_flow::Subset& input_subset,
@@ -40,17 +38,11 @@ public:
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 
 protected:
-    bool expand_inner(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
+    passes::LibNodeExpander::ExpandOutcome expand_inner(
+        passes::LibNodeExpander::AccessNodeExpand& expansion,
         structured_control_flow::Block& block,
-        data_flow::DataFlowGraph& dataflow,
-        structured_control_flow::Sequence& parent,
-        Transition& transition,
         const data_flow::Memlet* iedge_input,
         const data_flow::Memlet* iedge_result,
-        const data_flow::AccessNode* input_node,
-        const data_flow::AccessNode* output_node,
         const std::vector<symbolic::Expression>& output_shape,
         const std::vector<int64_t>& sorted_axes
     ) override;

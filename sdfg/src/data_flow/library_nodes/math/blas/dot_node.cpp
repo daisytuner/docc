@@ -71,12 +71,9 @@ void DotNode::replace(const symbolic::ExpressionMapping& replacements) {
 
 void DotNode::validate(const Function& function) const { BLASNode::validate(function); }
 
-bool DotNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+passes::LibNodeExpander::ExpandOutcome DotNode::
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
     auto& dataflow = this->get_parent();
-    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
-    int index = parent.index(block);
-    auto& transition = parent.at(index).second;
 
     const data_flow::Memlet* iedge_x = nullptr;
     const data_flow::Memlet* iedge_y = nullptr;
@@ -96,16 +93,14 @@ bool DotNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysis
         }
     }
 
-    // Check if legal
-    auto& input_node_x = static_cast<const data_flow::AccessNode&>(iedge_x->src());
-    auto& input_node_y = static_cast<const data_flow::AccessNode&>(iedge_y->src());
-    auto& output_node_res = static_cast<const data_flow::AccessNode&>(oedge_res->dst());
-    if (dataflow.in_degree(input_node_x) != 0 || dataflow.in_degree(input_node_y) != 0 ||
-        dataflow.out_degree(output_node_res) != 0) {
-        return false;
+    using Use = passes::LibNodeExpander::InputUse;
+    auto standalone = context.replacement_requires_access_nodes({Use::IndirectRead, Use::IndirectRead});
+    if (!standalone) {
+        return context.unable();
     }
 
-    auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
+    auto& builder = standalone->builder();
+    auto& new_sequence = standalone->replace_with_sequence();
 
     std::string loop_var = builder.find_new_name("_i");
     builder.add_container(loop_var, types::Scalar(types::PrimitiveType::UInt64));
@@ -121,10 +116,13 @@ bool DotNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysis
 
     auto& new_block = builder.add_block(body);
 
-    auto& res_in = builder.add_access(new_block, output_node_res.data());
-    auto& res_out = builder.add_access(new_block, output_node_res.data());
-    auto& x = builder.add_access(new_block, input_node_x.data());
-    auto& y = builder.add_access(new_block, input_node_y.data());
+    auto& res_out = standalone->add_output_access(new_block, 0);
+    auto& res_in = builder.add_access(new_block, res_out.data());
+    // absolute hack to read sth. that is supposed to be an output.
+    // This will definitely break SSA when we switch and should use a temporary scoped to the loop instead
+
+    auto& x = standalone->add_indirect_read_access(new_block, 0);
+    auto& y = standalone->add_indirect_read_access(new_block, 1);
 
     auto& tasklet = builder.add_tasklet(new_block, data_flow::TaskletCode::fp_fma, "__out", {"_in1", "_in2", "_in3"});
 
@@ -152,17 +150,7 @@ bool DotNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analysis
         new_block, tasklet, "__out", res_out, {}, oedge_res->base_type(), oedge_res->debug_info()
     );
 
-    // Clean up
-    builder.remove_memlet(block, *iedge_x);
-    builder.remove_memlet(block, *iedge_y);
-    builder.remove_memlet(block, *oedge_res);
-    builder.remove_node(block, input_node_x);
-    builder.remove_node(block, input_node_y);
-    builder.remove_node(block, output_node_res);
-    builder.remove_node(block, *this);
-    builder.remove_child(parent, index + 1);
-
-    return true;
+    return context.unable();
 }
 
 symbolic::Expression DotNode::flop() const {

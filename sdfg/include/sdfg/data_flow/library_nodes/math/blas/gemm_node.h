@@ -71,7 +71,8 @@ public:
 
     void validate(const Function& function) const override;
 
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    passes::LibNodeExpander::ExpandOutcome
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override;
 
     symbolic::SymbolSet symbols() const override;
 

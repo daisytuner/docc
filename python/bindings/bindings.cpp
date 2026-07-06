@@ -231,12 +231,6 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("dump_json") = true,
             py::arg("record_for_instrumentation") = false
         )
-        .def(
-            "set_output_dir",
-            static_cast<void (PyStructuredSDFG::*)(const std::string&)>(&PyStructuredSDFG::set_output_dir),
-            py::arg("path"),
-            "Set the output directory"
-        )
         .def("normalize", &PyStructuredSDFG::normalize, "Normalize the SDFG")
         .def(
             "schedule",

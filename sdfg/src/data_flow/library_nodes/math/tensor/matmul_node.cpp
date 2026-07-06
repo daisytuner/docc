@@ -232,41 +232,22 @@ void free_after_copy(
     );
 }
 
-bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+using Dir = passes::LibNodeExpander::InputUse;
+
+passes::LibNodeExpander::ExpandOutcome MatMulNode::expand(passes::LibNodeExpander::ExpandContext& context, Block& block) {
     auto& dataflow = this->get_parent();
-    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
 
     if (dataflow.in_degree(*this) != 3 || dataflow.out_degree(*this) != 0) {
-        return false;
+        return context.unable();
     }
 
     auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
     int index = parent.index(block);
-    auto& transition = parent.at(index).second;
-
-    // Get input and output edges
-    auto iedges = dataflow.in_edges_by_connector(*this);
-    if (iedges.size() != 3) {
-        return false;
-    }
-    auto* iedge_y = iedges.at(Y_INPUT_IDX);
-    auto* iedge_a = iedges.at(A_INPUT_IDX);
-    auto* iedge_b = iedges.at(B_INPUT_IDX);
-
-    // Check if legal - access nodes must not have other connections
-    auto& input_node_a = static_cast<data_flow::AccessNode&>(iedge_a->src());
-    auto& input_node_b = static_cast<data_flow::AccessNode&>(iedge_b->src());
-    auto& output_ptr = static_cast<data_flow::AccessNode&>(iedge_y->src());
-
-    if (dataflow.in_degree(input_node_a) != 0 || dataflow.in_degree(input_node_b) != 0 ||
-        dataflow.in_degree(output_ptr) != 0) {
-        return false;
-    }
 
     // Determine BLAS precision from primitive type
     auto prim_type = this->uniform_quantization(dataflow);
     if (!prim_type) {
-        return false;
+        return context.unable();
     }
     blas::BLAS_Precision precision;
     switch (prim_type.value()) {
@@ -281,223 +262,224 @@ bool MatMulNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             break;
         default:
             // GEMM only supports floating point types, fall back to naive expansion
-            return false;
+            return context.unable();
     };
 
-    // Add new graph after the current block
-    auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
+    auto standalone =
+        context.replacement_requires_access_nodes({Dir::IndirectReadWrite, Dir::IndirectRead, Dir::IndirectRead});
 
-    auto copy_name_a = input_node_a.data();
-    auto copy_name_b = input_node_b.data();
+    if (standalone) {
+        auto& builder = standalone->builder();
 
-    // Check if A and B have basic strides and whether they are transposed in the last dimension
-    blas::BLAS_Transpose trans_a, trans_b;
-    if (layout_a_.has_linear_accesses_no_padding()) {
-        trans_a = blas::BLAS_Transpose::No;
-    } else if (layout_a_.has_transposed_strides_no_padding()) {
-        trans_a = blas::BLAS_Transpose::Trans;
-    } else {
-        trans_a = blas::BLAS_Transpose::No;
-        throw InvalidSDFGException("A must be in c-order");
-    }
-    if (layout_b_.has_linear_accesses_no_padding()) {
-        trans_b = blas::BLAS_Transpose::No;
-    } else if (layout_b_.has_transposed_strides_no_padding()) {
-        trans_b = blas::BLAS_Transpose::Trans;
-    } else {
-        trans_b = blas::BLAS_Transpose::No;
-        throw InvalidSDFGException("B must be in c-order");
-    }
+        // Add new graph after the current block
+        auto& new_sequence = standalone->replace_with_sequence();
 
-    // Create maps for batch dimensions and M, N dimensions
-    structured_control_flow::Sequence* last_scope = &new_sequence;
-    structured_control_flow::Map* last_map = nullptr;
-    symbolic::MultiExpression batch_vars;
-
-    // Compute batch dimensions (all except last 2)
-    size_t batch_dims_a = layout_a_.dims() - 2;
-    size_t batch_dims_b = layout_b_.dims() - 2;
-    size_t max_batch_dims = std::max(batch_dims_a, batch_dims_b);
-
-    // Create maps for batch dimensions (using broadcasting)
-    for (size_t i = 0; i < max_batch_dims; ++i) {
-        std::string indvar_str = builder.find_new_name("_b");
-        builder.add_container(indvar_str, types::Scalar(types::PrimitiveType::UInt64));
-
-        auto indvar = symbolic::symbol(indvar_str);
-        auto init = symbolic::zero();
-        auto update = symbolic::add(indvar, symbolic::one());
-
-        // Determine the bound for this batch dimension (max of A and B for broadcasting)
-        symbolic::Expression bound;
-        size_t a_idx = batch_dims_a >= (max_batch_dims - i) ? i - (max_batch_dims - batch_dims_a) : SIZE_MAX;
-        size_t b_idx = batch_dims_b >= (max_batch_dims - i) ? i - (max_batch_dims - batch_dims_b) : SIZE_MAX;
-
-        if (a_idx != SIZE_MAX && b_idx != SIZE_MAX) {
-            // Both have this dimension - they should be equal or one should be 1 (broadcasting)
-            bound = layout_a_.get_dim(a_idx); // Assume they match or broadcasting is handled
-        } else if (a_idx != SIZE_MAX) {
-            bound = layout_a_.get_dim(a_idx);
+        // Check if A and B have basic strides and whether they are transposed in the last dimension
+        blas::BLAS_Transpose trans_a, trans_b;
+        if (layout_a_.has_linear_accesses_no_padding()) {
+            trans_a = blas::BLAS_Transpose::No;
+        } else if (layout_a_.has_transposed_strides_no_padding()) {
+            trans_a = blas::BLAS_Transpose::Trans;
         } else {
-            bound = layout_b_.get_dim(b_idx);
+            trans_a = blas::BLAS_Transpose::No;
+            throw InvalidSDFGException("A must be in c-order");
+        }
+        if (layout_b_.has_linear_accesses_no_padding()) {
+            trans_b = blas::BLAS_Transpose::No;
+        } else if (layout_b_.has_transposed_strides_no_padding()) {
+            trans_b = blas::BLAS_Transpose::Trans;
+        } else {
+            trans_b = blas::BLAS_Transpose::No;
+            throw InvalidSDFGException("B must be in c-order");
         }
 
-        auto condition = symbolic::Lt(indvar, bound);
-        last_map = &builder.add_map(
-            *last_scope,
-            indvar,
-            condition,
-            init,
-            update,
-            structured_control_flow::ScheduleType_Sequential::create(),
-            {},
-            block.debug_info()
-        );
-        last_scope = &last_map->root();
-        batch_vars.push_back(indvar);
-    }
+        // Create maps for batch dimensions and M, N dimensions
+        structured_control_flow::Sequence* last_scope = &new_sequence;
+        structured_control_flow::Map* last_map = nullptr;
+        symbolic::MultiExpression batch_vars;
 
-    auto& ref_block = builder.add_block(*last_scope, {}, block.debug_info());
+        // Compute batch dimensions (all except last 2)
+        size_t batch_dims_a = layout_a_.dims() - 2;
+        size_t batch_dims_b = layout_b_.dims() - 2;
+        size_t max_batch_dims = std::max(batch_dims_a, batch_dims_b);
 
-    auto scalar_type = types::Scalar(prim_type.value());
+        // Create maps for batch dimensions (using broadcasting)
+        for (size_t i = 0; i < max_batch_dims; ++i) {
+            std::string indvar_str = builder.find_new_name("_b");
+            builder.add_container(indvar_str, types::Scalar(types::PrimitiveType::UInt64));
 
-    // Compute offsets for this batch iteration
-    // For A: base_offset_a = offset_a + sum_i(batch_idx_i * batch_stride_a_i)
-    symbolic::Expression a_batch_offset = layout_a_.offset();
-    for (size_t i = 0; i < batch_dims_a; ++i) {
-        size_t batch_idx = max_batch_dims - batch_dims_a + i;
-        a_batch_offset = symbolic::add(a_batch_offset, symbolic::mul(batch_vars[batch_idx], layout_a_.get_stride(i)));
-    }
+            auto indvar = symbolic::symbol(indvar_str);
+            auto init = symbolic::zero();
+            auto update = symbolic::add(indvar, symbolic::one());
 
-    // For B: base_offset_b = offset_b + sum_i(batch_idx_i * batch_stride_b_i)
-    symbolic::Expression b_batch_offset = layout_b_.offset();
-    for (size_t i = 0; i < batch_dims_b; ++i) {
-        size_t batch_idx = max_batch_dims - batch_dims_b + i;
-        b_batch_offset = symbolic::add(b_batch_offset, symbolic::mul(batch_vars[batch_idx], layout_b_.get_stride(i)));
-    }
+            // Determine the bound for this batch dimension (max of A and B for broadcasting)
+            symbolic::Expression bound;
+            size_t a_idx = batch_dims_a >= (max_batch_dims - i) ? i - (max_batch_dims - batch_dims_a) : SIZE_MAX;
+            size_t b_idx = batch_dims_b >= (max_batch_dims - i) ? i - (max_batch_dims - batch_dims_b) : SIZE_MAX;
 
-    // Compute output batch offset (same as batch_vars pattern for Y)
-    symbolic::Expression c_batch_offset = symbolic::integer(0);
-    for (size_t i = 0; i < batch_vars.size(); ++i) {
-        // Output has shape [batch..., M, N] with row-major strides
-        // Stride for batch dim i is: M * N * product of remaining batch dims
-        symbolic::Expression c_stride = symbolic::mul(this->m(), this->n());
-        for (size_t j = i + 1; j < batch_vars.size(); ++j) {
-            // Multiply by subsequent batch dimensions
-            if (j < batch_dims_a) {
-                c_stride = symbolic::mul(c_stride, layout_a_.get_dim(j));
-            } else if (j - batch_dims_a < batch_dims_b) {
-                c_stride = symbolic::mul(c_stride, layout_b_.get_dim(j - batch_dims_a));
+            if (a_idx != SIZE_MAX && b_idx != SIZE_MAX) {
+                // Both have this dimension - they should be equal or one should be 1 (broadcasting)
+                bound = layout_a_.get_dim(a_idx); // Assume they match or broadcasting is handled
+            } else if (a_idx != SIZE_MAX) {
+                bound = layout_a_.get_dim(a_idx);
+            } else {
+                bound = layout_b_.get_dim(b_idx);
             }
+
+            auto condition = symbolic::Lt(indvar, bound);
+            last_map = &builder.add_map(
+                *last_scope,
+                indvar,
+                condition,
+                init,
+                update,
+                structured_control_flow::ScheduleType_Sequential::create(),
+                {},
+                block.debug_info()
+            );
+            last_scope = &last_map->root();
+            batch_vars.push_back(indvar);
         }
-        c_batch_offset = symbolic::add(c_batch_offset, symbolic::mul(batch_vars[i], c_stride));
-    }
 
-    // Create access nodes
-    auto& a_access = builder.add_access(ref_block, copy_name_a, debug_info());
-    auto& b_access = builder.add_access(ref_block, copy_name_b, debug_info());
-    auto& c_access_in = builder.add_access(ref_block, output_ptr.data(), debug_info());
+        auto& ref_block = builder.add_block(*last_scope, {}, block.debug_info());
 
-    std::string ref_name_a = builder.find_new_name(copy_name_a + "_ref");
-    builder.add_container(ref_name_a, types::Pointer(types::Scalar(types::PrimitiveType::Void)));
-    auto& a_access_ref = builder.add_access(ref_block, ref_name_a, debug_info());
-    std::string ref_name_b = builder.find_new_name(copy_name_b + "_ref");
-    builder.add_container(ref_name_b, types::Pointer(types::Scalar(types::PrimitiveType::Void)));
-    auto& b_access_ref = builder.add_access(ref_block, ref_name_b, debug_info());
-    std::string ref_name_c = builder.find_new_name(output_ptr.data() + "_ref");
-    builder.add_container(ref_name_c, types::Pointer(types::Scalar(types::PrimitiveType::Void)));
-    auto& c_access_ref_in = builder.add_access(ref_block, ref_name_c, debug_info());
+        auto scalar_type = types::Scalar(prim_type.value());
 
-    builder.add_reference_memlet(
-        ref_block, a_access, a_access_ref, {a_batch_offset}, ::sdfg::types::Pointer(scalar_type), debug_info()
-    );
-    builder.add_reference_memlet(
-        ref_block, b_access, b_access_ref, {b_batch_offset}, ::sdfg::types::Pointer(scalar_type), debug_info()
-    );
-    builder.add_reference_memlet(
-        ref_block, c_access_in, c_access_ref_in, {c_batch_offset}, ::sdfg::types::Pointer(scalar_type), debug_info()
-    );
+        // Compute offsets for this batch iteration
+        // For A: base_offset_a = offset_a + sum_i(batch_idx_i * batch_stride_a_i)
+        symbolic::Expression a_batch_offset = layout_a_.offset();
+        for (size_t i = 0; i < batch_dims_a; ++i) {
+            size_t batch_idx = max_batch_dims - batch_dims_a + i;
+            a_batch_offset =
+                symbolic::add(a_batch_offset, symbolic::mul(batch_vars[batch_idx], layout_a_.get_stride(i)));
+        }
 
-    // Create block with GEMM library node
-    auto& gemm_block = builder.add_block(*last_scope, {}, block.debug_info());
+        // For B: base_offset_b = offset_b + sum_i(batch_idx_i * batch_stride_b_i)
+        symbolic::Expression b_batch_offset = layout_b_.offset();
+        for (size_t i = 0; i < batch_dims_b; ++i) {
+            size_t batch_idx = max_batch_dims - batch_dims_b + i;
+            b_batch_offset =
+                symbolic::add(b_batch_offset, symbolic::mul(batch_vars[batch_idx], layout_b_.get_stride(i)));
+        }
 
-    // Leading dimensions: stride of the row dimension (second-to-last dim)
-    symbolic::Expression lda, ldb;
-    if (trans_a == blas::BLAS_Transpose::No) {
-        // For row-major A [m * k] -> lda = k
-        lda = layout_a_.get_stride_innermost(1);
+        // Compute output batch offset (same as batch_vars pattern for Y)
+        symbolic::Expression c_batch_offset = symbolic::integer(0);
+        for (size_t i = 0; i < batch_vars.size(); ++i) {
+            // Output has shape [batch..., M, N] with row-major strides
+            // Stride for batch dim i is: M * N * product of remaining batch dims
+            symbolic::Expression c_stride = symbolic::mul(this->m(), this->n());
+            for (size_t j = i + 1; j < batch_vars.size(); ++j) {
+                // Multiply by subsequent batch dimensions
+                if (j < batch_dims_a) {
+                    c_stride = symbolic::mul(c_stride, layout_a_.get_dim(j));
+                } else if (j - batch_dims_a < batch_dims_b) {
+                    c_stride = symbolic::mul(c_stride, layout_b_.get_dim(j - batch_dims_a));
+                }
+            }
+            c_batch_offset = symbolic::add(c_batch_offset, symbolic::mul(batch_vars[i], c_stride));
+        }
+
+        // Create input access nodes
+        auto& a_access = standalone->add_scalar_input_access(ref_block, A_INPUT_IDX);
+        auto& b_access = standalone->add_scalar_input_access(ref_block, B_INPUT_IDX);
+        auto& c_access_in = standalone->add_indirect_read_access(ref_block, Y_INPUT_IDX);
+
+        auto copy_name_a = a_access.data();
+        auto copy_name_b = b_access.data();
+        auto output_name = c_access_in.data();
+
+        std::string ref_name_a = builder.find_new_name(copy_name_a + "_ref");
+        builder.add_container(ref_name_a, types::Pointer(types::Scalar(types::PrimitiveType::Void)));
+        auto& a_access_ref = builder.add_access(ref_block, ref_name_a, debug_info());
+        std::string ref_name_b = builder.find_new_name(copy_name_b + "_ref");
+        builder.add_container(ref_name_b, types::Pointer(types::Scalar(types::PrimitiveType::Void)));
+        auto& b_access_ref = builder.add_access(ref_block, ref_name_b, debug_info());
+        std::string ref_name_c = builder.find_new_name(output_name + "_ref");
+        builder.add_container(ref_name_c, types::Pointer(types::Scalar(types::PrimitiveType::Void)));
+        auto& c_access_ref_in = builder.add_access(ref_block, ref_name_c, debug_info());
+
+        builder.add_reference_memlet(
+            ref_block, a_access, a_access_ref, {a_batch_offset}, ::sdfg::types::Pointer(scalar_type), debug_info()
+        );
+        builder.add_reference_memlet(
+            ref_block, b_access, b_access_ref, {b_batch_offset}, ::sdfg::types::Pointer(scalar_type), debug_info()
+        );
+        builder.add_reference_memlet(
+            ref_block, c_access_in, c_access_ref_in, {c_batch_offset}, ::sdfg::types::Pointer(scalar_type), debug_info()
+        );
+
+        // Create block with GEMM library node
+        auto& gemm_block = builder.add_block(*last_scope, {}, block.debug_info());
+
+        // Leading dimensions: stride of the row dimension (second-to-last dim)
+        symbolic::Expression lda, ldb;
+        if (trans_a == blas::BLAS_Transpose::No) {
+            // For row-major A [m * k] -> lda = k
+            lda = layout_a_.get_stride_innermost(1);
+        } else {
+            // For row-major A [m * k] -> lda = m
+            lda = layout_a_.get_stride_innermost(0);
+        }
+        if (trans_b == blas::BLAS_Transpose::No) {
+            // For row-major B [k * n] -> ldb = n
+            ldb = layout_b_.get_stride_innermost(1);
+        } else {
+            // For row-major B [k * n] -> ldb = k
+            ldb = layout_b_.get_stride_innermost(0);
+        }
+        // For row-major C [m * n] -> ldc = n
+        auto ldc = this->n();
+
+        // Add GEMM node: C = alpha * A * B + beta * C
+        // With alpha = 1.0, beta = 0.0: C = A * B
+        auto& gemm_node = builder.add_library_node<blas::GEMMNode>(
+            gemm_block,
+            debug_info(),
+            blas::ImplementationType_BLAS,
+            precision,
+            blas::BLAS_Layout::RowMajor,
+            trans_a,
+            trans_b,
+            this->m(),
+            this->n(),
+            this->k(),
+            lda,
+            ldb,
+            ldc
+        );
+
+        auto& a_access_ref_in_gemm = builder.add_access(gemm_block, ref_name_a, debug_info());
+        auto& b_access_ref_in_gemm = builder.add_access(gemm_block, ref_name_b, debug_info());
+        auto& c_access_ref_in_gemm = builder.add_access(gemm_block, ref_name_c, debug_info());
+
+        // Create alpha and beta constants
+        auto& alpha_const = builder.add_constant(gemm_block, "1.0", scalar_type, debug_info());
+        auto& beta_const = builder.add_constant(gemm_block, "0.0", scalar_type, debug_info());
+
+        // Connect memlets with batch offsets
+        // Input A with offset
+        builder.add_computational_memlet(
+            gemm_block, a_access_ref_in_gemm, gemm_node, "__A", {}, ::sdfg::types::Pointer(scalar_type), debug_info()
+        );
+        // Input B with offset
+        builder.add_computational_memlet(
+            gemm_block, b_access_ref_in_gemm, gemm_node, "__B", {}, ::sdfg::types::Pointer(scalar_type), debug_info()
+        );
+        // Input C (for beta * C, but beta=0 so just needs to be connected)
+        builder.add_computational_memlet(
+            gemm_block, c_access_ref_in_gemm, gemm_node, "__C", {}, ::sdfg::types::Pointer(scalar_type), debug_info()
+        );
+        // Alpha constant
+        builder.add_computational_memlet(gemm_block, alpha_const, gemm_node, "__alpha", {}, scalar_type, debug_info());
+        // Beta constant
+        builder.add_computational_memlet(gemm_block, beta_const, gemm_node, "__beta", {}, scalar_type, debug_info());
+
+        return standalone->successfully_expanded();
     } else {
-        // For row-major A [m * k] -> lda = m
-        lda = layout_a_.get_stride_innermost(0);
+        // lib node was not "standalone" in its block (all inputs and outputs come from access nodes solely used with
+        // this libnode) or could not be transformed into a form that can be used as if
+        return context.unable();
     }
-    if (trans_b == blas::BLAS_Transpose::No) {
-        // For row-major B [k * n] -> ldb = n
-        ldb = layout_b_.get_stride_innermost(1);
-    } else {
-        // For row-major B [k * n] -> ldb = k
-        ldb = layout_b_.get_stride_innermost(0);
-    }
-    // For row-major C [m * n] -> ldc = n
-    auto ldc = this->n();
-
-    // Add GEMM node: C = alpha * A * B + beta * C
-    // With alpha = 1.0, beta = 0.0: C = A * B
-    auto& gemm_node = builder.add_library_node<blas::GEMMNode>(
-        gemm_block,
-        debug_info(),
-        blas::ImplementationType_BLAS,
-        precision,
-        blas::BLAS_Layout::RowMajor,
-        trans_a,
-        trans_b,
-        this->m(),
-        this->n(),
-        this->k(),
-        lda,
-        ldb,
-        ldc
-    );
-
-    auto& a_access_ref_in_gemm = builder.add_access(gemm_block, ref_name_a, debug_info());
-    auto& b_access_ref_in_gemm = builder.add_access(gemm_block, ref_name_b, debug_info());
-    auto& c_access_ref_in_gemm = builder.add_access(gemm_block, ref_name_c, debug_info());
-
-    // Create alpha and beta constants
-    auto& alpha_const = builder.add_constant(gemm_block, "1.0", scalar_type, debug_info());
-    auto& beta_const = builder.add_constant(gemm_block, "0.0", scalar_type, debug_info());
-
-    // Connect memlets with batch offsets
-    // Input A with offset
-    builder.add_computational_memlet(
-        gemm_block, a_access_ref_in_gemm, gemm_node, "__A", {}, ::sdfg::types::Pointer(scalar_type), debug_info()
-    );
-    // Input B with offset
-    builder.add_computational_memlet(
-        gemm_block, b_access_ref_in_gemm, gemm_node, "__B", {}, ::sdfg::types::Pointer(scalar_type), debug_info()
-    );
-    // Input C (for beta * C, but beta=0 so just needs to be connected)
-    builder.add_computational_memlet(
-        gemm_block, c_access_ref_in_gemm, gemm_node, "__C", {}, ::sdfg::types::Pointer(scalar_type), debug_info()
-    );
-    // Alpha constant
-    builder.add_computational_memlet(gemm_block, alpha_const, gemm_node, "__alpha", {}, scalar_type, debug_info());
-    // Beta constant
-    builder.add_computational_memlet(gemm_block, beta_const, gemm_node, "__beta", {}, scalar_type, debug_info());
-
-    // Free copies if we made them
-    if (copy_name_a != input_node_a.data()) {
-        free_after_copy(copy_name_a, builder, new_sequence);
-    }
-    if (copy_name_b != input_node_b.data()) {
-        free_after_copy(copy_name_b, builder, new_sequence);
-    }
-
-
-    builder.clear_code_node_legacy(block, *this);
-    // WARNING: this has been deallocated at this point!!
-    builder.remove_child(parent, index + 1);
-
-    return true;
 }
 
 nlohmann::json MatMulNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {

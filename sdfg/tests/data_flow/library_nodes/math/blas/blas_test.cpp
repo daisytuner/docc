@@ -4,6 +4,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -40,8 +41,9 @@ TEST(BlasTest, DotNode) {
 
     EXPECT_EQ(block.dataflow().nodes().size(), 4);
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(dot_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, dot_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 TEST(BlasTest, GemmNode) {
@@ -100,8 +102,9 @@ TEST(BlasTest, GemmNode) {
     dump_sdfg(sdfg, "0.init");
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     dump_sdfg(sdfg, "1.expand");
 
@@ -212,8 +215,9 @@ TEST(BlasTest, GemmNode_TN) {
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
     builder.subject().validate();
 }
 
@@ -270,8 +274,9 @@ TEST(BlasTest, GemmNode_NT) {
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
     builder.subject().validate();
 }
 
@@ -328,7 +333,8 @@ TEST(BlasTest, GemmNode_TT) {
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
     builder.subject().validate();
 }
