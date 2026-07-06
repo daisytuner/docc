@@ -192,12 +192,6 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     auto local_buffer_reuse_pipeline = sdfg::passes::local_buffer_reuse_pipeline();
     local_buffer_reuse_pipeline.run(builder_opt, analysis_manager);
 
-    auto dir = sdfg_->metadata_if_exists("output_dir");
-
-    if (dir) {
-        dump(*dir, "0pre-expand", true, true);
-    }
-
     // Special expansion for einsum, because it can cut blocks apart manually, and the new expansion is not capable of
     // doing that generically
     sdfg::passes::Pipeline einsum_expand_pipe("EinsumExpansion");
