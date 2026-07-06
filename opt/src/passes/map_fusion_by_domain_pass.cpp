@@ -326,7 +326,7 @@ PatternHandler::MatchResult MapFusionHandler::fuse_contents(
 
     update_candidate_state(first_top, first_current, second_innermost, indvar_mapping);
 
-    auto& first_children = state_.loop_analysis->children(first_current->loop);
+    auto first_children = state_.loop_analysis->children(first_current->loop);
     bool keep_visiting_second = !state_.loop_analysis->children(second_innermost->loop).empty() ||
                                 !first_children.empty();
     auto& prev_local_info = state_.loop_analysis->loop_info_local(first_current->loop);
