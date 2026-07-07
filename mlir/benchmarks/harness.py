@@ -77,7 +77,11 @@ def run_benchmark(setup_func, name, batch_size=32):
     backend_label = args.device
     if args.device == "docc":
         compile_kwargs["backend"] = "docc"
-        compile_kwargs["options"] = {"target": args.target, "category": "server"}
+        compile_kwargs["options"] = {
+            "target": args.target,
+            "category": "server",
+            "remote_tuning": True,
+        }
 
         backend_label = f"docc_{args.target}"
 
