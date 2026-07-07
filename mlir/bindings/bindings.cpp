@@ -24,6 +24,8 @@
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 #include "sdfg/serializer/json_serializer.h"
 
+#include "boost/stacktrace/stacktrace.hpp"
+
 namespace py = pybind11;
 
 namespace {
@@ -103,6 +105,25 @@ private:
 
 PYBIND11_MODULE(_sdfg_mlir, m) {
     m.doc() = "Native Python bindings for MLIR to SDFG conversion";
+
+    // last handler, to dump stacktraces of uncaught exceptions
+    py::register_local_exception_translator([](std::exception_ptr p) {
+        try {
+            if (p) {
+                std::rethrow_exception(p);
+            }
+        } catch (const std::exception& e) {
+            auto c = std::current_exception();
+            boost::stacktrace::stacktrace trace = boost::stacktrace::stacktrace::from_current_exception();
+            std::cerr << "Uncaught exception: '" << e.what() << "'";
+            if (!trace.empty()) {
+                std::cerr << ", trace:\n" << trace;
+            }
+            std::cerr << std::endl;
+
+            throw;
+        }
+    });
 
     // Expose the PyMLIRModule class
     py::class_<PyMLIRModule>(m, "MLIRModule")
