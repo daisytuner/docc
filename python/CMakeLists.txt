@@ -6,7 +6,6 @@ find_package(nlohmann_json REQUIRED)
 # Define module
 set(PYTHON_SOURCES
     bindings/bindings.cpp
-    bindings/py_structured_sdfg.cpp
     bindings/builder/py_structured_sdfg_builder.cpp
     bindings/control_flow/py_control_flow.cpp
     bindings/data_flow/py_cmath.cpp
@@ -16,6 +15,7 @@ set(PYTHON_SOURCES
     bindings/data_flow/py_memlet.cpp
     bindings/data_flow/py_tasklet.cpp
     bindings/passes/py_passes.cpp
+    bindings/py_structured_sdfg.cpp
     bindings/targets/target_mapping.cpp
     bindings/transformations/py_transformations.cpp
     bindings/types/py_types.cpp
@@ -46,7 +46,16 @@ if(DEFINED DOCC_CXX_COMPILER)
     )
 endif()
 
-target_link_libraries(sdfg-py PRIVATE sdfg::sdfg sdfg::opt sdfg::rpc docc::c-compile nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
+target_link_libraries(sdfg-py PRIVATE
+    Boost::stacktrace
+    Boost::stacktrace_from_exception
+    sdfg::sdfg
+    sdfg::opt
+    sdfg::rpc
+    docc::c-compile
+    nlohmann_json::nlohmann_json
+    ${CMAKE_DL_LIBS}
+)
 
 if(TARGET docc::target::et)
     target_link_libraries(sdfg-py PRIVATE docc::target::et)

@@ -15,6 +15,8 @@ set_target_properties(sdfg-mlir PROPERTIES
 
 # Link against only the MLIR libraries we need (reduces wheel size significantly)
 target_link_libraries(sdfg-mlir PRIVATE
+    Boost::stacktrace
+    Boost::stacktrace_from_exception
     # Core MLIR
     MLIRIR
     MLIRSupport

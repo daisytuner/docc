@@ -55,7 +55,7 @@
 #include <docc/target/et/target.h>
 #endif
 #include <docc/target/tenstorrent/target.h>
-
+#include "boost/stacktrace/stacktrace.hpp"
 #include "targets/target_mapping.h"
 
 namespace py = pybind11;
@@ -76,6 +76,25 @@ PYBIND11_MODULE(_sdfg, m) {
     docc::target::et::register_plugin(docc_context);
 #endif
     docc::target::tenstorrent::register_plugin(docc_context);
+
+    // last handler, to dump stacktraces of uncaught exceptions
+    py::register_local_exception_translator([](std::exception_ptr p) {
+        try {
+            if (p) {
+                std::rethrow_exception(p);
+            }
+        } catch (const std::exception& e) {
+            auto c = std::current_exception();
+            boost::stacktrace::stacktrace trace = boost::stacktrace::stacktrace::from_current_exception();
+            std::cerr << "Uncaught exception: '" << e.what() << "'";
+            if (!trace.empty()) {
+                std::cerr << ", trace:\n" << trace;
+            }
+            std::cerr << std::endl;
+
+            throw;
+        }
+    });
 
     register_types(m);
     register_data_flow_node(m);
