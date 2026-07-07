@@ -121,12 +121,12 @@ bool SymbolPropagation::run_pass(builder::StructuredSDFGBuilder& builder, analys
                     !dominance_analysis.post_dominates(*read, *write2)) {
                     continue;
                 }
-                auto transition1 = dynamic_cast<structured_control_flow::Transition*>(write1->element());
-                auto transition2 = dynamic_cast<structured_control_flow::Transition*>(write2->element());
+                auto transition1 = dyn_cast<structured_control_flow::Transition*>(write1->element());
+                auto transition2 = dyn_cast<structured_control_flow::Transition*>(write2->element());
                 if (!transition1 || !transition2) {
                     continue;
                 }
-                auto transition_lhs = dynamic_cast<structured_control_flow::Transition*>(read->element());
+                auto transition_lhs = dyn_cast<structured_control_flow::Transition*>(read->element());
                 if (!transition_lhs) {
                     continue;
                 }
@@ -172,7 +172,7 @@ bool SymbolPropagation::run_pass(builder::StructuredSDFGBuilder& builder, analys
                 if (data_dependency_analysis.is_undefined_user(*write)) {
                     continue;
                 }
-                auto transition = dynamic_cast<structured_control_flow::Transition*>(write->element());
+                auto transition = dyn_cast<structured_control_flow::Transition*>(write->element());
                 if (!transition) {
                     continue;
                 }
@@ -271,11 +271,11 @@ bool SymbolPropagation::run_pass(builder::StructuredSDFGBuilder& builder, analys
                         }
 
                         // Criterion: Only transitions
-                        if (!dynamic_cast<structured_control_flow::Transition*>(user->element())) {
+                        if (!dyn_cast<structured_control_flow::Transition*>(user->element())) {
                             success = false;
                             break;
                         }
-                        auto sym_transition = dynamic_cast<structured_control_flow::Transition*>(user->element());
+                        auto sym_transition = dyn_cast<structured_control_flow::Transition*>(user->element());
                         auto sym_lhs = symbolic::symbol(user->container());
                         auto sym_rhs = sym_transition->assignments().at(sym_lhs);
 
@@ -305,7 +305,7 @@ bool SymbolPropagation::run_pass(builder::StructuredSDFGBuilder& builder, analys
                 }
                 rhs_modified = symbolic::simplify(rhs_modified);
 
-                if (auto transition_stmt = dynamic_cast<structured_control_flow::Transition*>(read->element())) {
+                if (auto transition_stmt = dyn_cast<structured_control_flow::Transition*>(read->element())) {
                     auto& assignments = transition_stmt->assignments();
                     for (auto& entry : assignments) {
                         if (symbolic::uses(entry.second, lhs)) {
@@ -313,7 +313,7 @@ bool SymbolPropagation::run_pass(builder::StructuredSDFGBuilder& builder, analys
                             applied = true;
                         }
                     }
-                } else if (auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(read->element())) {
+                } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(read->element())) {
                     // Criterion: RHS does not use nvptx symbols
                     bool nvptx = false;
                     for (auto& atom : symbolic::atoms(rhs_modified)) {
@@ -408,7 +408,7 @@ bool SymbolPropagation::run_pass(builder::StructuredSDFGBuilder& builder, analys
                             applied = true;
                         }
                     }
-                } else if (auto for_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(read->element())) {
+                } else if (auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(read->element())) {
                     auto for_user = dynamic_cast<analysis::ForUser*>(read);
                     if (for_user->is_init() && symbolic::uses(for_loop->init(), lhs)) {
                         auto new_init = symbolic::subs(for_loop->init(), lhs, rhs_modified);

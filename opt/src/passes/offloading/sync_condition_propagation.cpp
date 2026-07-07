@@ -12,7 +12,7 @@ bool SyncConditionPropagation::
     bool modified = false;
 
     for (auto loop : loop_analysis.loops()) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
             if (gpu::is_gpu_schedule(map->schedule_type())) {
                 sdfg::transformations::GPUConditionPropagation gpu_condition_propagation(*map);
                 if (gpu_condition_propagation.can_be_applied(builder, analysis_manager)) {

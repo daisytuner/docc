@@ -58,11 +58,11 @@ void LoopSplit::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     auto first_condition = symbolic::And(symbolic::Lt(indvar, split_point_), condition);
 
     structured_control_flow::StructuredLoop* first_loop = nullptr;
-    if (auto map = dynamic_cast<structured_control_flow::Map*>(&loop_)) {
+    if (auto map = dyn_cast<structured_control_flow::Map*>(&loop_)) {
         first_loop = &builder.add_map_before(
             *parent, loop_, indvar, first_condition, init, update, map->schedule_type(), {}, loop_.debug_info()
         );
-    } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(&loop_)) {
+    } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(&loop_)) {
         first_loop = &builder.add_reduce_before(
             *parent,
             loop_,
@@ -115,7 +115,7 @@ LoopSplit LoopSplit::from_json(builder::StructuredSDFGBuilder& builder, const nl
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
 
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw InvalidTransformationDescriptionException(
             "Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop."

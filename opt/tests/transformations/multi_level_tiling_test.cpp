@@ -69,7 +69,7 @@ TEST(MultiLevelTilingTest, TwoLevelTiling) {
 
     // Should have 3 nested loops: outer tile -> middle tile -> inner point
     EXPECT_EQ(sdfg_opt.root().size(), 1);
-    auto* outer_loop = dynamic_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
+    auto* outer_loop = dyn_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
     ASSERT_NE(outer_loop, nullptr);
     EXPECT_EQ(outer_loop->indvar()->get_name(), "i_tile0");
 
@@ -78,7 +78,7 @@ TEST(MultiLevelTilingTest, TwoLevelTiling) {
 
     // Middle loop
     EXPECT_EQ(outer_loop->root().size(), 1);
-    auto* middle_loop = dynamic_cast<structured_control_flow::For*>(&outer_loop->root().at(0).first);
+    auto* middle_loop = dyn_cast<structured_control_flow::For*>(&outer_loop->root().at(0).first);
     ASSERT_NE(middle_loop, nullptr);
 
     // Middle loop init is the outer indvar
@@ -89,7 +89,7 @@ TEST(MultiLevelTilingTest, TwoLevelTiling) {
 
     // Inner (point) loop
     EXPECT_EQ(middle_loop->root().size(), 1);
-    auto* inner_loop = dynamic_cast<structured_control_flow::For*>(&middle_loop->root().at(0).first);
+    auto* inner_loop = dyn_cast<structured_control_flow::For*>(&middle_loop->root().at(0).first);
     ASSERT_NE(inner_loop, nullptr);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
 
@@ -101,7 +101,7 @@ TEST(MultiLevelTilingTest, TwoLevelTiling) {
 
     // Block is preserved in the innermost loop
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&inner_loop->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&inner_loop->root().at(0).first) != nullptr);
 
     // Both tile variables exist
     EXPECT_TRUE(sdfg_opt.exists("i_tile0"));

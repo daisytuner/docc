@@ -19,8 +19,8 @@ namespace analysis {
 namespace {
 
 bool is_loop(structured_control_flow::ControlFlowNode* node) {
-    return dynamic_cast<structured_control_flow::StructuredLoop*>(node) != nullptr ||
-           dynamic_cast<structured_control_flow::While*>(node) != nullptr;
+    return dyn_cast<structured_control_flow::StructuredLoop*>(node) != nullptr ||
+           dyn_cast<structured_control_flow::While*>(node) != nullptr;
 }
 
 structured_control_flow::ControlFlowNode* find_containing_loop(structured_control_flow::Block* block) {
@@ -158,9 +158,9 @@ void EscapeAnalysis::run(analysis::AnalysisManager& analysis_manager) {
                     auto* use_element = use->element();
                     structured_control_flow::Block* use_block = nullptr;
                     if (auto* access = dynamic_cast<data_flow::AccessNode*>(use_element)) {
-                        use_block = dynamic_cast<structured_control_flow::Block*>(access->get_parent().get_parent());
+                        use_block = dyn_cast<structured_control_flow::Block*>(access->get_parent().get_parent());
                     } else if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(use_element)) {
-                        use_block = dynamic_cast<structured_control_flow::Block*>(lib->get_parent().get_parent());
+                        use_block = dyn_cast<structured_control_flow::Block*>(lib->get_parent().get_parent());
                     }
                     if (use_block) {
                         auto* use_loop = find_containing_loop(use_block);
@@ -176,10 +176,9 @@ void EscapeAnalysis::run(analysis::AnalysisManager& analysis_manager) {
                         auto* use_element = use->element();
                         structured_control_flow::Block* use_block = nullptr;
                         if (auto* access = dynamic_cast<data_flow::AccessNode*>(use_element)) {
-                            use_block = dynamic_cast<structured_control_flow::Block*>(access->get_parent().get_parent()
-                            );
+                            use_block = dyn_cast<structured_control_flow::Block*>(access->get_parent().get_parent());
                         } else if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(use_element)) {
-                            use_block = dynamic_cast<structured_control_flow::Block*>(lib->get_parent().get_parent());
+                            use_block = dyn_cast<structured_control_flow::Block*>(lib->get_parent().get_parent());
                         }
                         if (use_block) {
                             auto* use_loop = find_containing_loop(use_block);
@@ -194,12 +193,12 @@ void EscapeAnalysis::run(analysis::AnalysisManager& analysis_manager) {
                                         structured_control_flow::Block* after_block = nullptr;
                                         if (auto* acc = dynamic_cast<data_flow::AccessNode*>(after_element)) {
                                             after_block =
-                                                dynamic_cast<structured_control_flow::Block*>(acc->get_parent()
-                                                                                                  .get_parent());
+                                                dyn_cast<structured_control_flow::Block*>(acc->get_parent().get_parent()
+                                                );
                                         } else if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(after_element)) {
                                             after_block =
-                                                dynamic_cast<structured_control_flow::Block*>(lib->get_parent()
-                                                                                                  .get_parent());
+                                                dyn_cast<structured_control_flow::Block*>(lib->get_parent().get_parent()
+                                                );
                                         }
                                         if (after_block) {
                                             auto* after_loop = find_containing_loop(after_block);

@@ -142,6 +142,12 @@ protected:
     static constexpr size_t REQUIRED_ELEMENT_IDS = 2;
 
 public:
+    /// Bitmask of all concrete ElementTypes that are StructuredLoops.
+    static constexpr ElementType TypeGroup = ElementType::For | ElementType::Map | ElementType::Reduce;
+
+    /// LLVM-style RTTI predicate: true if \p element is a StructuredLoop.
+    static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+
     virtual ~StructuredLoop() = default;
 
     StructuredLoop(const StructuredLoop& node) = delete;

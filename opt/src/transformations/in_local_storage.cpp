@@ -141,7 +141,7 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         // Build substitution map: symbolic GPU map bounds → integer block sizes
         // E.g., Map condition "i < N" with block_size=32 → N=32
         for (auto* node : ancestors) {
-            if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+            if (auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
                 if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
                     continue;
                 }
@@ -180,7 +180,7 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         // Criterion: At least one cooperative dimension
         bool has_cooperative_dim = false;
         for (auto* node : ancestors) {
-            if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+            if (auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
                 if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
                     continue;
                 }
@@ -208,7 +208,7 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         auto ancestors = ControlFlowNode::parent_chain(loop_);
         bool has_gpu_ancestor = false;
         for (auto* node : ancestors) {
-            if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+            if (auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
                 if (gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
                     has_gpu_ancestor = true;
                     break;
@@ -220,7 +220,7 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
             // The loop is outside any GPU kernel.  Reject if the loop itself
             // is GPU-scheduled (it IS the kernel boundary) or if its body
             // contains GPU-scheduled maps (buffer on host, referenced in kernel).
-            if (auto* self_map = dynamic_cast<structured_control_flow::Map*>(&loop_)) {
+            if (auto* self_map = dyn_cast<structured_control_flow::Map*>(&loop_)) {
                 if (gpu::is_gpu_schedule(self_map->schedule_type())) {
                     return false;
                 }
@@ -228,7 +228,7 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
 
             auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
             for (auto* desc : loop_analysis.descendants(&loop_)) {
-                if (auto* desc_map = dynamic_cast<structured_control_flow::Map*>(desc)) {
+                if (auto* desc_map = dyn_cast<structured_control_flow::Map*>(desc)) {
                     if (gpu::is_gpu_schedule(desc_map->schedule_type())) {
                         return false;
                     }
@@ -241,7 +241,7 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         // cooperative dimension (a GPU indvar NOT in the bases), the buffer
         // must be NV_Shared so all threads in the block can see each other's reads.
         for (auto* node : ancestors) {
-            if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+            if (auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
                 if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
                     continue;
                 }
@@ -268,7 +268,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     auto& sdfg = builder.subject();
 
     auto parent_node = loop_.get_parent();
-    auto parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);
+    auto parent = dyn_cast<structured_control_flow::Sequence*>(parent_node);
     if (!parent) {
         throw InvalidSDFGException("InLocalStorage: Parent of loop must be a Sequence!");
     }
@@ -315,7 +315,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     if (storage_type_.is_nv_shared()) {
         auto ancestors = ControlFlowNode::parent_chain(loop_);
         for (auto* node : ancestors) {
-            auto* m = dynamic_cast<structured_control_flow::Map*>(node);
+            auto* m = dyn_cast<structured_control_flow::Map*>(node);
             if (!m || !gpu::is_gpu_schedule(m->schedule_type())) continue;
             if (m->schedule_type().value() == "ROCM") {
                 is_rocm = true;
@@ -335,7 +335,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
             return "?";
         };
         for (auto* node : ancestors) {
-            auto* m = dynamic_cast<structured_control_flow::Map*>(node);
+            auto* m = dyn_cast<structured_control_flow::Map*>(node);
             if (!m || !gpu::is_gpu_schedule(m->schedule_type())) continue;
             GpuDim gd;
             gd.dim = gpu::gpu_dimension(m->schedule_type());
@@ -531,8 +531,12 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         builder.add_container(local_name_, buffer_type);
 
         std::vector<symbolic::Symbol> copy_indvars;
+        int copy_index = parent->index(loop_);
+        assert(copy_index >= 0);
         structured_control_flow::Sequence* copy_scope =
             &builder.add_sequence_before(*parent, loop_, {}, loop_.debug_info());
+        structured_control_flow::Sequence* current_scope = copy_scope;
+
         for (size_t i = 0; i < varying_dims.size(); i++) {
             size_t d = varying_dims[i];
             auto indvar_name = builder.find_new_name("__daisy_ils_" + this->container_ + "_d" + std::to_string(d));
@@ -546,7 +550,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
             auto update = symbolic::add(indvar, symbolic::integer(1));
 
             auto& copy_loop = builder.add_map(
-                *copy_scope,
+                *current_scope,
                 indvar,
                 condition,
                 init,
@@ -555,11 +559,11 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
                 {},
                 loop_.debug_info()
             );
-            copy_scope = &copy_loop.root();
+            current_scope = &copy_loop.root();
         }
 
         // Create copy block
-        auto& copy_block = builder.add_block(*copy_scope);
+        auto& copy_block = builder.add_block(*current_scope);
         auto& copy_src = builder.add_access(copy_block, this->container_);
         auto& copy_dst = builder.add_access(copy_block, local_name_);
         auto& copy_tasklet = builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"});
@@ -571,6 +575,10 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         builder.add_computational_memlet(copy_block, copy_src, copy_tasklet, "_in", copy_src_subset, pointer_type);
         types::Array buffer_type_ref(storage_type_, 0, {}, scalar_type, total_size);
         builder.add_computational_memlet(copy_block, copy_tasklet, "_out", copy_dst, copy_dst_subset, buffer_type_ref);
+
+        // Remove temporary copy scope
+        builder.move_children(*copy_scope, *parent, copy_index + 1);
+        builder.remove_child(*parent, copy_index);
     }
 
     // ==================================================================
@@ -582,7 +590,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     // Recursive helper to traverse all blocks in the loop body
     std::function<void(structured_control_flow::ControlFlowNode&)> rewrite_accesses;
     rewrite_accesses = [&](structured_control_flow::ControlFlowNode& node) {
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
             auto& dfg = block->dataflow();
 
             // Collect access nodes to process (avoid iterator invalidation)
@@ -673,13 +681,13 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
                     }
                 }
             }
-        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
             for (size_t i = 0; i < seq->size(); i++) {
                 rewrite_accesses(seq->at(i).first);
             }
-        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
             rewrite_accesses(loop->root());
-        } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+        } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
             for (size_t i = 0; i < if_else->size(); i++) {
                 rewrite_accesses(if_else->at(i).first);
             }
@@ -687,17 +695,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     };
     rewrite_accesses(loop_.root());
 
-    // Cleanup
     analysis_manager.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, analysis_manager);
-        applies |= sf_pass.run(builder, analysis_manager);
-    } while (applies);
 }
 
 void InLocalStorage::to_json(nlohmann::json& j) const {
@@ -724,7 +722,7 @@ InLocalStorage InLocalStorage::from_json(builder::StructuredSDFGBuilder& builder
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (!loop) {
         throw InvalidTransformationDescriptionException(
             "Element with ID " + std::to_string(loop_id) + " is not a structured loop."

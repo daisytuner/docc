@@ -52,7 +52,7 @@ bool MapCollapse::check_perfect_nest() {
             return false;
         }
 
-        auto* next = dynamic_cast<structured_control_flow::Map*>(&body.at(0).first);
+        auto* next = dyn_cast<structured_control_flow::Map*>(&body.at(0).first);
         if (!next) {
             return false;
         }
@@ -161,7 +161,7 @@ bool MapCollapse::check_imperfect(analysis::AnalysisManager& analysis_manager) {
             return false;
         }
 
-        auto* map = dynamic_cast<structured_control_flow::Map*>(&body.at(idx).first);
+        auto* map = dyn_cast<structured_control_flow::Map*>(&body.at(idx).first);
         if (map != nullptr && this->is_collapsible_inner_map(*map, outer_indvar)) {
             is_collapsible[idx] = true;
             ++num_collapsible;
@@ -258,7 +258,7 @@ void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysi
     maps.push_back(&loop_);
     auto* current = &loop_;
     for (size_t i = 1; i < count_; ++i) {
-        auto* next = dynamic_cast<structured_control_flow::Map*>(&current->root().at(0).first);
+        auto* next = dyn_cast<structured_control_flow::Map*>(&current->root().at(0).first);
         maps.push_back(next);
         current = next;
     }
@@ -369,7 +369,7 @@ void MapCollapse::apply_imperfect(builder::StructuredSDFGBuilder& builder, analy
     std::vector<symbolic::Expression> collapsible_bounds;
     for (size_t idx = 0; idx < body.size(); ++idx) {
         auto& child = body.at(idx).first;
-        auto* map = dynamic_cast<structured_control_flow::Map*>(&child);
+        auto* map = dyn_cast<structured_control_flow::Map*>(&child);
         if (map != nullptr && this->is_collapsible_inner_map(*map, outer_indvar)) {
             auto bound = map->canonical_bound();
             items.push_back({&child, map, bound});
@@ -480,7 +480,7 @@ MapCollapse MapCollapse::from_json(builder::StructuredSDFGBuilder& builder, cons
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dynamic_cast<structured_control_flow::Map*>(element);
+    auto loop = dyn_cast<structured_control_flow::Map*>(element);
 
     return MapCollapse(*loop, count);
 }

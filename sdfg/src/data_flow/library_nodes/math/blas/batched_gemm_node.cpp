@@ -201,26 +201,22 @@ data_flow::PointerAccessType BatchedGEMMNode::pointer_access_type(int input_idx)
     }
 }
 
-bool BatchedGEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+passes::LibNodeExpander::ExpandOutcome BatchedGEMMNode::
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
     auto& dataflow = this->get_parent();
-    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
-    int index = parent.index(block);
-    auto& transition = parent.at(index).second;
 
     if (trans_a_ == BLAS_Transpose::ConjTrans || trans_b_ == BLAS_Transpose::ConjTrans) {
-        return false;
+        return context.unable();
     }
 
     auto primitive_type = scalar_primitive();
     if (primitive_type == types::PrimitiveType::Void) {
-        return false;
+        return context.unable();
     }
 
     types::Scalar scalar_type(primitive_type);
 
     auto in_edges = dataflow.in_edges(*this);
-    auto in_edges_it = in_edges.begin();
 
     data_flow::Memlet* iedge_a = dataflow.in_edges_by_connector(*this).at(0);
     data_flow::Memlet* iedge_b = dataflow.in_edges_by_connector(*this).at(1);
@@ -228,23 +224,17 @@ bool BatchedGEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::
     data_flow::Memlet* alpha_edge = dataflow.in_edges_by_connector(*this).at(3);
     data_flow::Memlet* beta_edge = dataflow.in_edges_by_connector(*this).at(4);
 
-    auto* input_node_a = dataflow.find_standalone_entry(iedge_a);
-    auto* input_node_b = dataflow.find_standalone_entry(iedge_b);
-    auto* input_node_c = dataflow.find_standalone_entry(iedge_c);
-    auto* alpha_node = dataflow.find_standalone_entry(alpha_edge);
-    auto* beta_node = dataflow.find_standalone_entry(beta_edge);
+    using Use = passes::LibNodeExpander::InputUse;
+    auto standalone = context.replacement_requires_access_nodes(
+        {Use::IndirectRead, Use::IndirectRead, Use::IndirectWrite, Use::Scalar, Use::Scalar}
+    );
 
-    if (input_node_a == nullptr || input_node_b == nullptr || input_node_c == nullptr || alpha_node == nullptr ||
-        beta_node == nullptr) {
-        return false;
+    if (!standalone) {
+        return context.unable();
     }
 
-    auto& A_var = input_node_a->data();
-    auto& B_var = input_node_b->data();
-    auto& C_ptr = input_node_c->data();
-
-    // Add new graph before the current block
-    auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
+    auto& new_sequence = standalone->replace_with_sequence();
+    auto& builder = standalone->builder();
 
     // Batch loop (outermost)
     std::string batch_indvar_str = builder.find_new_name("_batch");
@@ -322,8 +312,8 @@ bool BatchedGEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::
 
     // FMA: sum += A[batch_offset + ...] * B[batch_offset + ...]
     auto& code_block = builder.add_block(*last_scope, {}, block.debug_info());
-    auto& input_node_a_new = builder.add_access(code_block, A_var, input_node_a->debug_info());
-    auto& input_node_b_new = builder.add_access(code_block, B_var, input_node_b->debug_info());
+    auto& input_node_a_new = standalone->add_indirect_read_access(code_block, A_INPUT_IDX);
+    auto& input_node_b_new = standalone->add_indirect_read_access(code_block, B_INPUT_IDX);
 
     auto& core_fma =
         builder.add_tasklet(code_block, data_flow::fp_fma, "_out", {"_in1", "_in2", "_in3"}, block.debug_info());
@@ -355,7 +345,7 @@ bool BatchedGEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::
     // Flush: C[batch*stride_c + ldc*i + j] = alpha * sum + beta * C[...]
     auto& flush_block = builder.add_block_after(output_loop->root(), *last_map, {}, block.debug_info());
     auto& sum_final = builder.add_access(flush_block, sum_var, block.debug_info());
-    auto& input_node_c_new = builder.add_access(flush_block, C_ptr, input_node_c->debug_info());
+    auto& input_node_c_new = standalone->add_indirect_read_access(flush_block, C_INPUT_IDX);
     symbolic::Expression c_idx =
         symbolic::add(c_batch_offset, symbolic::add(symbolic::mul(ldc(), new_subset[0]), new_subset[1]));
 
@@ -363,14 +353,8 @@ bool BatchedGEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::
     auto& scale_sum_tasklet =
         builder.add_tasklet(flush_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"}, block.debug_info());
     builder.add_computational_memlet(flush_block, sum_final, scale_sum_tasklet, "_in1", {}, block.debug_info());
-    if (auto const_node = dynamic_cast<const data_flow::ConstantNode*>(alpha_node)) {
-        auto& alpha_node_new =
-            builder.add_constant(flush_block, const_node->data(), const_node->type(), block.debug_info());
-        builder.add_computational_memlet(flush_block, alpha_node_new, scale_sum_tasklet, "_in2", {}, block.debug_info());
-    } else {
-        auto& alpha_node_new = builder.add_access(flush_block, alpha_node->data(), block.debug_info());
-        builder.add_computational_memlet(flush_block, alpha_node_new, scale_sum_tasklet, "_in2", {}, block.debug_info());
-    }
+    auto& alpha_node = standalone->add_scalar_input_access(flush_block, ALPHA_INPUT_IDX);
+    builder.add_computational_memlet(flush_block, alpha_node, scale_sum_tasklet, "_in2", {}, block.debug_info());
 
     std::string scaled_sum_temp = builder.find_new_name("scaled_sum_temp");
     builder.add_container(scaled_sum_temp, scalar_type);
@@ -385,16 +369,8 @@ bool BatchedGEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::
     builder.add_computational_memlet(
         flush_block, input_node_c_new, scale_input_tasklet, "_in1", {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
     );
-    if (auto const_node = dynamic_cast<const data_flow::ConstantNode*>(beta_node)) {
-        auto& beta_node_new =
-            builder.add_constant(flush_block, const_node->data(), const_node->type(), block.debug_info());
-        builder
-            .add_computational_memlet(flush_block, beta_node_new, scale_input_tasklet, "_in2", {}, block.debug_info());
-    } else {
-        auto& beta_node_new = builder.add_access(flush_block, beta_node->data(), block.debug_info());
-        builder
-            .add_computational_memlet(flush_block, beta_node_new, scale_input_tasklet, "_in2", {}, block.debug_info());
-    }
+    auto& beta_node = standalone->add_scalar_input_access(flush_block, BETA_INPUT_IDX);
+    builder.add_computational_memlet(flush_block, beta_node, scale_input_tasklet, "_in2", {}, block.debug_info());
 
     std::string scaled_input_temp = builder.find_new_name("scaled_input_temp");
     builder.add_container(scaled_input_temp, scalar_type);
@@ -406,7 +382,7 @@ bool BatchedGEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::
     // alpha*sum + beta*C
     auto& flush_add_tasklet =
         builder.add_tasklet(flush_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, block.debug_info());
-    auto& output_node_new = builder.add_access(flush_block, C_ptr, input_node_c->debug_info());
+    auto& output_node_new = standalone->add_indirect_write_access(flush_block, C_INPUT_IDX);
     builder.add_computational_memlet(
         flush_block, scaled_sum_final, flush_add_tasklet, "_in1", {}, scalar_type, block.debug_info()
     );
@@ -417,21 +393,7 @@ bool BatchedGEMMNode::expand(builder::StructuredSDFGBuilder& builder, analysis::
         flush_block, flush_add_tasklet, "_out", output_node_new, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
     );
 
-    // Clean up block
-    builder.remove_memlet(block, *iedge_a);
-    builder.remove_memlet(block, *iedge_b);
-    builder.remove_memlet(block, *iedge_c);
-    builder.remove_memlet(block, *alpha_edge);
-    builder.remove_node(block, *alpha_node);
-    builder.remove_memlet(block, *beta_edge);
-    builder.remove_node(block, *beta_node);
-    builder.remove_node(block, *input_node_a);
-    builder.remove_node(block, *input_node_b);
-    builder.remove_node(block, *input_node_c);
-    builder.remove_node(block, *this);
-    builder.remove_child(parent, index + 1);
-
-    return true;
+    return standalone->successfully_expanded();
 }
 
 nlohmann::json BatchedGEMMNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {

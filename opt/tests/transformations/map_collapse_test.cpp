@@ -325,8 +325,8 @@ TEST(MapCollapseTest, Apply_2D_Structure) {
     // The collapsed body must contain an empty recovery block + the original inner block
     auto& body = collapsed->root();
     EXPECT_EQ(body.size(), 2);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&body.at(1).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(1).first) != nullptr);
 }
 
 TEST(MapCollapseTest, Apply_2D_IndvarTransitions) {
@@ -534,13 +534,13 @@ TEST(MapCollapseTest, Apply_3D_CollapseOuter2_Structure) {
     // collapsed body: empty recovery block + the surviving k map
     auto& body = collapsed->root();
     EXPECT_EQ(body.size(), 2);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
-    auto* k_map = dynamic_cast<structured_control_flow::Map*>(&body.at(1).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
+    auto* k_map = dyn_cast<structured_control_flow::Map*>(&body.at(1).first);
     ASSERT_NE(k_map, nullptr) << "Inner k map must survive as direct child of collapsed loop";
 
     // k map body still contains exactly the original block
     EXPECT_EQ(k_map->root().size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&k_map->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&k_map->root().at(0).first) != nullptr);
 }
 
 TEST(MapCollapseTest, Apply_3D_CollapseOuter2_IndvarTransitions) {
@@ -598,7 +598,7 @@ TEST(MapCollapseTest, Apply_3D_CollapseOuter2_CollapsedRange) {
     EXPECT_TRUE(symbolic::eq(collapsed->update(), symbolic::add(civ, symbolic::integer(1))));
 
     // The surviving k map must still have its original bound P
-    auto* k_map = dynamic_cast<structured_control_flow::Map*>(&collapsed->root().at(1).first);
+    auto* k_map = dyn_cast<structured_control_flow::Map*>(&collapsed->root().at(1).first);
     ASSERT_NE(k_map, nullptr);
     EXPECT_TRUE(symbolic::eq(k_map->condition(), symbolic::Lt(symbolic::symbol("k"), P)))
         << "k map bound must remain < P";
@@ -624,19 +624,19 @@ TEST(MapCollapseTest, Apply_3D_CollapseMiddle2_Structure) {
 
     // Root still has exactly one child: the outer i map (unchanged)
     EXPECT_EQ(builder.subject().root().size(), 1);
-    auto* i_map = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(0).first);
+    auto* i_map = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0).first);
     ASSERT_NE(i_map, nullptr) << "Outer i map must still be the root child";
 
     // Outer i map body: exactly the collapsed jk map
     EXPECT_EQ(i_map->root().size(), 1);
-    auto* jk_map = dynamic_cast<structured_control_flow::Map*>(&i_map->root().at(0).first);
+    auto* jk_map = dyn_cast<structured_control_flow::Map*>(&i_map->root().at(0).first);
     ASSERT_NE(jk_map, nullptr) << "Collapsed jk map must be inside the outer i map";
     EXPECT_EQ(jk_map, collapsed);
 
     // Collapsed body: empty recovery block + the original block
     EXPECT_EQ(collapsed->root().size(), 2);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&collapsed->root().at(0).first) != nullptr);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first) != nullptr);
 }
 
 TEST(MapCollapseTest, Apply_3D_CollapseMiddle2_IndvarTransitions) {
@@ -694,7 +694,7 @@ TEST(MapCollapseTest, Apply_3D_CollapseMiddle2_CollapsedRange) {
     EXPECT_TRUE(symbolic::eq(collapsed->update(), symbolic::add(civ, symbolic::integer(1))));
 
     // Outer i map must still have its original bound N
-    auto* i_map = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(0).first);
+    auto* i_map = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0).first);
     ASSERT_NE(i_map, nullptr);
     EXPECT_TRUE(symbolic::eq(i_map->condition(), symbolic::Lt(symbolic::symbol("i"), N)))
         << "Outer i map bound must remain < N";
@@ -788,8 +788,8 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
 
     // collapsed_ij body: empty recovery block + the k map
     EXPECT_EQ(collapsed_ij->root().size(), 2);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&collapsed_ij->root().at(0).first) != nullptr);
-    auto* surviving_k = dynamic_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed_ij->root().at(0).first) != nullptr);
+    auto* surviving_k = dyn_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1).first);
     ASSERT_NE(surviving_k, nullptr) << "k map must survive as child of collapsed_ij";
 
     // Indvar recovery for i, j (on the empty recovery block's transition)
@@ -806,12 +806,12 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
 
     // k map body: l map
     EXPECT_EQ(surviving_k->root().size(), 1);
-    auto* surviving_l = dynamic_cast<structured_control_flow::Map*>(&surviving_k->root().at(0).first);
+    auto* surviving_l = dyn_cast<structured_control_flow::Map*>(&surviving_k->root().at(0).first);
     ASSERT_NE(surviving_l, nullptr) << "l map must survive inside k map";
 
     // l map body: the original block
     EXPECT_EQ(surviving_l->root().size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&surviving_l->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&surviving_l->root().at(0).first) != nullptr);
 
     // --- Second collapse: (k, l) ---
     transformations::MapCollapse t2(*surviving_k, 2);
@@ -826,14 +826,14 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
     // Final structure: root → collapsed_ij → collapsed_kl → block
     EXPECT_EQ(builder.subject().root().size(), 1);
 
-    auto* final_outer = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(0).first);
+    auto* final_outer = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0).first);
     ASSERT_NE(final_outer, nullptr);
     // collapsed_ij must still be the root child
     EXPECT_EQ(final_outer, collapsed_ij);
 
     // collapsed_ij body: empty recovery block + collapsed_kl
     EXPECT_EQ(collapsed_ij->root().size(), 2);
-    auto* inner_map = dynamic_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1).first);
+    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1).first);
     ASSERT_NE(inner_map, nullptr);
     EXPECT_EQ(inner_map, collapsed_kl);
 
@@ -844,7 +844,7 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
 
     // collapsed_kl body: empty recovery block + the original block
     EXPECT_EQ(collapsed_kl->root().size(), 2);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&collapsed_kl->root().at(1).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed_kl->root().at(1).first) != nullptr);
 
     // Indvar recovery for k, l (on the empty recovery block's transition)
     {
@@ -935,7 +935,7 @@ TEST(MapCollapseTest, Apply_2D_WithComputation) {
     // Structure: root → collapsed → [empty recovery block, block]
     EXPECT_EQ(builder.subject().root().size(), 1);
     EXPECT_EQ(collapsed->root().size(), 2);
-    auto* body_block = dynamic_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first);
+    auto* body_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first);
     ASSERT_NE(body_block, nullptr);
 
     // Transition assignments
@@ -1060,7 +1060,7 @@ TEST(MapCollapseTest, Apply_4D_WithComputation_CollapsePairs) {
     auto civ_ij = collapsed_ij->indvar();
 
     // --- Second collapse: (k, l) ---
-    auto* surviving_k = dynamic_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1).first);
+    auto* surviving_k = dyn_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1).first);
     ASSERT_NE(surviving_k, nullptr);
     // collapsed_ij body: [empty recovery block, k map]
     // k map body: l map
@@ -1080,7 +1080,7 @@ TEST(MapCollapseTest, Apply_4D_WithComputation_CollapsePairs) {
     EXPECT_EQ(collapsed_ij->root().size(), 2);
     EXPECT_EQ(collapsed_kl->root().size(), 2);
 
-    auto* final_block = dynamic_cast<structured_control_flow::Block*>(&collapsed_kl->root().at(1).first);
+    auto* final_block = dyn_cast<structured_control_flow::Block*>(&collapsed_kl->root().at(1).first);
     ASSERT_NE(final_block, nullptr) << "Innermost element must be the original block";
 
     // Verify collapsed_ij transition assignments are still correct
@@ -1532,10 +1532,10 @@ TEST(MapCollapseTest, Apply_Imperfect_TwoSiblings_Structure) {
     // Body: recovery block + one guard (IfElse) per original sibling map.
     auto& body = collapsed->root();
     ASSERT_EQ(body.size(), 3);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
 
-    auto* guard_j = dynamic_cast<structured_control_flow::IfElse*>(&body.at(1).first);
-    auto* guard_k = dynamic_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first);
+    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
     ASSERT_NE(guard_j, nullptr) << "First sibling must be wrapped in a guard";
     ASSERT_NE(guard_k, nullptr) << "Second sibling must be wrapped in a guard";
     EXPECT_EQ(guard_j->size(), 1) << "Guard must have a single case (no else)";
@@ -1621,8 +1621,8 @@ TEST(MapCollapseTest, Apply_Imperfect_TwoSiblings_GuardConditions) {
     ASSERT_FALSE(t_idx.is_null());
 
     auto& body = collapsed->root();
-    auto* guard_j = dynamic_cast<structured_control_flow::IfElse*>(&body.at(1).first);
-    auto* guard_k = dynamic_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first);
+    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
     ASSERT_NE(guard_j, nullptr);
     ASSERT_NE(guard_k, nullptr);
 
@@ -1656,8 +1656,8 @@ TEST(MapCollapseTest, Apply_Imperfect_TwoSiblings_InnerIndexRecovery) {
     ASSERT_FALSE(t_idx.is_null());
 
     auto& body = collapsed->root();
-    auto* guard_j = dynamic_cast<structured_control_flow::IfElse*>(&body.at(1).first);
-    auto* guard_k = dynamic_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first);
+    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
     ASSERT_NE(guard_j, nullptr);
     ASSERT_NE(guard_k, nullptr);
 
@@ -1726,16 +1726,16 @@ TEST(MapCollapseTest, Apply_Imperfect_SkippedBlock_Replicated) {
     // Body: recovery block, replicated block A (unguarded), guard for inner map j.
     auto& body = collapsed->root();
     ASSERT_EQ(body.size(), 3);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
 
     // The skipped block is replicated: it stays a plain Block, not wrapped in a
     // guard, so it runs on every inner thread.
-    auto* replicated_a = dynamic_cast<structured_control_flow::Block*>(&body.at(1).first);
+    auto* replicated_a = dyn_cast<structured_control_flow::Block*>(&body.at(1).first);
     EXPECT_NE(replicated_a, nullptr) << "Skipped block must be replicated as a direct child (no guard)";
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::IfElse*>(&body.at(1).first) == nullptr)
+    EXPECT_TRUE(dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first) == nullptr)
         << "Skipped block must NOT be wrapped in an inner==0 guard";
 
-    auto* guard_j = dynamic_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
     ASSERT_NE(guard_j, nullptr);
     // Inner map guarded by t < M.
     EXPECT_TRUE(symbolic::eq(guard_j->at(0).second, symbolic::Lt(t_idx, M))) << "Inner map must be guarded by t < M";
@@ -1812,12 +1812,12 @@ TEST(MapCollapseTest, Apply_Imperfect_PreservesOrder) {
     auto& body = collapsed->root();
     ASSERT_EQ(body.size(), 4);
 
-    auto* guard_j = dynamic_cast<structured_control_flow::IfElse*>(&body.at(1).first);
-    auto* block_a = dynamic_cast<structured_control_flow::Block*>(&body.at(2).first);
-    auto* guard_k = dynamic_cast<structured_control_flow::IfElse*>(&body.at(3).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first);
+    auto* block_a = dyn_cast<structured_control_flow::Block*>(&body.at(2).first);
+    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(3).first);
     ASSERT_NE(guard_j, nullptr);
     ASSERT_NE(block_a, nullptr) << "Skipped block must be replicated as a plain Block in original order";
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::IfElse*>(&body.at(2).first) == nullptr)
+    EXPECT_TRUE(dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first) == nullptr)
         << "Skipped block must NOT be wrapped in an inner==0 guard";
     ASSERT_NE(guard_k, nullptr);
 
@@ -1932,17 +1932,17 @@ TEST(MapCollapseTest, Apply_Imperfect_Producer_Replicated_NotGuarded) {
     // Body: recovery block, replicated producer block (unguarded), inner-map guard.
     auto& body = collapsed->root();
     ASSERT_EQ(body.size(), 3);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
 
-    auto* producer = dynamic_cast<structured_control_flow::Block*>(&body.at(1).first);
+    auto* producer = dyn_cast<structured_control_flow::Block*>(&body.at(1).first);
     ASSERT_NE(producer, nullptr) << "Producer must be replicated as a direct child block";
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::IfElse*>(&body.at(1).first) == nullptr)
+    EXPECT_TRUE(dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first) == nullptr)
         << "Producer must NOT be wrapped in an inner==0 guard";
 
     // The producer keeps its tasklet (X[i] = Y[i]) intact.
     EXPECT_EQ(producer->dataflow().tasklets().size(), 1u);
 
-    auto* guard_j = dynamic_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
     ASSERT_NE(guard_j, nullptr);
     EXPECT_TRUE(symbolic::eq(guard_j->at(0).second, symbolic::Lt(t_idx, M)));
 }

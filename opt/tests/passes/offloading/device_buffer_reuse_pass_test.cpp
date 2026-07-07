@@ -165,7 +165,7 @@ using OffloadSite = std::pair<structured_control_flow::Block*, offloading::DataO
 void collect_offloads(
     structured_control_flow::ControlFlowNode& node, std::vector<OffloadSite>& allocs, std::vector<OffloadSite>& frees
 ) {
-    if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+    if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
         for (auto& n : block->dataflow().nodes()) {
             if (auto* off = dynamic_cast<offloading::DataOffloadingNode*>(&n)) {
                 if (off->is_alloc()) {
@@ -175,15 +175,15 @@ void collect_offloads(
                 }
             }
         }
-    } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+    } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         for (size_t i = 0; i < seq->size(); i++) {
             collect_offloads(seq->at(i).first, allocs, frees);
         }
-    } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+    } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
         for (size_t i = 0; i < if_else->size(); i++) {
             collect_offloads(if_else->at(i).first, allocs, frees);
         }
-    } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+    } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
         collect_offloads(loop->root(), allocs, frees);
     }
 }

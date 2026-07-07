@@ -110,6 +110,9 @@ public:
         bool keepdims
     );
 
+    static auto constexpr RESULT_PTR_IDX = 0;
+    static auto constexpr X_INPUT_IDX = 1;
+
     void validate(const Function& function) const override;
 
     /**
@@ -142,11 +145,12 @@ public:
      * Creates maps over non-reduced dimensions and reduction loops over reduced
      * dimensions with appropriate initialization and accumulation.
      *
-     * @param builder SDFG builder
-     * @param analysis_manager Analysis manager
-     * @return True if expansion succeeded
+     * @param context way to request isolation of node or add new blocks, loops etc.
+     * @param block the block in which the node is contained
+     * @return outcome of expand, created by context
      */
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    passes::LibNodeExpander::ExpandOutcome expand(passes::LibNodeExpander::ExpandContext& context, Block& block)
+        override;
 
     /**
      * @brief Generate the actual reduction code
@@ -165,11 +169,9 @@ public:
      * @return True if reduction generation succeeded
      */
     virtual bool expand_reduction(
+        passes::LibNodeExpander::AccessNodeExpand& expansion,
         builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
         structured_control_flow::Sequence& body,
-        const std::string& input_name,
-        const std::string& output_name,
         const types::Tensor& input_type,
         const types::Tensor& output_type,
         const data_flow::Subset& input_subset,
@@ -193,18 +195,14 @@ public:
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 
+    std::string toStr() const override;
+
 protected:
-    virtual bool expand_inner(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
+    virtual passes::LibNodeExpander::ExpandOutcome expand_inner(
+        passes::LibNodeExpander::AccessNodeExpand& expansion,
         structured_control_flow::Block& block,
-        data_flow::DataFlowGraph& dataflow,
-        structured_control_flow::Sequence& parent,
-        Transition& transition,
         const data_flow::Memlet* iedge_input,
         const data_flow::Memlet* iedge_result,
-        const data_flow::AccessNode* input_node,
-        const data_flow::AccessNode* output_node,
         const std::vector<symbolic::Expression>& output_shape,
         const std::vector<int64_t>& sorted_axes
     );

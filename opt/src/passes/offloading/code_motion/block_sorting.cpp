@@ -48,11 +48,11 @@ bool BlockSortingPass::bubble_up(
     }
 
     // Childs must be blocks
-    auto* current_block = dynamic_cast<structured_control_flow::Block*>(&current_child.first);
+    auto* current_block = dyn_cast<structured_control_flow::Block*>(&current_child.first);
     if (!current_block) {
         return false;
     }
-    auto* next_block = dynamic_cast<structured_control_flow::Block*>(&next_child.first);
+    auto* next_block = dyn_cast<structured_control_flow::Block*>(&next_child.first);
     if (!next_block) {
         return false;
     }
@@ -126,11 +126,11 @@ bool BlockSortingPass::bubble_down(
     }
 
     // Childs must be blocks
-    auto* current_block = dynamic_cast<structured_control_flow::Block*>(&current_child.first);
+    auto* current_block = dyn_cast<structured_control_flow::Block*>(&current_child.first);
     if (!current_block) {
         return false;
     }
-    auto* next_block = dynamic_cast<structured_control_flow::Block*>(&next_child.first);
+    auto* next_block = dyn_cast<structured_control_flow::Block*>(&next_child.first);
     if (!next_block) {
         return false;
     }
@@ -201,18 +201,17 @@ bool BlockSortingPass::sort(
     size_t i;
     for (i = 0; i < sequence.size(); i++) {
         auto* node = &sequence.at(i).first;
-        if (dynamic_cast<structured_control_flow::Return*>(node) ||
-            dynamic_cast<structured_control_flow::Break*>(node) ||
-            dynamic_cast<structured_control_flow::Continue*>(node)) {
+        if (dyn_cast<structured_control_flow::Return*>(node) || dyn_cast<structured_control_flow::Break*>(node) ||
+            dyn_cast<structured_control_flow::Continue*>(node)) {
             // Sorting after return, break, and continue is useless
             break;
-        } else if (auto* sequence2 = dynamic_cast<structured_control_flow::Sequence*>(node)) {
+        } else if (auto* sequence2 = dyn_cast<structured_control_flow::Sequence*>(node)) {
             applied |= this->sort(builder, analysis_manager, *sequence2);
-        } else if (auto* while_loop = dynamic_cast<structured_control_flow::While*>(node)) {
+        } else if (auto* while_loop = dyn_cast<structured_control_flow::While*>(node)) {
             applied |= this->sort(builder, analysis_manager, while_loop->root());
-        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(node)) {
+        } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
             applied |= this->sort(builder, analysis_manager, loop->root());
-        } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(node)) {
+        } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(node)) {
             for (size_t k = 0; k < if_else->size(); k++) {
                 applied |= this->sort(builder, analysis_manager, if_else->at(k).first);
             }

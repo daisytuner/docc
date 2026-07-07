@@ -59,8 +59,8 @@ TEST(ConditionEliminationTest, Basic) {
     // Check
     auto& root_new = new_sdfg.root();
     EXPECT_EQ(root_new.size(), 1);
-    auto& seq_before = dynamic_cast<structured_control_flow::Sequence&>(root_new.at(0).first);
-    auto loop_new = dynamic_cast<structured_control_flow::StructuredLoop*>(&seq_before.at(0).first);
+    auto& seq_before = dyn_cast<structured_control_flow::Sequence&>(root_new.at(0).first);
+    auto loop_new = dyn_cast<structured_control_flow::StructuredLoop*>(&seq_before.at(0).first);
     EXPECT_TRUE(loop_new != nullptr);
 }
 
@@ -116,8 +116,8 @@ TEST(ConditionEliminationTest, Basic_WithAssignmentsAtLoop) {
     // Check
     auto& root_new = new_sdfg.root();
     EXPECT_EQ(root_new.size(), 1);
-    auto& seq_before = dynamic_cast<structured_control_flow::Sequence&>(root_new.at(0).first);
-    auto loop_new = dynamic_cast<structured_control_flow::StructuredLoop*>(&seq_before.at(0).first);
+    auto& seq_before = dyn_cast<structured_control_flow::Sequence&>(root_new.at(0).first);
+    auto loop_new = dyn_cast<structured_control_flow::StructuredLoop*>(&seq_before.at(0).first);
     EXPECT_TRUE(loop_new != nullptr);
 
     auto& transition = seq_before.at(0).second;
@@ -177,8 +177,8 @@ TEST(ConditionEliminationTest, Basic_WithAssignmentsAtIfElse) {
     // Check
     auto& root_new = new_sdfg.root();
     EXPECT_EQ(root_new.size(), 1);
-    auto& seq_before = dynamic_cast<structured_control_flow::Sequence&>(root_new.at(0).first);
-    auto loop_new = dynamic_cast<structured_control_flow::StructuredLoop*>(&seq_before.at(0).first);
+    auto& seq_before = dyn_cast<structured_control_flow::Sequence&>(root_new.at(0).first);
+    auto loop_new = dyn_cast<structured_control_flow::StructuredLoop*>(&seq_before.at(0).first);
     EXPECT_TRUE(loop_new != nullptr);
 
     auto& transition = root_new.at(0).second;

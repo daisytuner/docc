@@ -52,6 +52,10 @@ public:
     Block(const Block& block) = delete;
     Block& operator=(const Block&) = delete;
 
+    ElementType type_id() const override { return ElementType::Block; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::Block; }
+
     void validate(const Function& function) const override;
 
     /**

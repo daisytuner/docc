@@ -1250,7 +1250,7 @@ LogicalResult translateLinalgBroadcastOp(SDFGTranslator& translator, linalg::Bro
     auto& in_access = builder.add_access(block, input_container, deb_info);
     auto& out_access = builder.add_access(block, result_container, deb_info);
     builder.add_computational_memlet(block, in_access, lib_node, "X", {}, *input_sdfg_tensor, deb_info);
-    builder.add_computational_memlet(block, lib_node, "Y", out_access, {}, *result_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(block, out_access, lib_node, "Y", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }

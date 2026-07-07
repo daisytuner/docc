@@ -103,7 +103,7 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
         }
 
         // Child must be a block
-        auto* block = dynamic_cast<sdfg::structured_control_flow::Block*>(&root.at(i).first);
+        auto* block = sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&root.at(i).first);
         if (!block) {
             break;
         }
@@ -271,7 +271,7 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
     // Find last node before return
     long long last_node = root.size() - 1;
     for (size_t i = 0; i < root.size(); i++) {
-        if (dynamic_cast<sdfg::structured_control_flow::Return*>(&root.at(i).first)) {
+        if (sdfg::dyn_cast<sdfg::structured_control_flow::Return*>(&root.at(i).first)) {
             last_node = i - 1;
             break;
         }
@@ -285,7 +285,7 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
         }
 
         // Child must be a block
-        auto* block = dynamic_cast<sdfg::structured_control_flow::Block*>(&root.at(i).first);
+        auto* block = sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&root.at(i).first);
         if (!block) {
             break;
         }

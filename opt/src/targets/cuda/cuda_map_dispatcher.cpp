@@ -407,7 +407,7 @@ codegen::InstrumentationInfo CUDAMapDispatcher::instrumentation_info() const {
         metrics.insert({"flop", flop_str});
     }
 
-    return codegen::InstrumentationInfo(node_.element_id(), codegen::ElementType_Map, TargetType_CUDA, loop_info, metrics);
+    return codegen::InstrumentationInfo(node_.element_id(), node_.element_type(), TargetType_CUDA, loop_info, metrics);
 };
 
 } // namespace cuda

@@ -50,7 +50,7 @@ void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::
     auto& transition2 = parent2->at(index2).second;
 
     structured_control_flow::StructuredLoop* middle_loop = nullptr;
-    if (auto map = dynamic_cast<structured_control_flow::Map*>(&inner)) {
+    if (auto map = dyn_cast<structured_control_flow::Map*>(&inner)) {
         middle_loop = &builder.add_map_before(
             *parent2,
             inner,
@@ -62,7 +62,7 @@ void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::
             transition2.assignments(),
             inner.debug_info()
         );
-    } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(&inner)) {
+    } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(&inner)) {
         middle_loop = &builder.add_reduce_before(
             *parent2,
             inner,
@@ -119,7 +119,7 @@ MultiLevelTiling MultiLevelTiling::from_json(builder::StructuredSDFGBuilder& bui
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
 
     return MultiLevelTiling(*loop, tile_size, tile_size_2);
 };

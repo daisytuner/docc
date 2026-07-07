@@ -56,8 +56,6 @@ public:
     static Pipeline data_parallelism();
 
     static Pipeline memory();
-
-    static Pipeline expansion();
 };
 
 } // namespace passes

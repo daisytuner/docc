@@ -5,6 +5,7 @@
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
 #include "sdfg/helpers/helpers.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -31,7 +32,9 @@ bool GemmExpansion::accept(structured_control_flow::Block& block) {
             if (symbolic::eq(gemm_node->m(), symbolic::one()) || symbolic::eq(gemm_node->n(), symbolic::one()) ||
                 symbolic::eq(gemm_node->k(), symbolic::one())) {
                 DEBUG_PRINTLN("Found degenerate GEMM. Expanding...");
-                if (gemm_node->expand(builder_, analysis_manager_)) {
+
+                auto outcome = expansion::expand_single_math_node(builder_, block, *gemm_node);
+                if (outcome.expanded) { // this could not handle multiple in one block, switch to LibN
                     return true;
                 }
             }

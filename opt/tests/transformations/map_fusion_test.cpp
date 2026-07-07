@@ -92,16 +92,16 @@ TEST(MapFusionTest, ProducerConsumer_1D) {
     EXPECT_EQ(new_sdfg.root().size(), 2);
 
     // The second map should now have 2 blocks in its body (producer + consumer)
-    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
+    auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
     EXPECT_TRUE(new_map2 != nullptr);
     EXPECT_EQ(new_map2->root().size(), 2) << "Second loop should now have 2 blocks (producer + consumer)";
 
     // First block is the new producer block
-    auto* producer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
+    auto* producer_block = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
     EXPECT_TRUE(producer_block != nullptr);
 
     // Second block is the original consumer block
-    auto* consumer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(1).first);
+    auto* consumer_block = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(1).first);
     EXPECT_TRUE(consumer_block != nullptr);
 }
 
@@ -182,11 +182,11 @@ TEST(MapFusionTest, SimpleInputOutputOverlap) {
     // Both maps should still exist
     EXPECT_EQ(new_sdfg.root().size(), 2);
 
-    auto* map1_after = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto* map1_after = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
     EXPECT_TRUE(map1_after != nullptr);
     EXPECT_EQ(map1_after->root().size(), 1) << "First loop should still have 1 block";
 
-    auto* map2_after = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
+    auto* map2_after = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
     EXPECT_TRUE(map2_after != nullptr);
     EXPECT_EQ(map2_after->root().size(), 1) << "Second loop should still have 1 block";
 }
@@ -515,10 +515,10 @@ TEST(MapFusionTest, TransformedAccessIndices) {
     auto& new_sdfg = builder.subject();
 
     // Get the fused second map
-    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
+    auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
     EXPECT_TRUE(new_map2 != nullptr);
 
-    auto* new_block2 = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
+    auto* new_block2 = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
     EXPECT_TRUE(new_block2 != nullptr);
 
     auto& dataflow = new_block2->dataflow();
@@ -1021,7 +1021,7 @@ TEST(MapFusionTest, Domain_Stencil1D_SharedAccessNode) {
     ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
-    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
+    auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
     ASSERT_TRUE(new_map2 != nullptr);
 
     // After fusion, the consumer body must contain (at least) the two producer
@@ -1029,7 +1029,7 @@ TEST(MapFusionTest, Domain_Stencil1D_SharedAccessNode) {
     // block.  Locate the consumer block (the only one with a write to "B").
     structured_control_flow::Block* consumer_block = nullptr;
     for (size_t i = 0; i < new_map2->root().size(); ++i) {
-        auto* b = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(i).first);
+        auto* b = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(i).first);
         if (b == nullptr) continue;
         for (auto& node : b->dataflow().nodes()) {
             auto* an = dynamic_cast<data_flow::AccessNode*>(&node);
@@ -1147,8 +1147,8 @@ TEST(MapFusionTest, Domain_SecondMapStrided) {
     // Apply and verify the index substitution
     transformation.apply(builder, analysis_manager);
 
-    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
-    auto* new_block2 = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
+    auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
+    auto* new_block2 = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
     auto& dataflow = new_block2->dataflow();
 
     // A should be accessed with 2*j after fusion
@@ -1241,8 +1241,8 @@ TEST(MapFusionTest, Domain_BothMapsStridedModuloMatches) {
     // Apply and verify the index substitution
     transformation.apply(builder, analysis_manager);
 
-    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
-    auto* new_block2 = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
+    auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
+    auto* new_block2 = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
     auto& dataflow = new_block2->dataflow();
 
     // A should be accessed with 2*j after fusion (i replaced by j)
@@ -1497,11 +1497,11 @@ TEST(MapFusionTest, Dataflow_InDegree0_SingleOutEdge) {
         << "Consumer memlet base_type should be Scalar after fusion";
 
     // Verify PRODUCER block memlets have correct base_type
-    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
+    auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
     ASSERT_TRUE(new_map2 != nullptr);
     EXPECT_EQ(new_map2->root().size(), 2) << "Should have 1 producer block + 1 consumer block";
 
-    auto* producer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
+    auto* producer_block = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
     ASSERT_TRUE(producer_block != nullptr);
 
     auto& producer_dataflow = producer_block->dataflow();
@@ -1920,16 +1920,16 @@ TEST(MapFusionTest, UseOfIndvar) {
     EXPECT_EQ(new_sdfg.root().size(), 2);
 
     // The second map should now have 2 blocks in its body (producer + consumer)
-    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
+    auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
     EXPECT_NE(new_map2, nullptr);
     EXPECT_EQ(new_map2->root().size(), 2) << "Second loop should now have 2 blocks (producer + consumer)";
 
     // First block is the new producer block
-    auto* producer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
+    auto* producer_block = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
     ASSERT_NE(producer_block, nullptr);
 
     // Second block is the original consumer block
-    auto* consumer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(1).first);
+    auto* consumer_block = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(1).first);
     EXPECT_NE(consumer_block, nullptr);
 
     // Check that the access node was changed from i to j
@@ -2027,20 +2027,20 @@ TEST(MapFusionTest, UseOfIndvar_Shifted) {
     EXPECT_EQ(new_sdfg.root().size(), 2);
 
     // The second map should now have 3 blocks in its body (empty + producer + consumer)
-    auto* new_map2 = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
+    auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
     EXPECT_NE(new_map2, nullptr);
     EXPECT_EQ(new_map2->root().size(), 3) << "Second loop should now have 3 blocks (empty + producer + consumer)";
 
     // First block is the empty block
-    auto* empty_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
+    auto* empty_block = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(0).first);
     ASSERT_NE(empty_block, nullptr);
 
     // Second block is the new producer block
-    auto* producer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(1).first);
+    auto* producer_block = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(1).first);
     ASSERT_NE(producer_block, nullptr);
 
     // Third block is the original consumer block
-    auto* consumer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2->root().at(2).first);
+    auto* consumer_block = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(2).first);
     EXPECT_NE(consumer_block, nullptr);
 
     // Check that there is an assignment with {some_tmp = j - 1}
@@ -2605,13 +2605,13 @@ TEST(MapFusionTest, Domain_2D_Apply_IndexSubstitution) {
     EXPECT_EQ(new_sdfg.root().size(), 2);
 
     // Navigate to the consumer's inner map body
-    auto* new_map2_outer = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
+    auto* new_map2_outer = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
     ASSERT_TRUE(new_map2_outer != nullptr);
 
     // The outer consumer map should have one child: the inner map
     EXPECT_EQ(new_map2_outer->root().size(), 1);
 
-    auto* new_map2_inner = dynamic_cast<structured_control_flow::Map*>(&new_map2_outer->root().at(0).first);
+    auto* new_map2_inner = dyn_cast<structured_control_flow::Map*>(&new_map2_outer->root().at(0).first);
     ASSERT_TRUE(new_map2_inner != nullptr);
 
     // The inner map should now have 2 blocks: producer + consumer
@@ -2619,11 +2619,11 @@ TEST(MapFusionTest, Domain_2D_Apply_IndexSubstitution) {
         << "Inner consumer map should have 2 blocks (producer + consumer) after fusion";
 
     // First block in inner map is the new producer block
-    auto* producer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2_inner->root().at(0).first);
+    auto* producer_block = dyn_cast<structured_control_flow::Block*>(&new_map2_inner->root().at(0).first);
     ASSERT_TRUE(producer_block != nullptr);
 
     // Second block in inner map is the original consumer block
-    auto* consumer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2_inner->root().at(1).first);
+    auto* consumer_block = dyn_cast<structured_control_flow::Block*>(&new_map2_inner->root().at(1).first);
     ASSERT_TRUE(consumer_block != nullptr);
 
     // Verify the producer block's input memlet now uses k,l instead of i,j
@@ -2745,15 +2745,15 @@ TEST(MapFusionTest, Domain_2D_Apply_StridedIndexSubstitution) {
     transformation.apply(builder, analysis_manager);
 
     // Navigate to the inner map
-    auto* new_map2_outer = dynamic_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
+    auto* new_map2_outer = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(1).first);
     ASSERT_TRUE(new_map2_outer != nullptr);
-    auto* new_map2_inner = dynamic_cast<structured_control_flow::Map*>(&new_map2_outer->root().at(0).first);
+    auto* new_map2_inner = dyn_cast<structured_control_flow::Map*>(&new_map2_outer->root().at(0).first);
     ASSERT_TRUE(new_map2_inner != nullptr);
 
     EXPECT_EQ(new_map2_inner->root().size(), 2) << "Inner consumer map should have 2 blocks after fusion";
 
     // Verify the producer block reads A[k, 2*l]
-    auto* producer_block = dynamic_cast<structured_control_flow::Block*>(&new_map2_inner->root().at(0).first);
+    auto* producer_block = dyn_cast<structured_control_flow::Block*>(&new_map2_inner->root().at(0).first);
     ASSERT_TRUE(producer_block != nullptr);
 
     auto& producer_df = producer_block->dataflow();
@@ -2901,7 +2901,7 @@ TEST(MapFusionTest, Pattern2_NonPerfectlyNestedProducer) {
         << "Outer producer map should still have 2 children (sibling block + inner map)";
 
     // Verify the inlined consumer block writes to C using producer indices (i, j)
-    auto* inlined_block = dynamic_cast<structured_control_flow::Block*>(&map1_inner.root().at(2).first);
+    auto* inlined_block = dyn_cast<structured_control_flow::Block*>(&map1_inner.root().at(2).first);
     ASSERT_TRUE(inlined_block != nullptr);
 
     auto& inlined_df = inlined_block->dataflow();
@@ -3059,7 +3059,7 @@ TEST(MapFusionTest, Pattern2_Reverse_NonPerfectlyNestedConsumer) {
         << "Outer consumer map should still have 2 children (sibling block + inner map)";
 
     // Verify the inlined producer block reads A using consumer indices (k, l)
-    auto* inlined_block = dynamic_cast<structured_control_flow::Block*>(&map2_inner.root().at(0).first);
+    auto* inlined_block = dyn_cast<structured_control_flow::Block*>(&map2_inner.root().at(0).first);
     ASSERT_TRUE(inlined_block != nullptr);
 
     auto& inlined_df = inlined_block->dataflow();
@@ -3385,7 +3385,7 @@ TEST(MapFusionTest, ScenarioA_ProducerReadsWritesT) {
     EXPECT_EQ(new_sdfg.root().size(), 1) << "Consumer loop should be removed";
 
     // The original producer block should still read T (not renamed)
-    auto* prod_block = dynamic_cast<structured_control_flow::Block*>(&map1.root().at(0).first);
+    auto* prod_block = dyn_cast<structured_control_flow::Block*>(&map1.root().at(0).first);
     ASSERT_NE(prod_block, nullptr);
     bool prod_reads_t = false;
     for (auto& node : prod_block->dataflow().nodes()) {
@@ -3397,7 +3397,7 @@ TEST(MapFusionTest, ScenarioA_ProducerReadsWritesT) {
     EXPECT_TRUE(prod_reads_t) << "Producer should still read from T (not renamed)";
 
     // The writeback block should write to T
-    auto* wb_block = dynamic_cast<structured_control_flow::Block*>(&map1.root().at(1).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&map1.root().at(1).first);
     ASSERT_NE(wb_block, nullptr);
     bool wb_writes_t = false;
     for (auto& node : wb_block->dataflow().nodes()) {
@@ -3409,7 +3409,7 @@ TEST(MapFusionTest, ScenarioA_ProducerReadsWritesT) {
     EXPECT_TRUE(wb_writes_t) << "Writeback block should write to T";
 
     // The inlined consumer should write to C with producer index i
-    auto* cons_block = dynamic_cast<structured_control_flow::Block*>(&map1.root().at(2).first);
+    auto* cons_block = dyn_cast<structured_control_flow::Block*>(&map1.root().at(2).first);
     ASSERT_NE(cons_block, nullptr);
     bool found_c_write = false;
     for (auto& node : cons_block->dataflow().nodes()) {
@@ -3517,7 +3517,7 @@ TEST(MapFusionTest, ScenarioB_ConsumerReadsWritesT) {
     EXPECT_EQ(new_sdfg.root().size(), 2) << "Both maps should remain (DCE removes dead producer later)";
 
     // Consumer's write to T should be preserved (not renamed to temp)
-    auto* cons_block = dynamic_cast<structured_control_flow::Block*>(&map2.root().at(1).first);
+    auto* cons_block = dyn_cast<structured_control_flow::Block*>(&map2.root().at(1).first);
     ASSERT_NE(cons_block, nullptr);
     bool writes_t = false;
     for (auto& node : cons_block->dataflow().nodes()) {
@@ -3627,7 +3627,7 @@ TEST(MapFusionTest, ScenarioC_BothReadWriteT) {
     EXPECT_EQ(new_sdfg.root().size(), 1) << "Consumer loop should be removed";
 
     // Producer block should still read T (the read access is not renamed)
-    auto* prod_block = dynamic_cast<structured_control_flow::Block*>(&map1.root().at(0).first);
+    auto* prod_block = dyn_cast<structured_control_flow::Block*>(&map1.root().at(0).first);
     ASSERT_NE(prod_block, nullptr);
     bool prod_reads_t = false;
     for (auto& node : prod_block->dataflow().nodes()) {
@@ -3639,7 +3639,7 @@ TEST(MapFusionTest, ScenarioC_BothReadWriteT) {
     EXPECT_TRUE(prod_reads_t) << "Producer should still read T";
 
     // Inlined consumer should write to T (not to temp)
-    auto* inlined_block = dynamic_cast<structured_control_flow::Block*>(&map1.root().at(2).first);
+    auto* inlined_block = dyn_cast<structured_control_flow::Block*>(&map1.root().at(2).first);
     ASSERT_NE(inlined_block, nullptr);
     bool consumer_writes_t = false;
     bool consumer_reads_tmp = false;
@@ -3780,7 +3780,7 @@ TEST(MapFusionTest, InitIntoReduction_Hoisted) {
     auto& band_body = map2_inner.root();
     ASSERT_EQ(band_body.size(), 2u);
 
-    auto* hoisted_init = dynamic_cast<structured_control_flow::Block*>(&band_body.at(0).first);
+    auto* hoisted_init = dyn_cast<structured_control_flow::Block*>(&band_body.at(0).first);
     ASSERT_NE(hoisted_init, nullptr);
     bool writes_T = false;
     bool reads_A = false;
@@ -3799,9 +3799,9 @@ TEST(MapFusionTest, InitIntoReduction_Hoisted) {
     EXPECT_TRUE(writes_T); // the hoisted init writes the accumulator array directly
     EXPECT_FALSE(reads_A); // it is the init, not the reduction body
 
-    auto* preserved = dynamic_cast<structured_control_flow::StructuredLoop*>(&band_body.at(1).first);
+    auto* preserved = dyn_cast<structured_control_flow::StructuredLoop*>(&band_body.at(1).first);
     ASSERT_NE(preserved, nullptr);
-    EXPECT_EQ(dynamic_cast<structured_control_flow::Map*>(preserved), nullptr); // still a sequential For
+    EXPECT_EQ(dyn_cast<structured_control_flow::Map*>(preserved), nullptr); // still a sequential For
 }
 
 TEST(MapFusionTest, ElementwiseIntoReduction_Fused) {
@@ -3942,7 +3942,7 @@ TEST(MapFusionTest, ElementwiseIntoReduction_Fused) {
     std::unordered_set<std::string> reads_in_for;
     std::unordered_set<std::string> writes_in_for;
     for (size_t bi = 0; bi < fused_body.size(); ++bi) {
-        auto* blk = dynamic_cast<structured_control_flow::Block*>(&fused_body.at(bi).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&fused_body.at(bi).first);
         ASSERT_NE(blk, nullptr);
         auto& df = blk->dataflow();
         for (auto& node : df.nodes()) {

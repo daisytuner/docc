@@ -220,11 +220,11 @@ void ROCBLASDataTransferExtraction::
     apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get data flow graph and block
     auto& dfg = this->blas_node_.get_parent();
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
     // Get sequence
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
+    auto* sequence = dyn_cast<structured_control_flow::Sequence*>(block->get_parent());
     assert(sequence);
 
     // Determine type

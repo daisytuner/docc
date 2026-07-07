@@ -23,6 +23,16 @@ static std::string escapeDotId(const std::string& id, const std::string& prefix 
     return prefix + std::regex_replace(id, dotIdBadChars, "_");
 }
 
+void DotVisualizer::register_chain_elem(const Element& element, const std::string& node_id, const std::string& cluster_id) {
+    auto& scope = seq_scope_stack_.back();
+    scope.last2_chain_elem = scope.last_chain_elem;
+    scope.last_chain_elem = SeqChainElem{&element, node_id, cluster_id};
+}
+
+void DotVisualizer::enter_scope() { seq_scope_stack_.emplace_back(); }
+
+void DotVisualizer::exit_scope() { seq_scope_stack_.pop_back(); }
+
 void DotVisualizer::visualizeSDFG(const SDFG& sdfg) {
     this->stream_.clear();
     this->stream_ << "digraph SDFG {\n";
@@ -117,19 +127,45 @@ void DotVisualizer::visualizeBlock(const StructuredSDFG& sdfg, const structured_
 }
 
 void DotVisualizer::visualizeSequence(const StructuredSDFG& sdfg, const structured_control_flow::Sequence& sequence) {
-    std::string last_comp_name_tmp, last_comp_name_cluster_tmp;
+    if (sequence.size() == 0) {
+        auto id = escapeDotId(sequence.element_id(), "empty_seq_");
+        this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
+        this->stream_.setIndent(this->stream_.indent() + 4);
+        this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"";
+        if (show_block_ids) {
+            this->stream_ << "Seq #" << sequence.element_id() << " ";
+        }
+        this->stream_ << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+        register_chain_elem(sequence, id, "cluster_" + id);
+        this->stream_ << "\";" << std::endl;
+        this->stream_.setIndent(this->stream_.indent() - 4);
+        this->stream_ << "}" << std::endl;
+        return;
+    }
+
+    auto& seq_scope = this->seq_scope_stack_.back();
+
     for (size_t i = 0; i < sequence.size(); ++i) {
         std::pair<const structured_control_flow::ControlFlowNode&, const structured_control_flow::Transition&> child =
             sequence.at(i);
+
         this->visualizeNode(sdfg, child.first);
-        if ((i > 0) && !last_comp_name_tmp.empty() && !this->last_comp_name_.empty() &&
-            last_comp_name_tmp != this->last_comp_name_) {
-            this->stream_ << last_comp_name_tmp << " -> " << this->last_comp_name_ << " [";
-            if (!last_comp_name_cluster_tmp.empty()) this->stream_ << "ltail=\"" << last_comp_name_cluster_tmp << "\",";
-            if (!this->last_comp_name_cluster_.empty())
-                this->stream_ << "lhead=\"" << this->last_comp_name_cluster_ << "\",";
+
+        if (seq_scope.last_chain_elem && seq_scope.last2_chain_elem) {
+            this->stream_ << seq_scope.last2_chain_elem->node_id << " -> " << seq_scope.last_chain_elem->node_id
+                          << " [";
+            auto last2_cluster = seq_scope.last2_chain_elem->cluster_id;
+            if (!last2_cluster.empty()) {
+                this->stream_ << "ltail=\"" << last2_cluster << "\",";
+            }
+            auto last_cluster = seq_scope.last_chain_elem->cluster_id;
+            if (!last_cluster.empty()) {
+                this->stream_ << "lhead=\"" << last_cluster << "\",";
+            }
             this->stream_ << "minlen=3";
-            if (!sequence.at(i - 1).second.empty()) {
+
+            // visualize assignments on edge
+            if (i > 0 && !sequence.at(i - 1).second.empty()) {
                 this->stream_ << ",label=\"{";
                 bool comma_sep = false;
                 for (auto& [sym, expr] : sequence.at(i - 1).second.assignments()) {
@@ -141,11 +177,12 @@ void DotVisualizer::visualizeSequence(const StructuredSDFG& sdfg, const structur
                 }
                 this->stream_ << "}\"";
             }
+
             this->stream_ << "];" << std::endl;
         }
-        last_comp_name_tmp = this->last_comp_name_;
-        last_comp_name_cluster_tmp = this->last_comp_name_cluster_;
     }
+
+    seq_scope.last2_chain_elem = std::nullopt;
 }
 
 void DotVisualizer::visualizeIfElse(const StructuredSDFG& sdfg, const structured_control_flow::IfElse& if_else) {
@@ -162,14 +199,15 @@ void DotVisualizer::visualizeIfElse(const StructuredSDFG& sdfg, const structured
         this->stream_.setIndent(this->stream_.indent() + 4);
         this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\""
                       << this->expression(if_else.at(i).second->__str__()) << "\";" << std::endl;
+        enter_scope();
         this->visualizeSequence(sdfg, if_else.at(i).first);
+        exit_scope();
         this->stream_.setIndent(this->stream_.indent() - 4);
         this->stream_ << "}" << std::endl;
     }
     this->stream_.setIndent(this->stream_.indent() - 4);
     this->stream_ << "}" << std::endl;
-    this->last_comp_name_ = id;
-    this->last_comp_name_cluster_ = "cluster_" + id;
+    register_chain_elem(if_else, id, "cluster_" + id);
 }
 
 void DotVisualizer::visualizeWhile(const StructuredSDFG& sdfg, const structured_control_flow::While& while_loop) {
@@ -181,11 +219,12 @@ void DotVisualizer::visualizeWhile(const StructuredSDFG& sdfg, const structured_
         this->stream_ << "#" << while_loop.element_id() << " ";
     }
     this->stream_ << "while:\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    enter_scope();
     this->visualizeSequence(sdfg, while_loop.root());
+    exit_scope();
     this->stream_.setIndent(this->stream_.indent() - 4);
     this->stream_ << "}" << std::endl;
-    this->last_comp_name_ = id;
-    this->last_comp_name_cluster_ = "cluster_" + id;
+    register_chain_elem(while_loop, id, "cluster_" + id);
 }
 
 void DotVisualizer::visualizeFor(const StructuredSDFG& sdfg, const structured_control_flow::For& loop) {
@@ -199,31 +238,29 @@ void DotVisualizer::visualizeFor(const StructuredSDFG& sdfg, const structured_co
     this->stream_ << "for: ";
     this->visualizeForBounds(loop.indvar(), loop.init(), loop.condition(), loop.update());
     this->stream_ << "\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    enter_scope();
     this->visualizeSequence(sdfg, loop.root());
+    exit_scope();
     this->stream_.setIndent(this->stream_.indent() - 4);
     this->stream_ << "}" << std::endl;
-    this->last_comp_name_ = id;
-    this->last_comp_name_cluster_ = "cluster_" + id;
+    register_chain_elem(loop, id, "cluster_" + id);
 }
 
 void DotVisualizer::visualizeReturn(const StructuredSDFG& sdfg, const structured_control_flow::Return& return_node) {
     auto id = escapeDotId(return_node.element_id(), "return_");
     this->stream_ << id << " [shape=cds,label=\" return " << return_node.data() << "\"];" << std::endl;
-    this->last_comp_name_ = id;
-    this->last_comp_name_cluster_.clear();
+    register_chain_elem(return_node, id, "");
 }
 void DotVisualizer::visualizeBreak(const StructuredSDFG& sdfg, const structured_control_flow::Break& break_node) {
     auto id = escapeDotId(break_node.element_id(), "break_");
     this->stream_ << id << " [shape=cds,label=\" break  \"];" << std::endl;
-    this->last_comp_name_ = id;
-    this->last_comp_name_cluster_.clear();
+    register_chain_elem(break_node, id, "");
 }
 
 void DotVisualizer::visualizeContinue(const StructuredSDFG& sdfg, const structured_control_flow::Continue& continue_node) {
     auto id = escapeDotId(continue_node.element_id(), "cont_");
     this->stream_ << id << " [shape=cds,label=\" continue  \"];" << std::endl;
-    this->last_comp_name_ = id;
-    this->last_comp_name_cluster_.clear();
+    register_chain_elem(continue_node, id, "");
 }
 
 void DotVisualizer::visualizeMap(const StructuredSDFG& sdfg, const structured_control_flow::Map& map_node) {
@@ -238,11 +275,12 @@ void DotVisualizer::visualizeMap(const StructuredSDFG& sdfg, const structured_co
     this->visualizeForBounds(map_node.indvar(), map_node.init(), map_node.condition(), map_node.update());
 
     this->stream_ << "\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    enter_scope();
     this->visualizeSequence(sdfg, map_node.root());
+    exit_scope();
     this->stream_.setIndent(this->stream_.indent() - 4);
     this->stream_ << "}" << std::endl;
-    this->last_comp_name_ = id;
-    this->last_comp_name_cluster_ = "cluster_" + id;
+    register_chain_elem(map_node, id, "cluster_" + id);
 }
 
 void DotVisualizer::visualizeReduce(const StructuredSDFG& sdfg, const structured_control_flow::Reduce& reduce_node) {
@@ -268,29 +306,30 @@ void DotVisualizer::visualizeReduce(const StructuredSDFG& sdfg, const structured
     this->visualizeForBounds(reduce_node.indvar(), reduce_node.init(), reduce_node.condition(), reduce_node.update());
 
     this->stream_ << "\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    enter_scope();
     this->visualizeSequence(sdfg, reduce_node.root());
+    exit_scope();
     this->stream_.setIndent(this->stream_.indent() - 4);
     this->stream_ << "}" << std::endl;
-    this->last_comp_name_ = id;
-    this->last_comp_name_cluster_ = "cluster_" + id;
+    register_chain_elem(reduce_node, id, "cluster_" + id);
 }
 
 void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flow::DataFlowGraph& dfg) {
-    this->last_comp_name_cluster_ = "cluster_" + id;
+    auto cluster_id = "cluster_" + id;
     if (dfg.nodes().empty()) {
         this->stream_ << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
-        this->last_comp_name_ = id;
+        register_chain_elem(*dfg.get_parent(), id, cluster_id);
         return;
     }
-    this->last_comp_name_.clear();
+    std::string chain_node_id;
     std::list<const data_flow::DataFlowNode*> nodes = dfg.topological_sort();
     for (const data_flow::DataFlowNode* node : nodes) {
         std::vector<std::string> in_connectors;
         bool is_access_node = false;
         bool node_will_show_literal_connectors = false;
         auto nodeId = escapeDotId(node->element_id(), "id");
-        if (this->last_comp_name_.empty()) {
-            this->last_comp_name_ = nodeId;
+        if (chain_node_id.empty()) {
+            chain_node_id = nodeId;
         }
         if (const data_flow::Tasklet* tasklet = dynamic_cast<const data_flow::Tasklet*>(node)) {
             this->stream_ << nodeId << " [shape=octagon,label=\"" << tasklet->output() << " = ";
@@ -409,6 +448,7 @@ void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flo
             }
         }
     }
+    register_chain_elem(*dfg.get_parent(), chain_node_id, cluster_id);
 }
 
 void DotVisualizer::writeToFile(const Function& sdfg, const std::filesystem::path& file) { writeToFile(sdfg, &file); }

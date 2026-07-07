@@ -245,7 +245,7 @@ bool MemletSimplification::accept(structured_control_flow::Map& map) {
         queue.pop_front();
 
 
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(current)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(current)) {
             // Process all memlets in this block
             auto& dfg = block->dataflow();
             for (auto& memlet : dfg.edges()) {
@@ -263,12 +263,12 @@ bool MemletSimplification::accept(structured_control_flow::Map& map) {
                     applied = true;
                 }
             }
-        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(current)) {
+        } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(current)) {
             // Add children of sequences to the queue
             for (size_t i = 0; i < seq->size(); ++i) {
                 queue.push_back(&seq->at(i).first);
             }
-        } else if (auto* if_stmt = dynamic_cast<structured_control_flow::IfElse*>(current)) {
+        } else if (auto* if_stmt = dyn_cast<structured_control_flow::IfElse*>(current)) {
             // Add branches of if statements to the queue
             for (size_t i = 0; i < if_stmt->size(); ++i) {
                 queue.push_back(&if_stmt->at(i).first);

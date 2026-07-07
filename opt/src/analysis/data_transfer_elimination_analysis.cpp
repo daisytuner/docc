@@ -335,7 +335,7 @@ void DataTransferEliminationAnalysis::handle_lib_node(Block& block, data_flow::L
 void DataTransferEliminationAnalysis::handle_structured_loop_before_body(StructuredLoop& loop) {
     BaseUserVisitor::handle_structured_loop_before_body(loop);
 
-    // auto* map = dynamic_cast<sdfg::structured_control_flow::Map*>(&loop);
+    // auto* map = sdfg::dyn_cast<sdfg::structured_control_flow::Map*>(&loop);
 
     // if (map && map->schedule_type().category() == ScheduleTypeCategory::Offloader) {
     //     get_or_create_state(loop).found_offloaded_kernel(*map);

@@ -26,7 +26,7 @@ bool GPUNestedParallelizationPass::
     for (auto* map : maps_) {
         auto descendants = loop_analysis.descendants(map);
         for (auto* descendant : descendants) {
-            if (auto* nested_map = dynamic_cast<structured_control_flow::Map*>(descendant)) {
+            if (auto* nested_map = dyn_cast<structured_control_flow::Map*>(descendant)) {
                 bool applicable = false;
                 if (target_ == GPUTarget::CUDA) {
                     transformations::CUDAParallelizeNestedMap transform(*nested_map, block_size_);

@@ -56,7 +56,7 @@ bool ConditionElimination::accept(structured_control_flow::Sequence& node) {
     bool applied = false;
     for (size_t i = 0; i < node.size(); i++) {
         auto& current = node.at(i).first;
-        if (auto ifelse = dynamic_cast<structured_control_flow::IfElse*>(&current)) {
+        if (auto ifelse = dyn_cast<structured_control_flow::IfElse*>(&current)) {
             if (ifelse->size() != 1) {
                 continue;
             }
@@ -67,7 +67,7 @@ bool ConditionElimination::accept(structured_control_flow::Sequence& node) {
             if (branch_root.size() != 1) {
                 continue;
             }
-            if (!dynamic_cast<structured_control_flow::StructuredLoop*>(&branch_root.at(0).first)) {
+            if (!dyn_cast<structured_control_flow::StructuredLoop*>(&branch_root.at(0).first)) {
                 continue;
             }
 

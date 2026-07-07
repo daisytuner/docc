@@ -338,7 +338,7 @@ TEST(StructuredSDFGBuilderTest, addMap) {
     EXPECT_EQ(sdfg->name(), "sdfg_1");
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto map = dynamic_cast<structured_control_flow::Map*>(&sdfg->root().at(0).first);
+    auto map = dyn_cast<structured_control_flow::Map*>(&sdfg->root().at(0).first);
     EXPECT_TRUE(map);
     EXPECT_EQ(sdfg->root().at(0).second.assignments().size(), 0);
 
@@ -379,7 +379,7 @@ TEST(StructuredSDFGBuilderTest, addMap_Transition) {
     EXPECT_EQ(sdfg->name(), "sdfg_1");
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto map = dynamic_cast<structured_control_flow::Map*>(&sdfg->root().at(0).first);
+    auto map = dyn_cast<structured_control_flow::Map*>(&sdfg->root().at(0).first);
     EXPECT_TRUE(map);
     EXPECT_EQ(sdfg->root().at(0).second.assignments().size(), 1);
 

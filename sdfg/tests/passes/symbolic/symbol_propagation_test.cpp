@@ -232,7 +232,7 @@ TEST(SymbolPropagationTest, Transition2IfElse_Constant) {
     EXPECT_EQ(child1.second.assignments().size(), 1);
     EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symbolic::integer(0)));
 
-    auto& child2 = dynamic_cast<structured_control_flow::IfElse&>(sdfg->root().at(1).first);
+    auto& child2 = dyn_cast<structured_control_flow::IfElse&>(sdfg->root().at(1).first);
     auto case1_1 = child2.at(0).first.at(0);
     EXPECT_EQ(case1_1.second.assignments().size(), 1);
     EXPECT_TRUE(SymEngine::eq(*case1_1.second.assignments().at(sym2), *symbolic::integer(0)));
@@ -279,7 +279,7 @@ TEST(SymbolPropagationTest, Transition2IfElse_Argument) {
     EXPECT_EQ(child1.second.assignments().size(), 1);
     EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symbolic::symbol("A")));
 
-    auto& child2 = dynamic_cast<structured_control_flow::IfElse&>(sdfg->root().at(1).first);
+    auto& child2 = dyn_cast<structured_control_flow::IfElse&>(sdfg->root().at(1).first);
     auto case1_1 = child2.at(0).first.at(0);
     EXPECT_EQ(case1_1.second.assignments().size(), 1);
     EXPECT_TRUE(SymEngine::eq(*case1_1.second.assignments().at(sym2), *symbolic::symbol("A")));
@@ -436,7 +436,7 @@ TEST(SymbolPropagationTest, Transition2While_In) {
     sdfg = builder_opt.move();
 
     // Check result
-    auto& child1 = dynamic_cast<structured_control_flow::While&>(sdfg->root().at(1).first);
+    auto& child1 = dyn_cast<structured_control_flow::While&>(sdfg->root().at(1).first);
     EXPECT_TRUE(SymEngine::eq(*child1.root().at(0).second.assignments().at(sym2), *symbolic::integer(0)));
 }
 

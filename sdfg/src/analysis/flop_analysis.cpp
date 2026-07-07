@@ -141,19 +141,18 @@ symbolic::SymbolSet FlopAnalysis::
 }
 
 symbolic::Expression FlopAnalysis::visit(structured_control_flow::ControlFlowNode& node, AnalysisManager& analysis_manager) {
-    if (auto sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+    if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         return this->visit_sequence(*sequence, analysis_manager);
-    } else if (auto block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+    } else if (auto block = dyn_cast<structured_control_flow::Block*>(&node)) {
         return this->visit_block(*block, analysis_manager);
-    } else if (auto structured_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+    } else if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
         return this->visit_structured_loop(*structured_loop, analysis_manager);
-    } else if (auto if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+    } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
         return this->visit_if_else(*if_else, analysis_manager);
-    } else if (auto while_loop = dynamic_cast<structured_control_flow::While*>(&node)) {
+    } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(&node)) {
         return this->visit_while(*while_loop, analysis_manager);
-    } else if (dynamic_cast<structured_control_flow::Return*>(&node) ||
-               dynamic_cast<structured_control_flow::Break*>(&node) ||
-               dynamic_cast<structured_control_flow::Continue*>(&node)) {
+    } else if (dyn_cast<structured_control_flow::Return*>(&node) || dyn_cast<structured_control_flow::Break*>(&node) ||
+               dyn_cast<structured_control_flow::Continue*>(&node)) {
         this->flops_[&node] = symbolic::zero();
         return symbolic::zero();
     } else {

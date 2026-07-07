@@ -15,7 +15,6 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/transpose_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
@@ -149,7 +148,7 @@ sdfg::structured_control_flow::IfElse& PyStructuredSDFGBuilder::
 
 void PyStructuredSDFGBuilder::begin_else(const sdfg::DebugInfo& debug_info) {
     auto current = scope_stack.back();
-    auto* if_node = dynamic_cast<sdfg::structured_control_flow::IfElse*>(current.node);
+    auto* if_node = sdfg::dyn_cast<sdfg::structured_control_flow::IfElse*>(current.node);
     if (!if_node || current.branch_index != 0) {
         throw std::runtime_error("Cannot begin_else: not in an if block or already in else");
     }
@@ -164,7 +163,7 @@ void PyStructuredSDFGBuilder::begin_else(const sdfg::DebugInfo& debug_info) {
 
 void PyStructuredSDFGBuilder::end_if() {
     auto current = scope_stack.back();
-    auto* if_node = dynamic_cast<sdfg::structured_control_flow::IfElse*>(current.node);
+    auto* if_node = sdfg::dyn_cast<sdfg::structured_control_flow::IfElse*>(current.node);
     if (!if_node) {
         throw std::runtime_error("Cannot end_if: not in an if/else block");
     }
@@ -194,7 +193,7 @@ void PyStructuredSDFGBuilder::add_continue(const sdfg::DebugInfo& debug_info) {
 
 void PyStructuredSDFGBuilder::end_while() {
     auto current = scope_stack.back();
-    auto* while_node = dynamic_cast<sdfg::structured_control_flow::While*>(current.node);
+    auto* while_node = sdfg::dyn_cast<sdfg::structured_control_flow::While*>(current.node);
     if (!while_node) {
         throw std::runtime_error("Cannot end_while: not in a while loop");
     }
@@ -241,7 +240,7 @@ sdfg::structured_control_flow::For& PyStructuredSDFGBuilder::begin_for(
 
 void PyStructuredSDFGBuilder::end_for() {
     auto current = scope_stack.back();
-    auto* for_node = dynamic_cast<sdfg::structured_control_flow::For*>(current.node);
+    auto* for_node = sdfg::dyn_cast<sdfg::structured_control_flow::For*>(current.node);
     if (!for_node) {
         throw std::runtime_error("Cannot end_for: not in a for loop");
     }
@@ -297,7 +296,7 @@ sdfg::structured_control_flow::Map& PyStructuredSDFGBuilder::begin_map(
 
 void PyStructuredSDFGBuilder::end_map() {
     auto current = scope_stack.back();
-    auto* map_node = dynamic_cast<sdfg::structured_control_flow::Map*>(current.node);
+    auto* map_node = sdfg::dyn_cast<sdfg::structured_control_flow::Map*>(current.node);
     if (!map_node) {
         throw std::runtime_error("Cannot end_map: not in a map loop");
     }

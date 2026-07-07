@@ -706,7 +706,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
         bool success = pass.run(builder_opt, analysis_manager);
     } else if (DOCC_expand != "none") {
         LLVM_DEBUG_PRINTLN("Expanding all library nodes");
-        auto expansion_pass = sdfg::passes::ExpansionPass();
+        auto expansion_pass = sdfg::passes::LibraryNodeExpansionPass();
         bool expanded = expansion_pass.run(builder_opt, analysis_manager);
     }
 

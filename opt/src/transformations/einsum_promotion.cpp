@@ -95,13 +95,13 @@ bool EinsumPromotion::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // Get block
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     if (!block) {
         return false;
     }
 
     // Get & check sequence
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
+    auto* sequence = dyn_cast<structured_control_flow::Sequence*>(block->get_parent());
     if (!sequence) {
         return false;
     }
@@ -110,7 +110,7 @@ bool EinsumPromotion::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // Get loop
-    auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(sequence->get_parent());
+    auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(sequence->get_parent());
     if (!loop) {
         return false;
     }
@@ -197,13 +197,13 @@ bool EinsumPromotion::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get DFG and block
     auto& dfg = this->einsum_node_.get_parent();
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
     // Get sequence and loop
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
+    auto* sequence = dyn_cast<structured_control_flow::Sequence*>(block->get_parent());
     assert(sequence);
-    auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(sequence->get_parent());
+    auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(sequence->get_parent());
     assert(loop);
 
     // Get new dimension data from loop
@@ -214,7 +214,7 @@ void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     assert(!bound.is_null());
 
     // Get the parent node of the loop
-    auto* loop_parent = dynamic_cast<structured_control_flow::Sequence*>(loop->get_parent());
+    auto* loop_parent = dyn_cast<structured_control_flow::Sequence*>(loop->get_parent());
     assert(loop_parent);
 
     // Add a new block after the loop

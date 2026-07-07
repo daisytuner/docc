@@ -463,6 +463,12 @@ codegen::InstrumentationInfo DotNodeDispatcher_Tenstorrent::instrumentation_info
         metrics.insert({"tt_work_units_primary", "tt_work_units_primary"});
         metrics.insert({"tt_num_cores_available", "tt_num_cores_available"});
     }
-    return {node_.element_id(), codegen::ElementType_Math, TargetType_Tenstorrent, analysis::LoopInfo{}, metrics};
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_Tenstorrent,
+        analysis::LoopInfo{},
+        metrics
+    };
 }
 } // namespace sdfg::tenstorrent::blas

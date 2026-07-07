@@ -42,12 +42,12 @@ std::unordered_set<std::string> StrideMinimization::allowed_swaps(
 ) {
     std::unordered_set<std::string> allowed_swaps;
     for (size_t i = 0; i < nested_loops.size() - 1; i++) {
-        if (dynamic_cast<structured_control_flow::While*>(nested_loops.at(i)) ||
-            dynamic_cast<structured_control_flow::While*>(nested_loops.at(i + 1))) {
+        if (dyn_cast<structured_control_flow::While*>(nested_loops.at(i)) ||
+            dyn_cast<structured_control_flow::While*>(nested_loops.at(i + 1))) {
             continue;
         } else {
-            auto first_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(i));
-            auto second_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(i + 1));
+            auto first_loop = dyn_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(i));
+            auto second_loop = dyn_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(i + 1));
             transformations::LoopInterchange loop_interchange(*first_loop, *second_loop);
             if (loop_interchange.can_be_applied(builder, analysis_manager)) {
                 allowed_swaps.insert(first_loop->indvar()->get_name() + "_" + second_loop->indvar()->get_name());
@@ -69,10 +69,10 @@ std::pair<bool, std::vector<std::string>> StrideMinimization::can_be_applied(
     size_t while_loops = 0;
     std::vector<std::string> permutation;
     for (auto& loop : nested_loops) {
-        if (!dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+        if (!dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
             permutation.push_back("WHILE_" + std::to_string(while_loops++));
         } else {
-            auto for_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
+            auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop);
             permutation.push_back(for_loop->indvar()->get_name());
         }
     }
@@ -81,9 +81,9 @@ std::pair<bool, std::vector<std::string>> StrideMinimization::can_be_applied(
 
     // Collect all memory accesses of body
     structured_control_flow::ControlFlowNode* nested_root = nullptr;
-    if (auto for_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(0))) {
+    if (auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(nested_loops.at(0))) {
         nested_root = &for_loop->root();
-    } else if (auto while_loop = dynamic_cast<structured_control_flow::While*>(nested_loops.at(0))) {
+    } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(nested_loops.at(0))) {
         nested_root = &while_loop->root();
     } else {
         assert(false);
@@ -261,10 +261,10 @@ void StrideMinimization::apply(
     size_t while_loops = 0;
     std::vector<std::string> permutation;
     for (auto& loop : nested_loops) {
-        if (!dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+        if (!dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
             permutation.push_back("WHILE_" + std::to_string(while_loops++));
         } else {
-            auto for_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
+            auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop);
             permutation.push_back(for_loop->indvar()->get_name());
         }
     }

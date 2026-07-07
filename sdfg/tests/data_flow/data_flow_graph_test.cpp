@@ -21,7 +21,7 @@ check_topo_sort(builder::StructuredSDFGBuilder& builder, const std::vector<data_
     }
 
     ASSERT_EQ(builder.subject().root().size(), 1) << "StructuredSDFG must have exactly one node";
-    auto* block = dynamic_cast<structured_control_flow::Block*>(&builder.subject().root().at(0).first);
+    auto* block = dyn_cast<structured_control_flow::Block*>(&builder.subject().root().at(0).first);
     ASSERT_TRUE(block) << "StructuredSDFG must have exactly one block";
 
     std::vector<const data_flow::DataFlowNode*> order;
@@ -42,7 +42,7 @@ check_topo_sort(builder::StructuredSDFGBuilder& builder, const std::vector<data_
     builder::StructuredSDFGBuilder builder2(sdfg2);
 
     ASSERT_EQ(builder2.subject().root().size(), 1) << "Cloned StructuredSDFG must have exactly one node";
-    auto* block2 = dynamic_cast<structured_control_flow::Block*>(&builder2.subject().root().at(0).first);
+    auto* block2 = dyn_cast<structured_control_flow::Block*>(&builder2.subject().root().at(0).first);
     ASSERT_TRUE(block2) << "Cloned StructuredSDFG must have exactly one block";
 
     std::vector<const data_flow::DataFlowNode*> order2;

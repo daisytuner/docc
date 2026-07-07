@@ -273,11 +273,11 @@ void AssumptionsAnalysis::traverse(
 ) {
     this->propagate_ref(current, outer_assumptions, outer_assumptions_with_trivial);
 
-    if (auto sequence_stmt = dynamic_cast<structured_control_flow::Sequence*>(&current)) {
+    if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&current)) {
         for (size_t i = 0; i < sequence_stmt->size(); i++) {
             this->traverse(sequence_stmt->at(i).first, outer_assumptions, outer_assumptions_with_trivial);
         }
-    } else if (auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(&current)) {
+    } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&current)) {
         if (!with_branch_conditions_) {
             // Cheap path: don't refine branch assumptions from the case
             // conditions. Recurse into each branch sequence inheriting the
@@ -321,9 +321,9 @@ void AssumptionsAnalysis::traverse(
                 this->assumptions_with_trivial_[&branch_seq]
             );
         }
-    } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&current)) {
+    } else if (auto while_stmt = dyn_cast<structured_control_flow::While*>(&current)) {
         this->traverse(while_stmt->root(), outer_assumptions, outer_assumptions_with_trivial);
-    } else if (auto loop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(&current)) {
+    } else if (auto loop_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(&current)) {
         this->traverse_structured_loop(loop_stmt, outer_assumptions, outer_assumptions_with_trivial);
     } else {
         // Other control flow nodes (e.g., Block) do not introduce assumptions or comprise scopes

@@ -56,7 +56,7 @@ llvm::PreservedAnalyses OPTReportPass::
                         }
                     }
 
-                    if (auto map = dynamic_cast<sdfg::structured_control_flow::Map*>(loop_nest)) {
+                    if (auto map = sdfg::dyn_cast<sdfg::structured_control_flow::Map*>(loop_nest)) {
                         sdfg::transformations::OMPTransform omp_transform(*map);
                         opt_report.add_target_test(
                             loopnest_index,

@@ -24,7 +24,6 @@ ErfNode::ErfNode(
 
 ElementWiseDataflowTensorNode::ElementOutput ErfNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,
-    analysis::AnalysisManager& analysis_manager,
     Block& block,
     std::vector<ElementInput>& needed_inputs,
     types::PrimitiveType expected_type

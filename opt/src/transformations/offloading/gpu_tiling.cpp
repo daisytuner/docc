@@ -151,7 +151,7 @@ GPUTiling GPUTiling::from_json(builder::StructuredSDFGBuilder& builder, const nl
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
 
     size_t size = j.at("parameters").at("size").get<size_t>();
 

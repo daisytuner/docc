@@ -37,6 +37,8 @@
 #pragma once
 
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/passes/expansion/lib_node_expander.h"
+#include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 
 namespace sdfg {
@@ -89,17 +91,20 @@ public:
     );
 
     /**
-     * @brief Expand this node into primitive operations
+     * @brief Expand this node into its internal operations
+     *
+     * Note: some nodes need more than one expansion, so these should be separate impls. of LibNodeExpander instead
      *
      * The expansion process transforms the high-level mathematical operation
      * represented by this node into primitive SDFG constructs (maps, tasklets, etc.).
      * This allows the operation to be further optimized and scheduled.
      *
-     * @param builder SDFG builder for creating new nodes
-     * @param analysis_manager Analysis manager for querying SDFG properties
-     * @return True if expansion was successful, false otherwise
+     * @param context way to request isolation of node or add new blocks, loops etc.
+     * @param block the block in which the node is contained
+     * @return context, which will know of all the changes that were made
      */
-    virtual bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) = 0;
+    virtual passes::LibNodeExpander::ExpandOutcome
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) = 0;
 };
 
 } // namespace math

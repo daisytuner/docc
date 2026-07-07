@@ -42,7 +42,7 @@ bool DataTransferMinimizationPass::eliminate_malloc_first_transfer(
     // leave the malloc itself, because we have not proven yet that there is no more d2H transfer that needs it
     // DDE needs to be able to find it
 
-    auto* h2d_block = dynamic_cast<structured_control_flow::Block*>(copy_in.offload_node->get_parent().get_parent());
+    auto* h2d_block = dyn_cast<structured_control_flow::Block*>(copy_in.offload_node->get_parent().get_parent());
     builder.remove_memlet(*h2d_block, *copy_in.host_access);
     builder.remove_node(*h2d_block, *copy_in.host_data);
     copy_in.remove_h2d_parts();
@@ -61,7 +61,7 @@ bool DataTransferMinimizationPass::eliminate_redundant_d2h(
     // leave the malloc itself, because we have not proven yet that there is no more d2H transfer that needs it
     // DDE needs to be able to find it
 
-    auto* d2h_block = dynamic_cast<structured_control_flow::Block*>(d2h.offload_node->get_parent().get_parent());
+    auto* d2h_block = dyn_cast<structured_control_flow::Block*>(d2h.offload_node->get_parent().get_parent());
     if (d2h.offload_node->is_d2h()) {
         if (d2h.offload_node->is_free()) {
             std::string out_conn = d2h.host_access->src_conn();
@@ -148,12 +148,11 @@ bool DataTransferMinimizationPass::eliminate_transfer_pair(
     }
     if (remove_entirely) {
         auto* copy_out_block =
-            dynamic_cast<structured_control_flow::Block*>(copy_out.offload_node->get_parent().get_parent());
+            dyn_cast<structured_control_flow::Block*>(copy_out.offload_node->get_parent().get_parent());
         builder.clear_code_node_legacy(*copy_out_block, *copy_out.offload_node);
     }
 
-    auto* copy_in_block = dynamic_cast<structured_control_flow::Block*>(copy_in.offload_node->get_parent().get_parent()
-    );
+    auto* copy_in_block = dyn_cast<structured_control_flow::Block*>(copy_in.offload_node->get_parent().get_parent());
     builder.clear_code_node_legacy(*copy_in_block, *copy_in.offload_node);
 
     // Maps the device pointers if necessary
@@ -269,7 +268,7 @@ bool DataTransferMinimizationLegacy::accept(structured_control_flow::Sequence& s
     while (copy_out_index < sequence.size()) {
         // Find a new copy-out
         for (; copy_out_index < sequence.size(); copy_out_index++) {
-            if (auto* block = dynamic_cast<structured_control_flow::Block*>(&sequence.at(copy_out_index).first)) {
+            if (auto* block = dyn_cast<structured_control_flow::Block*>(&sequence.at(copy_out_index).first)) {
                 if (block->dataflow().library_nodes().size() == 1 && block->dataflow().tasklets().size() == 0) {
                     auto* libnode = *block->dataflow().library_nodes().begin();
                     if (auto* offloading_node = dynamic_cast<offloading::DataOffloadingNode*>(libnode)) {
@@ -287,7 +286,7 @@ bool DataTransferMinimizationLegacy::accept(structured_control_flow::Sequence& s
         size_t i;
         for (i = copy_out_index; i < sequence.size(); i++) {
             // Child must be a block
-            auto* copy_in_block = dynamic_cast<structured_control_flow::Block*>(&sequence.at(i).first);
+            auto* copy_in_block = dyn_cast<structured_control_flow::Block*>(&sequence.at(i).first);
             if (!copy_in_block) {
                 continue;
             }
@@ -467,7 +466,7 @@ bool DataTransferMinimizationLegacy::check_container_dependency(
     // Simplification: Assume blocks are in the same sequence
     auto* copy_out_block_parent = copy_out_block->get_parent();
     auto* copy_in_block_parent = copy_in_block->get_parent();
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(copy_out_block_parent);
+    auto* sequence = dyn_cast<structured_control_flow::Sequence*>(copy_out_block_parent);
     if (copy_out_block_parent != copy_in_block_parent || !sequence) {
         return false;
     }
@@ -476,7 +475,7 @@ bool DataTransferMinimizationLegacy::check_container_dependency(
     size_t start = sequence->index(*copy_out_block);
     size_t stop = sequence->index(*copy_in_block);
     for (size_t i = start + 1; i < stop; i++) {
-        auto* block = dynamic_cast<structured_control_flow::Block*>(&sequence->at(i).first);
+        auto* block = dyn_cast<structured_control_flow::Block*>(&sequence->at(i).first);
         if (!block) {
             continue;
         }

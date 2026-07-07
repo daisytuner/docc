@@ -199,7 +199,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_LoopInterchange) {
     structured_control_flow::Map* loop_1_ = nullptr;
     structured_control_flow::Map* loop_2_ = nullptr;
     for (auto& loop : loop_analysis.loops()) {
-        auto* structured_loop = dynamic_cast<structured_control_flow::Map*>(loop);
+        auto* structured_loop = dyn_cast<structured_control_flow::Map*>(loop);
         if (structured_loop->indvar()->get_name() == "i") {
             loop_1_ = structured_loop;
         } else if (structured_loop->indvar()->get_name() == "j") {
@@ -227,7 +227,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
     auto& loop_analysis_1 = analysis_manager_->get<analysis::LoopAnalysis>();
     structured_control_flow::Map* loop_1_ = nullptr;
     for (auto& loop : loop_analysis_1.loops()) {
-        auto* structured_loop = dynamic_cast<structured_control_flow::Map*>(loop);
+        auto* structured_loop = dyn_cast<structured_control_flow::Map*>(loop);
         if (structured_loop->indvar()->get_name() == "i") {
             loop_1_ = structured_loop;
         }
@@ -240,7 +240,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
     auto& loop_analysis_2 = analysis_manager_->get<analysis::LoopAnalysis>();
     structured_control_flow::Map* loop_2_ = nullptr;
     for (auto& loop : loop_analysis_2.loops()) {
-        auto* structured_loop = dynamic_cast<structured_control_flow::Map*>(loop);
+        auto* structured_loop = dyn_cast<structured_control_flow::Map*>(loop);
         if (structured_loop->indvar()->get_name() == "j") {
             loop_2_ = structured_loop;
         }
@@ -255,7 +255,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
     structured_control_flow::Map* loop_j_outer = nullptr;
     structured_control_flow::Map* loop_i_tile = nullptr;
     for (auto& loop : loop_analysis_3.loops()) {
-        auto* structured_loop = dynamic_cast<structured_control_flow::Map*>(loop);
+        auto* structured_loop = dyn_cast<structured_control_flow::Map*>(loop);
         if (structured_loop->indvar()->get_name() == "i") {
             loop_i_tile = structured_loop;
         } else if (structured_loop->indvar()->get_name() == "j_tile0") {

@@ -659,17 +659,17 @@ void DataDependencyAnalysis::visit_sequence(
 
     for (size_t i = 0; i < sequence.size(); i++) {
         auto child = sequence.at(i);
-        if (auto block = dynamic_cast<structured_control_flow::Block*>(&child.first)) {
+        if (auto block = dyn_cast<structured_control_flow::Block*>(&child.first)) {
             visit_block(analysis_manager, *block, undefined, open_definitions, closed_definitions);
-        } else if (auto for_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child.first)) {
+        } else if (auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child.first)) {
             visit_for(analysis_manager, *for_loop, undefined, open_definitions, closed_definitions);
-        } else if (auto if_else = dynamic_cast<structured_control_flow::IfElse*>(&child.first)) {
+        } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&child.first)) {
             visit_if_else(analysis_manager, *if_else, undefined, open_definitions, closed_definitions);
-        } else if (auto while_loop = dynamic_cast<structured_control_flow::While*>(&child.first)) {
+        } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(&child.first)) {
             visit_while(analysis_manager, *while_loop, undefined, open_definitions, closed_definitions);
-        } else if (auto return_statement = dynamic_cast<structured_control_flow::Return*>(&child.first)) {
+        } else if (auto return_statement = dyn_cast<structured_control_flow::Return*>(&child.first)) {
             visit_return(analysis_manager, *return_statement, undefined, open_definitions, closed_definitions);
-        } else if (auto sequence = dynamic_cast<structured_control_flow::Sequence*>(&child.first)) {
+        } else if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&child.first)) {
             visit_sequence(analysis_manager, *sequence, undefined, open_definitions, closed_definitions);
         }
 

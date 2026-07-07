@@ -62,7 +62,7 @@ bool EinsumExtend::can_be_applied(builder::StructuredSDFGBuilder& builder, analy
 
 void EinsumExtend::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& dfg = this->einsum_node_.get_parent();
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
     // Construct inputs, in indices, and a map for new in edges

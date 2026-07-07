@@ -98,10 +98,10 @@ TEST(ConstantPropagationTest, Dataflow_Argument) {
     // Check result
     auto& sdfg = builder.subject();
 
-    auto& child1 = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(0).first);
+    auto& child1 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(0).first);
     EXPECT_EQ(child1.dataflow().nodes().size(), 3);
 
-    auto& child2 = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(1).first);
+    auto& child2 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(1).first);
     EXPECT_EQ(child2.dataflow().nodes().size(), 0);
 }
 
@@ -148,13 +148,13 @@ TEST(ConstantPropagationTest, Dataflow_Transient) {
     // Check result
     auto& sdfg = builder.subject();
 
-    auto& child0 = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(0).first);
+    auto& child0 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(0).first);
     EXPECT_EQ(child0.dataflow().nodes().size(), 3);
 
-    auto& child1 = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(1).first);
+    auto& child1 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(1).first);
     EXPECT_EQ(child1.dataflow().nodes().size(), 3);
 
-    auto& child2 = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(2).first);
+    auto& child2 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(2).first);
     EXPECT_EQ(child2.dataflow().nodes().size(), 0);
 }
 

@@ -176,8 +176,8 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 
     if (inner_depends_on_outer) {
         // Fourier-Motzkin elimination: only For-For
-        if (dynamic_cast<structured_control_flow::Map*>(&outer_loop_) ||
-            dynamic_cast<structured_control_flow::Map*>(&inner_loop_)) {
+        if (dyn_cast<structured_control_flow::Map*>(&outer_loop_) ||
+            dyn_cast<structured_control_flow::Map*>(&inner_loop_)) {
             return false;
         }
         // Outer loop must have unit step
@@ -227,8 +227,8 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // Criterion: Any of both loops is a map
-    if (dynamic_cast<structured_control_flow::Map*>(&outer_loop_) ||
-        dynamic_cast<structured_control_flow::Map*>(&inner_loop_)) {
+    if (dyn_cast<structured_control_flow::Map*>(&outer_loop_) ||
+        dyn_cast<structured_control_flow::Map*>(&inner_loop_)) {
         return true;
     }
 
@@ -418,10 +418,10 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     structured_control_flow::StructuredLoop* new_outer_loop = nullptr;
     structured_control_flow::StructuredLoop* new_inner_loop = nullptr;
 
-    auto* inner_map = dynamic_cast<structured_control_flow::Map*>(&inner_loop_);
-    auto* outer_map = dynamic_cast<structured_control_flow::Map*>(&outer_loop_);
-    auto* inner_reduce = dynamic_cast<structured_control_flow::Reduce*>(&inner_loop_);
-    auto* outer_reduce = dynamic_cast<structured_control_flow::Reduce*>(&outer_loop_);
+    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&inner_loop_);
+    auto* outer_map = dyn_cast<structured_control_flow::Map*>(&outer_loop_);
+    auto* inner_reduce = dyn_cast<structured_control_flow::Reduce*>(&inner_loop_);
+    auto* outer_reduce = dyn_cast<structured_control_flow::Reduce*>(&outer_loop_);
 
     bool dependent = !inner_map && !outer_map &&
                      (symbolic::uses(inner_loop_.init(), outer_loop_.indvar()->get_name()) ||
@@ -639,11 +639,11 @@ LoopInterchange LoopInterchange::from_json(builder::StructuredSDFGBuilder& build
     if (inner_element == nullptr) {
         throw InvalidSDFGException("Element with ID " + std::to_string(inner_loop_id) + " not found.");
     }
-    auto outer_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(outer_element);
+    auto outer_loop = dyn_cast<structured_control_flow::StructuredLoop*>(outer_element);
     if (outer_loop == nullptr) {
         throw InvalidSDFGException("Element with ID " + std::to_string(outer_loop_id) + " is not a StructuredLoop.");
     }
-    auto inner_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(inner_element);
+    auto inner_loop = dyn_cast<structured_control_flow::StructuredLoop*>(inner_element);
     if (inner_loop == nullptr) {
         throw InvalidSDFGException("Element with ID " + std::to_string(inner_loop_id) + " is not a StructuredLoop.");
     }

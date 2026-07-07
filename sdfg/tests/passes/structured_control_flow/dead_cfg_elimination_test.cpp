@@ -77,7 +77,7 @@ TEST(DeadCFGEliminationTest, TrivialMap) {
     auto& body_block = builder.add_block(map_loop.root());
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
 
     // Dead CFG Elimination
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -149,7 +149,7 @@ TEST(DeadCFGEliminationTest, NonTrivialMap) {
     auto& body_block = builder.add_block(for_loop.root());
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
 
     // Dead CFG Elimination
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -157,7 +157,7 @@ TEST(DeadCFGEliminationTest, NonTrivialMap) {
     dce_pass.run(builder, analysis_manager);
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
 }
 
 TEST(DeadCFGEliminationTest, TrivialMapWithLessThanOrEqual) {

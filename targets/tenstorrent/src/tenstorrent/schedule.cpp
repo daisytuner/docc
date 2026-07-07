@@ -843,7 +843,7 @@ void TenstorrentMapDispatcher::dispatch_node(
     }
     for (int ci = 0; ci < outer_map_body.size(); ++ci) {
         auto child = outer_map_body.at(ci);
-        if (auto* map_candidate = dynamic_cast<structured_control_flow::Map*>(&child.first)) {
+        if (auto* map_candidate = dyn_cast<structured_control_flow::Map*>(&child.first)) {
             if (map_candidate->schedule_type().value() == ScheduleType_Tenstorrent_Kernel::value()) {
                 inner_map_ptr = map_candidate;
             }
@@ -1014,8 +1014,7 @@ codegen::InstrumentationInfo TenstorrentMapDispatcher::instrumentation_info() co
         metrics.insert({"tt_num_cores_available", "tt_num_cores_available_"});
     }
 
-    return codegen::
-        InstrumentationInfo(map_.element_id(), codegen::ElementType_Map, TargetType_Tenstorrent, loop_info, metrics);
+    return codegen::InstrumentationInfo(map_.element_id(), map_.element_type(), TargetType_Tenstorrent, loop_info, metrics);
 }
 
 bool TenstorrentMapDispatcher::begin_node(codegen::PrettyPrinter& stream) {

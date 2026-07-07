@@ -4,6 +4,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/targets/rocm/rocm.h"
 
 using namespace sdfg;
@@ -46,8 +47,9 @@ TEST(RocBlasTest, DotNodeWithDataTransfers) {
 
     EXPECT_EQ(block.dataflow().nodes().size(), 4);
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(dot_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, dot_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 TEST(RocBlasTest, DotNodeWithoutDataTransfers) {
@@ -88,8 +90,9 @@ TEST(RocBlasTest, DotNodeWithoutDataTransfers) {
 
     EXPECT_EQ(block.dataflow().nodes().size(), 4);
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(dot_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, dot_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 }
 
 TEST(RocBlasTest, GemmNodeWithDataTransfers) {
@@ -146,23 +149,24 @@ TEST(RocBlasTest, GemmNodeWithDataTransfers) {
     EXPECT_EQ(block.dataflow().nodes().size(), 6);
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
     builder.subject().validate();
 
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto new_sequence = dynamic_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
     EXPECT_NE(new_sequence, nullptr);
 
-    auto map_1 = dynamic_cast<structured_control_flow::Map*>(&new_sequence->at(0).first);
+    auto map_1 = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0).first);
     EXPECT_NE(map_1, nullptr);
     EXPECT_EQ(map_1->root().size(), 1);
 
-    auto map_2 = dynamic_cast<structured_control_flow::Map*>(&map_1->root().at(0).first);
+    auto map_2 = dyn_cast<structured_control_flow::Map*>(&map_1->root().at(0).first);
     EXPECT_NE(map_2, nullptr);
     EXPECT_EQ(map_2->root().size(), 3);
 
-    auto block_init = dynamic_cast<structured_control_flow::Block*>(&map_2->root().at(0).first);
+    auto block_init = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(0).first);
     EXPECT_NE(block_init, nullptr);
     EXPECT_EQ(block_init->dataflow().nodes().size(), 3);
     auto init_tasklet = *block_init->dataflow().tasklets().begin();
@@ -170,11 +174,11 @@ TEST(RocBlasTest, GemmNodeWithDataTransfers) {
     EXPECT_EQ(init_tasklet->inputs().at(0), "_in");
     EXPECT_EQ(init_tasklet->output(), "_out");
 
-    auto map_3 = dynamic_cast<structured_control_flow::For*>(&map_2->root().at(1).first);
+    auto map_3 = dyn_cast<structured_control_flow::For*>(&map_2->root().at(1).first);
     EXPECT_NE(map_3, nullptr);
     EXPECT_EQ(map_3->root().size(), 1);
 
-    auto block_fma = dynamic_cast<structured_control_flow::Block*>(&map_3->root().at(0).first);
+    auto block_fma = dyn_cast<structured_control_flow::Block*>(&map_3->root().at(0).first);
     EXPECT_NE(block_fma, nullptr);
     EXPECT_EQ(block_fma->dataflow().nodes().size(), 5);
 
@@ -186,7 +190,7 @@ TEST(RocBlasTest, GemmNodeWithDataTransfers) {
     EXPECT_EQ(tasklet->inputs().at(2), "_in3");
     EXPECT_EQ(tasklet->output(), "_out");
 
-    auto block_flush = dynamic_cast<structured_control_flow::Block*>(&map_2->root().at(2).first);
+    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(2).first);
     EXPECT_NE(block_flush, nullptr);
     EXPECT_EQ(block_flush->dataflow().nodes().size(), 10);
     auto flush_tasklets = block_flush->dataflow().tasklets();
@@ -256,23 +260,24 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers) {
     EXPECT_EQ(block.dataflow().nodes().size(), 6);
 
     builder.subject().validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(gemm_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, gemm_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
     builder.subject().validate();
 
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto new_sequence = dynamic_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
     EXPECT_NE(new_sequence, nullptr);
 
-    auto map_1 = dynamic_cast<structured_control_flow::Map*>(&new_sequence->at(0).first);
+    auto map_1 = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0).first);
     EXPECT_NE(map_1, nullptr);
     EXPECT_EQ(map_1->root().size(), 1);
 
-    auto map_2 = dynamic_cast<structured_control_flow::Map*>(&map_1->root().at(0).first);
+    auto map_2 = dyn_cast<structured_control_flow::Map*>(&map_1->root().at(0).first);
     EXPECT_NE(map_2, nullptr);
     EXPECT_EQ(map_2->root().size(), 3);
 
-    auto block_init = dynamic_cast<structured_control_flow::Block*>(&map_2->root().at(0).first);
+    auto block_init = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(0).first);
     EXPECT_NE(block_init, nullptr);
     EXPECT_EQ(block_init->dataflow().nodes().size(), 3);
     auto init_tasklet = *block_init->dataflow().tasklets().begin();
@@ -280,11 +285,11 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers) {
     EXPECT_EQ(init_tasklet->inputs().at(0), "_in");
     EXPECT_EQ(init_tasklet->output(), "_out");
 
-    auto map_3 = dynamic_cast<structured_control_flow::For*>(&map_2->root().at(1).first);
+    auto map_3 = dyn_cast<structured_control_flow::For*>(&map_2->root().at(1).first);
     EXPECT_NE(map_3, nullptr);
     EXPECT_EQ(map_3->root().size(), 1);
 
-    auto block_fma = dynamic_cast<structured_control_flow::Block*>(&map_3->root().at(0).first);
+    auto block_fma = dyn_cast<structured_control_flow::Block*>(&map_3->root().at(0).first);
     EXPECT_NE(block_fma, nullptr);
     EXPECT_EQ(block_fma->dataflow().nodes().size(), 5);
 
@@ -296,7 +301,7 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers) {
     EXPECT_EQ(tasklet->inputs().at(2), "_in3");
     EXPECT_EQ(tasklet->output(), "_out");
 
-    auto block_flush = dynamic_cast<structured_control_flow::Block*>(&map_2->root().at(2).first);
+    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(2).first);
     EXPECT_NE(block_flush, nullptr);
     EXPECT_EQ(block_flush->dataflow().nodes().size(), 10);
     auto flush_tasklets = block_flush->dataflow().tasklets();

@@ -81,7 +81,7 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
     }
 
     auto& dfg = access_node->get_parent();
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     if (!block) {
         return {nullptr, 0};
     }
@@ -91,7 +91,7 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
         return {nullptr, 0};
     }
 
-    auto* block_parent_sequence = dynamic_cast<structured_control_flow::Sequence*>(block_parent);
+    auto* block_parent_sequence = dyn_cast<structured_control_flow::Sequence*>(block_parent);
     if (!block_parent_sequence) {
         return {nullptr, 0};
     }
@@ -168,7 +168,7 @@ bool ReadonlyTransferHoistingPass::move_readonly_transfer(
             return false;
         }
 
-        auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+        auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
         if (!block) {
             return false;
         }
@@ -182,7 +182,7 @@ bool ReadonlyTransferHoistingPass::move_readonly_transfer(
             return false;
         }
 
-        auto* block_parent_sequence = dynamic_cast<structured_control_flow::Sequence*>(block_parent);
+        auto* block_parent_sequence = dyn_cast<structured_control_flow::Sequence*>(block_parent);
         if (!block_parent_sequence) {
             return false;
         }
@@ -224,14 +224,14 @@ bool ReadonlyTransferHoistingPass::move_readonly_transfer(
     builder.move_child(*source, source->index(*source_block), *safe_sequence, safe_index);
     visisted.insert(block_id);
 
-    auto* free_block = dynamic_cast<structured_control_flow::Block*>(builder.find_element_by_id(free_block_id));
+    auto* free_block = dyn_cast<structured_control_flow::Block*>(builder.find_element_by_id(free_block_id));
     if (!free_block) {
         throw InvalidSDFGException(
             "ReadonlyTransferHoistingPass: Could not find block with id: " + std::to_string(free_block_id)
         );
     }
 
-    auto* free_block_parent = dynamic_cast<structured_control_flow::Sequence*>(free_block->get_parent());
+    auto* free_block_parent = dyn_cast<structured_control_flow::Sequence*>(free_block->get_parent());
     if (!free_block_parent) {
         throw InvalidSDFGException(
             "ReadonlyTransferHoistingPass: Cannot get the parent sequence of block with matching free"
@@ -256,7 +256,7 @@ long long ReadonlyTransferHoistingPass::find_matching_free_block(
     std::string device_container = static_cast<data_flow::AccessNode&>(oedge.dst()).data();
 
     for (size_t i = parent->index(*block) + 1; i < parent->size(); i++) {
-        auto* other_block = dynamic_cast<structured_control_flow::Block*>(&parent->at(i).first);
+        auto* other_block = dyn_cast<structured_control_flow::Block*>(&parent->at(i).first);
         if (!other_block) {
             continue;
         }
@@ -390,7 +390,7 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
     structured_control_flow::ControlFlowNode* current = &sequence->at(index).first;
     structured_control_flow::ControlFlowNode* current_parent = sequence;
     while (current_parent != nullptr) {
-        if (auto* current_sequence = dynamic_cast<structured_control_flow::Sequence*>(current_parent)) {
+        if (auto* current_sequence = dyn_cast<structured_control_flow::Sequence*>(current_parent)) {
             for (auto [parent_sequence, parent_index] : parents) {
                 if (current_sequence == parent_sequence) {
                     size_t current_index = current_sequence->index(*current);
@@ -415,7 +415,7 @@ std::vector<std::pair<structured_control_flow::Sequence*, size_t>> ReadonlyTrans
     structured_control_flow::ControlFlowNode* current = block;
     structured_control_flow::ControlFlowNode* current_parent = block->get_parent();
     while (current_parent != nullptr) {
-        if (auto* current_sequence = dynamic_cast<structured_control_flow::Sequence*>(current_parent)) {
+        if (auto* current_sequence = dyn_cast<structured_control_flow::Sequence*>(current_parent)) {
             parents.push_back({current_sequence, current_sequence->index(*current)});
         }
         current = current_parent;

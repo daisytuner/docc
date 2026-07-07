@@ -39,7 +39,7 @@ void cleanup(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager&
 structured_control_flow::For* find_last_for(structured_control_flow::Sequence& seq) {
     structured_control_flow::For* last = nullptr;
     for (size_t idx = 0; idx < seq.size(); idx++) {
-        if (auto* f = dynamic_cast<structured_control_flow::For*>(&seq.at(idx).first)) {
+        if (auto* f = dyn_cast<structured_control_flow::For*>(&seq.at(idx).first)) {
             last = f;
         }
     }
@@ -49,7 +49,7 @@ structured_control_flow::For* find_last_for(structured_control_flow::Sequence& s
 // Collect loop indvar names following computation path (LAST child at each level)
 std::vector<std::string> get_loop_order(builder::StructuredSDFGBuilder& builder) {
     std::vector<std::string> order;
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     while (loop) {
         order.push_back(loop->indvar()->get_name());
         loop = find_last_for(loop->root());
@@ -197,18 +197,18 @@ TEST(BlockingTest, GEMM_Phase1_Tiling) {
     ASSERT_EQ(initial_order[2], "k");
 
     // Step 1: LoopInterchange(j, k) → i → k → j
-    auto* loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    auto* loop_j = dynamic_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
-    auto* loop_k = dynamic_cast<structured_control_flow::For*>(&loop_j->root().at(0).first);
+    auto* loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* loop_j = dyn_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
+    auto* loop_k = dyn_cast<structured_control_flow::For*>(&loop_j->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*loop_j, *loop_k).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *loop_j, *loop_k);
     am.invalidate_all();
 
     // Step 2: LoopTiling(j, NC=256)
-    loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    loop_k = dynamic_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
-    loop_j = dynamic_cast<structured_control_flow::For*>(&loop_k->root().at(0).first);
+    loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    loop_k = dyn_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
+    loop_j = dyn_cast<structured_control_flow::For*>(&loop_k->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopTiling(*loop_j, 256).can_be_applied(builder, am));
     recorder.apply<transformations::LoopTiling>(builder, am, false, *loop_j, 256);
@@ -216,8 +216,8 @@ TEST(BlockingTest, GEMM_Phase1_Tiling) {
     cleanup(builder, am);
 
     // Step 3: LoopTiling(k, KC=64)
-    loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    loop_k = dynamic_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
+    loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    loop_k = dyn_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopTiling(*loop_k, 64).can_be_applied(builder, am));
     recorder.apply<transformations::LoopTiling>(builder, am, false, *loop_k, 64);
@@ -225,7 +225,7 @@ TEST(BlockingTest, GEMM_Phase1_Tiling) {
     cleanup(builder, am);
 
     // Step 4: LoopTiling(i, MC=64)
-    loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopTiling(*loop_i, 64).can_be_applied(builder, am));
     recorder.apply<transformations::LoopTiling>(builder, am, false, *loop_i, 64);
@@ -233,30 +233,30 @@ TEST(BlockingTest, GEMM_Phase1_Tiling) {
     cleanup(builder, am);
 
     // Step 5: LoopInterchange(i, k_tile)
-    auto* i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    auto* i_inner = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    auto* k_tile = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    auto* i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* i_inner = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    auto* k_tile = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*i_inner, *k_tile).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *i_inner, *k_tile);
     am.invalidate_all();
 
     // Step 6: LoopInterchange(k, j_tile)
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    i_inner = dynamic_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
-    auto* k_inner = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
-    auto* j_tile = dynamic_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
+    auto* k_inner = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    auto* j_tile = dyn_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*k_inner, *j_tile).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *k_inner, *j_tile);
     am.invalidate_all();
 
     // Step 7: LoopInterchange(i, j_tile)
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    i_inner = dynamic_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
-    j_tile = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
+    j_tile = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*i_inner, *j_tile).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *i_inner, *j_tile);
@@ -307,18 +307,18 @@ TEST(BlockingTest, GEMM_Phase2_Packing) {
     // ========================================================================
 
     // Step 1: LoopInterchange(j, k) → i → k → j
-    auto* loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    auto* loop_j = dynamic_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
-    auto* loop_k = dynamic_cast<structured_control_flow::For*>(&loop_j->root().at(0).first);
+    auto* loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* loop_j = dyn_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
+    auto* loop_k = dyn_cast<structured_control_flow::For*>(&loop_j->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*loop_j, *loop_k).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *loop_j, *loop_k);
     am.invalidate_all();
 
     // Step 2: LoopTiling(j, NC=256)
-    loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    loop_k = dynamic_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
-    loop_j = dynamic_cast<structured_control_flow::For*>(&loop_k->root().at(0).first);
+    loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    loop_k = dyn_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
+    loop_j = dyn_cast<structured_control_flow::For*>(&loop_k->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopTiling(*loop_j, 256).can_be_applied(builder, am));
     recorder.apply<transformations::LoopTiling>(builder, am, false, *loop_j, 256);
@@ -326,8 +326,8 @@ TEST(BlockingTest, GEMM_Phase2_Packing) {
     cleanup(builder, am);
 
     // Step 3: LoopTiling(k, KC=64)
-    loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    loop_k = dynamic_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
+    loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    loop_k = dyn_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopTiling(*loop_k, 64).can_be_applied(builder, am));
     recorder.apply<transformations::LoopTiling>(builder, am, false, *loop_k, 64);
@@ -335,7 +335,7 @@ TEST(BlockingTest, GEMM_Phase2_Packing) {
     cleanup(builder, am);
 
     // Step 4: LoopTiling(i, MC=64)
-    loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopTiling(*loop_i, 64).can_be_applied(builder, am));
     recorder.apply<transformations::LoopTiling>(builder, am, false, *loop_i, 64);
@@ -343,30 +343,30 @@ TEST(BlockingTest, GEMM_Phase2_Packing) {
     cleanup(builder, am);
 
     // Step 5: LoopInterchange(i, k_tile)
-    auto* i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    auto* i_inner = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    auto* k_tile = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    auto* i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* i_inner = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    auto* k_tile = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*i_inner, *k_tile).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *i_inner, *k_tile);
     am.invalidate_all();
 
     // Step 6: LoopInterchange(k, j_tile)
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    i_inner = dynamic_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
-    auto* k_inner = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
-    auto* j_tile = dynamic_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
+    auto* k_inner = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    auto* j_tile = dyn_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*k_inner, *j_tile).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *k_inner, *j_tile);
     am.invalidate_all();
 
     // Step 7: LoopInterchange(i, j_tile)
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    i_inner = dynamic_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
-    j_tile = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
+    j_tile = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*i_inner, *j_tile).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *i_inner, *j_tile);
@@ -383,10 +383,9 @@ TEST(BlockingTest, GEMM_Phase2_Packing) {
     // ========================================================================
 
     // Navigate: i_tile → k_tile → j_tile → i → k → j
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    structured_control_flow::For* j_tile_loop = dynamic_cast<structured_control_flow::For*>(&k_tile->root().at(0).first
-    );
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    structured_control_flow::For* j_tile_loop = dyn_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
     ASSERT_NE(j_tile_loop, nullptr);
 
     // Step 8: InLocalStorage(j_tile, "A") - Pack A[MC×KC] panel
@@ -399,8 +398,8 @@ TEST(BlockingTest, GEMM_Phase2_Packing) {
 
     // Step 9: InLocalStorage(i_loop, "B") - Pack B[KC×NC] panel
     // B doesn't depend on i's indvar, so union across i iterations = KC×NC
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     j_tile_loop = find_last_for(k_tile->root());
     ASSERT_NE(j_tile_loop, nullptr);
     auto* i_point = find_last_for(j_tile_loop->root());
@@ -453,18 +452,18 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     // ========================================================================
 
     // Step 1: LoopInterchange(j, k) → i → k → j
-    auto* loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    auto* loop_j = dynamic_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
-    auto* loop_k = dynamic_cast<structured_control_flow::For*>(&loop_j->root().at(0).first);
+    auto* loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* loop_j = dyn_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
+    auto* loop_k = dyn_cast<structured_control_flow::For*>(&loop_j->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*loop_j, *loop_k).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *loop_j, *loop_k);
     am.invalidate_all();
 
     // Step 2: LoopTiling(j, NC=256)
-    loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    loop_k = dynamic_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
-    loop_j = dynamic_cast<structured_control_flow::For*>(&loop_k->root().at(0).first);
+    loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    loop_k = dyn_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
+    loop_j = dyn_cast<structured_control_flow::For*>(&loop_k->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopTiling(*loop_j, 256).can_be_applied(builder, am));
     recorder.apply<transformations::LoopTiling>(builder, am, false, *loop_j, 256);
@@ -472,8 +471,8 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     cleanup(builder, am);
 
     // Step 3: LoopTiling(k, KC=64)
-    loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    loop_k = dynamic_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
+    loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    loop_k = dyn_cast<structured_control_flow::For*>(&loop_i->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopTiling(*loop_k, 64).can_be_applied(builder, am));
     recorder.apply<transformations::LoopTiling>(builder, am, false, *loop_k, 64);
@@ -481,7 +480,7 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     cleanup(builder, am);
 
     // Step 4: LoopTiling(i, MC=64)
-    loop_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    loop_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopTiling(*loop_i, 64).can_be_applied(builder, am));
     recorder.apply<transformations::LoopTiling>(builder, am, false, *loop_i, 64);
@@ -489,30 +488,30 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     cleanup(builder, am);
 
     // Step 5: LoopInterchange(i, k_tile)
-    auto* i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    auto* i_inner = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    auto* k_tile = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    auto* i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* i_inner = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    auto* k_tile = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*i_inner, *k_tile).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *i_inner, *k_tile);
     am.invalidate_all();
 
     // Step 6: LoopInterchange(k, j_tile)
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    i_inner = dynamic_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
-    auto* k_inner = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
-    auto* j_tile = dynamic_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
+    auto* k_inner = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    auto* j_tile = dyn_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*k_inner, *j_tile).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *k_inner, *j_tile);
     am.invalidate_all();
 
     // Step 7: LoopInterchange(i, j_tile)
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    i_inner = dynamic_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
-    j_tile = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
+    j_tile = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
 
     ASSERT_TRUE(transformations::LoopInterchange(*i_inner, *j_tile).can_be_applied(builder, am));
     recorder.apply<transformations::LoopInterchange>(builder, am, false, *i_inner, *j_tile);
@@ -523,9 +522,9 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     // ========================================================================
 
     // Navigate: i_tile → k_tile → j_tile → i → k → j
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
-    auto* j_tile_loop = dynamic_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    auto* j_tile_loop = dyn_cast<structured_control_flow::For*>(&k_tile->root().at(0).first);
     ASSERT_NE(j_tile_loop, nullptr);
 
     // Step 8: InLocalStorage(j_tile, "A") - A doesn't depend on j
@@ -536,8 +535,8 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     cleanup(builder, am);
 
     // Step 9: InLocalStorage(i_loop, "B") - B doesn't depend on i
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     j_tile_loop = find_last_for(k_tile->root());
     ASSERT_NE(j_tile_loop, nullptr);
     auto* i_point = find_last_for(j_tile_loop->root());
@@ -554,8 +553,8 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     // ========================================================================
 
     // Find the i point loop inside j_tile (last For in j_tile's root)
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     j_tile_loop = find_last_for(k_tile->root());
     i_point = find_last_for(j_tile_loop->root());
     ASSERT_NE(i_point, nullptr);
@@ -567,19 +566,19 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     cleanup(builder, am);
 
     // Navigate to j loop: i_tile → k_tile → j_tile → i_micro → i → k → j
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     j_tile_loop = find_last_for(k_tile->root());
     auto* i_micro = find_last_for(j_tile_loop->root());
     ASSERT_NE(i_micro, nullptr);
 
-    i_inner = dynamic_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
     ASSERT_NE(i_inner, nullptr);
 
-    k_inner = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    k_inner = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
     ASSERT_NE(k_inner, nullptr);
 
-    auto* j_inner = dynamic_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
+    auto* j_inner = dyn_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
     ASSERT_NE(j_inner, nullptr);
 
     // Step 11: LoopTiling(j, NR=8)
@@ -589,13 +588,13 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     cleanup(builder, am);
 
     // Re-navigate: i_micro → i → k → j_micro → j
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     j_tile_loop = find_last_for(k_tile->root());
     i_micro = find_last_for(j_tile_loop->root());
-    i_inner = dynamic_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
-    k_inner = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
-    auto* j_micro = dynamic_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
+    k_inner = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    auto* j_micro = dyn_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
 
     // Step 12: LoopInterchange(i, k) → i_micro → k → i → j_micro → j
     ASSERT_TRUE(transformations::LoopInterchange(*i_inner, *k_inner).can_be_applied(builder, am));
@@ -603,13 +602,13 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     am.invalidate_all();
 
     // Re-navigate after interchange
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     j_tile_loop = find_last_for(k_tile->root());
     i_micro = find_last_for(j_tile_loop->root());
-    k_inner = dynamic_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
-    i_inner = dynamic_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
-    j_micro = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    k_inner = dyn_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
+    j_micro = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
 
     // Step 13: LoopInterchange(i, j_micro) → i_micro → k → j_micro → i → j
     ASSERT_TRUE(transformations::LoopInterchange(*i_inner, *j_micro).can_be_applied(builder, am));
@@ -617,12 +616,12 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     am.invalidate_all();
 
     // Re-navigate after interchange
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     j_tile_loop = find_last_for(k_tile->root());
     i_micro = find_last_for(j_tile_loop->root());
-    k_inner = dynamic_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
-    j_micro = dynamic_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
+    k_inner = dyn_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
+    j_micro = dyn_cast<structured_control_flow::For*>(&k_inner->root().at(0).first);
 
     // Step 14: LoopInterchange(k, j_micro) → i_micro → j_micro → k → i → j
     ASSERT_TRUE(transformations::LoopInterchange(*k_inner, *j_micro).can_be_applied(builder, am));
@@ -632,12 +631,12 @@ TEST(BlockingTest, GEMM_Phase3_RegisterBlocking) {
     // Step 15: OutLocalStorage(k_loop, "C") - register tile MR×NR
     // C[i*N+j] doesn't depend on k → union across k iterations = MR×NR
     // After interchanges: i_micro → j_micro → k → i → j
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    k_tile = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    k_tile = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     j_tile_loop = find_last_for(k_tile->root());
     i_micro = find_last_for(j_tile_loop->root());
-    j_micro = dynamic_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
-    auto* k_point = dynamic_cast<structured_control_flow::For*>(&j_micro->root().at(0).first);
+    j_micro = dyn_cast<structured_control_flow::For*>(&i_micro->root().at(0).first);
+    auto* k_point = dyn_cast<structured_control_flow::For*>(&j_micro->root().at(0).first);
     ASSERT_NE(k_point, nullptr);
 
     auto& c_access_p3 = find_access_node(am, *k_point, "C");
@@ -759,8 +758,8 @@ TEST(BlockingTest, GEMV_Optimized) {
     ASSERT_EQ(initial_order[1], "j");
 
     // Get loops
-    auto* i_loop = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    auto* j_loop = dynamic_cast<structured_control_flow::For*>(&i_loop->root().at(0).first);
+    auto* i_loop = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* j_loop = dyn_cast<structured_control_flow::For*>(&i_loop->root().at(0).first);
 
     // Step 1: OutLocalStorage(j_loop, "y") - scalar accumulator for y[i]
     auto& y_access = find_access_node(am, *j_loop, "y");
@@ -770,7 +769,7 @@ TEST(BlockingTest, GEMV_Optimized) {
     cleanup(builder, am);
 
     // Step 2: LoopTiling(j, JC=64) - tile j for cache blocking
-    i_loop = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    i_loop = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     j_loop = find_last_for(i_loop->root());
     ASSERT_NE(j_loop, nullptr);
 
@@ -781,7 +780,7 @@ TEST(BlockingTest, GEMV_Optimized) {
 
     // Step 3: InLocalStorage(j_inner, "x") - pack x[JC] per tile
     // x[j] at j_inner level: j ranges j_tile..min(j_tile+JC, N) → extent JC
-    i_loop = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    i_loop = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     auto* j_tile = find_last_for(i_loop->root());
     ASSERT_NE(j_tile, nullptr);
     auto* j_inner = find_last_for(j_tile->root());
@@ -992,7 +991,7 @@ TEST(BlockingTest, LU_BlockedPipeline) {
     // -----------------------------------------------------------------------
     // Step 1: LoopTiling(i, 64) -> outer i_tile, inner i.
     // -----------------------------------------------------------------------
-    auto* i_loop = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* i_loop = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     ASSERT_NE(i_loop, nullptr);
     EXPECT_EQ(i_loop->indvar()->get_name(), "i");
 
@@ -1003,19 +1002,19 @@ TEST(BlockingTest, LU_BlockedPipeline) {
     cleanup(builder, am);
 
     // After tiling: root -> i_tile -> i -> {ChildA (j_loop), ChildB (j2_loop)}
-    auto* i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     ASSERT_NE(i_tile, nullptr);
     const std::string i_tile_name = i_tile->indvar()->get_name();
     EXPECT_NE(i_tile_name.find("i_tile"), std::string::npos);
 
-    auto* i_inner = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    auto* i_inner = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     ASSERT_NE(i_inner, nullptr);
     EXPECT_EQ(i_inner->indvar()->get_name(), "i");
 
     // i_inner body must have the two original children
     ASSERT_EQ(i_inner->root().size(), 2u);
-    auto* j_loop = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
-    auto* j2_loop = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(1).first);
+    auto* j_loop = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(0).first);
+    auto* j2_loop = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(1).first);
     ASSERT_NE(j_loop, nullptr);
     ASSERT_NE(j2_loop, nullptr);
     EXPECT_EQ(j_loop->indvar()->get_name(), "j");
@@ -1042,12 +1041,12 @@ TEST(BlockingTest, LU_BlockedPipeline) {
     cleanup(builder, am);
 
     // After split, inner_i now has 3 children: j_loop, j2_in_panel, j2_trailing.
-    i_tile = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
-    i_inner = dynamic_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
+    i_tile = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    i_inner = dyn_cast<structured_control_flow::For*>(&i_tile->root().at(0).first);
     ASSERT_EQ(i_inner->root().size(), 3u);
 
-    auto* j2_in_panel = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(1).first);
-    auto* j2_trailing = dynamic_cast<structured_control_flow::For*>(&i_inner->root().at(2).first);
+    auto* j2_in_panel = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(1).first);
+    auto* j2_trailing = dyn_cast<structured_control_flow::For*>(&i_inner->root().at(2).first);
     ASSERT_NE(j2_in_panel, nullptr);
     ASSERT_NE(j2_trailing, nullptr);
 
@@ -1090,7 +1089,7 @@ TEST(BlockingTest, LU_BlockedPipeline) {
     // children (ChildA + in-panel) AND a sibling i_inner contains the
     // trailing j2.
     {
-        auto* i_tile_after = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+        auto* i_tile_after = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
         ASSERT_NE(i_tile_after, nullptr);
         // i_tile body should now hold the prefix i_inner, the distributed
         // (center) i_inner, and possibly nothing else (no suffix piece).

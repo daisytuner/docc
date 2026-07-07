@@ -23,11 +23,11 @@ TEST(StructuredSDFGDeepCopy, Block) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&inserted_root->at(0).first));
     EXPECT_EQ(inserted_root->at(0).second.size(), 0);
 }
 
@@ -50,11 +50,11 @@ TEST(StructuredSDFGDeepCopy, Block_WithAssignments) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&inserted_root->at(0).first));
     EXPECT_EQ(inserted_root->at(0).second.size(), 1);
 }
 
@@ -76,13 +76,13 @@ TEST(StructuredSDFGDeepCopy, Block_WithLibraryNodebarrier_local) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&inserted_root->at(0).first));
     EXPECT_EQ(inserted_root->at(0).second.size(), 0);
-    auto inserted_block = dynamic_cast<structured_control_flow::Block*>(&inserted_root->at(0).first);
+    auto inserted_block = dyn_cast<structured_control_flow::Block*>(&inserted_root->at(0).first);
     EXPECT_EQ(inserted_block->dataflow().nodes().size(), 1);
     EXPECT_TRUE(dynamic_cast<data_flow::LibraryNode*>(&(*inserted_block->dataflow().nodes().begin())));
     auto inserted_barrier = dynamic_cast<data_flow::LibraryNode*>(&(*inserted_block->dataflow().nodes().begin()));
@@ -108,11 +108,11 @@ TEST(StructuredSDFGDeepCopy, Sequence) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Sequence*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Sequence*>(&inserted_root->at(0).first));
     EXPECT_EQ(inserted_root->at(0).second.size(), 0);
 }
 
@@ -135,11 +135,11 @@ TEST(StructuredSDFGDeepCopy, Sequence_WithAssignments) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Sequence*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Sequence*>(&inserted_root->at(0).first));
     EXPECT_EQ(inserted_root->at(0).second.size(), 1);
 }
 
@@ -160,11 +160,11 @@ TEST(StructuredSDFGDeepCopy, Return) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Return*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Return*>(&inserted_root->at(0).first));
     EXPECT_EQ(inserted_root->at(0).second.size(), 0);
 }
 
@@ -185,11 +185,11 @@ TEST(StructuredSDFGDeepCopy, While) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::While*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::While*>(&inserted_root->at(0).first));
     EXPECT_EQ(inserted_root->at(0).second.size(), 0);
 }
 
@@ -211,17 +211,17 @@ TEST(StructuredSDFGDeepCopy, Break) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::While*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::While*>(&inserted_root->at(0).first));
     EXPECT_EQ(inserted_root->at(0).second.size(), 0);
 
-    auto inserted_loop = dynamic_cast<structured_control_flow::While*>(&inserted_root->at(0).first);
+    auto inserted_loop = dyn_cast<structured_control_flow::While*>(&inserted_root->at(0).first);
     EXPECT_TRUE(inserted_loop);
     EXPECT_EQ(inserted_loop->root().size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Break*>(&inserted_loop->root().at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Break*>(&inserted_loop->root().at(0).first));
 }
 
 TEST(StructuredSDFGDeepCopy, Continue) {
@@ -242,17 +242,17 @@ TEST(StructuredSDFGDeepCopy, Continue) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::While*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::While*>(&inserted_root->at(0).first));
     EXPECT_EQ(inserted_root->at(0).second.size(), 0);
 
-    auto inserted_loop = dynamic_cast<structured_control_flow::While*>(&inserted_root->at(0).first);
+    auto inserted_loop = dyn_cast<structured_control_flow::While*>(&inserted_root->at(0).first);
     EXPECT_TRUE(inserted_loop);
     EXPECT_EQ(inserted_loop->root().size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Continue*>(&inserted_loop->root().at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Continue*>(&inserted_loop->root().at(0).first));
 }
 
 TEST(StructuredSDFGDeepCopy, For) {
@@ -277,13 +277,13 @@ TEST(StructuredSDFGDeepCopy, For) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::For*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&inserted_root->at(0).first));
 
-    auto inserted_loop = dynamic_cast<structured_control_flow::For*>(&inserted_root->at(0).first);
+    auto inserted_loop = dyn_cast<structured_control_flow::For*>(&inserted_root->at(0).first);
     EXPECT_TRUE(inserted_loop);
     EXPECT_EQ(inserted_loop->root().size(), 0);
     EXPECT_TRUE(symbolic::eq(inserted_loop->indvar(), loopvar));
@@ -316,13 +316,13 @@ TEST(StructuredSDFGDeepCopy, Map) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Map*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&inserted_root->at(0).first));
 
-    auto inserted_map = dynamic_cast<structured_control_flow::Map*>(&inserted_root->at(0).first);
+    auto inserted_map = dyn_cast<structured_control_flow::Map*>(&inserted_root->at(0).first);
     EXPECT_TRUE(inserted_map);
     EXPECT_EQ(inserted_map->root().size(), 0);
 
@@ -358,13 +358,13 @@ TEST(StructuredSDFGDeepCopy, Reduce) {
     EXPECT_EQ(root_target.size(), 1);
     auto inserted = root_target.at(0);
     EXPECT_EQ(inserted.second.size(), 0);
-    auto inserted_root = dynamic_cast<structured_control_flow::Sequence*>(&inserted.first);
+    auto inserted_root = dyn_cast<structured_control_flow::Sequence*>(&inserted.first);
     EXPECT_TRUE(inserted_root);
 
     EXPECT_EQ(inserted_root->size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Reduce*>(&inserted_root->at(0).first));
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Reduce*>(&inserted_root->at(0).first));
 
-    auto inserted_reduce = dynamic_cast<structured_control_flow::Reduce*>(&inserted_root->at(0).first);
+    auto inserted_reduce = dyn_cast<structured_control_flow::Reduce*>(&inserted_root->at(0).first);
     EXPECT_TRUE(inserted_reduce);
     EXPECT_EQ(inserted_reduce->root().size(), 0);
 

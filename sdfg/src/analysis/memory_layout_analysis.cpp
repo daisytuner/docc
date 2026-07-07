@@ -52,18 +52,18 @@ bool layout_has_unbounded_first_dim(const MemoryLayout& layout) {
 void collect_direct_child_scopes(
     structured_control_flow::ControlFlowNode& scope, std::set<const structured_control_flow::ControlFlowNode*>& result
 ) {
-    if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&scope)) {
+    if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&scope)) {
         result.insert(&loop->root());
-    } else if (auto* w = dynamic_cast<structured_control_flow::While*>(&scope)) {
+    } else if (auto* w = dyn_cast<structured_control_flow::While*>(&scope)) {
         result.insert(&w->root());
-    } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&scope)) {
+    } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&scope)) {
         for (size_t i = 0; i < seq->size(); i++) {
             auto& child = seq->at(i).first;
-            if (!dynamic_cast<structured_control_flow::Block*>(&child)) {
+            if (!dyn_cast<structured_control_flow::Block*>(&child)) {
                 result.insert(&child);
             }
         }
-    } else if (auto* ife = dynamic_cast<structured_control_flow::IfElse*>(&scope)) {
+    } else if (auto* ife = dyn_cast<structured_control_flow::IfElse*>(&scope)) {
         for (size_t i = 0; i < ife->size(); i++) {
             result.insert(&ife->at(i).first);
         }
@@ -102,19 +102,19 @@ void MemoryLayoutAnalysis::
         tiles_before.insert(entry.first);
     }
 
-    if (auto block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+    if (auto block = dyn_cast<structured_control_flow::Block*>(&node)) {
         process_block(*block, analysis_manager);
-    } else if (auto sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+    } else if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         for (size_t i = 0; i < sequence->size(); i++) {
             traverse(sequence->at(i).first, analysis_manager);
         }
-    } else if (auto if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+    } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
         for (size_t i = 0; i < if_else->size(); i++) {
             traverse(if_else->at(i).first, analysis_manager);
         }
-    } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&node)) {
+    } else if (auto while_stmt = dyn_cast<structured_control_flow::While*>(&node)) {
         traverse(while_stmt->root(), analysis_manager);
-    } else if (auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+    } else if (auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
         traverse(loop->root(), analysis_manager);
     } else {
         // Break, Continue, Return nodes don't contain blocks
@@ -285,7 +285,7 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         });
     }
 
-    auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&scope);
+    auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&scope);
 
     auto& assumptions_analysis = *this->detailed_assumptions_;
     // For loops, query at the loop body so the induction variable's bounds are visible.
@@ -330,17 +330,17 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
     symbolic::SymbolSet excluded_indvars;
     const bool scope_is_loop_body = !loop && [&]() {
         auto* parent = scope.get_parent();
-        auto* parent_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(parent);
+        auto* parent_loop = dyn_cast<structured_control_flow::StructuredLoop*>(parent);
         return parent_loop && &parent_loop->root() == &scope;
     }();
     if (loop) {
         excluded_indvars.insert(loop->indvar());
     } else if (scope_is_loop_body) {
-        auto* parent_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(scope.get_parent());
+        auto* parent_loop = dyn_cast<structured_control_flow::StructuredLoop*>(scope.get_parent());
         excluded_indvars.insert(parent_loop->indvar());
     } else {
         for (auto* cur = scope.get_parent(); cur; cur = cur->get_parent()) {
-            if (auto* l = dynamic_cast<structured_control_flow::StructuredLoop*>(cur)) {
+            if (auto* l = dyn_cast<structured_control_flow::StructuredLoop*>(cur)) {
                 excluded_indvars.insert(l->indvar());
             }
         }

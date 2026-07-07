@@ -250,7 +250,7 @@ void register_transformations(py::module& m) {
                         if (!value.contains("element_id")) continue;
                         auto element_id = value["element_id"].get<size_t>();
                         auto* elem = builder.builder().find_element_by_id(element_id);
-                        if (dynamic_cast<sdfg::structured_control_flow::StructuredLoop*>(elem) == nullptr) continue;
+                        if (sdfg::dyn_cast<sdfg::structured_control_flow::StructuredLoop*>(elem) == nullptr) continue;
                         auto* loop = static_cast<sdfg::structured_control_flow::ControlFlowNode*>(elem);
                         auto loop_info = loop_analysis.loop_info(loop);
                         value["loop_info"] = loop_info_to_json(loop_info);

@@ -807,7 +807,7 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
     // If return is present, remove it and everything after it
     size_t return_index = kernel_root.size();
     for (size_t i = 0; i < kernel_root.size(); i++) {
-        if (dynamic_cast<sdfg::structured_control_flow::Return*>(&kernel_root.at(i).first)) {
+        if (sdfg::dyn_cast<sdfg::structured_control_flow::Return*>(&kernel_root.at(i).first)) {
             return_index = i;
             break;
         }
@@ -836,7 +836,7 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
         }
 
         // Child must be a block
-        auto* block = dynamic_cast<sdfg::structured_control_flow::Block*>(&kernel_root.at(0).first);
+        auto* block = sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&kernel_root.at(0).first);
         if (!block) {
             break;
         }
@@ -1242,8 +1242,8 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
         }
 
         // Child must be a block
-        auto* block = dynamic_cast<sdfg::structured_control_flow::Block*>(&kernel_root.at(kernel_root.size() - 1).first
-        );
+        auto* block =
+            sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&kernel_root.at(kernel_root.size() - 1).first);
         if (!block) {
             break;
         }

@@ -237,14 +237,14 @@ bool BlockFusion::accept(structured_control_flow::Sequence& node) {
     size_t i = 0;
     while (i < (node.size() - 1)) {
         auto current_entry = node.at(i);
-        if (dynamic_cast<structured_control_flow::Block*>(&current_entry.first) == nullptr) {
+        if (dyn_cast<structured_control_flow::Block*>(&current_entry.first) == nullptr) {
             i++;
             continue;
         }
         auto current_block = static_cast<structured_control_flow::Block*>(&current_entry.first);
 
         auto next_entry = node.at(i + 1);
-        if (dynamic_cast<structured_control_flow::Block*>(&next_entry.first) == nullptr) {
+        if (dyn_cast<structured_control_flow::Block*>(&next_entry.first) == nullptr) {
             i++;
             continue;
         }

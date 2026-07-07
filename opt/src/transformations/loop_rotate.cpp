@@ -117,7 +117,7 @@ void LoopRotate::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     // Reconstruct original indvar value after loop exit
     // After loop, indvar holds transformed final value; we restore: indvar = old_init + new_init - indvar
     auto parent_node = loop_.get_parent();
-    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);
+    auto* parent = dyn_cast<structured_control_flow::Sequence*>(parent_node);
     if (parent) {
         builder.add_block_after(*parent, loop_, {{indvar, rotated_value}}, loop_.debug_info());
     }
@@ -141,7 +141,7 @@ LoopRotate LoopRotate::from_json(builder::StructuredSDFGBuilder& builder, const 
         throw std::runtime_error("Element with ID " + std::to_string(loop_id) + " not found.");
     }
 
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw std::runtime_error("Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop.");
     }

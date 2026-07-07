@@ -58,6 +58,10 @@ public:
     For(const For& node) = delete;
     For& operator=(const For&) = delete;
 
+    ElementType type_id() const override { return ElementType::For; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::For; }
+
     void validate(const Function& function) const override;
 };
 

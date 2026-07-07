@@ -22,10 +22,10 @@ bool PerfectLoopDistributionPass::can_be_applied(
     bool has_subloop = false;
     for (size_t i = 0; i < loop.root().size(); i++) {
         // skip blocks
-        if (dynamic_cast<structured_control_flow::Block*>(&loop.root().at(i).first)) {
+        if (dyn_cast<structured_control_flow::Block*>(&loop.root().at(i).first)) {
             continue;
         }
-        if (dynamic_cast<structured_control_flow::StructuredLoop*>(&loop.root().at(i).first)) {
+        if (dyn_cast<structured_control_flow::StructuredLoop*>(&loop.root().at(i).first)) {
             has_subloop = true;
             break;
         }
@@ -91,7 +91,7 @@ bool PerfectLoopDistributionPass::
                 break;
             }
             auto* node = path[depth - 1];
-            auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(node);
+            auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(node);
             if (loop) {
                 loops_at_depth.insert(loop);
             }

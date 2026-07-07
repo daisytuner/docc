@@ -35,9 +35,9 @@ namespace {
 void collect_blocks(structured_control_flow::Sequence& seq, std::vector<structured_control_flow::Block*>& blocks) {
     for (size_t i = 0; i < seq.size(); ++i) {
         auto& child = seq.at(i).first;
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&child)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&child)) {
             blocks.push_back(block);
-        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+        } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
             collect_blocks(loop->root(), blocks);
         }
     }
@@ -47,9 +47,9 @@ void collect_blocks(structured_control_flow::Sequence& seq, std::vector<structur
 structured_control_flow::Block* get_first_block(structured_control_flow::Sequence& seq) {
     for (size_t i = 0; i < seq.size(); ++i) {
         auto& child = seq.at(i).first;
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&child)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&child)) {
             return block;
-        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+        } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
             auto* result = get_first_block(loop->root());
             if (result) return result;
         }
@@ -187,7 +187,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
         return false;
     }
 
-    auto* parent_sequence = dynamic_cast<structured_control_flow::Sequence*>(first_parent);
+    auto* parent_sequence = dyn_cast<structured_control_flow::Sequence*>(first_parent);
     if (parent_sequence == nullptr) {
         return false;
     }
@@ -244,7 +244,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     if (first_map_.root().size() != 1) {
         return false;
     }
-    auto* first_inner_map = dynamic_cast<structured_control_flow::Map*>(&first_map_.root().at(0).first);
+    auto* first_inner_map = dyn_cast<structured_control_flow::Map*>(&first_map_.root().at(0).first);
     if (first_inner_map == nullptr) {
         return false;
     }
@@ -252,7 +252,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     if (second_map_.root().size() != 1) {
         return false;
     }
-    auto* second_inner_map = dynamic_cast<structured_control_flow::Map*>(&second_map_.root().at(0).first);
+    auto* second_inner_map = dyn_cast<structured_control_flow::Map*>(&second_map_.root().at(0).first);
     if (second_inner_map == nullptr) {
         return false;
     }
@@ -605,8 +605,8 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     auto tile_size_expr = stride;
 
     // Get references to inner maps before moving
-    auto* first_inner_map = dynamic_cast<structured_control_flow::Map*>(&first_map_.root().at(0).first);
-    auto* second_inner_map = dynamic_cast<structured_control_flow::Map*>(&second_map_.root().at(0).first);
+    auto* first_inner_map = dyn_cast<structured_control_flow::Map*>(&first_map_.root().at(0).first);
+    auto* second_inner_map = dyn_cast<structured_control_flow::Map*>(&second_map_.root().at(0).first);
 
     // Extract inner map properties before they get moved
     auto first_inner_indvar = first_inner_map->indvar();
@@ -970,7 +970,7 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
         std::function<void(structured_control_flow::ControlFlowNode&)> rewrite_accesses;
         rewrite_accesses = [&](structured_control_flow::ControlFlowNode& node) {
-            if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+            if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
                 auto& dfg = block->dataflow();
                 for (auto* access : dfg.data_nodes()) {
                     if (access->data() != cyc.container) continue;
@@ -984,13 +984,13 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
                         access->data(buf_cur_name);
                     }
                 }
-            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+            } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
                 for (size_t i = 0; i < seq->size(); i++) {
                     rewrite_accesses(seq->at(i).first);
                 }
-            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+            } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
                 rewrite_accesses(loop->root());
-            } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+            } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
                 for (size_t i = 0; i < if_else->size(); i++) {
                     rewrite_accesses(if_else->at(i).first);
                 }
@@ -1049,8 +1049,8 @@ TileFusion TileFusion::from_json(builder::StructuredSDFGBuilder& builder, const 
         );
     }
 
-    auto* first_map = dynamic_cast<structured_control_flow::Map*>(first_element);
-    auto* second_map = dynamic_cast<structured_control_flow::Map*>(second_element);
+    auto* first_map = dyn_cast<structured_control_flow::Map*>(first_element);
+    auto* second_map = dyn_cast<structured_control_flow::Map*>(second_element);
 
     if (first_map == nullptr) {
         throw InvalidTransformationDescriptionException(

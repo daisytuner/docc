@@ -11,8 +11,8 @@ std::string VectorizeTransform::name() const { return "VectorizeTransform"; }
 
 bool VectorizeTransform::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    if (dynamic_cast<structured_control_flow::Map*>(&loop_) == nullptr &&
-        dynamic_cast<structured_control_flow::Reduce*>(&loop_) == nullptr) {
+    if (dyn_cast<structured_control_flow::Map*>(&loop_) == nullptr &&
+        dyn_cast<structured_control_flow::Reduce*>(&loop_) == nullptr) {
         if (report_) report_->transform_impossible(this, "not a Map or Reduce");
         return false;
     }
@@ -52,7 +52,7 @@ VectorizeTransform VectorizeTransform::from_json(builder::StructuredSDFGBuilder&
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
 
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw InvalidTransformationDescriptionException(
             "Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop."

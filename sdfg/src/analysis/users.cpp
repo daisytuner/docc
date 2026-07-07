@@ -172,7 +172,7 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(data_flow::DataFlowGraph
 };
 
 std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow::ControlFlowNode& node) {
-    if (auto block_stmt = dynamic_cast<structured_control_flow::Block*>(&node)) {
+    if (auto block_stmt = dyn_cast<structured_control_flow::Block*>(&node)) {
         // NOP
         auto s = boost::add_vertex(this->graph_);
         this->users_.insert({s, std::make_unique<User>(s, "", block_stmt, Use::NOP)});
@@ -196,7 +196,7 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         boost::add_edge(subgraph.second, t, this->graph_);
 
         return {s, t};
-    } else if (auto sequence_stmt = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+    } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         auto s = boost::add_vertex(this->graph_);
         this->users_.insert({s, std::make_unique<User>(s, "", sequence_stmt, Use::NOP)});
         this->entries_.insert({sequence_stmt, this->users_.at(s).get()});
@@ -252,7 +252,7 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         this->exits_.insert({sequence_stmt, this->users_.at(t).get()});
 
         return {s, t};
-    } else if (auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+    } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&node)) {
         // NOP
         auto s = boost::add_vertex(this->graph_);
         this->users_.insert({s, std::make_unique<User>(s, "", if_else_stmt, Use::NOP)});
@@ -304,7 +304,7 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         }
 
         return {s, t};
-    } else if (auto loop_stmt = dynamic_cast<structured_control_flow::While*>(&node)) {
+    } else if (auto loop_stmt = dyn_cast<structured_control_flow::While*>(&node)) {
         // NOP
         auto s = boost::add_vertex(this->graph_);
         this->users_.insert({s, std::make_unique<User>(s, "", loop_stmt, Use::NOP)});
@@ -328,7 +328,7 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         boost::add_edge(t, s, this->graph_);
 
         return {s, t};
-    } else if (auto for_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+    } else if (auto for_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
         // NOP
         auto s = boost::add_vertex(this->graph_);
         this->users_.insert({s, std::make_unique<User>(s, "", for_stmt, Use::NOP)});
@@ -394,21 +394,21 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         boost::add_edge(t, last, this->graph_);
 
         return {s, t};
-    } else if (auto cont_stmt = dynamic_cast<structured_control_flow::Continue*>(&node)) {
+    } else if (auto cont_stmt = dyn_cast<structured_control_flow::Continue*>(&node)) {
         // Approximated by general back edge in loop scope
         auto v = boost::add_vertex(this->graph_);
         this->users_.insert({v, std::make_unique<User>(v, "", cont_stmt, Use::NOP)});
         this->entries_.insert({cont_stmt, this->users_.at(v).get()});
         this->exits_.insert({cont_stmt, this->users_.at(v).get()});
         return {v, v};
-    } else if (auto br_stmt = dynamic_cast<structured_control_flow::Break*>(&node)) {
+    } else if (auto br_stmt = dyn_cast<structured_control_flow::Break*>(&node)) {
         // Approximated by general back edge in loop scope
         auto v = boost::add_vertex(this->graph_);
         this->users_.insert({v, std::make_unique<User>(v, "", br_stmt, Use::NOP)});
         this->entries_.insert({br_stmt, this->users_.at(v).get()});
         this->exits_.insert({br_stmt, this->users_.at(v).get()});
         return {v, v};
-    } else if (auto ret_stmt = dynamic_cast<structured_control_flow::Return*>(&node)) {
+    } else if (auto ret_stmt = dyn_cast<structured_control_flow::Return*>(&node)) {
         if (!ret_stmt->is_data() || ret_stmt->data().empty()) {
             auto v = boost::add_vertex(this->graph_);
             this->users_.insert({v, std::make_unique<User>(v, "", ret_stmt, Use::NOP)});
@@ -631,10 +631,10 @@ structured_control_flow::ControlFlowNode* Users::scope(User* user) {
         return static_cast<structured_control_flow::Block*>(data_node->get_parent().get_parent());
     } else if (auto memlet = dynamic_cast<data_flow::Memlet*>(user->element())) {
         return static_cast<structured_control_flow::Block*>(memlet->get_parent().get_parent());
-    } else if (auto transition = dynamic_cast<structured_control_flow::Transition*>(user->element())) {
+    } else if (auto transition = dyn_cast<structured_control_flow::Transition*>(user->element())) {
         return &transition->parent();
     } else {
-        auto user_element = dynamic_cast<structured_control_flow::ControlFlowNode*>(user->element());
+        auto user_element = dyn_cast<structured_control_flow::ControlFlowNode*>(user->element());
         assert(user_element != nullptr && "Users::scope: User element is not a ControlFlowNode");
         return user_element;
     }
@@ -1001,7 +1001,7 @@ void Users::add_user(std::unique_ptr<User> user) {
     bool is_condition = false;
     bool is_update = false;
     if (auto for_user = dynamic_cast<ForUser*>(user_ptr)) {
-        auto for_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(user_ptr->element());
+        auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(user_ptr->element());
         if (for_loop == nullptr) {
             throw std::invalid_argument("Invalid user type");
         }

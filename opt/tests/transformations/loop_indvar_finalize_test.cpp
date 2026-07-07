@@ -51,7 +51,7 @@ TEST(LoopIndvarFinalizeTest, AfterLoopShift) {
     analysis::AnalysisManager am(builder2.subject());
 
     auto& sdfg_root = builder2.subject().root();
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopShift
@@ -120,7 +120,7 @@ TEST(LoopIndvarFinalizeTest, AfterLoopShiftAndUnitStride) {
     analysis::AnalysisManager am(builder2.subject());
 
     auto& sdfg_root = builder2.subject().root();
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopShift (shifts init from 2 to 0)
@@ -186,7 +186,7 @@ TEST(LoopIndvarFinalizeTest, CanApplyToNormalizedLoop) {
     analysis::AnalysisManager am(builder2.subject());
 
     auto& sdfg_root = builder2.subject().root();
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Loop is already normalized
@@ -234,7 +234,7 @@ TEST(LoopIndvarFinalizeTest, CannotApplyNotNormalForm) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Loop is not in normal form

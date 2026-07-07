@@ -22,7 +22,7 @@ bool WhileToForConversion::can_be_applied(
     if (end_of_body.second.size() > 0) {
         return false;
     }
-    auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(&end_of_body.first);
+    auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&end_of_body.first);
     if (!if_else_stmt || if_else_stmt->size() != 2) {
         return false;
     }
@@ -34,9 +34,9 @@ bool WhileToForConversion::can_be_applied(
         return false;
     }
     auto first_condition = if_else_stmt->at(0).second;
-    if (dynamic_cast<structured_control_flow::Break*>(&first_branch.at(0).first)) {
+    if (dyn_cast<structured_control_flow::Break*>(&first_branch.at(0).first)) {
         first_is_break = true;
-    } else if (dynamic_cast<structured_control_flow::Continue*>(&first_branch.at(0).first)) {
+    } else if (dyn_cast<structured_control_flow::Continue*>(&first_branch.at(0).first)) {
         first_is_continue = true;
     }
     if (!first_is_break && !first_is_continue) {
@@ -50,9 +50,9 @@ bool WhileToForConversion::can_be_applied(
         return false;
     }
     auto second_condition = if_else_stmt->at(1).second;
-    if (dynamic_cast<structured_control_flow::Break*>(&second_branch.at(0).first)) {
+    if (dyn_cast<structured_control_flow::Break*>(&second_branch.at(0).first)) {
         second_is_break = true;
-    } else if (dynamic_cast<structured_control_flow::Continue*>(&second_branch.at(0).first)) {
+    } else if (dyn_cast<structured_control_flow::Continue*>(&second_branch.at(0).first)) {
         second_is_continue = true;
     }
     if (!second_is_break && !second_is_continue) {
@@ -88,7 +88,7 @@ bool WhileToForConversion::can_be_applied(
             if (update_write != nullptr) {
                 return false;
             }
-            if (!dynamic_cast<structured_control_flow::Transition*>(writes.at(0)->element())) {
+            if (!dyn_cast<structured_control_flow::Transition*>(writes.at(0)->element())) {
                 return false;
             }
             update_write = writes.at(0);
@@ -100,7 +100,7 @@ bool WhileToForConversion::can_be_applied(
         return false;
     }
     auto indvar = symbolic::symbol(update_write->container());
-    auto update_element = dynamic_cast<structured_control_flow::Transition*>(update_write->element());
+    auto update_element = dyn_cast<structured_control_flow::Transition*>(update_write->element());
     ;
     auto update = update_element->assignments().at(indvar);
 
@@ -160,14 +160,14 @@ void WhileToForConversion::apply(
 
     // Identify break and continue conditions
     auto last_element = body.at(body.size() - 1);
-    auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(&last_element.first);
+    auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&last_element.first);
 
     auto first_condition = if_else_stmt->at(0).second;
 
     bool second_is_break = false;
     auto& second_branch = if_else_stmt->at(1).first;
     auto second_condition = if_else_stmt->at(1).second;
-    if (dynamic_cast<structured_control_flow::Break*>(&second_branch.at(0).first)) {
+    if (dyn_cast<structured_control_flow::Break*>(&second_branch.at(0).first)) {
         second_is_break = true;
     }
     auto& all_users = analysis_manager.get<analysis::Users>();
@@ -182,7 +182,7 @@ void WhileToForConversion::apply(
             continue;
         }
     }
-    auto update_element = dynamic_cast<structured_control_flow::Transition*>(write_to_indvar->element());
+    auto update_element = dyn_cast<structured_control_flow::Transition*>(write_to_indvar->element());
 
     auto indvar = symbolic::symbol(write_to_indvar->container());
     auto update = update_element->assignments().at(indvar);
@@ -231,9 +231,9 @@ bool WhileToForConversion::run_pass(builder::StructuredSDFGBuilder& builder, ana
         queue.pop_front();
 
         // Add children to queue
-        if (auto sequence_stmt = dynamic_cast<structured_control_flow::Sequence*>(current)) {
+        if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(current)) {
             for (size_t i = 0; i < sequence_stmt->size(); i++) {
-                if (auto match = dynamic_cast<structured_control_flow::While*>(&sequence_stmt->at(i).first)) {
+                if (auto match = dyn_cast<structured_control_flow::While*>(&sequence_stmt->at(i).first)) {
                     if (this->can_be_applied(builder, analysis_manager, *match)) {
                         this->apply(builder, analysis_manager, *sequence_stmt, *match);
                         applied = true;
@@ -242,13 +242,13 @@ bool WhileToForConversion::run_pass(builder::StructuredSDFGBuilder& builder, ana
 
                 queue.push_back(&sequence_stmt->at(i).first);
             }
-        } else if (auto if_else = dynamic_cast<structured_control_flow::IfElse*>(current)) {
+        } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(current)) {
             for (size_t i = 0; i < if_else->size(); i++) {
                 queue.push_back(&if_else->at(i).first);
             }
-        } else if (auto loop_stmt = dynamic_cast<structured_control_flow::While*>(current)) {
+        } else if (auto loop_stmt = dyn_cast<structured_control_flow::While*>(current)) {
             queue.push_back(&loop_stmt->root());
-        } else if (auto sloop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(current)) {
+        } else if (auto sloop_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(current)) {
             queue.push_back(&sloop_stmt->root());
         }
     }

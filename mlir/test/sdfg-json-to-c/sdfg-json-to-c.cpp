@@ -12,6 +12,8 @@
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/serializer/json_serializer.h>
 
+#include "sdfg/passes/schedules/expansion_pass.h"
+
 int main(int argc, char* argv[]) {
     sdfg::codegen::register_default_dispatchers();
     sdfg::serializer::register_default_serializers();
@@ -29,8 +31,8 @@ int main(int argc, char* argv[]) {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg);
     sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
 
-    sdfg::passes::Pipeline libnode_expansion = sdfg::passes::Pipeline::expansion();
-    libnode_expansion.run(builder, analysis_manager);
+    sdfg::passes::LibraryNodeExpansionPass math_expansion;
+    math_expansion.run(builder, analysis_manager);
 
     sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;
     tensor_to_pointer_conversion_pass.run(builder, analysis_manager);

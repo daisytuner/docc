@@ -3,6 +3,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/math/tensor/batched_matmul_expander.h"
 #include "sdfg/targets/cuda/math/tensor/batchnorm_expander.h"
@@ -47,7 +48,6 @@ bool CudaExpansion::accept(structured_control_flow::Block& node) {
     }
     return made_changes;
 };
-
 
 } // namespace passes
 } // namespace sdfg

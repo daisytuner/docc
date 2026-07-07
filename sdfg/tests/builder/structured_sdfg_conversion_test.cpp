@@ -88,7 +88,7 @@ TEST(StructuredSDFGConversionTest, SimpleSequence) {
     auto& root = struct_sdfg->root();
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_NE(dynamic_cast<structured_control_flow::Return*>(&root.at(0).first), nullptr);
+    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&root.at(0).first), nullptr);
 }
 
 TEST(StructuredSDFGConversionTest, While) {
@@ -220,27 +220,27 @@ TEST(StructuredSDFGConversionTest, SimpleLoop) {
 
     ASSERT_EQ(root.size(), 2);
 
-    auto* loop = dynamic_cast<structured_control_flow::While*>(&root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::While*>(&root.at(0).first);
     ASSERT_NE(loop, nullptr);
 
     auto& loop_body = loop->root();
 
     EXPECT_GE(loop_body.size(), 1);
-    auto if_else = dynamic_cast<structured_control_flow::IfElse*>(&loop_body.at(0).first);
+    auto if_else = dyn_cast<structured_control_flow::IfElse*>(&loop_body.at(0).first);
     ASSERT_NE(if_else, nullptr);
     EXPECT_EQ(if_else->size(), 2); // 2 cases
 
     auto case1 = if_else->at(0);
     EXPECT_TRUE(symbolic::eq(case1.second, SymEngine::Ne(symbolic::symbol("loop_cond"), symbolic::integer(0))));
-    auto continue_node = dynamic_cast<structured_control_flow::Continue*>(&case1.first.at(0).first);
+    auto continue_node = dyn_cast<structured_control_flow::Continue*>(&case1.first.at(0).first);
     EXPECT_NE(continue_node, nullptr);
 
     auto case2 = if_else->at(1);
     EXPECT_TRUE(symbolic::eq(case2.second, SymEngine::Eq(symbolic::symbol("loop_cond"), symbolic::integer(0))));
-    auto break_node = dynamic_cast<structured_control_flow::Break*>(&case2.first.at(0).first);
+    auto break_node = dyn_cast<structured_control_flow::Break*>(&case2.first.at(0).first);
     EXPECT_NE(break_node, nullptr);
 
-    EXPECT_NE(dynamic_cast<structured_control_flow::Return*>(&root.at(1).first), nullptr); // D
+    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&root.at(1).first), nullptr); // D
 }
 
 TEST(StructuredSDFGConversionTest, LoopWithBreak) {
@@ -277,13 +277,13 @@ TEST(StructuredSDFGConversionTest, LoopWithBreak) {
     // Expected: Block(A) -> While -> Return(E)
 
     ASSERT_EQ(root.size(), 2);
-    auto* loop = dynamic_cast<structured_control_flow::While*>(&root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::While*>(&root.at(0).first);
     ASSERT_NE(loop, nullptr);
 
     auto& loop_body = loop->root();
 
     ASSERT_GE(loop_body.size(), 1);
-    auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&loop_body.at(0).first);
+    auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&loop_body.at(0).first);
     ASSERT_NE(if_else, nullptr);
 }
 
@@ -314,14 +314,14 @@ TEST(StructuredSDFGConversionTest, UnstructuredReturn) {
     // Case 2 (A->Ret): Return(Ret)
 
     ASSERT_EQ(root.size(), 1);
-    auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&root.at(0).first);
+    auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&root.at(0).first);
     ASSERT_NE(if_else, nullptr);
     EXPECT_EQ(if_else->size(), 2); // 2 cases
 
     auto branch1 = if_else->at(0);
     EXPECT_TRUE(symbolic::eq(branch1.second, SymEngine::Ne(symbolic::symbol("cond"), symbolic::integer(0))));
     EXPECT_EQ(branch1.first.size(), 1);
-    EXPECT_NE(dynamic_cast<structured_control_flow::Return*>(&branch1.first.at(0).first), nullptr); // C
+    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&branch1.first.at(0).first), nullptr); // C
 }
 
 TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
@@ -384,9 +384,9 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
     auto& root = struct_sdfg->root();
 
     ASSERT_EQ(root.size(), 3);
-    EXPECT_NE(dynamic_cast<structured_control_flow::Block*>(&root.at(0).first), nullptr);
+    EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&root.at(0).first), nullptr);
 
-    auto* loop = dynamic_cast<structured_control_flow::While*>(&root.at(1).first);
+    auto* loop = dyn_cast<structured_control_flow::While*>(&root.at(1).first);
     ASSERT_NE(loop, nullptr);
 
     auto& loop_body = loop->root();
@@ -399,7 +399,7 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
     //        False branch: Continue (with updates)
 
     ASSERT_GE(loop_body.size(), 1);
-    auto* header_check = dynamic_cast<structured_control_flow::IfElse*>(&loop_body.at(0).first);
+    auto* header_check = dyn_cast<structured_control_flow::IfElse*>(&loop_body.at(0).first);
     ASSERT_NE(header_check, nullptr);
     ASSERT_EQ(header_check->size(), 2);
 

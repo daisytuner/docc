@@ -234,16 +234,16 @@ private:
      */
     std::pair<bool, const ExposedType&> solve(structured_control_flow::ControlFlowNode& node, const ExposedType& in) {
         // Dispatch to the concrete type
-        if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
             return solve(*seq, in);
         }
-        if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+        if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
             return solve(*if_else, in);
         }
-        if (auto* sloop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        if (auto* sloop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
             return solve_loop(*sloop, in);
         }
-        if (auto* while_loop = dynamic_cast<structured_control_flow::While*>(&node)) {
+        if (auto* while_loop = dyn_cast<structured_control_flow::While*>(&node)) {
             return solve(*while_loop, in);
         }
 

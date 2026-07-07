@@ -460,8 +460,8 @@ TEST(LoopAnalysisTest, outermost_loops) {
     EXPECT_EQ(outermost_loops_copy.size(), 4);
     for (size_t i = 0; i < outermost_loops.size(); i++) {
         EXPECT_EQ(
-            dynamic_cast<sdfg::structured_control_flow::StructuredLoop*>(outermost_loops[i])->indvar()->get_name(),
-            dynamic_cast<sdfg::structured_control_flow::StructuredLoop*>(outermost_loops_copy[i])->indvar()->get_name()
+            sdfg::dyn_cast<sdfg::structured_control_flow::StructuredLoop*>(outermost_loops[i])->indvar()->get_name(),
+            sdfg::dyn_cast<sdfg::structured_control_flow::StructuredLoop*>(outermost_loops_copy[i])->indvar()->get_name()
         );
     }
 
@@ -474,8 +474,10 @@ TEST(LoopAnalysisTest, outermost_loops) {
     EXPECT_EQ(outermost_loops_copy2.size(), 4);
     for (size_t i = 0; i < outermost_loops.size(); i++) {
         EXPECT_EQ(
-            dynamic_cast<sdfg::structured_control_flow::StructuredLoop*>(outermost_loops[i])->indvar()->get_name(),
-            dynamic_cast<sdfg::structured_control_flow::StructuredLoop*>(outermost_loops_copy2[i])->indvar()->get_name()
+            sdfg::dyn_cast<sdfg::structured_control_flow::StructuredLoop*>(outermost_loops[i])->indvar()->get_name(),
+            sdfg::dyn_cast<sdfg::structured_control_flow::StructuredLoop*>(outermost_loops_copy2[i])
+                ->indvar()
+                ->get_name()
         );
     }
 }

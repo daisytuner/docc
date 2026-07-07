@@ -87,15 +87,17 @@ TEST(DotVisualizerTest, transpose) {
         << "style=filled;color=lightblue;label=\"\";" << std::endl
         << "subgraph cluster_" << escapeDotId(loop1.element_id(), "for_") << " {" << std::endl;
     exp.setIndent(12);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"for: i = 0; i < M; i = 1 + i\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << loop1.element_id()
+        << " for: i = 0; i < M; i = 1 + i\";" << std::endl
         << escapeDotId(loop1.element_id(), "for_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(loop2.element_id(), "for_") << " {" << std::endl;
     exp.setIndent(16);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"for: j = 0; j < N; j = 1 + j\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << loop2.element_id()
+        << " for: j = 0; j < N; j = 1 + j\";" << std::endl
         << escapeDotId(loop2.element_id(), "for_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(block.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(20);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block.element_id() << " \";" << std::endl
         << escapeDotId(A.element_id(), "id") << " [penwidth=3.0,label=\"A\"];" << std::endl
         << escapeDotId(tasklet.element_id(), "id") << " [shape=octagon,label=\"_out = _in\"];" << std::endl
         << escapeDotId(A.element_id(), "id") << " -> " << escapeDotId(tasklet.element_id(), "id")
@@ -225,17 +227,18 @@ TEST(DotVisualizerTest, syrk) {
         << "style=filled;color=lightblue;label=\"\";" << std::endl
         << "subgraph cluster_" << escapeDotId(loop_i.element_id(), "for_") << " {" << std::endl;
     exp.setIndent(12);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"for: i = 0; i < N; i = 1 + i\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << loop_i.element_id()
+        << " for: i = 0; i < N; i = 1 + i\";" << std::endl
         << escapeDotId(loop_i.element_id(), "for_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(loop_j_1.element_id(), "for_") << " {" << std::endl;
     exp.setIndent(16); // TODO matching the exact NODE ID is HORRIBLE, especially because those UUIDs are not valid
                        // graphviz identifiers
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"for: j_1 = 0; j_1 <= i; j_1 = 1 + j_1\";"
-        << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << loop_j_1.element_id()
+        << " for: j_1 = 0; j_1 <= i; j_1 = 1 + j_1\";" << std::endl
         << escapeDotId(loop_j_1.element_id(), "for_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(block1.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(20);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block1.element_id() << " \";" << std::endl
         << escapeDotId(C_in_node_1.element_id(), "id") << " [penwidth=3.0,label=\"C\"];" << std::endl
         << escapeDotId(beta_node.element_id(), "id") << " [penwidth=3.0,label=\"beta\"];" << std::endl
         << escapeDotId(tasklet1.element_id(), "id") << " [shape=octagon,label=\"_out = *(_in1, _in2)\"];" << std::endl
@@ -251,16 +254,17 @@ TEST(DotVisualizerTest, syrk) {
     exp.setIndent(12);
     exp << "}" << std::endl << "subgraph cluster_" << escapeDotId(loop_k.element_id(), "for_") << " {" << std::endl;
     exp.setIndent(16);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"for: k = 0; k < M; k = 1 + k\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << loop_k.element_id()
+        << " for: k = 0; k < M; k = 1 + k\";" << std::endl
         << escapeDotId(loop_k.element_id(), "for_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(loop_j_2.element_id(), "for_") << " {" << std::endl;
     exp.setIndent(20);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"for: j_2 = 0; j_2 <= i; j_2 = 1 + j_2\";"
-        << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << loop_j_2.element_id()
+        << " for: j_2 = 0; j_2 <= i; j_2 = 1 + j_2\";" << std::endl
         << escapeDotId(loop_j_2.element_id(), "for_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(block2.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(24);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block2.element_id() << " \";" << std::endl
         << escapeDotId(A_node.element_id(), "id") << " [penwidth=3.0,label=\"A\"];" << std::endl
         << escapeDotId(tasklet2.element_id(), "id") << " [shape=octagon,label=\"_out = *(_in1, _in2)\"];" << std::endl
         << escapeDotId(A_node.element_id(), "id") << " -> " << escapeDotId(tasklet2.element_id(), "id")
@@ -274,7 +278,7 @@ TEST(DotVisualizerTest, syrk) {
     exp.setIndent(20);
     exp << "}" << std::endl << "subgraph cluster_" << escapeDotId(block3.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(24);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block3.element_id() << " \";" << std::endl
         << escapeDotId(C_in_node_2.element_id(), "id") << " [penwidth=3.0,label=\"C\"];" << std::endl
         << escapeDotId(tmp_node_2.element_id(), "id") << " [penwidth=3.0,style=\"dashed,filled\",label=\"tmp\"];"
         << std::endl
@@ -345,7 +349,7 @@ TEST(DotVisualizerTest, multi_tasklet_block) {
         << "style=filled;color=lightblue;label=\"\";" << std::endl
         << "subgraph cluster_" << escapeDotId(block.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(12);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block.element_id() << " \";" << std::endl
         << escapeDotId(A1.element_id(), "id") << " [penwidth=3.0,style=\"dashed,filled\",label=\"A\"];" << std::endl
         << escapeDotId(tasklet1.element_id(), "id") << " [shape=octagon,label=\"_out = _in\"];" << std::endl
         << escapeDotId(A1.element_id(), "id") << " -> " << escapeDotId(tasklet1.element_id(), "id")
@@ -408,14 +412,15 @@ TEST(DotVisualizerTest, test_if_else) {
         << "style=filled;color=lightblue;label=\"\";" << std::endl
         << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << " {" << std::endl;
     exp.setIndent(12);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"if:\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << if_else.element_id() << " if:\";"
+        << std::endl
         << escapeDotId(if_else.element_id(), "if_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_0 {" << std::endl;
     exp.setIndent(16);
     exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"A <= 0\";" << std::endl
         << "subgraph cluster_" << escapeDotId(block.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(20);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block.element_id() << " \";" << std::endl
         << escapeDotId(input_node.element_id(), "id") << " [penwidth=3.0,style=\"dashed,filled\",label=\"A\"];"
         << std::endl
         << escapeDotId(tasklet.element_id(), "id") << " [shape=octagon,label=\"_out = _in\"];" << std::endl
@@ -428,12 +433,13 @@ TEST(DotVisualizerTest, test_if_else) {
     exp.setIndent(16);
     exp << "}" << std::endl;
     exp.setIndent(12);
-    exp << "}" << std::endl << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_1 {" << std::endl;
+    exp << "}" << std::endl;
+    exp << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_1 {" << std::endl;
     exp.setIndent(16);
     exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"0 < A\";" << std::endl
         << "subgraph cluster_" << escapeDotId(block2.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(20);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block2.element_id() << " \";" << std::endl
         << escapeDotId(input_node2.element_id(), "id") << " [penwidth=3.0,style=\"dashed,filled\",label=\"B\"];"
         << std::endl
         << escapeDotId(tasklet2.element_id(), "id") << " [shape=octagon,label=\"_out = _in\"];" << std::endl
@@ -492,18 +498,20 @@ TEST(DotVisualizerTest, test_while) {
         << "style=filled;color=lightblue;label=\"\";" << std::endl
         << "subgraph cluster_" << escapeDotId(loop.element_id(), "while_") << " {" << std::endl;
     exp.setIndent(12);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"while:\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << loop.element_id() << " while:\";"
+        << std::endl
         << escapeDotId(loop.element_id(), "while_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << " {" << std::endl;
     exp.setIndent(16);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"if:\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << if_else.element_id() << " if:\";"
+        << std::endl
         << escapeDotId(if_else.element_id(), "if_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_0 {" << std::endl;
     exp.setIndent(20);
     exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"i < 10\";" << std::endl
         << "subgraph cluster_" << escapeDotId(block1.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(24);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block1.element_id() << " \";" << std::endl
         << escapeDotId(block1.element_id(), "block_") << " [shape=point,style=invis,label=\"\"];" << std::endl;
     exp.setIndent(20);
     exp << "}" << std::endl
@@ -517,7 +525,7 @@ TEST(DotVisualizerTest, test_while) {
     exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"10 <= i\";" << std::endl
         << "subgraph cluster_" << escapeDotId(block2.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(24);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block2.element_id() << " \";" << std::endl
         << escapeDotId(block2.element_id(), "block_") << " [shape=point,style=invis,label=\"\"];" << std::endl;
     exp.setIndent(20);
     exp << "}" << std::endl
@@ -600,7 +608,7 @@ TEST(DotVisualizerTest, test_return) {
         << "style=filled;color=lightblue;label=\"\";" << std::endl
         << "subgraph cluster_" << escapeDotId(block1.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(12);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block1.element_id() << " \";" << std::endl
         << escapeDotId(zero_node.element_id(), "id") << " [penwidth=3.0,style=\"dashed,filled\",label=\"0\"];"
         << std::endl
         << escapeDotId(tasklet1.element_id(), "id") << " [shape=octagon,label=\"_out = _in\"];" << std::endl
@@ -613,11 +621,13 @@ TEST(DotVisualizerTest, test_return) {
     exp.setIndent(8);
     exp << "}" << std::endl << "subgraph cluster_" << escapeDotId(loop.element_id(), "while_") << " {" << std::endl;
     exp.setIndent(12);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"while:\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << loop.element_id() << " while:\";"
+        << std::endl
         << escapeDotId(loop.element_id(), "while_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << " {" << std::endl;
     exp.setIndent(16);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"if:\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << if_else.element_id() << " if:\";"
+        << std::endl
         << escapeDotId(if_else.element_id(), "if_") << " [shape=point,style=invis,label=\"\"];" << std::endl
         << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_0 {" << std::endl;
     exp.setIndent(20);
@@ -629,7 +639,7 @@ TEST(DotVisualizerTest, test_return) {
     exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"i < N\";" << std::endl
         << "subgraph cluster_" << escapeDotId(block2.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(24);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block2.element_id() << " \";" << std::endl
         << escapeDotId(input2.element_id(), "id") << " [penwidth=3.0,label=\"A\"];" << std::endl
         << escapeDotId(two_node.element_id(), "id") << " [penwidth=3.0,style=\"dashed,filled\",label=\"2.0\"];"
         << std::endl
@@ -644,7 +654,7 @@ TEST(DotVisualizerTest, test_return) {
     exp.setIndent(20);
     exp << "}" << std::endl << "subgraph cluster_" << escapeDotId(block3.element_id(), "block_") << " {" << std::endl;
     exp.setIndent(24);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block3.element_id() << " \";" << std::endl
         << escapeDotId(input3.element_id(), "id") << " [penwidth=3.0,style=\"dashed,filled\",label=\"i\"];" << std::endl
         << escapeDotId(one_node.element_id(), "id") << " [penwidth=3.0,style=\"dashed,filled\",label=\"1\"];"
         << std::endl
@@ -717,7 +727,8 @@ TEST(DotVisualizerTest, test_handleTasklet) {
             << "style=filled;color=lightblue;label=\"\";" << std::endl
             << "subgraph cluster_" << escapeDotId(block.element_id(), "block_") << " {" << std::endl;
         exp.setIndent(12);
-        exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"\";" << std::endl
+        exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block.element_id() << " \";"
+            << std::endl
             << escapeDotId(tasklet.element_id(), "id") << " [shape=octagon,label=\"";
         if (code.first == data_flow::TaskletCode::assign) {
             exp << "_out = 0";

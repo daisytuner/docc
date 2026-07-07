@@ -175,12 +175,12 @@ TEST(TileFusionTest, Jacobi1D_Basic) {
     // After move, we need to re-navigate the SDFG
     auto& root = builder_opt.subject().root();
     ASSERT_EQ(root.size(), 1);
-    auto* time_loop = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* time_loop = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
     ASSERT_NE(time_loop, nullptr);
     ASSERT_EQ(time_loop->root().size(), 2);
 
-    auto* k1 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
-    auto* k2 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
+    auto* k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
+    auto* k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
     ASSERT_NE(k1, nullptr);
     ASSERT_NE(k2, nullptr);
 
@@ -188,8 +188,8 @@ TEST(TileFusionTest, Jacobi1D_Basic) {
     transformations::LoopTiling tiling_k1(*k1, 32);
     ASSERT_TRUE(tiling_k1.can_be_applied(builder_opt, analysis_manager));
     tiling_k1.apply(builder_opt, analysis_manager);
-    auto* k1_outer = dynamic_cast<structured_control_flow::Map*>(tiling_k1.outer_loop());
-    auto* k1_inner = dynamic_cast<structured_control_flow::Map*>(tiling_k1.inner_loop());
+    auto* k1_outer = dyn_cast<structured_control_flow::Map*>(tiling_k1.outer_loop());
+    auto* k1_inner = dyn_cast<structured_control_flow::Map*>(tiling_k1.inner_loop());
     ASSERT_NE(k1_outer, nullptr);
     ASSERT_NE(k1_inner, nullptr);
 
@@ -197,8 +197,8 @@ TEST(TileFusionTest, Jacobi1D_Basic) {
     transformations::LoopTiling tiling_k2(*k2, 32);
     ASSERT_TRUE(tiling_k2.can_be_applied(builder_opt, analysis_manager));
     tiling_k2.apply(builder_opt, analysis_manager);
-    auto* k2_outer = dynamic_cast<structured_control_flow::Map*>(tiling_k2.outer_loop());
-    auto* k2_inner = dynamic_cast<structured_control_flow::Map*>(tiling_k2.inner_loop());
+    auto* k2_outer = dyn_cast<structured_control_flow::Map*>(tiling_k2.outer_loop());
+    auto* k2_inner = dyn_cast<structured_control_flow::Map*>(tiling_k2.inner_loop());
     ASSERT_NE(k2_outer, nullptr);
     ASSERT_NE(k2_inner, nullptr);
 
@@ -214,8 +214,8 @@ TEST(TileFusionTest, Jacobi1D_Basic) {
 
     // Now apply TileFusion on the two tiled outer maps
     ASSERT_EQ(time_loop->root().size(), 2);
-    auto* tile_k1 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
-    auto* tile_k2 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
+    auto* tile_k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
+    auto* tile_k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
     ASSERT_NE(tile_k1, nullptr);
     ASSERT_NE(tile_k2, nullptr);
 
@@ -228,7 +228,7 @@ TEST(TileFusionTest, Jacobi1D_Basic) {
     // Verify structure: time loop now has 1 child (fused For tile loop).
     // The init copy is inside the fused loop guarded by if (tile == init).
     ASSERT_EQ(time_loop->root().size(), 1);
-    auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&time_loop->root().at(0).first);
+    auto* fused_tile = dyn_cast<structured_control_flow::For*>(&time_loop->root().at(0).first);
     ASSERT_NE(fused_tile, nullptr);
 
     // The fused tile loop should have 5 children with double-buffer:
@@ -238,11 +238,11 @@ TEST(TileFusionTest, Jacobi1D_Basic) {
     //   4. consumer Map (K2, writes original C)
     //   5. swap copy (buf_cur = buf_pf)
     ASSERT_EQ(fused_tile->root().size(), 5);
-    auto* init_if_else = dynamic_cast<structured_control_flow::IfElse*>(&fused_tile->root().at(0).first);
-    auto* pf_copy = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(1).first);
-    auto* fused_producer = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(2).first);
-    auto* fused_consumer = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(3).first);
-    auto* swap_copy = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(4).first);
+    auto* init_if_else = dyn_cast<structured_control_flow::IfElse*>(&fused_tile->root().at(0).first);
+    auto* pf_copy = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(1).first);
+    auto* fused_producer = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(2).first);
+    auto* fused_consumer = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(3).first);
+    auto* swap_copy = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(4).first);
     ASSERT_NE(init_if_else, nullptr);
     ASSERT_NE(pf_copy, nullptr);
     ASSERT_NE(fused_producer, nullptr);
@@ -655,12 +655,12 @@ TEST(TileFusionTest, ZeroRadiusElementwise) {
     // Verify: single For tile loop with 2 inner Maps
     auto& new_root = builder.subject().root();
     ASSERT_EQ(new_root.size(), 1);
-    auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&new_root.at(0).first);
+    auto* fused_tile = dyn_cast<structured_control_flow::For*>(&new_root.at(0).first);
     ASSERT_NE(fused_tile, nullptr);
     ASSERT_EQ(fused_tile->root().size(), 2);
 
-    auto* producer = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(0).first);
-    auto* consumer = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(1).first);
+    auto* producer = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(0).first);
+    auto* consumer = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(1).first);
     ASSERT_NE(producer, nullptr);
     ASSERT_NE(consumer, nullptr);
 }
@@ -683,9 +683,9 @@ TEST(TileFusionTest, Jacobi1D_DoubleBufferContainers) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     auto& root = builder_opt.subject().root();
-    auto* time_loop = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
-    auto* k1 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
-    auto* k2 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
+    auto* time_loop = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
+    auto* k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
 
     transformations::LoopTiling tiling_k1(*k1, 32);
     ASSERT_TRUE(tiling_k1.can_be_applied(builder_opt, analysis_manager));
@@ -704,8 +704,8 @@ TEST(TileFusionTest, Jacobi1D_DoubleBufferContainers) {
         applies |= sequence_fusion.run(builder_opt, analysis_manager);
     } while (applies);
 
-    auto* tile_k1 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
-    auto* tile_k2 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
+    auto* tile_k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
+    auto* tile_k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
 
     transformations::TileFusion tile_fusion(*tile_k1, *tile_k2);
     ASSERT_TRUE(tile_fusion.can_be_applied(builder_opt, analysis_manager));
@@ -728,15 +728,15 @@ TEST(TileFusionTest, Jacobi1D_DoubleBufferContainers) {
     EXPECT_EQ(elem_scalar->primitive_type(), types::PrimitiveType::Double);
 
     // Verify K1 reads from buf_cur, not from A
-    auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&time_loop->root().at(0).first);
-    auto* fused_producer = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(2).first);
+    auto* fused_tile = dyn_cast<structured_control_flow::For*>(&time_loop->root().at(0).first);
+    auto* fused_producer = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(2).first);
 
     // Walk K1's blocks and check that reads of "A" are now reads of "__tf_buf_cur_A"
     bool found_buf_cur_read = false;
     bool found_direct_a_read = false;
     std::function<void(structured_control_flow::ControlFlowNode&)> check_reads;
     check_reads = [&](structured_control_flow::ControlFlowNode& node) {
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
             for (auto* access : block->dataflow().data_nodes()) {
                 if (access->data() == "__tf_buf_cur_A" && block->dataflow().out_degree(*access) > 0) {
                     found_buf_cur_read = true;
@@ -745,11 +745,11 @@ TEST(TileFusionTest, Jacobi1D_DoubleBufferContainers) {
                     found_direct_a_read = true;
                 }
             }
-        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
             for (size_t i = 0; i < seq->size(); i++) {
                 check_reads(seq->at(i).first);
             }
-        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
             check_reads(loop->root());
         }
     };
@@ -759,21 +759,21 @@ TEST(TileFusionTest, Jacobi1D_DoubleBufferContainers) {
     EXPECT_FALSE(found_direct_a_read) << "K1 should NOT read directly from A";
 
     // Verify K2 still writes to A (not to a buffer)
-    auto* fused_consumer = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(3).first);
+    auto* fused_consumer = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(3).first);
     bool found_a_write = false;
     std::function<void(structured_control_flow::ControlFlowNode&)> check_writes;
     check_writes = [&](structured_control_flow::ControlFlowNode& node) {
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
             for (auto* access : block->dataflow().data_nodes()) {
                 if (access->data() == "A" && block->dataflow().in_degree(*access) > 0) {
                     found_a_write = true;
                 }
             }
-        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
             for (size_t i = 0; i < seq->size(); i++) {
                 check_writes(seq->at(i).first);
             }
-        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
             check_writes(loop->root());
         }
     };
@@ -795,9 +795,9 @@ TEST(TileFusionTest, Jacobi1D_CopyLoopTargets) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     auto& root = builder_opt.subject().root();
-    auto* time_loop = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
-    auto* k1 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
-    auto* k2 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
+    auto* time_loop = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
+    auto* k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
 
     transformations::LoopTiling tiling_k1(*k1, 32);
     tiling_k1.can_be_applied(builder_opt, analysis_manager);
@@ -815,8 +815,8 @@ TEST(TileFusionTest, Jacobi1D_CopyLoopTargets) {
         a |= sf.run(builder_opt, analysis_manager);
     } while (a);
 
-    auto* tile_k1 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
-    auto* tile_k2 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
+    auto* tile_k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
+    auto* tile_k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
 
     transformations::TileFusion tile_fusion(*tile_k1, *tile_k2);
     tile_fusion.can_be_applied(builder_opt, analysis_manager);
@@ -827,7 +827,7 @@ TEST(TileFusionTest, Jacobi1D_CopyLoopTargets) {
         std::set<std::string> names;
         auto& seq = map.root();
         for (size_t i = 0; i < seq.size(); i++) {
-            auto* block = dynamic_cast<structured_control_flow::Block*>(&seq.at(i).first);
+            auto* block = dyn_cast<structured_control_flow::Block*>(&seq.at(i).first);
             if (!block) continue;
             for (auto* access : block->dataflow().data_nodes()) {
                 names.insert(access->data());
@@ -837,28 +837,28 @@ TEST(TileFusionTest, Jacobi1D_CopyLoopTargets) {
     };
 
     // Init copy: inside if-else at fused_for[0], reads A, writes __tf_buf_cur_A
-    auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&time_loop->root().at(0).first);
+    auto* fused_tile = dyn_cast<structured_control_flow::For*>(&time_loop->root().at(0).first);
     ASSERT_NE(fused_tile, nullptr);
 
-    auto* init_if_else = dynamic_cast<structured_control_flow::IfElse*>(&fused_tile->root().at(0).first);
+    auto* init_if_else = dyn_cast<structured_control_flow::IfElse*>(&fused_tile->root().at(0).first);
     ASSERT_NE(init_if_else, nullptr);
     ASSERT_GE(init_if_else->size(), 1);
     auto& init_then = init_if_else->at(0).first;
     ASSERT_GE(init_then.size(), 1);
-    auto* init_copy = dynamic_cast<structured_control_flow::Map*>(&init_then.at(0).first);
+    auto* init_copy = dyn_cast<structured_control_flow::Map*>(&init_then.at(0).first);
     ASSERT_NE(init_copy, nullptr);
     auto init_nodes = collect_data_nodes(*init_copy);
     EXPECT_TRUE(init_nodes.count("A")) << "Init copy should read from A";
     EXPECT_TRUE(init_nodes.count("__tf_buf_cur_A")) << "Init copy should write to __tf_buf_cur_A";
 
     // Pre-fetch: reads A, writes __tf_buf_pf_A
-    auto* pf_copy = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(1).first);
+    auto* pf_copy = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(1).first);
     auto pf_nodes = collect_data_nodes(*pf_copy);
     EXPECT_TRUE(pf_nodes.count("A")) << "Pre-fetch should read from A";
     EXPECT_TRUE(pf_nodes.count("__tf_buf_pf_A")) << "Pre-fetch should write to __tf_buf_pf_A";
 
     // Swap: reads __tf_buf_pf_A, writes __tf_buf_cur_A
-    auto* swap_copy = dynamic_cast<structured_control_flow::Map*>(&fused_tile->root().at(4).first);
+    auto* swap_copy = dyn_cast<structured_control_flow::Map*>(&fused_tile->root().at(4).first);
     auto swap_nodes = collect_data_nodes(*swap_copy);
     EXPECT_TRUE(swap_nodes.count("__tf_buf_pf_A")) << "Swap should read from __tf_buf_pf_A";
     EXPECT_TRUE(swap_nodes.count("__tf_buf_cur_A")) << "Swap should write to __tf_buf_cur_A";
@@ -959,7 +959,7 @@ TEST(TileFusionTest, NoCyclicDependency_NoBuffers) {
 
     // No cyclic dependency → fused For has 2 children (K1 + K2), no buffer loops
     ASSERT_EQ(root.size(), 1);
-    auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* fused_tile = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
     ASSERT_NE(fused_tile, nullptr);
     ASSERT_EQ(fused_tile->root().size(), 2) << "Without cyclic deps, no buffer loops should be added";
 
@@ -981,9 +981,9 @@ TEST(TileFusionTest, Jacobi1D_Serialization) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     auto& root = builder_opt.subject().root();
-    auto* time_loop = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
-    auto* k1 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
-    auto* k2 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
+    auto* time_loop = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
+    auto* k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
 
     transformations::LoopTiling tiling_k1(*k1, 32);
     tiling_k1.can_be_applied(builder_opt, analysis_manager);
@@ -1001,8 +1001,8 @@ TEST(TileFusionTest, Jacobi1D_Serialization) {
         a |= sf.run(builder_opt, analysis_manager);
     } while (a);
 
-    auto* tile_k1 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
-    auto* tile_k2 = dynamic_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
+    auto* tile_k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0).first);
+    auto* tile_k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1).first);
 
     // Serialize before applying
     transformations::TileFusion tile_fusion(*tile_k1, *tile_k2);

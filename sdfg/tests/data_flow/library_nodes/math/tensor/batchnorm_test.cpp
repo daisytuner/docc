@@ -6,6 +6,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg_debug_dump.h"
 
@@ -68,7 +69,7 @@ TEST(BatchNormTest, BatchNorm_2D_Simple) {
 
     analysis::AnalysisManager ana(builder.subject());
 
-    batchnorm_node.expand(builder, ana);
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, batchnorm_node);
 
     dump_sdfg(builder.subject(), "1.post-expand");
 

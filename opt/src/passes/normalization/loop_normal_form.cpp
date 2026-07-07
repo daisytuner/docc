@@ -77,10 +77,10 @@ bool LoopNormalFormPass::run_pass(builder::StructuredSDFGBuilder& builder, analy
 
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     for (auto& loop : loop_analysis.loops()) {
-        if (!dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+        if (!dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
             continue; // Skip non-structured loops
         }
-        modified |= apply(builder, analysis_manager, *dynamic_cast<structured_control_flow::StructuredLoop*>(loop));
+        modified |= apply(builder, analysis_manager, *dyn_cast<structured_control_flow::StructuredLoop*>(loop));
     }
 
     return modified;

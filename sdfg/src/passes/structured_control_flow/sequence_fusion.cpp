@@ -22,11 +22,11 @@ bool SequenceFusion::run_pass(builder::StructuredSDFGBuilder& builder, analysis:
         queue.pop_front();
 
         // If sequence, attempt fusion
-        if (auto seq = dynamic_cast<structured_control_flow::Sequence*>(current)) {
+        if (auto seq = dyn_cast<structured_control_flow::Sequence*>(current)) {
             size_t i = 0;
             while (i < seq->size()) {
                 auto child = seq->at(i);
-                auto subseq = dynamic_cast<structured_control_flow::Sequence*>(&child.first);
+                auto subseq = dyn_cast<structured_control_flow::Sequence*>(&child.first);
                 if (!subseq) {
                     i++;
                     continue;
@@ -38,17 +38,17 @@ bool SequenceFusion::run_pass(builder::StructuredSDFGBuilder& builder, analysis:
         }
 
         // Add children to queue
-        if (auto sequence_stmt = dynamic_cast<structured_control_flow::Sequence*>(current)) {
+        if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(current)) {
             for (size_t i = 0; i < sequence_stmt->size(); i++) {
                 queue.push_back(&sequence_stmt->at(i).first);
             }
-        } else if (auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(current)) {
+        } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(current)) {
             for (size_t i = 0; i < if_else_stmt->size(); i++) {
                 queue.push_back(&if_else_stmt->at(i).first);
             }
-        } else if (auto loop_stmt = dynamic_cast<structured_control_flow::While*>(current)) {
+        } else if (auto loop_stmt = dyn_cast<structured_control_flow::While*>(current)) {
             queue.push_back(&loop_stmt->root());
-        } else if (auto sloop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(current)) {
+        } else if (auto sloop_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(current)) {
             queue.push_back(&sloop_stmt->root());
         }
     }

@@ -142,6 +142,97 @@ jobs:
           cd "$GITHUB_WORKSPACE/build"
           ./rpc/tests/sdfgrpc_daisytuner_rpc_test
 
+  inference-tests-linux:
+    runs-on:
+      group: dahlia
+      labels: rocm
+    container:
+      image: daisytuner/docc-run-env-llvm19-vllm-rocm-ubuntu-22.04:latest-amd64
+      options: >-
+        --cap-add=PERFMON
+        --device /dev/kfd
+        --device /dev/dri
+
+    env:
+      DOCC_INFERENCE: "ON" #skips certain tests only when inference enabled. 
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
+          submodules: recursive
+
+      - name: Create virtual environment
+        run: |
+          python -m venv --system-site-packages .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          pip install numpy scipy ml_dtypes
+
+          # Build cupy-rocm from source for ROCm 6x
+          # To be removed when docker image is updated to ROCm 7x
+          export CUPY_INSTALL_USE_HIP=1
+          export ROCM_HOME=/opt/rocm
+          export HCC_AMDGPU_TARGET=$(rocminfo | grep -m1 -o 'gfx[0-9a-f]*')
+          pip install cupy --no-cache-dir
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake \
+            -G Ninja \
+            -DDOCC_CXX_COMPILER="/opt/rocm/llvm/bin/clang++" \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
+            -DPYTHON_BUILD_FRONTEND=ON \
+            -Dpybind11_DIR=$(python -c "import pybind11; print(pybind11.get_cmake_dir())") \
+            -DMLIR_BUILD_FRONTEND=ON \
+            -DMLIR_BUILD_BINDINGS=ON \
+            -DMLIR_BUILD_TESTS=ON \
+            -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
+            ..
+          ninja -j$(nproc)
+          ninja install
+
+      - name: Unit Tests
+        run: |
+          cd build/
+          ./sdfg/tests/sdfglib_test
+          ./opt/tests/sdfgopt_test
+          ./c-compile/tests/c-compile_test
+          ./tutorial/printf_target/tests/printf_target_test
+          ./arg-capture-io/tests/capture_io_test
+
+      - name: Python Integration Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+        run: |
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          python -m pytest -v python/tests -m "unmarked"
+
+      - name: MLIR Unit & Integration Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+        run: |
+          rocm-smi
+          pip install --no-cache-dir --no-deps torch-mlir==20260512.810 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
+          cd build/
+          ninja check-docc-mlir
+          python -m pytest -v ../mlir/integration -m "unmarked or rocm"
+
+
   ##### FRONTENDS #####
 
   llvm-tests-linux:

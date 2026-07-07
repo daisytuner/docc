@@ -81,7 +81,7 @@ TEST(LoopSplitTest, Basic) {
     EXPECT_EQ(sdfg_opt.root().size(), 2);
 
     // First loop: for(i_0 = 0; i_0 < M && i_0 < N; i_0++)
-    auto* first_loop = dynamic_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
+    auto* first_loop = dyn_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
     ASSERT_TRUE(first_loop != nullptr);
     EXPECT_TRUE(symbolic::eq(first_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::
@@ -92,7 +92,7 @@ TEST(LoopSplitTest, Basic) {
     EXPECT_EQ(first_loop->root().size(), 1);
 
     // Second loop: for(i = M; i < N; i++)
-    auto* second_loop = dynamic_cast<structured_control_flow::For*>(&sdfg_opt.root().at(1).first);
+    auto* second_loop = dyn_cast<structured_control_flow::For*>(&sdfg_opt.root().at(1).first);
     ASSERT_TRUE(second_loop != nullptr);
     EXPECT_EQ(second_loop->indvar()->get_name(), "i");
     EXPECT_TRUE(symbolic::eq(second_loop->init(), split_point));
@@ -101,8 +101,8 @@ TEST(LoopSplitTest, Basic) {
     EXPECT_EQ(second_loop->root().size(), 1);
 
     // Both should have body with a block
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&first_loop->root().at(0).first) != nullptr);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&second_loop->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&first_loop->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&second_loop->root().at(0).first) != nullptr);
 
     // First loop should have a fresh indvar
     EXPECT_NE(first_loop->indvar()->get_name(), "i");
@@ -129,7 +129,7 @@ TEST(LoopSplitTest, SplitAtConstant) {
     EXPECT_EQ(sdfg_opt.root().size(), 2);
 
     // First loop: i_0 in [0, 42) intersected with original bound (i_0 < N)
-    auto* first_loop = dynamic_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
+    auto* first_loop = dyn_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
     ASSERT_TRUE(first_loop != nullptr);
     EXPECT_TRUE(symbolic::eq(first_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::
@@ -139,7 +139,7 @@ TEST(LoopSplitTest, SplitAtConstant) {
                                symbolic::Lt(first_loop->indvar(), symbolic::symbol("N")))));
 
     // Second loop: i in [42, N)
-    auto* second_loop = dynamic_cast<structured_control_flow::For*>(&sdfg_opt.root().at(1).first);
+    auto* second_loop = dyn_cast<structured_control_flow::For*>(&sdfg_opt.root().at(1).first);
     ASSERT_TRUE(second_loop != nullptr);
     EXPECT_TRUE(symbolic::eq(second_loop->init(), symbolic::integer(42)));
 }
@@ -193,7 +193,7 @@ TEST(LoopSplitTest, SplitWithNonZeroInit) {
     EXPECT_EQ(sdfg_opt.root().size(), 2);
 
     // First loop: [M, K) intersected with original bound (i_0 < N)
-    auto* first_loop = dynamic_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
+    auto* first_loop = dyn_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
     ASSERT_TRUE(first_loop != nullptr);
     EXPECT_TRUE(symbolic::eq(first_loop->init(), init));
     EXPECT_TRUE(symbolic::eq(
@@ -202,7 +202,7 @@ TEST(LoopSplitTest, SplitWithNonZeroInit) {
     ));
 
     // Second loop: [K, N)
-    auto* second_loop = dynamic_cast<structured_control_flow::For*>(&sdfg_opt.root().at(1).first);
+    auto* second_loop = dyn_cast<structured_control_flow::For*>(&sdfg_opt.root().at(1).first);
     ASSERT_TRUE(second_loop != nullptr);
     EXPECT_TRUE(symbolic::eq(second_loop->init(), split_point));
     EXPECT_TRUE(symbolic::eq(second_loop->condition(), symbolic::Lt(second_loop->indvar(), bound)));
@@ -300,12 +300,12 @@ TEST(LoopSplitTest, SplitExpressionArithmetic) {
     EXPECT_EQ(sdfg_opt.root().size(), 2);
 
     // First loop: [0, N/2)
-    auto* first_loop = dynamic_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
+    auto* first_loop = dyn_cast<structured_control_flow::For*>(&sdfg_opt.root().at(0).first);
     ASSERT_TRUE(first_loop != nullptr);
     EXPECT_TRUE(symbolic::eq(first_loop->init(), symbolic::integer(0)));
 
     // Second loop: [N/2, N)
-    auto* second_loop = dynamic_cast<structured_control_flow::For*>(&sdfg_opt.root().at(1).first);
+    auto* second_loop = dyn_cast<structured_control_flow::For*>(&sdfg_opt.root().at(1).first);
     ASSERT_TRUE(second_loop != nullptr);
     EXPECT_TRUE(symbolic::eq(second_loop->init(), split_point));
 }

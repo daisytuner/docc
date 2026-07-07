@@ -71,9 +71,9 @@ TEST(LoopInterchangeTest, Map_2D) {
 
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto outer_loop = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
     EXPECT_TRUE(outer_loop != nullptr);
-    auto inner_loop = dynamic_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
     EXPECT_TRUE(inner_loop != nullptr);
 
     EXPECT_EQ(outer_loop->indvar()->get_name(), "j");
@@ -152,11 +152,11 @@ TEST(LoopInterchangeTest, Map_2D_Transition) {
 
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto outer_loop = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
     EXPECT_TRUE(outer_loop != nullptr);
     EXPECT_EQ(new_sdfg.root().at(0).second.assignments().size(), 1);
     EXPECT_TRUE(symbolic::eq(new_sdfg.root().at(0).second.assignments().at(indvar), symbolic::zero()));
-    auto inner_loop = dynamic_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
     EXPECT_TRUE(inner_loop != nullptr);
     EXPECT_EQ(outer_loop->root().at(0).second.assignments().size(), 0);
 
@@ -475,12 +475,12 @@ TEST(LoopInterchangeTest, CreatedAndDeletedElements) {
     EXPECT_EQ(new_sdfg.root().size(), 1);
 
     // Verify new outer loop exists and has correct indvar
-    auto outer_loop = dynamic_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
     EXPECT_TRUE(outer_loop != nullptr);
     EXPECT_EQ(outer_loop->indvar()->get_name(), "j");
 
     // Verify new inner loop exists and has correct indvar
-    auto inner_loop = dynamic_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
     EXPECT_TRUE(inner_loop != nullptr);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
 
@@ -548,9 +548,9 @@ TEST(LoopInterchangeTest, ForFor_Independent) {
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
-    auto outer = dynamic_cast<structured_control_flow::For*>(&sdfg.root().at(0).first);
+    auto outer = dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0).first);
     ASSERT_NE(outer, nullptr);
-    auto inner = dynamic_cast<structured_control_flow::For*>(&outer->root().at(0).first);
+    auto inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(0).first);
     ASSERT_NE(inner, nullptr);
 
     EXPECT_EQ(outer->indvar()->get_name(), "j");
@@ -872,11 +872,11 @@ TEST(LoopInterchangeTest, ForFor_FM_NonUnitStride) {
     transformation.apply(builder, analysis_manager);
 
     // After interchange: outer = tile (stride 32), inner = t (stride 1)
-    auto* outer = dynamic_cast<structured_control_flow::For*>(&sdfg.root().at(0).first);
+    auto* outer = dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0).first);
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->indvar()->get_name(), "tile");
 
-    auto* inner = dynamic_cast<structured_control_flow::For*>(&outer->root().at(0).first);
+    auto* inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(0).first);
     ASSERT_NE(inner, nullptr);
     EXPECT_EQ(inner->indvar()->get_name(), "t");
 

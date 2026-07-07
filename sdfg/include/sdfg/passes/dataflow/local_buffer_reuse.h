@@ -127,7 +127,7 @@ private:
     // Get block at index, return nullptr if not valid
     structured_control_flow::Block* get_block(structured_control_flow::Sequence& seq, int idx) {
         if (idx >= static_cast<int>(seq.size())) return nullptr;
-        auto* blk = dynamic_cast<structured_control_flow::Block*>(&seq.at(idx).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&seq.at(idx).first);
         if (blk == nullptr || !seq.at(idx).second.empty()) return nullptr;
         return blk;
     }
@@ -246,7 +246,7 @@ private:
         for (auto& user : users) {
             if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(user->element())) {
                 auto& parent_graph = access_node->get_parent();
-                auto parent_blk = dynamic_cast<structured_control_flow::Block*>(parent_graph.get_parent());
+                auto parent_blk = dyn_cast<structured_control_flow::Block*>(parent_graph.get_parent());
                 if (parent_blk != nullptr && parent_blk->dataflow().is_a_library_node<stdlib::FreeNode>() != nullptr) {
                     return parent_blk;
                 }
@@ -261,7 +261,7 @@ private:
             return false;
         }
 
-        auto parent_scope = dynamic_cast<structured_control_flow::Sequence*>(free_blk->get_parent());
+        auto parent_scope = dyn_cast<structured_control_flow::Sequence*>(free_blk->get_parent());
         if (parent_scope == nullptr) {
             return false;
         }
@@ -320,7 +320,7 @@ public:
                     all_constraints_met = false;
                     break;
                 }
-                auto parent_scope = dynamic_cast<structured_control_flow::Sequence*>(free_blk->get_parent());
+                auto parent_scope = dyn_cast<structured_control_flow::Sequence*>(free_blk->get_parent());
                 if (parent_scope == nullptr) {
                     all_constraints_met = false;
                     break;

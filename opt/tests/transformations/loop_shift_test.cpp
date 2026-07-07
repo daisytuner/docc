@@ -58,7 +58,7 @@ TEST(LoopShiftTest, ShiftToZero) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Verify initial state: i = 3..N
@@ -132,7 +132,7 @@ TEST(LoopShiftTest, ShiftByOffset) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Verify initial state: i = 5..N
@@ -198,7 +198,7 @@ TEST(LoopShiftTest, IndvarUsedInAccessNode) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopShift with default constructor (shifts to 0)
@@ -213,7 +213,7 @@ TEST(LoopShiftTest, IndvarUsedInAccessNode) {
 
     // Get the second block (original block, now with updated references)
     ASSERT_EQ(loop->root().size(), 2);
-    auto* original_block = dynamic_cast<structured_control_flow::Block*>(&loop->root().at(1).first);
+    auto* original_block = dyn_cast<structured_control_flow::Block*>(&loop->root().at(1).first);
     ASSERT_NE(original_block, nullptr);
 
     // Find the access node for A
@@ -266,7 +266,7 @@ TEST(LoopShiftTest, NoOpWhenOffsetIsZero) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     size_t original_body_size = loop->root().size();
@@ -315,7 +315,7 @@ TEST(LoopShiftTest, IndvarFinalValueAfterLoop) {
     auto& sdfg_root = builder2.subject().root();
     ASSERT_EQ(sdfg_root.size(), 1); // Just the loop
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopShift (shifts to 0 by default, offset = 5)
@@ -327,7 +327,7 @@ TEST(LoopShiftTest, IndvarFinalValueAfterLoop) {
     ASSERT_EQ(sdfg_root.size(), 2);
 
     // Verify the second element is a block (reconstruction)
-    auto* post_loop_block = dynamic_cast<structured_control_flow::Block*>(&sdfg_root.at(1).first);
+    auto* post_loop_block = dyn_cast<structured_control_flow::Block*>(&sdfg_root.at(1).first);
     ASSERT_NE(post_loop_block, nullptr);
 
     // Check the reconstruction block's transition contains the reconstruction assignment

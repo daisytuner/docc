@@ -7,17 +7,17 @@ namespace codegen {
 
 InstrumentationInfo::InstrumentationInfo(
     size_t element_id,
-    const ElementType& element_type,
+    std::string_view element_desc,
     const TargetType& target_type,
     const analysis::LoopInfo& loop_info,
     const std::unordered_map<std::string, std::string>& metrics
 )
-    : element_id_(element_id), element_type_(element_type), target_type_(target_type), loop_info_(loop_info),
+    : element_id_(element_id), element_desc_(element_desc), target_type_(target_type), loop_info_(loop_info),
       metrics_(metrics) {}
 
 size_t InstrumentationInfo::element_id() const { return element_id_; }
 
-const ElementType& InstrumentationInfo::element_type() const { return element_type_; }
+const std::string& InstrumentationInfo::element_desc() const { return element_desc_; }
 
 const TargetType& InstrumentationInfo::target_type() const { return target_type_; }
 

@@ -120,7 +120,7 @@ void LoopUnitStride::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 
     // Reconstruct original indvar value after loop exit
     // After loop, indvar holds transformed final value; we restore: indvar = |stride| * indvar
-    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(loop_.get_parent());
+    auto* parent = dyn_cast<structured_control_flow::Sequence*>(loop_.get_parent());
     if (parent) {
         builder.add_block_after(*parent, loop_, {{indvar, strided_expr}}, loop_.debug_info());
     }
@@ -144,7 +144,7 @@ LoopUnitStride LoopUnitStride::from_json(builder::StructuredSDFGBuilder& builder
         throw std::runtime_error("LoopUnitStride: Element with ID " + std::to_string(loop_id) + " not found.");
     }
 
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw std::runtime_error("LoopUnitStride: Element with ID " + std::to_string(loop_id) + " is not a loop.");
     }

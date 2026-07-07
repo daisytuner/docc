@@ -32,7 +32,7 @@ bool CudaConvExpander::expand_conv_naive(
 ) {
     auto& dfg = node.get_parent();
     math::tensor::ConvNode::ConvExpandPrerequisits b;
-    if (!node.check_expandable(dfg, analysis_manager, b)) {
+    if (!node.check_expandable(dfg, b)) {
         return false;
     }
 
@@ -273,7 +273,7 @@ bool CudaConvExpander::expand_conv_im2row(
 ) {
     auto& dfg = node.get_parent();
     math::tensor::ConvNode::ConvExpandPrerequisits b;
-    if (!node.check_expandable(dfg, analysis_manager, b)) {
+    if (!node.check_expandable(dfg, b)) {
         return false;
     }
 

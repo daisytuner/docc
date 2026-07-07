@@ -44,7 +44,7 @@ void LoopIndvarFinalize::apply(builder::StructuredSDFGBuilder& builder, analysis
     auto closed_form = loop_.num_iterations();
 
     auto parent_node = loop_.get_parent();
-    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);
+    auto* parent = dyn_cast<structured_control_flow::Sequence*>(parent_node);
 
     // Add block with closed-form assignment right after the loop
     // SymbolPropagation will propagate into subsequent blocks
@@ -71,7 +71,7 @@ LoopIndvarFinalize LoopIndvarFinalize::from_json(builder::StructuredSDFGBuilder&
         throw std::runtime_error("LoopIndvarFinalize: Element not found");
     }
 
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (!loop) {
         throw std::runtime_error("LoopIndvarFinalize: Element is not a loop");
     }

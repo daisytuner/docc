@@ -210,7 +210,7 @@ bool collect_candidate_cheap(
     // executed each iteration, never inside a conditional branch).
     auto* update_use = body_writes.front();
     auto* element = update_use->element();
-    auto* update_transition = dynamic_cast<structured_control_flow::Transition*>(element);
+    auto* update_transition = dyn_cast<structured_control_flow::Transition*>(element);
     if (update_transition == nullptr) return false;
     if (&update_transition->parent() != &loop.root()) return false;
 
@@ -232,7 +232,7 @@ bool collect_candidate_cheap(
     }
     if (init_use == nullptr) return false;
 
-    auto* init_transition = dynamic_cast<structured_control_flow::Transition*>(init_use->element());
+    auto* init_transition = dyn_cast<structured_control_flow::Transition*>(init_use->element());
     if (init_transition == nullptr) return false;
 
     auto init_it = init_transition->assignments().find(sym);
@@ -300,21 +300,21 @@ struct LoopEntry {
 };
 
 void collect_loops_postorder(structured_control_flow::ControlFlowNode& node, std::vector<LoopEntry>& out) {
-    if (auto seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+    if (auto seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         for (size_t i = 0; i < seq->size(); ++i) {
             auto& child = seq->at(i).first;
             collect_loops_postorder(child, out);
-            if (auto sloop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+            if (auto sloop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
                 out.push_back({sloop, seq});
             }
         }
-    } else if (auto if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+    } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
         for (size_t i = 0; i < if_else->size(); ++i) {
             collect_loops_postorder(if_else->at(i).first, out);
         }
-    } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&node)) {
+    } else if (auto while_stmt = dyn_cast<structured_control_flow::While*>(&node)) {
         collect_loops_postorder(while_stmt->root(), out);
-    } else if (auto sloop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+    } else if (auto sloop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
         collect_loops_postorder(sloop->root(), out);
     }
 }

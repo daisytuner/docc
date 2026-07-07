@@ -48,6 +48,10 @@ public:
     While(const While& node) = delete;
     While& operator=(const While&) = delete;
 
+    ElementType type_id() const override { return ElementType::While; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::While; }
+
     void validate(const Function& function) const override;
 
     /**
@@ -89,6 +93,10 @@ private:
     static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
+    ElementType type_id() const override { return ElementType::Break; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::Break; }
+
     void validate(const Function& function) const override;
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
@@ -114,6 +122,10 @@ private:
     static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
+    ElementType type_id() const override { return ElementType::Continue; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::Continue; }
+
     void validate(const Function& function) const override;
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;

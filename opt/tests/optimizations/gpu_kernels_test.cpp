@@ -115,7 +115,7 @@ data_flow::AccessNode* find_access_by_suffix(structured_control_flow::ControlFlo
     // Walk the node recursively. We only need a single match - first wins.
     std::function<data_flow::AccessNode*(structured_control_flow::ControlFlowNode&)> walk =
         [&](structured_control_flow::ControlFlowNode& n) -> data_flow::AccessNode* {
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&n)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&n)) {
             for (auto& dn : block->dataflow().nodes()) {
                 if (auto* an = dynamic_cast<data_flow::AccessNode*>(&dn)) {
                     const auto& data = an->data();
@@ -125,19 +125,19 @@ data_flow::AccessNode* find_access_by_suffix(structured_control_flow::ControlFlo
                     }
                 }
             }
-        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
+        } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&n)) {
             for (size_t i = 0; i < seq->size(); ++i) {
                 if (auto* hit = walk(seq->at(i).first)) {
                     return hit;
                 }
             }
-        } else if (auto* ifelse = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
+        } else if (auto* ifelse = dyn_cast<structured_control_flow::IfElse*>(&n)) {
             for (size_t i = 0; i < ifelse->size(); ++i) {
                 if (auto* hit = walk(ifelse->at(i).first)) {
                     return hit;
                 }
             }
-        } else if (auto* loop_node = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
+        } else if (auto* loop_node = dyn_cast<structured_control_flow::StructuredLoop*>(&n)) {
             if (auto* hit = walk(loop_node->root())) {
                 return hit;
             }
@@ -146,7 +146,7 @@ data_flow::AccessNode* find_access_by_suffix(structured_control_flow::ControlFlo
     };
     // For a StructuredLoop, walk its body; for everything else, walk the node
     // itself (Sequence/Block/IfElse search recursively).
-    if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+    if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
         return walk(loop->root());
     }
     return walk(node);
@@ -176,7 +176,7 @@ std::string find_container_by_suffix(const sdfg::Function& fn, const std::string
 // Find the first For loop under `seq`.
 structured_control_flow::For* find_first_for(structured_control_flow::Sequence& seq) {
     for (size_t i = 0; i < seq.size(); ++i) {
-        if (auto* f = dynamic_cast<structured_control_flow::For*>(&seq.at(i).first)) {
+        if (auto* f = dyn_cast<structured_control_flow::For*>(&seq.at(i).first)) {
             return f;
         }
     }
@@ -186,7 +186,7 @@ structured_control_flow::For* find_first_for(structured_control_flow::Sequence& 
 // Find the first Map under `seq`.
 structured_control_flow::Map* find_first_map(structured_control_flow::Sequence& seq) {
     for (size_t i = 0; i < seq.size(); ++i) {
-        if (auto* m = dynamic_cast<structured_control_flow::Map*>(&seq.at(i).first)) {
+        if (auto* m = dyn_cast<structured_control_flow::Map*>(&seq.at(i).first)) {
             return m;
         }
     }
@@ -645,7 +645,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     // it should be the only For directly under map_i_body.
     structured_control_flow::For* kk_loop = nullptr;
     for (size_t i = 0; i < map_i_body.size(); ++i) {
-        if (auto* f = dynamic_cast<structured_control_flow::For*>(&map_i_body.at(i).first)) {
+        if (auto* f = dyn_cast<structured_control_flow::For*>(&map_i_body.at(i).first)) {
             const std::string indvar = f->indvar()->get_name();
             if (indvar.compare(0, std::strlen("k_tile"), "k_tile") == 0) {
                 kk_loop = f;
@@ -665,7 +665,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     // fixpoint.
     auto unwrap_if_else = [](structured_control_flow::ControlFlowNode* node
                           ) -> structured_control_flow::ControlFlowNode* {
-        while (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(node)) {
+        while (auto* ie = dyn_cast<structured_control_flow::IfElse*>(node)) {
             if (ie->size() != 1) return nullptr;
             auto& inner = ie->at(0).first;
             if (inner.size() != 1) return nullptr;
@@ -679,7 +679,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     auto* last_unwrapped = unwrap_if_else(last_raw);
     ASSERT_NE(last_unwrapped, nullptr) << "last kk_body child does not unwrap to a single inner node";
 
-    auto* last_child = dynamic_cast<structured_control_flow::For*>(last_unwrapped);
+    auto* last_child = dyn_cast<structured_control_flow::For*>(last_unwrapped);
     ASSERT_NE(last_child, nullptr) << "last unwrapped child is not a For";
     EXPECT_EQ(last_child->indvar()->get_name(), "k");
 
@@ -712,7 +712,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     int copy_map_count = 0;
     for (size_t i = 0; i < kk_body.size(); ++i) {
         auto* unwrapped = unwrap_if_else(&kk_body.at(i).first);
-        if (unwrapped && dynamic_cast<structured_control_flow::Map*>(unwrapped)) {
+        if (unwrapped && dyn_cast<structured_control_flow::Map*>(unwrapped)) {
             ++copy_map_count;
         }
     }
@@ -722,7 +722,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     // -> 4 total. Barriers are NOT wrapped (they must execute for all threads).
     int barrier_block_count = 0;
     for (size_t i = 0; i < kk_body.size(); ++i) {
-        auto* blk = dynamic_cast<structured_control_flow::Block*>(&kk_body.at(i).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&kk_body.at(i).first);
         if (!blk) continue;
         for (auto& n : blk->dataflow().nodes()) {
             if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&n)) {

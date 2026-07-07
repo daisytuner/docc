@@ -145,10 +145,10 @@ bool CUDASoftmaxDataTransferExtraction::
 void CUDASoftmaxDataTransferExtraction::
     apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& dfg = this->softmax_node_.get_parent();
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
+    auto* sequence = dyn_cast<structured_control_flow::Sequence*>(block->get_parent());
     assert(sequence);
 
     auto* x_edge = dfg.in_edge_for_connector(this->softmax_node_, "X");

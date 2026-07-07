@@ -186,12 +186,12 @@ TEST(DiamondTilingTest, Jacobi1D) {
     // Re-navigate after move
     auto& root = builder.subject().root();
     ASSERT_EQ(root.size(), 1);
-    auto* loop_t = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* loop_t = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
     ASSERT_NE(loop_t, nullptr);
     ASSERT_EQ(loop_t->root().size(), 2);
 
-    auto* k1 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* k2 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
+    auto* k1 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
+    auto* k2 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
     ASSERT_NE(k1, nullptr);
     ASSERT_NE(k2, nullptr);
 
@@ -213,8 +213,8 @@ TEST(DiamondTilingTest, Jacobi1D) {
 
     // After cleanup: for t: tile_k1 → tile_k2
     ASSERT_EQ(loop_t->root().size(), 2);
-    auto* tile_k1 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* tile_k2 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
+    auto* tile_k1 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
+    auto* tile_k2 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
     ASSERT_NE(tile_k1, nullptr);
     ASSERT_NE(tile_k2, nullptr);
 
@@ -225,7 +225,7 @@ TEST(DiamondTilingTest, Jacobi1D) {
     // After fusion: for t: for tile_0: if_else(init), pf, K1_ext, K2, swap
     // With cyclic containers, init copy is inside if-else, fused For has 5 children
     ASSERT_EQ(loop_t->root().size(), 1);
-    auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
+    auto* fused_tile = dyn_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
     ASSERT_NE(fused_tile, nullptr);
     ASSERT_EQ(fused_tile->root().size(), 5);
 
@@ -241,18 +241,18 @@ TEST(DiamondTilingTest, Jacobi1D) {
     dump_sdfg(builder.subject(), "1.after");
 
     // After interchange: outer = tile, inner = t
-    auto* outer = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* outer = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->indvar()->get_name(), fused_tile_indvar_name);
 
-    auto* inner = dynamic_cast<structured_control_flow::For*>(&outer->root().at(0).first);
+    auto* inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(0).first);
     ASSERT_NE(inner, nullptr);
     EXPECT_EQ(inner->indvar()->get_name(), "t");
 
     // Inner t-loop should have 5 children (if_else, pf, K1_ext, K2, swap)
     ASSERT_EQ(inner->root().size(), 5);
-    auto* k1_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(2).first);
-    auto* k2_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(3).first);
+    auto* k1_map = dyn_cast<structured_control_flow::Map*>(&inner->root().at(2).first);
+    auto* k2_map = dyn_cast<structured_control_flow::Map*>(&inner->root().at(3).first);
     ASSERT_NE(k1_map, nullptr);
     ASSERT_NE(k2_map, nullptr);
 
@@ -567,18 +567,18 @@ TEST(DiamondTilingTest, Jacobi2D_1DSpatial) {
     // Verify initial structure: for t { map i_1 { map j_1 { ... } }, map i_2 { map j_2 { ... } } }
     auto& root = builder.subject().root();
     ASSERT_EQ(root.size(), 1);
-    auto* loop_t = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* loop_t = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
     ASSERT_NE(loop_t, nullptr);
     ASSERT_EQ(loop_t->root().size(), 2);
 
-    auto* k1 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* k2 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
+    auto* k1 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
+    auto* k2 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
     ASSERT_NE(k1, nullptr);
     ASSERT_NE(k2, nullptr);
 
     // Verify K1 has inner j map
     ASSERT_EQ(k1->root().size(), 1);
-    auto* j1_map = dynamic_cast<structured_control_flow::Map*>(&k1->root().at(0).first);
+    auto* j1_map = dyn_cast<structured_control_flow::Map*>(&k1->root().at(0).first);
     ASSERT_NE(j1_map, nullptr);
 
     // --- Step 1: Tile both Maps with tile size 32 ---
@@ -599,8 +599,8 @@ TEST(DiamondTilingTest, Jacobi2D_1DSpatial) {
 
     // After cleanup: for t { tile_k1 { ... }, tile_k2 { ... } }
     ASSERT_EQ(loop_t->root().size(), 2);
-    auto* tile_k1 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* tile_k2 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
+    auto* tile_k1 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
+    auto* tile_k2 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
     ASSERT_NE(tile_k1, nullptr);
     ASSERT_NE(tile_k2, nullptr);
 
@@ -610,7 +610,7 @@ TEST(DiamondTilingTest, Jacobi2D_1DSpatial) {
 
     // After fusion: for t { for tile_0 { if_else(init), pf, K1_ext, K2, swap } }
     ASSERT_EQ(loop_t->root().size(), 1);
-    auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
+    auto* fused_tile = dyn_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
     ASSERT_NE(fused_tile, nullptr);
     ASSERT_EQ(fused_tile->root().size(), 5);
 
@@ -624,18 +624,18 @@ TEST(DiamondTilingTest, Jacobi2D_1DSpatial) {
     am.invalidate_all();
 
     // After interchange: outer = tile, inner = t
-    auto* outer = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* outer = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->indvar()->get_name(), fused_tile_indvar_name);
 
-    auto* inner = dynamic_cast<structured_control_flow::For*>(&outer->root().at(0).first);
+    auto* inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(0).first);
     ASSERT_NE(inner, nullptr);
     EXPECT_EQ(inner->indvar()->get_name(), "t");
 
     // Inner t-loop should have 5 children (if_else, pf, K1_ext, K2, swap)
     ASSERT_EQ(inner->root().size(), 5);
-    auto* k1_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(2).first);
-    auto* k2_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(3).first);
+    auto* k1_map = dyn_cast<structured_control_flow::Map*>(&inner->root().at(2).first);
+    auto* k2_map = dyn_cast<structured_control_flow::Map*>(&inner->root().at(3).first);
     ASSERT_NE(k1_map, nullptr);
     ASSERT_NE(k2_map, nullptr);
 
@@ -833,18 +833,18 @@ TEST(DiamondTilingTest, FDTD2D_1DSpatial) {
     // Verify initial structure: for t { map i_1 { map j_1 { ... } }, map i_2 { map j_2 { ... } } }
     auto& root = builder.subject().root();
     ASSERT_EQ(root.size(), 1);
-    auto* loop_t = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* loop_t = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
     ASSERT_NE(loop_t, nullptr);
     ASSERT_EQ(loop_t->root().size(), 2);
 
-    auto* k3 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* k4 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
+    auto* k3 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
+    auto* k4 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
     ASSERT_NE(k3, nullptr);
     ASSERT_NE(k4, nullptr);
 
     // Verify K3 has inner j map
     ASSERT_EQ(k3->root().size(), 1);
-    auto* j3_map = dynamic_cast<structured_control_flow::Map*>(&k3->root().at(0).first);
+    auto* j3_map = dyn_cast<structured_control_flow::Map*>(&k3->root().at(0).first);
     ASSERT_NE(j3_map, nullptr);
 
     // --- Step 1: Tile both Maps with tile size 32 ---
@@ -865,8 +865,8 @@ TEST(DiamondTilingTest, FDTD2D_1DSpatial) {
 
     // After cleanup: for t { tile_k3 { ... }, tile_k4 { ... } }
     ASSERT_EQ(loop_t->root().size(), 2);
-    auto* tile_k3 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* tile_k4 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
+    auto* tile_k3 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
+    auto* tile_k4 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
     ASSERT_NE(tile_k3, nullptr);
     ASSERT_NE(tile_k4, nullptr);
 
@@ -876,7 +876,7 @@ TEST(DiamondTilingTest, FDTD2D_1DSpatial) {
 
     // After fusion: for t { for tile_0 { map K3_ext, map K4 } }
     ASSERT_EQ(loop_t->root().size(), 1);
-    auto* fused_tile = dynamic_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
+    auto* fused_tile = dyn_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
     ASSERT_NE(fused_tile, nullptr);
     ASSERT_EQ(fused_tile->root().size(), 2);
 
@@ -890,18 +890,18 @@ TEST(DiamondTilingTest, FDTD2D_1DSpatial) {
     am.invalidate_all();
 
     // After interchange: outer = tile, inner = t
-    auto* outer = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* outer = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->indvar()->get_name(), fused_tile_indvar_name);
 
-    auto* inner = dynamic_cast<structured_control_flow::For*>(&outer->root().at(0).first);
+    auto* inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(0).first);
     ASSERT_NE(inner, nullptr);
     EXPECT_EQ(inner->indvar()->get_name(), "t");
 
     // Inner t-loop should have two Maps as children (K3_ext and K4)
     ASSERT_EQ(inner->root().size(), 2);
-    auto* k3_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(0).first);
-    auto* k4_map = dynamic_cast<structured_control_flow::Map*>(&inner->root().at(1).first);
+    auto* k3_map = dyn_cast<structured_control_flow::Map*>(&inner->root().at(0).first);
+    auto* k4_map = dyn_cast<structured_control_flow::Map*>(&inner->root().at(1).first);
     ASSERT_NE(k3_map, nullptr);
     ASSERT_NE(k4_map, nullptr);
 
@@ -960,12 +960,12 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
     // Initial structure: for t { map i_1 { map j_1 }, map i_2 { map j_2 } }
     auto& root = builder.subject().root();
     ASSERT_EQ(root.size(), 1);
-    auto* loop_t = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* loop_t = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
     ASSERT_NE(loop_t, nullptr);
     ASSERT_EQ(loop_t->root().size(), 2);
 
-    auto* k3 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* k4 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
+    auto* k3 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
+    auto* k4 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
     ASSERT_NE(k3, nullptr);
     ASSERT_NE(k4, nullptr);
 
@@ -975,7 +975,7 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
 
     // Find inner j maps
     ASSERT_EQ(k3->root().size(), 1);
-    auto* map_j_1_orig = dynamic_cast<structured_control_flow::Map*>(&k3->root().at(0).first);
+    auto* map_j_1_orig = dyn_cast<structured_control_flow::Map*>(&k3->root().at(0).first);
     ASSERT_NE(map_j_1_orig, nullptr);
 
     // Apply LoopShift to j_1 (shift from init=1 to init=0)
@@ -997,8 +997,8 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
     } while (applies);
 
     // Re-fetch k3 and k4 after Phase 0 cleanup
-    k3 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    k4 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
+    k3 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
+    k4 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
     ASSERT_NE(k3, nullptr);
     ASSERT_NE(k4, nullptr);
 
@@ -1019,8 +1019,8 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
 
     // After cleanup: for t { tile_i_1 { i_1 { j_1 } }, tile_i_2 { i_2 { j_2 } } }
     ASSERT_EQ(loop_t->root().size(), 2);
-    auto* tile_i_1 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
-    auto* tile_i_2 = dynamic_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
+    auto* tile_i_1 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(0).first);
+    auto* tile_i_2 = dyn_cast<structured_control_flow::Map*>(&loop_t->root().at(1).first);
     ASSERT_NE(tile_i_1, nullptr);
     ASSERT_NE(tile_i_2, nullptr);
 
@@ -1030,7 +1030,7 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
 
     // After fusion: for t { for fused_tile_i { map i_1{j_1}, map i_2{j_2} } }
     ASSERT_EQ(loop_t->root().size(), 1);
-    auto* fused_tile_i = dynamic_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
+    auto* fused_tile_i = dyn_cast<structured_control_flow::For*>(&loop_t->root().at(0).first);
     ASSERT_NE(fused_tile_i, nullptr);
     ASSERT_EQ(fused_tile_i->root().size(), 2);
 
@@ -1043,10 +1043,10 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
     am.invalidate_all();
 
     // After interchange: tile_i { t { map i_1{j_1}, map i_2{j_2} } }
-    auto* outer_tile_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* outer_tile_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     ASSERT_NE(outer_tile_i, nullptr);
 
-    auto* inner_t = dynamic_cast<structured_control_flow::For*>(&outer_tile_i->root().at(0).first);
+    auto* inner_t = dyn_cast<structured_control_flow::For*>(&outer_tile_i->root().at(0).first);
     ASSERT_NE(inner_t, nullptr);
     EXPECT_EQ(inner_t->indvar()->get_name(), "t");
 
@@ -1054,17 +1054,17 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
 
     // Navigate to the inner maps
     ASSERT_EQ(inner_t->root().size(), 2);
-    auto* map_i_1 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(0).first);
-    auto* map_i_2 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(1).first);
+    auto* map_i_1 = dyn_cast<structured_control_flow::Map*>(&inner_t->root().at(0).first);
+    auto* map_i_2 = dyn_cast<structured_control_flow::Map*>(&inner_t->root().at(1).first);
     ASSERT_NE(map_i_1, nullptr);
     ASSERT_NE(map_i_2, nullptr);
 
     // Find inner j maps
     ASSERT_EQ(map_i_1->root().size(), 1);
-    auto* map_j_1 = dynamic_cast<structured_control_flow::Map*>(&map_i_1->root().at(0).first);
+    auto* map_j_1 = dyn_cast<structured_control_flow::Map*>(&map_i_1->root().at(0).first);
     ASSERT_NE(map_j_1, nullptr);
     ASSERT_EQ(map_i_2->root().size(), 1);
-    auto* map_j_2 = dynamic_cast<structured_control_flow::Map*>(&map_i_2->root().at(0).first);
+    auto* map_j_2 = dyn_cast<structured_control_flow::Map*>(&map_i_2->root().at(0).first);
     ASSERT_NE(map_j_2, nullptr);
 
     // --- Step 6: Tile both j-Maps with tile size 32 ---
@@ -1082,16 +1082,16 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
 
     // After tiling: map i_1 { tile_j_1 { j_1 } }, map i_2 { tile_j_2 { j_2 } }
     // Re-navigate after tiling
-    map_i_1 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(0).first);
-    map_i_2 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(1).first);
+    map_i_1 = dyn_cast<structured_control_flow::Map*>(&inner_t->root().at(0).first);
+    map_i_2 = dyn_cast<structured_control_flow::Map*>(&inner_t->root().at(1).first);
     ASSERT_NE(map_i_1, nullptr);
     ASSERT_NE(map_i_2, nullptr);
 
     ASSERT_EQ(map_i_1->root().size(), 1);
-    auto* tile_j_1 = dynamic_cast<structured_control_flow::Map*>(&map_i_1->root().at(0).first);
+    auto* tile_j_1 = dyn_cast<structured_control_flow::Map*>(&map_i_1->root().at(0).first);
     ASSERT_NE(tile_j_1, nullptr);
     ASSERT_EQ(map_i_2->root().size(), 1);
-    auto* tile_j_2 = dynamic_cast<structured_control_flow::Map*>(&map_i_2->root().at(0).first);
+    auto* tile_j_2 = dyn_cast<structured_control_flow::Map*>(&map_i_2->root().at(0).first);
     ASSERT_NE(tile_j_2, nullptr);
 
     // --- Step 7: LoopInterchange(i_1, tile_j_1) ---
@@ -1105,8 +1105,8 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
     // After interchange: t { tile_j_1{i_1{j_1}}, tile_j_2{i_2{j_2}} }
     // Now tile_j_1 and tile_j_2 are siblings!
     ASSERT_EQ(inner_t->root().size(), 2);
-    tile_j_1 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(0).first);
-    tile_j_2 = dynamic_cast<structured_control_flow::Map*>(&inner_t->root().at(1).first);
+    tile_j_1 = dyn_cast<structured_control_flow::Map*>(&inner_t->root().at(0).first);
+    tile_j_2 = dyn_cast<structured_control_flow::Map*>(&inner_t->root().at(1).first);
     ASSERT_NE(tile_j_1, nullptr);
     ASSERT_NE(tile_j_2, nullptr);
 
@@ -1116,7 +1116,7 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
 
     // After fusion: t { for fused_tile_j { i_1{j_1}, i_2{j_2} } }
     ASSERT_EQ(inner_t->root().size(), 1);
-    auto* fused_tile_j = dynamic_cast<structured_control_flow::For*>(&inner_t->root().at(0).first);
+    auto* fused_tile_j = dyn_cast<structured_control_flow::For*>(&inner_t->root().at(0).first);
     ASSERT_NE(fused_tile_j, nullptr);
 
     // --- Step 10: LoopSkewing(t, tile_j, factor=32) ---
@@ -1128,15 +1128,15 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
     am.invalidate_all();
 
     // Final structure: tile_i { tile_j { t { i_1{j_1}, i_2{j_2} } } }
-    auto* final_tile_i = dynamic_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
+    auto* final_tile_i = dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0).first);
     ASSERT_NE(final_tile_i, nullptr);
 
     ASSERT_EQ(final_tile_i->root().size(), 1);
-    auto* final_tile_j = dynamic_cast<structured_control_flow::For*>(&final_tile_i->root().at(0).first);
+    auto* final_tile_j = dyn_cast<structured_control_flow::For*>(&final_tile_i->root().at(0).first);
     ASSERT_NE(final_tile_j, nullptr);
 
     ASSERT_EQ(final_tile_j->root().size(), 1);
-    auto* final_t = dynamic_cast<structured_control_flow::For*>(&final_tile_j->root().at(0).first);
+    auto* final_t = dyn_cast<structured_control_flow::For*>(&final_tile_j->root().at(0).first);
     ASSERT_NE(final_t, nullptr);
     EXPECT_EQ(final_t->indvar()->get_name(), "t");
 

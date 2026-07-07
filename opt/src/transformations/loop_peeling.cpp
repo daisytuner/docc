@@ -205,7 +205,7 @@ static std::vector<structured_control_flow::StructuredLoop*> collect_peelable_ne
         auto& body = current->root();
         if (body.size() != 1) break;
         auto& child = body.at(0).first;
-        auto* inner_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child);
+        auto* inner_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child);
         if (!inner_loop) break;
         if (!loop_is_peelable(*inner_loop)) break;
         nest.push_back(inner_loop);
@@ -288,7 +288,7 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
         auto zero_init = symbolic::integer(0);
 
         structured_control_flow::StructuredLoop* new_loop = nullptr;
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
             new_loop = &builder.add_map(
                 *current_parent,
                 indvar,
@@ -299,7 +299,7 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 {},
                 loop->debug_info()
             );
-        } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(loop)) {
+        } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(loop)) {
             new_loop = &builder.add_reduce(
                 *current_parent,
                 indvar,
@@ -346,7 +346,7 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
         auto* loop = peel_infos[i].loop;
 
         structured_control_flow::StructuredLoop* new_loop = nullptr;
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
             new_loop = &builder.add_map(
                 *current_parent,
                 loop->indvar(),
@@ -357,7 +357,7 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 {},
                 loop->debug_info()
             );
-        } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(loop)) {
+        } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(loop)) {
             new_loop = &builder.add_reduce(
                 *current_parent,
                 loop->indvar(),
@@ -403,7 +403,7 @@ LoopPeeling LoopPeeling::from_json(builder::StructuredSDFGBuilder& builder, cons
     if (element == nullptr) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw InvalidTransformationDescriptionException(
             "Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop."

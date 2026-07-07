@@ -28,25 +28,25 @@ ControlFlowAnalysis::ControlFlowAnalysis(StructuredSDFG& sdfg)
 std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured_control_flow::ControlFlowNode& current
 ) {
     // Leaf nodes
-    if (auto block_node = dynamic_cast<structured_control_flow::Block*>(&current)) {
+    if (auto block_node = dyn_cast<structured_control_flow::Block*>(&current)) {
         auto v = boost::add_vertex(graph_);
         nodes_[v] = &current;
         return {v, v};
-    } else if (auto return_node = dynamic_cast<structured_control_flow::Return*>(&current)) {
+    } else if (auto return_node = dyn_cast<structured_control_flow::Return*>(&current)) {
         auto v = boost::add_vertex(graph_);
         nodes_[v] = &current;
         return {v, boost::graph_traits<graph::Graph>::null_vertex()};
-    } else if (auto continue_node = dynamic_cast<structured_control_flow::Continue*>(&current)) {
-        auto v = boost::add_vertex(graph_);
-        nodes_[v] = &current;
-        boost::add_edge(v, last_loop_, graph_);
-        return {v, boost::graph_traits<graph::Graph>::null_vertex()};
-    } else if (auto break_node = dynamic_cast<structured_control_flow::Break*>(&current)) {
+    } else if (auto continue_node = dyn_cast<structured_control_flow::Continue*>(&current)) {
         auto v = boost::add_vertex(graph_);
         nodes_[v] = &current;
         boost::add_edge(v, last_loop_, graph_);
         return {v, boost::graph_traits<graph::Graph>::null_vertex()};
-    } else if (auto if_else_node = dynamic_cast<structured_control_flow::IfElse*>(&current)) {
+    } else if (auto break_node = dyn_cast<structured_control_flow::Break*>(&current)) {
+        auto v = boost::add_vertex(graph_);
+        nodes_[v] = &current;
+        boost::add_edge(v, last_loop_, graph_);
+        return {v, boost::graph_traits<graph::Graph>::null_vertex()};
+    } else if (auto if_else_node = dyn_cast<structured_control_flow::IfElse*>(&current)) {
         auto start_v = boost::add_vertex(graph_);
         nodes_[start_v] = &current;
 
@@ -74,7 +74,7 @@ std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured
         }
 
         return {start_v, end_v};
-    } else if (auto while_loop = dynamic_cast<structured_control_flow::While*>(&current)) {
+    } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(&current)) {
         auto header_v = boost::add_vertex(graph_);
         nodes_[header_v] = &current;
 
@@ -99,7 +99,7 @@ std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured
         boost::add_edge(header_v, exit_v, graph_);
 
         return {header_v, exit_v};
-    } else if (auto structured_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&current)) {
+    } else if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&current)) {
         auto header_v = boost::add_vertex(graph_);
         nodes_[header_v] = &current;
 
@@ -124,7 +124,7 @@ std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured
         boost::add_edge(header_v, exit_v, graph_);
 
         return {header_v, exit_v};
-    } else if (auto sequence_node = dynamic_cast<structured_control_flow::Sequence*>(&current)) {
+    } else if (auto sequence_node = dyn_cast<structured_control_flow::Sequence*>(&current)) {
         graph::Vertex seq_start = boost::graph_traits<graph::Graph>::null_vertex();
         graph::Vertex seq_end = boost::graph_traits<graph::Graph>::null_vertex();
 

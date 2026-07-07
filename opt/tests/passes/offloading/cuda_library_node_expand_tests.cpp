@@ -65,7 +65,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_Group1) {
     dump_sdfg(sdfg, "1.after");
 
     ASSERT_EQ(sdfg.root().size(), 1);
-    auto* new_sequence = dynamic_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
     ASSERT_NE(new_sequence, nullptr);
     EXPECT_EQ(new_sequence->size(), 7) << "Expecting im2row expansion";
 }
@@ -126,7 +126,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne) {
     dump_sdfg(sdfg, "1.after");
 
     ASSERT_EQ(sdfg.root().size(), 1);
-    auto* new_sequence = dynamic_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
     ASSERT_NE(new_sequence, nullptr);
     EXPECT_EQ(new_sequence->size(), 1) << "Expecting naïve expansion";
 }
@@ -191,7 +191,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_Group1) {
     dump_sdfg(sdfg, "1.after");
 
     ASSERT_EQ(sdfg.root().size(), 1);
-    auto* new_sequence = dynamic_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
     ASSERT_NE(new_sequence, nullptr);
     EXPECT_EQ(new_sequence->size(), 7) << "Expecting im2row expansion";
 }
@@ -256,7 +256,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_GroupNotOne) {
     dump_sdfg(sdfg, "1.after");
 
     ASSERT_EQ(sdfg.root().size(), 1);
-    auto* new_sequence = dynamic_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
     ASSERT_NE(new_sequence, nullptr);
     EXPECT_EQ(new_sequence->size(), 1) << "Expecting naïve expansion";
 }
@@ -320,7 +320,7 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne_SymbolicPadding) {
     dump_sdfg(sdfg, "1.after");
 
     ASSERT_EQ(sdfg.root().size(), 1);
-    auto* new_sequence = dynamic_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
     ASSERT_NE(new_sequence, nullptr);
     EXPECT_EQ(new_sequence->size(), 1) << "Expecting naïve expansion";
 }

@@ -126,7 +126,6 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/tensor_expansion_utils.cpp
     src/data_flow/library_nodes/math/tensor/tensor_layout.cpp
     src/data_flow/library_nodes/math/tensor/tensor_node.cpp
-    src/data_flow/library_nodes/math/tensor/transpose_node.cpp
     src/data_flow/library_nodes/stdlib/alloca.cpp
     src/data_flow/library_nodes/stdlib/assert.cpp
     src/data_flow/library_nodes/stdlib/calloc.cpp
@@ -155,8 +154,9 @@ set(SOURCE_FILES
     src/passes/dataflow/memlet_linearization.cpp
     src/passes/dataflow/memlet_simplification.cpp
     src/passes/dataflow/tensor_to_pointer_conversion.cpp
+    src/passes/expansion/library_node_expansion_pass.cpp
+    src/passes/expansion/lib_node_expansion_context.cpp
     src/passes/memory/allocation_management.cpp
-    src/passes/schedules/expansion_pass.cpp
     src/passes/symbolic/symbol_evolution.cpp
     src/passes/symbolic/symbol_propagation.cpp
     src/passes/symbolic/symbol_promotion.cpp

@@ -176,6 +176,10 @@ public:
     Memlet(const Memlet& memlet) = delete;
     Memlet& operator=(const Memlet&) = delete;
 
+    ElementType type_id() const override { return ElementType::Memlet; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::Memlet; }
+
     /**
      * @brief Validate the memlet
      * @param function Function context for validation

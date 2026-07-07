@@ -194,7 +194,7 @@ TEST(EinsumNodeTest, ExpandGEMM) {
     EXPECT_EQ(root.size(), 1);
     ASSERT_GE(root.size(), 1);
 
-    auto* loop1 = dynamic_cast<structured_control_flow::Map*>(&root.at(0).first);
+    auto* loop1 = dyn_cast<structured_control_flow::Map*>(&root.at(0).first);
     ASSERT_TRUE(loop1);
     // Indvars are renamed during expansion for uniqueness, so get them from the loops
     auto i_renamed = loop1->indvar();
@@ -204,7 +204,7 @@ TEST(EinsumNodeTest, ExpandGEMM) {
     EXPECT_EQ(loop1->root().size(), 1);
     ASSERT_GE(loop1->root().size(), 1);
 
-    auto* loop2 = dynamic_cast<structured_control_flow::Map*>(&loop1->root().at(0).first);
+    auto* loop2 = dyn_cast<structured_control_flow::Map*>(&loop1->root().at(0).first);
     ASSERT_TRUE(loop2);
     auto j_renamed = loop2->indvar();
     EXPECT_TRUE(symbolic::eq(loop2->init(), zero));
@@ -213,7 +213,7 @@ TEST(EinsumNodeTest, ExpandGEMM) {
     EXPECT_EQ(loop2->root().size(), 1);
     ASSERT_GE(loop2->root().size(), 1);
 
-    auto* loop3 = dynamic_cast<structured_control_flow::For*>(&loop2->root().at(0).first);
+    auto* loop3 = dyn_cast<structured_control_flow::For*>(&loop2->root().at(0).first);
     ASSERT_TRUE(loop3);
     auto k_renamed = loop3->indvar();
     EXPECT_TRUE(symbolic::eq(loop3->init(), zero));
@@ -222,7 +222,7 @@ TEST(EinsumNodeTest, ExpandGEMM) {
     EXPECT_EQ(loop3->root().size(), 1);
     ASSERT_GE(loop3->root().size(), 1);
 
-    auto* new_block = dynamic_cast<structured_control_flow::Block*>(&loop3->root().at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&loop3->root().at(0).first);
     ASSERT_TRUE(new_block);
     auto& dfg = new_block->dataflow();
     EXPECT_EQ(dfg.tasklets().size(), 1);
@@ -463,11 +463,11 @@ TEST(EinsumNodeTest, ExpandMeans) {
     EXPECT_EQ(root.size(), 3);
     ASSERT_GE(root.size(), 3);
 
-    auto* for_init_opt = dynamic_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* for_init_opt = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
     ASSERT_TRUE(for_init_opt);
     EXPECT_EQ(for_init_opt, &for_init);
 
-    auto* loop1 = dynamic_cast<structured_control_flow::Map*>(&root.at(1).first);
+    auto* loop1 = dyn_cast<structured_control_flow::Map*>(&root.at(1).first);
     ASSERT_TRUE(loop1);
     // Indvars are renamed during expansion for uniqueness
     auto i_renamed = loop1->indvar();
@@ -477,7 +477,7 @@ TEST(EinsumNodeTest, ExpandMeans) {
     EXPECT_EQ(loop1->root().size(), 1);
     ASSERT_GE(loop1->root().size(), 1);
 
-    auto* loop2 = dynamic_cast<structured_control_flow::For*>(&loop1->root().at(0).first);
+    auto* loop2 = dyn_cast<structured_control_flow::For*>(&loop1->root().at(0).first);
     ASSERT_TRUE(loop2);
     auto j_renamed = loop2->indvar();
     EXPECT_TRUE(symbolic::eq(loop2->init(), zero));
@@ -486,7 +486,7 @@ TEST(EinsumNodeTest, ExpandMeans) {
     EXPECT_EQ(loop2->root().size(), 1);
     ASSERT_GE(loop2->root().size(), 1);
 
-    auto* new_block = dynamic_cast<structured_control_flow::Block*>(&loop2->root().at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&loop2->root().at(0).first);
     ASSERT_TRUE(new_block);
     auto& dfg = new_block->dataflow();
     EXPECT_EQ(dfg.tasklets().size(), 1);
@@ -523,7 +523,7 @@ TEST(EinsumNodeTest, ExpandMeans) {
         }
     }
 
-    auto* for_div_opt = dynamic_cast<structured_control_flow::For*>(&root.at(2).first);
+    auto* for_div_opt = dyn_cast<structured_control_flow::For*>(&root.at(2).first);
     ASSERT_TRUE(for_div_opt);
     EXPECT_EQ(for_div_opt, &for_div);
 }
@@ -688,7 +688,7 @@ TEST(EinsumNodeTest, ExpandMean) {
     EXPECT_EQ(root.size(), 3);
     ASSERT_GE(root.size(), 3);
 
-    auto* block_before = dynamic_cast<structured_control_flow::Block*>(&root.at(0).first);
+    auto* block_before = dyn_cast<structured_control_flow::Block*>(&root.at(0).first);
     ASSERT_TRUE(block_before);
     auto& dfg_before = block_before->dataflow();
     EXPECT_EQ(dfg_before.tasklets().size(), 1);
@@ -713,7 +713,7 @@ TEST(EinsumNodeTest, ExpandMean) {
         EXPECT_EQ(access_node->data(), "0.0");
     }
 
-    auto* for1 = dynamic_cast<structured_control_flow::For*>(&root.at(1).first);
+    auto* for1 = dyn_cast<structured_control_flow::For*>(&root.at(1).first);
     ASSERT_TRUE(for1);
     // Indvars are renamed during expansion for uniqueness
     auto i_renamed = for1->indvar();
@@ -723,7 +723,7 @@ TEST(EinsumNodeTest, ExpandMean) {
     EXPECT_EQ(for1->root().size(), 1);
     ASSERT_GE(for1->root().size(), 1);
 
-    auto* new_block = dynamic_cast<structured_control_flow::Block*>(&for1->root().at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&for1->root().at(0).first);
     ASSERT_TRUE(new_block);
     auto& new_dfg = new_block->dataflow();
     EXPECT_EQ(new_dfg.tasklets().size(), 1);
@@ -756,7 +756,7 @@ TEST(EinsumNodeTest, ExpandMean) {
         }
     }
 
-    auto* block_after = dynamic_cast<structured_control_flow::Block*>(&root.at(2).first);
+    auto* block_after = dyn_cast<structured_control_flow::Block*>(&root.at(2).first);
     ASSERT_TRUE(block_after);
     auto& dfg_after = block_after->dataflow();
     EXPECT_EQ(dfg_after.tasklets().size(), 2);

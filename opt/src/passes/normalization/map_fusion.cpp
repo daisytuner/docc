@@ -22,7 +22,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
     // Iterate over sequence looking for consecutive (Map, StructuredLoop) pairs
     size_t i = 0;
     while (i + 1 < node.size()) {
-        auto* first = dynamic_cast<structured_control_flow::Map*>(&node.at(i).first);
+        auto* first = dyn_cast<structured_control_flow::Map*>(&node.at(i).first);
         if (!first) {
             i++;
             continue;
@@ -32,7 +32,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
             continue;
         }
 
-        if (auto* second = dynamic_cast<structured_control_flow::StructuredLoop*>(&node.at(i + 1).first)) {
+        if (auto* second = dyn_cast<structured_control_flow::StructuredLoop*>(&node.at(i + 1).first)) {
             if (second->root().size() == 0) {
                 i++;
                 continue;
@@ -46,9 +46,9 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                 applied = true;
             }
         } else if (i + 2 < node.size()) {
-            auto* mid_block = dynamic_cast<structured_control_flow::Block*>(&node.at(i + 1).first);
+            auto* mid_block = dyn_cast<structured_control_flow::Block*>(&node.at(i + 1).first);
             if (mid_block && mid_block->is_a_library_node<stdlib::MallocNode>()) {
-                if (auto* second = dynamic_cast<structured_control_flow::StructuredLoop*>(&node.at(i + 2).first)) {
+                if (auto* second = dyn_cast<structured_control_flow::StructuredLoop*>(&node.at(i + 2).first)) {
                     if (second->root().size() == 0) {
                         i++;
                         continue;

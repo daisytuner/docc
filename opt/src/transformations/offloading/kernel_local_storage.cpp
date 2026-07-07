@@ -70,7 +70,7 @@ std::tuple<symbolic::Integer, symbolic::Integer, symbolic::Integer> KernelLocalS
     symbolic::Integer z_dim_size = symbolic::one();
 
     for (auto node : ancestors) {
-        if (auto ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+        if (auto ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
             auto schedule_type = ancestor_map->schedule_type();
             if (!gpu::is_gpu_schedule(schedule_type)) {
                 continue;
@@ -98,7 +98,7 @@ std::tuple<symbolic::Symbol, symbolic::Symbol, symbolic::Symbol> KernelLocalStor
     symbolic::Symbol z_dim_indvar = SymEngine::null;
 
     for (auto node : ancestors) {
-        if (auto ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+        if (auto ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
             auto schedule_type = ancestor_map->schedule_type();
             if (!gpu::is_gpu_schedule(schedule_type)) {
                 continue;
@@ -216,7 +216,7 @@ bool KernelLocalStorage::is_candidate(
     auto ancestors = ControlFlowNode::parent_chain(loop);
 
     // Criterion: Must not be a GPU map itself
-    if (auto loop_map = dynamic_cast<structured_control_flow::Map*>(&loop)) {
+    if (auto loop_map = dyn_cast<structured_control_flow::Map*>(&loop)) {
         if (gpu::is_gpu_schedule(loop_map->schedule_type())) {
             return false;
         }
@@ -225,7 +225,7 @@ bool KernelLocalStorage::is_candidate(
     // Criterion: Must be nested in a GPU schedule
     bool is_gpu_scope = false;
     for (auto ancestor : ancestors) {
-        if (auto ancestor_map = dynamic_cast<structured_control_flow::Map*>(ancestor)) {
+        if (auto ancestor_map = dyn_cast<structured_control_flow::Map*>(ancestor)) {
             if (gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
                 is_gpu_scope = true;
             } else if (ancestor_map->schedule_type().value() == ScheduleType_Sequential::value()) {
@@ -290,7 +290,7 @@ bool KernelLocalStorage::is_candidate(
     // Criterion: more than one GPU dimension is available
     symbolic::SymbolVec indvars;
     for (auto node : ancestors) {
-        if (auto ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+        if (auto ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
             auto schedule_type = ancestor_map->schedule_type();
             if (!gpu::is_gpu_schedule(schedule_type)) {
                 continue;
@@ -391,7 +391,7 @@ void KernelLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis
     // Detect GPU backend from ancestor map schedule types
     bool is_rocm = false;
     for (auto node : ancestors) {
-        if (auto ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+        if (auto ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
             if (ancestor_map->schedule_type().value() == "ROCM") {
                 is_rocm = true;
                 break;
@@ -613,7 +613,7 @@ KernelLocalStorage KernelLocalStorage::from_json(builder::StructuredSDFGBuilder&
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto outer_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto outer_loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (!outer_loop) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " is not a loop.");
     }

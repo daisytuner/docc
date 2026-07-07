@@ -211,7 +211,7 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     auto parent = static_cast<structured_control_flow::Sequence*>(this->loop_.get_parent());
 
     structured_control_flow::ScheduleType schedule_type = structured_control_flow::ScheduleType_Sequential::create();
-    if (auto map_stmt = dynamic_cast<structured_control_flow::Map*>(&this->loop_)) {
+    if (auto map_stmt = dyn_cast<structured_control_flow::Map*>(&this->loop_)) {
         schedule_type = map_stmt->schedule_type();
     }
 
@@ -277,7 +277,7 @@ LoopDistribute LoopDistribute::from_json(builder::StructuredSDFGBuilder& builder
     if (element == nullptr) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw InvalidTransformationDescriptionException(
             "Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop."

@@ -54,7 +54,7 @@ TEST(LoopConditionNormalizeTest, PositiveStrideUnequality) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Verify initial state: i != N with stride +1
@@ -120,7 +120,7 @@ TEST(LoopConditionNormalizeTest, NegativeStrideUnequality) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Verify initial state: i != 0 with stride -1
@@ -188,7 +188,7 @@ TEST(LoopConditionNormalizeTest, AffineCondition) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply transformation
@@ -239,7 +239,7 @@ TEST(LoopConditionNormalizeTest, NonUnitStride_NotApplicable) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Transformation should not be applicable with stride != ±1
@@ -272,7 +272,7 @@ TEST(LoopConditionNormalizeTest, NoUnequality_NotApplicable) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Transformation should not be applicable (no != to convert)
@@ -315,7 +315,7 @@ TEST(LoopConditionNormalizeTest, MapUnequality) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply transformation
@@ -363,7 +363,7 @@ TEST(LoopConditionNormalizeTest, IndvarOnRHS) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply transformation
@@ -424,7 +424,7 @@ TEST(LoopConditionNormalizeTest, AffineIndvarExpression_NotApplicable) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Transformation should NOT be applicable - coefficient of indvar is 2, not 1
@@ -463,7 +463,7 @@ TEST(LoopConditionNormalizeTest, BooleanComparisonFalseEqRelational) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Transformation should be applicable (has boolean comparison pattern)
@@ -512,7 +512,7 @@ TEST(LoopConditionNormalizeTest, MaxBoundSimplification) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Transformation should be applicable (has max pattern)

@@ -63,6 +63,10 @@ public:
     Map(const Map& node) = delete;
     Map& operator=(const Map&) = delete;
 
+    ElementType type_id() const override { return ElementType::Map; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::Map; }
+
     void validate(const Function& function) const override;
 };
 

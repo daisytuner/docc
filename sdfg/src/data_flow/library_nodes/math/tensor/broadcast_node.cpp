@@ -1,5 +1,6 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/structured_control_flow/for.h"
 
 namespace sdfg {
@@ -20,8 +21,8 @@ BroadcastNode::BroadcastNode(
           vertex,
           parent,
           LibraryNodeType_Broadcast,
-          {"Y"},
-          {"X"},
+          {},
+          {"Y", "X"},
           data_flow::ImplementationType_NONE
       ),
       input_shape_(input_shape), output_shape_(output_shape) {}
@@ -31,8 +32,8 @@ void BroadcastNode::validate(const Function& function) const {
 
     auto& graph = this->get_parent();
 
-    auto& iedge = *graph.in_edges(*this).begin();
-    auto& shape = static_cast<const types::Tensor&>(iedge.base_type());
+    auto* iedge = graph.in_edge_for_connector(*this, inputs_.at(X_INPUT_IDX));
+    auto& shape = static_cast<const types::Tensor&>(iedge->base_type());
     if (!shape.is_scalar()) {
         if (shape.shape().size() != this->input_shape_.size()) {
             throw InvalidSDFGException(
@@ -50,8 +51,8 @@ void BroadcastNode::validate(const Function& function) const {
         }
     }
 
-    auto& oedge = *graph.out_edges(*this).begin();
-    auto& output_shape = static_cast<const types::Tensor&>(oedge.base_type());
+    auto* oedge = graph.in_edge_for_connector(*this, inputs_.at(RESULT_PTR_IDX));
+    auto& output_shape = static_cast<const types::Tensor&>(oedge->base_type());
     if (output_shape.shape().size() != this->output_shape_.size()) {
         throw InvalidSDFGException(
             "Library Node: Output tensor shape must match node shape. Output tensor shape: " +
@@ -102,22 +103,28 @@ void BroadcastNode::replace(const symbolic::ExpressionMapping& replacements) {
     }
 }
 
-bool BroadcastNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+passes::LibNodeExpander::ExpandOutcome BroadcastNode::
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
     auto& dataflow = this->get_parent();
-    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
 
-    if (dataflow.in_degree(*this) != 1 || dataflow.out_degree(*this) != 1) {
-        return false;
+    if (dataflow.in_degree(*this) != 2 || dataflow.out_degree(*this) != 0) {
+        return context.unable();
     }
 
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
+    auto edges = dataflow.in_edges_by_connector(*this);
+    auto& in_edge = *edges.at(X_INPUT_IDX);
+    auto& result_ptr_edge = *edges.at(RESULT_PTR_IDX);
 
-    auto& in_edge = *dataflow.in_edges(*this).begin();
-    auto& out_edge = *dataflow.out_edges(*this).begin();
-    auto& in_node = static_cast<data_flow::AccessNode&>(in_edge.src());
-    auto& out_node = static_cast<data_flow::AccessNode&>(out_edge.dst());
+
+    using Use = passes::LibNodeExpander::InputUse;
+    auto standalone = context.replacement_requires_access_nodes({Use::IndirectWrite, Use::IndirectRead});
+
+    if (!standalone) {
+        return context.unable();
+    }
 
     symbolic::MultiExpression loop_vars;
+    auto& builder = standalone->builder();
     structured_control_flow::Sequence* inner_scope = nullptr;
 
     for (size_t i = 0; i < output_shape_.size(); ++i) {
@@ -130,16 +137,13 @@ bool BroadcastNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
         auto update = symbolic::add(sym_var, symbolic::one());
 
         if (i == 0) {
-            auto& loop = builder.add_map_before(
-                parent,
-                block,
+            auto& loop = standalone->replace_with_structured_loop(
+                passes::LibNodeExpander::AccessNodeExpand::LoopType::Map,
                 sym_var,
                 condition,
                 init,
                 update,
-                structured_control_flow::ScheduleType_Sequential::create(),
-                {},
-                this->debug_info()
+                structured_control_flow::ScheduleType_Sequential::create()
             );
             inner_scope = &loop.root();
         } else {
@@ -160,8 +164,8 @@ bool BroadcastNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
 
     auto& tasklet_block = builder.add_block(*inner_scope, {}, this->debug_info());
 
-    auto& in_acc = builder.add_access(tasklet_block, in_node.data());
-    auto& out_acc = builder.add_access(tasklet_block, out_node.data());
+    auto& in_acc = standalone->add_indirect_read_access(tasklet_block, X_INPUT_IDX);
+    auto& out_acc = standalone->add_indirect_write_access(tasklet_block, RESULT_PTR_IDX);
 
     symbolic::MultiExpression input_subset = {};
     for (size_t i = 0; i < input_shape_.size(); ++i) {
@@ -183,19 +187,10 @@ bool BroadcastNode::expand(builder::StructuredSDFGBuilder& builder, analysis::An
         tasklet_block, in_acc, tasklet, "_in", input_subset, in_edge.base_type(), this->debug_info()
     );
     builder.add_computational_memlet(
-        tasklet_block, tasklet, "_out", out_acc, loop_vars, out_edge.base_type(), this->debug_info()
+        tasklet_block, tasklet, "_out", out_acc, loop_vars, result_ptr_edge.base_type(), this->debug_info()
     );
 
-    builder.remove_memlet(block, in_edge);
-    builder.remove_memlet(block, out_edge);
-    builder.remove_node(block, in_node);
-    builder.remove_node(block, out_node);
-    builder.remove_node(block, *this);
-
-    int index = parent.index(block);
-    builder.remove_child(parent, index);
-
-    return true;
+    return standalone->successfully_expanded();
 }
 
 std::unique_ptr<data_flow::DataFlowNode> BroadcastNode::
@@ -203,6 +198,16 @@ std::unique_ptr<data_flow::DataFlowNode> BroadcastNode::
     return std::unique_ptr<data_flow::DataFlowNode>(
         new BroadcastNode(element_id, this->debug_info(), vertex, parent, input_shape_, output_shape_)
     );
+}
+
+data_flow::PointerAccessType BroadcastNode::pointer_access_type(int input_idx) const {
+    if (input_idx == RESULT_PTR_IDX) {
+        return data_flow::PointerAccessMeta::create_full_write_only(symbolic::__nullptr__(), true);
+    } else if (input_idx == X_INPUT_IDX) {
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::__nullptr__(), true);
+    } else {
+        return TensorNode::pointer_access_type(input_idx);
+    }
 }
 
 } // namespace tensor

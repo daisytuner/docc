@@ -555,7 +555,7 @@ bool BlockHoisting::map_invariant_front(structured_control_flow::Sequence& paren
     }
     auto& first_node = first_child.first;
 
-    auto* block = dynamic_cast<structured_control_flow::Block*>(&first_node);
+    auto* block = dyn_cast<structured_control_flow::Block*>(&first_node);
     if (!block) {
         return false;
     }
@@ -584,7 +584,7 @@ bool BlockHoisting::map_invariant_back(structured_control_flow::Sequence& parent
     }
     auto& last_node = last_child.first;
 
-    auto* block = dynamic_cast<structured_control_flow::Block*>(&last_node);
+    auto* block = dyn_cast<structured_control_flow::Block*>(&last_node);
     if (!block) {
         return false;
     }
@@ -671,7 +671,7 @@ bool BlockHoisting::
     if (!first_child.second.assignments().empty()) {
         return false;
     }
-    auto* first_block = dynamic_cast<structured_control_flow::Block*>(&first_child.first);
+    auto* first_block = dyn_cast<structured_control_flow::Block*>(&first_child.first);
     if (!first_block) {
         return false;
     }
@@ -686,7 +686,7 @@ bool BlockHoisting::
         if (!other_child.second.assignments().empty()) {
             return false;
         }
-        auto* other_block = dynamic_cast<structured_control_flow::Block*>(&other_child.first);
+        auto* other_block = dyn_cast<structured_control_flow::Block*>(&other_child.first);
         if (!other_block) {
             return false;
         }
@@ -742,7 +742,7 @@ bool BlockHoisting::
     if (!last_child.second.assignments().empty()) {
         return false;
     }
-    auto* last_block = dynamic_cast<structured_control_flow::Block*>(&last_child.first);
+    auto* last_block = dyn_cast<structured_control_flow::Block*>(&last_child.first);
     if (!last_block) {
         return false;
     }
@@ -757,7 +757,7 @@ bool BlockHoisting::
         if (!other_child.second.assignments().empty()) {
             return false;
         }
-        auto* other_block = dynamic_cast<structured_control_flow::Block*>(&other_child.first);
+        auto* other_block = dyn_cast<structured_control_flow::Block*>(&other_child.first);
         if (!other_block) {
             return false;
         }

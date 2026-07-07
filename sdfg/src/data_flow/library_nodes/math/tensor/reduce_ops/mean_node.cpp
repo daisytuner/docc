@@ -19,32 +19,27 @@ MeanNode::MeanNode(
 )
     : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Mean, shape, axes, keepdims) {}
 
-bool MeanNode::expand_inner(
-    builder::StructuredSDFGBuilder& builder,
-    analysis::AnalysisManager& analysis_manager,
+passes::LibNodeExpander::ExpandOutcome MeanNode::expand_inner(
+    passes::LibNodeExpander::AccessNodeExpand& expansion,
     structured_control_flow::Block& block,
-    data_flow::DataFlowGraph& dataflow,
-    structured_control_flow::Sequence& parent,
-    Transition& transition,
     const data_flow::Memlet* iedge_input,
     const data_flow::Memlet* iedge_result,
-    const data_flow::AccessNode* input_node,
-    const data_flow::AccessNode* output_node,
     const std::vector<symbolic::Expression>& output_shape,
     const std::vector<int64_t>& sorted_axes
 ) {
-    auto out_cont = output_node->data();
     auto& out_type = iedge_result->base_type();
     auto& in_type = iedge_input->base_type();
-    auto in_cont = input_node->data();
+
+    auto& seq = expansion.replace_with_sequence();
+    auto& builder = expansion.builder();
 
     // Create SumNode
-    auto& sum_block = builder.add_block_before(parent, block, {}, this->debug_info());
+    auto& sum_block = builder.add_block(seq, {}, this->debug_info());
     auto& sum_node = builder.add_library_node<SumNode>(sum_block, this->debug_info(), shape_, axes_, keepdims_);
 
     // Create intermediate buffer for Sum result
-    auto& sum_in_node = builder.add_access(sum_block, in_cont, this->debug_info());
-    auto& sum_out_node = builder.add_access(sum_block, out_cont, this->debug_info());
+    auto& sum_in_node = expansion.add_scalar_input_access(sum_block, X_INPUT_IDX);
+    auto& sum_out_node = expansion.add_scalar_input_access(sum_block, RESULT_PTR_IDX);
 
     // Connect Input -> Sum -> Tmp
     builder.add_computational_memlet(sum_block, sum_in_node, sum_node, "X", {}, in_type, this->debug_info());
@@ -61,15 +56,14 @@ bool MeanNode::expand_inner(
         symbolic::Expression dim = shape_[ax];
         count_expr = symbolic::mul(count_expr, dim);
     }
-    auto& count_block =
-        builder.add_block_before(parent, block, {{symbolic::symbol(count_container), count_expr}}, this->debug_info());
+    auto& count_block = builder.add_block(seq, {{symbolic::symbol(count_container), count_expr}}, this->debug_info());
 
     // Create DivNode
-    auto& div_block = builder.add_block_before(parent, block, transition.assignments(), this->debug_info());
+    auto& div_block = builder.add_block(seq, {}, this->debug_info());
     auto& div_node = builder.add_library_node<DivNode>(div_block, this->debug_info(), output_shape);
 
     // Connect Tmp -> Div (A)
-    auto& div_in_node = builder.add_access(div_block, out_cont, this->debug_info());
+    auto& div_in_node = expansion.add_scalar_input_access(div_block, RESULT_PTR_IDX);
     builder.add_computational_memlet(div_block, div_in_node, div_node, "A", {}, out_type, this->debug_info());
 
     // Connect Count -> Div (B)
@@ -80,25 +74,13 @@ bool MeanNode::expand_inner(
     // Connect Div -> Output (C)
     builder.add_computational_memlet(div_block, div_in_node, div_node, "C", {}, out_type, this->debug_info());
 
-    // Cleanup
-    builder.remove_memlet(block, *iedge_input);
-    builder.remove_memlet(block, *iedge_result);
-    builder.remove_node(block, *input_node);
-    builder.remove_node(block, *output_node);
-    builder.remove_node(block, *this);
-
-    int last_index = parent.index(block);
-    builder.remove_child(parent, last_index);
-
-    return true;
+    return expansion.successfully_expanded();
 }
 
 bool MeanNode::expand_reduction(
+    passes::LibNodeExpander::AccessNodeExpand& expansion,
     builder::StructuredSDFGBuilder& builder,
-    analysis::AnalysisManager& analysis_manager,
     structured_control_flow::Sequence& body,
-    const std::string& input_name,
-    const std::string& output_name,
     const types::Tensor& input_type,
     const types::Tensor& output_type,
     const data_flow::Subset& input_subset,

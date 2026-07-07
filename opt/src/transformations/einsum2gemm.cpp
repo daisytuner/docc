@@ -157,7 +157,7 @@ void Einsum2Gemm::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
     auto& dfg = this->einsum_node_.get_parent();
 
     // Get the block in which the einsum node lives
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
     // Determine the BLAS precision

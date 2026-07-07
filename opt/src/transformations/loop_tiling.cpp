@@ -36,7 +36,7 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     auto outer_update = symbolic::add(outer_indvar, symbolic::integer(this->tile_size_));
 
     structured_control_flow::StructuredLoop* outer_loop = nullptr;
-    if (auto map = dynamic_cast<structured_control_flow::Map*>(&loop_)) {
+    if (auto map = dyn_cast<structured_control_flow::Map*>(&loop_)) {
         outer_loop = &builder.add_map_before(
             *parent,
             loop_,
@@ -48,7 +48,7 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
             transition.assignments(),
             loop_.debug_info()
         );
-    } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(&loop_)) {
+    } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(&loop_)) {
         outer_loop = &builder.add_reduce_before(
             *parent,
             loop_,
@@ -113,7 +113,7 @@ LoopTiling LoopTiling::from_json(builder::StructuredSDFGBuilder& builder, const 
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
 
     return LoopTiling(*loop, tile_size);
 };

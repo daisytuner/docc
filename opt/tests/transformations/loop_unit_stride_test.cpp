@@ -44,7 +44,7 @@ TEST(LoopUnitStrideTest, BasicPositiveStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -116,7 +116,7 @@ TEST(LoopUnitStrideTest, SymbolicBoundPositiveStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -179,7 +179,7 @@ TEST(LoopUnitStrideTest, CannotApplyNonZeroInit) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Cannot apply to non-zero init - need LoopShift first
@@ -223,7 +223,7 @@ TEST(LoopUnitStrideTest, NegativeStridePreservesDirection) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -288,7 +288,7 @@ TEST(LoopUnitStrideTest, PositiveStridePreservesDirection) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -344,7 +344,7 @@ TEST(LoopUnitStrideTest, CannotApplyUnitStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Cannot apply to unit stride
@@ -385,7 +385,7 @@ TEST(LoopUnitStrideTest, CannotApplyNegativeUnitStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Cannot apply to stride = -1 (use LoopRotate instead)
@@ -427,7 +427,7 @@ TEST(LoopUnitStrideTest, MapLoop) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -478,7 +478,7 @@ TEST(LoopUnitStrideTest, JsonRoundTrip) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Create transformation and serialize
@@ -527,7 +527,7 @@ TEST(LoopUnitStrideTest, LargeStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -588,7 +588,7 @@ TEST(LoopUnitStrideTest, IndvarFinalValueAfterLoop) {
     auto& sdfg_root = builder2.subject().root();
     ASSERT_EQ(sdfg_root.size(), 1); // Just the loop
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -600,7 +600,7 @@ TEST(LoopUnitStrideTest, IndvarFinalValueAfterLoop) {
     ASSERT_EQ(sdfg_root.size(), 2);
 
     // Verify the second element is a block (reconstruction)
-    auto* post_loop_block = dynamic_cast<structured_control_flow::Block*>(&sdfg_root.at(1).first);
+    auto* post_loop_block = dyn_cast<structured_control_flow::Block*>(&sdfg_root.at(1).first);
     ASSERT_NE(post_loop_block, nullptr);
 
     // Check the reconstruction block's transition contains the reconstruction assignment

@@ -54,7 +54,7 @@ bool LoopSchedulingPass::run_pass_target(
         if (!found_incompatible) {
             auto descendants = loop_analysis.descendants(loop);
             for (auto descendant : descendants) {
-                if (auto map_node = dynamic_cast<structured_control_flow::Map*>(descendant)) {
+                if (auto map_node = dyn_cast<structured_control_flow::Map*>(descendant)) {
                     auto compatible_schedules = scheduler->compatible_types();
                     if (compatible_schedules.find(map_node->schedule_type().category()) == compatible_schedules.end()) {
                         found_incompatible = true;
@@ -84,9 +84,9 @@ bool LoopSchedulingPass::run_pass_target(
         }
 
         SchedulerAction action;
-        if (auto while_loop = dynamic_cast<structured_control_flow::While*>(loop)) {
+        if (auto while_loop = dyn_cast<structured_control_flow::While*>(loop)) {
             action = scheduler->find(builder, analysis_manager, *while_loop, offload_unknown_sizes_);
-        } else if (auto structured_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+        } else if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
             action = scheduler->find(builder, analysis_manager, *structured_loop, offload_unknown_sizes_);
         } else {
             throw InvalidSDFGException("LoopScheduler encountered non-loop in loop analysis.");
@@ -94,7 +94,7 @@ bool LoopSchedulingPass::run_pass_target(
 
         switch (action) {
             case SchedulerAction::NEXT: {
-                if (auto structured_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+                if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
                     applicable_loops.push_back(structured_loop);
                 }
                 break;

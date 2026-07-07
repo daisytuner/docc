@@ -62,11 +62,11 @@ BufferReuseMarker::BufferReuseMarker(
 bool BufferReuseMarker::visit_internal(structured_control_flow::Sequence& parent) {
     for (size_t i = 0; i < parent.size(); i++) {
         auto& current = parent.at(i).first;
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&current)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&current)) {
             process_block(*block);
-        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&current)) {
+        } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&current)) {
             visit_internal(*seq);
-        } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&current)) {
+        } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&current)) {
             // Buffers created in different branches are not totally ordered, so they interfere.
             std::vector<std::pair<size_t, size_t>> ranges;
             for (size_t c = 0; c < if_else->size(); c++) {
@@ -83,7 +83,7 @@ bool BufferReuseMarker::visit_internal(structured_control_flow::Sequence& parent
                     }
                 }
             }
-        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&current)) {
+        } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&current)) {
             visit_internal(loop->root());
         }
     }

@@ -527,7 +527,7 @@ bool MapFusion::find_write_location(
     for (size_t i = 0; i < seq.size(); ++i) {
         auto& child = seq.at(i).first;
 
-        if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&child)) {
+        if (auto* blk = dyn_cast<structured_control_flow::Block*>(&child)) {
             // Check if this block writes to the container
             auto& dataflow = blk->dataflow();
             for (auto& node : dataflow.nodes()) {
@@ -545,7 +545,7 @@ bool MapFusion::find_write_location(
                     block = blk;
                 }
             }
-        } else if (auto* nested_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+        } else if (auto* nested_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
             if (!find_write_location(*nested_loop, container, loops, body, block)) {
                 return false;
             }
@@ -576,7 +576,7 @@ bool MapFusion::find_read_location(
     for (size_t i = 0; i < seq.size(); ++i) {
         auto& child = seq.at(i).first;
 
-        if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&child)) {
+        if (auto* blk = dyn_cast<structured_control_flow::Block*>(&child)) {
             // Check if this block reads from the container
             auto& dataflow = blk->dataflow();
             for (auto& node : dataflow.nodes()) {
@@ -593,7 +593,7 @@ bool MapFusion::find_read_location(
                     body = &seq;
                 }
             }
-        } else if (auto* nested_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+        } else if (auto* nested_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
             if (!find_read_location(*nested_loop, container, loops, body)) {
                 return false;
             }
@@ -626,7 +626,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         return false;
     }
 
-    auto* parent_sequence = dynamic_cast<structured_control_flow::Sequence*>(first_parent);
+    auto* parent_sequence = dyn_cast<structured_control_flow::Sequence*>(first_parent);
     if (parent_sequence == nullptr) {
         return false;
     }
@@ -717,7 +717,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         producer_body_ = &first_map_.root();
         structured_control_flow::ControlFlowNode* node = &first_map_.root().at(0).first;
         int level = 1;
-        while (auto* nested = dynamic_cast<structured_control_flow::StructuredLoop*>(node)) {
+        while (auto* nested = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
             if (limit_depth && ++level > limit_depth) {
                 break;
             }
@@ -726,7 +726,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             if (nested->root().size() == 0) return false;
             node = &nested->root().at(0).first;
         }
-        producer_block_ = dynamic_cast<structured_control_flow::Block*>(node);
+        producer_block_ = dyn_cast<structured_control_flow::Block*>(node);
         if (producer_block_ == nullptr) {
             return false;
         }
@@ -757,7 +757,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         consumer_body_ = &second_loop_.root();
         structured_control_flow::ControlFlowNode* node = &second_loop_.root().at(0).first;
         int level = 1;
-        while (auto* nested = dynamic_cast<structured_control_flow::StructuredLoop*>(node)) {
+        while (auto* nested = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
             if (limit_depth && ++level > limit_depth) {
                 break;
             }
@@ -1024,7 +1024,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         symbolic::SymbolSet sequential_indvars;
         size_t first_sequential = consumer_loops_.size();
         for (size_t li = 0; li < consumer_loops_.size(); ++li) {
-            if (dynamic_cast<structured_control_flow::Map*>(consumer_loops_[li]) == nullptr) {
+            if (dyn_cast<structured_control_flow::Map*>(consumer_loops_[li]) == nullptr) {
                 sequential_indvars.insert(consumer_loops_[li]->indvar());
                 if (first_sequential == consumer_loops_.size()) {
                     first_sequential = li;
@@ -1228,7 +1228,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             // Case 1, the accumulator array stays live, so DCE would not reclaim it — remove
             // the producer explicitly (mirrors how ConsumerIntoProducer removes its loop).
             auto* parent = first_map_.get_parent();
-            auto* parent_seq = dynamic_cast<structured_control_flow::Sequence*>(parent);
+            auto* parent_seq = dyn_cast<structured_control_flow::Sequence*>(parent);
             if (parent_seq != nullptr) {
                 int idx = parent_seq->index(first_map_);
                 if (idx >= 0) {
@@ -1284,7 +1284,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             structured_control_flow::ControlFlowNode* last_inserted = &wb_block;
 
             for (size_t i = 0; i < consumer_body_->size(); ++i) {
-                auto* consumer_block = dynamic_cast<structured_control_flow::Block*>(&consumer_body_->at(i).first);
+                auto* consumer_block = dyn_cast<structured_control_flow::Block*>(&consumer_body_->at(i).first);
                 if (consumer_block == nullptr) {
                     continue;
                 }
@@ -1417,7 +1417,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
 
         // Remove the consumer loop
         auto* parent = second_loop_.get_parent();
-        auto* parent_seq = dynamic_cast<structured_control_flow::Sequence*>(parent);
+        auto* parent_seq = dyn_cast<structured_control_flow::Sequence*>(parent);
         if (parent_seq != nullptr) {
             int idx = parent_seq->index(second_loop_);
             if (idx >= 0) {
@@ -1479,8 +1479,8 @@ MapFusion MapFusion::from_json(builder::StructuredSDFGBuilder& builder, const nl
         );
     }
 
-    auto* first_map = dynamic_cast<structured_control_flow::Map*>(first_element);
-    auto* second_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(second_element);
+    auto* first_map = dyn_cast<structured_control_flow::Map*>(first_element);
+    auto* second_loop = dyn_cast<structured_control_flow::StructuredLoop*>(second_element);
 
     if (first_map == nullptr) {
         throw InvalidTransformationDescriptionException(

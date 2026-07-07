@@ -58,16 +58,16 @@ void LoopAnalysis::
         structured_control_flow::For* new_for = nullptr;
         structured_control_flow::ControlFlowNode* new_loop = nullptr;
         // Loop detected
-        if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(current)) {
+        if (auto while_stmt = dyn_cast<structured_control_flow::While*>(current)) {
             new_loop = while_stmt;
             new_while = while_stmt;
-        } else if (auto map_stmt = dynamic_cast<structured_control_flow::Map*>(current)) {
+        } else if (auto map_stmt = dyn_cast<structured_control_flow::Map*>(current)) {
             new_map = map_stmt;
             new_loop = map_stmt;
-        } else if (auto for_stmt = dynamic_cast<structured_control_flow::For*>(current)) {
+        } else if (auto for_stmt = dyn_cast<structured_control_flow::For*>(current)) {
             new_for = for_stmt;
             new_loop = for_stmt;
-        } else if (auto loop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(current)) {
+        } else if (auto loop_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(current)) {
             // Generic structured loop (e.g. Reduce) that is neither a Map nor a For.
             new_loop = loop_stmt;
         }
@@ -82,7 +82,7 @@ void LoopAnalysis::
             init_new_loop_info(loop_info, id, loop_level, new_loop, new_map, new_while);
         }
 
-        if (auto block = dynamic_cast<structured_control_flow::Block*>(current)) {
+        if (auto block = dyn_cast<structured_control_flow::Block*>(current)) {
             non_perfectly_nested = true;
             for (auto& node : block->dataflow().nodes()) {
                 if (auto library_node = dynamic_cast<data_flow::LibraryNode*>(&node)) {
@@ -93,7 +93,7 @@ void LoopAnalysis::
                     }
                 }
             }
-        } else if (auto sequence_stmt = dynamic_cast<structured_control_flow::Sequence*>(current)) {
+        } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(current)) {
             auto seq_entries = sequence_stmt->size();
             if (current != &scope) { // the body-root of each loop is expected to be a sequence
                 non_perfectly_nested = true;
@@ -102,22 +102,22 @@ void LoopAnalysis::
                 auto entry = sequence_stmt->at(i);
                 queue.push_back(&entry.first);
             }
-        } else if (auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(current)) {
+        } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(current)) {
             non_perfectly_nested = true;
             for (size_t i = 0; i < if_else_stmt->size(); i++) {
                 queue.push_back(&if_else_stmt->at(i).first);
             }
-        } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(current)) {
+        } else if (auto while_stmt = dyn_cast<structured_control_flow::While*>(current)) {
             this->run(while_stmt->root(), while_stmt, loop_level + 1);
-        } else if (auto for_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(current)) {
+        } else if (auto for_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(current)) {
             this->run(for_stmt->root(), for_stmt, loop_level + 1);
-        } else if (dynamic_cast<structured_control_flow::Break*>(current)) {
+        } else if (dyn_cast<structured_control_flow::Break*>(current)) {
             non_perfectly_nested = true;
             continue;
-        } else if (dynamic_cast<structured_control_flow::Continue*>(current)) {
+        } else if (dyn_cast<structured_control_flow::Continue*>(current)) {
             non_perfectly_nested = true;
             continue;
-        } else if (dynamic_cast<structured_control_flow::Return*>(current)) {
+        } else if (dyn_cast<structured_control_flow::Return*>(current)) {
             non_perfectly_nested = true;
             continue;
         } else {
@@ -134,9 +134,9 @@ void LoopAnalysis::
 
 structured_control_flow::Sequence* LoopAnalysis::get_loop_content_root(structured_control_flow::ControlFlowNode* loop) {
     structured_control_flow::Sequence* root = nullptr;
-    if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(loop)) {
+    if (auto while_stmt = dyn_cast<structured_control_flow::While*>(loop)) {
         root = &while_stmt->root();
-    } else if (auto loop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+    } else if (auto loop_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
         root = &loop_stmt->root();
     } else {
         throw std::runtime_error("Node is not a loop");
@@ -266,7 +266,7 @@ const LocalLoopInfo& LoopAnalysis::loop_info_local(structured_control_flow::Cont
 
 structured_control_flow::ControlFlowNode* LoopAnalysis::find_loop_by_indvar(const std::string& indvar) {
     for (auto& loop : this->loops_) {
-        if (auto loop_stmt = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
+        if (auto loop_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
             if (loop_stmt->indvar()->get_name() == indvar) {
                 return loop;
             }
@@ -299,14 +299,14 @@ bool LoopAnalysis::is_outermost_loop(structured_control_flow::ControlFlowNode* l
 const std::vector<structured_control_flow::ControlFlowNode*> LoopAnalysis::outermost_maps() const {
     std::vector<structured_control_flow::ControlFlowNode*> outermost_maps_;
     for (const auto& [loop, parent] : this->loop_tree_) {
-        if (dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (dyn_cast<structured_control_flow::Map*>(loop)) {
             auto ancestor = parent;
             while (true) {
                 if (ancestor == nullptr) {
                     outermost_maps_.push_back(loop);
                     break;
                 }
-                if (dynamic_cast<structured_control_flow::Map*>(ancestor)) {
+                if (dyn_cast<structured_control_flow::Map*>(ancestor)) {
                     break;
                 }
                 ancestor = this->loop_tree_.at(ancestor);

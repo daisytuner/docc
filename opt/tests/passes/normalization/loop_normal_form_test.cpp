@@ -57,7 +57,7 @@ TEST(LoopNormalFormTest, ShiftsNonZeroInit) {
     bool applied = pass.run(builder2, am);
     EXPECT_TRUE(applied);
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // After LoopShift: init should be 0
@@ -106,7 +106,7 @@ TEST(LoopNormalFormTest, NormalizesNonUnitStride) {
     bool applied = pass.run(builder2, am);
     EXPECT_TRUE(applied);
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // After LoopUnitStride: stride should be +1
@@ -155,7 +155,7 @@ TEST(LoopNormalFormTest, RotatesNegativeStride) {
     passes::normalization::LoopNormalFormPass pipeline;
     pipeline.run(builder2, am);
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // After full normalization: stride should be +1
@@ -201,7 +201,7 @@ TEST(LoopNormalFormTest, AlreadyNormalized) {
     bool applied = pass.run(builder2, am);
     ASSERT_TRUE(applied) << "Already normalized loop should add final indvar value";
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // Everything should remain unchanged
@@ -254,7 +254,7 @@ TEST(LoopNormalFormTest, FullPipelinePositiveStride) {
     passes::normalization::LoopNormalFormPass pipeline;
     pipeline.run(builder2, am);
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // After full normalization:
@@ -315,7 +315,7 @@ TEST(LoopNormalFormTest, FullPipelineNegativeNonUnitStride) {
     passes::normalization::LoopNormalFormPass pipeline;
     pipeline.run(builder2, am);
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // After full normalization (LoopUnitStride then LoopRotate):
@@ -363,7 +363,7 @@ TEST(LoopNormalFormTest, MapLoopNormalization) {
     passes::normalization::LoopNormalFormPass pipeline;
     pipeline.run(builder2, am);
 
-    auto* loop = dynamic_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // After full normalization: init=0, stride=+1
@@ -422,7 +422,7 @@ TEST(LoopNormalFormTest, NestedLoops) {
     passes::normalization::LoopNormalFormPass pipeline;
     pipeline.run(builder2, am);
 
-    auto* outer = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* outer = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(outer, nullptr);
 
     // Outer loop: shifted to init=0
@@ -440,7 +440,7 @@ TEST(LoopNormalFormTest, NestedLoops) {
     // Find inner loop (may be preceded by assignment block)
     structured_control_flow::For* inner = nullptr;
     for (size_t i = 0; i < outer->root().size(); ++i) {
-        inner = dynamic_cast<structured_control_flow::For*>(&outer->root().at(i).first);
+        inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(i).first);
         if (inner) break;
     }
     ASSERT_NE(inner, nullptr);
@@ -491,7 +491,7 @@ TEST(LoopNormalFormTest, SymbolicBounds) {
     passes::normalization::LoopNormalFormPass pipeline;
     pipeline.run(builder2, am);
 
-    auto* loop = dynamic_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
     ASSERT_NE(loop, nullptr);
 
     // After normalization: stride = +1

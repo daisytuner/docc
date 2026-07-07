@@ -18,11 +18,9 @@ SumNode::SumNode(
     : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Sum, shape, axes, keepdims) {}
 
 bool SumNode::expand_reduction(
+    passes::LibNodeExpander::AccessNodeExpand& expansion,
     builder::StructuredSDFGBuilder& builder,
-    analysis::AnalysisManager& analysis_manager,
     structured_control_flow::Sequence& body,
-    const std::string& input_name,
-    const std::string& output_name,
     const types::Tensor& input_type,
     const types::Tensor& output_type,
     const data_flow::Subset& input_subset,
@@ -35,9 +33,9 @@ bool SumNode::expand_reduction(
 
     auto& tasklet = builder.add_tasklet(block, opcode, {"_out"}, {"_in1", "_in2"}, this->debug_info());
 
-    auto& in_access = builder.add_access(block, input_name, this->debug_info());
-    auto& out_read_access = builder.add_access(block, output_name, this->debug_info());
-    auto& out_write_access = builder.add_access(block, output_name, this->debug_info());
+    auto& in_access = expansion.add_indirect_read_access(block, X_INPUT_IDX);
+    auto& out_read_access = expansion.add_indirect_read_access(block, RESULT_PTR_IDX);
+    auto& out_write_access = expansion.add_indirect_write_access(block, RESULT_PTR_IDX);
 
     builder.add_computational_memlet(block, in_access, tasklet, "_in1", input_subset, input_type, this->debug_info());
     builder

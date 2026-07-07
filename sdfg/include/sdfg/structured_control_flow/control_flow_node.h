@@ -52,6 +52,15 @@ protected:
     ControlFlowNode(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent);
 
 public:
+    /// Bitmask of all concrete ElementTypes that are ControlFlowNodes.
+    static constexpr ElementType TypeGroup = ElementType::Block | ElementType::Sequence | ElementType::IfElse |
+                                             ElementType::While | ElementType::Continue | ElementType::Break |
+                                             ElementType::Return | ElementType::For | ElementType::Map |
+                                             ElementType::Reduce;
+
+    /// LLVM-style RTTI predicate: true if \p element is a ControlFlowNode.
+    static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+
     virtual ~ControlFlowNode() = default;
 
     ControlFlowNode* get_parent();

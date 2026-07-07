@@ -502,13 +502,13 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
                 if (no_reads) {
                     bool could_eliminate_write = false;
                     auto write = set.first;
-                    if (auto transition = dynamic_cast<structured_control_flow::Transition*>(write->element())) {
+                    if (auto transition = dyn_cast<structured_control_flow::Transition*>(write->element())) {
                         transition->assignments().erase(symbolic::symbol(name));
                         applied = true;
                         could_eliminate_write = true;
                     } else if (auto access_node = dynamic_cast<data_flow::AccessNode*>(write->element())) {
                         auto& graph = access_node->get_parent();
-                        auto& block = dynamic_cast<structured_control_flow::Block&>(*graph.get_parent());
+                        auto& block = dyn_cast<structured_control_flow::Block&>(*graph.get_parent());
 
                         if (builder.clear_node(block, *access_node)) {
                             applied = true;

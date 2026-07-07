@@ -360,7 +360,7 @@ TEST(CollapseToDepthTest, Apply_3D_Target2_Structure) {
 
     // Outer body: empty recovery block + inner k map
     EXPECT_EQ(outer_result->root().size(), 2);
-    auto* k_map = dynamic_cast<structured_control_flow::Map*>(&outer_result->root().at(1).first);
+    auto* k_map = dyn_cast<structured_control_flow::Map*>(&outer_result->root().at(1).first);
     ASSERT_NE(k_map, nullptr);
     EXPECT_EQ(k_map, inner_result);
 
@@ -416,13 +416,13 @@ TEST(CollapseToDepthTest, Apply_4D_Target2_Structure) {
 
     // Outer body: empty recovery block + inner collapsed map
     EXPECT_EQ(outer_result->root().size(), 2);
-    auto* inner_map = dynamic_cast<structured_control_flow::Map*>(&outer_result->root().at(1).first);
+    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&outer_result->root().at(1).first);
     ASSERT_NE(inner_map, nullptr);
     EXPECT_EQ(inner_map, inner_result);
 
     // Inner body: original block (single loop, not collapsed)
     EXPECT_EQ(inner_result->root().size(), 1);
-    EXPECT_TRUE(dynamic_cast<structured_control_flow::Block*>(&inner_result->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&inner_result->root().at(0).first) != nullptr);
 
     // Outer indvar recovery: i = civ_outer / (M*P), j = (civ_outer / P) % M, k = civ_outer % P
     auto i = symbolic::symbol("i");
@@ -472,7 +472,7 @@ TEST(CollapseToDepthTest, Apply_5D_Target2_OddSplit) {
 
     // Outer body: empty recovery block + inner collapsed map
     EXPECT_EQ(outer_result->root().size(), 2);
-    auto* inner_map = dynamic_cast<structured_control_flow::Map*>(&outer_result->root().at(1).first);
+    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&outer_result->root().at(1).first);
     ASSERT_NE(inner_map, nullptr);
     EXPECT_EQ(inner_map, inner_result);
 
