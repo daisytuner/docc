@@ -47,8 +47,7 @@ if(DEFINED DOCC_CXX_COMPILER)
 endif()
 
 target_link_libraries(sdfg-py PRIVATE
-    Boost::stacktrace
-    Boost::stacktrace_from_exception
+    ${DAISY_STACKTRACE_LIBS}
     sdfg::sdfg
     sdfg::opt
     sdfg::rpc
