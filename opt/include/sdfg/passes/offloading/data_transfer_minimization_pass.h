@@ -48,33 +48,6 @@ protected:
     );
 };
 
-class DataTransferMinimizationLegacy : public visitor::NonStoppingStructuredSDFGVisitor {
-private:
-    virtual std::pair<data_flow::AccessNode*, data_flow::AccessNode*>
-    get_src_and_dst(data_flow::DataFlowGraph& dfg, offloading::DataOffloadingNode* offloading_node);
-
-protected:
-    data_flow::AccessNode* get_in_access(data_flow::CodeNode* node, const std::string& dst_conn);
-    data_flow::AccessNode* get_out_access(data_flow::CodeNode* node, const std::string& src_conn);
-
-    bool check_container_dependency(
-        structured_control_flow::Block* copy_out_block,
-        const std::string& copy_out_container,
-        structured_control_flow::Block* copy_in_block,
-        const std::string& copy_in_container
-    );
-
-public:
-    DataTransferMinimizationLegacy(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
-
-    static std::string name() { return "DataTransferMinimization"; }
-
-    virtual bool visit() override;
-
-    virtual bool accept(structured_control_flow::Sequence& sequence) override;
-};
-
-typedef VisitorPass<DataTransferMinimizationLegacy> DataTransferMinimizationLegacyPass;
 
 } // namespace passes
 } // namespace sdfg

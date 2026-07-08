@@ -47,7 +47,6 @@ set(SOURCE_FILES
     src/passes/offloading/rocm_library_node_transfer_extraction_pass.cpp
     src/passes/offloading/sync_condition_propagation.cpp
     src/passes/collapse_pass.cpp
-    src/passes/extended_data_transfer_minimization_pass.cpp
     src/passes/readonly_transfer_hoisting_pass.cpp
     src/passes/dot_expansion_pass.cpp
     src/passes/gemm_expansion_pass.cpp

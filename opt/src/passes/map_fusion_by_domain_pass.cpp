@@ -416,8 +416,12 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
         ++current_level;
         bool uneven = !more_first || !more_second;
         if (fusing_option) {
-            indvar_mapping[first_next->loop->indvar()] = second_next->loop->indvar();
+            auto insertion = indvar_mapping.insert({first_next->loop->indvar(), second_next->loop->indvar()});
+            assert(insertion.second);
             fusing_option = this->loop_match(*first_next, *second_next, indvar_mapping);
+            if (!fusing_option) {
+                indvar_mapping.erase(insertion.first);
+            }
         }
         auto res = this->check_ins_outs(*first_next, *second_next, indvar_mapping);
         if (!res.no_conflicts) {

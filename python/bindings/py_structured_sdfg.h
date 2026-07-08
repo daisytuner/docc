@@ -69,6 +69,8 @@ public:
 
     void simplify();
 
+    void dump_debug(const std::string& type, bool dump_dot = true, bool dump_json = true);
+
     void dump(
         const std::string& path,
         const std::string& type = "",

@@ -25,23 +25,23 @@ public:
     ScheduleType sched_ = ScheduleType_Sequential::create();
     Sequence& root = builder.subject().root();
 
-    Map& add_map(Sequence& parent, const std::string& iv) {
+    Map& add_map(Sequence& parent, const std::string& iv, const std::string& end = "N") {
         builder.add_container(iv, types::Scalar(types::PrimitiveType::Int32));
         auto sym = symbolic::symbol(iv);
         return builder.add_map(
             parent,
             sym,
-            symbolic::Lt(sym, symbolic::symbol("N")),
+            symbolic::Lt(sym, symbolic::symbol(end)),
             symbolic::zero(),
             symbolic::add(sym, symbolic::one()),
             sched_
         );
     }
-    For& add_for(Sequence& parent, const std::string& iv) {
+    For& add_for(Sequence& parent, const std::string& iv, const std::string& end = "N") {
         builder.add_container(iv, types::Scalar(types::PrimitiveType::Int32));
         auto sym = symbolic::symbol(iv);
         return builder.add_for(
-            parent, sym, symbolic::Lt(sym, symbolic::symbol("N")), symbolic::zero(), symbolic::add(sym, symbolic::one())
+            parent, sym, symbolic::Lt(sym, symbolic::symbol(end)), symbolic::zero(), symbolic::add(sym, symbolic::one())
         );
     }
 };
@@ -202,4 +202,61 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
     task_fuse_pass.run(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "4.rle-cleanup");
+}
+
+TEST(MapFusionByDomainTest, DoNotCauseIndvarReuse) {
+    builder::StructuredSDFGBuilder builder("map_fuse_stacks", FunctionType_CPU);
+    MultiNestBuilder m(builder);
+
+    auto scalar = types::Scalar(types::PrimitiveType::Float);
+    auto int_scalar = types::Scalar(types::PrimitiveType::Int32);
+    auto ptr = types::Pointer(scalar);
+
+    builder.add_container("copyA_src", ptr, true);
+    builder.add_container("copyA_dst", ptr, true);
+    builder.add_container("copyB_src", ptr, true);
+    builder.add_container("copyB_dst", ptr, true);
+    builder.add_container("N", int_scalar, true);
+    builder.add_container("N1", int_scalar, true);
+    builder.add_container("N2", int_scalar, true);
+    builder.add_container("N3", int_scalar, true);
+
+    auto& la_0 = m.add_map(m.root, "a_i");
+    auto& la_1 = m.add_map(la_0.root(), "a_j", "N1");
+    auto& la_2 = m.add_map(la_1.root(), "a_k", "N2");
+
+    auto& la_block = builder.add_block(la_2.root());
+
+    auto& a_src = builder.add_access(la_block, "copyA_src");
+    auto& a_dst = builder.add_access(la_block, "copyA_dst");
+    auto& a_assign = builder.add_tasklet(la_block, data_flow::assign, {"_out"}, {"_in"});
+    builder.add_computational_memlet(la_block, a_src, a_assign, "_in", {symbolic::parse("N2*N1*a_i+N2*a_j+a_k")}, ptr);
+    builder.add_computational_memlet(la_block, a_assign, "_out", a_dst, {symbolic::parse("N2*N1*a_i+N2*a_j+a_k")}, ptr);
+
+
+    auto& lb_0 = m.add_map(m.root, "b_i");
+    auto& lb_1 = m.add_map(lb_0.root(), "b_j", "N2");
+    auto& lb_2 = m.add_map(lb_1.root(), "b_k", "N3");
+
+    auto& lb_block = builder.add_block(lb_2.root());
+
+    auto& b_src = builder.add_access(lb_block, "copyB_src");
+    auto& b_dst = builder.add_access(lb_block, "copyB_dst");
+    auto& b_assign = builder.add_tasklet(lb_block, data_flow::assign, {"_out"}, {"_in"});
+    builder.add_computational_memlet(lb_block, b_src, b_assign, "_in", {symbolic::parse("N3*N2*b_i+N3*b_j+b_k")}, ptr);
+    builder.add_computational_memlet(lb_block, b_assign, "_out", b_dst, {symbolic::parse("N3*N2*b_i+N3*b_j+b_k")}, ptr);
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    MapFusionByDomainPass pass;
+    analysis::AnalysisManager ana(builder.subject());
+    pass.run_pass(builder, ana);
+
+    dump_sdfg(builder.subject(), "1.fused");
+
+    EXPECT_EQ(la_1.indvar()->get_name(), "a_j");
+    EXPECT_EQ(la_2.indvar()->get_name(), "a_k");
+
+    EXPECT_EQ(lb_1.indvar()->get_name(), "b_j");
+    EXPECT_EQ(lb_2.indvar()->get_name(), "b_k");
 }

@@ -332,9 +332,13 @@ void PyStructuredSDFG::simplify() {
     dataflow_simplification.run(builder_opt, analysis_manager);
 
     if (use_new_fusion_in_simplify_) {
+        dump_debug("py3.1.pre-fusion");
+
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
         sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
+
+        dump_debug("py3.2.post-fusion");
 
         // Cleanup of artifacts of MapFusion
         dde.run(builder_opt, analysis_manager);
@@ -354,6 +358,18 @@ void PyStructuredSDFG::simplify() {
     // normalize() map-fusion run so loop distribution and fusion do not fight)
     auto map_fusion = sdfg::passes::normalization::map_fusion(false);
     map_fusion.run(builder_opt, analysis_manager);
+}
+
+constexpr bool DEBUG_SDFG_DUMPS = false;
+
+void PyStructuredSDFG::dump_debug(const std::string& type, bool dump_dot, bool dump_json) {
+    if constexpr (DEBUG_SDFG_DUMPS) {
+        auto* dir = sdfg_->metadata_if_exists("output_dir");
+
+        if (dir) {
+            dump(*dir, type, dump_dot, dump_json);
+        }
+    }
 }
 
 void PyStructuredSDFG::dump(
