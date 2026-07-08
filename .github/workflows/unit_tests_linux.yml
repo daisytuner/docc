@@ -154,7 +154,7 @@ jobs:
         --device /dev/dri
 
     env:
-      DOCC_INFERENCE: "ON" #skips certain tests only when inference enabled. 
+      DOCC_INFERENCE: "ON" #skips certain tests only when inference enabled.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -198,8 +198,6 @@ jobs:
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$(python -c "import pybind11; print(pybind11.get_cmake_dir())") \
             -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_BUILD_BINDINGS=ON \
-            -DMLIR_BUILD_TESTS=ON \
             -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
             -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
             ..
@@ -364,8 +362,6 @@ jobs:
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_BUILD_BINDINGS=ON \
-            -DMLIR_BUILD_TESTS=ON \
             -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
             -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
             -DINSTALL_GTEST=OFF \
@@ -536,8 +532,6 @@ jobs:
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_BUILD_BINDINGS=ON \
-            -DMLIR_BUILD_TESTS=ON \
             -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
             -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
             -DINSTALL_GTEST=OFF \
@@ -624,8 +618,6 @@ jobs:
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_BUILD_BINDINGS=ON \
-            -DMLIR_BUILD_TESTS=ON \
             -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
             -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
             -DINSTALL_GTEST=OFF \
@@ -703,8 +695,6 @@ jobs:
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_BUILD_BINDINGS=ON \
-            -DMLIR_BUILD_TESTS=ON \
             -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
             -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
             -DINSTALL_GTEST=OFF \
