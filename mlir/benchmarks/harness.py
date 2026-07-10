@@ -80,7 +80,7 @@ def run_benchmark(setup_func, name, batch_size=32):
         compile_kwargs["options"] = {
             "target": args.target,
             "category": "server",
-            "remote_tuning": True,
+            # "remote_tuning": True,
         }
 
         backend_label = f"docc_{args.target}"
