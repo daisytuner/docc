@@ -9,7 +9,7 @@ parameters:
   container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
   timeout: 120
   partitions:
-    - chamomile
+    - zinnia
 
 steps:
   build: |
