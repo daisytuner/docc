@@ -596,19 +596,6 @@ const symbolic::Assumptions& AssumptionsAnalysis::
     }
 }
 
-void AssumptionsAnalysis::register_node(
-    structured_control_flow::ControlFlowNode& new_node, structured_control_flow::ControlFlowNode& sibling_node
-) {
-    auto it = ref_assumptions_.find(&sibling_node);
-    if (it != ref_assumptions_.end()) {
-        ref_assumptions_[&new_node] = it->second;
-    }
-    auto it2 = ref_assumptions_with_trivial_.find(&sibling_node);
-    if (it2 != ref_assumptions_with_trivial_.end()) {
-        ref_assumptions_with_trivial_[&new_node] = it2->second;
-    }
-}
-
 const symbolic::SymbolSet& AssumptionsAnalysis::parameters() { return this->parameters_; }
 
 bool AssumptionsAnalysis::is_parameter(const symbolic::Symbol& container) {

@@ -83,13 +83,6 @@ public:
 
     const symbolic::Assumptions& get(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds = false);
 
-    // Register a newly created node so it inherits the same scope assumptions as
-    // sibling_node. Call this after inserting nodes into a sequence to keep the
-    // cached analysis valid without a full re-run.
-    void register_node(
-        structured_control_flow::ControlFlowNode& new_node, structured_control_flow::ControlFlowNode& sibling_node
-    );
-
     const symbolic::SymbolSet& parameters();
 
     bool is_parameter(const symbolic::Symbol& container);
