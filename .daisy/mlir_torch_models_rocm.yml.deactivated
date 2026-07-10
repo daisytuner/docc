@@ -1,4 +1,4 @@
-on:
+on: # Deactivated because torch mlir breaks here
   push:
     branches:
       - main
