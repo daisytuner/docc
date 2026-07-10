@@ -8,6 +8,8 @@ import pytest
 
 import docc.torch
 
+os.environ["NVIDIA_TF32_OVERRIDE"] = "1"  # Enable TF32 for CUDA and ROCm backends
+
 
 def _prepare_input(model_input, device):
     """Move input(s) to the given device, recursing into nested tuples/lists."""
