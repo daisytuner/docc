@@ -37,9 +37,9 @@ steps:
     # Warm start
     venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --device cpu
     DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --device docc --target=rocm
-    venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --n_runs=1 --device cpu -variant segformer --batch-size 16
-    venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --n_runs=1 --device rocm -variant segformer --batch-size 16
-    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --n_runs=1 --device docc --target=rocm -variant segformer --batch-size 16
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --n_runs=1 --device cpu --variant segformer --batch-size 16
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --n_runs=1 --device rocm --variant segformer --batch-size 16
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --n_runs=1 --device docc --target=rocm --variant segformer --batch-size 16
 
   run:
     resnet18_torch:
@@ -53,13 +53,13 @@ steps:
         DOCC_REUSE_BINARIES: 1
     # model segformer
     segformer_torch:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device cpu -variant segformer --batch-size 16
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device cpu --variant segformer --batch-size 16
       energy: true
     segformer_torch_rocm:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device rocm -variant segformer --batch-size 16
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device rocm --variant segformer --batch-size 16
       energy: true
     segformer_docc_rocm:
-      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device docc --target=rocm -variant segformer --batch-size 16
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device docc --target=rocm --variant segformer --batch-size 16
       energy: true
       env:
         DOCC_CI: regions
