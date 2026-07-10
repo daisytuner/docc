@@ -64,7 +64,7 @@ def run_benchmark(setup_func, name, batch_size=32):
             sys.exit(1)
         device = torch.device("cuda")
     elif args.device == "docc":
-        if args.target == "cuda":
+        if args.target == "cuda" or args.target == "rocm":
             device = torch.device("cuda")
         else:
             device = torch.device("cpu")
