@@ -6,6 +6,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -261,47 +262,6 @@ TEST(MapCollapseTest, CannotApply_InnerInitDependsOnOuterIndvar) {
     EXPECT_FALSE(t.can_be_applied(builder, am));
 }
 
-TEST(MapCollapseTest, CannotApply_NonEmptyTransitionToInnerMap) {
-    // The transition attached to the inner map (inside outer.root()) carries an
-    // assignment, violating the "empty transitions in holding sequence" criterion.
-    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
-    auto& root = builder.subject().root();
-
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
-    builder.add_container("N", sym_desc, true);
-    builder.add_container("M", sym_desc, true);
-    builder.add_container("i", sym_desc);
-    builder.add_container("j", sym_desc);
-
-    auto i = symbolic::symbol("i");
-    auto j = symbolic::symbol("j");
-
-    auto& outer = builder.add_map(
-        root,
-        i,
-        symbolic::Lt(i, symbolic::symbol("N")),
-        symbolic::integer(0),
-        symbolic::add(i, symbolic::integer(1)),
-        structured_control_flow::ScheduleType_Sequential::create()
-    );
-
-    // The inner map has a non-empty transition in outer.root()
-    auto& inner = builder.add_map(
-        outer.root(),
-        j,
-        symbolic::Lt(j, symbolic::symbol("M")),
-        symbolic::integer(0),
-        symbolic::add(j, symbolic::integer(1)),
-        structured_control_flow::ScheduleType_Sequential::create(),
-        {{i, symbolic::integer(0)}} // non-empty transition on the inner map
-    );
-    builder.add_block(inner.root());
-
-    analysis::AnalysisManager am(builder.subject());
-    transformations::MapCollapse t(outer, 2);
-    EXPECT_FALSE(t.can_be_applied(builder, am));
-}
-
 // ---------------------------------------------------------------------------
 // Apply — structural checks
 // ---------------------------------------------------------------------------
@@ -320,13 +280,13 @@ TEST(MapCollapseTest, Apply_2D_Structure) {
 
     // The root must contain the collapsed loop as its only child
     EXPECT_EQ(builder.subject().root().size(), 1);
-    EXPECT_EQ(&builder.subject().root().at(0).first, collapsed);
+    EXPECT_EQ(&builder.subject().root().at(0), collapsed);
 
     // The collapsed body must contain an empty recovery block + the original inner block
     auto& body = collapsed->root();
     EXPECT_EQ(body.size(), 2);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(1).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::AssignmentBlock*>(&body.at(0)) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(1)) != nullptr);
 }
 
 TEST(MapCollapseTest, Apply_2D_IndvarTransitions) {
@@ -351,8 +311,9 @@ TEST(MapCollapseTest, Apply_2D_IndvarTransitions) {
     auto M = symbolic::symbol("M");
 
     // Transition to the first element inside the collapsed loop body
-    const auto& transition = collapsed->root().at(0).second;
-    const auto& assignments = transition.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& assignments = transition->assignments();
 
     // Both original indvars must be re-defined
     ASSERT_TRUE(assignments.count(i)) << "'i' must be assigned in the transition to the first body element";
@@ -445,7 +406,9 @@ TEST(MapCollapseTest, Apply_3D_IndvarTransitions) {
     ASSERT_NE(collapsed, nullptr);
 
     auto civ = collapsed->indvar();
-    const auto& assignments = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& assignments = transition->assignments();
 
     ASSERT_TRUE(assignments.count(i)) << "'i' not assigned";
     ASSERT_TRUE(assignments.count(j)) << "'j' not assigned";
@@ -529,18 +492,18 @@ TEST(MapCollapseTest, Apply_3D_CollapseOuter2_Structure) {
 
     // Root has exactly the collapsed map
     EXPECT_EQ(builder.subject().root().size(), 1);
-    EXPECT_EQ(&builder.subject().root().at(0).first, collapsed);
+    EXPECT_EQ(&builder.subject().root().at(0), collapsed);
 
     // collapsed body: empty recovery block + the surviving k map
     auto& body = collapsed->root();
     EXPECT_EQ(body.size(), 2);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
-    auto* k_map = dyn_cast<structured_control_flow::Map*>(&body.at(1).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::AssignmentBlock*>(&body.at(0)) != nullptr);
+    auto* k_map = dyn_cast<structured_control_flow::Map*>(&body.at(1));
     ASSERT_NE(k_map, nullptr) << "Inner k map must survive as direct child of collapsed loop";
 
     // k map body still contains exactly the original block
     EXPECT_EQ(k_map->root().size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&k_map->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&k_map->root().at(0)) != nullptr);
 }
 
 TEST(MapCollapseTest, Apply_3D_CollapseOuter2_IndvarTransitions) {
@@ -564,7 +527,9 @@ TEST(MapCollapseTest, Apply_3D_CollapseOuter2_IndvarTransitions) {
     auto k = symbolic::symbol("k");
     auto M = symbolic::symbol("M");
 
-    const auto& assignments = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& assignments = transition->assignments();
 
     ASSERT_TRUE(assignments.count(i)) << "'i' must be assigned";
     ASSERT_TRUE(assignments.count(j)) << "'j' must be assigned";
@@ -598,7 +563,7 @@ TEST(MapCollapseTest, Apply_3D_CollapseOuter2_CollapsedRange) {
     EXPECT_TRUE(symbolic::eq(collapsed->update(), symbolic::add(civ, symbolic::integer(1))));
 
     // The surviving k map must still have its original bound P
-    auto* k_map = dyn_cast<structured_control_flow::Map*>(&collapsed->root().at(1).first);
+    auto* k_map = dyn_cast<structured_control_flow::Map*>(&collapsed->root().at(1));
     ASSERT_NE(k_map, nullptr);
     EXPECT_TRUE(symbolic::eq(k_map->condition(), symbolic::Lt(symbolic::symbol("k"), P)))
         << "k map bound must remain < P";
@@ -624,19 +589,19 @@ TEST(MapCollapseTest, Apply_3D_CollapseMiddle2_Structure) {
 
     // Root still has exactly one child: the outer i map (unchanged)
     EXPECT_EQ(builder.subject().root().size(), 1);
-    auto* i_map = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0).first);
+    auto* i_map = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0));
     ASSERT_NE(i_map, nullptr) << "Outer i map must still be the root child";
 
     // Outer i map body: exactly the collapsed jk map
     EXPECT_EQ(i_map->root().size(), 1);
-    auto* jk_map = dyn_cast<structured_control_flow::Map*>(&i_map->root().at(0).first);
+    auto* jk_map = dyn_cast<structured_control_flow::Map*>(&i_map->root().at(0));
     ASSERT_NE(jk_map, nullptr) << "Collapsed jk map must be inside the outer i map";
     EXPECT_EQ(jk_map, collapsed);
 
     // Collapsed body: empty recovery block + the original block
     EXPECT_EQ(collapsed->root().size(), 2);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(0).first) != nullptr);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::AssignmentBlock*>(&collapsed->root().at(0)) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1)) != nullptr);
 }
 
 TEST(MapCollapseTest, Apply_3D_CollapseMiddle2_IndvarTransitions) {
@@ -660,7 +625,9 @@ TEST(MapCollapseTest, Apply_3D_CollapseMiddle2_IndvarTransitions) {
     auto k = symbolic::symbol("k");
     auto P = symbolic::symbol("P");
 
-    const auto& assignments = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& assignments = transition->assignments();
 
     EXPECT_FALSE(assignments.count(i)) << "'i' must NOT be assigned";
     ASSERT_TRUE(assignments.count(j)) << "'j' must be assigned";
@@ -694,7 +661,7 @@ TEST(MapCollapseTest, Apply_3D_CollapseMiddle2_CollapsedRange) {
     EXPECT_TRUE(symbolic::eq(collapsed->update(), symbolic::add(civ, symbolic::integer(1))));
 
     // Outer i map must still have its original bound N
-    auto* i_map = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0).first);
+    auto* i_map = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0));
     ASSERT_NE(i_map, nullptr);
     EXPECT_TRUE(symbolic::eq(i_map->condition(), symbolic::Lt(symbolic::symbol("i"), N)))
         << "Outer i map bound must remain < N";
@@ -777,7 +744,7 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
 
     // After first collapse: root → collapsed_ij → k → l → block
     EXPECT_EQ(builder.subject().root().size(), 1);
-    EXPECT_EQ(&builder.subject().root().at(0).first, collapsed_ij);
+    EXPECT_EQ(&builder.subject().root().at(0), collapsed_ij);
 
     auto civ_ij = collapsed_ij->indvar();
 
@@ -788,13 +755,15 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
 
     // collapsed_ij body: empty recovery block + the k map
     EXPECT_EQ(collapsed_ij->root().size(), 2);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed_ij->root().at(0).first) != nullptr);
-    auto* surviving_k = dyn_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::AssignmentBlock*>(&collapsed_ij->root().at(0)) != nullptr);
+    auto* surviving_k = dyn_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1));
     ASSERT_NE(surviving_k, nullptr) << "k map must survive as child of collapsed_ij";
 
     // Indvar recovery for i, j (on the empty recovery block's transition)
     {
-        const auto& asgn = collapsed_ij->root().at(0).second.assignments();
+        const auto transition = dyn_cast<AssignmentBlock*>(&collapsed_ij->root().at(0));
+        ASSERT_TRUE(transition);
+        const auto& asgn = transition->assignments();
         ASSERT_TRUE(asgn.count(i)) << "'i' must be assigned";
         ASSERT_TRUE(asgn.count(j)) << "'j' must be assigned";
         EXPECT_FALSE(asgn.count(k)) << "'k' must NOT be assigned here";
@@ -806,12 +775,12 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
 
     // k map body: l map
     EXPECT_EQ(surviving_k->root().size(), 1);
-    auto* surviving_l = dyn_cast<structured_control_flow::Map*>(&surviving_k->root().at(0).first);
+    auto* surviving_l = dyn_cast<structured_control_flow::Map*>(&surviving_k->root().at(0));
     ASSERT_NE(surviving_l, nullptr) << "l map must survive inside k map";
 
     // l map body: the original block
     EXPECT_EQ(surviving_l->root().size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&surviving_l->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&surviving_l->root().at(0)) != nullptr);
 
     // --- Second collapse: (k, l) ---
     transformations::MapCollapse t2(*surviving_k, 2);
@@ -826,14 +795,14 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
     // Final structure: root → collapsed_ij → collapsed_kl → block
     EXPECT_EQ(builder.subject().root().size(), 1);
 
-    auto* final_outer = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0).first);
+    auto* final_outer = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0));
     ASSERT_NE(final_outer, nullptr);
     // collapsed_ij must still be the root child
     EXPECT_EQ(final_outer, collapsed_ij);
 
     // collapsed_ij body: empty recovery block + collapsed_kl
     EXPECT_EQ(collapsed_ij->root().size(), 2);
-    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1).first);
+    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1));
     ASSERT_NE(inner_map, nullptr);
     EXPECT_EQ(inner_map, collapsed_kl);
 
@@ -844,11 +813,13 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
 
     // collapsed_kl body: empty recovery block + the original block
     EXPECT_EQ(collapsed_kl->root().size(), 2);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed_kl->root().at(1).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&collapsed_kl->root().at(1)) != nullptr);
 
     // Indvar recovery for k, l (on the empty recovery block's transition)
     {
-        const auto& asgn = collapsed_kl->root().at(0).second.assignments();
+        const auto transition = dyn_cast<AssignmentBlock*>(&collapsed_kl->root().at(0));
+        ASSERT_TRUE(transition);
+        const auto& asgn = transition->assignments();
         ASSERT_TRUE(asgn.count(k)) << "'k' must be assigned";
         ASSERT_TRUE(asgn.count(l)) << "'l' must be assigned";
         EXPECT_FALSE(asgn.count(i)) << "'i' must NOT be assigned here";
@@ -860,7 +831,9 @@ TEST(MapCollapseTest, Apply_4D_CollapsePairs) {
 
     // Verify that collapsed_ij indvar recovery is still correct after second collapse
     {
-        const auto& asgn = collapsed_ij->root().at(0).second.assignments();
+        const auto transition = dyn_cast<AssignmentBlock*>(&collapsed_ij->root().at(0));
+        ASSERT_TRUE(transition);
+        const auto& asgn = transition->assignments();
         ASSERT_TRUE(asgn.count(i)) << "'i' must still be assigned after second collapse";
         ASSERT_TRUE(asgn.count(j)) << "'j' must still be assigned after second collapse";
 
@@ -935,12 +908,14 @@ TEST(MapCollapseTest, Apply_2D_WithComputation) {
     // Structure: root → collapsed → [empty recovery block, block]
     EXPECT_EQ(builder.subject().root().size(), 1);
     EXPECT_EQ(collapsed->root().size(), 2);
-    auto* body_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first);
+    auto* body_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1));
     ASSERT_NE(body_block, nullptr);
 
     // Transition assignments
     auto civ = collapsed->indvar();
-    const auto& asgn = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& asgn = transition->assignments();
     ASSERT_TRUE(asgn.count(i));
     ASSERT_TRUE(asgn.count(j));
     EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ, M)));
@@ -1069,7 +1044,7 @@ TEST(MapCollapseTest, Apply_4D_WithComputation_CollapsePairs) {
     auto civ_ij = collapsed_ij->indvar();
 
     // --- Second collapse: (k, l) ---
-    auto* surviving_k = dyn_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1).first);
+    auto* surviving_k = dyn_cast<structured_control_flow::Map*>(&collapsed_ij->root().at(1));
     ASSERT_NE(surviving_k, nullptr);
     // collapsed_ij body: [empty recovery block, k map]
     // k map body: l map
@@ -1089,12 +1064,14 @@ TEST(MapCollapseTest, Apply_4D_WithComputation_CollapsePairs) {
     EXPECT_EQ(collapsed_ij->root().size(), 2);
     EXPECT_EQ(collapsed_kl->root().size(), 2);
 
-    auto* final_block = dyn_cast<structured_control_flow::Block*>(&collapsed_kl->root().at(1).first);
+    auto* final_block = dyn_cast<structured_control_flow::Block*>(&collapsed_kl->root().at(1));
     ASSERT_NE(final_block, nullptr) << "Innermost element must be the original block";
 
     // Verify collapsed_ij transition assignments are still correct
     {
-        const auto& asgn = collapsed_ij->root().at(0).second.assignments();
+        const auto transition = dyn_cast<AssignmentBlock*>(&collapsed_ij->root().at(0));
+        ASSERT_TRUE(transition);
+        const auto& asgn = transition->assignments();
         ASSERT_TRUE(asgn.count(i));
         ASSERT_TRUE(asgn.count(j));
         EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ_ij, M)));
@@ -1103,7 +1080,9 @@ TEST(MapCollapseTest, Apply_4D_WithComputation_CollapsePairs) {
 
     // Verify collapsed_kl transition assignments
     {
-        const auto& asgn = collapsed_kl->root().at(0).second.assignments();
+        const auto transition = dyn_cast<AssignmentBlock*>(&collapsed_kl->root().at(0));
+        ASSERT_TRUE(transition);
+        const auto& asgn = transition->assignments();
         ASSERT_TRUE(asgn.count(k));
         ASSERT_TRUE(asgn.count(l));
         EXPECT_TRUE(symbolic::eq(asgn.at(k), symbolic::div(civ_kl, Q)));
@@ -1546,15 +1525,15 @@ TEST(MapCollapseTest, Apply_Imperfect_TwoSiblings_Structure) {
 
     // Root holds exactly the collapsed map.
     EXPECT_EQ(builder.subject().root().size(), 1);
-    EXPECT_EQ(&builder.subject().root().at(0).first, collapsed);
+    EXPECT_EQ(&builder.subject().root().at(0), collapsed);
 
     // Body: recovery block + one guard (IfElse) per original sibling map.
     auto& body = collapsed->root();
     ASSERT_EQ(body.size(), 3);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::AssignmentBlock*>(&body.at(0)) != nullptr);
 
-    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first);
-    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1));
+    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(2));
     ASSERT_NE(guard_j, nullptr) << "First sibling must be wrapped in a guard";
     ASSERT_NE(guard_k, nullptr) << "Second sibling must be wrapped in a guard";
     EXPECT_EQ(guard_j->size(), 1) << "Guard must have a single case (no else)";
@@ -1606,7 +1585,9 @@ TEST(MapCollapseTest, Apply_Imperfect_TwoSiblings_RecoveryTransition) {
 
     // The recovery transition (after the recovery block) defines exactly the
     // outer index i and the virtual inner index t.
-    const auto& assignments = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& assignments = transition->assignments();
     EXPECT_EQ(assignments.size(), 2u) << "Recovery must assign exactly i and t";
 
     // i = civ / max(M, P)
@@ -1635,13 +1616,15 @@ TEST(MapCollapseTest, Apply_Imperfect_TwoSiblings_GuardConditions) {
     auto P = symbolic::symbol("P");
     auto bmax = symbolic::max(M, P);
 
-    const auto& assignments = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& assignments = transition->assignments();
     auto t_idx = find_inner_index(assignments, civ, bmax);
     ASSERT_FALSE(t_idx.is_null());
 
     auto& body = collapsed->root();
-    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first);
-    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1));
+    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(2));
     ASSERT_NE(guard_j, nullptr);
     ASSERT_NE(guard_k, nullptr);
 
@@ -1670,13 +1653,15 @@ TEST(MapCollapseTest, Apply_Imperfect_TwoSiblings_InnerIndexRecovery) {
     auto P = symbolic::symbol("P");
     auto bmax = symbolic::max(M, P);
 
-    const auto& recovery = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& recovery = transition->assignments();
     auto t_idx = find_inner_index(recovery, civ, bmax);
     ASSERT_FALSE(t_idx.is_null());
 
     auto& body = collapsed->root();
-    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first);
-    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1));
+    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(2));
     ASSERT_NE(guard_j, nullptr);
     ASSERT_NE(guard_k, nullptr);
 
@@ -1686,8 +1671,12 @@ TEST(MapCollapseTest, Apply_Imperfect_TwoSiblings_InnerIndexRecovery) {
     ASSERT_GE(case_j.size(), 1u);
     ASSERT_GE(case_k.size(), 1u);
 
-    const auto& j_asgn = case_j.at(0).second.assignments();
-    const auto& k_asgn = case_k.at(0).second.assignments();
+    const auto j_asgn_block = dyn_cast<AssignmentBlock*>(&case_j.at(0));
+    ASSERT_TRUE(j_asgn_block);
+    const auto& j_asgn = j_asgn_block->assignments();
+    const auto k_asgn_block = dyn_cast<AssignmentBlock*>(&case_k.at(0));
+    ASSERT_TRUE(k_asgn_block);
+    const auto& k_asgn = k_asgn_block->assignments();
     ASSERT_TRUE(j_asgn.count(j)) << "'j' must be recovered inside its guard";
     ASSERT_TRUE(k_asgn.count(k)) << "'k' must be recovered inside its guard";
     EXPECT_TRUE(symbolic::eq(j_asgn.at(j), t_idx)) << "Expected j = t";
@@ -1708,7 +1697,7 @@ TEST(MapCollapseTest, Apply_Imperfect_ScheduleAndOriginalRemoved) {
 
     // Original outer nest replaced by exactly one collapsed map.
     EXPECT_EQ(builder.subject().root().size(), 1);
-    EXPECT_EQ(&builder.subject().root().at(0).first, collapsed);
+    EXPECT_EQ(&builder.subject().root().at(0), collapsed);
 
     // Collapsed map inherits the outer map's schedule type.
     EXPECT_EQ(collapsed->schedule_type().value(), structured_control_flow::ScheduleType_Sequential::value());
@@ -1723,10 +1712,14 @@ TEST(MapCollapseTest, Apply_Imperfect_SkippedBlock_Replicated) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto [outer, map_j, block_a] = build_imperfect_block_then_map(builder);
 
+    dump_sdfg(builder.subject(), "0.init");
+
     analysis::AnalysisManager am(builder.subject());
     transformations::MapCollapse t(*outer, 2);
     ASSERT_TRUE(t.can_be_applied(builder, am));
     t.apply(builder, am);
+
+    dump_sdfg(builder.subject(), "1.collapsed");
 
     auto* collapsed = t.collapsed_loop();
     ASSERT_NE(collapsed, nullptr);
@@ -1738,26 +1731,108 @@ TEST(MapCollapseTest, Apply_Imperfect_SkippedBlock_Replicated) {
     auto N = symbolic::symbol("N");
     EXPECT_TRUE(symbolic::eq(collapsed->condition(), symbolic::Lt(civ, symbolic::mul(N, M))));
 
-    const auto& recovery = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& recovery = transition->assignments();
     auto t_idx = find_inner_index(recovery, civ, M);
     ASSERT_FALSE(t_idx.is_null());
 
     // Body: recovery block, replicated block A (unguarded), guard for inner map j.
     auto& body = collapsed->root();
     ASSERT_EQ(body.size(), 3);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::AssignmentBlock*>(&body.at(0)) != nullptr);
 
     // The skipped block is replicated: it stays a plain Block, not wrapped in a
     // guard, so it runs on every inner thread.
-    auto* replicated_a = dyn_cast<structured_control_flow::Block*>(&body.at(1).first);
+    auto* replicated_a = dyn_cast<structured_control_flow::Block*>(&body.at(1));
     EXPECT_NE(replicated_a, nullptr) << "Skipped block must be replicated as a direct child (no guard)";
-    EXPECT_TRUE(dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first) == nullptr)
+    EXPECT_TRUE(dyn_cast<structured_control_flow::IfElse*>(&body.at(1)) == nullptr)
         << "Skipped block must NOT be wrapped in an inner==0 guard";
 
-    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(2));
     ASSERT_NE(guard_j, nullptr);
     // Inner map guarded by t < M.
     EXPECT_TRUE(symbolic::eq(guard_j->at(0).second, symbolic::Lt(t_idx, M))) << "Inner map must be guarded by t < M";
+}
+
+TEST(MapCollapseTest, Apply_Imperfect_Assignments_Are_LikeAnyOtherNode) {
+    // The transition attached to the inner map (inside outer.root()) carries an
+    // assignment, violating the "empty transitions in holding sequence" criterion.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("rando", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto rando = symbolic::symbol("rando");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // The inner map has a non-empty transition in outer.root()
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    builder.add_block(inner.root());
+    auto& rogue_node = builder.add_assignments(outer.root(), {{rando, symbolic::integer(0)}}); // non-empty transition
+                                                                                               // after the inner map
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    EXPECT_TRUE(t.can_be_applied(builder, am));
+    t.apply(builder, am);
+
+    dump_sdfg(builder.subject(), "1.collapsed");
+
+    auto* collapsed = t.collapsed_loop();
+    ASSERT_NE(collapsed, nullptr);
+
+    auto civ = collapsed->indvar();
+    auto M = symbolic::symbol("M");
+
+    // Collapsed range [0, N*M): only one collapsible map → max-bound is M.
+    auto N = symbolic::symbol("N");
+    EXPECT_TRUE(symbolic::eq(collapsed->condition(), symbolic::Lt(civ, symbolic::mul(N, M))));
+
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& recovery = transition->assignments();
+    auto t_idx = find_inner_index(recovery, civ, M);
+    ASSERT_FALSE(t_idx.is_null());
+
+    // Body: recovery block, replicated block A (unguarded), guard for inner map j.
+    auto& body = collapsed->root();
+    ASSERT_EQ(body.size(), 3);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::AssignmentBlock*>(&body.at(0)) != nullptr);
+
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1));
+    ASSERT_NE(guard_j, nullptr);
+    // Inner map guarded by t < M.
+    EXPECT_TRUE(symbolic::eq(guard_j->at(0).second, symbolic::Lt(t_idx, M))) << "Inner map must be guarded by t < M";
+
+    // The skipped block is replicated: it stays a plain Block, not wrapped in a
+    // guard, so it runs on every inner thread.
+    auto* replicated_a = dyn_cast<structured_control_flow::AssignmentBlock*>(&body.at(2));
+    EXPECT_NE(replicated_a, nullptr) << "Skipped block must be replicated as a direct child (no guard)";
 }
 
 TEST(MapCollapseTest, Apply_Imperfect_PreservesOrder) {
@@ -1823,7 +1898,9 @@ TEST(MapCollapseTest, Apply_Imperfect_PreservesOrder) {
     auto civ = collapsed->indvar();
     auto bmax = symbolic::max(M, P);
 
-    const auto& recovery = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& recovery = transition->assignments();
     auto t_idx = find_inner_index(recovery, civ, bmax);
     ASSERT_FALSE(t_idx.is_null());
 
@@ -1831,12 +1908,12 @@ TEST(MapCollapseTest, Apply_Imperfect_PreservesOrder) {
     auto& body = collapsed->root();
     ASSERT_EQ(body.size(), 4);
 
-    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first);
-    auto* block_a = dyn_cast<structured_control_flow::Block*>(&body.at(2).first);
-    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(3).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(1));
+    auto* block_a = dyn_cast<structured_control_flow::Block*>(&body.at(2));
+    auto* guard_k = dyn_cast<structured_control_flow::IfElse*>(&body.at(3));
     ASSERT_NE(guard_j, nullptr);
     ASSERT_NE(block_a, nullptr) << "Skipped block must be replicated as a plain Block in original order";
-    EXPECT_TRUE(dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first) == nullptr)
+    EXPECT_TRUE(dyn_cast<structured_control_flow::IfElse*>(&body.at(2)) == nullptr)
         << "Skipped block must NOT be wrapped in an inner==0 guard";
     ASSERT_NE(guard_k, nullptr);
 
@@ -1944,24 +2021,26 @@ TEST(MapCollapseTest, Apply_Imperfect_Producer_Replicated_NotGuarded) {
     auto civ = collapsed->indvar();
     auto M = symbolic::symbol("M");
 
-    const auto& recovery = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& recovery = transition->assignments();
     auto t_idx = find_inner_index(recovery, civ, M);
     ASSERT_FALSE(t_idx.is_null());
 
     // Body: recovery block, replicated producer block (unguarded), inner-map guard.
     auto& body = collapsed->root();
     ASSERT_EQ(body.size(), 3);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&body.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::AssignmentBlock*>(&body.at(0)) != nullptr);
 
-    auto* producer = dyn_cast<structured_control_flow::Block*>(&body.at(1).first);
+    auto* producer = dyn_cast<structured_control_flow::Block*>(&body.at(1));
     ASSERT_NE(producer, nullptr) << "Producer must be replicated as a direct child block";
-    EXPECT_TRUE(dyn_cast<structured_control_flow::IfElse*>(&body.at(1).first) == nullptr)
+    EXPECT_TRUE(dyn_cast<structured_control_flow::IfElse*>(&body.at(1)) == nullptr)
         << "Producer must NOT be wrapped in an inner==0 guard";
 
     // The producer keeps its tasklet (X[i] = Y[i]) intact.
     EXPECT_EQ(producer->dataflow().tasklets().size(), 1u);
 
-    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(2).first);
+    auto* guard_j = dyn_cast<structured_control_flow::IfElse*>(&body.at(2));
     ASSERT_NE(guard_j, nullptr);
     EXPECT_TRUE(symbolic::eq(guard_j->at(0).second, symbolic::Lt(t_idx, M)));
 }
@@ -2165,14 +2244,16 @@ TEST(MapCollapseTest, Apply_2D_InlinesRecoveredIndvars) {
     auto civ = collapsed->indvar();
 
     // Fallback: the recovery transition still defines i and j.
-    const auto& asgn = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& asgn = transition->assignments();
     ASSERT_TRUE(asgn.count(i));
     ASSERT_TRUE(asgn.count(j));
     EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ, M)));
     EXPECT_TRUE(symbolic::eq(asgn.at(j), symbolic::mod(civ, M)));
 
     // Subsets are inlined: {i, j} -> {civ / M, civ % M}, no reference to i or j remains.
-    auto* body_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first);
+    auto* body_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1));
     ASSERT_NE(body_block, nullptr);
     auto* t_node = *body_block->dataflow().tasklets().begin();
     const auto& in_subset = (*body_block->dataflow().in_edges(*t_node).begin()).subset();
@@ -2249,11 +2330,13 @@ TEST(MapCollapseTest, Apply_2D_KeepsTransitionAsFallbackForAccessNodeContainer) 
     auto civ = collapsed->indvar();
 
     // Fallback retained: recovery transition still defines i (needed by the access node).
-    const auto& asgn = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& asgn = transition->assignments();
     ASSERT_TRUE(asgn.count(i));
     EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ, M)));
 
-    auto* body_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first);
+    auto* body_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1));
     ASSERT_NE(body_block, nullptr);
     auto* t_node = *body_block->dataflow().tasklets().begin();
 
@@ -2343,12 +2426,14 @@ TEST(MapCollapseTest, Apply_Imperfect_InlinesRecoveredIndvars) {
     auto expected_j = symbolic::mod(civ, M);
 
     // Fallback: outer recovery transition still defines i.
-    const auto& outer_asgn = collapsed->root().at(0).second.assignments();
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    const auto& outer_asgn = transition->assignments();
     ASSERT_TRUE(outer_asgn.count(i));
     EXPECT_TRUE(symbolic::eq(outer_asgn.at(i), expected_i));
 
     // Skipped block (index 1): B[i] -> B[civ / M].
-    auto* skipped_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first);
+    auto* skipped_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1));
     ASSERT_NE(skipped_block, nullptr);
     auto* skipped_tk = *skipped_block->dataflow().tasklets().begin();
     const auto& skipped_subset = (*skipped_block->dataflow().in_edges(*skipped_tk).begin()).subset();
@@ -2357,11 +2442,11 @@ TEST(MapCollapseTest, Apply_Imperfect_InlinesRecoveredIndvars) {
     EXPECT_FALSE(symbolic::uses(skipped_subset[0], i));
 
     // Guarded inner map (index 2): A[i*M + j] -> A[(civ/M)*M + civ%M].
-    auto* guard = dyn_cast<structured_control_flow::IfElse*>(&collapsed->root().at(2).first);
+    auto* guard = dyn_cast<structured_control_flow::IfElse*>(&collapsed->root().at(2));
     ASSERT_NE(guard, nullptr);
     auto& branch = guard->at(0).first;
     // Branch: [recovery block (j = t), inner block].
-    auto* guarded_block = dyn_cast<structured_control_flow::Block*>(&branch.at(1).first);
+    auto* guarded_block = dyn_cast<structured_control_flow::Block*>(&branch.at(1));
     ASSERT_NE(guarded_block, nullptr);
     auto* guarded_tk = *guarded_block->dataflow().tasklets().begin();
     const auto& guarded_subset = (*guarded_block->dataflow().in_edges(*guarded_tk).begin()).subset();

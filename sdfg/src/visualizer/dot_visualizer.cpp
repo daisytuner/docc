@@ -126,6 +126,36 @@ void DotVisualizer::visualizeBlock(const StructuredSDFG& sdfg, const structured_
     this->stream_ << "}" << std::endl;
 }
 
+void DotVisualizer::visualizeAssignmentBlock(
+    const StructuredSDFG& sdfg, const structured_control_flow::AssignmentBlock& assignment_block
+) {
+    auto id = escapeDotId(assignment_block.element_id(), "assign_");
+    this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
+    this->stream_.setIndent(this->stream_.indent() + 4);
+    this->stream_ << "style=filled;shape=box;fillcolor=white;color=black;label=\"";
+    if (show_block_ids) {
+        this->stream_ << "#" << assignment_block.element_id() << " ";
+    }
+    this->stream_ << "assign:\";" << std::endl;
+    if (assignment_block.empty()) {
+        this->stream_ << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    } else {
+        this->stream_ << id << " [shape=record,color=transparent,label=\"{";
+        int i = 0;
+        for (auto& [sym, expr] : assignment_block.assignments()) {
+            if (i > 0) {
+                this->stream_ << " | ";
+            }
+            this->stream_ << sym->get_name() << " = " << expr->__str__();
+            ++i;
+        }
+        this->stream_ << "}\"];" << std::endl;
+    }
+    register_chain_elem(*assignment_block.get_parent(), id, "cluster_" + id);
+    this->stream_.setIndent(this->stream_.indent() - 4);
+    this->stream_ << "}" << std::endl;
+}
+
 void DotVisualizer::visualizeSequence(const StructuredSDFG& sdfg, const structured_control_flow::Sequence& sequence) {
     if (sequence.size() == 0) {
         auto id = escapeDotId(sequence.element_id(), "empty_seq_");
@@ -135,9 +165,9 @@ void DotVisualizer::visualizeSequence(const StructuredSDFG& sdfg, const structur
         if (show_block_ids) {
             this->stream_ << "Seq #" << sequence.element_id() << " ";
         }
+        this->stream_ << "\";" << std::endl;
         this->stream_ << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
         register_chain_elem(sequence, id, "cluster_" + id);
-        this->stream_ << "\";" << std::endl;
         this->stream_.setIndent(this->stream_.indent() - 4);
         this->stream_ << "}" << std::endl;
         return;
@@ -146,10 +176,9 @@ void DotVisualizer::visualizeSequence(const StructuredSDFG& sdfg, const structur
     auto& seq_scope = this->seq_scope_stack_.back();
 
     for (size_t i = 0; i < sequence.size(); ++i) {
-        std::pair<const structured_control_flow::ControlFlowNode&, const structured_control_flow::Transition&> child =
-            sequence.at(i);
+        auto& child = sequence.at(i);
 
-        this->visualizeNode(sdfg, child.first);
+        this->visualizeNode(sdfg, child);
 
         if (seq_scope.last_chain_elem && seq_scope.last2_chain_elem) {
             this->stream_ << seq_scope.last2_chain_elem->node_id << " -> " << seq_scope.last_chain_elem->node_id
@@ -163,21 +192,6 @@ void DotVisualizer::visualizeSequence(const StructuredSDFG& sdfg, const structur
                 this->stream_ << "lhead=\"" << last_cluster << "\",";
             }
             this->stream_ << "minlen=3";
-
-            // visualize assignments on edge
-            if (i > 0 && !sequence.at(i - 1).second.empty()) {
-                this->stream_ << ",label=\"{";
-                bool comma_sep = false;
-                for (auto& [sym, expr] : sequence.at(i - 1).second.assignments()) {
-                    if (comma_sep) {
-                        this->stream_ << ",";
-                        comma_sep = true;
-                    }
-                    this->stream_ << sym->get_name() << " = " << expr->__str__();
-                }
-                this->stream_ << "}\"";
-            }
-
             this->stream_ << "];" << std::endl;
         }
     }

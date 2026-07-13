@@ -14,7 +14,7 @@ TEST(BlockTest, BasicStructure) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, control_flow::Assignments{});
+    auto& block = builder.add_block(root);
 
     // Verify block is a ControlFlowNode
     EXPECT_TRUE(dynamic_cast<const ControlFlowNode*>(&block) != nullptr);
@@ -33,7 +33,7 @@ TEST(BlockTest, DataflowAccess) {
     builder.add_container("y", int_type);
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, control_flow::Assignments{});
+    auto& block = builder.add_block(root);
 
     // Access the dataflow graph
     auto& dataflow = block.dataflow();
@@ -46,7 +46,7 @@ TEST(BlockTest, DataflowAccess) {
 }
 
 // Test block with assignments
-TEST(BlockTest, BlockWithAssignments) {
+TEST(BlockTest, AssignmentBlock) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
     types::Scalar int_type(types::PrimitiveType::Int32);
@@ -56,14 +56,15 @@ TEST(BlockTest, BlockWithAssignments) {
 
     control_flow::Assignments assignments{{symbolic::symbol("N"), symbolic::integer(10)}};
 
-    auto& block = builder.add_block(root, assignments);
+    auto& block = builder.add_assignments(root, assignments);
 
     // Verify block exists
     EXPECT_EQ(root.size(), 1);
 
-    auto [node, transition] = root.at(0);
-    EXPECT_TRUE(dynamic_cast<const Block*>(&node) != nullptr);
-    EXPECT_EQ(transition.assignments().size(), 1);
+    auto& node = root.at(0);
+    auto* assignment_block = dynamic_cast<const AssignmentBlock*>(&node);
+    EXPECT_TRUE(assignment_block != nullptr);
+    EXPECT_EQ(assignment_block->assignments().size(), 1);
 }
 
 // Test multiple blocks in sequence
@@ -72,16 +73,16 @@ TEST(BlockTest, MultipleBlocks) {
 
     auto& root = builder.subject().root();
 
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
-    auto& block3 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
+    auto& block2 = builder.add_block(root);
+    auto& block3 = builder.add_block(root);
 
     EXPECT_EQ(root.size(), 3);
 
     // Verify all are blocks
-    auto [node1, trans1] = root.at(0);
-    auto [node2, trans2] = root.at(1);
-    auto [node3, trans3] = root.at(2);
+    auto& node1 = root.at(0);
+    auto& node2 = root.at(1);
+    auto& node3 = root.at(2);
 
     EXPECT_TRUE(dynamic_cast<const Block*>(&node1) != nullptr);
     EXPECT_TRUE(dynamic_cast<const Block*>(&node2) != nullptr);
@@ -93,7 +94,7 @@ TEST(BlockTest, ConstAndNonConstAccess) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, control_flow::Assignments{});
+    auto& block = builder.add_block(root);
 
     // Non-const access
     auto& mut_dataflow = block.dataflow();

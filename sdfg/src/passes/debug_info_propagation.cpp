@@ -16,11 +16,12 @@ void DebugInfoPropagation::propagate(structured_control_flow::ControlFlowNode* c
         for (auto& edge : graph.edges()) {
             current_debug_info = DebugInfo::merge(current_debug_info, edge.debug_info());
         }
+    } else if (auto assignment_block = dyn_cast<structured_control_flow::AssignmentBlock*>(current)) {
+        current_debug_info = DebugInfo::merge(current_debug_info, assignment_block->debug_info());
     } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(current)) {
         for (size_t i = 0; i < sequence_stmt->size(); i++) {
-            this->propagate(&sequence_stmt->at(i).first);
-            current_debug_info = DebugInfo::merge(current_debug_info, sequence_stmt->at(i).first.debug_info());
-            current_debug_info = DebugInfo::merge(current_debug_info, sequence_stmt->at(i).second.debug_info());
+            this->propagate(&sequence_stmt->at(i));
+            current_debug_info = DebugInfo::merge(current_debug_info, sequence_stmt->at(i).debug_info());
         }
     } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(current)) {
         for (size_t i = 0; i < if_else_stmt->size(); i++) {

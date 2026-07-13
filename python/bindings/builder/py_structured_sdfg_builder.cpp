@@ -151,12 +151,12 @@ sdfg::structured_control_flow::Sequence& PyStructuredSDFGBuilder::current_sequen
 }
 
 void PyStructuredSDFGBuilder::add_return(const std::string& data, const sdfg::DebugInfo& debug_info) {
-    builder_.add_return(current_sequence(), data, {}, debug_info);
+    builder_.add_return(current_sequence(), data, debug_info);
 }
 
 void PyStructuredSDFGBuilder::
     add_constant_return(const std::string& value, const sdfg::types::IType& type, const sdfg::DebugInfo& debug_info) {
-    builder_.add_constant_return(current_sequence(), value, type, {}, debug_info);
+    builder_.add_constant_return(current_sequence(), value, type, debug_info);
 }
 
 sdfg::structured_control_flow::IfElse& PyStructuredSDFGBuilder::
@@ -169,7 +169,7 @@ sdfg::structured_control_flow::IfElse& PyStructuredSDFGBuilder::
         throw std::runtime_error("Condition must be a boolean expression: " + condition);
     }
 
-    auto& if_node = builder_.add_if_else(parent, {}, debug_info);
+    auto& if_node = builder_.add_if_else(parent, debug_info);
     auto& then_block = builder_.add_case(if_node, cond_bool, debug_info);
 
     scope_stack.push_back({&then_block, &if_node, 0});
@@ -203,7 +203,7 @@ void PyStructuredSDFGBuilder::end_if() {
 
 sdfg::structured_control_flow::While& PyStructuredSDFGBuilder::begin_while(const sdfg::DebugInfo& debug_info) {
     auto& parent = current_sequence();
-    auto& while_node = builder_.add_while(parent, {}, debug_info);
+    auto& while_node = builder_.add_while(parent, debug_info);
 
     auto& while_body = while_node.root();
 
@@ -214,12 +214,12 @@ sdfg::structured_control_flow::While& PyStructuredSDFGBuilder::begin_while(const
 
 void PyStructuredSDFGBuilder::add_break(const sdfg::DebugInfo& debug_info) {
     auto& parent = current_sequence();
-    builder_.add_break(parent, {}, debug_info);
+    builder_.add_break(parent, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_continue(const sdfg::DebugInfo& debug_info) {
     auto& parent = current_sequence();
-    builder_.add_continue(parent, {}, debug_info);
+    builder_.add_continue(parent, debug_info);
 }
 
 void PyStructuredSDFGBuilder::end_while() {
@@ -262,7 +262,7 @@ sdfg::structured_control_flow::For& PyStructuredSDFGBuilder::begin_for(
 
     auto update = SymEngine::add(var_sym, step_expr);
 
-    auto& for_node = builder_.add_for(parent, var_sym, condition, start_expr, update, {}, debug_info);
+    auto& for_node = builder_.add_for(parent, var_sym, condition, start_expr, update, debug_info);
 
     scope_stack.push_back({&for_node.root(), &for_node, 0});
 
@@ -316,7 +316,6 @@ sdfg::structured_control_flow::Map& PyStructuredSDFGBuilder::begin_map(
         start_expr,
         update,
         sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         debug_info
     );
 
@@ -341,7 +340,7 @@ void PyStructuredSDFGBuilder::
     sdfg::symbolic::Symbol lhs_sym = SymEngine::rcp_dynamic_cast<const SymEngine::Symbol>(parse_and_expand(lhs));
     sdfg::symbolic::Expression rhs_sym = parse_and_expand(rhs);
 
-    builder_.add_block(parent, {{lhs_sym, rhs_sym}}, debug_info);
+    builder_.add_assignments(parent, {{lhs_sym, rhs_sym}}, debug_info);
 }
 
 void PyStructuredSDFGBuilder::
@@ -815,8 +814,8 @@ Block& PyStructuredSDFGBuilder::insert_block_at_root_start(const sdfg::DebugInfo
     }
 
     // Get first child and insert before it
-    auto& first_child = root.at(0).first;
-    return builder_.add_block_before(root, first_child, {}, debug_info);
+    auto& first_child = root.at(0);
+    return builder_.add_block_before(root, first_child, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_gemm(

@@ -41,8 +41,9 @@ private:
     bool eliminate_symbols(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Sequence& parent,
         structured_control_flow::StructuredLoop& loop,
-        structured_control_flow::Transition& transition
+        structured_control_flow::AssignmentBlock* after_loop_assigns
     );
 
 public:

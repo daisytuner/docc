@@ -199,9 +199,9 @@ TEST(KernelLocalStorageTest, NoOffset) {
     EXPECT_TRUE(found_container);
 
     EXPECT_EQ(map2.root().size(), 4);
-    auto sync1 = dynamic_cast<Block*>(&map2.root().at(0).first);
-    auto if_else = dynamic_cast<IfElse*>(&map2.root().at(1).first);
-    auto sync2 = dynamic_cast<Block*>(&map2.root().at(2).first);
+    auto sync1 = dynamic_cast<Block*>(&map2.root().at(0));
+    auto if_else = dynamic_cast<IfElse*>(&map2.root().at(1));
+    auto sync2 = dynamic_cast<Block*>(&map2.root().at(2));
 
     EXPECT_TRUE(sync1);
     EXPECT_TRUE(if_else);
@@ -232,7 +232,7 @@ TEST(KernelLocalStorageTest, NoOffset) {
 
     auto& branch = if_else->at(0).first;
     EXPECT_EQ(branch.size(), 1);
-    auto if_else_block = dynamic_cast<Block*>(&branch.at(0).first);
+    auto if_else_block = dynamic_cast<Block*>(&branch.at(0));
 
     EXPECT_EQ(if_else_block->dataflow().nodes().size(), 3);
 
@@ -349,9 +349,9 @@ TEST(KernelLocalStorageTest, WithOffset) {
     EXPECT_TRUE(found_container);
 
     EXPECT_EQ(outer_loop->root().size(), 4);
-    auto sync1 = dynamic_cast<Block*>(&outer_loop->root().at(0).first);
-    auto if_else = dynamic_cast<IfElse*>(&outer_loop->root().at(1).first);
-    auto sync2 = dynamic_cast<Block*>(&outer_loop->root().at(2).first);
+    auto sync1 = dynamic_cast<Block*>(&outer_loop->root().at(0));
+    auto if_else = dynamic_cast<IfElse*>(&outer_loop->root().at(1));
+    auto sync2 = dynamic_cast<Block*>(&outer_loop->root().at(2));
 
     EXPECT_TRUE(sync1);
     EXPECT_TRUE(if_else);
@@ -382,7 +382,7 @@ TEST(KernelLocalStorageTest, WithOffset) {
 
     auto& branch = if_else->at(0).first;
     EXPECT_EQ(branch.size(), 1);
-    auto if_else_block = dynamic_cast<Block*>(&branch.at(0).first);
+    auto if_else_block = dynamic_cast<Block*>(&branch.at(0));
 
     EXPECT_EQ(if_else_block->dataflow().nodes().size(), 3);
 

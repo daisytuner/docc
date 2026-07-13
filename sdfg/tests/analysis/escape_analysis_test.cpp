@@ -160,7 +160,7 @@ TEST(EscapeAnalysisTest, NoMalloc_NotDetected) {
 
     // Just a simple assignment
     auto sym_x = symbolic::symbol("x");
-    builder.add_block(root, {{sym_x, symbolic::integer(42)}});
+    builder.add_assignments(root, {{sym_x, symbolic::integer(42)}});
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     auto& escape_analysis = analysis_manager.get<analysis::EscapeAnalysis>();
@@ -281,7 +281,7 @@ TEST(EscapeAnalysisTest, LastUse_NullForNonMalloc) {
     builder.add_container("x", desc);
 
     auto sym_x = symbolic::symbol("x");
-    builder.add_block(root, {{sym_x, symbolic::integer(42)}});
+    builder.add_assignments(root, {{sym_x, symbolic::integer(42)}});
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     auto& escape_analysis = analysis_manager.get<analysis::EscapeAnalysis>();

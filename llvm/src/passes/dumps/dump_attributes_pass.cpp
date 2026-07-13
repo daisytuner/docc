@@ -97,13 +97,8 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
 
     // Collect offloading nodes at beginning of SDFG
     for (size_t i = 0; i < root.size(); i++) {
-        // Assignments are not allowed
-        if (!root.at(i).second.empty()) {
-            break;
-        }
-
         // Child must be a block
-        auto* block = sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&root.at(i).first);
+        auto* block = sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&root.at(i));
         if (!block) {
             break;
         }
@@ -271,7 +266,7 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
     // Find last node before return
     long long last_node = root.size() - 1;
     for (size_t i = 0; i < root.size(); i++) {
-        if (sdfg::dyn_cast<sdfg::structured_control_flow::Return*>(&root.at(i).first)) {
+        if (sdfg::dyn_cast<sdfg::structured_control_flow::Return*>(&root.at(i))) {
             last_node = i - 1;
             break;
         }
@@ -279,13 +274,8 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
 
     // Collect offloading nodes at end of SDFG
     for (long long i = last_node; i >= 0; i--) {
-        // Assignments are not allowed
-        if (!root.at(i).second.empty()) {
-            break;
-        }
-
         // Child must be a block
-        auto* block = sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&root.at(i).first);
+        auto* block = sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&root.at(i));
         if (!block) {
             break;
         }

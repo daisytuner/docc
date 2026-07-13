@@ -154,32 +154,32 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
 
     auto& root = builder.subject().root();
     EXPECT_EQ(root.size(), 3);
-    EXPECT_EQ(&root.at(0).first, &malloc_tmp);
+    EXPECT_EQ(&root.at(0), &malloc_tmp);
     EXPECT_EQ(loops2.children(nullptr).size(), 2); // root loops
 
     EXPECT_FALSE(builder.find_element_by_id(a_org_ids.at(0))); // a0 no longer in the SDFG
 
-    EXPECT_EQ(root.at(1).first.element_id(), c_org_ids.at(0));
-    auto& c_outer = dynamic_cast<Map&>(root.at(1).first);
+    EXPECT_EQ(root.at(1).element_id(), c_org_ids.at(0));
+    auto& c_outer = dynamic_cast<Map&>(root.at(1));
     EXPECT_EQ(c_outer.root().size(), 1);
     EXPECT_EQ(loops2.children(&c_outer).size(), 1);
     EXPECT_TRUE(loops2.loop_info(&c_outer).is_perfectly_nested);
     EXPECT_TRUE(loops2.loop_info(&c_outer).is_perfectly_parallel);
-    EXPECT_EQ(c_outer.root().at(0).first.element_id(), c_org_ids.at(1));
-    auto& c_middle = dynamic_cast<Map&>(c_outer.root().at(0).first);
+    EXPECT_EQ(c_outer.root().at(0).element_id(), c_org_ids.at(1));
+    auto& c_middle = dynamic_cast<Map&>(c_outer.root().at(0));
     EXPECT_EQ(c_middle.root().size(), 1);
-    EXPECT_EQ(c_middle.root().at(0).first.element_id(), c_org_ids.at(2));
+    EXPECT_EQ(c_middle.root().at(0).element_id(), c_org_ids.at(2));
 
-    EXPECT_EQ(root.at(2).first.element_id(), d_org_ids.at(0));
-    auto& d_outer = dynamic_cast<Map&>(root.at(2).first);
+    EXPECT_EQ(root.at(2).element_id(), d_org_ids.at(0));
+    auto& d_outer = dynamic_cast<Map&>(root.at(2));
     EXPECT_EQ(d_outer.root().size(), 1);
     EXPECT_EQ(loops2.children(&d_outer).size(), 1);
     EXPECT_TRUE(loops2.loop_info(&d_outer).is_perfectly_nested);
     EXPECT_TRUE(loops2.loop_info(&d_outer).is_perfectly_parallel);
-    EXPECT_EQ(d_outer.root().at(0).first.element_id(), d_org_ids.at(1));
-    auto& d_middle = dynamic_cast<Map&>(d_outer.root().at(0).first);
+    EXPECT_EQ(d_outer.root().at(0).element_id(), d_org_ids.at(1));
+    auto& d_middle = dynamic_cast<Map&>(d_outer.root().at(0));
     EXPECT_EQ(d_middle.root().size(), 1);
-    EXPECT_EQ(d_middle.root().at(0).first.element_id(), d_org_ids.at(2));
+    EXPECT_EQ(d_middle.root().at(0).element_id(), d_org_ids.at(2));
 
     analysis_manager.invalidate_all();
 

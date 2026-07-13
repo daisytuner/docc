@@ -81,7 +81,7 @@ TEST(ForLoopTest, RootSequence) {
     EXPECT_TRUE(dynamic_cast<const Sequence*>(&loop_root) != nullptr);
 
     // Add block to loop body
-    builder.add_block(loop_root, control_flow::Assignments{});
+    builder.add_block(loop_root);
     EXPECT_EQ(loop_root.size(), 1);
 }
 
@@ -115,7 +115,7 @@ TEST(WhileLoopTest, RootSequence) {
     EXPECT_TRUE(dynamic_cast<const Sequence*>(&loop_root) != nullptr);
 
     // Add block to loop body
-    builder.add_block(loop_root, control_flow::Assignments{});
+    builder.add_block(loop_root);
     EXPECT_EQ(loop_root.size(), 1);
 
     // Const access
@@ -386,7 +386,7 @@ TEST(LoopTest, NestedLoops) {
     EXPECT_EQ(outer_root.size(), 1);
 
     auto& inner_root = inner_loop.root();
-    builder.add_block(inner_root, control_flow::Assignments{});
+    builder.add_block(inner_root);
     EXPECT_EQ(inner_root.size(), 1);
 }
 

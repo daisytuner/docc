@@ -2,6 +2,7 @@
 
 #include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/visitor/structured_sdfg_visitor.h"
 #include "symengine/subs.h"
 
 namespace sdfg {
@@ -9,6 +10,8 @@ namespace structured_control_flow {
 
 IfElse::IfElse(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent)
     : ControlFlowNode(element_id, debug_info, parent) {}
+
+bool IfElse::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
 
 void IfElse::validate(const Function& function) const {
     for (auto& entry : this->cases_) {
@@ -35,7 +38,17 @@ std::pair<const Sequence&, const symbolic::Condition> IfElse::at(size_t i) const
 
 std::pair<Sequence&, const symbolic::Condition> IfElse::at(size_t i) {
     return {*this->cases_.at(i), this->conditions_.at(i)};
-};
+}
+
+int IfElse::index(const Sequence& child) const {
+    for (auto i = 0; i < this->cases_.size(); ++i) {
+        if (this->cases_.at(i).get() == &child) {
+            return static_cast<int>(i);
+        }
+    }
+
+    return -1;
+}
 
 bool IfElse::is_complete() const {
     auto condition = symbolic::__false__();

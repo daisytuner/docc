@@ -33,7 +33,7 @@ std::unique_ptr<StructuredSDFG> cutout(
     assert(parent_scope != nullptr);
     index = parent_scope->index(*copied_node);
 
-    new_scope = &builder.add_sequence_before(*parent_scope, *copied_node, {}, {});
+    new_scope = &builder.add_sequence_before(*parent_scope, *copied_node);
     builder.move_child(*parent_scope, index + 1, *new_scope);
     local_analysis_manager.invalidate_all();
     sequence = new_scope;

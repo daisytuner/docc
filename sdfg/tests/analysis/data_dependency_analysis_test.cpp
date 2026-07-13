@@ -380,7 +380,7 @@ TEST(DataDependencyAnalysisTest, Sequence_Define_Scalar) {
     builder.add_container("A", base_desc);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
+    auto& transition1 = builder.add_assignments(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
 
     // Run analysis
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -397,8 +397,6 @@ TEST(DataDependencyAnalysisTest, Sequence_Define_Scalar) {
     EXPECT_EQ(open_definitions.size(), 1);
     EXPECT_EQ(closed_definitions.size(), 0);
 
-    auto& transition1 = root.at(0).second;
-
     auto& write_A = *open_definitions.begin();
     EXPECT_EQ(write_A.first->use(), analysis::Use::WRITE);
     EXPECT_EQ(write_A.first->container(), "A");
@@ -414,8 +412,8 @@ TEST(DataDependencyAnalysisTest, Sequence_Use_Scalar) {
     builder.add_container("B", base_desc);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
-    auto& block2 = builder.add_block(root, {{symbolic::symbol("B"), symbolic::symbol("A")}});
+    auto& transition1 = builder.add_assignments(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
+    auto& transition2 = builder.add_assignments(root, {{symbolic::symbol("B"), symbolic::symbol("A")}});
 
     // Run analysis
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -431,9 +429,6 @@ TEST(DataDependencyAnalysisTest, Sequence_Use_Scalar) {
     EXPECT_EQ(undefined.size(), 0);
     EXPECT_EQ(open_definitions.size(), 2);
     EXPECT_EQ(closed_definitions.size(), 0);
-
-    auto& transition1 = root.at(0).second;
-    auto& transition2 = root.at(1).second;
 
     auto write_A = users.get_user("A", &transition1, analysis::Use::WRITE);
     auto write_B = users.get_user("B", &transition2, analysis::Use::WRITE);
@@ -455,8 +450,8 @@ TEST(DataDependencyAnalysisTest, Sequence_Close_Scalar) {
     builder.add_container("A", base_desc);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
-    auto& block2 = builder.add_block(root, {{symbolic::symbol("A"), symbolic::integer(1)}});
+    auto& transition1 = builder.add_assignments(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
+    auto& transition2 = builder.add_assignments(root, {{symbolic::symbol("A"), symbolic::integer(1)}});
 
     // Run analysis
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -472,9 +467,6 @@ TEST(DataDependencyAnalysisTest, Sequence_Close_Scalar) {
     EXPECT_EQ(undefined.size(), 0);
     EXPECT_EQ(open_definitions.size(), 1);
     EXPECT_EQ(closed_definitions.size(), 1);
-
-    auto& transition1 = root.at(0).second;
-    auto& transition2 = root.at(1).second;
 
     auto write_A_1 = users.get_user("A", &transition1, analysis::Use::WRITE);
     auto write_A_2 = users.get_user("A", &transition2, analysis::Use::WRITE);
@@ -524,9 +516,6 @@ TEST(DataDependencyAnalysisTest, Sequence_Close_Array) {
     EXPECT_EQ(open_definitions.size(), 1);
     EXPECT_EQ(closed_definitions.size(), 1);
 
-    auto& transition1 = root.at(0).second;
-    auto& transition2 = root.at(1).second;
-
     auto write_A_1 = users.get_user("A", &output_node, analysis::Use::WRITE);
     auto write_A_2 = users.get_user("A", &output_node2, analysis::Use::WRITE);
 
@@ -569,9 +558,6 @@ TEST(DataDependencyAnalysisTest, Sequence_Define_Array_Subsets) {
     EXPECT_EQ(undefined.size(), 0);
     EXPECT_EQ(open_definitions.size(), 2);
     EXPECT_EQ(closed_definitions.size(), 0);
-
-    auto& transition1 = root.at(0).second;
-    auto& transition2 = root.at(1).second;
 
     auto write_A_1 = users.get_user("A", &output_node, analysis::Use::WRITE);
     auto write_A_2 = users.get_user("A", &output_node2, analysis::Use::WRITE);
@@ -620,7 +606,7 @@ TEST(DataDependencyAnalysisTest, IfElse_Condition_Use) {
     builder.add_container("A", base_desc);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
+    auto& transition1 = builder.add_assignments(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
     auto& if_else = builder.add_if_else(root);
     auto& branch1 = builder.add_case(if_else, symbolic::Eq(symbolic::symbol("A"), symbolic::integer(0)));
 
@@ -639,8 +625,6 @@ TEST(DataDependencyAnalysisTest, IfElse_Condition_Use) {
     EXPECT_EQ(open_definitions.size(), 1);
     EXPECT_EQ(closed_definitions.size(), 0);
 
-    auto& transition1 = root.at(0).second;
-
     auto write_A = users.get_user("A", &transition1, analysis::Use::WRITE);
     auto& definition_A = open_definitions.at(write_A);
     EXPECT_EQ(definition_A.size(), 1);
@@ -656,13 +640,13 @@ TEST(DataDependencyAnalysisTest, IfElse_Define_Complete_Scalar) {
     builder.add_container("A", base_desc);
 
     auto& root = builder.subject().root();
-    auto& block0 = builder.add_block(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
+    auto& transition0 = builder.add_assignments(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
     auto& if_else = builder.add_if_else(root);
     auto& branch1 = builder.add_case(if_else, symbolic::__true__());
-    auto& block1 = builder.add_block(branch1, {{symbolic::symbol("A"), symbolic::integer(1)}});
+    auto& transition1 = builder.add_assignments(branch1, {{symbolic::symbol("A"), symbolic::integer(1)}});
     auto& branch2 = builder.add_case(if_else, symbolic::__false__());
-    auto& block2 = builder.add_block(branch2, {{symbolic::symbol("A"), symbolic::integer(2)}});
-    auto& block3 = builder.add_block(root, {{symbolic::symbol("B"), symbolic::symbol("A")}});
+    auto& transition2 = builder.add_assignments(branch2, {{symbolic::symbol("A"), symbolic::integer(2)}});
+    auto& transition3 = builder.add_assignments(root, {{symbolic::symbol("B"), symbolic::symbol("A")}});
 
     // Run analysis
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -678,11 +662,6 @@ TEST(DataDependencyAnalysisTest, IfElse_Define_Complete_Scalar) {
     EXPECT_EQ(undefined.size(), 0);
     EXPECT_EQ(open_definitions.size(), 3);
     EXPECT_EQ(closed_definitions.size(), 1);
-
-    auto& transition0 = root.at(0).second;
-    auto& transition1 = branch1.at(0).second;
-    auto& transition2 = branch2.at(0).second;
-    auto& transition3 = root.at(2).second;
 
     auto write_A_0 = users.get_user("A", &transition0, analysis::Use::WRITE);
     auto write_A_1 = users.get_user("A", &transition1, analysis::Use::WRITE);
@@ -713,11 +692,11 @@ TEST(DataDependencyAnalysisTest, IfElse_Define_Incomplete_Scalar) {
     builder.add_container("B", base_desc);
 
     auto& root = builder.subject().root();
-    auto& block0 = builder.add_block(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
+    auto& transition0 = builder.add_assignments(root, {{symbolic::symbol("A"), symbolic::integer(0)}});
     auto& if_else = builder.add_if_else(root);
     auto& branch1 = builder.add_case(if_else, symbolic::__false__());
-    auto& block1 = builder.add_block(branch1, {{symbolic::symbol("A"), symbolic::integer(1)}});
-    auto& block2 = builder.add_block(root, {{symbolic::symbol("B"), symbolic::symbol("A")}});
+    auto& transition1 = builder.add_assignments(branch1, {{symbolic::symbol("A"), symbolic::integer(1)}});
+    auto& transition3 = builder.add_assignments(root, {{symbolic::symbol("B"), symbolic::symbol("A")}});
 
     // Run analysis
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -733,10 +712,6 @@ TEST(DataDependencyAnalysisTest, IfElse_Define_Incomplete_Scalar) {
     EXPECT_EQ(undefined.size(), 0);
     EXPECT_EQ(open_definitions.size(), 4);
     EXPECT_EQ(closed_definitions.size(), 0);
-
-    auto& transition0 = root.at(0).second;
-    auto& transition1 = branch1.at(0).second;
-    auto& transition3 = root.at(2).second;
 
     auto write_A_0 = users.get_user("A", &transition0, analysis::Use::WRITE);
     auto write_A_1 = users.get_user("A", &transition1, analysis::Use::WRITE);
@@ -798,10 +773,6 @@ TEST(DataDependencyAnalysisTest, IfElse_Define_Array) {
     EXPECT_EQ(open_definitions.size(), 1);
     EXPECT_EQ(closed_definitions.size(), 2);
 
-    auto& transition1 = branch1.at(0).second;
-    auto& transition2 = branch2.at(0).second;
-    auto& transition3 = root.at(1).second;
-
     auto write_A_1 = users.get_user("A", &output_node, analysis::Use::WRITE);
     auto write_A_2 = users.get_user("A", &output_node2, analysis::Use::WRITE);
     auto write_A_3 = users.get_user("A", &output_node3, analysis::Use::WRITE);
@@ -857,10 +828,6 @@ TEST(DataDependencyAnalysisTest, IfElse_Define_Array_Subsets) {
     EXPECT_EQ(undefined.size(), 0);
     EXPECT_EQ(open_definitions.size(), 3);
     EXPECT_EQ(closed_definitions.size(), 0);
-
-    auto& transition1 = branch1.at(0).second;
-    auto& transition2 = branch2.at(0).second;
-    auto& transition3 = root.at(1).second;
 
     auto write_A_1 = users.get_user("A", &output_node, analysis::Use::WRITE);
     auto write_A_2 = users.get_user("A", &output_node2, analysis::Use::WRITE);
@@ -918,10 +885,6 @@ TEST(DataDependencyAnalysisTest, IfElse_Close_Array) {
     EXPECT_EQ(undefined.size(), 0);
     EXPECT_EQ(open_definitions.size(), 2);
     EXPECT_EQ(closed_definitions.size(), 1);
-
-    auto& transition1 = branch1.at(0).second;
-    auto& transition2 = branch2.at(0).second;
-    auto& transition3 = root.at(1).second;
 
     auto write_A_1 = users.get_user("A", &output_node, analysis::Use::WRITE);
     auto write_A_2 = users.get_user("A", &output_node2, analysis::Use::WRITE);

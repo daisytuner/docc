@@ -110,8 +110,7 @@ passes::LibNodeExpander::ExpandOutcome DotNode::
     auto loop_condition = symbolic::Lt(loop_indvar, this->n_);
     auto loop_update = symbolic::add(loop_indvar, symbolic::integer(1));
 
-    auto& loop =
-        builder.add_for(new_sequence, loop_indvar, loop_condition, loop_init, loop_update, {}, block.debug_info());
+    auto& loop = builder.add_for(new_sequence, loop_indvar, loop_condition, loop_init, loop_update, block.debug_info());
     auto& body = loop.root();
 
     auto& new_block = builder.add_block(body);

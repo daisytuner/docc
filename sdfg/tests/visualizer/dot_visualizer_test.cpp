@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <regex>
+
 #include "sdfg/builder/sdfg_builder.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/utils.h"
@@ -17,6 +18,7 @@
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -481,10 +483,10 @@ TEST(DotVisualizerTest, test_while) {
 
     auto& if_else = builder.add_if_else(body);
     auto& case1 = builder.add_case(if_else, symbolic::Lt(sym, symbolic::integer(10)));
-    auto& block1 = builder.add_block(case1, {{sym, symbolic::integer(10)}});
+    auto& assign1 = builder.add_assignments(case1, {{sym, symbolic::integer(10)}});
     auto& cont1 = builder.add_continue(case1);
     auto& case2 = builder.add_case(if_else, symbolic::Ge(sym, symbolic::integer(10)));
-    auto& block2 = builder.add_block(case2, {{sym, symbolic::integer(0)}});
+    auto& assign2 = builder.add_assignments(case2, {{sym, symbolic::integer(0)}});
     auto& break1 = builder.add_break(case2);
 
     auto sdfg2 = builder.move();
@@ -509,30 +511,32 @@ TEST(DotVisualizerTest, test_while) {
         << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_0 {" << std::endl;
     exp.setIndent(20);
     exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"i < 10\";" << std::endl
-        << "subgraph cluster_" << escapeDotId(block1.element_id(), "block_") << " {" << std::endl;
+        << "subgraph cluster_" << escapeDotId(assign1.element_id(), "assign_") << " {" << std::endl;
     exp.setIndent(24);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block1.element_id() << " \";" << std::endl
-        << escapeDotId(block1.element_id(), "block_") << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << assign1.element_id() << " assign:\";"
+        << std::endl;
+    exp << escapeDotId(assign1.element_id(), "assign_") << " [shape=record,color=transparent,label=\"{i = 10}\"];"
+        << std::endl;
     exp.setIndent(20);
     exp << "}" << std::endl
-        << escapeDotId(cont1.element_id(), "cont_") << " [shape=cds,label=\" continue  \"];" << std::endl
-        << escapeDotId(block1.element_id(), "block_") << " -> " << escapeDotId(cont1.element_id(), "cont_")
-        << " [ltail=\"cluster_" << escapeDotId(block1.element_id(), "block_") << "\",minlen=3,label=\"{i = 10}\"];"
-        << std::endl;
+        << escapeDotId(cont1.element_id(), "cont_") << " [shape=cds,label=\" continue  \"];" << std::endl;
+    exp << escapeDotId(assign1.element_id(), "assign_") << " -> " << escapeDotId(cont1.element_id(), "cont_")
+        << " [ltail=\"cluster_" << escapeDotId(assign1.element_id(), "assign_") << "\",minlen=3];" << std::endl;
     exp.setIndent(16);
     exp << "}" << std::endl << "subgraph cluster_" << escapeDotId(if_else.element_id(), "if_") << "_1 {" << std::endl;
     exp.setIndent(20);
     exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"10 <= i\";" << std::endl
-        << "subgraph cluster_" << escapeDotId(block2.element_id(), "block_") << " {" << std::endl;
+        << "subgraph cluster_" << escapeDotId(assign2.element_id(), "assign_") << " {" << std::endl;
     exp.setIndent(24);
-    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << block2.element_id() << " \";" << std::endl
-        << escapeDotId(block2.element_id(), "block_") << " [shape=point,style=invis,label=\"\"];" << std::endl;
+    exp << "style=filled;shape=box;fillcolor=white;color=black;label=\"#" << assign2.element_id() << " assign:\";"
+        << std::endl;
+    exp << escapeDotId(assign2.element_id(), "assign_") << " [shape=record,color=transparent,label=\"{i = 0}\"];"
+        << std::endl;
     exp.setIndent(20);
     exp << "}" << std::endl
-        << escapeDotId(break1.element_id(), "break_") << " [shape=cds,label=\" break  \"];" << std::endl
-        << escapeDotId(block2.element_id(), "block_") << " -> " << escapeDotId(break1.element_id(), "break_")
-        << " [ltail=\"cluster_" << escapeDotId(block2.element_id(), "block_") << "\",minlen=3,label=\"{i = 0}\"];"
-        << std::endl;
+        << escapeDotId(break1.element_id(), "break_") << " [shape=cds,label=\" break  \"];" << std::endl;
+    exp << escapeDotId(assign2.element_id(), "assign_") << " -> " << escapeDotId(break1.element_id(), "break_")
+        << " [ltail=\"cluster_" << escapeDotId(assign2.element_id(), "assign_") << "\",minlen=3];" << std::endl;
     exp.setIndent(16);
     exp << "}" << std::endl;
     exp.setIndent(12);
@@ -543,6 +547,8 @@ TEST(DotVisualizerTest, test_while) {
     exp << "}" << std::endl;
     exp.setIndent(0);
     exp << "}" << std::endl;
+
+    dump_sdfg(*sdfg2, "test_while");
 
     visualizer::DotVisualizer dot(*sdfg2);
     dot.visualize();

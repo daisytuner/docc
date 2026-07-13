@@ -56,7 +56,6 @@ void TensorCopyNode::expand_identity_mode(
             symbolic::zero(),
             symbolic::add(indvar, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             this->debug_info_
         );
         current_seq = &map.root();
@@ -128,7 +127,6 @@ void TensorCopyNode::expand_permutation_mode(
             symbolic::zero(),
             symbolic::add(indvar, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             this->debug_info_
         );
         current_seq = &map.root();
@@ -139,7 +137,7 @@ void TensorCopyNode::expand_permutation_mode(
         indvars_x[mask[i]] = indvars_y[i];
     }
 
-    auto& block = builder.add_block(*current_seq, {}, this->debug_info_);
+    auto& block = builder.add_block(*current_seq, this->debug_info_);
     auto& x_access = standalone.add_scalar_input_access(block, X_INPUT_IDX);
     auto& y_access = standalone.add_scalar_input_access(block, Y_INPUT_IDX);
 
@@ -189,7 +187,6 @@ void TensorCopyNode::expand_squeeze_mode(
             symbolic::zero(),
             symbolic::add(indvar, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             this->debug_info_
         );
         current_seq = &map.root();
@@ -274,7 +271,6 @@ void TensorCopyNode::expand_reshape_mode(
         symbolic::zero(),
         symbolic::add(indvar, symbolic::one()),
         structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         this->debug_info_
     );
 

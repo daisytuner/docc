@@ -77,7 +77,7 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
 
     // After expansion, the root should contain a new sequence
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // The sequence should contain:
     // 1. Reference block (creating references for batch offsets)
@@ -88,7 +88,7 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
     // Find the GEMM block - it should contain the GEMMNode
     bool found_gemm = false;
     for (size_t i = 0; i < new_sequence.size(); ++i) {
-        auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(i).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(i));
         if (blk) {
             for (auto& node : blk->dataflow().library_nodes()) {
                 if (auto* gemm = dynamic_cast<math::blas::GEMMNode*>(node)) {
@@ -167,12 +167,12 @@ TEST(MatMulTest, MatMul_3D_Batched) {
 
     // After expansion, should have a map for the batch dimension
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Look for a Map (batch loop)
     bool found_batch_map = false;
     for (size_t i = 0; i < new_sequence.size(); ++i) {
-        if (dyn_cast<structured_control_flow::Map*>(&new_sequence.at(i).first)) {
+        if (dyn_cast<structured_control_flow::Map*>(&new_sequence.at(i))) {
             found_batch_map = true;
             break;
         }
@@ -243,9 +243,9 @@ TEST(MatMulTest, MatMul_WithSymbolicDimensions) {
 
     // Verify GEMM node has symbolic dimensions
     bool found_gemm = false;
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     for (size_t i = 0; i < new_sequence.size(); ++i) {
-        auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(i).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(i));
         if (blk) {
             for (auto& node : blk->dataflow().library_nodes()) {
                 if (auto* gemm = dynamic_cast<math::blas::GEMMNode*>(node)) {
@@ -361,14 +361,14 @@ TEST(MatMulTest, MatMul_NoCopyForDefaultStrides) {
 
     // Verify no malloc or free nodes exist (no copies needed)
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     int malloc_count = 0;
     int free_count = 0;
     bool found_gemm = false;
 
     for (size_t i = 0; i < new_sequence.size(); ++i) {
-        auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(i).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(i));
         if (blk) {
             for (auto& node : blk->dataflow().library_nodes()) {
                 if (dynamic_cast<stdlib::MallocNode*>(node)) {

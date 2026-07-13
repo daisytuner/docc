@@ -168,7 +168,7 @@ symbolic::Expression FlopAnalysis::
     bool is_null = false;
 
     for (size_t i = 0; i < sequence.size(); i++) {
-        symbolic::Expression child = this->visit(sequence.at(i).first, analysis_manager);
+        symbolic::Expression child = this->visit(sequence.at(i), analysis_manager);
         if (child.is_null()) {
             is_null = true;
         }

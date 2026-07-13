@@ -41,20 +41,18 @@ TEST(SymbolPromotionTest, Assign_Signed) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
-    auto child2 = sdfg->root().at(1);
-    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2.first);
+    auto& child1 = sdfg->root().at(0);
+    auto assignments = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    auto& child2 = sdfg->root().at(1);
+    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2);
 
-    EXPECT_NE(block1, nullptr);
+    EXPECT_NE(assignments, nullptr);
     EXPECT_NE(block2, nullptr);
 
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym2), *sym1));
+    EXPECT_EQ(assignments->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*assignments->assignments().at(sym2), *sym1));
 
     EXPECT_EQ(block2->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child2.second.assignments().size(), 0);
 }
 
 TEST(SymbolPromotionTest, Assign_Signed_Constant) {
@@ -85,20 +83,18 @@ TEST(SymbolPromotionTest, Assign_Signed_Constant) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
-    auto child2 = sdfg->root().at(1);
-    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2.first);
+    auto& child1 = sdfg->root().at(0);
+    auto assignments1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    auto& child2 = sdfg->root().at(1);
+    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2);
 
-    EXPECT_NE(block1, nullptr);
+    EXPECT_NE(assignments1, nullptr);
     EXPECT_NE(block2, nullptr);
 
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::integer(0)));
+    EXPECT_EQ(assignments1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*assignments1->assignments().at(sym), *symbolic::integer(0)));
 
     EXPECT_EQ(block2->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child2.second.assignments().size(), 0);
 }
 
 TEST(SymbolPromotionTest, Assign_Unsigned) {
@@ -150,9 +146,10 @@ TEST(SymbolPromotionTest, Assign_Unsigned_Constant) {
     passes::SymbolPromotion s2spass;
     EXPECT_TRUE(s2spass.run(builder, analysis_manager));
 
-    auto& trans = builder.subject().root().at(0).second;
-    EXPECT_EQ(trans.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(trans.assignments().at(symbolic::symbol("i")), symbolic::zero()));
+    auto trans = dyn_cast<AssignmentBlock*>(&builder.subject().root().at(0));
+    EXPECT_TRUE(trans != nullptr);
+    EXPECT_EQ(trans->assignments().size(), 1);
+    EXPECT_TRUE(symbolic::eq(trans->assignments().at(symbolic::symbol("i")), symbolic::zero()));
 }
 
 TEST(SymbolPromotionTest, Assign_Unsigned_Cast_Input) {
@@ -294,17 +291,16 @@ TEST(SymbolPromotionTest, Add_Signed) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
-    auto child2 = sdfg->root().at(1);
-    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2.first);
+    auto& child1 = sdfg->root().at(0);
+    auto assignments1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    auto& child2 = sdfg->root().at(1);
+    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2);
 
-    EXPECT_NE(block1, nullptr);
+    EXPECT_NE(assignments1, nullptr);
     EXPECT_NE(block2, nullptr);
 
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym2), *symbolic::add(sym1, sym2)));
+    EXPECT_EQ(assignments1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*assignments1->assignments().at(sym2), *symbolic::add(sym1, sym2)));
 
     EXPECT_EQ(block2->dataflow().nodes().size(), 0);
 }
@@ -337,20 +333,18 @@ TEST(SymbolPromotionTest, Add_Signed_Constant) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
-    auto child2 = sdfg->root().at(1);
-    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    auto& child2 = sdfg->root().at(1);
+    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2);
 
     EXPECT_NE(block1, nullptr);
     EXPECT_NE(block2, nullptr);
 
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::integer(1)));
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::integer(1)));
 
     EXPECT_EQ(block2->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child2.second.assignments().size(), 0);
 }
 
 TEST(SymbolPromotionTest, Sub_Signed) {
@@ -383,17 +377,16 @@ TEST(SymbolPromotionTest, Sub_Signed) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
-    auto child2 = sdfg->root().at(1);
-    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    auto& child2 = sdfg->root().at(1);
+    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2);
 
     EXPECT_NE(block1, nullptr);
     EXPECT_NE(block2, nullptr);
 
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym2), *symbolic::sub(sym1, sym2)));
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym2), *symbolic::sub(sym1, sym2)));
 
     EXPECT_EQ(block2->dataflow().nodes().size(), 0);
 }
@@ -426,20 +419,18 @@ TEST(SymbolPromotionTest, Sub_Signed_Constant) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
-    auto child2 = sdfg->root().at(1);
-    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    auto& child2 = sdfg->root().at(1);
+    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2);
 
     EXPECT_NE(block1, nullptr);
     EXPECT_NE(block2, nullptr);
 
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::integer(-1)));
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::integer(-1)));
 
     EXPECT_EQ(block2->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child2.second.assignments().size(), 0);
 }
 
 TEST(SymbolPromotionTest, Mul_Signed) {
@@ -472,17 +463,16 @@ TEST(SymbolPromotionTest, Mul_Signed) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
-    auto child2 = sdfg->root().at(1);
-    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    auto& child2 = sdfg->root().at(1);
+    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2);
 
     EXPECT_NE(block1, nullptr);
     EXPECT_NE(block2, nullptr);
 
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym2), *symbolic::mul(sym1, sym2)));
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym2), *symbolic::mul(sym1, sym2)));
 
     EXPECT_EQ(block2->dataflow().nodes().size(), 0);
 }
@@ -515,20 +505,18 @@ TEST(SymbolPromotionTest, Mul_Signed_Constant) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
-    auto child2 = sdfg->root().at(1);
-    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    auto& child2 = sdfg->root().at(1);
+    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2);
 
     EXPECT_NE(block1, nullptr);
     EXPECT_NE(block2, nullptr);
 
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::integer(0)));
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::integer(0)));
 
     EXPECT_EQ(block2->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child2.second.assignments().size(), 0);
 }
 
 TEST(SymbolPromotionTest, SHL_Constant) {
@@ -561,21 +549,19 @@ TEST(SymbolPromotionTest, SHL_Constant) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
-    auto child2 = sdfg->root().at(1);
-    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    auto& child2 = sdfg->root().at(1);
+    auto block2 = dynamic_cast<const structured_control_flow::Block*>(&child2);
 
     EXPECT_NE(block1, nullptr);
     EXPECT_NE(block2, nullptr);
 
     auto rhs = symbolic::mul(sym2, symbolic::integer(2));
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *rhs));
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *rhs));
 
     EXPECT_EQ(block2->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child2.second.assignments().size(), 0);
 }
 
 TEST(SymbolPromotionTest, SHL_NonConstant) {
@@ -637,14 +623,13 @@ TEST(SymbolPromotionTest, Div_Signed) {
 
     // Check result - verify expression is j / k
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto expected = symbolic::div(sym_j, sym_k);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, Div_Signed_Constant) {
@@ -675,9 +660,13 @@ TEST(SymbolPromotionTest, Div_Signed_Constant) {
 
     // Check result - 8 / 2 = 4
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::integer(4)));
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    EXPECT_NE(block1, nullptr);
+    EXPECT_EQ(block1->assignments().size(), 1);
+
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::integer(4)));
 }
 
 TEST(SymbolPromotionTest, Rem_Signed) {
@@ -712,14 +701,14 @@ TEST(SymbolPromotionTest, Rem_Signed) {
 
     // Check result - verify expression is j % k
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto expected = symbolic::mod(sym_j, sym_k);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, Rem_Signed_Constant) {
@@ -750,9 +739,11 @@ TEST(SymbolPromotionTest, Rem_Signed_Constant) {
 
     // Check result - 7 % 3 = 1
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::integer(1)));
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    EXPECT_NE(block1, nullptr);
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::integer(1)));
 }
 
 TEST(SymbolPromotionTest, Min_Signed) {
@@ -787,14 +778,13 @@ TEST(SymbolPromotionTest, Min_Signed) {
 
     // Check result - verify expression is min(j, k)
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto expected = symbolic::min(sym_j, sym_k);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, Min_Signed_Constant) {
@@ -825,9 +815,11 @@ TEST(SymbolPromotionTest, Min_Signed_Constant) {
 
     // Check result - min(5, 3) = 3
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::integer(3)));
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    EXPECT_NE(block1, nullptr);
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::integer(3)));
 }
 
 TEST(SymbolPromotionTest, Max_Signed) {
@@ -862,14 +854,13 @@ TEST(SymbolPromotionTest, Max_Signed) {
 
     // Check result - verify expression is max(j, k)
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto expected = symbolic::max(sym_j, sym_k);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, Max_Signed_Constant) {
@@ -900,9 +891,11 @@ TEST(SymbolPromotionTest, Max_Signed_Constant) {
 
     // Check result - max(5, 3) = 5
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::integer(5)));
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    EXPECT_NE(block1, nullptr);
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::integer(5)));
 }
 
 TEST(SymbolPromotionTest, Abs_Signed) {
@@ -933,14 +926,13 @@ TEST(SymbolPromotionTest, Abs_Signed) {
 
     // Check result - verify expression is abs(j)
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto expected = symbolic::abs(sym_j);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, Abs_Signed_Constant) {
@@ -969,10 +961,11 @@ TEST(SymbolPromotionTest, Abs_Signed_Constant) {
 
     // Check result - abs(-5) = 5
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::
-                    eq(*child1.second.assignments().at(sym), *symbolic::simplify(symbolic::abs(symbolic::integer(-5))))
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    EXPECT_NE(block1, nullptr);
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::simplify(symbolic::abs(symbolic::integer(-5))))
     );
 }
 
@@ -1006,14 +999,13 @@ TEST(SymbolPromotionTest, ASHR_Constant) {
 
     // Check result - verify expression is j / 2^2 = j / 4
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto expected = symbolic::div(sym_j, symbolic::integer(4));
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, ASHR_Constant_Literal) {
@@ -1044,9 +1036,11 @@ TEST(SymbolPromotionTest, ASHR_Constant_Literal) {
 
     // Check result - 8 >> 2 = 2
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym), *symbolic::integer(2)));
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
+    EXPECT_NE(block1, nullptr);
+    EXPECT_EQ(block1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::integer(2)));
 }
 
 TEST(SymbolPromotionTest, And_Bool) {
@@ -1081,16 +1075,15 @@ TEST(SymbolPromotionTest, And_Bool) {
 
     // Check result - verify expression is (j == true) & (k == true)
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto op1_is_true = symbolic::Eq(sym_j, symbolic::__true__());
     auto op2_is_true = symbolic::Eq(sym_k, symbolic::__true__());
     auto expected = symbolic::And(op1_is_true, op2_is_true);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, Or_Bool) {
@@ -1125,16 +1118,15 @@ TEST(SymbolPromotionTest, Or_Bool) {
 
     // Check result - verify expression is (j == true) | (k == true)
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto op1_is_true = symbolic::Eq(sym_j, symbolic::__true__());
     auto op2_is_true = symbolic::Eq(sym_k, symbolic::__true__());
     auto expected = symbolic::Or(op1_is_true, op2_is_true);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, Xor_Bool) {
@@ -1169,17 +1161,16 @@ TEST(SymbolPromotionTest, Xor_Bool) {
 
     // Check result - verify expression is ((j == true) | (k == true)) & !((j == true) & (k == true))
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto op1_is_true = symbolic::Eq(sym_j, symbolic::__true__());
     auto op2_is_true = symbolic::Eq(sym_k, symbolic::__true__());
     auto expected =
         symbolic::And(symbolic::Or(op1_is_true, op2_is_true), symbolic::Not(symbolic::And(op1_is_true, op2_is_true)));
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, ZExt_i32_to_i64) {
@@ -1211,14 +1202,13 @@ TEST(SymbolPromotionTest, ZExt_i32_to_i64) {
 
     // Check result - verify expression is zext_i64(j)
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto expected = symbolic::zext_i64(SymEngine::rcp_static_cast<const SymEngine::Symbol>(sym_j));
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, Trunc_i64_to_i32) {
@@ -1250,14 +1240,13 @@ TEST(SymbolPromotionTest, Trunc_i64_to_i32) {
 
     // Check result - verify expression is trunc_i32(j)
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg->root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto expected = symbolic::trunc_i32(SymEngine::rcp_static_cast<const SymEngine::Symbol>(sym_j));
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }
 
 TEST(SymbolPromotionTest, Signed_Int_neg_1_xor) {
@@ -1287,12 +1276,11 @@ TEST(SymbolPromotionTest, Signed_Int_neg_1_xor) {
 
     // Check result - verify expression is - sym_j - 1
     EXPECT_EQ(sdfg.root().size(), 2);
-    auto child1 = sdfg.root().at(0);
-    auto block1 = dynamic_cast<const structured_control_flow::Block*>(&child1.first);
+    auto& child1 = sdfg.root().at(0);
+    auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
-    EXPECT_EQ(block1->dataflow().nodes().size(), 0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    EXPECT_EQ(block1->assignments().size(), 1);
 
     auto expected = symbolic::add(symbolic::mul(symbolic::integer(-1), sym_j), symbolic::integer(-1));
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym_i), *expected));
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym_i), *expected));
 }

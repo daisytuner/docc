@@ -187,13 +187,12 @@ passes::LibNodeExpander::ExpandOutcome ConcatNode::
             symbolic::zero(),
             symbolic::add(indvar, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             this->debug_info_
         );
         current_seq = &map.root();
     }
 
-    auto& if_else = builder.add_if_else(*current_seq, {}, this->debug_info_);
+    auto& if_else = builder.add_if_else(*current_seq, this->debug_info_);
     auto dim_indvar = subset.at(this->dim_);
     const auto* iedge_result = dfg.in_edge_for_connector(*this, this->result());
     if (!iedge_result) {
@@ -209,7 +208,7 @@ passes::LibNodeExpander::ExpandOutcome ConcatNode::
         data_flow::Subset offset_subset(subset);
         offset_subset[this->dim_] = symbolic::sub(dim_indvar, offset);
 
-        auto& block = builder.add_block(case_seq, {}, this->debug_info_);
+        auto& block = builder.add_block(case_seq, this->debug_info_);
         auto& tensor_access = standalone->add_scalar_input_access(block, i);
         auto& result_access = standalone->add_scalar_input_access(block, this->tensor_layouts_.size());
         auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info_);

@@ -40,8 +40,8 @@ TEST(UniqueLoopIndvarsTest, DistinctIndvars_NoChange) {
     EXPECT_FALSE(pass.run(builder_opt, analysis_manager));
 
     auto& result = builder_opt.subject();
-    auto* loop0 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0).first);
-    auto* loop1 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(1).first);
+    auto* loop0 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0));
+    auto* loop1 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(1));
     ASSERT_NE(loop0, nullptr);
     ASSERT_NE(loop1, nullptr);
     EXPECT_TRUE(symbolic::eq(loop0->indvar(), symbolic::symbol("i")));
@@ -72,8 +72,8 @@ TEST(UniqueLoopIndvarsTest, SiblingLoops_SameIndvar_Renamed) {
     EXPECT_TRUE(pass.run(builder_opt, analysis_manager));
 
     auto& result = builder_opt.subject();
-    auto* loop0 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0).first);
-    auto* loop1 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(1).first);
+    auto* loop0 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0));
+    auto* loop1 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(1));
     ASSERT_NE(loop0, nullptr);
     ASSERT_NE(loop1, nullptr);
 
@@ -123,9 +123,9 @@ TEST(UniqueLoopIndvarsTest, NestedLoops_SameIndvar_InnerRenamed) {
     EXPECT_TRUE(pass.run(builder_opt, analysis_manager));
 
     auto& result = builder_opt.subject();
-    auto* outer_res = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0).first);
+    auto* outer_res = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0));
     ASSERT_NE(outer_res, nullptr);
-    auto* inner_res = dynamic_cast<const structured_control_flow::StructuredLoop*>(&outer_res->root().at(0).first);
+    auto* inner_res = dynamic_cast<const structured_control_flow::StructuredLoop*>(&outer_res->root().at(0));
     ASSERT_NE(inner_res, nullptr);
 
     // Outer keeps the original indvar; the inner one is disambiguated.
@@ -176,9 +176,9 @@ TEST(UniqueLoopIndvarsTest, NestedMaps_SameIndvar_InnerRenamed) {
     EXPECT_TRUE(pass.run(builder_opt, analysis_manager));
 
     auto& result = builder_opt.subject();
-    auto* outer_res = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0).first);
+    auto* outer_res = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0));
     ASSERT_NE(outer_res, nullptr);
-    auto* inner_res = dynamic_cast<const structured_control_flow::StructuredLoop*>(&outer_res->root().at(0).first);
+    auto* inner_res = dynamic_cast<const structured_control_flow::StructuredLoop*>(&outer_res->root().at(0));
     ASSERT_NE(inner_res, nullptr);
 
     EXPECT_TRUE(symbolic::eq(outer_res->indvar(), symbolic::symbol("i")));
@@ -263,8 +263,8 @@ TEST(UniqueLoopIndvarsTest, IndvarReadAfterLoop_NotRenamed) {
     EXPECT_FALSE(pass.run(builder_opt, analysis_manager));
 
     auto& result = builder_opt.subject();
-    auto* l0 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0).first);
-    auto* l1 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(1).first);
+    auto* l0 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(0));
+    auto* l1 = dynamic_cast<const structured_control_flow::StructuredLoop*>(&result.root().at(1));
     ASSERT_NE(l0, nullptr);
     ASSERT_NE(l1, nullptr);
 

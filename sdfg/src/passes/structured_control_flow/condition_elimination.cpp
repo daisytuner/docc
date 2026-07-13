@@ -6,15 +6,12 @@
 namespace sdfg {
 namespace passes {
 
-bool ConditionElimination::eliminate_condition(
-    structured_control_flow::Sequence& parent,
-    structured_control_flow::IfElse& match_node,
-    structured_control_flow::Transition& match_transition
-) {
+bool ConditionElimination::
+    eliminate_condition(structured_control_flow::Sequence& parent, structured_control_flow::IfElse& match_node) {
     auto branch = match_node.at(0);
     auto& branch_root = branch.first;
     auto& branch_condition = branch.second;
-    auto& loop = static_cast<structured_control_flow::StructuredLoop&>(branch_root.at(0).first);
+    auto& loop = static_cast<structured_control_flow::StructuredLoop&>(branch_root.at(0));
 
     auto loop_indvar = loop.indvar();
     auto loop_init = loop.init();
@@ -31,7 +28,7 @@ bool ConditionElimination::eliminate_condition(
     auto loop_iter0_condition = symbolic::subs(loop_condition, loop_indvar, loop_init);
     if (symbolic::eq(loop_iter0_condition, branch_condition)) {
         // Insert placeholder before if-else
-        auto& new_child = this->builder_.add_sequence_before(parent, match_node, match_transition.assignments());
+        auto& new_child = this->builder_.add_sequence_before(parent, match_node);
 
         // Move children of branch to placeholder
         this->builder_.move_children(branch_root, new_child);
@@ -55,23 +52,21 @@ ConditionElimination::
 bool ConditionElimination::accept(structured_control_flow::Sequence& node) {
     bool applied = false;
     for (size_t i = 0; i < node.size(); i++) {
-        auto& current = node.at(i).first;
+        auto& current = node.at(i);
         if (auto ifelse = dyn_cast<structured_control_flow::IfElse*>(&current)) {
             if (ifelse->size() != 1) {
                 continue;
             }
             auto branch = ifelse->at(0);
-            auto& condition = branch.second;
 
             auto& branch_root = branch.first;
             if (branch_root.size() != 1) {
                 continue;
             }
-            if (!dyn_cast<structured_control_flow::StructuredLoop*>(&branch_root.at(0).first)) {
+            if (!dyn_cast<structured_control_flow::StructuredLoop*>(&branch_root.at(0))) {
                 continue;
             }
-
-            if (this->eliminate_condition(node, *ifelse, node.at(i).second)) {
+            if (this->eliminate_condition(node, *ifelse)) {
                 applied = true;
             }
         }

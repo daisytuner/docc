@@ -71,9 +71,9 @@ TEST(LoopInterchangeTest, Map_2D) {
 
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0));
     EXPECT_TRUE(outer_loop != nullptr);
-    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0));
     EXPECT_TRUE(inner_loop != nullptr);
 
     EXPECT_EQ(outer_loop->indvar()->get_name(), "j");
@@ -81,7 +81,7 @@ TEST(LoopInterchangeTest, Map_2D) {
 
     EXPECT_EQ(outer_loop->root().size(), 1);
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_EQ(&inner_loop->root().at(0).first, &block);
+    EXPECT_EQ(&inner_loop->root().at(0), &block);
 }
 
 TEST(LoopInterchangeTest, Map_2D_Transition) {
@@ -114,10 +114,11 @@ TEST(LoopInterchangeTest, Map_2D_Transition) {
         symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
-        structured_control_flow::ScheduleType_Sequential::create(),
-        {{symbolic::symbol("i"), symbolic::zero()}}
+        structured_control_flow::ScheduleType_Sequential::create()
     );
     auto& body = loop.root();
+
+    builder.add_assignments(root, {{symbolic::symbol("i"), symbolic::zero()}});
 
     // Define loop 2
     auto bound_2 = symbolic::symbol("M");
@@ -151,21 +152,22 @@ TEST(LoopInterchangeTest, Map_2D_Transition) {
     transformation.apply(builder, analysis_manager);
 
     auto& new_sdfg = builder.subject();
-    EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
-    EXPECT_TRUE(outer_loop != nullptr);
-    EXPECT_EQ(new_sdfg.root().at(0).second.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(new_sdfg.root().at(0).second.assignments().at(indvar), symbolic::zero()));
-    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    ASSERT_EQ(new_sdfg.root().size(), 2);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0));
+    ASSERT_TRUE(outer_loop != nullptr);
+    auto assignment_after = dyn_cast<AssignmentBlock*>(&new_sdfg.root().at(1));
+    ASSERT_TRUE(assignment_after);
+    EXPECT_EQ(assignment_after->assignments().size(), 1);
+    EXPECT_TRUE(symbolic::eq(assignment_after->assignments().at(indvar), symbolic::zero()));
+    ASSERT_EQ(outer_loop->root().size(), 1);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0));
     EXPECT_TRUE(inner_loop != nullptr);
-    EXPECT_EQ(outer_loop->root().at(0).second.assignments().size(), 0);
 
     EXPECT_EQ(outer_loop->indvar()->get_name(), "j");
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
 
-    EXPECT_EQ(outer_loop->root().size(), 1);
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_EQ(&inner_loop->root().at(0).first, &block);
+    EXPECT_EQ(&inner_loop->root().at(0), &block);
 }
 
 TEST(LoopInterchangeTest, DependentLoops) {
@@ -475,12 +477,12 @@ TEST(LoopInterchangeTest, CreatedAndDeletedElements) {
     EXPECT_EQ(new_sdfg.root().size(), 1);
 
     // Verify new outer loop exists and has correct indvar
-    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0));
     EXPECT_TRUE(outer_loop != nullptr);
     EXPECT_EQ(outer_loop->indvar()->get_name(), "j");
 
     // Verify new inner loop exists and has correct indvar
-    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0));
     EXPECT_TRUE(inner_loop != nullptr);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
 
@@ -491,7 +493,7 @@ TEST(LoopInterchangeTest, CreatedAndDeletedElements) {
     // Verify loop structure is preserved: 2 loops with 1 block
     EXPECT_EQ(outer_loop->root().size(), 1);
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_EQ(&inner_loop->root().at(0).first, &block);
+    EXPECT_EQ(&inner_loop->root().at(0), &block);
 }
 
 // For-For interchange: A[i][j] = A[i][j] + 1.0 — no cross-iteration deps, should be legal
@@ -548,14 +550,14 @@ TEST(LoopInterchangeTest, ForFor_Independent) {
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
-    auto outer = dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0).first);
+    auto outer = dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0));
     ASSERT_NE(outer, nullptr);
-    auto inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(0).first);
+    auto inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(0));
     ASSERT_NE(inner, nullptr);
 
     EXPECT_EQ(outer->indvar()->get_name(), "j");
     EXPECT_EQ(inner->indvar()->get_name(), "i");
-    EXPECT_EQ(&inner->root().at(0).first, &block);
+    EXPECT_EQ(&inner->root().at(0), &block);
 }
 
 // For-For interchange: A[i+1][j] = A[i][j] — forward dep in i, no dep in j. Legal.
@@ -872,11 +874,11 @@ TEST(LoopInterchangeTest, ForFor_FM_NonUnitStride) {
     transformation.apply(builder, analysis_manager);
 
     // After interchange: outer = tile (stride 32), inner = t (stride 1)
-    auto* outer = dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0).first);
+    auto* outer = dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0));
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->indvar()->get_name(), "tile");
 
-    auto* inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(0).first);
+    auto* inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(0));
     ASSERT_NE(inner, nullptr);
     EXPECT_EQ(inner->indvar()->get_name(), "t");
 

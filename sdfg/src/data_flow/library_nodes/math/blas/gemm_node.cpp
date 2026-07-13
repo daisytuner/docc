@@ -185,11 +185,10 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 block.debug_info()
             );
         } else {
-            last_map = &builder.add_for(*last_scope, indvar, condition, init, update, {}, block.debug_info());
+            last_map = &builder.add_for(*last_scope, indvar, condition, init, update, block.debug_info());
         }
         last_scope = &last_map->root();
 
@@ -202,7 +201,7 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
 
 
     // Add code
-    auto& init_block = builder.add_block_before(output_loop->root(), *last_map, {}, block.debug_info());
+    auto& init_block = builder.add_block_before(output_loop->root(), *last_map, block.debug_info());
     auto& sum_init = builder.add_access(init_block, sum_var, block.debug_info());
 
     auto& zero_node = builder.add_constant(init_block, "0.0", alpha_edge->base_type(), block.debug_info());
@@ -210,7 +209,7 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
     builder.add_computational_memlet(init_block, zero_node, init_tasklet, "_in", {}, block.debug_info());
     builder.add_computational_memlet(init_block, init_tasklet, "_out", sum_init, {}, block.debug_info());
 
-    auto& code_block = builder.add_block(*last_scope, {}, block.debug_info());
+    auto& code_block = builder.add_block(*last_scope, block.debug_info());
     auto& input_node_a_new = standalone->add_indirect_read_access(code_block, A_INPUT_IDX);
     auto& input_node_b_new = standalone->add_indirect_read_access(code_block, B_INPUT_IDX);
 
@@ -239,7 +238,7 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
     );
     builder.add_computational_memlet(code_block, core_fma, "_out", sum_out, {}, iedge_c->debug_info());
 
-    auto& flush_block = builder.add_block_after(output_loop->root(), *last_map, {}, block.debug_info());
+    auto& flush_block = builder.add_block_after(output_loop->root(), *last_map, block.debug_info());
     auto& sum_final = builder.add_access(flush_block, sum_var, block.debug_info());
     auto& input_node_c_new = standalone->add_indirect_read_access(flush_block, C_INPUT_IDX);
     symbolic::Expression c_idx = symbolic::add(symbolic::mul(ldc(), new_subset[0]), new_subset[1]);

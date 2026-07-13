@@ -39,7 +39,7 @@ bool ExtendedBlockHoisting::equal_libnodes(structured_control_flow::Block& block
 void ExtendedBlockHoisting::if_else_extract_invariant_libnode_front(
     structured_control_flow::Sequence& parent, structured_control_flow::IfElse& if_else
 ) {
-    auto& first_block = static_cast<structured_control_flow::Block&>(if_else.at(0).first.at(0).first);
+    auto& first_block = static_cast<structured_control_flow::Block&>(if_else.at(0).first.at(0));
     auto& first_dfg = first_block.dataflow();
     auto* first_libnode = *first_dfg.library_nodes().begin();
     if (auto* offloading_node = dynamic_cast<offloading::DataOffloadingNode*>(first_libnode)) {
@@ -49,7 +49,7 @@ void ExtendedBlockHoisting::if_else_extract_invariant_libnode_front(
             std::string first_device_container = first_src.data();
 
             for (size_t i = 1; i < if_else.size(); i++) {
-                auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(0).first);
+                auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(0));
                 auto& other_dfg = other_block.dataflow();
                 auto* other_offloading_node =
                     dynamic_cast<offloading::DataOffloadingNode*>(*other_dfg.library_nodes().begin());
@@ -66,7 +66,7 @@ void ExtendedBlockHoisting::if_else_extract_invariant_libnode_front(
             std::string first_device_container = first_dst.data();
 
             for (size_t i = 1; i < if_else.size(); i++) {
-                auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(0).first);
+                auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(0));
                 auto& other_dfg = other_block.dataflow();
                 auto* other_libnode = *other_dfg.library_nodes().begin();
                 auto& other_oedge = *other_dfg.out_edges(*other_libnode).begin();
@@ -87,7 +87,7 @@ void ExtendedBlockHoisting::if_else_extract_invariant_libnode_back(
     structured_control_flow::Sequence& parent, structured_control_flow::IfElse& if_else
 ) {
     size_t first_size = if_else.at(0).first.size();
-    auto& first_block = static_cast<structured_control_flow::Block&>(if_else.at(0).first.at(first_size - 1).first);
+    auto& first_block = static_cast<structured_control_flow::Block&>(if_else.at(0).first.at(first_size - 1));
     auto& first_dfg = first_block.dataflow();
     auto* first_libnode = *first_dfg.library_nodes().begin();
     if (auto* offloading_node = dynamic_cast<offloading::DataOffloadingNode*>(first_libnode)) {
@@ -98,8 +98,8 @@ void ExtendedBlockHoisting::if_else_extract_invariant_libnode_back(
 
             for (size_t i = 1; i < if_else.size(); i++) {
                 size_t other_size = if_else.at(i).first.size();
-                auto& other_block =
-                    static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1).first);
+                auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1)
+                );
                 auto& other_dfg = other_block.dataflow();
                 auto* other_offloading_node =
                     dynamic_cast<offloading::DataOffloadingNode*>(*other_dfg.library_nodes().begin());
@@ -117,8 +117,8 @@ void ExtendedBlockHoisting::if_else_extract_invariant_libnode_back(
 
             for (size_t i = 1; i < if_else.size(); i++) {
                 size_t other_size = if_else.at(i).first.size();
-                auto& other_block =
-                    static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1).first);
+                auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1)
+                );
                 auto& other_dfg = other_block.dataflow();
                 auto* other_libnode = *other_dfg.library_nodes().begin();
                 auto& other_oedge = *other_dfg.out_edges(*other_libnode).begin();

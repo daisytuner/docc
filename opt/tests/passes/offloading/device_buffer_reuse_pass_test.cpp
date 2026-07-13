@@ -177,7 +177,7 @@ void collect_offloads(
         }
     } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         for (size_t i = 0; i < seq->size(); i++) {
-            collect_offloads(seq->at(i).first, allocs, frees);
+            collect_offloads(seq->at(i), allocs, frees);
         }
     } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
         for (size_t i = 0; i < if_else->size(); i++) {

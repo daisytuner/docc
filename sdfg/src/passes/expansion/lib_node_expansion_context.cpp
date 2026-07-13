@@ -28,11 +28,7 @@ public:
         auto& parent = context_->parent_;
         auto& block = context_->block_;
 
-        // the libnode to be expanded (and its access/const nodes) are the only thing in the block and we will be
-        // removing it after. Save any potential assignments on the old block to the sequence
-        auto* assignments = expansion_will_empty_block_ ? &parent.at(child_idx).second.assignments() : nullptr;
-
-        return context_->builder_.add_sequence_at(parent, insertion_idx, block.debug_info(), assignments);
+        return context_->builder_.add_sequence_at(parent, insertion_idx, block.debug_info());
     }
 
     structured_control_flow::StructuredLoop& replace_with_structured_loop(
@@ -48,19 +44,13 @@ public:
         auto& parent = context_->parent_;
         auto& block = context_->block_;
 
-        // the libnode to be expanded (and its access/const nodes) are the only thing in the block and we will be
-        // removing it after. Save any potential assignments on the old block to the sequence
-        auto* assignments = expansion_will_empty_block_ ? &parent.at(child_idx).second.assignments() : nullptr;
-
         switch (type) {
             case LoopType::For:
-                return context_->builder_.add_for_at(
-                    parent, insertion_idx, indvar, condition, init, update, schedule_type, block.debug_info(), assignments
-                );
+                return context_->builder_
+                    .add_for_at(parent, insertion_idx, indvar, condition, init, update, schedule_type, block.debug_info());
             case LoopType::Map:
-                return context_->builder_.add_map_at(
-                    parent, insertion_idx, indvar, condition, init, update, schedule_type, block.debug_info(), assignments
-                );
+                return context_->builder_
+                    .add_map_at(parent, insertion_idx, indvar, condition, init, update, schedule_type, block.debug_info());
             default:
                 throw std::runtime_error("Unsupported LoopType: " + std::to_string(static_cast<int>(type)));
         }

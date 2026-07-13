@@ -58,7 +58,7 @@ void collect_direct_child_scopes(
         result.insert(&w->root());
     } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&scope)) {
         for (size_t i = 0; i < seq->size(); i++) {
-            auto& child = seq->at(i).first;
+            auto& child = seq->at(i);
             if (!dyn_cast<structured_control_flow::Block*>(&child)) {
                 result.insert(&child);
             }
@@ -106,7 +106,7 @@ void MemoryLayoutAnalysis::
         process_block(*block, analysis_manager);
     } else if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         for (size_t i = 0; i < sequence->size(); i++) {
-            traverse(sequence->at(i).first, analysis_manager);
+            traverse(sequence->at(i), analysis_manager);
         }
     } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
         for (size_t i = 0; i < if_else->size(); i++) {

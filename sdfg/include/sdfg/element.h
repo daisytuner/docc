@@ -79,7 +79,7 @@ enum class ElementType : uint64_t {
     Return = 1LL << 7,
     Block = 1LL << 8,
     Sequence = 1LL << 9,
-    Transition = 1LL << 10,
+    AssignmentBlock = 1LL << 10,
     IfElse = 1LL << 11,
     While = 1LL << 12,
     Continue = 1LL << 13,
@@ -128,8 +128,8 @@ constexpr std::string_view element_type_name(ElementType type) {
             return "block";
         case ElementType::Sequence:
             return "sequence";
-        case ElementType::Transition:
-            return "transition";
+        case ElementType::AssignmentBlock:
+            return "assignment_block";
         case ElementType::IfElse:
             return "if_else";
         case ElementType::While:
@@ -146,6 +146,11 @@ constexpr std::string_view element_type_name(ElementType type) {
             return "reduce";
     }
     throw InvalidSDFGException("Element: Unknown element type");
+}
+
+inline std::ostream& operator<<(std::ostream& os, ElementType type) {
+    os << element_type_name(type);
+    return os;
 }
 
 class Element {

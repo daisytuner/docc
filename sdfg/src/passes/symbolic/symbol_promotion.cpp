@@ -403,7 +403,7 @@ void SymbolPromotion::apply(
     }
 
     // Split states and set transition
-    builder.add_block_before(sequence, block, {{lhs, symbolic::simplify(rhs)}}, block.debug_info());
+    builder.add_assignments_before(sequence, block, {{lhs, symbolic::simplify(rhs)}}, block.debug_info());
     builder.clear_code_node_legacy(block, *tasklet);
 };
 
@@ -427,8 +427,8 @@ bool SymbolPromotion::run_pass(builder::StructuredSDFGBuilder& builder, analysis
         if (auto match = dyn_cast<structured_control_flow::Sequence*>(current)) {
             size_t i = 0;
             while (i < match->size()) {
-                auto entry = match->at(i);
-                if (auto block = dyn_cast<structured_control_flow::Block*>(&entry.first)) {
+                auto& entry = match->at(i);
+                if (auto block = dyn_cast<structured_control_flow::Block*>(&entry)) {
                     if (can_be_applied(builder, analysis_manager, block->dataflow())) {
                         apply(builder, analysis_manager, *match, *block);
                         applied = true;
@@ -442,7 +442,7 @@ bool SymbolPromotion::run_pass(builder::StructuredSDFGBuilder& builder, analysis
         // Add children to queue
         if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(current)) {
             for (size_t i = 0; i < sequence_stmt->size(); i++) {
-                queue.push_back(&sequence_stmt->at(i).first);
+                queue.push_back(&sequence_stmt->at(i));
             }
         } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(current)) {
             for (size_t i = 0; i < if_else_stmt->size(); i++) {

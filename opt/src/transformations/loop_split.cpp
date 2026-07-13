@@ -60,7 +60,7 @@ void LoopSplit::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     structured_control_flow::StructuredLoop* first_loop = nullptr;
     if (auto map = dyn_cast<structured_control_flow::Map*>(&loop_)) {
         first_loop = &builder.add_map_before(
-            *parent, loop_, indvar, first_condition, init, update, map->schedule_type(), {}, loop_.debug_info()
+            *parent, loop_, indvar, first_condition, init, update, map->schedule_type(), loop_.debug_info()
         );
     } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(&loop_)) {
         first_loop = &builder.add_reduce_before(
@@ -72,12 +72,10 @@ void LoopSplit::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             update,
             reduce->reductions(),
             reduce->schedule_type(),
-            {},
             loop_.debug_info()
         );
     } else {
-        first_loop =
-            &builder.add_for_before(*parent, loop_, indvar, first_condition, init, update, {}, loop_.debug_info());
+        first_loop = &builder.add_for_before(*parent, loop_, indvar, first_condition, init, update, loop_.debug_info());
     }
 
     // Deep copy the original loop body into the first loop

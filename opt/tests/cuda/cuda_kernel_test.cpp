@@ -79,14 +79,28 @@ TEST(CUDAKernel, DispatcherTest) {
     );
     EXPECT_EQ(
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
-        "#include \"\"\n\n__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){\n    int "
-        "__daisy_cuda_thread_idx_x = threadIdx.x;\n    int __daisy_cuda_indvar_x = threadIdx.x + "
-        "blockIdx.x*blockDim.x;\n    int __daisy_cuda_thread_idx_y = threadIdx.y;\n    int __daisy_cuda_indvar_y = "
-        "threadIdx.y + blockIdx.y*blockDim.y;\n    int __daisy_cuda_thread_idx_z = threadIdx.z;\n    int "
-        "__daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;\n    int i = __daisy_cuda_indvar_x;\n    if "
-        "(__daisy_cuda_indvar_x < "
-        "100) {\n            {\n                float in_ = 0.0f;\n                float out_;\n\n                out_ "
-        "= in_;\n\n                (reinterpret_cast<float *>(__daisy_cuda_A))[i] = out_;\n            }\n    }\n}\n"
+        R"a(#include ""
+
+__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+    int __daisy_cuda_thread_idx_x = threadIdx.x;
+    int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
+    int __daisy_cuda_thread_idx_y = threadIdx.y;
+    int __daisy_cuda_indvar_y = threadIdx.y + blockIdx.y*blockDim.y;
+    int __daisy_cuda_thread_idx_z = threadIdx.z;
+    int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
+    int i = __daisy_cuda_indvar_x;
+    if (__daisy_cuda_indvar_x < 100) {
+        {
+            float in_ = 0.0f;
+            float out_;
+
+            out_ = in_;
+
+            (reinterpret_cast<float *>(__daisy_cuda_A))[i] = out_;
+        }
+    }
+}
+)a"
     );
 }
 
@@ -169,16 +183,31 @@ TEST(CUDAKernel, NestedXYDispatcherTest) {
     );
     EXPECT_EQ(
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
-        "#include \"\"\n\n__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){\n    int "
-        "__daisy_cuda_thread_idx_x = threadIdx.x;\n    int __daisy_cuda_indvar_x = threadIdx.x + "
-        "blockIdx.x*blockDim.x;\n    int __daisy_cuda_thread_idx_y = threadIdx.y;\n    int __daisy_cuda_indvar_y = "
-        "threadIdx.y + blockIdx.y*blockDim.y;\n    int __daisy_cuda_thread_idx_z = threadIdx.z;\n    int "
-        "__daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;\n    int i = __daisy_cuda_indvar_x;\n    int j = "
-        "__daisy_cuda_indvar_y;\n    if (__daisy_cuda_indvar_x < 100) {\n            if (__daisy_cuda_indvar_y < 40) "
-        "{\n                    {\n                "
-        "        float in_ = 0.0f;\n                        float out_;\n\n                        out_ = in_;\n\n     "
-        "                   (reinterpret_cast<float *>(__daisy_cuda_A))[i + j] = out_;\n                    }\n        "
-        "    }\n    }\n}\n"
+        R"a(#include ""
+
+__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+    int __daisy_cuda_thread_idx_x = threadIdx.x;
+    int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
+    int __daisy_cuda_thread_idx_y = threadIdx.y;
+    int __daisy_cuda_indvar_y = threadIdx.y + blockIdx.y*blockDim.y;
+    int __daisy_cuda_thread_idx_z = threadIdx.z;
+    int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
+    int i = __daisy_cuda_indvar_x;
+    int j = __daisy_cuda_indvar_y;
+    if (__daisy_cuda_indvar_x < 100) {
+        if (__daisy_cuda_indvar_y < 40) {
+            {
+                float in_ = 0.0f;
+                float out_;
+
+                out_ = in_;
+
+                (reinterpret_cast<float *>(__daisy_cuda_A))[i + j] = out_;
+            }
+        }
+    }
+}
+)a"
     );
 }
 
@@ -261,16 +290,31 @@ TEST(CUDAKernel, NestedXZDispatcherTest) {
     );
     EXPECT_EQ(
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
-        "#include \"\"\n\n__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){\n    int "
-        "__daisy_cuda_thread_idx_x = threadIdx.x;\n    int __daisy_cuda_indvar_x = threadIdx.x + "
-        "blockIdx.x*blockDim.x;\n    int __daisy_cuda_thread_idx_y = threadIdx.y;\n    int __daisy_cuda_indvar_y = "
-        "threadIdx.y + blockIdx.y*blockDim.y;\n    int __daisy_cuda_thread_idx_z = threadIdx.z;\n    int "
-        "__daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;\n    int i = __daisy_cuda_indvar_x;\n    int j = "
-        "__daisy_cuda_indvar_z;\n    if (__daisy_cuda_indvar_x < 100) {\n            if (__daisy_cuda_indvar_z < 40) "
-        "{\n                    {\n                "
-        "        float in_ = 0.0f;\n                        float out_;\n\n                        out_ = in_;\n\n     "
-        "                   (reinterpret_cast<float *>(__daisy_cuda_A))[i + j] = out_;\n                    }\n        "
-        "    }\n    }\n}\n"
+        R"a(#include ""
+
+__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+    int __daisy_cuda_thread_idx_x = threadIdx.x;
+    int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
+    int __daisy_cuda_thread_idx_y = threadIdx.y;
+    int __daisy_cuda_indvar_y = threadIdx.y + blockIdx.y*blockDim.y;
+    int __daisy_cuda_thread_idx_z = threadIdx.z;
+    int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
+    int i = __daisy_cuda_indvar_x;
+    int j = __daisy_cuda_indvar_z;
+    if (__daisy_cuda_indvar_x < 100) {
+        if (__daisy_cuda_indvar_z < 40) {
+            {
+                float in_ = 0.0f;
+                float out_;
+
+                out_ = in_;
+
+                (reinterpret_cast<float *>(__daisy_cuda_A))[i + j] = out_;
+            }
+        }
+    }
+}
+)a"
     );
 }
 
@@ -370,19 +414,34 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
     );
     EXPECT_EQ(
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
-        "#include \"\"\n\n__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){\n    int "
-        "__daisy_cuda_thread_idx_x = threadIdx.x;\n    int __daisy_cuda_indvar_x = threadIdx.x + "
-        "blockIdx.x*blockDim.x;\n    int __daisy_cuda_thread_idx_y = threadIdx.y;\n    int __daisy_cuda_indvar_y = "
-        "threadIdx.y + blockIdx.y*blockDim.y;\n    int __daisy_cuda_thread_idx_z = threadIdx.z;\n    int "
-        "__daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;\n    int i = __daisy_cuda_indvar_x;\n    int j = "
-        "__daisy_cuda_indvar_y;\n    int k = __daisy_cuda_indvar_z;\n    if (__daisy_cuda_indvar_x < 100) {\n          "
-        "  if (__daisy_cuda_indvar_y < 40) {\n   "
-        "                 if (__daisy_cuda_indvar_z < 200) {\n                            {\n                          "
-        "      float in_ = "
-        "0.0f;\n                                float out_;\n\n                                out_ = in_;\n\n         "
-        "                       (reinterpret_cast<float *>(__daisy_cuda_A))[i + j + k] = out_;\n                       "
-        "     }\n         "
-        "           }\n            }\n    }\n}\n"
+        R"a(#include ""
+
+__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+    int __daisy_cuda_thread_idx_x = threadIdx.x;
+    int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
+    int __daisy_cuda_thread_idx_y = threadIdx.y;
+    int __daisy_cuda_indvar_y = threadIdx.y + blockIdx.y*blockDim.y;
+    int __daisy_cuda_thread_idx_z = threadIdx.z;
+    int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
+    int i = __daisy_cuda_indvar_x;
+    int j = __daisy_cuda_indvar_y;
+    int k = __daisy_cuda_indvar_z;
+    if (__daisy_cuda_indvar_x < 100) {
+        if (__daisy_cuda_indvar_y < 40) {
+            if (__daisy_cuda_indvar_z < 200) {
+                {
+                    float in_ = 0.0f;
+                    float out_;
+
+                    out_ = in_;
+
+                    (reinterpret_cast<float *>(__daisy_cuda_A))[i + j + k] = out_;
+                }
+            }
+        }
+    }
+}
+)a"
     );
 }
 

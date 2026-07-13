@@ -134,7 +134,7 @@ LogicalResult translateTensorConcatOp(SDFGTranslator& translator, tensor::Concat
 
     // Create concat node
     auto& builder = translator.builder();
-    auto& block = builder.add_block(translator.insertion_point(), {}, deb_info);
+    auto& block = builder.add_block(translator.insertion_point(), deb_info);
     std::vector<::sdfg::data_flow::AccessNode*> input_accesses;
     input_accesses.reserve(num_inputs);
     std::unordered_map<std::string, ::sdfg::data_flow::AccessNode*> input_access_map;
@@ -335,7 +335,6 @@ LogicalResult translateTensorInsertSliceOp(SDFGTranslator& translator, tensor::I
             init,
             update,
             ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             deb_info
         );
         current_seq = &map.root();
@@ -381,7 +380,6 @@ LogicalResult translateTensorInsertSliceOp(SDFGTranslator& translator, tensor::I
             init,
             update,
             ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             deb_info
         );
         current_seq = &map.root();
@@ -487,7 +485,6 @@ LogicalResult translateTensorExtractSliceOp(SDFGTranslator& translator, tensor::
             ::sdfg::symbolic::zero(),
             ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one()),
             ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             deb_info
         );
         current_seq = &map.root();
@@ -610,14 +607,13 @@ LogicalResult translateTensorPadOp(SDFGTranslator& translator, tensor::PadOp* pa
             init,
             update,
             ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             deb_info
         );
         current_seq = &map.root();
     }
 
     // Create if/else
-    auto& if_else = builder.add_if_else(*current_seq, {}, deb_info);
+    auto& if_else = builder.add_if_else(*current_seq, deb_info);
     auto& copy_case =
         builder.add_case(if_else, ::sdfg::symbolic::Eq(copy_condition, ::sdfg::symbolic::__true__()), deb_info);
     auto& fill_case =

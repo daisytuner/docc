@@ -208,6 +208,7 @@ set(SOURCE_FILES
     src/types/utils.cpp
     src/visitor/immutable_structured_sdfg_visitor.cpp
     src/visitor/structured_sdfg_visitor.cpp
+    src/visitor/structured_sdfg_walker.cpp
     src/visualizer/dot_visualizer.cpp
     src/visualizer/visualizer.cpp
 )

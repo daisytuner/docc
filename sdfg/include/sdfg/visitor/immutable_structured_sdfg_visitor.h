@@ -23,6 +23,8 @@ public:
 
     virtual bool accept(structured_control_flow::Block& node);
 
+    virtual bool accept(structured_control_flow::AssignmentBlock& node);
+
     virtual bool accept(structured_control_flow::Sequence& node);
 
     virtual bool accept(structured_control_flow::Return& node);

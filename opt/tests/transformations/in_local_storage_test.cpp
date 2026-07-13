@@ -82,7 +82,7 @@ TEST(InLocalStorageTest, For_Array) {
     EXPECT_EQ(new_root.size(), 2);
 
     // First element should be copy loop
-    auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(copy_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), symbolic::integer(4))));
@@ -90,7 +90,7 @@ TEST(InLocalStorageTest, For_Array) {
 
     auto& copy_body = copy_loop->root();
     EXPECT_EQ(copy_body.size(), 1);
-    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&copy_body.at(0).first);
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&copy_body.at(0));
     EXPECT_NE(copy_block, nullptr);
 
     EXPECT_EQ(copy_block->dataflow().nodes().size(), 3);
@@ -122,13 +122,13 @@ TEST(InLocalStorageTest, For_Array) {
     EXPECT_TRUE(writes_A_local);
 
     // Second element should be the main loop
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
     // Verify main loop uses local buffer
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1);
-    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(main_block, nullptr);
 
     EXPECT_EQ(main_block->dataflow().nodes().size(), 4);
@@ -214,7 +214,7 @@ TEST(InLocalStorageTest, For_Array_Linearized) {
     auto& outer_body = outer_loop.root();
     EXPECT_EQ(outer_body.size(), 2u);
 
-    auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&outer_body.at(0).first);
+    auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&outer_body.at(0));
     EXPECT_NE(copy_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), symbolic::integer(16))));
@@ -222,7 +222,7 @@ TEST(InLocalStorageTest, For_Array_Linearized) {
 
     auto& copy_body = copy_loop->root();
     EXPECT_EQ(copy_body.size(), 1);
-    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&copy_body.at(0).first);
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&copy_body.at(0));
     EXPECT_NE(copy_block, nullptr);
 
     EXPECT_EQ(copy_block->dataflow().nodes().size(), 3);
@@ -256,13 +256,13 @@ TEST(InLocalStorageTest, For_Array_Linearized) {
     EXPECT_TRUE(reads_A);
     EXPECT_TRUE(writes_A_local);
 
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&outer_body.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&outer_body.at(1));
     EXPECT_NE(main_loop, nullptr);
 
     // Verify the compute memlet uses LOCAL indices (k, zero-based)
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1u);
-    auto* compute_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* compute_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(compute_block, nullptr);
 
     bool found_local_access = false;
@@ -339,7 +339,7 @@ TEST(InLocalStorageTest, For_Array_PolyBench) {
     EXPECT_EQ(new_root.size(), 2);
 
     // First element should be copy loop
-    auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(copy_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), symbolic::integer(4))));
@@ -347,7 +347,7 @@ TEST(InLocalStorageTest, For_Array_PolyBench) {
 
     auto& copy_body = copy_loop->root();
     EXPECT_EQ(copy_body.size(), 1);
-    auto* copy_loop_inner = dyn_cast<structured_control_flow::Map*>(&copy_body.at(0).first);
+    auto* copy_loop_inner = dyn_cast<structured_control_flow::Map*>(&copy_body.at(0));
     EXPECT_NE(copy_loop_inner, nullptr);
     EXPECT_TRUE(symbolic::eq(copy_loop_inner->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(copy_loop_inner->condition(), symbolic::Lt(copy_loop_inner->indvar(), symbolic::integer(8)))
@@ -357,7 +357,7 @@ TEST(InLocalStorageTest, For_Array_PolyBench) {
 
     auto& copy_body_inner = copy_loop_inner->root();
     EXPECT_EQ(copy_body_inner.size(), 1);
-    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&copy_body_inner.at(0).first);
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&copy_body_inner.at(0));
     EXPECT_NE(copy_block, nullptr);
 
     EXPECT_EQ(copy_block->dataflow().nodes().size(), 3);
@@ -395,16 +395,16 @@ TEST(InLocalStorageTest, For_Array_PolyBench) {
     EXPECT_TRUE(writes_A_local);
 
     // Second element should be the main loop
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
     // Verify main loop uses local buffer
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1);
-    auto* main_loop_inner = dyn_cast<structured_control_flow::For*>(&main_body.at(0).first);
+    auto* main_loop_inner = dyn_cast<structured_control_flow::For*>(&main_body.at(0));
     EXPECT_NE(main_loop_inner, nullptr);
 
-    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop_inner->root().at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop_inner->root().at(0));
     EXPECT_NE(main_block, nullptr);
 
     EXPECT_EQ(main_block->dataflow().nodes().size(), 3);
@@ -495,7 +495,7 @@ TEST(InLocalStorageTest, For_Scalar) {
     EXPECT_EQ(new_root.size(), 2);
 
     // First element should be copy block
-    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(0).first);
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(0));
     EXPECT_NE(copy_block, nullptr);
 
     EXPECT_EQ(copy_block->dataflow().nodes().size(), 3);
@@ -527,14 +527,14 @@ TEST(InLocalStorageTest, For_Scalar) {
     EXPECT_TRUE(writes_A_local);
 
     // Second element should be the main loop
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
 
     // Verify main loop uses local buffer
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1);
-    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(main_block, nullptr);
 
     EXPECT_EQ(main_block->dataflow().nodes().size(), 4);
@@ -611,7 +611,7 @@ TEST(InLocalStorageTest, Map_Array) {
     EXPECT_EQ(new_root.size(), 2);
 
     // First element should be copy loop
-    auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(copy_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), symbolic::integer(4))));
@@ -619,7 +619,7 @@ TEST(InLocalStorageTest, Map_Array) {
 
     auto& copy_body = copy_loop->root();
     EXPECT_EQ(copy_body.size(), 1);
-    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&copy_body.at(0).first);
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&copy_body.at(0));
     EXPECT_NE(copy_block, nullptr);
 
     EXPECT_EQ(copy_block->dataflow().nodes().size(), 3);
@@ -651,14 +651,14 @@ TEST(InLocalStorageTest, Map_Array) {
     EXPECT_TRUE(writes_A_local);
 
     // Second element should be the main loop
-    auto* main_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
 
     // Verify main loop uses local buffer
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1);
-    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(main_block, nullptr);
 
     EXPECT_EQ(main_block->dataflow().nodes().size(), 3);
@@ -772,26 +772,26 @@ TEST(InLocalStorageTest, For_MultipleGroups) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 1);
 
-    auto* new_i_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0).first);
+    auto* new_i_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0));
     EXPECT_NE(new_i_loop, nullptr);
     EXPECT_EQ(new_i_loop, &i_loop);
     EXPECT_EQ(new_i_loop->root().size(), 1);
 
-    auto* new_j_loop = dyn_cast<structured_control_flow::For*>(&new_i_loop->root().at(0).first);
+    auto* new_j_loop = dyn_cast<structured_control_flow::For*>(&new_i_loop->root().at(0));
     EXPECT_NE(new_j_loop, nullptr);
     EXPECT_EQ(new_j_loop, &j_loop);
 
     // body of j-loop [copyin_ik, copyin_jk, k-loop]
     EXPECT_EQ(new_j_loop->root().size(), 3);
 
-    auto* copyin_ik = dyn_cast<structured_control_flow::Map*>(&new_j_loop->root().at(0).first);
+    auto* copyin_ik = dyn_cast<structured_control_flow::Map*>(&new_j_loop->root().at(0));
     EXPECT_NE(copyin_ik, nullptr);
     EXPECT_TRUE(symbolic::eq(copyin_ik->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(copyin_ik->condition(), symbolic::Lt(copyin_ik->indvar(), symbolic::integer(16))));
     EXPECT_TRUE(symbolic::eq(copyin_ik->update(), symbolic::add(copyin_ik->indvar(), symbolic::integer(1))));
     auto& copyin_ik_body = copyin_ik->root();
     EXPECT_EQ(copyin_ik_body.size(), 1);
-    auto* copyin_ik_block = dyn_cast<structured_control_flow::Block*>(&copyin_ik_body.at(0).first);
+    auto* copyin_ik_block = dyn_cast<structured_control_flow::Block*>(&copyin_ik_body.at(0));
     EXPECT_NE(copyin_ik_block, nullptr);
 
     EXPECT_EQ(copyin_ik_block->dataflow().nodes().size(), 3);
@@ -824,14 +824,14 @@ TEST(InLocalStorageTest, For_MultipleGroups) {
     EXPECT_TRUE(reads_A);
     EXPECT_TRUE(writes_A_local);
 
-    auto* copyin_jk = dyn_cast<structured_control_flow::Map*>(&new_j_loop->root().at(1).first);
+    auto* copyin_jk = dyn_cast<structured_control_flow::Map*>(&new_j_loop->root().at(1));
     EXPECT_NE(copyin_jk, nullptr);
     EXPECT_TRUE(symbolic::eq(copyin_jk->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(copyin_jk->condition(), symbolic::Lt(copyin_jk->indvar(), symbolic::integer(16))));
     EXPECT_TRUE(symbolic::eq(copyin_jk->update(), symbolic::add(copyin_jk->indvar(), symbolic::integer(1))));
     auto& copyin_jk_body = copyin_jk->root();
     EXPECT_EQ(copyin_jk_body.size(), 1);
-    auto* copyin_jk_block = dyn_cast<structured_control_flow::Block*>(&copyin_jk_body.at(0).first);
+    auto* copyin_jk_block = dyn_cast<structured_control_flow::Block*>(&copyin_jk_body.at(0));
     EXPECT_NE(copyin_jk_block, nullptr);
 
     EXPECT_EQ(copyin_jk_block->dataflow().nodes().size(), 3);
@@ -864,12 +864,12 @@ TEST(InLocalStorageTest, For_MultipleGroups) {
     EXPECT_TRUE(reads_A);
     EXPECT_TRUE(writes_A_local);
 
-    auto* k_loop_new = dyn_cast<structured_control_flow::For*>(&new_j_loop->root().at(2).first);
+    auto* k_loop_new = dyn_cast<structured_control_flow::For*>(&new_j_loop->root().at(2));
     EXPECT_NE(k_loop_new, nullptr);
     EXPECT_EQ(k_loop_new, &k_loop);
     auto& k_loop_body = k_loop_new->root();
     EXPECT_EQ(k_loop_body.size(), 2);
-    auto* k_block = dyn_cast<structured_control_flow::Block*>(&k_loop_body.at(0).first);
+    auto* k_block = dyn_cast<structured_control_flow::Block*>(&k_loop_body.at(0));
     EXPECT_NE(k_block, nullptr);
 }
 
@@ -960,26 +960,26 @@ TEST(InLocalStorageTest, For_MultipleGroups_SplitNode) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 1);
 
-    auto* new_i_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0).first);
+    auto* new_i_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0));
     EXPECT_NE(new_i_loop, nullptr);
     EXPECT_EQ(new_i_loop, &i_loop);
     EXPECT_EQ(new_i_loop->root().size(), 1);
 
-    auto* new_j_loop = dyn_cast<structured_control_flow::For*>(&new_i_loop->root().at(0).first);
+    auto* new_j_loop = dyn_cast<structured_control_flow::For*>(&new_i_loop->root().at(0));
     EXPECT_NE(new_j_loop, nullptr);
     EXPECT_EQ(new_j_loop, &j_loop);
 
     // body of j-loop [copyin_ik, copyin_jk, k-loop]
     EXPECT_EQ(new_j_loop->root().size(), 3);
 
-    auto* copyin_ik = dyn_cast<structured_control_flow::Map*>(&new_j_loop->root().at(0).first);
+    auto* copyin_ik = dyn_cast<structured_control_flow::Map*>(&new_j_loop->root().at(0));
     EXPECT_NE(copyin_ik, nullptr);
     EXPECT_TRUE(symbolic::eq(copyin_ik->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(copyin_ik->condition(), symbolic::Lt(copyin_ik->indvar(), symbolic::integer(16))));
     EXPECT_TRUE(symbolic::eq(copyin_ik->update(), symbolic::add(copyin_ik->indvar(), symbolic::integer(1))));
     auto& copyin_ik_body = copyin_ik->root();
     EXPECT_EQ(copyin_ik_body.size(), 1);
-    auto* copyin_ik_block = dyn_cast<structured_control_flow::Block*>(&copyin_ik_body.at(0).first);
+    auto* copyin_ik_block = dyn_cast<structured_control_flow::Block*>(&copyin_ik_body.at(0));
     EXPECT_NE(copyin_ik_block, nullptr);
 
     EXPECT_EQ(copyin_ik_block->dataflow().nodes().size(), 3);
@@ -1012,14 +1012,14 @@ TEST(InLocalStorageTest, For_MultipleGroups_SplitNode) {
     EXPECT_TRUE(reads_A);
     EXPECT_TRUE(writes_A_local);
 
-    auto* copyin_jk = dyn_cast<structured_control_flow::Map*>(&new_j_loop->root().at(1).first);
+    auto* copyin_jk = dyn_cast<structured_control_flow::Map*>(&new_j_loop->root().at(1));
     EXPECT_NE(copyin_jk, nullptr);
     EXPECT_TRUE(symbolic::eq(copyin_jk->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(copyin_jk->condition(), symbolic::Lt(copyin_jk->indvar(), symbolic::integer(16))));
     EXPECT_TRUE(symbolic::eq(copyin_jk->update(), symbolic::add(copyin_jk->indvar(), symbolic::integer(1))));
     auto& copyin_jk_body = copyin_jk->root();
     EXPECT_EQ(copyin_jk_body.size(), 1);
-    auto* copyin_jk_block = dyn_cast<structured_control_flow::Block*>(&copyin_jk_body.at(0).first);
+    auto* copyin_jk_block = dyn_cast<structured_control_flow::Block*>(&copyin_jk_body.at(0));
     EXPECT_NE(copyin_jk_block, nullptr);
 
     EXPECT_EQ(copyin_jk_block->dataflow().nodes().size(), 3);
@@ -1052,12 +1052,12 @@ TEST(InLocalStorageTest, For_MultipleGroups_SplitNode) {
     EXPECT_TRUE(reads_A);
     EXPECT_TRUE(writes_A_local);
 
-    auto* k_loop_new = dyn_cast<structured_control_flow::For*>(&new_j_loop->root().at(2).first);
+    auto* k_loop_new = dyn_cast<structured_control_flow::For*>(&new_j_loop->root().at(2));
     EXPECT_NE(k_loop_new, nullptr);
     EXPECT_EQ(k_loop_new, &k_loop);
     auto& k_loop_body = k_loop_new->root();
     EXPECT_EQ(k_loop_body.size(), 1);
-    auto* k_block = dyn_cast<structured_control_flow::Block*>(&k_loop_body.at(0).first);
+    auto* k_block = dyn_cast<structured_control_flow::Block*>(&k_loop_body.at(0));
     EXPECT_NE(k_block, nullptr);
 
     EXPECT_EQ(k_block->dataflow().nodes().size(), 5);
@@ -1403,23 +1403,23 @@ TEST(InLocalStorageTest, TiledAccess_2D) {
         EXPECT_EQ(j_tile_body.size(), 2u);
 
         // First: copy loop (outer dim, 0..MC)
-        auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&j_tile_body.at(0).first);
+        auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&j_tile_body.at(0));
         EXPECT_NE(copy_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), MC)));
 
         // Second: compute loop (i_loop preserved)
-        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&j_tile_body.at(1).first);
+        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&j_tile_body.at(1));
         EXPECT_NE(compute_loop, nullptr);
 
         // Verify the compute memlet uses LOCAL indices: (i-i_tile)*NC + (j-j_tile)
         auto& compute_i_body = compute_loop->root();
         EXPECT_GE(compute_i_body.size(), 1u);
-        auto* compute_j_loop = dyn_cast<structured_control_flow::For*>(&compute_i_body.at(0).first);
+        auto* compute_j_loop = dyn_cast<structured_control_flow::For*>(&compute_i_body.at(0));
         EXPECT_NE(compute_j_loop, nullptr);
         auto& compute_j_body = compute_j_loop->root();
         EXPECT_EQ(compute_j_body.size(), 1u);
-        auto* compute_block = dyn_cast<structured_control_flow::Block*>(&compute_j_body.at(0).first);
+        auto* compute_block = dyn_cast<structured_control_flow::Block*>(&compute_j_body.at(0));
         EXPECT_NE(compute_block, nullptr);
 
         bool found_local_access = false;
@@ -1524,7 +1524,7 @@ TEST(InLocalStorageTest, TiledAccess_1D) {
         EXPECT_EQ(tile_loop.root().size(), 2u);
 
         // First: copy loop (0..TILE)
-        auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&tile_loop.root().at(0).first);
+        auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&tile_loop.root().at(0));
         EXPECT_NE(copy_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), TILE)));
@@ -1643,7 +1643,7 @@ TEST(InLocalStorageTest, TiledAccess_2D_Panel) {
         EXPECT_EQ(k_tile_loop.root().size(), 2u);
 
         // First: copy loop (outer dim, 0..MC)
-        auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&k_tile_loop.root().at(0).first);
+        auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&k_tile_loop.root().at(0));
         EXPECT_NE(copy_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(copy_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), MC)));
@@ -1651,7 +1651,7 @@ TEST(InLocalStorageTest, TiledAccess_2D_Panel) {
         // Check nested second dimension (0..KC)
         auto& copy_inner_body = copy_loop->root();
         EXPECT_EQ(copy_inner_body.size(), 1u);
-        auto* copy_inner = dyn_cast<structured_control_flow::Map*>(&copy_inner_body.at(0).first);
+        auto* copy_inner = dyn_cast<structured_control_flow::Map*>(&copy_inner_body.at(0));
         EXPECT_NE(copy_inner, nullptr);
         EXPECT_TRUE(symbolic::eq(copy_inner->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(copy_inner->condition(), symbolic::Lt(copy_inner->indvar(), KC)));
@@ -1659,11 +1659,11 @@ TEST(InLocalStorageTest, TiledAccess_2D_Panel) {
         // Verify the compute memlet uses LOCAL indices: (i-i_tile)*KC + (k-k_tile)
         auto& compute_i_body = i_loop.root();
         EXPECT_GE(compute_i_body.size(), 1u);
-        auto* compute_k_loop = dyn_cast<structured_control_flow::For*>(&compute_i_body.at(0).first);
+        auto* compute_k_loop = dyn_cast<structured_control_flow::For*>(&compute_i_body.at(0));
         EXPECT_NE(compute_k_loop, nullptr);
         auto& compute_k_body = compute_k_loop->root();
         EXPECT_EQ(compute_k_body.size(), 1u);
-        auto* compute_block = dyn_cast<structured_control_flow::Block*>(&compute_k_body.at(0).first);
+        auto* compute_block = dyn_cast<structured_control_flow::Block*>(&compute_k_body.at(0));
         EXPECT_NE(compute_block, nullptr);
 
         bool found_local_access = false;
@@ -2098,7 +2098,7 @@ TEST(InLocalStorageTest, GPU_Cooperative_FlatPointer) {
     EXPECT_GE(map_y_body.size(), 4u);
 
     // First element: barrier block
-    auto* barrier1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(0).first);
+    auto* barrier1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(0));
     EXPECT_NE(barrier1, nullptr);
     bool has_barrier1 = false;
     for (auto& node : barrier1->dataflow().nodes()) {
@@ -2111,11 +2111,11 @@ TEST(InLocalStorageTest, GPU_Cooperative_FlatPointer) {
     EXPECT_TRUE(has_barrier1);
 
     // Second element: cooperative copy map (strided loop)
-    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(1).first);
+    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(1));
     EXPECT_NE(copy_map, nullptr);
 
     // Third element: barrier block
-    auto* barrier2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(2).first);
+    auto* barrier2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(2));
     EXPECT_NE(barrier2, nullptr);
     bool has_barrier2 = false;
     for (auto& node : barrier2->dataflow().nodes()) {
@@ -2128,7 +2128,7 @@ TEST(InLocalStorageTest, GPU_Cooperative_FlatPointer) {
     EXPECT_TRUE(has_barrier2);
 
     // Fourth element: original for loop
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(3).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(3));
     EXPECT_NE(main_loop, nullptr);
 }
 
@@ -2230,13 +2230,13 @@ TEST(InLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     auto& map_y_body = map_y.root();
     EXPECT_GE(map_y_body.size(), 4u);
 
-    auto* barrier1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(0).first);
+    auto* barrier1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(0));
     EXPECT_NE(barrier1, nullptr);
-    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(1).first);
+    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(1));
     EXPECT_NE(copy_map, nullptr);
-    auto* barrier2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(2).first);
+    auto* barrier2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(2));
     EXPECT_NE(barrier2, nullptr);
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(3).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(3));
     EXPECT_NE(main_loop, nullptr);
 }
 

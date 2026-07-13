@@ -79,12 +79,12 @@ void create_and_test(
     dump_sdfg(sdfg, "1.after");
 
     ASSERT_EQ(root.size(), 1);
-    auto* current_seq = sdfg::dyn_cast<structured_control_flow::Sequence*>(&root.at(0).first);
+    auto* current_seq = sdfg::dyn_cast<structured_control_flow::Sequence*>(&root.at(0));
     ASSERT_NE(current_seq, nullptr);
     ASSERT_EQ(current_seq->size(), 1);
 
-    while (structured_control_flow::Map::classof(current_seq->at(0).first)) {
-        auto* map = sdfg::dyn_cast<structured_control_flow::Map*>(&current_seq->at(0).first);
+    while (structured_control_flow::Map::classof(current_seq->at(0))) {
+        auto* map = sdfg::dyn_cast<structured_control_flow::Map*>(&current_seq->at(0));
         ASSERT_TRUE(symbolic::eq(map->init(), symbolic::zero()));
         auto indvar = map->indvar();
         ASSERT_TRUE(symbolic::eq(map->update(), symbolic::add(indvar, symbolic::one())));
@@ -96,7 +96,7 @@ void create_and_test(
         ASSERT_EQ(current_seq->size(), 1);
     }
 
-    auto* comp_block = sdfg::dyn_cast<structured_control_flow::Block*>(&current_seq->at(0).first);
+    auto* comp_block = sdfg::dyn_cast<structured_control_flow::Block*>(&current_seq->at(0));
     ASSERT_NE(comp_block, nullptr);
 
     auto& dfg = comp_block->dataflow();

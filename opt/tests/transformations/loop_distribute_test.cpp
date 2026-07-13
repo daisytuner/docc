@@ -71,16 +71,16 @@ TEST(LoopDistributeTest, BasicDistribution) {
     EXPECT_EQ(new_sdfg.root().size(), 2); // Now we should have 2 loops
 
     // First loop is the original For (kept) holding block1
-    auto first_loop = dyn_cast<structured_control_flow::For*>(&new_sdfg.root().at(0).first);
+    auto first_loop = dyn_cast<structured_control_flow::For*>(&new_sdfg.root().at(0));
     EXPECT_TRUE(first_loop != nullptr);
     EXPECT_EQ(first_loop->root().size(), 1);
-    EXPECT_EQ(&first_loop->root().at(0).first, &block1);
+    EXPECT_EQ(&first_loop->root().at(0), &block1);
 
     // Second loop is the new Map (suffix) holding block2
-    auto second_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1).first);
+    auto second_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1));
     EXPECT_TRUE(second_loop != nullptr);
     EXPECT_EQ(second_loop->root().size(), 1);
-    EXPECT_EQ(&second_loop->root().at(0).first, &block2);
+    EXPECT_EQ(&second_loop->root().at(0), &block2);
 }
 
 TEST(LoopDistributeTest, Serialization) {

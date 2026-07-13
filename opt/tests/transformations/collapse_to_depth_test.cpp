@@ -6,6 +6,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -226,10 +227,14 @@ TEST(CollapseToDepthTest, Apply_2D_Target1_Structure) {
     builder::StructuredSDFGBuilder builder("test", FunctionType_CPU);
     auto& outer = build_2d_nest(builder);
 
+    dump_sdfg(builder.subject(), "0.init");
+
     analysis::AnalysisManager am(builder.subject());
     transformations::CollapseToDepth t(outer, 1);
     ASSERT_TRUE(t.can_be_applied(builder, am));
     t.apply(builder, am);
+
+    dump_sdfg(builder.subject(), "1.collapsed");
 
     auto* result = t.outer_loop();
     ASSERT_NE(result, nullptr);
@@ -237,7 +242,7 @@ TEST(CollapseToDepthTest, Apply_2D_Target1_Structure) {
 
     // Root has one child: the collapsed map
     EXPECT_EQ(builder.subject().root().size(), 1);
-    EXPECT_EQ(&builder.subject().root().at(0).first, result);
+    EXPECT_EQ(&builder.subject().root().at(0), result);
 
     // Collapsed range: [0, N*M)
     auto civ = result->indvar();
@@ -253,7 +258,9 @@ TEST(CollapseToDepthTest, Apply_2D_Target1_Structure) {
     // Indvar recovery
     auto i = symbolic::symbol("i");
     auto j = symbolic::symbol("j");
-    const auto& asgn = result->root().at(0).second.assignments();
+    auto recovery_assns = dyn_cast<AssignmentBlock*>(&result->root().at(0));
+    ASSERT_TRUE(recovery_assns);
+    const auto& asgn = recovery_assns->assignments();
     ASSERT_TRUE(asgn.count(i));
     ASSERT_TRUE(asgn.count(j));
     EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ, M)));
@@ -288,7 +295,9 @@ TEST(CollapseToDepthTest, Apply_3D_Target1_Structure) {
     auto i = symbolic::symbol("i");
     auto j = symbolic::symbol("j");
     auto k = symbolic::symbol("k");
-    const auto& asgn = result->root().at(0).second.assignments();
+    auto recovery_assns = dyn_cast<AssignmentBlock*>(&result->root().at(0));
+    ASSERT_TRUE(recovery_assns);
+    const auto& asgn = recovery_assns->assignments();
     ASSERT_TRUE(asgn.count(i));
     ASSERT_TRUE(asgn.count(j));
     ASSERT_TRUE(asgn.count(k));
@@ -350,7 +359,7 @@ TEST(CollapseToDepthTest, Apply_3D_Target2_Structure) {
 
     // Root: single outer collapsed map
     EXPECT_EQ(builder.subject().root().size(), 1);
-    EXPECT_EQ(&builder.subject().root().at(0).first, outer_result);
+    EXPECT_EQ(&builder.subject().root().at(0), outer_result);
 
     // Outer range: [0, N*M)
     auto civ_outer = outer_result->indvar();
@@ -360,7 +369,7 @@ TEST(CollapseToDepthTest, Apply_3D_Target2_Structure) {
 
     // Outer body: empty recovery block + inner k map
     EXPECT_EQ(outer_result->root().size(), 2);
-    auto* k_map = dyn_cast<structured_control_flow::Map*>(&outer_result->root().at(1).first);
+    auto* k_map = dyn_cast<structured_control_flow::Map*>(&outer_result->root().at(1));
     ASSERT_NE(k_map, nullptr);
     EXPECT_EQ(k_map, inner_result);
 
@@ -373,7 +382,9 @@ TEST(CollapseToDepthTest, Apply_3D_Target2_Structure) {
     // Outer indvar recovery: i = civ / M, j = civ % M
     auto i = symbolic::symbol("i");
     auto j = symbolic::symbol("j");
-    const auto& asgn = outer_result->root().at(0).second.assignments();
+    auto recovery_assns = dyn_cast<AssignmentBlock*>(&outer_result->root().at(0));
+    ASSERT_TRUE(recovery_assns);
+    const auto& asgn = recovery_assns->assignments();
     ASSERT_TRUE(asgn.count(i));
     ASSERT_TRUE(asgn.count(j));
     EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ_outer, M)));
@@ -403,7 +414,7 @@ TEST(CollapseToDepthTest, Apply_4D_Target2_Structure) {
 
     // Root: collapsed outer map
     EXPECT_EQ(builder.subject().root().size(), 1);
-    EXPECT_EQ(&builder.subject().root().at(0).first, outer_result);
+    EXPECT_EQ(&builder.subject().root().at(0), outer_result);
 
     // Outer range: [0, N*M*P)
     auto civ_outer = outer_result->indvar();
@@ -416,20 +427,22 @@ TEST(CollapseToDepthTest, Apply_4D_Target2_Structure) {
 
     // Outer body: empty recovery block + inner collapsed map
     EXPECT_EQ(outer_result->root().size(), 2);
-    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&outer_result->root().at(1).first);
+    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&outer_result->root().at(1));
     ASSERT_NE(inner_map, nullptr);
     EXPECT_EQ(inner_map, inner_result);
 
     // Inner body: original block (single loop, not collapsed)
     EXPECT_EQ(inner_result->root().size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&inner_result->root().at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&inner_result->root().at(0)) != nullptr);
 
     // Outer indvar recovery: i = civ_outer / (M*P), j = (civ_outer / P) % M, k = civ_outer % P
     auto i = symbolic::symbol("i");
     auto j = symbolic::symbol("j");
     auto k = symbolic::symbol("k");
     {
-        const auto& asgn = outer_result->root().at(0).second.assignments();
+        auto recovery_assns = dyn_cast<AssignmentBlock*>(&outer_result->root().at(0));
+        ASSERT_TRUE(recovery_assns);
+        const auto& asgn = recovery_assns->assignments();
         ASSERT_TRUE(asgn.count(i));
         ASSERT_TRUE(asgn.count(j));
         ASSERT_TRUE(asgn.count(k));
@@ -472,7 +485,7 @@ TEST(CollapseToDepthTest, Apply_5D_Target2_OddSplit) {
 
     // Outer body: empty recovery block + inner collapsed map
     EXPECT_EQ(outer_result->root().size(), 2);
-    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&outer_result->root().at(1).first);
+    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&outer_result->root().at(1));
     ASSERT_NE(inner_map, nullptr);
     EXPECT_EQ(inner_map, inner_result);
 
@@ -484,7 +497,9 @@ TEST(CollapseToDepthTest, Apply_5D_Target2_OddSplit) {
     auto j = symbolic::symbol("j");
     auto k = symbolic::symbol("k");
     {
-        const auto& asgn = outer_result->root().at(0).second.assignments();
+        auto recovery_assns = dyn_cast<AssignmentBlock*>(&outer_result->root().at(0));
+        ASSERT_TRUE(recovery_assns);
+        const auto& asgn = recovery_assns->assignments();
         ASSERT_TRUE(asgn.count(i));
         ASSERT_TRUE(asgn.count(j));
         ASSERT_TRUE(asgn.count(k));
@@ -497,7 +512,9 @@ TEST(CollapseToDepthTest, Apply_5D_Target2_OddSplit) {
     auto l = symbolic::symbol("l");
     auto m = symbolic::symbol("m");
     {
-        const auto& asgn = inner_result->root().at(0).second.assignments();
+        auto recovery_assns = dyn_cast<AssignmentBlock*>(&inner_result->root().at(0));
+        ASSERT_TRUE(recovery_assns);
+        const auto& asgn = recovery_assns->assignments();
         ASSERT_TRUE(asgn.count(l));
         ASSERT_TRUE(asgn.count(m));
         EXPECT_TRUE(symbolic::eq(asgn.at(l), symbolic::div(civ_inner, R)));

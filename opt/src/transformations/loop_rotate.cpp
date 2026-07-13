@@ -108,10 +108,11 @@ void LoopRotate::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
     // Add an empty block before the first child to set the rotated variable in the transition
     if (loop_.root().size() > 0) {
-        auto& first_child = loop_.root().at(0).first;
-        builder.add_block_before(loop_.root(), first_child, control_flow::Assignments{{rotated_var, rotated_value}});
+        auto& first_child = loop_.root().at(0);
+        builder
+            .add_assignments_before(loop_.root(), first_child, control_flow::Assignments{{rotated_var, rotated_value}});
     } else {
-        builder.add_block(loop_.root(), control_flow::Assignments{{rotated_var, rotated_value}});
+        builder.add_assignments(loop_.root(), control_flow::Assignments{{rotated_var, rotated_value}});
     }
 
     // Reconstruct original indvar value after loop exit
@@ -119,7 +120,7 @@ void LoopRotate::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     auto parent_node = loop_.get_parent();
     auto* parent = dyn_cast<structured_control_flow::Sequence*>(parent_node);
     if (parent) {
-        builder.add_block_after(*parent, loop_, {{indvar, rotated_value}}, loop_.debug_info());
+        builder.add_assignments_after(*parent, loop_, {{indvar, rotated_value}}, loop_.debug_info());
     }
 }
 

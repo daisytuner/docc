@@ -48,7 +48,7 @@ void LoopIndvarFinalize::apply(builder::StructuredSDFGBuilder& builder, analysis
 
     // Add block with closed-form assignment right after the loop
     // SymbolPropagation will propagate into subsequent blocks
-    builder.add_block_after(*parent, loop_, {{indvar, closed_form}}, loop_.debug_info());
+    builder.add_assignments_after(*parent, loop_, {{indvar, closed_form}}, loop_.debug_info());
 
     analysis_manager.invalidate_all();
 }

@@ -18,7 +18,7 @@ TEST(ArgCapturePlanTest, CreateCapturePlan_Arguments_Scalar) {
     builder.add_container("arg1", int_type, true);
     builder.add_container("arg2", int_type, true);
 
-    auto& block = builder.add_block(
+    auto& block = builder.add_assignments(
         builder.subject().root(),
         {{symbolic::symbol("arg1"), symbolic::zero()}, {symbolic::symbol("arg2"), symbolic::zero()}}
     );
@@ -48,12 +48,12 @@ TEST(ArgCapturePlanTest, CreateCapturePlan_Transients_Scalar) {
     builder.add_container("t1", int_type);
     builder.add_container("t2", int_type);
 
-    auto& block1 = builder.add_block(
+    auto& block1 = builder.add_assignments(
         builder.subject().root(),
         {{symbolic::symbol("t1"), symbolic::zero()}, {symbolic::symbol("t2"), symbolic::zero()}}
     );
     auto& subseq = builder.add_sequence(builder.subject().root());
-    auto& block2 = builder.add_block(
+    auto& block2 = builder.add_assignments(
         subseq,
         {{symbolic::symbol("t1"), symbolic::add(symbolic::symbol("t1"), symbolic::one())},
          {symbolic::symbol("t2"), symbolic::add(symbolic::symbol("t2"), symbolic::one())}}

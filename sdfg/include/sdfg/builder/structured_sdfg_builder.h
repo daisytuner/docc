@@ -70,46 +70,23 @@ private:
     static constexpr int32_t INSERT_AT_END = -10;
 
     template<typename T, typename... Args>
-    std::pair<T&, Transition&> insert_node_internal(
-        Sequence& parent,
-        int32_t insert_idx,
-        const sdfg::control_flow::Assignments* assignments,
-        const DebugInfo& debug_info,
-        Args&&... args
-    ) {
+    T& insert_node_internal(Sequence& parent, int32_t insert_idx, const DebugInfo& debug_info, Args&&... args) {
         auto child = std::unique_ptr<
             T>(new T(this->new_element_id_batch(T::REQUIRED_ELEMENT_IDS), debug_info, &parent, std::forward<Args>(args)...)
         );
         auto& new_child = *child;
 
-        std::unique_ptr<Transition> transition;
-        if (assignments) {
-            transition =
-                std::unique_ptr<Transition>(new Transition(this->new_element_id(), debug_info, parent, *assignments));
-        } else {
-            Assignments empty;
-            transition = std::unique_ptr<Transition>(new Transition(this->new_element_id(), debug_info, parent, empty));
-        }
-        auto& new_transition = *transition;
-
         if (insert_idx == INSERT_AT_END) {
             parent.children_.push_back(std::move(child));
-            parent.transitions_.push_back(std::move(transition));
         } else {
             parent.children_.insert(parent.children_.begin() + insert_idx, std::move(child));
-
-            parent.transitions_.insert(parent.transitions_.begin() + insert_idx, std::move(transition));
         }
 
-        return {new_child, new_transition};
+        return new_child;
     }
 
-    std::pair<Block&, Transition&> insert_block_internal(
-        Sequence& parent,
-        int32_t insert_idx,
-        const data_flow::DataFlowGraph* import_from,
-        const sdfg::control_flow::Assignments* assignments,
-        const DebugInfo& debug_info
+    Block& insert_block_internal(
+        Sequence& parent, int32_t insert_idx, const data_flow::DataFlowGraph* import_from, const DebugInfo& debug_info
     );
 
 protected:
@@ -158,36 +135,13 @@ public:
         override;
     virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override;
 
-    Sequence& add_sequence(
-        Sequence& parent,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    Sequence& add_sequence(Sequence& parent, const DebugInfo& debug_info = DebugInfo());
 
-    Sequence& add_sequence_before(
-        Sequence& parent,
-        ControlFlowNode& block,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    Sequence& add_sequence_before(Sequence& parent, ControlFlowNode& block, const DebugInfo& debug_info = DebugInfo());
 
-    Sequence& add_sequence_after(
-        Sequence& parent,
-        ControlFlowNode& block,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    Sequence& add_sequence_after(Sequence& parent, ControlFlowNode& block, const DebugInfo& debug_info = DebugInfo());
 
-    Sequence& add_sequence_at(
-        Sequence& parent,
-        InsertionPoint insertion_point,
-        const DebugInfo& debug_info = DebugInfo(),
-        const sdfg::control_flow::Assignments* assignments = nullptr
-    );
-
-    [[deprecated("use method with explicit assignments instead")]]
-    std::pair<Sequence&, Transition&>
-    add_sequence_before(Sequence& parent, ControlFlowNode& block, const DebugInfo& debug_info = DebugInfo());
+    Sequence& add_sequence_at(Sequence& parent, InsertionPoint insertion_point, const DebugInfo& debug_info = DebugInfo());
 
     void remove_from_parent(ControlFlowNode& child);
 
@@ -205,117 +159,70 @@ public:
 
     Sequence& hoist_root();
 
-    Block& add_block(
+    AssignmentBlock&
+    add_assignments(Sequence& parent, const Assignments& assignments, const DebugInfo& debug_info = DebugInfo());
+
+    AssignmentBlock& add_assignments_before(
         Sequence& parent,
-        const sdfg::control_flow::Assignments& assignments = {},
+        ControlFlowNode& child,
+        const Assignments& assignments,
         const DebugInfo& debug_info = DebugInfo()
     );
+
+    AssignmentBlock& add_assignments_after(
+        Sequence& parent,
+        ControlFlowNode& child,
+        const Assignments& assignments,
+        const DebugInfo& debug_info = DebugInfo()
+    );
+
+    AssignmentBlock& add_assignments_at(
+        Sequence& parent,
+        InsertionPoint insertion_point,
+        const Assignments& assignments,
+        const DebugInfo& debug_info = DebugInfo()
+    );
+
+    Block& add_block(Sequence& parent, const DebugInfo& debug_info = DebugInfo());
 
     /**
      * @param data_flow_graph copies the contents of this into the new block
      **/
     Block& add_block(
-        Sequence& parent,
-        const data_flow::DataFlowGraph& data_flow_graph,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
+        Sequence& parent, const data_flow::DataFlowGraph& data_flow_graph, const DebugInfo& debug_info = DebugInfo()
     );
 
-    Block& add_block_before(
-        Sequence& parent,
-        ControlFlowNode& child,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    Block& add_block_before(Sequence& parent, ControlFlowNode& child, const DebugInfo& debug_info = DebugInfo());
 
     Block& add_block_before(
         Sequence& parent,
         ControlFlowNode& child,
         data_flow::DataFlowGraph& data_flow_graph,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
-    Block& add_block_after(
-        Sequence& parent,
-        ControlFlowNode& child,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    Block& add_block_after(Sequence& parent, ControlFlowNode& child, const DebugInfo& debug_info = DebugInfo());
 
     Block& add_block_after(
         Sequence& parent,
         ControlFlowNode& child,
         data_flow::DataFlowGraph& data_flow_graph,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
-    Block& add_block_at(
-        Sequence& parent,
-        InsertionPoint insertion_point,
-        const DebugInfo& debug_info = DebugInfo(),
-        const sdfg::control_flow::Assignments* assignments = nullptr
-    );
+    Block& add_block_at(Sequence& parent, InsertionPoint insertion_point, const DebugInfo& debug_info = DebugInfo());
 
-    [[deprecated("use method with explicit assignments instead")]]
-    std::pair<Block&, Transition&>
-    add_block_before(Sequence& parent, ControlFlowNode& child, const DebugInfo& debug_info = DebugInfo());
+    IfElse& add_if_else(Sequence& parent, const DebugInfo& debug_info = DebugInfo());
 
-    [[deprecated("use method with explicit assignments instead")]]
-    std::pair<Block&, Transition&> add_block_before(
-        Sequence& parent,
-        ControlFlowNode& child,
-        data_flow::DataFlowGraph& data_flow_graph,
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    IfElse& add_if_else_before(Sequence& parent, ControlFlowNode& child, const DebugInfo& debug_info = DebugInfo());
 
-    [[deprecated("use method with explicit assignments instead")]]
-    std::pair<
-        Block&,
-        Transition&> add_block_after(Sequence& parent, ControlFlowNode& child, const DebugInfo& debug_info = DebugInfo());
-
-    [[deprecated("use method with explicit assignments instead")]]
-    std::pair<Block&, Transition&> add_block_after(
-        Sequence& parent,
-        ControlFlowNode& child,
-        data_flow::DataFlowGraph& data_flow_graph,
-        const DebugInfo& debug_info = DebugInfo()
-    );
-
-    IfElse& add_if_else(
-        Sequence& parent,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
-
-    IfElse& add_if_else_before(
-        Sequence& parent,
-        ControlFlowNode& child,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
-
-    IfElse& add_if_else_after(
-        Sequence& parent,
-        ControlFlowNode& child,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
-
-    [[deprecated("use method with explicit assignments instead")]]
-    std::pair<IfElse&, Transition&>
-    add_if_else_before(Sequence& parent, ControlFlowNode& child, const DebugInfo& debug_info = DebugInfo());
+    IfElse& add_if_else_after(Sequence& parent, ControlFlowNode& child, const DebugInfo& debug_info = DebugInfo());
 
     Sequence& add_case(IfElse& scope, const sdfg::symbolic::Condition cond, const DebugInfo& debug_info = DebugInfo());
 
     void remove_case(IfElse& scope, size_t i, const DebugInfo& debug_info = DebugInfo());
 
-    While& add_while(
-        Sequence& parent,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    While& add_while(Sequence& parent, const DebugInfo& debug_info = DebugInfo());
 
     For& add_for(
         Sequence& parent,
@@ -323,7 +230,6 @@ public:
         const symbolic::Condition condition,
         const symbolic::Expression init,
         const symbolic::Expression update,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
@@ -334,7 +240,6 @@ public:
         const symbolic::Condition condition,
         const symbolic::Expression init,
         const symbolic::Expression update,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
@@ -345,7 +250,6 @@ public:
         const symbolic::Condition condition,
         const symbolic::Expression init,
         const symbolic::Expression update,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
@@ -357,8 +261,7 @@ public:
         const symbolic::Expression init,
         const symbolic::Expression update,
         const ScheduleType& schedule_type,
-        const DebugInfo& debug_info = DebugInfo(),
-        const sdfg::control_flow::Assignments* assignments = nullptr
+        const DebugInfo& debug_info = DebugInfo()
     );
 
     Map& add_map(
@@ -368,7 +271,6 @@ public:
         const symbolic::Expression init,
         const symbolic::Expression update,
         const ScheduleType& schedule_type,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
@@ -380,7 +282,6 @@ public:
         const symbolic::Expression init,
         const symbolic::Expression update,
         const ScheduleType& schedule_type,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
@@ -392,7 +293,6 @@ public:
         const symbolic::Expression init,
         const symbolic::Expression update,
         const ScheduleType& schedule_type,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
@@ -404,8 +304,7 @@ public:
         const symbolic::Expression init,
         const symbolic::Expression update,
         const ScheduleType& schedule_type,
-        const DebugInfo& debug_info = DebugInfo(),
-        const sdfg::control_flow::Assignments* assignments = nullptr
+        const DebugInfo& debug_info = DebugInfo()
     );
 
     Reduce& add_reduce(
@@ -416,7 +315,6 @@ public:
         const symbolic::Expression update,
         const std::vector<structured_control_flow::ReductionInfo>& reductions,
         const ScheduleType& schedule_type,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
@@ -429,7 +327,6 @@ public:
         const symbolic::Expression update,
         const std::vector<structured_control_flow::ReductionInfo>& reductions,
         const ScheduleType& schedule_type,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
@@ -442,35 +339,17 @@ public:
         const symbolic::Expression update,
         const std::vector<structured_control_flow::ReductionInfo>& reductions,
         const ScheduleType& schedule_type,
-        const sdfg::control_flow::Assignments& assignments = {},
         const DebugInfo& debug_info = DebugInfo()
     );
 
-    Continue& add_continue(
-        Sequence& parent,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    Continue& add_continue(Sequence& parent, const DebugInfo& debug_info = DebugInfo());
 
-    Break& add_break(
-        Sequence& parent,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    Break& add_break(Sequence& parent, const DebugInfo& debug_info = DebugInfo());
 
-    Return& add_return(
-        Sequence& parent,
-        const std::string& data,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
-    );
+    Return& add_return(Sequence& parent, const std::string& data, const DebugInfo& debug_info = DebugInfo());
 
     Return& add_constant_return(
-        Sequence& parent,
-        const std::string& data,
-        const types::IType& type,
-        const sdfg::control_flow::Assignments& assignments = {},
-        const DebugInfo& debug_info = DebugInfo()
+        Sequence& parent, const std::string& data, const types::IType& type, const DebugInfo& debug_info = DebugInfo()
     );
 
     For& convert_while(

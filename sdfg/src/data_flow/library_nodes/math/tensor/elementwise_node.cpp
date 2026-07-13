@@ -183,7 +183,6 @@ std::pair<structured_control_flow::Sequence*, std::vector<symbolic::Expression>>
             init,
             update,
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             scope_deb_info
         );
         last_scope = &last_map->root();

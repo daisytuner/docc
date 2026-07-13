@@ -124,6 +124,7 @@ set(TEST_FILES
     types/tensor_test.cpp
     types/utils_test.cpp
     visitor/structured_sdfg_visitor_test.cpp
+    visitor/structured_sdfg_walker_test.cpp
     visualizer/dot_visualizer_test.cpp
 )
 

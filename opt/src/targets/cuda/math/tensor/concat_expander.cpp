@@ -38,7 +38,6 @@ bool CudaConcatExpander::expand_concat_separately(
     auto& new_sequence = builder.add_sequence_before(
         *parent_sequence,
         *parent_block,
-        parent_sequence->at(parent_block_index).second.assignments(),
         parent_block->debug_info()
     );
 
@@ -67,7 +66,6 @@ bool CudaConcatExpander::expand_concat_separately(
                 symbolic::zero(),
                 symbolic::add(indvar, symbolic::one()),
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 parent_block->debug_info()
             );
             current_seq = &map.root();

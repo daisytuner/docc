@@ -83,7 +83,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
     EXPECT_EQ(new_root.size(), 3);
 
     // First element should be init loop
-    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(init_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(init_loop->condition(), symbolic::Lt(init_loop->indvar(), symbolic::integer(4))));
@@ -91,7 +91,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
 
     auto& init_body = init_loop->root();
     EXPECT_EQ(init_body.size(), 1);
-    auto* init_block = dyn_cast<structured_control_flow::Block*>(&init_body.at(0).first);
+    auto* init_block = dyn_cast<structured_control_flow::Block*>(&init_body.at(0));
     EXPECT_NE(init_block, nullptr);
 
     EXPECT_EQ(init_block->dataflow().nodes().size(), 3);
@@ -123,13 +123,13 @@ TEST(OutLocalStorageTest, For_Array_RW) {
     EXPECT_TRUE(writes_C_local);
 
     // Second element should be the main loop
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
     // Verify main loop uses local buffer
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1);
-    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(main_block, nullptr);
 
     bool uses_C_local = false;
@@ -156,7 +156,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
     EXPECT_FALSE(uses_C_original);
 
     // Third element should be writeback loop
-    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2));
     EXPECT_NE(wb_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), symbolic::integer(4))));
@@ -164,7 +164,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
 
     auto& wb_body = wb_loop->root();
     EXPECT_EQ(wb_body.size(), 1);
-    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_body.at(0).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_body.at(0));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -252,13 +252,13 @@ TEST(OutLocalStorageTest, For_Array_WO) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0));
     EXPECT_NE(main_loop, nullptr);
 
     // Verify main loop uses local buffer
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1);
-    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(main_block, nullptr);
 
     bool uses_C_local = false;
@@ -282,14 +282,14 @@ TEST(OutLocalStorageTest, For_Array_WO) {
     EXPECT_FALSE(uses_C_original);
 
     // Second element should be writeback loop
-    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1));
     EXPECT_NE(wb_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), symbolic::integer(4))));
 
     auto& wb_body = wb_loop->root();
     EXPECT_EQ(wb_body.size(), 1);
-    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_body.at(0).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_body.at(0));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -384,14 +384,14 @@ TEST(OutLocalStorageTest, For_Array_Linearized_RW) {
     auto& outer_body = outer_loop.root();
     EXPECT_EQ(outer_body.size(), 3u);
 
-    auto* init_map = dyn_cast<structured_control_flow::Map*>(&outer_body.at(0).first);
+    auto* init_map = dyn_cast<structured_control_flow::Map*>(&outer_body.at(0));
     EXPECT_NE(init_map, nullptr);
     EXPECT_TRUE(symbolic::eq(init_map->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(init_map->condition(), symbolic::Lt(init_map->indvar(), symbolic::integer(16))));
 
     auto& init_body = init_map->root();
     EXPECT_EQ(init_body.size(), 1);
-    auto* init_block = dyn_cast<structured_control_flow::Block*>(&init_body.at(0).first);
+    auto* init_block = dyn_cast<structured_control_flow::Block*>(&init_body.at(0));
     EXPECT_NE(init_block, nullptr);
 
     EXPECT_EQ(init_block->dataflow().nodes().size(), 3);
@@ -412,10 +412,10 @@ TEST(OutLocalStorageTest, For_Array_Linearized_RW) {
         }
     }
 
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&outer_body.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&outer_body.at(1));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&outer_body.at(2).first);
+    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&outer_body.at(2));
     EXPECT_NE(wb_map, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_map->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_map->condition(), symbolic::Lt(wb_map->indvar(), symbolic::integer(16))));
@@ -423,7 +423,7 @@ TEST(OutLocalStorageTest, For_Array_Linearized_RW) {
     // Verify the compute memlets use LOCAL indices (k, zero-based)
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1u);
-    auto* compute_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* compute_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(compute_block, nullptr);
 
     bool found_local_access = false;
@@ -505,10 +505,10 @@ TEST(OutLocalStorageTest, For_Array_Linearized_WO) {
     auto& outer_body = outer_loop.root();
     EXPECT_EQ(outer_body.size(), 2u);
 
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&outer_body.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&outer_body.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&outer_body.at(1).first);
+    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&outer_body.at(1));
     EXPECT_NE(wb_map, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_map->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_map->condition(), symbolic::Lt(wb_map->indvar(), symbolic::integer(16))));
@@ -516,7 +516,7 @@ TEST(OutLocalStorageTest, For_Array_Linearized_WO) {
     // Verify the compute memlet uses LOCAL indices (k, zero-based)
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1u);
-    auto* compute_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* compute_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(compute_block, nullptr);
 
     bool found_local_access = false;
@@ -601,18 +601,18 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_WO) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_outer = dyn_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    auto* wb_outer = dyn_cast<structured_control_flow::Map*>(&new_root.at(1));
     EXPECT_NE(wb_outer, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_outer->condition(), symbolic::Lt(wb_outer->indvar(), symbolic::integer(4))));
 
-    auto* wb_inner = dyn_cast<structured_control_flow::Map*>(&wb_outer->root().at(0).first);
+    auto* wb_inner = dyn_cast<structured_control_flow::Map*>(&wb_outer->root().at(0));
     EXPECT_NE(wb_inner, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_inner->condition(), symbolic::Lt(wb_inner->indvar(), symbolic::integer(8))));
 
-    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_inner->root().at(0).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_inner->root().at(0));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -640,9 +640,9 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_WO) {
     // Verify main loop uses local buffer
     bool uses_C_local = false;
     bool uses_C_original = false;
-    auto* main_inner = dyn_cast<structured_control_flow::For*>(&main_loop->root().at(0).first);
+    auto* main_inner = dyn_cast<structured_control_flow::For*>(&main_loop->root().at(0));
     EXPECT_NE(main_inner, nullptr);
-    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_inner->root().at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_inner->root().at(0));
     EXPECT_NE(main_block, nullptr);
     for (auto* node : main_block->dataflow().data_nodes()) {
         if (node->data() == "__daisy_out_local_storage_C0") {
@@ -718,7 +718,7 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_RW) {
     EXPECT_EQ(new_root.size(), 3);
 
     // Init should be a for loop (first dimension)
-    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(init_loop, nullptr);
     // Should iterate 0..4 (first dim extent)
     EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
@@ -727,13 +727,13 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_RW) {
     // Init loop should contain nested loop for second dimension
     auto& init_body = init_loop->root();
     EXPECT_EQ(init_body.size(), 1);
-    auto* inner_init = dyn_cast<structured_control_flow::Map*>(&init_body.at(0).first);
+    auto* inner_init = dyn_cast<structured_control_flow::Map*>(&init_body.at(0));
     EXPECT_NE(inner_init, nullptr);
     EXPECT_TRUE(symbolic::eq(inner_init->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(inner_init->condition(), symbolic::Lt(inner_init->indvar(), symbolic::integer(8))));
 
     // check that accesses got converted into linearized accesses
-    auto* inner_init_body = dyn_cast<structured_control_flow::Block*>(&inner_init->root().at(0).first);
+    auto* inner_init_body = dyn_cast<structured_control_flow::Block*>(&inner_init->root().at(0));
     EXPECT_NE(inner_init_body, nullptr);
     for (auto& edge : inner_init_body->dataflow().edges()) {
         auto inferred_type = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
@@ -742,23 +742,23 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_RW) {
     }
 
     // Compute loop preserved
-    auto* compute_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* compute_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(compute_loop, nullptr);
 
     // Writeback should be a for loop
-    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2));
     EXPECT_NE(wb_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), symbolic::integer(4))));
 
     auto& wb_body = wb_loop->root();
     EXPECT_EQ(wb_body.size(), 1);
-    auto* inner_wb = dyn_cast<structured_control_flow::Map*>(&wb_body.at(0).first);
+    auto* inner_wb = dyn_cast<structured_control_flow::Map*>(&wb_body.at(0));
     EXPECT_NE(inner_wb, nullptr);
     EXPECT_TRUE(symbolic::eq(inner_wb->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(inner_wb->condition(), symbolic::Lt(inner_wb->indvar(), symbolic::integer(8))));
 
-    auto* inner_wb_body = dyn_cast<structured_control_flow::Block*>(&inner_wb->root().at(0).first);
+    auto* inner_wb_body = dyn_cast<structured_control_flow::Block*>(&inner_wb->root().at(0));
     EXPECT_NE(inner_wb_body, nullptr);
     for (auto& edge : inner_wb_body->dataflow().edges()) {
         auto inferred_type = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
@@ -826,7 +826,7 @@ TEST(OutLocalStorageTest, For_Scalar_RW) {
     EXPECT_EQ(new_root.size(), 3);
 
     // First element should be init block (no loop because extent is 1)
-    auto* init_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(0).first);
+    auto* init_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(0));
     EXPECT_NE(init_block, nullptr);
 
     EXPECT_EQ(init_block->dataflow().nodes().size(), 3);
@@ -852,11 +852,11 @@ TEST(OutLocalStorageTest, For_Scalar_RW) {
     EXPECT_TRUE(writes_C_local);
 
     // Second element should be the main loop
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
     auto& main_body = main_loop->root();
-    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(main_block, nullptr);
     bool uses_C_local = false;
     bool uses_C_original = false;
@@ -878,7 +878,7 @@ TEST(OutLocalStorageTest, For_Scalar_RW) {
     EXPECT_FALSE(uses_C_original);
 
     // Third element should be writeback block (no loop)
-    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(2).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(2));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -958,10 +958,10 @@ TEST(OutLocalStorageTest, For_Scalar_WO) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(1).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(1));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -979,7 +979,7 @@ TEST(OutLocalStorageTest, For_Scalar_WO) {
     }
 
     // Verify main loop uses local buffer
-    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop->root().at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop->root().at(0));
     EXPECT_NE(main_block, nullptr);
     bool uses_C_local = false;
     bool uses_C_original = false;
@@ -1043,13 +1043,13 @@ TEST(OutLocalStorageTest, Map_Array_RW) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 3);
 
-    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(init_loop, nullptr);
 
-    auto* main_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2));
     EXPECT_NE(wb_loop, nullptr);
 }
 
@@ -1103,10 +1103,10 @@ TEST(OutLocalStorageTest, Map_Array_WO) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
-    auto* main_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1));
     EXPECT_NE(wb_loop, nullptr);
 }
 
@@ -1193,7 +1193,7 @@ TEST(OutLocalStorageTest, For_MultipleGroups_RW) {
     // No raw C accesses should remain inside the k-loop
     auto& k_body = k_loop.root();
     for (size_t bi = 0; bi < k_body.size(); ++bi) {
-        auto* blk = dyn_cast<structured_control_flow::Block*>(&k_body.at(bi).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&k_body.at(bi));
         if (!blk) continue;
         for (auto* node : blk->dataflow().data_nodes()) {
             EXPECT_NE(node->data(), "C") << "All C accesses inside k-loop should be rewritten";
@@ -1274,7 +1274,7 @@ TEST(OutLocalStorageTest, For_MultipleGroups_WO) {
     // No raw C accesses should remain inside the k-loop
     auto& k_body = k_loop.root();
     for (size_t bi = 0; bi < k_body.size(); ++bi) {
-        auto* blk = dyn_cast<structured_control_flow::Block*>(&k_body.at(bi).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&k_body.at(bi));
         if (!blk) continue;
         for (auto* node : blk->dataflow().data_nodes()) {
             EXPECT_NE(node->data(), "C") << "All C accesses inside k-loop should be rewritten";
@@ -1367,7 +1367,7 @@ TEST(OutLocalStorageTest, For_MultipleGroups_SplitNode_WO) {
     // No raw C accesses should remain inside the k-loop
     auto& k_body = k_loop.root();
     for (size_t bi = 0; bi < k_body.size(); ++bi) {
-        auto* blk = dyn_cast<structured_control_flow::Block*>(&k_body.at(bi).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&k_body.at(bi));
         if (!blk) continue;
         for (auto* node : blk->dataflow().data_nodes()) {
             EXPECT_NE(node->data(), "C") << "All C accesses inside k-loop should be rewritten";
@@ -1669,7 +1669,7 @@ TEST(OutLocalStorageTest, FlatPointer_Linearized2D) {
     EXPECT_EQ(new_root.size(), 3);
 
     // Init should be a for loop (first dimension)
-    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(init_loop, nullptr);
     // Should iterate 0..4 (first dim extent)
     EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
@@ -1678,17 +1678,17 @@ TEST(OutLocalStorageTest, FlatPointer_Linearized2D) {
     // Init loop should contain nested loop for second dimension
     auto& init_body = init_loop->root();
     EXPECT_EQ(init_body.size(), 1);
-    auto* inner_init = dyn_cast<structured_control_flow::Map*>(&init_body.at(0).first);
+    auto* inner_init = dyn_cast<structured_control_flow::Map*>(&init_body.at(0));
     EXPECT_NE(inner_init, nullptr);
     EXPECT_TRUE(symbolic::eq(inner_init->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(inner_init->condition(), symbolic::Lt(inner_init->indvar(), symbolic::integer(8))));
 
     // Compute loop preserved
-    auto* compute_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* compute_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(compute_loop, nullptr);
 
     // Writeback should be a for loop
-    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2));
     EXPECT_NE(wb_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), symbolic::integer(4))));
@@ -1811,7 +1811,7 @@ TEST(OutLocalStorageTest, TiledAccumulator_2D) {
         EXPECT_EQ(k_tile_body.size(), 3);
 
         // Init: nested for loops (MC x KC)
-        auto* init_loop = dyn_cast<structured_control_flow::Map*>(&k_tile_body.at(0).first);
+        auto* init_loop = dyn_cast<structured_control_flow::Map*>(&k_tile_body.at(0));
         EXPECT_NE(init_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(init_loop->condition(), symbolic::Lt(init_loop->indvar(), MC)));
@@ -1819,17 +1819,17 @@ TEST(OutLocalStorageTest, TiledAccumulator_2D) {
         // Check nested second dimension
         auto& init_inner_body = init_loop->root();
         EXPECT_EQ(init_inner_body.size(), 1);
-        auto* init_inner = dyn_cast<structured_control_flow::Map*>(&init_inner_body.at(0).first);
+        auto* init_inner = dyn_cast<structured_control_flow::Map*>(&init_inner_body.at(0));
         EXPECT_NE(init_inner, nullptr);
         EXPECT_TRUE(symbolic::eq(init_inner->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(init_inner->condition(), symbolic::Lt(init_inner->indvar(), KC)));
 
         // Compute loop preserved
-        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&k_tile_body.at(1).first);
+        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&k_tile_body.at(1));
         EXPECT_NE(compute_loop, nullptr);
 
         // Writeback: nested for loops (MC x KC)
-        auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&k_tile_body.at(2).first);
+        auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&k_tile_body.at(2));
         EXPECT_NE(wb_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), MC)));
@@ -1837,11 +1837,11 @@ TEST(OutLocalStorageTest, TiledAccumulator_2D) {
         // Verify the compute memlet uses LOCAL indices: (i-i_tile)*KC + (k-k_tile)
         auto& compute_i_body = compute_loop->root();
         EXPECT_GE(compute_i_body.size(), 1u);
-        auto* compute_k_loop = dyn_cast<structured_control_flow::For*>(&compute_i_body.at(0).first);
+        auto* compute_k_loop = dyn_cast<structured_control_flow::For*>(&compute_i_body.at(0));
         EXPECT_NE(compute_k_loop, nullptr);
         auto& compute_k_body = compute_k_loop->root();
         EXPECT_EQ(compute_k_body.size(), 1u);
-        auto* compute_block = dyn_cast<structured_control_flow::Block*>(&compute_k_body.at(0).first);
+        auto* compute_block = dyn_cast<structured_control_flow::Block*>(&compute_k_body.at(0));
         EXPECT_NE(compute_block, nullptr);
 
         bool found_local_read = false;
@@ -1951,11 +1951,11 @@ TEST(OutLocalStorageTest, TiledWriteOnly_1D) {
         EXPECT_EQ(tile_body.size(), 2);
 
         // First: compute loop
-        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&tile_body.at(0).first);
+        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&tile_body.at(0));
         EXPECT_NE(compute_loop, nullptr);
 
         // Second: writeback loop (0..TILE)
-        auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&tile_body.at(1).first);
+        auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&tile_body.at(1));
         EXPECT_NE(wb_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), TILE)));
@@ -1963,7 +1963,7 @@ TEST(OutLocalStorageTest, TiledWriteOnly_1D) {
         // Writeback body: C_local → assign → C
         auto& wb_body = wb_loop->root();
         EXPECT_EQ(wb_body.size(), 1);
-        auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_body.at(0).first);
+        auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_body.at(0));
         EXPECT_NE(wb_block, nullptr);
         bool has_c = false, has_local = false;
         for (auto* node : wb_block->dataflow().data_nodes()) {
@@ -2068,7 +2068,7 @@ TEST(OutLocalStorageTest, TiledAccumulator_1D_NonZeroBase) {
         EXPECT_EQ(tile_body.size(), 3);
 
         // Init loop: 0..TILE
-        auto* init_loop = dyn_cast<structured_control_flow::Map*>(&tile_body.at(0).first);
+        auto* init_loop = dyn_cast<structured_control_flow::Map*>(&tile_body.at(0));
         EXPECT_NE(init_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(init_loop->condition(), symbolic::Lt(init_loop->indvar(), TILE)));
@@ -2076,7 +2076,7 @@ TEST(OutLocalStorageTest, TiledAccumulator_1D_NonZeroBase) {
         // Init body should read from C and write to C_local
         auto& init_body = init_loop->root();
         EXPECT_EQ(init_body.size(), 1);
-        auto* init_block = dyn_cast<structured_control_flow::Block*>(&init_body.at(0).first);
+        auto* init_block = dyn_cast<structured_control_flow::Block*>(&init_body.at(0));
         EXPECT_NE(init_block, nullptr);
         bool has_c = false, has_local = false;
         for (auto* node : init_block->dataflow().data_nodes()) {
@@ -2087,11 +2087,11 @@ TEST(OutLocalStorageTest, TiledAccumulator_1D_NonZeroBase) {
         EXPECT_TRUE(has_local);
 
         // Compute loop (j_loop) preserved
-        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&tile_body.at(1).first);
+        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&tile_body.at(1));
         EXPECT_NE(compute_loop, nullptr);
 
         // Writeback loop: 0..TILE
-        auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&tile_body.at(2).first);
+        auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&tile_body.at(2));
         EXPECT_NE(wb_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), TILE)));
@@ -2361,16 +2361,16 @@ TEST(OutLocalStorageTest, GPU_Cooperative_FlatPointer) {
     auto& map_y_body = map_y.root();
     EXPECT_GE(map_y_body.size(), 4u);
 
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* barrier1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(1).first);
+    auto* barrier1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(1));
     EXPECT_NE(barrier1, nullptr);
 
-    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(2).first);
+    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(2));
     EXPECT_NE(wb_map, nullptr);
 
-    auto* barrier2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(3).first);
+    auto* barrier2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(3));
     EXPECT_NE(barrier2, nullptr);
 }
 
@@ -2471,19 +2471,19 @@ TEST(OutLocalStorageTest, GPU_Cooperative_ReadWrite) {
     auto& map_y_body = map_y.root();
     EXPECT_GE(map_y_body.size(), 7u);
 
-    auto* b1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(0).first);
+    auto* b1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(0));
     EXPECT_NE(b1, nullptr);
-    auto* init_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(1).first);
+    auto* init_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(1));
     EXPECT_NE(init_map, nullptr);
-    auto* b2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(2).first);
+    auto* b2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(2));
     EXPECT_NE(b2, nullptr);
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(3).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(3));
     EXPECT_NE(main_loop, nullptr);
-    auto* b3 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(4).first);
+    auto* b3 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(4));
     EXPECT_NE(b3, nullptr);
-    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(5).first);
+    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(5));
     EXPECT_NE(wb_map, nullptr);
-    auto* b4 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(6).first);
+    auto* b4 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(6));
     EXPECT_NE(b4, nullptr);
 }
 
