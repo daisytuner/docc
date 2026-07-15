@@ -20,7 +20,7 @@ struct TargetOptions {
 struct DoccTarget {
     static constexpr int NEWEST_API_VER = 2;
 
-    int api_ver;
+    int api_ver = NEWEST_API_VER;
     std::string short_name;
 
     bool (*apply_additional_compile_options)(docc::compile::SrcFileCompilerBuilder& src_compile_builder);
