@@ -72,7 +72,13 @@ void register_passes(py::module& m) {
     py::class_<scheduler::LoopSchedulingPass, Pass>(m, "LoopSchedulingPass")
         .def(
             py::init([](const std::vector<std::string>& targets, bool offload_unknown_sizes) {
-                return std::make_unique<scheduler::LoopSchedulingPass>(targets, nullptr, offload_unknown_sizes);
+                std::vector<scheduler::LoopScheduler*> schedulers;
+                auto& registry = scheduler::SchedulerRegistry::instance();
+                for (const auto& target : targets) {
+                    schedulers.push_back(registry.get_loop_scheduler(target));
+                }
+
+                return std::make_unique<scheduler::LoopSchedulingPass>(schedulers, nullptr, offload_unknown_sizes);
             }),
             py::arg("targets"),
             py::arg("offload_unknown_sizes") = false,

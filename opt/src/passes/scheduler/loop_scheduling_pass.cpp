@@ -15,7 +15,7 @@ bool LoopSchedulingPass::run_pass_target(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, LoopScheduler& scheduler
 ) {
     scheduler.set_report(report_);
-    scheduler->set_recorder(recorder_);
+    scheduler.set_recorder(recorder_);
 
     UniqueLoopIndvars unique_indvar_pass;
     unique_indvar_pass.run_pass(builder, analysis_manager);

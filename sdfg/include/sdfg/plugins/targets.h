@@ -1,5 +1,10 @@
 #pragma once
 
+#include <string>
+#include "sdfg/analysis/analysis.h"
+#include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/passes/scheduler/loop_scheduler.h"
+
 namespace docc::compile {
 class SrcFileCompilerBuilder;
 }
