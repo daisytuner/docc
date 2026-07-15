@@ -67,8 +67,10 @@
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
+#include "sdfg/passes/scheduler/vectorize_scheduler.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
+#include "sdfg/targets/omp/schedule.h"
 #include "sdfg/util/offloading_instrumentation_plan.h"
 #include "targets/target_mapping.h"
 
@@ -466,13 +468,21 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
 
     docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, options);
 
-    std::vector<std::string> schedulers;
+    std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
 
     if (options.remote_tuning) {
         std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
             sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-        sdfg::passes::rpc::register_rpc_loop_opt(context, options.target, options.category);
-        schedulers.push_back("rpc");
+        schedulers.push_back(std::make_shared<sdfg::passes::rpc::RPCScheduler>(context, options.target, options.category)
+        );
+    }
+
+    auto* handler = docc_context_.get_target_handler(options.target);
+    if (handler) {
+        auto target_schedulers = handler->safe_get_target_loop_schedulers(options);
+        if (!target_schedulers.empty()) {
+            schedulers.insert(schedulers.end(), target_schedulers.begin(), target_schedulers.end());
+        }
     }
 
     // CPU Opt Pipeline
@@ -483,17 +493,12 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         symbol_propagation_pass.run(builder, analysis_manager);
         dde.run(builder, analysis_manager);
         dce.run(builder, analysis_manager);
+    }
 
-        if (options.target == "openmp") {
-            schedulers.push_back(options.target);
-        }
-        schedulers.push_back("vectorize");
-    }
-    // GPU Opt Pipeline
-    else if (options.target == "cuda" || options.target == "rocm") {
-        schedulers.push_back(options.target);
-    }
-    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, nullptr);
+    auto mapped = schedulers | std::views::transform([&](auto& n) { return n.get(); });
+    std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
+
+    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
     bool loop_scheduling_changes = loop_scheduling_pass.run(builder, analysis_manager);
     if (loop_scheduling_changes) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;

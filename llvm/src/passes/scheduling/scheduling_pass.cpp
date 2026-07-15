@@ -7,9 +7,15 @@
 namespace docc {
 namespace passes {
 
-SchedulingPass::
-    SchedulingPass(bool force_synchronous, bool dump_visualization, bool transfer_opt, sdfg::PassReportConsumer* report)
-    : force_synchronous_(force_synchronous || DOCC_FORCE_SYNCHRONOUS_OFFLOADING),
+SchedulingPass::SchedulingPass(
+    const sdfg::passes::scheduler::SchedulerRegistry& scheduler_registry,
+    bool force_synchronous,
+    bool dump_visualization,
+    bool transfer_opt,
+    sdfg::PassReportConsumer* report
+)
+    : scheduler_registry_(scheduler_registry),
+      force_synchronous_(force_synchronous || DOCC_FORCE_SYNCHRONOUS_OFFLOADING),
       dump_visualization_(dump_visualization), transfer_opt_(transfer_opt), report_(report) {}
 
 llvm::PreservedAnalyses SchedulingPass::
@@ -23,12 +29,12 @@ llvm::PreservedAnalyses SchedulingPass::
     auto remote_tuning = docc::DOCC_TRANSFERTUNE.getValue();
     auto offload_unknown_sizes = docc::DOCC_OFFLOAD_UNKNOWN_SIZES.getValue();
 
-    std::vector<std::string> targets;
+    std::vector<sdfg::passes::scheduler::LoopScheduler*> schedulers;
     if (target != "tenstorrent" && remote_tuning) {
-        targets.push_back("rpc");
+        schedulers.push_back(scheduler_registry_.get_loop_scheduler("rpc"));
     }
     if (target != "sequential") {
-        targets.push_back(target);
+        schedulers.push_back(scheduler_registry_.get_loop_scheduler(target));
     }
 
     registry.for_each_sdfg_modifiable(Module, [&](analysis::SDFGHolder&, sdfg::StructuredSDFG& sdfg) {
@@ -36,7 +42,7 @@ llvm::PreservedAnalyses SchedulingPass::
         sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
         if (report_) report_->in_scope(&builder.subject());
 
-        sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(targets, report_, offload_unknown_sizes);
+        sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, report_, offload_unknown_sizes);
         loop_scheduling_pass.run(builder, analysis_manager);
     });
 

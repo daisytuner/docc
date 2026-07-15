@@ -5,6 +5,7 @@
 #include <sdfg/passes/pass.h>
 #include <string>
 #include "sdfg/optimization_report/pass_report_consumer.h"
+#include "sdfg/passes/scheduler/loop_scheduler.h"
 
 namespace sdfg {
 namespace transformations {
@@ -15,18 +16,18 @@ namespace scheduler {
 
 class LoopSchedulingPass : public Pass {
 private:
-    std::vector<std::string> targets_;
+    std::vector<LoopScheduler*> targets_;
     sdfg::PassReportConsumer* report_;
     bool offload_unknown_sizes_;
     sdfg::transformations::Recorder* recorder_ = nullptr;
 
     bool run_pass_target(
-        builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, const std::string& target
+        builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, LoopScheduler& scheduler
     );
 
 public:
     LoopSchedulingPass(
-        const std::vector<std::string>& targets, sdfg::PassReportConsumer* report, bool offload_unknown_sizes = false
+        const std::vector<LoopScheduler*>& targets, sdfg::PassReportConsumer* report, bool offload_unknown_sizes = false
     )
         : targets_(targets), report_(report), offload_unknown_sizes_(offload_unknown_sizes) {}
     ~LoopSchedulingPass() override = default;

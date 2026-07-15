@@ -13,7 +13,7 @@ struct TargetOptions {
 };
 
 struct DoccTarget {
-    static constexpr int NEWEST_API_VER = 1;
+    static constexpr int NEWEST_API_VER = 2;
 
     int api_ver;
     std::string short_name;
@@ -64,6 +64,17 @@ struct DoccTarget {
             return apply_sched_time_mapping;
         } else {
             return nullptr;
+        }
+    }
+
+    std::vector<std::shared_ptr<
+        sdfg::passes::scheduler::LoopScheduler>> (*get_target_loop_schedulers)(const TargetOptions& options);
+    [[nodiscard]] std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>>
+    safe_get_target_loop_schedulers(const TargetOptions& options) const {
+        if (api_ver >= 2 && get_target_loop_schedulers != nullptr) {
+            return get_target_loop_schedulers(options);
+        } else {
+            return {};
         }
     }
 };

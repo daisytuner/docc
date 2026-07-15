@@ -43,6 +43,12 @@ docc::target::DoccTarget tenstorrent_target = {
         std::vector<std::shared_ptr<plugins::TargetMapper>> mappers{std::make_shared<TTLibNodeMapper>()};
         passes::TargetMappingPass mappingPass(mappers);
         return mappingPass.run_pass(builder, analysis_manager);
+    },
+    .get_target_loop_schedulers = [](const docc::target::TargetOptions &options
+                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
+        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::TenstorrentScheduler>());
+        return schedulers;
     }
 };
 
