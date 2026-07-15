@@ -78,6 +78,10 @@ class MapFusion : public Transformation {
         bool invert_range_check = false
     );
 
+    /// Core transformation logic, shared by apply() and apply_without_invalidate().
+    /// Does NOT call invalidate_all() — the caller is responsible for analysis management.
+    void apply_impl(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+
     /**
      * @brief Find the unique write location of a container in a loop nest
      *
@@ -145,11 +149,35 @@ public:
      *
      * Inlines the producer computation from the first map into the second map,
      * eliminating intermediate storage accesses.
+     * Calls invalidate_all() on the analysis manager when done.
      *
      * @param builder The SDFG builder
      * @param analysis_manager The analysis manager
      */
     virtual void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
+    /**
+     * @brief Apply the map fusion transformation without invalidating the analysis manager.
+     *
+     * Identical to apply() except that it does NOT call invalidate_all().  Use this
+     * when the calling pass manages analysis invalidation itself (e.g. to preserve
+     * analyses that are still valid after the transformation).
+     *
+     * @param builder The SDFG builder
+     * @param analysis_manager The analysis manager
+     */
+    void apply_without_invalidate(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+
+    /**
+     * @brief Returns true when the direction resolved during the last can_be_applied()
+     *        call was ProducerIntoConsumer.
+     *
+     * Useful for callers that manage their own analysis invalidation via
+     * apply_without_invalidate(): ProducerIntoConsumer leaves the loop structure
+     * of the parent sequence intact, whereas ConsumerIntoProducer removes the
+     * consumer loop and requires a full invalidation.
+     */
+    bool was_producer_into_consumer() const { return direction_ == FusionDirection::ProducerIntoConsumer; }
 
     /**
      * @brief Serialize this transformation to JSON

@@ -1088,7 +1088,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     return !fusion_candidates_.empty();
 }
 
-void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+void MapFusion::apply_impl(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
 
     if (direction_ == FusionDirection::ProducerIntoConsumer) {
@@ -1426,8 +1426,17 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         }
     }
 
-    analysis_manager.invalidate_all();
     applied_ = true;
+}
+
+void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    apply_impl(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+}
+
+void MapFusion::
+    apply_without_invalidate(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    apply_impl(builder, analysis_manager);
 }
 
 void MapFusion::to_json(nlohmann::json& j) const {
