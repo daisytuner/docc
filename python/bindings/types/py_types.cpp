@@ -127,6 +127,7 @@ void register_types(py::module& m) {
         )
         .def_property_readonly("offset", [](const Tensor& self) { return self.offset()->__str__(); })
         .def("total_elements", [](const Tensor& self) { return self.total_elements()->__str__(); })
+        .def("total_size", [](const Tensor& self) { return self.total_size()->__str__(); })
         .def(
             "newaxis", [](const Tensor& self, size_t axis) { return self.newaxis(axis); }, py::arg("axis")
         )
@@ -150,5 +151,6 @@ void register_types(py::module& m) {
                 return self.reshape(shape_expr);
             },
             py::arg("new_shape")
-        );
+        )
+        .def("is_contiguous", &Tensor::is_contiguous);
 }

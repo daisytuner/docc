@@ -15,8 +15,8 @@ set(TEST_FILES
     analysis/data_dependency_analysis_test.cpp
     analysis/escape_analysis_test.cpp
     analysis/flop_analysis_test.cpp
-    analysis/loop_analysis_test.cpp
     analysis/loop_analysis_info_test.cpp
+    analysis/loop_analysis_test.cpp
     analysis/loop_carried_dependency_analysis_test.cpp
     analysis/memory_layout_analysis_test.cpp
     analysis/type_analysis_test.cpp
@@ -32,9 +32,9 @@ set(TEST_FILES
     codegen/dispatchers/for_dispatcher_test.cpp
     codegen/dispatchers/if_else_dispatcher_test.cpp
     codegen/dispatchers/map_dispatcher_test.cpp
-    codegen/dispatchers/reduce_dispatcher_test.cpp
     codegen/dispatchers/node_dispatcher_factory_test.cpp
     codegen/dispatchers/node_dispatcher_test.cpp
+    codegen/dispatchers/reduce_dispatcher_test.cpp
     codegen/dispatchers/sequence_dispatcher_test.cpp
     codegen/dispatchers/while_dispatcher_test.cpp
     codegen/instrumentation/arg_capture_plan_test.cpp
@@ -42,53 +42,54 @@ set(TEST_FILES
     codegen/language_extensions/cpp_language_extension_test.cpp
     codegen/language_extensions/cuda_language_extension_test.cpp
     codegen/utils_test.cpp
-    control_flow/state_test.cpp
     control_flow/interstate_edge_test.cpp
+    control_flow/state_test.cpp
     cutouts/cutouts_test.cpp
     data_flow/access_node_test.cpp
     data_flow/code_node_test.cpp
     data_flow/data_flow_graph_test.cpp
     data_flow/data_flow_node_test.cpp
-    data_flow/memlet_test.cpp
-    data_flow/pointer_metadata_test.cpp
-    data_flow/tasklet_test.cpp
     data_flow/library_nodes/load_const_node_test.cpp
     data_flow/library_nodes/math/blas/blas_test.cpp
     data_flow/library_nodes/math/cmath/cmath_node_test.cpp
     data_flow/library_nodes/math/tensor/batchnorm_test.cpp
     data_flow/library_nodes/math/tensor/cmath_node_test.cpp
-    data_flow/library_nodes/math/tensor/reduce_test.cpp
-    data_flow/library_nodes/math/tensor/elementwise_test.cpp
-    data_flow/library_nodes/math/tensor/primitive_type_test.cpp
     data_flow/library_nodes/math/tensor/conv_test.cpp
+    data_flow/library_nodes/math/tensor/copy_node_test.cpp
     data_flow/library_nodes/math/tensor/einsum_test.cpp
+    data_flow/library_nodes/math/tensor/elementwise_test.cpp
     data_flow/library_nodes/math/tensor/matmul_test.cpp
     data_flow/library_nodes/math/tensor/pooling_test.cpp
+    data_flow/library_nodes/math/tensor/primitive_type_test.cpp
+    data_flow/library_nodes/math/tensor/reduce_test.cpp
     data_flow/library_nodes/math/tensor/tasklet_node_test.cpp
+    data_flow/memlet_test.cpp
+    data_flow/pointer_metadata_test.cpp
+    data_flow/tasklet_test.cpp
     deepcopy/structured_sdfg_deep_copy_test.cpp
     element_test.cpp
     graph/graph_algorithms_test.cpp
     helpers/helpers_test.cpp
     passes/dataflow/bytes_reference_elimination_test.cpp
     passes/dataflow/dead_data_elimination_test.cpp
-    passes/dataflow/trivial_array_elimination_test.cpp
-    passes/dataflow/trivial_reference_conversion_test.cpp
-    passes/dataflow/reference_propagation_test.cpp
-    passes/dataflow/tasklet_fusion_test.cpp
     passes/dataflow/local_buffer_reuse_test.cpp
     passes/dataflow/memlet_linearization_test.cpp
     passes/dataflow/memlet_simplification_test.cpp
+    passes/dataflow/reference_propagation_test.cpp
+    passes/dataflow/tasklet_fusion_test.cpp
     passes/dataflow/tensor_to_pointer_conversion_test.cpp
+    passes/dataflow/trivial_array_elimination_test.cpp
+    passes/dataflow/trivial_reference_conversion_test.cpp
+    passes/debug_info_propagation_test.cpp
+    passes/expansion/expansion_pass_test.cpp
     passes/memory/allocation_management_test.cpp
     passes/pipeline_test.cpp
-    passes/expansion/expansion_pass_test.cpp
     passes/structured_control_flow/block_fusion_test.cpp
     passes/structured_control_flow/condition_elimination_test.cpp
     passes/structured_control_flow/dead_cfg_elimination_test.cpp
     passes/structured_control_flow/for_classification_test.cpp
     passes/structured_control_flow/pointer_evolution_test.cpp
     passes/structured_control_flow/unique_loop_indvars_test.cpp
-    passes/debug_info_propagation_test.cpp
     passes/symbolic/symbol_evolution_test.cpp
     passes/symbolic/symbol_promotion_test.cpp
     passes/symbolic/symbol_propagation_test.cpp
@@ -103,13 +104,14 @@ set(TEST_FILES
     structured_sdfg_test.cpp
     symbolic/assumptions_test.cpp
     symbolic/conjunctive_normal_form_test.cpp
+    symbolic/delinearization_test.cpp
     symbolic/extreme_values_test.cpp
     symbolic/maps_test.cpp
     symbolic/polyhedral_test.cpp
     symbolic/polynomials_test.cpp
-    symbolic/symbolic_test.cpp
     symbolic/sets_test.cpp
-    symbolic/delinearization_test.cpp
+    symbolic/symbolic_test.cpp
+    test.cpp
     types/array_test.cpp
     types/function_test.cpp
     types/pointer_test.cpp
@@ -122,7 +124,6 @@ set(TEST_FILES
     types/utils_test.cpp
     visitor/structured_sdfg_visitor_test.cpp
     visualizer/dot_visualizer_test.cpp
-    test.cpp
 )
 
 # Now simply link against gtest or gtest_main as needed. Eg

@@ -1,0 +1,11 @@
+pybind11
+pytest
+coverage
+black==25.9.0
+build
+scikit-build-core
+sympy
+numpy
+ml_dtypes
+scipy
+requests

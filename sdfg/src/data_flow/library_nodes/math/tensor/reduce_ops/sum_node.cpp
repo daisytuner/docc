@@ -54,6 +54,10 @@ std::string SumNode::identity(types::PrimitiveType primitive_type) const {
     return "0.0";
 }
 
+std::optional<structured_control_flow::ReductionOperation> SumNode::reduction_operation() const {
+    return std::make_optional(structured_control_flow::ReductionOperation::Add);
+}
+
 std::unique_ptr<data_flow::DataFlowNode> SumNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::make_unique<

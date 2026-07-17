@@ -91,6 +91,10 @@ std::string MinNode::identity(types::PrimitiveType primitive_type) const {
     }
 }
 
+std::optional<structured_control_flow::ReductionOperation> MinNode::reduction_operation() const {
+    return std::make_optional(structured_control_flow::ReductionOperation::Min);
+}
+
 std::unique_ptr<data_flow::DataFlowNode> MinNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(

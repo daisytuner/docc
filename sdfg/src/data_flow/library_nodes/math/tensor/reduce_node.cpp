@@ -140,6 +140,7 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
     // Add new sequence
     auto& new_sequence = expansion.replace_with_sequence();
     auto& builder = expansion.builder();
+    std::string accum_container;
 
     // 1. Initialization Loop
     {
@@ -185,6 +186,7 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
         builder.add_computational_memlet(
             init_block, init_tasklet, "_out", out_access, init_subset, iedge_result->base_type(), block.debug_info()
         );
+        accum_container = out_access.data();
     }
 
     // 2. Reduction Loop
@@ -239,7 +241,8 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
             loop_vars_map[dim_idx] = indvar;
         }
 
-        // Generate inner sequential loops (Fors)
+        // Generate inner sequential loops (Fors / Reduces)
+        auto reduction_operation = this->reduction_operation();
         for (size_t dim_idx : inner_dims) {
             std::string indvar_str = builder.find_new_name("_k");
             builder.add_container(indvar_str, types::Scalar(types::PrimitiveType::Int64));
@@ -249,7 +252,21 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
             auto update = symbolic::add(indvar, symbolic::one());
             auto condition = symbolic::Lt(indvar, shape_[dim_idx]);
 
-            last_loop = &builder.add_for(*last_scope, indvar, condition, init, update, {}, block.debug_info());
+            if (reduction_operation.has_value()) {
+                last_loop = &builder.add_reduce(
+                    *last_scope,
+                    indvar,
+                    condition,
+                    init,
+                    update,
+                    {{.operation = reduction_operation.value(), .container = accum_container}},
+                    structured_control_flow::ScheduleType_Sequential::create(),
+                    {},
+                    block.debug_info()
+                );
+            } else {
+                last_loop = &builder.add_for(*last_scope, indvar, condition, init, update, {}, block.debug_info());
+            }
             last_scope = &last_loop->root();
             loop_vars_map[dim_idx] = indvar;
         }
