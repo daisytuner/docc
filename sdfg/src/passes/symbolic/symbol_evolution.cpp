@@ -403,14 +403,8 @@ bool SymbolEvolution::run_pass(builder::StructuredSDFGBuilder& builder, analysis
             // only when we don't touch the parent ourselves).
             auto idx = entry.parent_seq->index(*entry.loop);
             if (idx < 0) break;
-            AssignmentBlock* exit_assigns;
-            if (idx < entry.parent_seq->size() - 1) {
-                exit_assigns = dyn_cast<AssignmentBlock*>(&entry.parent_seq->at(idx + 1));
-            } else {
-                exit_assigns = nullptr;
-            }
 
-            bool applied = eliminate_symbols(builder, analysis_manager, *entry.parent_seq, *entry.loop, exit_assigns);
+            bool applied = eliminate_symbols(builder, analysis_manager, *entry.parent_seq, *entry.loop, nullptr);
             if (!applied) break;
 
             any_applied = true;

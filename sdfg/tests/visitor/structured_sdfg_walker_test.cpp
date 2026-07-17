@@ -9,6 +9,13 @@
 using namespace sdfg::visitor;
 using namespace sdfg;
 
+bool operator==(
+    const std::pair<const ControlFlowNode*, StructuredSDFGWalker::Scope>& a,
+    const std::pair<const ControlFlowNode*, StructuredSDFGWalker::Scope>& b
+) {
+    return a.first == b.first && a.second == b.second;
+}
+
 TEST(StructuredSDFGWalkerTest, WalksFullSDFG) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -40,7 +47,7 @@ TEST(StructuredSDFGWalkerTest, WalksFullSDFG) {
 
     while (it != end) {
         auto v = *it;
-        order.push_back(std::make_pair(&v.first, v.second));
+        order.emplace_back(&v.first, v.second);
         // std::cout << "Node: " << v.first.element_id() << ": " << v.first.type_id() << ": " << v.second << std::endl;
 
         ++it;
@@ -104,7 +111,7 @@ TEST(StructuredSDFGWalkerTest, CanWalkUntilTarget) {
 
     while (it != end) {
         auto v = *it;
-        order.push_back(std::make_pair(&v.first, v.second));
+        order.emplace_back(&v.first, v.second);
         std::cout << "Node: " << v.first.element_id() << ": " << v.first.type_id() << ": " << v.second << std::endl;
 
         ++it;
@@ -150,7 +157,7 @@ TEST(StructuredSDFGWalkerTest, WalksFullSDFG_FromNested) {
 
     while (it != end) {
         auto v = *it;
-        order.push_back(std::make_pair(&v.first, v.second));
+        order.emplace_back(&v.first, v.second);
         // std::cout << "Node: " << v.first.element_id() << ": " << v.first.type_id() << ": " << v.second << std::endl;
 
         ++it;
@@ -209,7 +216,7 @@ TEST(StructuredSDFGWalkerTest, WalksOnlyOut) {
 
     while (it != end) {
         auto v = *it;
-        order.push_back(std::make_pair(&v.first, v.second));
+        order.emplace_back(&v.first, v.second);
         // std::cout << "Node: " << v.first.element_id() << ": " << v.first.type_id() << ": " << v.second << std::endl;
 
         it.next_no_descend();
