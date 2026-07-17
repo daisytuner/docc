@@ -37,8 +37,12 @@ void CodegenBuildPool::worker_loop() {
             work_queue_.pop();
         }
 
-        task->codegen();
-        task->compile();
+        try {
+            task->codegen();
+            task->compile();
+        } catch (...) {
+            last_exception_ = std::current_exception();
+        }
 
         if (--outstanding_compiles_ == 0) {
             done_cv_.notify_all();
@@ -70,6 +74,9 @@ void CodegenBuildPool::add_compile_state(std::unique_ptr<CompileState> state) {
 void CodegenBuildPool::await_compiles_finished() {
     std::unique_lock lock(queue_mutex_);
     done_cv_.wait(lock, [this] { return outstanding_compiles_.load() == 0; });
+    if (last_exception_) {
+        std::rethrow_exception(last_exception_);
+    }
 }
 
 void CodegenBuildPool::for_each_src(std::function<void(CompileState&)> fn) {

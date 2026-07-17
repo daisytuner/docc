@@ -1,4 +1,5 @@
 #include "docc/target/docc_target.h"
+#include <cstdlib>
 #include <filesystem>
 
 #include "docc/compile/src_file_compiler_builder.h"
@@ -46,10 +47,8 @@ static DoccTarget rocm_target = {
     .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
         builder.add_compile_option("-x hip");
         const char* arch_env = std::getenv("DOCC_ROCM_ARCH");
-        if (!arch_env) {
-            arch_env = "gfx1201";
-        }
-        builder.add_compile_option("--offload-arch=" + std::string(arch_env));
+        std::string rocm_dev = (arch_env && *arch_env) ? arch_env : "gfx1201";
+        builder.add_compile_option("--offload-arch=" + rocm_dev);
         std::filesystem::path rocm_path = "/opt/rocm";
         builder.add_compile_option("--offload-host-only");
         builder.add_compile_option("--rocm-path=" + rocm_path.string());
@@ -63,7 +62,7 @@ static DoccTarget rocm_target = {
         compile::SrcFileCompilerBuilder b;
         b.inherit(builder, true);
         b.remove_compile_option("--offload-host-only");
-
+        b.set_compiler("/opt/rocm/llvm/bin/clang++");
         builder.redirect_snippet("rocm.cpp", std::move(b));
 
         return true;
