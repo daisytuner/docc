@@ -6,15 +6,15 @@ on:
       - main
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
+    paths-ignore:
+      - "examples/**"
+      - "llvm/**"
+      - "mlir/**"
+      - "targets/et/**"
+      - "targets/tenstorrent/**"
+      - "tutorial/**"
   schedule:
     - cron: "0 4 * * *"
-  paths-ignore:
-    - "examples/**"
-    - "llvm/**"
-    - "mlir/**"
-    - "targets/et/**"
-    - "targets/tenstorrent/**"
-    - "tutorial/**"
 
 jobs:
 
@@ -76,7 +76,7 @@ jobs:
           coverage xml
 
       - name: Coveralls
-        if: ${{ matrix.python-version }} == "3.14"
+        if: matrix.python-version == '3.14'
         uses: coverallsapp/github-action@v2
         with:
           flag-name: pytorch
