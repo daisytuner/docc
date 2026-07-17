@@ -202,7 +202,7 @@ class ContainerInfo(ContainerInfoBase):
         memory_managed: bool = False,
         in_argument: bool = False,
         out_argument: bool = False,
-    ) -> ContainerInfo:
+    ) -> "ContainerInfo":
         """
         Static helper method to create a container information directly from the SDFG type tuple.
         """
@@ -222,7 +222,7 @@ class ContainerInfo(ContainerInfoBase):
         memory_managed: bool | None = None,
         in_argument: bool | None = None,
         out_argument: bool | None = None,
-    ) -> ContainerInfo:
+    ) -> "ContainerInfo":
         """
         Updates the container information. Each value is updated only if it is not None. Also
         returns the updated container information.
@@ -247,7 +247,7 @@ class ContainerInfo(ContainerInfoBase):
         memory_managed: bool | None = None,
         in_argument: bool | None = None,
         out_argument: bool | None = None,
-    ) -> ContainerInfo:
+    ) -> "ContainerInfo":
         """
         Copies the container information. Each value from the original container information is
         copied if the matching argument of this function is None. Otherwise the copy contains the
@@ -399,12 +399,12 @@ class ContainerPreInfo(ContainerInfoBase):
 
     @staticmethod
     def copy(
-        pre_info: ContainerPreInfo,
+        pre_info: "ContainerPreInfo",
         ref: str | None = None,
         refed_by: str | None = None,
         in_argument: bool | None = None,
         out_argument: bool | None = None,
-    ) -> ContainerPreInfo:
+    ) -> "ContainerPreInfo":
         """
         Copies the container information. Each value from the original container information is
         copied if the matching argument of this function is None. Otherwise the copy contains the
