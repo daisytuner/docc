@@ -24,7 +24,7 @@ def test_builder_with_debug_info():
     builder.add_container("A", Scalar(PrimitiveType.Int64), False)
     builder.add_container("B", Scalar(PrimitiveType.Int64), False)
 
-    builder.add_transition("A", "1", di)
+    builder.add_assignments("A", "1", di)
 
     sdfg = builder.move()
     assert sdfg is not None

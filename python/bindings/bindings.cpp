@@ -443,10 +443,15 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def("end_map", &PyStructuredSDFGBuilder::end_map)
         .def(
-            "add_transition",
-            &PyStructuredSDFGBuilder::add_transition,
+            "add_assignments",
+            &PyStructuredSDFGBuilder::add_assignments,
             py::arg("lhs"),
             py::arg("rhs"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_empty_assignments",
+            &PyStructuredSDFGBuilder::add_empty_assignments,
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(

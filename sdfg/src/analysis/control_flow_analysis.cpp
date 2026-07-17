@@ -32,6 +32,10 @@ std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured
         auto v = boost::add_vertex(graph_);
         nodes_[v] = &current;
         return {v, v};
+    } else if (auto assign_node = dyn_cast<structured_control_flow::AssignmentBlock*>(&current)) {
+        auto v = boost::add_vertex(graph_);
+        nodes_[v] = &current;
+        return {v, v};
     } else if (auto return_node = dyn_cast<structured_control_flow::Return*>(&current)) {
         auto v = boost::add_vertex(graph_);
         nodes_[v] = &current;

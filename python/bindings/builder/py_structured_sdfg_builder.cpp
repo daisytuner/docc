@@ -334,13 +334,19 @@ void PyStructuredSDFGBuilder::end_map() {
 }
 
 void PyStructuredSDFGBuilder::
-    add_transition(const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info) {
+    add_assignments(const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info) {
     auto& parent = current_sequence();
 
     sdfg::symbolic::Symbol lhs_sym = SymEngine::rcp_dynamic_cast<const SymEngine::Symbol>(parse_and_expand(lhs));
     sdfg::symbolic::Expression rhs_sym = parse_and_expand(rhs);
 
     builder_.add_assignments(parent, {{lhs_sym, rhs_sym}}, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_empty_assignments(const sdfg::DebugInfo& debug_info) {
+    auto& parent = current_sequence();
+
+    builder_.add_assignments(parent, {}, debug_info);
 }
 
 void PyStructuredSDFGBuilder::

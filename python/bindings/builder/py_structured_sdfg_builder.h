@@ -117,9 +117,11 @@ public:
 
     void end_map();
 
-    void add_transition(
+    void add_assignments(
         const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
+
+    void add_empty_assignments(const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
 
     void add_assignment(
         const std::string& target, const std::string& value, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()

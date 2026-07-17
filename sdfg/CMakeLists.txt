@@ -30,7 +30,6 @@ set(SOURCE_FILES
     src/analysis/control_flow_analysis.cpp
     src/analysis/data_dependency_analysis.cpp
     src/analysis/dominance_analysis.cpp
-    src/analysis/escape_analysis.cpp
     src/analysis/flop_analysis.cpp
     src/analysis/loop_analysis.cpp
     src/analysis/loop_carried_dependency_analysis.cpp
