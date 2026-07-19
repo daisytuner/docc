@@ -81,13 +81,32 @@ bool CommonAssignmentElimination::
                     if (!hoisted_assignments.empty()) {
                         AssignmentBlock* existing = nullptr;
                         if (i + 1 < sequence_stmt->size()) {
+                            // currently, this pass is called in a loop to hoist assingments out multiple levels.
+                            // And it does not remove the source, so this can easily lead to infinite loops if it does
+                            // not achieve stable results. So needs to not make changes on its own results
                             auto& next_stmt = sequence_stmt->at(i + 1);
                             if (auto assign_block = dyn_cast<AssignmentBlock*>(&next_stmt)) {
                                 existing = assign_block;
-                                for (auto& hoisted : hoisted_assignments) {
-                                    bool added = existing->add_if_not_overwritten(hoisted.first, hoisted.second);
-                                    if (added) {
-                                        applied = true;
+                                for (const auto& target : hoisted_assignments | std::views::keys) {
+                                    for (auto& val : assign_block->assignments() | std::views::values) {
+                                        if (has_symbol(*val, *target)) {
+                                            // existing block uses what we would hoist, needs to go in a separate
+                                            // assignments before
+                                            existing = nullptr;
+                                            break;
+                                        }
+                                    }
+                                    if (!existing) {
+                                        break;
+                                    }
+                                }
+
+                                if (existing) {
+                                    for (auto& hoisted : hoisted_assignments) {
+                                        bool added = existing->add_if_not_overwritten(hoisted.first, hoisted.second);
+                                        if (added) {
+                                            applied = true;
+                                        }
                                     }
                                 }
                             }

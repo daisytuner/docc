@@ -85,6 +85,7 @@ set(TEST_FILES
     passes/memory/allocation_management_test.cpp
     passes/pipeline_test.cpp
     passes/structured_control_flow/block_fusion_test.cpp
+    passes/structured_control_flow/common_assignment_elimination_test.cpp
     passes/structured_control_flow/condition_elimination_test.cpp
     passes/structured_control_flow/dead_cfg_elimination_test.cpp
     passes/structured_control_flow/for_classification_test.cpp
