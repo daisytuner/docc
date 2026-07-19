@@ -152,7 +152,8 @@ symbolic::Expression FlopAnalysis::visit(structured_control_flow::ControlFlowNod
     } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(&node)) {
         return this->visit_while(*while_loop, analysis_manager);
     } else if (dyn_cast<structured_control_flow::Return*>(&node) || dyn_cast<structured_control_flow::Break*>(&node) ||
-               dyn_cast<structured_control_flow::Continue*>(&node)) {
+               dyn_cast<structured_control_flow::Continue*>(&node) ||
+               dyn_cast<structured_control_flow::AssignmentBlock*>(&node)) {
         this->flops_[&node] = symbolic::zero();
         return symbolic::zero();
     } else {
