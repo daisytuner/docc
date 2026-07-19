@@ -9,12 +9,9 @@
 using namespace sdfg::visitor;
 using namespace sdfg;
 
-bool operator==(
-    const std::pair<const ControlFlowNode*, StructuredSDFGWalker::Scope>& a,
-    const std::pair<const ControlFlowNode*, StructuredSDFGWalker::Scope>& b
-) {
-    return a.first == b.first && a.second == b.second;
-}
+#define EXPECT_PAIR_EQ(val, p1, p2) \
+    EXPECT_EQ((val).first, p1);     \
+    EXPECT_EQ((val).second, p2)
 
 TEST(StructuredSDFGWalkerTest, WalksFullSDFG) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
@@ -54,30 +51,30 @@ TEST(StructuredSDFGWalkerTest, WalksFullSDFG) {
     }
 
     EXPECT_EQ(order.size(), 24);
-    EXPECT_EQ(order.at(0), std::make_pair(&root, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(1), std::make_pair(&sequence, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(2), std::make_pair(&block, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(3), std::make_pair(&if_else, StructuredSDFGWalker::Scope::IF_ENTRY));
-    EXPECT_EQ(order.at(4), std::make_pair(&branch_a, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(5), std::make_pair(&assgn, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(6), std::make_pair(&branch_a, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(7), std::make_pair(&if_else, StructuredSDFGWalker::Scope::IF_NEXT_BRANCH));
-    EXPECT_EQ(order.at(8), std::make_pair(&branch_b, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(9), std::make_pair(&branch_b, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(10), std::make_pair(&if_else, StructuredSDFGWalker::Scope::IF_EXIT));
-    EXPECT_EQ(order.at(11), std::make_pair(&loop, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(12), std::make_pair(&loop.root(), StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(13), std::make_pair(&cont, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(14), std::make_pair(&br, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(15), std::make_pair(&loop.root(), StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(16), std::make_pair(&loop, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(17), std::make_pair(&for_l, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(18), std::make_pair(&for_l.root(), StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(19), std::make_pair(&for_l.root(), StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(20), std::make_pair(&for_l, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(21), std::make_pair(&ret, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(22), std::make_pair(&sequence, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(23), std::make_pair(&root, StructuredSDFGWalker::Scope::EXIT));
+    EXPECT_PAIR_EQ(order.at(0), &root, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(1), &sequence, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(2), &block, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(3), &if_else, StructuredSDFGWalker::Scope::IF_ENTRY);
+    EXPECT_PAIR_EQ(order.at(4), &branch_a, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(5), &assgn, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(6), &branch_a, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(7), &if_else, StructuredSDFGWalker::Scope::IF_NEXT_BRANCH);
+    EXPECT_PAIR_EQ(order.at(8), &branch_b, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(9), &branch_b, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(10), &if_else, StructuredSDFGWalker::Scope::IF_EXIT);
+    EXPECT_PAIR_EQ(order.at(11), &loop, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(12), &loop.root(), StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(13), &cont, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(14), &br, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(15), &loop.root(), StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(16), &loop, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(17), &for_l, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(18), &for_l.root(), StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(19), &for_l.root(), StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(20), &for_l, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(21), &ret, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(22), &sequence, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(23), &root, StructuredSDFGWalker::Scope::EXIT);
 }
 
 TEST(StructuredSDFGWalkerTest, CanWalkUntilTarget) {
@@ -118,12 +115,12 @@ TEST(StructuredSDFGWalkerTest, CanWalkUntilTarget) {
     }
 
     EXPECT_EQ(order.size(), 6);
-    EXPECT_EQ(order.at(0), std::make_pair(&root, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(1), std::make_pair(&sequence, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(2), std::make_pair(&block, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(3), std::make_pair(&if_else, StructuredSDFGWalker::Scope::IF_ENTRY));
-    EXPECT_EQ(order.at(4), std::make_pair(&branch_a, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(5), std::make_pair(&assgn, StructuredSDFGWalker::Scope::NONE));
+    EXPECT_PAIR_EQ(order.at(0), &root, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(1), &sequence, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(2), &block, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(3), &if_else, StructuredSDFGWalker::Scope::IF_ENTRY);
+    EXPECT_PAIR_EQ(order.at(4), &branch_a, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(5), &assgn, StructuredSDFGWalker::Scope::NONE);
 }
 
 TEST(StructuredSDFGWalkerTest, WalksFullSDFG_FromNested) {
@@ -164,25 +161,25 @@ TEST(StructuredSDFGWalkerTest, WalksFullSDFG_FromNested) {
     }
 
     EXPECT_EQ(order.size(), 19);
-    EXPECT_EQ(order.at(0), std::make_pair(&assgn, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(1), std::make_pair(&branch_a, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(2), std::make_pair(&if_else, StructuredSDFGWalker::Scope::IF_NEXT_BRANCH));
-    EXPECT_EQ(order.at(3), std::make_pair(&branch_b, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(4), std::make_pair(&branch_b, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(5), std::make_pair(&if_else, StructuredSDFGWalker::Scope::IF_EXIT));
-    EXPECT_EQ(order.at(6), std::make_pair(&loop, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(7), std::make_pair(&loop.root(), StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(8), std::make_pair(&cont, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(9), std::make_pair(&br, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(10), std::make_pair(&loop.root(), StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(11), std::make_pair(&loop, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(12), std::make_pair(&for_l, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(13), std::make_pair(&for_l.root(), StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(14), std::make_pair(&for_l.root(), StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(15), std::make_pair(&for_l, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(16), std::make_pair(&ret, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(17), std::make_pair(&sequence, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(18), std::make_pair(&root, StructuredSDFGWalker::Scope::EXIT));
+    EXPECT_PAIR_EQ(order.at(0), &assgn, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(1), &branch_a, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(2), &if_else, StructuredSDFGWalker::Scope::IF_NEXT_BRANCH);
+    EXPECT_PAIR_EQ(order.at(3), &branch_b, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(4), &branch_b, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(5), &if_else, StructuredSDFGWalker::Scope::IF_EXIT);
+    EXPECT_PAIR_EQ(order.at(6), &loop, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(7), &loop.root(), StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(8), &cont, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(9), &br, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(10), &loop.root(), StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(11), &loop, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(12), &for_l, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(13), &for_l.root(), StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(14), &for_l.root(), StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(15), &for_l, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(16), &ret, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(17), &sequence, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(18), &root, StructuredSDFGWalker::Scope::EXIT);
 }
 
 TEST(StructuredSDFGWalkerTest, WalksOnlyOut) {
@@ -223,14 +220,14 @@ TEST(StructuredSDFGWalkerTest, WalksOnlyOut) {
     }
 
     EXPECT_EQ(order.size(), 8);
-    EXPECT_EQ(order.at(0), std::make_pair(&assgn, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(1), std::make_pair(&branch_a, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(2), std::make_pair(&if_else, StructuredSDFGWalker::Scope::IF_NEXT_BRANCH));
-    EXPECT_EQ(order.at(3), std::make_pair(&loop, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(4), std::make_pair(&for_l, StructuredSDFGWalker::Scope::ENTRY));
-    EXPECT_EQ(order.at(5), std::make_pair(&ret, StructuredSDFGWalker::Scope::NONE));
-    EXPECT_EQ(order.at(6), std::make_pair(&sequence, StructuredSDFGWalker::Scope::EXIT));
-    EXPECT_EQ(order.at(7), std::make_pair(&root, StructuredSDFGWalker::Scope::EXIT));
+    EXPECT_PAIR_EQ(order.at(0), &assgn, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(1), &branch_a, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(2), &if_else, StructuredSDFGWalker::Scope::IF_NEXT_BRANCH);
+    EXPECT_PAIR_EQ(order.at(3), &loop, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(4), &for_l, StructuredSDFGWalker::Scope::ENTRY);
+    EXPECT_PAIR_EQ(order.at(5), &ret, StructuredSDFGWalker::Scope::NONE);
+    EXPECT_PAIR_EQ(order.at(6), &sequence, StructuredSDFGWalker::Scope::EXIT);
+    EXPECT_PAIR_EQ(order.at(7), &root, StructuredSDFGWalker::Scope::EXIT);
 }
 
 TEST(StructuredSDFGWalkerTest, CanSkipChildrenConditionally) {
@@ -265,23 +262,23 @@ TEST(StructuredSDFGWalkerTest, CanSkipChildrenConditionally) {
         return std::make_pair(&resolved.first, resolved.second);
     };
 
-    EXPECT_EQ(resolve(it), std::make_pair(&root, StructuredSDFGWalker::Scope::ENTRY));
+    EXPECT_PAIR_EQ(resolve(it), &root, StructuredSDFGWalker::Scope::ENTRY);
     it.next();
-    EXPECT_EQ(resolve(it), std::make_pair(&sequence, StructuredSDFGWalker::Scope::ENTRY));
+    EXPECT_PAIR_EQ(resolve(it), &sequence, StructuredSDFGWalker::Scope::ENTRY);
     it.next();
-    EXPECT_EQ(resolve(it), std::make_pair(&block, StructuredSDFGWalker::Scope::NONE));
+    EXPECT_PAIR_EQ(resolve(it), &block, StructuredSDFGWalker::Scope::NONE);
     it.next();
-    EXPECT_EQ(resolve(it), std::make_pair(&if_else, StructuredSDFGWalker::Scope::IF_ENTRY));
+    EXPECT_PAIR_EQ(resolve(it), &if_else, StructuredSDFGWalker::Scope::IF_ENTRY);
     it.next_no_descend();
-    EXPECT_EQ(resolve(it), std::make_pair(&loop, StructuredSDFGWalker::Scope::ENTRY));
+    EXPECT_PAIR_EQ(resolve(it), &loop, StructuredSDFGWalker::Scope::ENTRY);
     it.next_no_descend();
-    EXPECT_EQ(resolve(it), std::make_pair(&for_l, StructuredSDFGWalker::Scope::ENTRY));
+    EXPECT_PAIR_EQ(resolve(it), &for_l, StructuredSDFGWalker::Scope::ENTRY);
     it.next_no_descend();
-    EXPECT_EQ(resolve(it), std::make_pair(&ret, StructuredSDFGWalker::Scope::NONE));
+    EXPECT_PAIR_EQ(resolve(it), &ret, StructuredSDFGWalker::Scope::NONE);
     it.next_no_descend();
-    EXPECT_EQ(resolve(it), std::make_pair(&sequence, StructuredSDFGWalker::Scope::EXIT));
+    EXPECT_PAIR_EQ(resolve(it), &sequence, StructuredSDFGWalker::Scope::EXIT);
     it.next_no_descend();
-    EXPECT_EQ(resolve(it), std::make_pair(&root, StructuredSDFGWalker::Scope::EXIT));
+    EXPECT_PAIR_EQ(resolve(it), &root, StructuredSDFGWalker::Scope::EXIT);
     it.next_no_descend();
     EXPECT_FALSE(it != end);
 }
