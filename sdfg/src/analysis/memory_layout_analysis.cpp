@@ -164,15 +164,21 @@ void MemoryLayoutAnalysis::
                 continue;
             }
             case types::TypeID::Array: {
-                // Arrays are c-like stack array, so we can infer a simple row-major layout without needing
-                // delinearization
+                // Arrays are c-like stack arrays, so we can infer a simple row-major layout without needing
+                // delinearization. Collect the extent of every (nested) array dimension so that
+                // multi-dimensional arrays get a full shape instead of just their leading dimension.
                 auto* array_type = dynamic_cast<const types::Array*>(&memlet.base_type());
-                symbolic::MultiExpression shape = {array_type->num_elements()};
+                symbolic::MultiExpression shape;
+                shape.push_back(array_type->num_elements());
                 while (array_type->element_type().type_id() == types::TypeID::Array) {
                     array_type = dynamic_cast<const types::Array*>(&array_type->element_type());
+                    shape.push_back(array_type->num_elements());
                 }
                 if (array_type->element_type().type_id() != types::TypeID::Scalar) {
                     continue; // Skip non-scalar arrays
+                }
+                if (subset.size() != shape.size()) {
+                    continue; // Require one index per (native) array dimension
                 }
 
                 MemoryLayout layout(shape);
