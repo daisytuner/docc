@@ -8,6 +8,11 @@
 
 using namespace sdfg;
 
+static passes::scheduler::OMPScheduler* get_omp_sched() {
+    static passes::scheduler::OMPScheduler instance;
+    return &instance;
+}
+
 TEST(OMPSchedulerTest, OuterParallelMapWithInnerMap) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
@@ -66,7 +71,7 @@ TEST(OMPSchedulerTest, OuterParallelMapWithInnerMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"openmp"}, nullptr);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -142,7 +147,7 @@ TEST(OMPSchedulerTest, OuterWhileWith2DMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"openmp"}, nullptr);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -226,7 +231,7 @@ TEST(OMPSchedulerTest, OuterWhileWithInnerMaps) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"openmp"}, nullptr);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 

@@ -96,6 +96,6 @@ def test_unknown_target_raises():
     builder = _build_map_nest()
     analysis_manager = AnalysisManager(builder)
 
-    scheduler = LoopSchedulingPass(["does_not_exist"])
     with pytest.raises(Exception):
+        scheduler = LoopSchedulingPass(["does_not_exist"])
         scheduler.run(builder, analysis_manager)

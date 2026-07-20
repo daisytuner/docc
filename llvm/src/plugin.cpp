@@ -84,14 +84,19 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
 
                 auto remote_tuning = docc::DOCC_TRANSFERTUNE.getValue();
 
+                auto &sched_registry = sdfg::passes::scheduler::SchedulerRegistry::instance();
+
                 if (remote_tuning) {
                     std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
                         sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
                     sdfg::passes::rpc::register_rpc_loop_opt(context, target, category);
+                    // TODO don't use global state here
                 }
 
                 // Compile-Time Pass Registration
-                PB.registerPipelineStartEPCallback([](llvm::ModulePassManager &MPM, llvm::OptimizationLevel Level) {
+                PB.registerPipelineStartEPCallback([&sched_registry](
+                                                       llvm::ModulePassManager &MPM, llvm::OptimizationLevel Level
+                                                   ) {
                     // Simplification
                     {
                         llvm::FunctionPassManager FPM;
@@ -206,8 +211,9 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
                         // before offloading
                         MPM.addPass(docc::passes::createDOCCPass(docc::passes::DumpSDFGPass(), AM));
                         MPM.addPass(docc::passes::createDOCCPass(
-                            docc::passes::
-                                SchedulingPass(false, false, enable_offloading_transfer_opt, report_consumer.get()),
+                            docc::passes::SchedulingPass(
+                                sched_registry, false, false, enable_offloading_transfer_opt, report_consumer.get()
+                            ),
                             AM
                         ));
                     }

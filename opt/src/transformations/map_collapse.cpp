@@ -317,6 +317,7 @@ void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysi
     auto& first_transition = collapsed_map.root().at(0).second;
     size_t n = indvars.size();
 
+    symbolic::ExpressionMapping recovery_map;
     for (size_t k = 0; k < n; ++k) {
         // Compute suffix product = B_{k+1} * ... * B_{n-1}
         symbolic::Expression suffix = symbolic::integer(1);
@@ -340,7 +341,17 @@ void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysi
         }
 
         first_transition.assignments()[indvars[k]] = value;
+        recovery_map[indvars[k]] = value;
     }
+
+    // Step 8b: Inline the recovered induction variables directly into the collapsed body.
+    // This substitutes each original indvar with its closed-form expression in memlet subsets,
+    // tasklet code and nested control flow, so downstream analyses/codegen see the relation to
+    // the collapsed induction variable without requiring a separate SymbolPropagation pass.
+    // The recovery assignments above are kept as a fallback: uses that cannot take a complex
+    // expression (e.g. an induction variable used as an access-node container name) are left
+    // untouched by replace() and still resolved through the transition.
+    collapsed_map.root().replace(recovery_map);
 
     // Step 9: Remove the original nest
     // The index shifted by 1 because we inserted a map before
@@ -423,6 +434,12 @@ void MapCollapse::apply_imperfect(builder::StructuredSDFGBuilder& builder, analy
     recovery_transition.assignments()[outer_indvar] = symbolic::div(civ, inner_extent);
     recovery_transition.assignments()[inner_index] = symbolic::mod(civ, inner_extent);
 
+    // Induction variables to inline into the collapsed body (see Step 8b). The outer
+    // induction variable maps directly to its closed-form; each collapsible inner induction
+    // variable maps to the virtual inner index (civ % inner_extent).
+    symbolic::ExpressionMapping recovery_map;
+    recovery_map[outer_indvar] = symbolic::div(civ, inner_extent);
+
     // Step 7: Move the outer body into the collapsed map (after the recovery block),
     // preserving order.
     builder.move_children(outer.root(), collapsed_map.root());
@@ -448,9 +465,18 @@ void MapCollapse::apply_imperfect(builder::StructuredSDFGBuilder& builder, analy
             // Move the map body into the guarded branch and drop the empty map shell.
             builder.move_children(item.map->root(), branch);
             builder.remove_child(collapsed_map.root(), collapsed_map.root().index(*child));
+
+            recovery_map[inner_iv] = symbolic::mod(civ, inner_extent);
         }
         // Skipped elements are left in place (replicated on every inner thread).
     }
+
+    // Step 8b: Inline the recovered induction variables directly into the collapsed body so
+    // downstream analyses/codegen see the relation to the collapsed induction variable without
+    // requiring a separate SymbolPropagation pass. The recovery assignments (outer recovery
+    // block and per-branch inner recovery) are kept as a fallback for uses that cannot take a
+    // complex expression (e.g. an induction variable used as an access-node container name).
+    collapsed_map.root().replace(recovery_map);
 
     // Step 9: Remove the original outer map.
     transition.assignments().clear();

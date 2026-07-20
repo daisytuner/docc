@@ -4,16 +4,22 @@
 #include <sstream>
 
 #include <sdfg/data_flow/access_node.h>
+#include <sdfg/transformations/in_local_storage.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
+#include <sdfg/transformations/loop_peeling.h>
 #include <sdfg/transformations/loop_skewing.h>
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/map_collapse.h>
 #include <sdfg/transformations/map_fusion.h>
+#include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
+#include <sdfg/transformations/offloading/cuda_transform.h>
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/recorder.h>
 #include <sdfg/transformations/tile_fusion.h>
 #include <sdfg/transformations/transformation.h>
+#include <sdfg/transformations/vectorize_transform.h>
+#include <sdfg/types/type.h>
 
 #include "analysis/py_analysis.h"
 #include "builder/py_structured_sdfg_builder.h"
@@ -220,6 +226,103 @@ void register_transformations(py::module& m) {
             return oss.str();
         });
 
+    // CUDATransform transformation (offload a top-level map to a CUDA kernel, X grid dim)
+    py::class_<sdfg::cuda::CUDATransform, Transformation>(m, "CUDATransform")
+        .def(
+            py::init<Map&, int, bool>(),
+            py::arg("map"),
+            py::arg("block_size") = 32,
+            py::arg("allow_dynamic_sizes") = false,
+            "Create a CUDA offload transformation.\n\n"
+            "Args:\n"
+            "    map: The top-level map to offload to a CUDA kernel (X dimension)\n"
+            "    block_size: Threads per block along X (default: 32)\n"
+            "    allow_dynamic_sizes: Permit non-constant iteration counts (default: False)"
+        )
+        .def("__repr__", [](const sdfg::cuda::CUDATransform& t) {
+            std::ostringstream oss;
+            oss << "<CUDATransform name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // CUDAParallelizeNestedMap transformation (add a nested map as the next grid dim)
+    py::class_<CUDAParallelizeNestedMap, Transformation>(m, "CUDAParallelizeNestedMap")
+        .def(
+            py::init<Map&, size_t>(),
+            py::arg("loop"),
+            py::arg("block_size"),
+            "Parallelize a nested map as the next CUDA grid dimension (parent X->Y, Y->Z).\n\n"
+            "Args:\n"
+            "    loop: The nested (sequential) map to parallelize\n"
+            "    block_size: Threads per block along this dimension"
+        )
+        .def("__repr__", [](const CUDAParallelizeNestedMap& t) {
+            std::ostringstream oss;
+            oss << "<CUDAParallelizeNestedMap name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // LoopPeeling transformation
+    py::class_<LoopPeeling, Transformation>(m, "LoopPeeling")
+        .def(
+            py::init<StructuredLoop&>(),
+            py::arg("loop"),
+            "Create a loop peeling transformation.\n\n"
+            "Args:\n"
+            "    loop: The loop with compound conditions to peel"
+        )
+        .def("__repr__", [](const LoopPeeling& t) {
+            std::ostringstream oss;
+            oss << "<LoopPeeling name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // VectorizeTransform transformation
+    py::class_<VectorizeTransform, Transformation>(m, "VectorizeTransform")
+        .def(
+            py::init<StructuredLoop&>(),
+            py::arg("loop"),
+            "Create a vectorize transformation.\n\n"
+            "Args:\n"
+            "    loop: The sequential loop to vectorize"
+        )
+        .def("__repr__", [](const VectorizeTransform& t) {
+            std::ostringstream oss;
+            oss << "<VectorizeTransform name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // InLocalStorage transformation (stage a read tile into local/shared storage)
+    py::class_<InLocalStorage, Transformation>(m, "InLocalStorage")
+        .def(
+            py::init([](StructuredLoop& loop,
+                        const sdfg::data_flow::AccessNode& access_node,
+                        const std::string& storage_type) {
+                sdfg::types::StorageType st = sdfg::types::StorageType::CPU_Stack();
+                if (storage_type == "NV_Shared") {
+                    st = sdfg::types::StorageType::NV_Shared();
+                } else if (storage_type == "CPU_Stack") {
+                    st = sdfg::types::StorageType::CPU_Stack();
+                } else {
+                    throw std::invalid_argument("Unsupported storage_type: " + storage_type);
+                }
+                return std::make_unique<InLocalStorage>(loop, access_node, st);
+            }),
+            py::arg("loop"),
+            py::arg("access_node"),
+            py::arg("storage_type") = "CPU_Stack",
+            "Create an in-local-storage transformation (stage a read tile).\n\n"
+            "Args:\n"
+            "    loop: The loop defining the localization scope\n"
+            "    access_node: The access node for the container to localize\n"
+            "    storage_type: 'CPU_Stack' (registers) or 'NV_Shared' (shared memory)"
+        )
+        .def("__repr__", [](const InLocalStorage& t) {
+            std::ostringstream oss;
+            oss << "<InLocalStorage name='" << t.name() << "'>";
+            return oss.str();
+        });
+
     // Recorder class for recording transformation history
     py::class_<Recorder>(m, "Recorder")
         .def(py::init<>(), "Create an empty transformation recorder")
@@ -230,38 +333,11 @@ void register_transformations(py::module& m) {
                PyStructuredSDFGBuilder& builder,
                PyAnalysisManager& analysis_manager,
                bool skip_if_not_applicable) {
-                if (!transformation.can_be_applied(builder.builder(), analysis_manager.manager())) {
-                    if (!skip_if_not_applicable) {
-                        throw InvalidTransformationException(
-                            "Transformation " + transformation.name() + " cannot be applied."
-                        );
-                    }
-                    return false;
-                }
-
-                // Record the transformation
-                nlohmann::json desc;
-                transformation.to_json(desc);
-
-                // Enrich each subgraph loop entry with loop_level and map_stack_depth
-                if (desc.contains("subgraph")) {
-                    auto& loop_analysis = analysis_manager.manager().get<sdfg::analysis::LoopAnalysis>();
-                    for (auto& [key, value] : desc["subgraph"].items()) {
-                        if (!value.contains("element_id")) continue;
-                        auto element_id = value["element_id"].get<size_t>();
-                        auto* elem = builder.builder().find_element_by_id(element_id);
-                        if (sdfg::dyn_cast<sdfg::structured_control_flow::StructuredLoop*>(elem) == nullptr) continue;
-                        auto* loop = static_cast<sdfg::structured_control_flow::ControlFlowNode*>(elem);
-                        auto loop_info = loop_analysis.loop_info(loop);
-                        value["loop_info"] = loop_info_to_json(loop_info);
-                    }
-                }
-
-                self.history().push_back(desc);
-
-                // Apply the transformation
-                transformation.apply(builder.builder(), analysis_manager.manager());
-                return true;
+                // Delegate to the C++ ``record`` so the virtual ``enrich`` hook
+                // runs: the base Recorder attaches ``loop_info`` and subclasses
+                // such as EmbeddingRecorder additionally attach node embeddings.
+                return self
+                    .record(transformation, builder.builder(), analysis_manager.manager(), skip_if_not_applicable);
             },
             py::arg("transformation"),
             py::arg("builder"),

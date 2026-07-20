@@ -126,7 +126,8 @@ TEST_F(RPCLoopOptTest, Matmul_FMA) {
     auto& loop_analysis = analysis_manager.get<sdfg::analysis::LoopAnalysis>();
     auto outer_loops = loop_analysis.outermost_loops();
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"rpc"}, nullptr);
+    passes::scheduler::LoopSchedulingPass
+        loop_scheduling_pass({passes::scheduler::SchedulerRegistry::instance().get_loop_scheduler("rpc")}, nullptr);
     loop_scheduling_pass.run(*builder_, analysis_manager);
 
     sdfg::analysis::AnalysisManager test_analysis_manager(builder_->subject());
@@ -172,7 +173,8 @@ TEST_F(RPCLoopOptTest, Double_Matmul) {
 
     EXPECT_EQ(outer_loops.size(), 2);
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"rpc"}, nullptr);
+    passes::scheduler::LoopSchedulingPass
+        loop_scheduling_pass({passes::scheduler::SchedulerRegistry::instance().get_loop_scheduler("rpc")}, nullptr);
     loop_scheduling_pass.run(*builder_, analysis_manager);
 
     sdfg::analysis::AnalysisManager test_analysis_manager(builder_->subject());
@@ -330,11 +332,16 @@ protected:
                 auto& bi = resp_builder.add_access(blk, "B");
                 auto& ci = resp_builder.add_access(blk, "C");
                 auto& co = resp_builder.add_access(blk, "C");
-                auto& t = resp_builder.add_tasklet(blk, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
-                resp_builder.add_computational_memlet(blk, ai, t, "_in1", {symbolic::symbol("i"), symbolic::symbol("j")});
-                resp_builder.add_computational_memlet(blk, bi, t, "_in2", {symbolic::symbol("j"), symbolic::symbol("k")});
-                resp_builder.add_computational_memlet(blk, ci, t, "_in3", {symbolic::symbol("i"), symbolic::symbol("k")});
-                resp_builder.add_computational_memlet(blk, t, "_out", co, {symbolic::symbol("i"), symbolic::symbol("k")});
+                auto& t =
+                    resp_builder.add_tasklet(blk, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+                resp_builder
+                    .add_computational_memlet(blk, ai, t, "_in1", {symbolic::symbol("i"), symbolic::symbol("j")});
+                resp_builder
+                    .add_computational_memlet(blk, bi, t, "_in2", {symbolic::symbol("j"), symbolic::symbol("k")});
+                resp_builder
+                    .add_computational_memlet(blk, ci, t, "_in3", {symbolic::symbol("i"), symbolic::symbol("k")});
+                resp_builder
+                    .add_computational_memlet(blk, t, "_out", co, {symbolic::symbol("i"), symbolic::symbol("k")});
             }
 
             // Child 3: simulated D2H block
@@ -351,21 +358,14 @@ protected:
 
         // Build RPC context from env vars (same mechanism as test.cpp main)
         passes::rpc::SimpleRpcContextBuilder ctx_builder;
-        auto test_ctx = ctx_builder
-                            .initialize_local_default()
-                            .from_env()
-                            .from_header_env()
-                            .build();
+        auto test_ctx = ctx_builder.initialize_local_default().from_env().from_header_env().build();
 
         // Register scheduler under a test-specific key
         passes::scheduler::SchedulerRegistry::instance()
-            .register_loop_scheduler<passes::rpc::RPCScheduler>(
-                target_key_, test_ctx, "sequential", "server", false);
+            .register_loop_scheduler<passes::rpc::RPCScheduler>(target_key_, test_ctx, "sequential", "server", false);
     }
 
-    void TearDown() override {
-        unsetenv("RPC_HEADER");
-    }
+    void TearDown() override { unsetenv("RPC_HEADER"); }
 };
 
 TEST_F(RPCLoopOptMoveChildrenTest, MoveAllChildrenFromRPCResult) {
@@ -373,7 +373,8 @@ TEST_F(RPCLoopOptMoveChildrenTest, MoveAllChildrenFromRPCResult) {
 
     // Run the scheduling pass through the full pipeline
     analysis::AnalysisManager analysis_manager(builder_->subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({target_key_}, nullptr);
+    passes::scheduler::LoopSchedulingPass
+        loop_scheduling_pass({passes::scheduler::SchedulerRegistry::instance().get_loop_scheduler(target_key_)}, nullptr);
     loop_scheduling_pass.run(*builder_, analysis_manager);
 
     // After the pass: the single map should be replaced by all 3 children from the response

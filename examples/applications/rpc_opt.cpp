@@ -17,6 +17,7 @@
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/loop_scheduling_pass.h"
+#include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/transformations/rpc_node_transform.h"
 
@@ -180,7 +181,8 @@ int main(int argc, char* argv[]) {
 
     passes::rpc::register_rpc_loop_opt(std::move(ctx), target, category, true);
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"rpc"}, nullptr);
+    passes::scheduler::LoopSchedulingPass
+        loop_scheduling_pass({passes::scheduler::SchedulerRegistry::instance().get_loop_scheduler("rpc")}, nullptr);
     loop_scheduling_pass.run(*builder, analysis_manager);
 
     // generate code for tuned sdfg

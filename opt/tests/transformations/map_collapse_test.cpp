@@ -957,14 +957,23 @@ TEST(MapCollapseTest, Apply_2D_WithComputation) {
     EXPECT_EQ(body_block->dataflow().in_degree(*t_node), 1);
     EXPECT_EQ(body_block->dataflow().out_degree(*t_node), 1);
 
-    // Verify memlet subsets still reference i*M + j
+    // Verify memlet subsets are inlined to the collapsed induction variable.
+    // MapCollapse now substitutes the recovered induction variables (i -> civ / M,
+    // j -> civ % M) directly into the memlet subsets so downstream analyses see the
+    // relation to civ without needing a separate SymbolPropagation pass. The transition
+    // assignments verified above are still kept as a fallback.
+    symbolic::ExpressionMapping recovery;
+    recovery[i] = symbolic::div(civ, M);
+    recovery[j] = symbolic::mod(civ, M);
+    auto expected_index = symbolic::subs(index_expr, recovery);
+
     EXPECT_EQ((*in_edges.begin()).subset().size(), 1);
-    EXPECT_TRUE(symbolic::eq((*in_edges.begin()).subset()[0], index_expr))
-        << "Input memlet subset must still be i*M + j";
+    EXPECT_TRUE(symbolic::eq((*in_edges.begin()).subset()[0], expected_index))
+        << "Input memlet subset must be inlined to (civ / M) * M + civ % M";
 
     EXPECT_EQ((*out_edges.begin()).subset().size(), 1);
-    EXPECT_TRUE(symbolic::eq((*out_edges.begin()).subset()[0], index_expr))
-        << "Output memlet subset must still be i*M + j";
+    EXPECT_TRUE(symbolic::eq((*out_edges.begin()).subset()[0], expected_index))
+        << "Output memlet subset must be inlined to (civ / M) * M + civ % M";
 }
 
 // ---------------------------------------------------------------------------
@@ -1112,13 +1121,23 @@ TEST(MapCollapseTest, Apply_4D_WithComputation_CollapsePairs) {
     EXPECT_EQ(final_block->dataflow().in_degree(*t_node), 1);
     EXPECT_EQ(final_block->dataflow().out_degree(*t_node), 1);
 
+    // Both collapses inline their recovered induction variables into the memlet subsets:
+    //   i -> civ_ij / M, j -> civ_ij % M   (first collapse)
+    //   k -> civ_kl / Q, l -> civ_kl % Q   (second collapse)
+    symbolic::ExpressionMapping recovery;
+    recovery[i] = symbolic::div(civ_ij, M);
+    recovery[j] = symbolic::mod(civ_ij, M);
+    recovery[k] = symbolic::div(civ_kl, Q);
+    recovery[l] = symbolic::mod(civ_kl, Q);
+    auto expected_index = symbolic::subs(index_expr, recovery);
+
     EXPECT_EQ((*in_edges.begin()).subset().size(), 1);
-    EXPECT_TRUE(symbolic::eq((*in_edges.begin()).subset()[0], index_expr))
-        << "Input memlet subset must still be i*M*P*Q + j*P*Q + k*Q + l";
+    EXPECT_TRUE(symbolic::eq((*in_edges.begin()).subset()[0], expected_index))
+        << "Input memlet subset must be inlined in terms of civ_ij and civ_kl";
 
     EXPECT_EQ((*out_edges.begin()).subset().size(), 1);
-    EXPECT_TRUE(symbolic::eq((*out_edges.begin()).subset()[0], index_expr))
-        << "Output memlet subset must still be i*M*P*Q + j*P*Q + k*Q + l";
+    EXPECT_TRUE(symbolic::eq((*out_edges.begin()).subset()[0], expected_index))
+        << "Output memlet subset must be inlined in terms of civ_ij and civ_kl";
 }
 
 // ---------------------------------------------------------------------------
@@ -2082,4 +2101,278 @@ TEST(MapCollapseTest, CannotApply_Imperfect_WriteWriteConflict) {
     analysis::AnalysisManager am(builder.subject());
     transformations::MapCollapse t(outer, 2);
     EXPECT_FALSE(t.can_be_applied(builder, am));
+}
+
+// ---------------------------------------------------------------------------
+// Inlining of recovered induction variables (no SymbolPropagation required)
+// ---------------------------------------------------------------------------
+
+TEST(MapCollapseTest, Apply_2D_InlinesRecoveredIndvars) {
+    // A[i][j] read/write with subset {i, j}. After collapse the subsets must be
+    // inlined directly to {civ / M, civ % M}, while the recovery transition is kept
+    // as a fallback.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(float_desc);
+    types::Pointer opaque_desc;
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // A[i][j] = A[i][j]  (2D subset)
+    auto& block = builder.add_block(inner.root());
+    auto& A_in = builder.add_access(block, "A");
+    auto& A_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, A_in, tasklet, "_in", {i, j}, ptr_desc);
+    builder.add_computational_memlet(block, tasklet, "_out", A_out, {i, j}, ptr_desc);
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    ASSERT_TRUE(t.can_be_applied(builder, am));
+    t.apply(builder, am);
+
+    auto* collapsed = t.collapsed_loop();
+    ASSERT_NE(collapsed, nullptr);
+    auto civ = collapsed->indvar();
+
+    // Fallback: the recovery transition still defines i and j.
+    const auto& asgn = collapsed->root().at(0).second.assignments();
+    ASSERT_TRUE(asgn.count(i));
+    ASSERT_TRUE(asgn.count(j));
+    EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ, M)));
+    EXPECT_TRUE(symbolic::eq(asgn.at(j), symbolic::mod(civ, M)));
+
+    // Subsets are inlined: {i, j} -> {civ / M, civ % M}, no reference to i or j remains.
+    auto* body_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first);
+    ASSERT_NE(body_block, nullptr);
+    auto* t_node = *body_block->dataflow().tasklets().begin();
+    const auto& in_subset = (*body_block->dataflow().in_edges(*t_node).begin()).subset();
+    const auto& out_subset = (*body_block->dataflow().out_edges(*t_node).begin()).subset();
+
+    ASSERT_EQ(in_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(in_subset[0], symbolic::div(civ, M)));
+    EXPECT_TRUE(symbolic::eq(in_subset[1], symbolic::mod(civ, M)));
+    EXPECT_FALSE(symbolic::uses(in_subset[0], i));
+    EXPECT_FALSE(symbolic::uses(in_subset[1], j));
+
+    ASSERT_EQ(out_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(out_subset[0], symbolic::div(civ, M)));
+    EXPECT_TRUE(symbolic::eq(out_subset[1], symbolic::mod(civ, M)));
+}
+
+TEST(MapCollapseTest, Apply_2D_KeepsTransitionAsFallbackForAccessNodeContainer) {
+    // When an induction variable is used as an access-node *container* (data) name it
+    // cannot be replaced by a complex expression: AccessNode::replace only renames
+    // symbol->symbol. The container reference must therefore be left untouched and the
+    // recovery transition kept so the value is still defined. Memlet subsets in the same
+    // block are still inlined normally.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(float_desc);
+    types::Pointer opaque_desc;
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // A[j] = i  — reads the induction variable 'i' as a *container* (data), writes A[j].
+    auto& block = builder.add_block(inner.root());
+    auto& i_in = builder.add_access(block, "i");
+    auto& A_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, i_in, tasklet, "_in", {}, sym_desc);
+    builder.add_computational_memlet(block, tasklet, "_out", A_out, {j}, ptr_desc);
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    ASSERT_TRUE(t.can_be_applied(builder, am));
+    t.apply(builder, am);
+
+    auto* collapsed = t.collapsed_loop();
+    ASSERT_NE(collapsed, nullptr);
+    auto civ = collapsed->indvar();
+
+    // Fallback retained: recovery transition still defines i (needed by the access node).
+    const auto& asgn = collapsed->root().at(0).second.assignments();
+    ASSERT_TRUE(asgn.count(i));
+    EXPECT_TRUE(symbolic::eq(asgn.at(i), symbolic::div(civ, M)));
+
+    auto* body_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first);
+    ASSERT_NE(body_block, nullptr);
+    auto* t_node = *body_block->dataflow().tasklets().begin();
+
+    // The access-node container is NOT rewritten (still "i") — complex expressions cannot
+    // be a container name.
+    auto& in_src = (*body_block->dataflow().in_edges(*t_node).begin()).src();
+    auto* in_access = dyn_cast<data_flow::AccessNode>(&in_src);
+    ASSERT_NE(in_access, nullptr);
+    EXPECT_EQ(in_access->data(), "i") << "Induction variable used as a container must not be inlined";
+
+    // The ordinary subset {j} is still inlined to civ % M.
+    const auto& out_subset = (*body_block->dataflow().out_edges(*t_node).begin()).subset();
+    ASSERT_EQ(out_subset.size(), 1u);
+    EXPECT_TRUE(symbolic::eq(out_subset[0], symbolic::mod(civ, M)));
+}
+
+TEST(MapCollapseTest, Apply_Imperfect_InlinesRecoveredIndvars) {
+    // Imperfect (CUDA-style) collapse: outer map i with a skipped block referencing i and a
+    // collapsible inner map j whose body references i and j. After collapse the subsets must
+    // be inlined to the collapsed index (i -> civ / M, j -> civ % M) without SymbolPropagation.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(float_desc);
+    types::Pointer opaque_desc;
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("B", opaque_desc, true);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Skipped block: B[i] = B[i]  (replicated on every inner thread; references i only).
+    auto& skipped = builder.add_block(outer.root());
+    {
+        auto& b_in = builder.add_access(skipped, "B");
+        auto& b_out = builder.add_access(skipped, "B");
+        auto& tk = builder.add_tasklet(skipped, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(skipped, b_in, tk, "_in", {i}, ptr_desc);
+        builder.add_computational_memlet(skipped, tk, "_out", b_out, {i}, ptr_desc);
+    }
+
+    // Collapsible inner map j: A[i*M + j] = A[i*M + j].
+    auto& map_j = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto index_expr = symbolic::add(symbolic::mul(i, M), j);
+    auto& inner_block = builder.add_block(map_j.root());
+    auto& a_in = builder.add_access(inner_block, "A");
+    auto& a_out = builder.add_access(inner_block, "A");
+    auto& inner_tk = builder.add_tasklet(inner_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(inner_block, a_in, inner_tk, "_in", {index_expr}, ptr_desc);
+    builder.add_computational_memlet(inner_block, inner_tk, "_out", a_out, {index_expr}, ptr_desc);
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    ASSERT_TRUE(t.can_be_applied(builder, am));
+    t.apply(builder, am);
+
+    auto* collapsed = t.collapsed_loop();
+    ASSERT_NE(collapsed, nullptr);
+    auto civ = collapsed->indvar();
+    // For a single collapsible inner map the inner extent is its bound M.
+    auto expected_i = symbolic::div(civ, M);
+    auto expected_j = symbolic::mod(civ, M);
+
+    // Fallback: outer recovery transition still defines i.
+    const auto& outer_asgn = collapsed->root().at(0).second.assignments();
+    ASSERT_TRUE(outer_asgn.count(i));
+    EXPECT_TRUE(symbolic::eq(outer_asgn.at(i), expected_i));
+
+    // Skipped block (index 1): B[i] -> B[civ / M].
+    auto* skipped_block = dyn_cast<structured_control_flow::Block*>(&collapsed->root().at(1).first);
+    ASSERT_NE(skipped_block, nullptr);
+    auto* skipped_tk = *skipped_block->dataflow().tasklets().begin();
+    const auto& skipped_subset = (*skipped_block->dataflow().in_edges(*skipped_tk).begin()).subset();
+    ASSERT_EQ(skipped_subset.size(), 1u);
+    EXPECT_TRUE(symbolic::eq(skipped_subset[0], expected_i));
+    EXPECT_FALSE(symbolic::uses(skipped_subset[0], i));
+
+    // Guarded inner map (index 2): A[i*M + j] -> A[(civ/M)*M + civ%M].
+    auto* guard = dyn_cast<structured_control_flow::IfElse*>(&collapsed->root().at(2).first);
+    ASSERT_NE(guard, nullptr);
+    auto& branch = guard->at(0).first;
+    // Branch: [recovery block (j = t), inner block].
+    auto* guarded_block = dyn_cast<structured_control_flow::Block*>(&branch.at(1).first);
+    ASSERT_NE(guarded_block, nullptr);
+    auto* guarded_tk = *guarded_block->dataflow().tasklets().begin();
+    const auto& guarded_subset = (*guarded_block->dataflow().in_edges(*guarded_tk).begin()).subset();
+
+    symbolic::ExpressionMapping recovery;
+    recovery[i] = expected_i;
+    recovery[j] = expected_j;
+    auto expected_index = symbolic::subs(index_expr, recovery);
+
+    ASSERT_EQ(guarded_subset.size(), 1u);
+    EXPECT_TRUE(symbolic::eq(guarded_subset[0], expected_index));
+    EXPECT_FALSE(symbolic::uses(guarded_subset[0], i));
+    EXPECT_FALSE(symbolic::uses(guarded_subset[0], j));
 }

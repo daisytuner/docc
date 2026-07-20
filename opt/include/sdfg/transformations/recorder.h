@@ -64,32 +64,28 @@ public:
     virtual ~Recorder() = default;
 
     /**
-     * @brief Apply a transformation and record it
+     * @brief Apply an already-constructed transformation and record it.
      *
-     * @tparam T The transformation type (must satisfy transformation_concept)
-     * @tparam Args Argument types for transformation constructor
-     * @param builder The SDFG builder
-     * @param analysis_manager The analysis manager
-     * @param skip_if_not_applicable If true, skip instead of throwing on failure
-     * @param args Arguments forwarded to transformation constructor
-     * @throws InvalidTransformationException if transformation cannot be applied and skip_if_not_applicable is false
+     * The single implementation of the record-and-apply flow: check
+     * applicability, serialize, run the virtual ``enrich`` hook, append to the history and
+     * apply. The templated ``apply`` overload is a thin constructor-forwarding
+     * wrapper around this.
+     *
+     * @return true if applied, false if skipped (not applicable).
+     * @throws InvalidTransformationException if not applicable and not skipped.
      */
-    template<typename T, typename... Args>
-        requires transformation_concept<T>
-    void apply(
+    bool record(
+        Transformation& transformation,
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
-        bool skip_if_not_applicable,
-        Args&&... args
+        bool skip_if_not_applicable = false
     ) {
-        T transformation(std::forward<Args>(args)...);
-
         if (!transformation.can_be_applied(builder, analysis_manager)) {
             if (!skip_if_not_applicable) {
                 throw transformations::
                     InvalidTransformationException("Transformation " + transformation.name() + " cannot be applied.");
             }
-            return;
+            return false;
         }
 
         nlohmann::json desc;
@@ -103,11 +99,33 @@ public:
             );
         }
 #endif
+
         this->enrich(desc, builder, analysis_manager);
-
         history_.push_back(desc);
-
         transformation.apply(builder, analysis_manager);
+        return true;
+    }
+
+    /**
+     * @brief Construct a transformation from ``args`` and record it.
+     *
+     * Convenience wrapper around ``record`` for call sites that hold the
+     * transformation's constructor arguments rather than a built object.
+     *
+     * @tparam T The transformation type (must satisfy transformation_concept)
+     * @tparam Args Argument types for transformation constructor
+     * @throws InvalidTransformationException if not applicable and not skipped.
+     */
+    template<typename T, typename... Args>
+        requires transformation_concept<T>
+    void apply(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        bool skip_if_not_applicable,
+        Args&&... args
+    ) {
+        T transformation(std::forward<Args>(args)...);
+        this->record(transformation, builder, analysis_manager, skip_if_not_applicable);
     };
 
     /**

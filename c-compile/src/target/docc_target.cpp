@@ -6,6 +6,10 @@
 #include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_rewriter_pass.h"
+#include "sdfg/passes/scheduler/cuda_scheduler.h"
+#include "sdfg/passes/scheduler/omp_scheduler.h"
+#include "sdfg/passes/scheduler/rocm_scheduler.h"
+#include "sdfg/passes/scheduler/vectorize_scheduler.h"
 
 namespace docc::target {
 
@@ -37,6 +41,12 @@ static DoccTarget cuda_target = {
                                    const TargetOptions& options) -> bool {
         sdfg::cuda::CudaLibraryNodeRewriterPass cuda_pass;
         return cuda_pass.run(builder, analysis_manager);
+    },
+    .get_target_loop_schedulers = [](const TargetOptions& options
+                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
+        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::CUDAScheduler>());
+        return schedulers;
     }
 };
 
@@ -79,12 +89,35 @@ static DoccTarget rocm_target = {
                                    const TargetOptions& options) -> bool {
         sdfg::rocm::RocmLibraryNodeRewriterPass rocm_pass;
         return rocm_pass.run(builder, analysis_manager);
+    },
+    .get_target_loop_schedulers = [](const TargetOptions& options
+                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
+        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::ROCMScheduler>());
+        return schedulers;
     }
 };
 
-static DoccTarget sequential_target = {.short_name = "sequential"};
+static DoccTarget sequential_target = {
+    .short_name = "sequential",
+    .get_target_loop_schedulers = [](const TargetOptions& options
+                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
+        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::VectorizeScheduler>());
+        return schedulers;
+    }
+};
 
-static DoccTarget openmp_target = {.short_name = "openmp"};
+static DoccTarget openmp_target = {
+    .short_name = "openmp",
+    .get_target_loop_schedulers = [](const TargetOptions& options
+                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
+        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::OMPScheduler>());
+        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::VectorizeScheduler>());
+        return schedulers;
+    }
+};
 
 /**
  * Temporary workaround. Ideally, these should live with the plugins themselves.
