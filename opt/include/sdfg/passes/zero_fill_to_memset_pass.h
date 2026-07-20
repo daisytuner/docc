@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/memory_layout_analysis.h"
 #include "sdfg/passes/pass.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -56,6 +57,7 @@ private:
     builder::StructuredSDFGBuilder& builder_;
     ZeroFillToMemsetPass::State& state_;
     analysis::MemoryLayoutAnalysis& memory_layout_analysis_;
+    analysis::LoopAnalysis& loop_analysis_;
     std::vector<Candidate> candidates_;
 
     bool match(structured_control_flow::Map& node, Candidate& candidate);
@@ -64,7 +66,8 @@ public:
     ZeroFillToMemsetVisitor(
         builder::StructuredSDFGBuilder& builder,
         ZeroFillToMemsetPass::State& state,
-        analysis::MemoryLayoutAnalysis& memory_layout_analysis
+        analysis::MemoryLayoutAnalysis& memory_layout_analysis,
+        analysis::LoopAnalysis& loop_analysis
     );
 
     bool visit(structured_control_flow::Map& node) override;

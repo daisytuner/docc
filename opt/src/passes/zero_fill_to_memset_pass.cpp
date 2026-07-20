@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/memory_layout_analysis.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
@@ -118,17 +119,30 @@ static bool covers_full_container(const analysis::MemoryTile& tile, const std::v
 ZeroFillToMemsetVisitor::ZeroFillToMemsetVisitor(
     builder::StructuredSDFGBuilder& builder,
     ZeroFillToMemsetPass::State& state,
-    analysis::MemoryLayoutAnalysis& memory_layout_analysis
+    analysis::MemoryLayoutAnalysis& memory_layout_analysis,
+    analysis::LoopAnalysis& loop_analysis
 )
-    : builder_(builder), state_(state), memory_layout_analysis_(memory_layout_analysis) {}
+    : builder_(builder), state_(state), memory_layout_analysis_(memory_layout_analysis), loop_analysis_(loop_analysis) {
+}
 
 bool ZeroFillToMemsetVisitor::match(structured_control_flow::Map& node, Candidate& candidate) {
-    // Walk the perfect nest of Maps, collecting the exclusive upper bounds.
+    // The nest must be a perfect stack consisting solely of Maps. LoopAnalysis decides this:
+    // `is_perfectly_nested` guarantees every level holds exactly one child loop (a single
+    // linear chain), and `num_maps == num_loops` guarantees each of those loops is a Map.
+    // This gives a finite nesting depth to iterate over instead of an open-ended walk.
+    const analysis::LoopInfo info = loop_analysis_.loop_info(&node);
+    if (!info.is_perfectly_nested || info.num_loops == 0 || info.num_loops != info.num_maps) {
+        return false;
+    }
+    const size_t depth = info.num_loops;
+
+    // Walk the (now bounded) perfect nest of Maps, collecting the exclusive upper bounds.
     std::vector<symbolic::Expression> bounds;
+    bounds.reserve(depth);
 
     structured_control_flow::StructuredLoop* loop = &node;
     structured_control_flow::Block* terminal = nullptr;
-    while (true) {
+    for (size_t level = 0; level < depth; level++) {
         // Each loop must be a normalized [0, bound) unit-stride loop.
         if (!symbolic::eq(loop->init(), symbolic::zero()) || !loop->is_contiguous()) {
             return false;
@@ -139,8 +153,9 @@ bool ZeroFillToMemsetVisitor::match(structured_control_flow::Map& node, Candidat
         }
         bounds.push_back(bound);
 
+        // Perfect nesting guarantees a single child; additionally reject transitions that
+        // carry symbol assignments, which the loop analysis does not consider.
         auto& body = loop->root();
-        // A perfect nest: the body contains exactly the next nesting level.
         if (body.size() != 1) {
             return false;
         }
@@ -150,14 +165,22 @@ bool ZeroFillToMemsetVisitor::match(structured_control_flow::Map& node, Candidat
         }
 
         auto& child = entry.first;
-        if (auto* inner_map = dynamic_cast<structured_control_flow::Map*>(&child)) {
+        if (level + 1 < depth) {
+            // Intermediate level: the single child is the next Map in the chain.
+            auto* inner_map = dynamic_cast<structured_control_flow::Map*>(&child);
+            if (inner_map == nullptr) {
+                return false;
+            }
             loop = inner_map;
-            continue;
+        } else {
+            // Innermost level: the single child is the terminal computation block.
+            terminal = dynamic_cast<structured_control_flow::Block*>(&child);
+            if (terminal == nullptr) {
+                return false;
+            }
         }
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&child)) {
-            terminal = block;
-            break;
-        }
+    }
+    if (terminal == nullptr) {
         return false;
     }
 
@@ -276,8 +299,9 @@ bool ZeroFillToMemsetPass::run_pass(builder::StructuredSDFGBuilder& builder, ana
     State state;
 
     auto& memory_layout_analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
-    ZeroFillToMemsetVisitor visitor(builder, state, memory_layout_analysis);
+    ZeroFillToMemsetVisitor visitor(builder, state, memory_layout_analysis, loop_analysis);
     visitor.dispatch(builder.subject().root());
     visitor.apply();
 

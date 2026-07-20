@@ -44,6 +44,7 @@
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/passes/symbolic/type_minimization.h>
+#include <sdfg/passes/zero_fill_to_memset_pass.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
@@ -360,6 +361,9 @@ void PyStructuredSDFG::simplify() {
     // normalize() map-fusion run so loop distribution and fusion do not fight)
     auto map_fusion = sdfg::passes::normalization::map_fusion(false);
     map_fusion.run(builder_opt, analysis_manager);
+
+    auto zero_fill_to_memset_pass = sdfg::passes::ZeroFillToMemsetPass();
+    zero_fill_to_memset_pass.run(builder_opt, analysis_manager);
 }
 
 constexpr bool DEBUG_SDFG_DUMPS = false;
