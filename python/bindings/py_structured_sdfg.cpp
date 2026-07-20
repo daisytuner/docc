@@ -361,9 +361,6 @@ void PyStructuredSDFG::simplify() {
     // normalize() map-fusion run so loop distribution and fusion do not fight)
     auto map_fusion = sdfg::passes::normalization::map_fusion(false);
     map_fusion.run(builder_opt, analysis_manager);
-
-    auto zero_fill_to_memset_pass = sdfg::passes::ZeroFillToMemsetPass();
-    zero_fill_to_memset_pass.run(builder_opt, analysis_manager);
 }
 
 constexpr bool DEBUG_SDFG_DUMPS = false;
@@ -455,6 +452,9 @@ void PyStructuredSDFG::normalize() {
         sdfg::passes::TaskletFusionPass task_fuse_pass;
         task_fuse_pass.run(builder, analysis_manager);
     }
+
+    auto zero_fill_to_memset_pass = sdfg::passes::ZeroFillToMemsetPass();
+    zero_fill_to_memset_pass.run(builder, analysis_manager);
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
