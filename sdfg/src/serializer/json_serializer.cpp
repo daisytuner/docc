@@ -715,6 +715,39 @@ void JSONSerializer::json_to_dataflow(
     }
 }
 
+control_flow::Assignments JSONSerializer::parse_assignments(const nlohmann::json& assignments_arr) {
+    assert(assignments_arr.is_array());
+
+    control_flow::Assignments assignments;
+    for (const auto& assignment : assignments_arr) {
+        assert(assignment.contains("symbol"));
+        assert(assignment["symbol"].is_string());
+        assert(assignment.contains("expression"));
+        assert(assignment["expression"].is_string());
+        auto expr = symbolic::parse(assignment["expression"].get<std::string>());
+        assignments.insert({symbolic::symbol(assignment["symbol"]), expr});
+    }
+
+    return std::move(assignments);
+}
+
+void JSONSerializer::parse_legacy_transition_to_assignment_block(
+    const nlohmann::json& j,
+    sdfg::builder::StructuredSDFGBuilder& builder,
+    sdfg::structured_control_flow::Sequence& parent
+) {
+    assert(j.contains("type"));
+    assert(j["type"].is_string());
+    assert(j["type"] == "transition");
+    assert(j.contains("assignments"));
+    auto& assignments_arr = j["assignments"];
+
+    auto assignments = parse_assignments(assignments_arr);
+
+    auto& block = builder.add_assignments(parent, assignments, json_to_debug_info(j["debug_info"]));
+    block.element_id_ = j["element_id"];
+}
+
 void JSONSerializer::json_to_sequence(
     const nlohmann::json& j, builder::StructuredSDFGBuilder& builder, structured_control_flow::Sequence& sequence
 ) {
@@ -722,13 +755,28 @@ void JSONSerializer::json_to_sequence(
     assert(j["type"].is_string());
     assert(j.contains("children"));
     assert(j["children"].is_array());
+    auto child_count = j["children"].size();
 
     sequence.element_id_ = j["element_id"];
     sequence.debug_info_ = json_to_debug_info(j["debug_info"]);
 
     std::string type = j["type"];
     if (type == "sequence") {
-        for (size_t i = 0; i < j["children"].size(); i++) {
+        auto transition_it = j.find("transitions");
+        const nlohmann::json* transition_arr = nullptr;
+        if (transition_it != j.end()) {
+            auto& transitions = *transition_it;
+            if (transitions.is_array() && transitions.size() == child_count) {
+                transition_arr = &transitions;
+            } else {
+                throw std::runtime_error(
+                    "Contains legacy transitions, but count differs from chil count: " +
+                    std::to_string(transitions.size()) + " vs. " + std::to_string(child_count)
+                );
+            }
+        }
+
+        for (size_t i = 0; i < child_count; i++) {
             auto& child = j["children"][i];
 
             auto child_type = child["type"];
@@ -753,6 +801,13 @@ void JSONSerializer::json_to_sequence(
                 json_to_sequence(child, builder, subseq);
             } else {
                 throw std::runtime_error("Unknown child type");
+            }
+
+            if (transition_arr) {
+                // parses the transition after having already added its element
+                // will then add the Transitions as a AssignmentBlock instead
+                // keeps the original order of instructions, but changes sequence element count
+                parse_legacy_transition_to_assignment_block(transition_arr->at(i), builder, sequence);
             }
         }
     } else {
@@ -791,15 +846,7 @@ void JSONSerializer::json_to_assignment_block(
     auto assignments_arr = j["assignments"];
     assert(assignments_arr.is_array());
 
-    control_flow::Assignments assignments;
-    for (const auto& assignment : assignments_arr) {
-        assert(assignment.contains("symbol"));
-        assert(assignment["symbol"].is_string());
-        assert(assignment.contains("expression"));
-        assert(assignment["expression"].is_string());
-        auto expr = symbolic::parse(assignment["expression"].get<std::string>());
-        assignments.insert({symbolic::symbol(assignment["symbol"]), expr});
-    }
+    control_flow::Assignments assignments = parse_assignments(assignments_arr);
 
     auto& block = builder.add_assignments(parent, assignments, json_to_debug_info(j["debug_info"]));
     block.element_id_ = j["element_id"];

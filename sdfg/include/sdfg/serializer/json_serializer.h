@@ -79,6 +79,14 @@ public:
         sdfg::structured_control_flow::Block& parent
     );
 
+    control_flow::Assignments parse_assignments(const nlohmann::json& assignments_arr);
+
+    void parse_legacy_transition_to_assignment_block(
+        const nlohmann::json& j,
+        sdfg::builder::StructuredSDFGBuilder& builder,
+        sdfg::structured_control_flow::Sequence& parent
+    );
+
     void json_to_sequence(
         const nlohmann::json& j,
         sdfg::builder::StructuredSDFGBuilder& builder,

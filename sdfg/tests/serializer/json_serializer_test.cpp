@@ -2008,3 +2008,119 @@ TEST(JSONSerializerTest, SerializeDeserialize_LibraryNode) {
     EXPECT_TRUE(dynamic_cast<data_flow::BarrierLocalNode*>(&lib_node_new));
     auto barrier_local_node = dynamic_cast<data_flow::BarrierLocalNode*>(&lib_node_new);
 }
+
+TEST(JsonSerializerTest, DeseríalizeLegacyTransitions) {
+    std::string json_str = R"a(
+{
+    "children": [
+        {
+            "dataflow": {
+                "edges": [],
+                "nodes": [],
+                "type": "dataflow"
+            },
+            "debug_info": {
+                "end_column": 38,
+                "end_line": 39,
+                "filename": "",
+                "function": "init_array",
+                "has": true,
+                "start_column": 38,
+                "start_line": 39
+            },
+            "element_id": 69,
+            "type": "block"
+        },
+        {
+            "dataflow": {
+                "edges": [],
+                "nodes": [],
+                "type": "dataflow"
+            },
+            "debug_info": {
+                "end_column": 38,
+                "end_line": 39,
+                "filename": "",
+                "function": "init_array",
+                "has": true,
+                "start_column": 38,
+                "start_line": 39
+            },
+            "element_id": 69,
+            "type": "block"
+        }
+    ],
+    "debug_info": {
+        "end_column": 15,
+        "end_line": 39,
+        "filename": "",
+        "function": "",
+        "has": true,
+        "start_column": 19,
+        "start_line": 38
+    },
+    "element_id": 1392,
+    "transitions": [
+        {
+            "assignments": [
+                {
+                    "expression": "1 + trunc_i32(_7*_12)",
+                    "symbol": "_17"
+                }
+            ],
+            "debug_info": {
+                "end_column": 38,
+                "end_line": 39,
+                "filename": "",
+                "function": "init_array",
+                "has": true,
+                "start_column": 38,
+                "start_line": 39
+            },
+            "element_id": 70,
+            "type": "transition"
+        },
+        {
+            "assignments": [],
+            "debug_info": {
+                "end_column": 38,
+                "end_line": 39,
+                "filename": "",
+                "function": "init_array",
+                "has": true,
+                "start_column": 38,
+                "start_line": 39
+            },
+            "element_id": 77,
+            "type": "transition"
+        }
+    ],
+    "type": "sequence"
+}
+)a";
+
+    nlohmann::json j = nlohmann::json::parse(json_str);
+
+    serializer::JSONSerializer ser;
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    ser.json_to_sequence(j, builder, builder.subject().root());
+
+    auto& root_seq = builder.subject().root();
+    EXPECT_EQ(root_seq.size(), 4);
+
+    EXPECT_TRUE(dyn_cast<Block*>(&root_seq.at(0)));
+    EXPECT_TRUE(dyn_cast<Block*>(&root_seq.at(2)));
+    auto& recovered_transition1 = root_seq.at(1);
+    auto& recovered_transition2 = root_seq.at(3);
+    auto assignBlock1 = dyn_cast<AssignmentBlock*>(&recovered_transition1);
+    EXPECT_TRUE(assignBlock1);
+    EXPECT_EQ(assignBlock1->element_id(), 70);
+    EXPECT_EQ(assignBlock1->size(), 1);
+    auto s = symbolic::symbol("_17");
+    auto expr = assignBlock1->assignments().at(s);
+    EXPECT_TRUE(symbolic::null_safe_eq(expr, symbolic::parse("1 + trunc_i32(_7*_12)")));
+    auto assignBlock2 = dyn_cast<AssignmentBlock*>(&recovered_transition2);
+    EXPECT_TRUE(assignBlock2);
+    EXPECT_EQ(assignBlock2->element_id(), 77);
+    EXPECT_EQ(assignBlock2->size(), 0);
+}
