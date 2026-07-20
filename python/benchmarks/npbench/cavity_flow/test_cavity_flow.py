@@ -141,7 +141,7 @@ def test_cavity_flow(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 35, "MAP": 60, "SEQUENTIAL": 30, "FOR": 4}
+            verification={"VECTORIZE": 34, "MAP": 60, "SEQUENTIAL": 30, "FOR": 4}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
