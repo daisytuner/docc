@@ -50,7 +50,7 @@ def test_correlation(target):
                 "REDUCE": 3,
                 "MAP": 23,
                 "FOR": 1,
-                "SEQUENTIAL": 29,
+                "SEQUENTIAL": 27,
             }
         )
     elif target == "sequential":

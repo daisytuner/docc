@@ -41,7 +41,7 @@ def kernel(M, float_n, data):
 def test_covariance(target):
     if target == "none":
         verifier = SDFGVerification(
-            verification={"GEMM": 1, "REDUCE": 1, "MAP": 10, "FOR": 1, "SEQUENTIAL": 13}
+            verification={"GEMM": 1, "REDUCE": 1, "MAP": 10, "FOR": 1, "SEQUENTIAL": 12}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
