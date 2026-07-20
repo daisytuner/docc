@@ -457,6 +457,59 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
     } while (more_first || more_second);
 
     if (last_matched_level >= 0) {
+        // Commit-time RAW verification.
+        //
+        // The per-level check_ins_outs above only sees the access subsets that were recorded on the
+        // exact candidate levels being paired. When a shared container is produced/consumed by maps
+        // that live *below* the fused levels (i.e. in the un-fused remainder of the stacks), its
+        // subset is nullopt at the paired levels, so the per-level check cannot see a conflict.
+        //
+        // If the two stacks are only partially fused, such a producer-write / consumer-read pair is
+        // realized inside the un-fused inner loops. Co-nesting the fused levels is then only legal if,
+        // for every shared container, the element the producer writes in a fused iteration is exactly
+        // the one the consumer reads in that same iteration -- i.e. the full write/read subsets match
+        // under the achieved indvar mapping. Otherwise we would materialize a read-before-write
+        // (e.g. a layernorm -> transpose/reshape pair where the producer writes row-major but the
+        // consumer reads column-wise). Verify this using the subsets recorded anywhere in each stack.
+        auto collect_subsets = [&](structured_control_flow::Map& top, bool want_output) {
+            std::unordered_map<std::string, std::vector<data_flow::Subset>> out;
+            auto nodes = state_.loop_analysis->descendants(&top);
+            nodes.insert(&top);
+            for (auto* node : nodes) {
+                auto cand_it = state_.fuse_candidates.find(node->element_id());
+                if (cand_it == state_.fuse_candidates.end()) {
+                    continue;
+                }
+                for (auto& [name, arg] : cand_it->second->args) {
+                    if (!arg.subset.has_value()) {
+                        continue;
+                    }
+                    if (want_output ? arg.arg.is_output : arg.arg.is_input) {
+                        out[name].push_back(arg.subset.value());
+                    }
+                }
+            }
+            return out;
+        };
+
+        auto prod_writes = collect_subsets(first, /*want_output=*/true);
+        auto cons_reads = collect_subsets(second, /*want_output=*/false);
+        for (auto& [name, writes] : prod_writes) {
+            auto read_it = cons_reads.find(name);
+            if (read_it == cons_reads.end()) {
+                continue;
+            }
+            for (auto& write_subset : writes) {
+                for (auto& read_subset : read_it->second) {
+                    if (!symbolic::vectors_of_expressions_match(write_subset, read_subset, indvar_mapping)) {
+                        // Cannot prove the RAW dependency stays within a fused iteration -> unsafe to
+                        // fuse. Leave the stacks for the more granular normalization::map_fusion.
+                        return {};
+                    }
+                }
+            }
+        }
+
         DEBUG_PRINTLN(
             "Fusing map stack (" << last_matched_level + 1 << " lvls): #" << first.element_id() << " | #"
                                  << first_current->loop->element_id() << ", #" << second.element_id() << " | #"

@@ -2506,6 +2506,252 @@ TEST(MapFusionTest, Domain_2D_CrossDimensionDependency) {
         << "Cross-dimension dependencies with a unique linear solution should fuse";
 }
 
+TEST(MapFusionTest, Domain_2D_Transpose_Scalarized) {
+    // A transposed consumer read of an elementwise producer output IS legal to fuse,
+    // because MapFusion SCALARIZES the intermediate: the consumer's T[l,k] read is
+    // replaced by inlining the producer computation at the mapped index (A[l,k]), so
+    // the result is B[k,l] = A[l,k] with no materialized T and no read-before-write.
+    //
+    // Producer: Map(i, 0:N) { Map(j, 0:N) { T[i,j] = A[i,j] } }
+    // Consumer: Map(k, 0:N) { Map(l, 0:N) { B[k,l] = T[l,k] } }
+    //
+    // (Contrast: a pass that loop-fuses these while keeping T *materialized* would be
+    // incorrect -- that is the read-before-write we traced in segformer, and it is NOT
+    // this transformation.)
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Array inner_array(float_desc, {symbolic::symbol("N")});
+    types::Array array_2d(inner_array, {symbolic::symbol("N")});
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+    builder.add_container("l", sym_desc);
+    builder.add_container("A", array_2d, true);
+    builder.add_container("T", array_2d);
+    builder.add_container("B", array_2d, true);
+
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+
+    // Producer: Map(i, 0:N) { Map(j, 0:N) { T[i,j] = A[i,j] } }
+    auto& map1_outer = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map1_inner = builder.add_map(
+        map1_outer.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        schedule
+    );
+    auto& block1 = builder.add_block(map1_inner.root());
+    auto& a_in = builder.add_access(block1, "A");
+    auto& t_out = builder.add_access(block1, "T");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(block1, a_in, tasklet1, "_in", {symbolic::symbol("i"), symbolic::symbol("j")}, array_2d);
+    builder.add_computational_memlet(
+        block1, tasklet1, "_out", t_out, {symbolic::symbol("i"), symbolic::symbol("j")}, array_2d
+    );
+
+    // Consumer: Map(k, 0:N) { Map(l, 0:N) { B[k,l] = T[l,k] } }  (transposed read of T)
+    auto& map2_outer = builder.add_map(
+        root,
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map2_inner = builder.add_map(
+        map2_outer.root(),
+        symbolic::symbol("l"),
+        symbolic::Lt(symbolic::symbol("l"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("l"), symbolic::integer(1)),
+        schedule
+    );
+    auto& block2 = builder.add_block(map2_inner.root());
+    auto& t_in = builder.add_access(block2, "T");
+    auto& b_out = builder.add_access(block2, "B");
+    auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(block2, t_in, tasklet2, "_in", {symbolic::symbol("l"), symbolic::symbol("k")}, array_2d);
+    builder.add_computational_memlet(
+        block2, tasklet2, "_out", b_out, {symbolic::symbol("k"), symbolic::symbol("l")}, array_2d
+    );
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(map1_outer, map2_outer);
+
+    ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+
+    // The inlined producer must read A at the TRANSPOSED index [l, k] (scalarized),
+    // and the materialized intermediate T must be gone from the fused body.
+    bool inlined_reads_A_lk = false;
+    bool reads_materialized_T = false;
+    for (size_t bi = 0; bi < map2_inner.root().size(); ++bi) {
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&map2_inner.root().at(bi).first);
+        if (blk == nullptr) continue;
+        auto& df = blk->dataflow();
+        for (auto& node : df.nodes()) {
+            auto* acc = dynamic_cast<data_flow::AccessNode*>(&node);
+            if (acc == nullptr || df.out_degree(*acc) == 0) continue;
+            if (acc->data() == "T") reads_materialized_T = true;
+            if (acc->data() == "A") {
+                for (auto& e : df.out_edges(*acc)) {
+                    if (e.type() != data_flow::MemletType::Computational) continue;
+                    if (e.subset().size() == 2 && symbolic::eq(e.subset()[0], symbolic::symbol("l")) &&
+                        symbolic::eq(e.subset()[1], symbolic::symbol("k"))) {
+                        inlined_reads_A_lk = true;
+                    }
+                }
+            }
+        }
+    }
+    EXPECT_TRUE(inlined_reads_A_lk) << "Inlined producer should read A[l,k] (scalarized transpose)";
+    EXPECT_FALSE(reads_materialized_T) << "Intermediate T must be scalarized away, not read as an array";
+}
+
+TEST(MapFusionTest, Domain_ReshapeTranspose_FlatBuffer_Rejected) {
+    // Faithful reproduction of the segformer layernorm->reshape case: producer and
+    // consumer reinterpret the SAME flat intermediate buffer T with DIFFERENT stride
+    // structure (a reshape), plus a transpose of the shared axis.
+    //
+    // Flat T of size 256*256. N = 256, P = 16 (N = P*P).
+    //   Producer: Map(i,0:256) { Map(j,0:256) { T[256*i + j] = A[256*i + j] } }
+    //             -> writes with trailing dim 256 (j), interpretation [i][j] = (256,256)
+    //   Consumer: Map(k,0:256){ Map(u,0:16){ Map(v,0:16){ B[...] = T[k + 256*v + 4096*u] }}}
+    //             -> reads with TWO 16-trailing dims (u,v), interpretation [u][v][k] = (16,16,256)
+    //
+    // Element match: 256*i + j = k + 256*v + 4096*u  =>  j = k,  i = v + 16*u.
+    // So producer-outer i corresponds to the consumer's reshaped inner (v + 16*u), and
+    // producer-inner j to consumer-outer k -- transpose across a reshape.
+    //
+    // Probe: report whether MapFusion fuses this, and if so whether it scalarizes T or
+    // leaves it materialized (the read-before-write we saw in segformer).
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Array flat(float_desc, {symbolic::integer(65536)});
+
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+    builder.add_container("u", sym_desc);
+    builder.add_container("v", sym_desc);
+    builder.add_container("A", flat, true);
+    builder.add_container("T", flat);
+    builder.add_container("B", flat, true);
+
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+
+    auto lin_prod = [&](const char* a, const char* b) {
+        // 256*a + b
+        return data_flow::Subset{
+            symbolic::add(symbolic::mul(symbolic::integer(256), symbolic::symbol(a)), symbolic::symbol(b))
+        };
+    };
+
+    // Producer: Map(i,0:256) { Map(j,0:256) { T[256*i+j] = A[256*i+j] } }
+    auto& map1_outer = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(256)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map1_inner = builder.add_map(
+        map1_outer.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::integer(256)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        schedule
+    );
+    auto& block1 = builder.add_block(map1_inner.root());
+    auto& a_in = builder.add_access(block1, "A");
+    auto& t_out = builder.add_access(block1, "T");
+    auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block1, a_in, tasklet1, "_in", lin_prod("i", "j"), flat);
+    builder.add_computational_memlet(block1, tasklet1, "_out", t_out, lin_prod("i", "j"), flat);
+
+    // Consumer: Map(k,0:256){ Map(u,0:16){ Map(v,0:16){ B[...] = T[k + 256*v + 4096*u] }}}
+    auto& map2_outer = builder.add_map(
+        root,
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(256)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map2_mid = builder.add_map(
+        map2_outer.root(),
+        symbolic::symbol("u"),
+        symbolic::Lt(symbolic::symbol("u"), symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("u"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map2_inner = builder.add_map(
+        map2_mid.root(),
+        symbolic::symbol("v"),
+        symbolic::Lt(symbolic::symbol("v"), symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("v"), symbolic::integer(1)),
+        schedule
+    );
+    auto& block2 = builder.add_block(map2_inner.root());
+    auto& t_in = builder.add_access(block2, "T");
+    auto& b_out = builder.add_access(block2, "B");
+    auto& tasklet2 = builder.add_tasklet(block2, data_flow::TaskletCode::assign, "_out", {"_in"});
+    // T[k + 256*v + 4096*u]
+    auto t_read_idx = data_flow::Subset{symbolic::
+                                            add(symbolic::symbol("k"),
+                                                symbolic::
+                                                    add(symbolic::mul(symbolic::integer(256), symbolic::symbol("v")),
+                                                        symbolic::mul(symbolic::integer(4096), symbolic::symbol("u"))))
+    };
+    builder.add_computational_memlet(block2, t_in, tasklet2, "_in", t_read_idx, flat);
+    // B[256*k + 16*u + v]  (output layout; not central to the T reshape)
+    auto b_write_idx = data_flow::Subset{symbolic::add(
+        symbolic::mul(symbolic::integer(256), symbolic::symbol("k")),
+        symbolic::add(symbolic::mul(symbolic::integer(16), symbolic::symbol("u")), symbolic::symbol("v"))
+    )};
+    builder.add_computational_memlet(block2, tasklet2, "_out", b_out, b_write_idx, flat);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(map1_outer, map2_outer);
+
+    // MapFusion must REJECT a reshape+transpose: the producer writes the flat buffer with
+    // a (256,256) interpretation while the consumer reads it with a (16,16,256)
+    // interpretation. The delinearized subset dimensionalities differ (2D vs 3D), so no
+    // consistent per-iteration index mapping exists. (In segformer this same pattern is
+    // instead merged by a downstream normalization pass while T stays materialized, which
+    // is where the read-before-write comes from -- NOT here.)
+    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager))
+        << "Reshape+transpose fusion must be rejected: producer (256,256) vs consumer (16,16,256) "
+           "interpretations of the same flat buffer have no consistent per-iteration index mapping.";
+}
+
 TEST(MapFusionTest, Domain_2D_Apply_IndexSubstitution) {
     // Verify apply() correctly substitutes indices in the 2D case
     // Producer: Map(i, 0:M) { Map(j, 0:N) { T[i,j] = A[i,j] + 1.0 } }
