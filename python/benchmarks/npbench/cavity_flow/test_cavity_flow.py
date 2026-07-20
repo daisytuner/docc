@@ -134,8 +134,8 @@ def test_cavity_flow(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "MAP": 60,
-                "SEQUENTIAL": 64,
+                "MAP": 61,
+                "SEQUENTIAL": 65,
                 "FOR": 4,
             }
         )

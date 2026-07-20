@@ -48,9 +48,9 @@ def test_correlation(target):
                 "GEMM": 1,
                 "CMath": 2,
                 "REDUCE": 3,
-                "MAP": 23,
+                "MAP": 25,
                 "FOR": 1,
-                "SEQUENTIAL": 27,
+                "SEQUENTIAL": 29,
             }
         )
     elif target == "sequential":
