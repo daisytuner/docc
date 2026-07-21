@@ -94,8 +94,8 @@ def test_adi(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "CPU_PARALLEL": 1,
-                "VECTORIZE": 19,
+                "CPU_PARALLEL": 6,
+                "VECTORIZE": 14,
                 "MAP": 20,
                 "SEQUENTIAL": 5,
                 "FOR": 5,

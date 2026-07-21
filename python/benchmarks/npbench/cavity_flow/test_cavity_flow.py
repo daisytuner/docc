@@ -147,8 +147,8 @@ def test_cavity_flow(target):
         verifier = SDFGVerification(
             verification={
                 "VECTORIZE": 9,
-                "CPU_PARALLEL": 26,
-                "MAP": 42,
+                "CPU_PARALLEL": 25,
+                "MAP": 41,
                 "SEQUENTIAL": 11,
                 "FOR": 4,
             }

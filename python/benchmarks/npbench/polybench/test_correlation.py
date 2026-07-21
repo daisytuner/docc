@@ -69,10 +69,10 @@ def test_correlation(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 5,
+                "VECTORIZE": 3,
                 "REDUCE": 3,
                 "CMath": 2,
-                "CPU_PARALLEL": 14,
+                "CPU_PARALLEL": 16,
                 "MAP": 16,
                 "SEQUENTIAL": 1,
                 "FOR": 1,

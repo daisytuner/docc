@@ -23,8 +23,7 @@ SchedulerAction OMPScheduler::find(
 
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto loop_info = loop_analysis.loop_info(&loop);
-    if (loop_info.loopnest_index == -1 || loop_info.num_maps <= 1 || loop_info.is_perfectly_nested ||
-        loop_info.has_side_effects) {
+    if (loop_info.loopnest_index == -1 || loop_info.num_maps <= 1 || loop_info.is_perfectly_nested) {
         return NEXT;
     } else {
         return CHILDREN;

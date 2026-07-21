@@ -36,7 +36,13 @@ def test_syrk(target):
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 4, "MAP": 4, "SEQUENTIAL": 2, "FOR": 2},
+            verification={
+                "VECTORIZE": 2,
+                "MAP": 4,
+                "SEQUENTIAL": 2,
+                "FOR": 2,
+                "CPU_PARALLEL": 2,
+            },
         )
     elif target == "cuda":
         verifier = SDFGVerification(

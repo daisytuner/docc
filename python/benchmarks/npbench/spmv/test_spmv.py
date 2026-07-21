@@ -71,9 +71,9 @@ def test_spmv(target):
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "CPU_PARALLEL": 1,
+                "CPU_PARALLEL": 4,
                 "REDUCE": 1,
-                "VECTORIZE": 4,
+                "VECTORIZE": 1,
                 "MAP": 4,
                 "SEQUENTIAL": 1,
                 "FOR": 1,
