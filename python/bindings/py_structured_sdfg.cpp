@@ -44,6 +44,7 @@
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/passes/symbolic/type_minimization.h>
+#include <sdfg/passes/zero_fill_to_memset_pass.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
@@ -451,6 +452,9 @@ void PyStructuredSDFG::normalize() {
         sdfg::passes::TaskletFusionPass task_fuse_pass;
         task_fuse_pass.run(builder, analysis_manager);
     }
+
+    auto zero_fill_to_memset_pass = sdfg::passes::ZeroFillToMemsetPass();
+    zero_fill_to_memset_pass.run(builder, analysis_manager);
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {

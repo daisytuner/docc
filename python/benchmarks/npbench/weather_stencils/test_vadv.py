@@ -135,7 +135,13 @@ def test_vadv(target):
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 34, "MAP": 66, "SEQUENTIAL": 39, "FOR": 7}
+            verification={
+                "VECTORIZE": 2,
+                "MAP": 34,
+                "SEQUENTIAL": 7,
+                "FOR": 7,
+                "CPU_PARALLEL": 32,
+            }
         )
     elif target == "cuda":
         verifier = SDFGVerification(

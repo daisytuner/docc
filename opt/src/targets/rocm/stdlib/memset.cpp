@@ -11,33 +11,33 @@ MemsetNodeDispatcher_ROCMWithTransfers::MemsetNodeDispatcher_ROCMWithTransfers(
 )
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
 
-void MemsetNodeDispatcher_ROCMWithTransfers::dispatch_code(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void MemsetNodeDispatcher_ROCMWithTransfers::dispatch_code_with_edges(
+    codegen::CodegenOutput& out,
+    std::vector<codegen::DispatchInput>& inputs,
+    std::vector<codegen::DispatchOutput>& outputs
 ) {
     auto& node = static_cast<const sdfg::stdlib::MemsetNode&>(node_);
 
-    library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
+    out.library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
 
-    stream << "hipError_t err_hip;" << std::endl;
+    out.stream << "hipError_t err_hip;" << std::endl;
 
     std::string num_expr = language_extension_.expression(node.num());
 
-    stream << "void *d_ptr;" << std::endl;
-    stream << "err_hip = hipMalloc(&d_ptr, " << num_expr << ");" << std::endl;
-    rocm_error_checking(stream, language_extension_, "err_hip");
+    out.stream << "void *d_ptr;" << std::endl;
+    out.stream << "err_hip = hipMalloc(&d_ptr, " << num_expr << ");" << std::endl;
+    rocm_error_checking(out.stream, language_extension_, "err_hip");
 
-    stream << "err_hip = hipMemset(d_ptr, " << language_extension_.expression(node.value()) << ", " << num_expr << ");"
-           << std::endl;
-    rocm_error_checking(stream, language_extension_, "err_hip");
+    out.stream << "err_hip = hipMemset(d_ptr, " << language_extension_.expression(node.value()) << ", " << num_expr
+               << ");" << std::endl;
+    rocm_error_checking(out.stream, language_extension_, "err_hip");
 
-    stream << "err_hip = hipMemcpy(" << node.outputs().at(0) << ", d_ptr, " << num_expr << ", hipMemcpyDeviceToHost);"
-           << std::endl;
-    rocm_error_checking(stream, language_extension_, "err_hip");
+    out.stream << "err_hip = hipMemcpy(" << inputs.at(0).expr << ", d_ptr, " << num_expr << ", hipMemcpyDeviceToHost);"
+               << std::endl;
+    rocm_error_checking(out.stream, language_extension_, "err_hip");
 
-    stream << "err_hip = hipFree(d_ptr);" << std::endl;
-    rocm_error_checking(stream, language_extension_, "err_hip");
+    out.stream << "err_hip = hipFree(d_ptr);" << std::endl;
+    rocm_error_checking(out.stream, language_extension_, "err_hip");
 }
 
 MemsetNodeDispatcher_ROCMWithoutTransfers::MemsetNodeDispatcher_ROCMWithoutTransfers(
