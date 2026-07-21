@@ -354,9 +354,9 @@ def test_cfd(compiler="clang++-19"):
         verification={
             "sdfgs": 6,
             "MAP": 14,
-            "CPU_PARALLEL": 5,
+            "CPU_PARALLEL": 12,
             "FOR": 13,
-            "SEQUENTIAL": 22,
+            "SEQUENTIAL": 15,
         }
     )
     runner = TestRunner(
