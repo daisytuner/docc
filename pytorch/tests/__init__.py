@@ -15,8 +15,8 @@ def compare_shapes(res_shape: torch.Size, ref_shape: torch.Size) -> None:
 def compare(
     res: None | int | float | torch.Tensor | tuple,
     ref: None | int | float | torch.Tensor | tuple,
-    rtol=1e-4,
-    atol=1e-5,
+    rtol: float = 1e-4,
+    atol: float = 1e-5,
     equal_nan: bool = False,
 ):
     if res is None and ref is None:

@@ -1,3 +1,7 @@
+"""
+GraphParser modules for parsing normalization layers.
+"""
+
 import torch.fx
 
 from docc.sdfg import StructuredSDFGBuilder, Tensor, Scalar, DebugInfo

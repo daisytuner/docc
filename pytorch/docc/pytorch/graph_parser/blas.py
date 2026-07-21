@@ -1,3 +1,7 @@
+"""
+GraphParser modules for parsing BLAS and LAPACK operations.
+"""
+
 import torch.fx
 from torch.fx.node import Argument
 

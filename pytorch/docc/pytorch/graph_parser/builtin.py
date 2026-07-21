@@ -1,3 +1,7 @@
+"""
+GraphParser modules for parsing builtin Python functions.
+"""
+
 import torch.fx
 
 from docc.sdfg import StructuredSDFGBuilder
@@ -13,7 +17,7 @@ from docc.pytorch.graph_parser.utils import (
 )
 
 
-class TensorReshape2dParser(GraphParserModule):
+class GetitemParser(GraphParserModule):
     def pre_parse(
         self,
         node: torch.fx.Node,
@@ -31,14 +35,23 @@ class TensorReshape2dParser(GraphParserModule):
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
         container: str = node.name
-        ref_container: str = self.get_arg_container(
+        base_ref_container: str = self.get_arg_container(
             node, container_info, 0, resolve=False
         )
+        if not isinstance(node.args[1], int):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected int-type as second argument but got: "
+                + str(type(node.args[1])),
+            )
+        index: int = node.args[1]
+        ref_container: str = f"{base_ref_container}_{index}"
         if container in container_info:
             info: ContainerInfoBase = container_info[container]
             if not isinstance(info, ContainerPreInfo):
                 raise GraphParserError(
-                    self, node, "Expected ContainerPreInfo but got: " + str(type(info))
+                    self, node, "Expected ContainterPreInfo but got: " + str(type(info))
                 )
             container_info[container] = ContainerPreInfo.copy(info, ref=ref_container)
         else:
@@ -63,22 +76,8 @@ class TensorReshape2dParser(GraphParserModule):
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        if len(node.args) != 2:
-            raise GraphParserError(
-                self,
-                node,
-                "Expected exactly 2 arguments but got " + str(len(node.args)),
-            )
-        if len(node.kwargs) != 0:
-            raise GraphParserError(
-                self, node, "Unsupported kwargs: " + str(node.kwargs)
-            )
-        self.update_container_types(node, builder, container_info, node.name)
+        pass
 
 
-register_pre_module("aten.permute.default", TensorReshape2dParser())
-register_module("aten.permute.default", TensorReshape2dParser())
-register_pre_module("aten.squeeze.dims", TensorReshape2dParser())
-register_module("aten.squeeze.dims", TensorReshape2dParser())
-register_pre_module("aten.unsqueeze.default", TensorReshape2dParser())
-register_module("aten.unsqueeze.default", TensorReshape2dParser())
+register_pre_module("_operator.getitem", GetitemParser())
+register_module("_operator.getitem", GetitemParser())

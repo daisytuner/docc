@@ -23,14 +23,14 @@ from docc.pytorch.graph_parser.utils import (
     dispatch_to_module,
 )
 import docc.pytorch.graph_parser.blas
+import docc.pytorch.graph_parser.builtin
 import docc.pytorch.graph_parser.convolution
 import docc.pytorch.graph_parser.elementwise
-import docc.pytorch.graph_parser.mutating
-import docc.pytorch.graph_parser.native
 import docc.pytorch.graph_parser.nonlinear_activation
 import docc.pytorch.graph_parser.normalization
 import docc.pytorch.graph_parser.pooling
 import docc.pytorch.graph_parser.reduction
+import docc.pytorch.graph_parser.reshaping
 import docc.pytorch.graph_parser.tensor
 
 

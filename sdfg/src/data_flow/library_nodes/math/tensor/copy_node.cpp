@@ -518,7 +518,6 @@ nlohmann::json TensorCopyNodeSerializer::serialize(const data_flow::LibraryNode&
 
     j["code"] = copy_node.code().value();
 
-    serializer::JSONSerializer serializer;
     copy_node.layout_x().serialize_to_json(j["layout_x"]);
     copy_node.layout_y().serialize_to_json(j["layout_y"]);
 

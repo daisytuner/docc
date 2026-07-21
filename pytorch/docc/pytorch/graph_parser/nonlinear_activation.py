@@ -1,3 +1,7 @@
+"""
+GraphParser modules for parsing non-linear activation functions.
+"""
+
 import torch.fx
 
 from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo

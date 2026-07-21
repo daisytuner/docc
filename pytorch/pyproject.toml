@@ -1,7 +1,7 @@
 [project]
 name = "docc-pytorch"
 dynamic = ["version"]
-description = "A JIT compiler for PyTorch GraphModules for stateful dataflow multigraphs (SDFG)."
+description = "A backend for PyTorch compile based on the Daisytuner Optimizing Compiler Collection (DOCC)."
 authors = [{ name = "Daisytuner", email = "hello@daisytuner.com" }]
 maintainers = [{ name = "Daisytuner", email = "hello@daisytuner.com" }]
 license = { text = "BSD-3-Clause" }
@@ -23,11 +23,12 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Topic :: Software Development :: Compilers",
 ]
-keywords = ["pytorch", "mlir", "sdfg", "compiler", "optimization"]
+keywords = ["pytorch", "sdfg", "compiler", "optimization"]
 dependencies = [
     # "docc-compiler",
     "numpy>=1.19.0",
-    "ml_dtypes>=0.5.4"
+    "ml_dtypes>=0.5.4",
+    "sympy>=1.14.0"
 ]
 
 [project.urls]

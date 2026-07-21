@@ -1,3 +1,7 @@
+"""
+GraphParser module for parsing operations performed directly on a tensor object.
+"""
+
 import torch.fx
 
 from docc.sdfg import StructuredSDFGBuilder
