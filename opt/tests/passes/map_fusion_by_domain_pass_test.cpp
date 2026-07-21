@@ -204,6 +204,272 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
     dump_sdfg(builder.subject(), "4.rle-cleanup");
 }
 
+TEST(MapFusionByDomainTest, FindNonStackedNestedConflicts) {
+    builder::StructuredSDFGBuilder builder("map_fuse_conflicted", FunctionType_CPU);
+    MultiNestBuilder m(builder);
+
+    types::Scalar scalar(types::PrimitiveType::Float);
+    types::Pointer ptr(scalar);
+
+    builder.add_container("N", scalar, true);
+    builder.add_container("src", ptr, true);
+    builder.add_container("dst", ptr, true);
+    builder.add_container("_tmp", ptr, false);
+    builder.add_container("extra", ptr, false);
+    builder.add_container("extra2", ptr, false);
+
+    auto& malloc_tmp = builder.add_block(m.root);
+    {
+        auto& acc_tmp = builder.add_access(malloc_tmp, "_tmp");
+        auto& malloc_node =
+            builder.add_library_node<stdlib::MallocNode>(malloc_tmp, DebugInfo(), symbolic::parse("N*N*4"));
+        builder.add_computational_memlet(malloc_tmp, malloc_node, "_ret", acc_tmp, {}, ptr);
+        auto& acc_extra = builder.add_access(malloc_tmp, "extra");
+        auto& malloc_extra =
+            builder.add_library_node<stdlib::MallocNode>(malloc_tmp, DebugInfo(), symbolic::parse("N*N*4"));
+        builder.add_computational_memlet(malloc_tmp, malloc_extra, "_ret", acc_extra, {}, ptr);
+        auto& acc_extra2 = builder.add_access(malloc_tmp, "extra2");
+        auto& malloc_extra2 =
+            builder.add_library_node<stdlib::MallocNode>(malloc_tmp, DebugInfo(), symbolic::parse("N*N*4"));
+        builder.add_computational_memlet(malloc_tmp, malloc_extra2, "_ret", acc_extra2, {}, ptr);
+    }
+
+    // Producer: Map(a_i) { Map(a_j) { _tmp[a_i*N + a_j] = src[a_i*N + a_j] } }  (row-major write)
+    auto& a0 = m.add_map(m.root, "a_i");
+    auto& a1 = m.add_map(a0.root(), "a_j");
+    auto& a_block = builder.add_block(a1.root());
+    {
+        auto& acc_src = builder.add_access(a_block, "src");
+        auto& acc_tmp = builder.add_access(a_block, "_tmp");
+        auto& tasklet = builder.add_tasklet(a_block, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
+        builder.add_computational_memlet(a_block, acc_src, tasklet, "_in", {symbolic::parse("a_i*N + a_j")}, ptr);
+        builder.add_computational_memlet(a_block, tasklet, "_out", acc_tmp, {symbolic::parse("a_i*N + a_j")}, ptr);
+    }
+    auto& a_n_2 = m.add_map(a1.root(), "a_k");
+    auto& a_hidden_block = builder.add_block(a_n_2.root());
+    {
+        auto& acc_tmp = builder.add_access(a_hidden_block, "_tmp");
+        auto& acc_extra = builder.add_access(a_hidden_block, "extra");
+        auto& tasklet = builder.add_tasklet(a_hidden_block, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
+        builder.add_computational_memlet(a_hidden_block, acc_tmp, tasklet, "_in", {symbolic::parse("a_i*N + a_k")}, ptr);
+        builder
+            .add_computational_memlet(a_hidden_block, tasklet, "_out", acc_extra, {symbolic::parse("a_k*N + a_i")}, ptr);
+    }
+
+    // Consumer: Map(b_i) { Map(b_j) { dst[b_i*N + b_j] = _tmp[b_i*N + b_j] } }  (perfectly matching read)
+    auto& b0 = m.add_map(m.root, "b_i");
+    auto& b1 = m.add_map(b0.root(), "b_j");
+    auto& b_block = builder.add_block(b1.root());
+    {
+        auto& acc_tmp = builder.add_access(b_block, "_tmp");
+        auto& acc_dst = builder.add_access(b_block, "dst");
+        auto& tasklet = builder.add_tasklet(b_block, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
+        builder.add_computational_memlet(b_block, acc_tmp, tasklet, "_in", {symbolic::parse("b_i*N + b_j")}, ptr);
+        builder.add_computational_memlet(b_block, tasklet, "_out", acc_dst, {symbolic::parse("b_i*N + b_j")}, ptr);
+    }
+
+    //  inner loop that is not part of the stack (that can be fused as one), but itself a candidate for fusing
+    auto& b_n_2 = m.add_map(b1.root(), "b_k");
+    auto& b_hidden_block = builder.add_block(b_n_2.root());
+    {
+        auto& acc_extra = builder.add_access(b_hidden_block, "extra");
+        auto& acc_extra2 = builder.add_access(b_hidden_block, "extra2");
+        auto& tasklet = builder.add_tasklet(b_hidden_block, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
+        builder
+            .add_computational_memlet(b_hidden_block, acc_extra, tasklet, "_in", {symbolic::parse("b_i*N + b_k")}, ptr);
+        builder
+            .add_computational_memlet(b_hidden_block, tasklet, "_out", acc_extra2, {symbolic::parse("b_k*N + b_i")}, ptr);
+    }
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    analysis_manager.get<analysis::LoopAnalysis>();
+    builder.subject().validate();
+    analysis_manager.invalidate_all();
+
+    MapFusionByDomainPass pass;
+    pass.run_pass(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.after");
+
+    // Not fused: malloc + producer stack + consumer stack all remain at root.
+    EXPECT_EQ(builder.subject().root().size(), 3u)
+        << "Transposed producer/consumer must NOT be fused (would create a read-before-write "
+           "on the materialized intermediate _tmp).";
+}
+
+
+TEST(MapFusionByDomainTest, DoNotFuseTransposedProducerConsumer) {
+    // Reproducer for the segformer layernorm->reshape read-before-write.
+    // Producer stack writes the malloc'd intermediate _tmp ROW-major: _tmp[i*N + j].
+    // Consumer stack reads it TRANSPOSED: _tmp[j*N + i].
+    //
+    // Fusing these on the shared outer domain is ILLEGAL: within a single fused outer
+    // iteration i the consumer reads _tmp[j*N + i] for all j (a whole column), but the
+    // producer at that iteration wrote only row i (_tmp[i*N + 0:N]). For j != i the
+    // consumer reads a cell the producer writes in a LATER iteration -> read-before-write
+    // on the materialized intermediate. The pass must NOT fuse (both stacks stay at root).
+
+    builder::StructuredSDFGBuilder builder("map_fuse_transpose", FunctionType_CPU);
+    MultiNestBuilder m(builder);
+
+    types::Scalar scalar(types::PrimitiveType::Float);
+    types::Pointer ptr(scalar);
+
+    builder.add_container("N", scalar, true);
+    builder.add_container("src", ptr, true);
+    builder.add_container("dst", ptr, true);
+    builder.add_container("_tmp", ptr, false);
+
+    auto& malloc_tmp = builder.add_block(m.root);
+    {
+        auto& acc_tmp = builder.add_access(malloc_tmp, "_tmp");
+        auto& malloc_node =
+            builder.add_library_node<stdlib::MallocNode>(malloc_tmp, DebugInfo(), symbolic::parse("N*N*4"));
+        builder.add_computational_memlet(malloc_tmp, malloc_node, "_ret", acc_tmp, {}, ptr);
+    }
+
+    // Producer: Map(a_i) { Map(a_j) { _tmp[a_i*N + a_j] = src[a_i*N + a_j] } }  (row-major write)
+    auto& a0 = m.add_map(m.root, "a_i");
+    auto& a1 = m.add_map(a0.root(), "a_j");
+    auto& a_block = builder.add_block(a1.root());
+    {
+        auto& acc_src = builder.add_access(a_block, "src");
+        auto& acc_tmp = builder.add_access(a_block, "_tmp");
+        auto& tasklet = builder.add_tasklet(a_block, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
+        builder.add_computational_memlet(a_block, acc_src, tasklet, "_in", {symbolic::parse("a_i*N + a_j")}, ptr);
+        builder.add_computational_memlet(a_block, tasklet, "_out", acc_tmp, {symbolic::parse("a_i*N + a_j")}, ptr);
+    }
+
+    // Consumer: Map(b_i) { Map(b_j) { dst[b_i*N + b_j] = _tmp[b_j*N + b_i] } }  (TRANSPOSED read)
+    auto& b0 = m.add_map(m.root, "b_i");
+    auto& b1 = m.add_map(b0.root(), "b_j");
+    auto& b_block = builder.add_block(b1.root());
+    {
+        auto& acc_tmp = builder.add_access(b_block, "_tmp");
+        auto& acc_dst = builder.add_access(b_block, "dst");
+        auto& tasklet = builder.add_tasklet(b_block, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
+        builder.add_computational_memlet(b_block, acc_tmp, tasklet, "_in", {symbolic::parse("b_j*N + b_i")}, ptr);
+        builder.add_computational_memlet(b_block, tasklet, "_out", acc_dst, {symbolic::parse("b_i*N + b_j")}, ptr);
+    }
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    analysis_manager.get<analysis::LoopAnalysis>();
+    builder.subject().validate();
+    analysis_manager.invalidate_all();
+
+    MapFusionByDomainPass pass;
+    pass.run_pass(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.after");
+
+    // Not fused: malloc + producer stack + consumer stack all remain at root.
+    EXPECT_EQ(builder.subject().root().size(), 3u)
+        << "Transposed producer/consumer must NOT be fused (would create a read-before-write "
+           "on the materialized intermediate _tmp).";
+}
+
+TEST(MapFusionByDomainTest, DoNotFuseTransposedSharedBand_Segformer) {
+    // Faithful reproducer of the segformer layernorm->reshape->transpose kernel (rid 764639257).
+    // Ground-truth structure from the emitted cutout:
+    //
+    //   Map(X<16) { Map(r<256) {                       // shared outer band
+    //     Map(c<256)        { _tmp[65536*X + 256*r + c]          = ... }   // producer: writes ROW r
+    //     Map(u<16){Map(v<16){ dst[...] = _tmp[65536*X + r + 4096*u + 256*v] }}}}  // consumer: reads COLUMN r
+    //
+    // _tmp is a [16][256][256] transient. The producer writes it row-major ([X][r][c]);
+    // the consumer reads it transposed ([X][w][r], w = 16u+v). Fusing on the r loop is ILLEGAL:
+    // at fused iteration (X, r) the consumer reads _tmp[65536*X + 256*w + r] for all w in [0,256),
+    // i.e. a whole COLUMN spanning every row, but the producer has only written ROW r so far.
+    // For w != r those cells are written in LATER r-iterations -> read-before-write.
+    //
+    // Note the fused dim r has DIFFERENT strides in _tmp: 256 in the producer write, 1 in the
+    // consumer read. The pass must detect this subset mismatch and NOT fuse.
+    //
+    // This differs from DoNotFuseTransposedProducerConsumer by faithfully modelling the
+    // uneven inner depth (producer 1 inner loop, consumer 2) that the real kernel has.
+
+    builder::StructuredSDFGBuilder builder("map_fuse_transpose_band", FunctionType_CPU);
+    MultiNestBuilder m(builder);
+
+    types::Scalar scalar(types::PrimitiveType::Float);
+    types::Pointer ptr(scalar);
+
+    builder.add_container("BX", scalar, true); // 16
+    builder.add_container("BR", scalar, true); // 256
+    builder.add_container("BC", scalar, true); // 256
+    builder.add_container("BU", scalar, true); // 16
+    builder.add_container("BV", scalar, true); // 16
+    builder.add_container("src", ptr, true);
+    builder.add_container("dst", ptr, true);
+    builder.add_container("_tmp", ptr, false);
+
+    auto& malloc_tmp = builder.add_block(m.root);
+    {
+        auto& acc_tmp = builder.add_access(malloc_tmp, "_tmp");
+        auto& malloc_node =
+            builder.add_library_node<stdlib::MallocNode>(malloc_tmp, DebugInfo(), symbolic::parse("BX*BR*BC*4"));
+        builder.add_computational_memlet(malloc_tmp, malloc_node, "_ret", acc_tmp, {}, ptr);
+    }
+
+    // Producer: Map(a_x) { Map(a_r) { Map(a_c) { _tmp[65536*a_x + 256*a_r + a_c] = src[...] } } }
+    auto& a0 = m.add_map(m.root, "a_x", "BX");
+    auto& a1 = m.add_map(a0.root(), "a_r", "BR");
+    auto& a2 = m.add_map(a1.root(), "a_c", "BC");
+    auto& a_block = builder.add_block(a2.root());
+    {
+        auto& acc_src = builder.add_access(a_block, "src");
+        auto& acc_tmp = builder.add_access(a_block, "_tmp");
+        auto& tasklet = builder.add_tasklet(a_block, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
+        builder.add_computational_memlet(
+            a_block, acc_src, tasklet, "_in", {symbolic::parse("65536*a_x + 256*a_r + a_c")}, ptr
+        );
+        builder.add_computational_memlet(
+            a_block, tasklet, "_out", acc_tmp, {symbolic::parse("65536*a_x + 256*a_r + a_c")}, ptr
+        );
+    }
+
+    // Consumer: Map(b_x) { Map(b_r) { Map(b_u) { Map(b_v) {
+    //     dst[65536*b_x + 256*b_r + 16*b_u + b_v] = _tmp[65536*b_x + b_r + 4096*b_u + 256*b_v]  (TRANSPOSED read)
+    // } } } }
+    auto& b0 = m.add_map(m.root, "b_x", "BX");
+    auto& b1 = m.add_map(b0.root(), "b_r", "BR");
+    auto& b2 = m.add_map(b1.root(), "b_u", "BU");
+    auto& b3 = m.add_map(b2.root(), "b_v", "BV");
+    auto& b_block = builder.add_block(b3.root());
+    {
+        auto& acc_tmp = builder.add_access(b_block, "_tmp");
+        auto& acc_dst = builder.add_access(b_block, "dst");
+        auto& tasklet = builder.add_tasklet(b_block, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
+        builder.add_computational_memlet(
+            b_block, acc_tmp, tasklet, "_in", {symbolic::parse("65536*b_x + b_r + 4096*b_u + 256*b_v")}, ptr
+        );
+        builder.add_computational_memlet(
+            b_block, tasklet, "_out", acc_dst, {symbolic::parse("65536*b_x + 256*b_r + 16*b_u + b_v")}, ptr
+        );
+    }
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    analysis_manager.get<analysis::LoopAnalysis>();
+    builder.subject().validate();
+    analysis_manager.invalidate_all();
+
+    MapFusionByDomainPass pass;
+    pass.run_pass(builder, analysis_manager);
+
+    dump_sdfg(builder.subject(), "1.after");
+
+    // Not fused: malloc + producer stack + consumer stack all remain at root.
+    EXPECT_EQ(builder.subject().root().size(), 3u)
+        << "Segformer transposed producer/consumer must NOT be fused on the r loop (would create a "
+           "read-before-write on the materialized transient _tmp).";
+}
+
 TEST(MapFusionByDomainTest, DoNotCauseIndvarReuse) {
     builder::StructuredSDFGBuilder builder("map_fuse_stacks", FunctionType_CPU);
     MultiNestBuilder m(builder);
