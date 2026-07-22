@@ -92,6 +92,10 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_map_utils.cpp
     src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/targets/offloading/external_offloading_node.cpp
+    src/expanders/batched_matmul_expander.cpp
+    src/expanders/batchnorm_expander.cpp
+    src/expanders/conv_expander.cpp
+    src/expanders/conv_fft_expander.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp

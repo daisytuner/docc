@@ -17,24 +17,6 @@ public:
     CudaConvExpander(math::tensor::ConvNode& library_node)
         : TargetLibNodeExpander(library_node), node_(library_node) {};
     bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
-
-    static bool expand_conv(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        math::tensor::ConvNode& node
-    );
-
-    static bool expand_conv_naive(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        math::tensor::ConvNode& node
-    );
-
-    static bool expand_conv_im2row(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        math::tensor::ConvNode& node
-    );
 };
 } // namespace offloading
 } // namespace sdfg
