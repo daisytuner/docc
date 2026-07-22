@@ -14,115 +14,6 @@
 namespace sdfg {
 namespace cuda {
 
-std::string CUDASoftmaxDataTransferExtraction::create_device_container(
-    builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
-) {
-    auto new_type = type.clone();
-    new_type->storage_type(types::StorageType(
-        "NV_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
-    ));
-    auto device_container = builder.find_new_name(CUDA_DEVICE_PREFIX);
-    builder.add_container(device_container, *new_type);
-    return device_container;
-}
-
-void CUDASoftmaxDataTransferExtraction::create_allocate(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<CUDADataOffloadingNode>(
-        builder,
-        alloc_block,
-        device_container,
-        device_container,
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC,
-        type,
-        type,
-        this->softmax_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
-void CUDASoftmaxDataTransferExtraction::create_deallocate(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& device_container,
-    const types::Pointer& type
-) {
-    auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<CUDADataOffloadingNode>(
-        builder,
-        dealloc_block,
-        device_container,
-        device_container,
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::FREE,
-        type,
-        type,
-        this->softmax_node_.debug_info(),
-        SymEngine::null,
-        symbolic::zero()
-    );
-}
-
-void CUDASoftmaxDataTransferExtraction::create_copy_to_device_with_allocation(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& host_container,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<CUDADataOffloadingNode>(
-        builder,
-        copy_block,
-        host_container,
-        device_container,
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::ALLOC,
-        type,
-        type,
-        this->softmax_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
-void CUDASoftmaxDataTransferExtraction::create_copy_from_device_with_deallocation(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& host_container,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<CUDADataOffloadingNode>(
-        builder,
-        copy_block,
-        host_container,
-        device_container,
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::FREE,
-        type,
-        type,
-        this->softmax_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
 CUDASoftmaxDataTransferExtraction::CUDASoftmaxDataTransferExtraction(math::tensor::SoftmaxNode& softmax_node)
     : softmax_node_(softmax_node) {}
 
@@ -170,13 +61,17 @@ void CUDASoftmaxDataTransferExtraction::
     }
     auto total_size = symbolic::mul(total_elems, types::get_contiguous_element_size(ptr_type, true));
 
-    auto dX = this->create_device_container(builder, ptr_type, total_size);
-    auto dY = this->create_device_container(builder, ptr_type, total_size);
+    auto dX = create_device_container(builder, ptr_type, total_size);
+    auto dY = create_device_container(builder, ptr_type, total_size);
 
-    this->create_copy_to_device_with_allocation(builder, *sequence, *block, x_access.data(), dX, total_size, ptr_type);
-    this->create_allocate(builder, *sequence, *block, dY, total_size, ptr_type);
-    this->create_copy_from_device_with_deallocation(builder, *sequence, *block, y_access.data(), dY, total_size, ptr_type);
-    this->create_deallocate(builder, *sequence, *block, dX, ptr_type);
+    create_copy_to_device_with_allocation(
+        builder, *sequence, *block, x_access.data(), dX, total_size, ptr_type, this->softmax_node_.debug_info()
+    );
+    create_allocate(builder, *sequence, *block, dY, total_size, ptr_type, this->softmax_node_.debug_info());
+    create_copy_from_device_with_deallocation(
+        builder, *sequence, *block, y_access.data(), dY, total_size, ptr_type, this->softmax_node_.debug_info()
+    );
+    create_deallocate(builder, *sequence, *block, dX, ptr_type, this->softmax_node_.debug_info());
 
     x_access.data(dX);
     y_access.data(dY);

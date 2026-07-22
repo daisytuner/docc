@@ -28,165 +28,6 @@
 namespace sdfg {
 namespace rocm {
 
-std::string ROCBLASDataTransferExtraction::create_device_container(
-    builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
-) {
-    auto new_type = type.clone();
-    new_type->storage_type(types::StorageType(
-        "AMD_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
-    ));
-    auto device_container = builder.find_new_name(ROCM_DEVICE_PREFIX);
-    builder.add_container(device_container, *new_type);
-    return device_container;
-}
-
-void ROCBLASDataTransferExtraction::create_allocate(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<ROCMDataOffloadingNode>(
-        builder,
-        alloc_block,
-        device_container,
-        device_container,
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC,
-        type,
-        type,
-        this->blas_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
-void ROCBLASDataTransferExtraction::create_deallocate(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& device_container,
-    const types::Pointer& type
-) {
-    auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<ROCMDataOffloadingNode>(
-        builder,
-        dealloc_block,
-        device_container,
-        device_container,
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::FREE,
-        type,
-        type,
-        this->blas_node_.debug_info(),
-        SymEngine::null,
-        symbolic::zero()
-    );
-}
-
-void ROCBLASDataTransferExtraction::create_copy_to_device(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& host_container,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<ROCMDataOffloadingNode>(
-        builder,
-        copy_block,
-        host_container,
-        device_container,
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::NO_CHANGE,
-        type,
-        type,
-        this->blas_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
-void ROCBLASDataTransferExtraction::create_copy_from_device(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& host_container,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<ROCMDataOffloadingNode>(
-        builder,
-        copy_block,
-        host_container,
-        device_container,
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::NO_CHANGE,
-        type,
-        type,
-        this->blas_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
-void ROCBLASDataTransferExtraction::create_copy_to_device_with_allocation(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& host_container,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<ROCMDataOffloadingNode>(
-        builder,
-        copy_block,
-        host_container,
-        device_container,
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::ALLOC,
-        type,
-        type,
-        this->blas_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
-void ROCBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& host_container,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<ROCMDataOffloadingNode>(
-        builder,
-        copy_block,
-        host_container,
-        device_container,
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::FREE,
-        type,
-        type,
-        this->blas_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
 ROCBLASDataTransferExtraction::ROCBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
 
 std::string ROCBLASDataTransferExtraction::name() const { return "ROCBLASDataTransferExtraction"; }
@@ -263,18 +104,18 @@ void ROCBLASDataTransferExtraction::
             symbolic::add(symbolic::mul(symbolic::sub(dot_node->n(), symbolic::one()), dot_node->incy()), symbolic::one()),
             types::get_contiguous_element_size(type, true)
         );
-        auto dx = this->create_device_container(builder, type, x_size);
-        auto dy = this->create_device_container(builder, type, y_size);
+        auto dx = create_device_container(builder, type, x_size);
+        auto dy = create_device_container(builder, type, y_size);
 
-        this->create_copy_to_device_with_allocation(
-            builder, *sequence, *block, in_access.at("__x").data(), dx, x_size, type
+        create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__x").data(), dx, x_size, type, this->blas_node_.debug_info()
         );
-        this->create_copy_to_device_with_allocation(
-            builder, *sequence, *block, in_access.at("__y").data(), dy, y_size, type
+        create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__y").data(), dy, y_size, type, this->blas_node_.debug_info()
         );
 
-        this->create_deallocate(builder, *sequence, *block, dx, type);
-        this->create_deallocate(builder, *sequence, *block, dy, type);
+        create_deallocate(builder, *sequence, *block, dx, type, this->blas_node_.debug_info());
+        create_deallocate(builder, *sequence, *block, dy, type, this->blas_node_.debug_info());
 
         in_access.at("__x").data(dx);
         in_access.at("__y").data(dy);
@@ -284,22 +125,26 @@ void ROCBLASDataTransferExtraction::
         auto b_size = symbolic::mul(symbolic::mul(gemm_node->k(), gemm_node->n()), elem_size);
         auto c_size = symbolic::mul(symbolic::mul(gemm_node->m(), gemm_node->n()), elem_size);
 
-        auto dA = this->create_device_container(builder, type, a_size);
-        auto dB = this->create_device_container(builder, type, b_size);
-        auto dC = this->create_device_container(builder, type, c_size);
+        auto dA = create_device_container(builder, type, a_size);
+        auto dB = create_device_container(builder, type, b_size);
+        auto dC = create_device_container(builder, type, c_size);
 
-        this->create_copy_to_device_with_allocation(
-            builder, *sequence, *block, in_access.at("__A").data(), dA, a_size, type
+        create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__A").data(), dA, a_size, type, this->blas_node_.debug_info()
         );
-        this->create_copy_to_device_with_allocation(
-            builder, *sequence, *block, in_access.at("__B").data(), dB, b_size, type
+        create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__B").data(), dB, b_size, type, this->blas_node_.debug_info()
         );
         auto c_ptr = in_access.at("__C").data();
-        this->create_copy_to_device_with_allocation(builder, *sequence, *block, c_ptr, dC, c_size, type);
+        create_copy_to_device_with_allocation(
+            builder, *sequence, *block, c_ptr, dC, c_size, type, this->blas_node_.debug_info()
+        );
 
-        this->create_copy_from_device_with_deallocation(builder, *sequence, *block, c_ptr, dC, c_size, type);
-        this->create_deallocate(builder, *sequence, *block, dA, type);
-        this->create_deallocate(builder, *sequence, *block, dB, type);
+        create_copy_from_device_with_deallocation(
+            builder, *sequence, *block, c_ptr, dC, c_size, type, this->blas_node_.debug_info()
+        );
+        create_deallocate(builder, *sequence, *block, dA, type, this->blas_node_.debug_info());
+        create_deallocate(builder, *sequence, *block, dB, type, this->blas_node_.debug_info());
 
         in_access.at("__A").data(dA);
         in_access.at("__B").data(dB);
@@ -313,22 +158,26 @@ void ROCBLASDataTransferExtraction::
         auto c_size =
             symbolic::mul(symbolic::mul(batched_gemm_node->batch_count(), batched_gemm_node->stride_c()), elem_size);
 
-        auto dA = this->create_device_container(builder, type, a_size);
-        auto dB = this->create_device_container(builder, type, b_size);
-        auto dC = this->create_device_container(builder, type, c_size);
+        auto dA = create_device_container(builder, type, a_size);
+        auto dB = create_device_container(builder, type, b_size);
+        auto dC = create_device_container(builder, type, c_size);
 
-        this->create_copy_to_device_with_allocation(
-            builder, *sequence, *block, in_access.at("__A").data(), dA, a_size, type
+        create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__A").data(), dA, a_size, type, this->blas_node_.debug_info()
         );
-        this->create_copy_to_device_with_allocation(
-            builder, *sequence, *block, in_access.at("__B").data(), dB, b_size, type
+        create_copy_to_device_with_allocation(
+            builder, *sequence, *block, in_access.at("__B").data(), dB, b_size, type, this->blas_node_.debug_info()
         );
         auto c_ptr = in_access.at("__C").data();
-        this->create_copy_to_device_with_allocation(builder, *sequence, *block, c_ptr, dC, c_size, type);
+        create_copy_to_device_with_allocation(
+            builder, *sequence, *block, c_ptr, dC, c_size, type, this->blas_node_.debug_info()
+        );
 
-        this->create_copy_from_device_with_deallocation(builder, *sequence, *block, c_ptr, dC, c_size, type);
-        this->create_deallocate(builder, *sequence, *block, dA, type);
-        this->create_deallocate(builder, *sequence, *block, dB, type);
+        create_copy_from_device_with_deallocation(
+            builder, *sequence, *block, c_ptr, dC, c_size, type, this->blas_node_.debug_info()
+        );
+        create_deallocate(builder, *sequence, *block, dA, type, this->blas_node_.debug_info());
+        create_deallocate(builder, *sequence, *block, dB, type, this->blas_node_.debug_info());
 
         in_access.at("__A").data(dA);
         in_access.at("__B").data(dB);

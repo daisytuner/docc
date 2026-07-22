@@ -5,6 +5,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "sdfg/analysis/loop_analysis.h"
+#include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/code_snippet_factory.h"
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
@@ -15,9 +16,13 @@
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/function.h"
 #include "sdfg/graph/graph.h"
+#include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/types/pointer.h"
+#include "sdfg/types/type.h"
 #include "symengine/symengine_rcp.h"
 
 namespace sdfg {
@@ -215,6 +220,175 @@ data_flow::LibraryNode& ROCMDataOffloadingNodeSerializer::deserialize(
 
     return offloading::DataOffloadingNodeSerializer::deserialize_generic_offload<
         ROCMDataOffloadingNode>(j, builder, parent, device_id);
+}
+
+// -----------------------------------------------------------------------------
+// Shared data-transfer extraction helpers
+// -----------------------------------------------------------------------------
+
+std::string create_device_container(
+    builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
+) {
+    auto new_type = type.clone();
+    new_type->storage_type(types::StorageType(
+        "AMD_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
+    ));
+    auto device_container = builder.find_new_name(ROCM_DEVICE_PREFIX);
+    builder.add_container(device_container, *new_type);
+    return device_container;
+}
+
+void create_allocate(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+) {
+    auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
+        alloc_block,
+        device_container,
+        device_container,
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::ALLOC,
+        type,
+        type,
+        debug_info,
+        size,
+        symbolic::zero()
+    );
+}
+
+void create_deallocate(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& device_container,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+) {
+    auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
+        dealloc_block,
+        device_container,
+        device_container,
+        offloading::DataTransferDirection::NONE,
+        offloading::BufferLifecycle::FREE,
+        type,
+        type,
+        debug_info,
+        SymEngine::null,
+        symbolic::zero()
+    );
+}
+
+void create_copy_to_device(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& host_container,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+) {
+    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
+        copy_block,
+        host_container,
+        device_container,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::NO_CHANGE,
+        type,
+        type,
+        debug_info,
+        size,
+        symbolic::zero()
+    );
+}
+
+void create_copy_from_device(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& host_container,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+) {
+    auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
+        copy_block,
+        host_container,
+        device_container,
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::NO_CHANGE,
+        type,
+        type,
+        debug_info,
+        size,
+        symbolic::zero()
+    );
+}
+
+void create_copy_to_device_with_allocation(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& host_container,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+) {
+    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
+        copy_block,
+        host_container,
+        device_container,
+        offloading::DataTransferDirection::H2D,
+        offloading::BufferLifecycle::ALLOC,
+        type,
+        type,
+        debug_info,
+        size,
+        symbolic::zero()
+    );
+}
+
+void create_copy_from_device_with_deallocation(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& host_container,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+) {
+    auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
+    offloading::add_offloading_node<ROCMDataOffloadingNode>(
+        builder,
+        copy_block,
+        host_container,
+        device_container,
+        offloading::DataTransferDirection::D2H,
+        offloading::BufferLifecycle::FREE,
+        type,
+        type,
+        debug_info,
+        size,
+        symbolic::zero()
+    );
 }
 
 } // namespace rocm

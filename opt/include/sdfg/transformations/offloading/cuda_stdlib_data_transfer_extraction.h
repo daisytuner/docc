@@ -21,46 +21,6 @@ class CUDAStdlibDataTransferExtraction : public transformations::Transformation 
 private:
     data_flow::LibraryNode& lib_node_;
 
-    std::string create_device_container(
-        builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
-    );
-
-    void create_allocate(
-        builder::StructuredSDFGBuilder& builder,
-        structured_control_flow::Sequence& sequence,
-        structured_control_flow::Block& block,
-        const std::string& device_container,
-        const symbolic::Expression& size,
-        const types::Pointer& type
-    );
-    void create_deallocate(
-        builder::StructuredSDFGBuilder& builder,
-        structured_control_flow::Sequence& sequence,
-        structured_control_flow::Block& block,
-        const std::string& device_container,
-        const types::Pointer& type
-    );
-
-    void create_copy_from_device_with_deallocation(
-        builder::StructuredSDFGBuilder& builder,
-        structured_control_flow::Sequence& sequence,
-        structured_control_flow::Block& block,
-        const std::string& host_container,
-        const std::string& device_container,
-        const symbolic::Expression& size,
-        const types::Pointer& type
-    );
-
-    void create_copy_to_device_with_allocation(
-        builder::StructuredSDFGBuilder& builder,
-        structured_control_flow::Sequence& sequence,
-        structured_control_flow::Block& block,
-        const std::string& host_container,
-        const std::string& device_container,
-        const symbolic::Expression& size,
-        const types::Pointer& type
-    );
-
     void apply_memset(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,

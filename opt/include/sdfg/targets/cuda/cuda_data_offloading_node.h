@@ -83,5 +83,88 @@ public:
     ) override;
 };
 
+// -----------------------------------------------------------------------------
+// Shared data-transfer extraction helpers
+//
+// These build the CUDA offloading nodes (device alloc/free, H2D/D2H copies) that
+// all CUDA library-node data-transfer extractions (BLAS, stdlib, softmax, FFT,
+// ...) need. They are centralized here so each extraction only expresses *which*
+// buffers to move, not *how* the offloading nodes are constructed.
+// -----------------------------------------------------------------------------
+
+/// Create an unmanaged device container (NV_Generic storage) mirroring @p type.
+std::string create_device_container(
+    builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
+);
+
+/// Insert a device allocation block before @p block.
+void create_allocate(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+);
+
+/// Insert a device deallocation block after @p block.
+void create_deallocate(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& device_container,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+);
+
+/// Insert an H2D copy block before @p block (buffer must already be allocated).
+void create_copy_to_device(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& host_container,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+);
+
+/// Insert a D2H copy block after @p block (buffer stays allocated).
+void create_copy_from_device(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& host_container,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+);
+
+/// Insert an allocate + H2D copy block before @p block.
+void create_copy_to_device_with_allocation(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& host_container,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+);
+
+/// Insert a D2H copy + deallocate block after @p block.
+void create_copy_from_device_with_deallocation(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    structured_control_flow::Block& block,
+    const std::string& host_container,
+    const std::string& device_container,
+    const symbolic::Expression& size,
+    const types::Pointer& type,
+    const DebugInfo& debug_info
+);
+
 } // namespace cuda
 } // namespace sdfg

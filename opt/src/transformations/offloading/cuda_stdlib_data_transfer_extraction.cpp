@@ -22,115 +22,6 @@
 namespace sdfg {
 namespace cuda {
 
-std::string CUDAStdlibDataTransferExtraction::create_device_container(
-    builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
-) {
-    auto new_type = type.clone();
-    new_type->storage_type(types::StorageType(
-        "NV_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
-    ));
-    auto device_container = builder.find_new_name(CUDA_DEVICE_PREFIX);
-    builder.add_container(device_container, *new_type);
-    return device_container;
-}
-
-void CUDAStdlibDataTransferExtraction::create_allocate(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<CUDADataOffloadingNode>(
-        builder,
-        alloc_block,
-        device_container,
-        device_container,
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::ALLOC,
-        type,
-        type,
-        this->lib_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
-void CUDAStdlibDataTransferExtraction::create_deallocate(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& device_container,
-    const types::Pointer& type
-) {
-    auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<CUDADataOffloadingNode>(
-        builder,
-        dealloc_block,
-        device_container,
-        device_container,
-        offloading::DataTransferDirection::NONE,
-        offloading::BufferLifecycle::FREE,
-        type,
-        type,
-        this->lib_node_.debug_info(),
-        SymEngine::null,
-        symbolic::zero()
-    );
-}
-
-void CUDAStdlibDataTransferExtraction::create_copy_from_device_with_deallocation(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& host_container,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<CUDADataOffloadingNode>(
-        builder,
-        copy_block,
-        host_container,
-        device_container,
-        offloading::DataTransferDirection::D2H,
-        offloading::BufferLifecycle::FREE,
-        type,
-        type,
-        this->lib_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
-void CUDAStdlibDataTransferExtraction::create_copy_to_device_with_allocation(
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence,
-    structured_control_flow::Block& block,
-    const std::string& host_container,
-    const std::string& device_container,
-    const symbolic::Expression& size,
-    const types::Pointer& type
-) {
-    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
-    offloading::add_offloading_node<CUDADataOffloadingNode>(
-        builder,
-        copy_block,
-        host_container,
-        device_container,
-        offloading::DataTransferDirection::H2D,
-        offloading::BufferLifecycle::ALLOC,
-        type,
-        type,
-        this->lib_node_.debug_info(),
-        size,
-        symbolic::zero()
-    );
-}
-
 CUDAStdlibDataTransferExtraction::CUDAStdlibDataTransferExtraction(data_flow::LibraryNode& lib_node)
     : lib_node_(lib_node) {}
 
@@ -199,13 +90,15 @@ void CUDAStdlibDataTransferExtraction::apply_memset(
     auto& type = static_cast<const types::Pointer&>(host_type);
 
     auto ptr_size = memset_node.num();
-    auto dPtr = this->create_device_container(builder, type, ptr_size);
+    auto dPtr = create_device_container(builder, type, ptr_size);
 
     // Allocate device buffer
-    this->create_allocate(builder, sequence, block, dPtr, ptr_size, type);
+    create_allocate(builder, sequence, block, dPtr, ptr_size, type, this->lib_node_.debug_info());
 
     // Copy from device to host and deallocate
-    this->create_copy_from_device_with_deallocation(builder, sequence, block, host_container_name, dPtr, ptr_size, type);
+    create_copy_from_device_with_deallocation(
+        builder, sequence, block, host_container_name, dPtr, ptr_size, type, this->lib_node_.debug_info()
+    );
 
     // Redirect output to device container
     host_access_node.data(dPtr);
@@ -228,9 +121,11 @@ void CUDAStdlibDataTransferExtraction::apply_memcpy(
     auto& src_container_name = src_access_node.data();
     auto& src_type = static_cast<const types::Pointer&>(builder.subject().type(src_container_name));
 
-    auto dSrc = this->create_device_container(builder, src_type, ptr_size);
-    this->create_copy_to_device_with_allocation(builder, sequence, block, src_container_name, dSrc, ptr_size, src_type);
-    this->create_deallocate(builder, sequence, block, dSrc, src_type);
+    auto dSrc = create_device_container(builder, src_type, ptr_size);
+    create_copy_to_device_with_allocation(
+        builder, sequence, block, src_container_name, dSrc, ptr_size, src_type, this->lib_node_.debug_info()
+    );
+    create_deallocate(builder, sequence, block, dSrc, src_type, this->lib_node_.debug_info());
     src_access_node.data(dSrc);
 
     // Handle _dst (write) - need D2H transfer
@@ -240,9 +135,11 @@ void CUDAStdlibDataTransferExtraction::apply_memcpy(
     auto& dst_container_name = dst_access_node.data();
     auto& dst_type = static_cast<const types::Pointer&>(builder.subject().type(dst_container_name));
 
-    auto dDst = this->create_device_container(builder, dst_type, ptr_size);
-    this->create_allocate(builder, sequence, block, dDst, ptr_size, dst_type);
-    this->create_copy_from_device_with_deallocation(builder, sequence, block, dst_container_name, dDst, ptr_size, dst_type);
+    auto dDst = create_device_container(builder, dst_type, ptr_size);
+    create_allocate(builder, sequence, block, dDst, ptr_size, dst_type, this->lib_node_.debug_info());
+    create_copy_from_device_with_deallocation(
+        builder, sequence, block, dst_container_name, dDst, ptr_size, dst_type, this->lib_node_.debug_info()
+    );
     dst_access_node.data(dDst);
 }
 
