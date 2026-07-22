@@ -325,6 +325,15 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_concat_op(
+        const std::vector<std::string>& tensors,
+        const std::vector<const sdfg::types::Tensor*>& tensor_types,
+        const std::string& result,
+        const sdfg::types::Tensor& result_type,
+        long long dim,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_reduce_op(
         const std::string& op_type,
         const std::string& input,

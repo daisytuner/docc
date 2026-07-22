@@ -1470,6 +1470,45 @@ void PyStructuredSDFGBuilder::add_copy_op(
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
 }
 
+void PyStructuredSDFGBuilder::add_concat_op(
+    const std::vector<std::string>& tensors,
+    const std::vector<const sdfg::types::Tensor*>& tensor_types,
+    const std::string& result,
+    const sdfg::types::Tensor& result_type,
+    long long dim,
+    const sdfg::DebugInfo& debug_info
+) {
+    size_t num_inputs = tensors.size();
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    std::vector<sdfg::data_flow::AccessNode*> tensor_accesses;
+    tensor_accesses.reserve(num_inputs);
+    std::unordered_map<std::string, sdfg::data_flow::AccessNode*> tensor_access_map;
+    std::vector<std::string> inputs;
+    inputs.reserve(num_inputs);
+    std::vector<sdfg::math::tensor::TensorLayout> input_layouts;
+    input_layouts.reserve(num_inputs);
+    for (size_t i = 0; i < num_inputs; i++) {
+        const auto& tensor = tensors[i];
+        if (tensor_access_map.contains(tensor)) {
+            tensor_accesses.push_back(tensor_access_map.at(tensor));
+        } else {
+            auto& tensor_access = builder_.add_access(block, tensor, debug_info);
+            tensor_access_map.insert({tensor, &tensor_access});
+            tensor_accesses.push_back(&tensor_access);
+        }
+        inputs.push_back("X" + std::to_string(i));
+        input_layouts.push_back(tensor_types[i]->layout());
+    }
+    auto& result_access = builder_.add_access(block, result, debug_info);
+    auto& libnode = builder_.add_library_node<
+        sdfg::math::tensor::ConcatNode>(block, debug_info, "Y", result_type.layout(), inputs, input_layouts, dim);
+    for (size_t i = 0; i < num_inputs; i++) {
+        builder_
+            .add_computational_memlet(block, *tensor_accesses[i], libnode, inputs[i], {}, *tensor_types[i], debug_info);
+    }
+    builder_.add_computational_memlet(block, result_access, libnode, "Y", {}, result_type, debug_info);
+}
+
 void PyStructuredSDFGBuilder::add_reduce_op(
     const std::string& op_type,
     const std::string& input,

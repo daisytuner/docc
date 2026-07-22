@@ -627,6 +627,16 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_concat_op",
+            &PyStructuredSDFGBuilder::add_concat_op,
+            py::arg("tensors"),
+            py::arg("tensor_types"),
+            py::arg("result"),
+            py::arg("result_type"),
+            py::arg("dim"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_reduce_op",
             &PyStructuredSDFGBuilder::add_reduce_op,
             py::arg("op_type"),

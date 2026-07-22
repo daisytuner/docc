@@ -1504,6 +1504,10 @@ void register_default_serializers() {
         .register_library_node_serializer(math::tensor::LibraryNodeType_TensorCopy.value(), []() {
             return std::make_unique<math::tensor::TensorCopyNodeSerializer>();
         });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_TensorConcat.value(), []() {
+            return std::make_unique<math::tensor::ConcatNodeSerializer>();
+        });
 
     // Elementwise
     LibraryNodeSerializerRegistry::instance()
