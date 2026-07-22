@@ -262,3 +262,61 @@ TEST(CPPLanguageExtensionTest, Expression_External) {
     auto result = generator.expression(sym);
     EXPECT_EQ(result, "(reinterpret_cast<uintptr_t>(&EXT1))");
 }
+
+TEST(CPPLanguageExtensionTest, PrimitiveType_Complex) {
+    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    codegen::CPPLanguageExtension generator(sdfg);
+
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CHalf), "half2");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CBFloat), "bfloat162");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFloat), "float2");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CDouble), "double2");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFP128), "fp128_2");
+}
+
+TEST(CPPLanguageExtensionTest, Zero_Complex) {
+    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    codegen::CPPLanguageExtension generator(sdfg);
+
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CFloat), "float2{0, 0}");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CDouble), "double2{0, 0}");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CFP128), "fp128_2{0, 0}");
+}
+
+TEST(CPPLanguageExtensionTest, Tasklet_ComplexAdd) {
+    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& state = builder.add_state();
+    types::Scalar desc(types::PrimitiveType::CFloat);
+    builder.add_container("a", desc);
+    builder.add_container("b", desc);
+    builder.add_container("c", desc);
+    auto& a = builder.add_access(state, "a");
+    auto& b = builder.add_access(state, "b");
+    auto& c = builder.add_access(state, "c");
+    auto& tasklet = builder.add_tasklet(state, data_flow::TaskletCode::complex_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(state, a, tasklet, "_in1", {});
+    builder.add_computational_memlet(state, b, tasklet, "_in2", {});
+    builder.add_computational_memlet(state, tasklet, "_out", c, {});
+    codegen::CPPLanguageExtension generator(builder.subject());
+    EXPECT_EQ(generator.tasklet(tasklet), "__daisy_cadd_f(_in1, _in2)");
+}
+
+TEST(CPPLanguageExtensionTest, Tasklet_ComplexDiv) {
+    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& state = builder.add_state();
+    types::Scalar desc(types::PrimitiveType::CDouble);
+    builder.add_container("a", desc);
+    builder.add_container("b", desc);
+    builder.add_container("c", desc);
+    auto& a = builder.add_access(state, "a");
+    auto& b = builder.add_access(state, "b");
+    auto& c = builder.add_access(state, "c");
+    auto& tasklet = builder.add_tasklet(state, data_flow::TaskletCode::complex_div, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(state, a, tasklet, "_in1", {});
+    builder.add_computational_memlet(state, b, tasklet, "_in2", {});
+    builder.add_computational_memlet(state, tasklet, "_out", c, {});
+    codegen::CPPLanguageExtension generator(builder.subject());
+    EXPECT_EQ(generator.tasklet(tasklet), "__daisy_cdiv_d(_in1, _in2)");
+}

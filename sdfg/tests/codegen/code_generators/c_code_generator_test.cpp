@@ -246,3 +246,58 @@ TEST(CCodeGeneratorTest, DispatchGlobals) {
     auto result = generator.globals().str();
     EXPECT_EQ(result, "extern int a;\n");
 }
+
+TEST(CCodeGeneratorTest, ComplexSupportPreamble) {
+    builder::StructuredSDFGBuilder builder("sdfg_a", FunctionType_CPU);
+
+    auto sdfg = builder.move();
+    analysis::AnalysisManager analysis_manager(*sdfg);
+
+    auto instrumentation_plan = codegen::InstrumentationPlan::none(*sdfg);
+    auto arg_capture_plan = codegen::ArgCapturePlan::none(*sdfg);
+    codegen::CCodeGenerator generator(*sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan);
+    EXPECT_TRUE(generator.generate());
+
+    auto includes = generator.includes().str();
+    // Reused vector types are defined on CPU targets.
+    EXPECT_NE(includes.find("typedef struct { float x; float y; } float2;"), std::string::npos);
+    EXPECT_NE(includes.find("typedef struct { double x; double y; } double2;"), std::string::npos);
+    EXPECT_NE(includes.find("typedef struct { _Float16 x; _Float16 y; } half2;"), std::string::npos);
+    EXPECT_NE(includes.find("typedef struct { __bf16 x; __bf16 y; } bfloat162;"), std::string::npos);
+    EXPECT_NE(includes.find("fp128_2;"), std::string::npos);
+    // Helper functions are instantiated for each element suffix.
+    EXPECT_NE(includes.find("__daisy_cadd_##SUF"), std::string::npos);
+    EXPECT_NE(includes.find("__DAISY_DEFINE_COMPLEX(float2, float, float, f,"), std::string::npos);
+    EXPECT_NE(includes.find("__DAISY_DEFINE_COMPLEX(double2, double, double, d,"), std::string::npos);
+}
+
+TEST(CCodeGeneratorTest, ComplexAddSchedule) {
+    builder::StructuredSDFGBuilder builder("sdfg_a", FunctionType_CPU);
+
+    types::Scalar desc(types::PrimitiveType::CFloat);
+    builder.add_container("a", desc, true);
+    builder.add_container("b", desc, true);
+    builder.add_container("c", desc, true);
+
+    auto& root = builder.subject().root();
+    auto& block = builder.add_block(root);
+    auto& a = builder.add_access(block, "a");
+    auto& b = builder.add_access(block, "b");
+    auto& c = builder.add_access(block, "c");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::complex_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, a, tasklet, "_in1", {});
+    builder.add_computational_memlet(block, b, tasklet, "_in2", {});
+    builder.add_computational_memlet(block, tasklet, "_out", c, {});
+
+    auto sdfg = builder.move();
+    analysis::AnalysisManager analysis_manager(*sdfg);
+
+    auto instrumentation_plan = codegen::InstrumentationPlan::none(*sdfg);
+    auto arg_capture_plan = codegen::ArgCapturePlan::none(*sdfg);
+    codegen::CCodeGenerator generator(*sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan);
+    EXPECT_TRUE(generator.generate());
+
+    auto result = generator.main().str();
+    EXPECT_NE(result.find("__daisy_cadd_f(_in1, _in2)"), std::string::npos);
+    EXPECT_NE(result.find("float2 _in1"), std::string::npos);
+}

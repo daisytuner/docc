@@ -103,7 +103,11 @@ void CUDACodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
     out << "#define "
         << "__DAISY_NVVM__" << std::endl;
     out << "#include <cstdint>" << std::endl;
+    out << "#include <cuda_fp16.h>" << std::endl;
+    out << "#include <cuda_bf16.h>" << std::endl;
     out << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
+
+    out << complex_support_preamble(true);
 };
 
 void CUDACodeGenerator::dispatch_structures() { this->dispatch_header_structures(this->classes_stream_); }
