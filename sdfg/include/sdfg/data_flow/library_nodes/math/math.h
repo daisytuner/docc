@@ -35,6 +35,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sqrt_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/fft_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/pooling_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/max_node.h"

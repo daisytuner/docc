@@ -193,6 +193,56 @@ void register_cuda_plugin(plugins::Context& context) {
     );
 
 
+    // FFT - cuFFT with data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_FFT.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::FFTNodeDispatcher_CUFFTWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::FFTNodeBase&>(node)
+            );
+        }
+    );
+    // FFT - cuFFT without data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_FFT.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::FFTNodeDispatcher_CUFFTWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::FFTNodeBase&>(node)
+            );
+        }
+    );
+    // IFFT - cuFFT with data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_IFFT.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::FFTNodeDispatcher_CUFFTWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::FFTNodeBase&>(node)
+            );
+        }
+    );
+    // IFFT - cuFFT without data transfers
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_IFFT.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::FFTNodeDispatcher_CUFFTWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::FFTNodeBase&>(node)
+            );
+        }
+    );
+
+
     context.scheduler_registry
         .register_loop_scheduler<passes::scheduler::CUDAScheduler>(passes::scheduler::CUDAScheduler::target());
 }

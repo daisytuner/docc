@@ -1493,6 +1493,14 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::ConvNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_FFT.value(), []() {
+            return std::make_unique<math::tensor::FFTNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_IFFT.value(), []() {
+            return std::make_unique<math::tensor::IFFTNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Pooling.value(), []() {
             return std::make_unique<math::tensor::PoolingNodeSerializer>();
         });

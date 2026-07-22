@@ -55,6 +55,12 @@ bool RocmLibraryNodeRewriter::accept(structured_control_flow::Block& node) {
                 memset_node->implementation_type() = implType.value();
             }
         }
+        if (auto fft_node = dynamic_cast<math::tensor::FFTNodeBase*>(&library_node)) {
+            if (fft_node->real_primitive() == types::PrimitiveType::Float ||
+                fft_node->real_primitive() == types::PrimitiveType::Double) {
+                fft_node->implementation_type() = rocm::ImplementationType_ROCMWithTransfers;
+            }
+        }
     }
     return false;
 }

@@ -67,6 +67,7 @@ set(SOURCE_FILES
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
     src/targets/cuda/math/tensor/batchnorm_expander.cpp
     src/targets/cuda/math/tensor/conv_expander.cpp
+    src/targets/cuda/math/tensor/fft.cpp
     src/targets/cuda/math/tensor/softmax.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
@@ -81,6 +82,7 @@ set(SOURCE_FILES
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp
     src/targets/rocm/math/tensor/batchnorm_expander.cpp
     src/targets/rocm/math/tensor/conv_expander.cpp
+    src/targets/rocm/math/tensor/fft.cpp
     src/targets/rocm/stdlib/memset.cpp
     src/targets/rocm/stdlib/memcpy.cpp
     src/targets/rocm/plugin.cpp
@@ -93,9 +95,11 @@ set(SOURCE_FILES
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
+    src/transformations/offloading/cufft_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/rocblas_data_transfer_extraction.cpp
+    src/transformations/offloading/rocfft_data_transfer_extraction.cpp
     src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_transform.cpp

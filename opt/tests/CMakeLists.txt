@@ -12,7 +12,9 @@ set(TEST_FILES
     cuda/blas/cublas_test.cpp
     cuda/cuda_kernel_test.cpp
     cuda/softmax_dispatcher_test.cpp
+    cuda/fft_dispatcher_test.cpp
     rocm/blas/rocblas_test.cpp
+    rocm/fft_dispatcher_test.cpp
     rocm/rocm_library_nodes_test.cpp
     cuda/cuda_library_nodes_test.cpp
     passes/einsum_test.cpp
@@ -33,6 +35,7 @@ set(TEST_FILES
     transformations/offloading/rocblas_data_transfer_extraction_test.cpp
     transformations/offloading/cuda_stdlib_data_transfer_extraction_test.cpp
     transformations/offloading/rocm_stdlib_data_transfer_extraction_test.cpp
+    transformations/offloading/fft_data_transfer_extraction_test.cpp
     optimizations/diamond_tiling_test.cpp
     optimizations/blocking_test.cpp
     optimizations/gpu_kernels_test.cpp
@@ -44,6 +47,7 @@ set(TEST_FILES
     passes/offloading/rocm_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_rewriter_pass_test.cpp
     passes/offloading/rocm_library_node_rewriter_pass_test.cpp
+    passes/offloading/fft_library_node_rewriter_pass_test.cpp
     passes/scheduler/cuda_scheduler_test.cpp
     passes/scheduler/omp_scheduler_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
