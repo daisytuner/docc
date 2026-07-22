@@ -1,8 +1,11 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/copy_node.h"
 
-#include <gtest/gtest.h>
+#include <memory>
+#include <nlohmann/json_fwd.hpp>
 #include <utility>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -12,9 +15,11 @@
 #include "sdfg/element.h"
 #include "sdfg/function.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -426,4 +431,40 @@ TEST(TensorCopyNodeTest, reshape_from_one_big) {
          symbolic::mod(symbolic::div(i, e), d),
          symbolic::mod(i, e)}
     ));
+}
+
+TEST(TensorCopyNodeTest, serialization) {
+    auto a = symbolic::integer(2);
+    auto b = symbolic::integer(3);
+    math::tensor::TensorLayout layout_x({a, b});
+    math::tensor::TensorLayout layout_y({a, b});
+
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_type(types::PrimitiveType::Float);
+    types::Pointer desc_type(base_type);
+    builder.add_container("X", desc_type, true);
+    builder.add_container("Y", desc_type, true);
+
+    types::Tensor X_tensor(base_type, layout_x);
+    types::Tensor Y_tensor(base_type, layout_y);
+
+    auto& block = builder.add_block(root);
+    auto& X_access = builder.add_access(block, "X");
+    auto& Y_access = builder.add_access(block, "Y");
+    auto& libnode =
+        builder.add_library_node<math::tensor::TensorCopyNode>(block, sdfg::DebugInfo(), layout_x, layout_y);
+    builder.add_computational_memlet(block, X_access, libnode, "X", {}, X_tensor);
+    builder.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_tensor);
+
+    ASSERT_NO_THROW(sdfg.validate());
+
+    serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    ASSERT_NO_THROW(j = serializer.serialize(sdfg));
+
+    std::unique_ptr<StructuredSDFG> new_sdfg;
+    ASSERT_NO_THROW(new_sdfg = serializer.deserialize(j));
 }

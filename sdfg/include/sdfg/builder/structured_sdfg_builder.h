@@ -149,6 +149,15 @@ public:
 
     Element* find_element_by_id(const size_t& element_id) const;
 
+    /**
+     * @brief Replace symbolic expressions on the whole SDFG
+     * @param old_expression Expression to replace
+     * @param new_expression Replacement expression
+     */
+    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
+        override;
+    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override;
+
     Sequence& add_sequence(
         Sequence& parent,
         const sdfg::control_flow::Assignments& assignments = {},

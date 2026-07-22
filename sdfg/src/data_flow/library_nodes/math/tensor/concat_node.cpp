@@ -34,129 +34,6 @@ namespace sdfg {
 namespace math {
 namespace tensor {
 
-void ConcatNode::expand_naive(
-    passes::LibNodeExpander::AccessNodeExpand& standalone,
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence
-) {
-    auto& dfg = this->get_parent();
-
-    types::Scalar indvar_type(types::PrimitiveType::UInt64);
-    structured_control_flow::Sequence* current_seq = &sequence;
-    data_flow::Subset subset;
-    subset.reserve(this->result_layout_.dims());
-    for (auto dim : this->result_layout_.shape()) {
-        auto indvar_container = builder.find_new_name("_i");
-        builder.add_container(indvar_container, indvar_type);
-        auto indvar = symbolic::symbol(indvar_container);
-        subset.push_back(indvar);
-        auto& map = builder.add_map(
-            *current_seq,
-            indvar,
-            symbolic::Lt(indvar, dim),
-            symbolic::zero(),
-            symbolic::add(indvar, symbolic::one()),
-            structured_control_flow::ScheduleType_Sequential::create(),
-            {},
-            this->debug_info_
-        );
-        current_seq = &map.root();
-    }
-
-    auto& if_else = builder.add_if_else(*current_seq, {}, this->debug_info_);
-    auto dim_indvar = subset.at(this->dim_);
-    const auto* iedge_result = dfg.in_edge_for_connector(*this, this->result());
-    if (!iedge_result) {
-        throw InvalidSDFGException("ConcatNode: Cannot get in edge for connector: " + this->result());
-    }
-
-    symbolic::Expression offset = symbolic::zero();
-    for (size_t i = 0; i < this->tensor_layouts_.size(); i++) {
-        auto new_offset = symbolic::add(offset, this->tensor_layouts_[i].get_dim(this->dim_));
-        auto condition = symbolic::And(symbolic::Ge(dim_indvar, offset), symbolic::Lt(dim_indvar, new_offset));
-        auto& case_seq = builder.add_case(if_else, condition, this->debug_info_);
-
-        data_flow::Subset offset_subset(subset);
-        offset_subset[this->dim_] = symbolic::sub(dim_indvar, offset);
-
-        auto& block = builder.add_block(case_seq, {}, this->debug_info_);
-        auto& tensor_access = standalone.add_scalar_input_access(block, i);
-        auto& result_access = standalone.add_scalar_input_access(block, this->tensor_layouts_.size());
-        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info_);
-
-        const auto* iedge_tensor = dfg.in_edge_for_connector(*this, this->inputs_[i]);
-        if (!iedge_tensor) {
-            throw InvalidSDFGException("ConcatNode: Cannot get in edge for connector: " + this->inputs_[i]);
-        }
-        builder.add_computational_memlet(
-            block, tensor_access, tasklet, "_in", offset_subset, iedge_tensor->base_type(), iedge_tensor->debug_info()
-        );
-        builder.add_computational_memlet(
-            block, tasklet, "_out", result_access, subset, iedge_result->base_type(), iedge_result->debug_info()
-        );
-
-        offset = new_offset;
-    }
-}
-
-void ConcatNode::expand_separately(
-    passes::LibNodeExpander::AccessNodeExpand& standalone,
-    builder::StructuredSDFGBuilder& builder,
-    structured_control_flow::Sequence& sequence
-) {
-    auto& dfg = this->get_parent();
-    types::Scalar indvar_type(types::PrimitiveType::UInt64);
-    size_t num_tensors = this->inputs().size() - 1;
-    const auto* iedge_result = dfg.in_edge_for_connector(*this, this->result());
-    if (!iedge_result) {
-        throw InvalidSDFGException("ConcatNode: Cannot get in edge for connector: " + this->result());
-    }
-    symbolic::Expression offset = symbolic::zero();
-
-    for (size_t i = 0; i < num_tensors; i++) {
-        structured_control_flow::Sequence* current_seq = &sequence;
-        data_flow::Subset subset;
-        subset.reserve(this->tensor_layouts_[i].dims());
-        for (auto dim : this->tensor_layouts_[i].shape()) {
-            auto indvar_container = builder.find_new_name("_i");
-            builder.add_container(indvar_container, indvar_type);
-            auto indvar = symbolic::symbol(indvar_container);
-            subset.push_back(indvar);
-            auto& map = builder.add_map(
-                *current_seq,
-                indvar,
-                symbolic::Lt(indvar, dim),
-                symbolic::zero(),
-                symbolic::add(indvar, symbolic::one()),
-                structured_control_flow::ScheduleType_Sequential::create(),
-                {},
-                this->debug_info_
-            );
-            current_seq = &map.root();
-        }
-
-        auto& block = builder.add_block(*current_seq, {}, this->debug_info_);
-        auto& tensor_access = standalone.add_scalar_input_access(block, i);
-        auto& result_access = standalone.add_scalar_input_access(block, this->tensor_layouts_.size());
-        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info_);
-
-        const auto* iedge_tensor = dfg.in_edge_for_connector(*this, this->inputs_[i]);
-        if (!iedge_tensor) {
-            throw InvalidSDFGException("ConcatNode: Cannot get in edge for connector: " + this->inputs_[i]);
-        }
-        builder.add_computational_memlet(
-            block, tensor_access, tasklet, "_in", subset, iedge_tensor->base_type(), iedge_tensor->debug_info()
-        );
-
-        data_flow::Subset offset_subset(subset);
-        offset_subset[this->dim_] = symbolic::add(subset[this->dim_], offset);
-        builder.add_computational_memlet(
-            block, tasklet, "_out", result_access, offset_subset, iedge_result->base_type(), iedge_result->debug_info()
-        );
-        offset = symbolic::add(offset, this->tensor_layouts_[i].get_dim(this->dim_));
-    }
-}
-
 ConcatNode::ConcatNode(
     size_t element_id,
     const DebugInfo& debug_info,
@@ -292,8 +169,64 @@ passes::LibNodeExpander::ExpandOutcome ConcatNode::
     // Add a graph after the current block
     auto& new_sequence = standalone->replace_with_sequence();
 
-    this->expand_naive(*standalone, builder, new_sequence);
-    // this->expand_separately(*standalone, builder, new_sequence);
+    auto& dfg = this->get_parent();
+
+    types::Scalar indvar_type(types::PrimitiveType::UInt64);
+    structured_control_flow::Sequence* current_seq = &new_sequence;
+    data_flow::Subset subset;
+    subset.reserve(this->result_layout_.dims());
+    for (auto dim : this->result_layout_.shape()) {
+        auto indvar_container = builder.find_new_name("_i");
+        builder.add_container(indvar_container, indvar_type);
+        auto indvar = symbolic::symbol(indvar_container);
+        subset.push_back(indvar);
+        auto& map = builder.add_map(
+            *current_seq,
+            indvar,
+            symbolic::Lt(indvar, dim),
+            symbolic::zero(),
+            symbolic::add(indvar, symbolic::one()),
+            structured_control_flow::ScheduleType_Sequential::create(),
+            {},
+            this->debug_info_
+        );
+        current_seq = &map.root();
+    }
+
+    auto& if_else = builder.add_if_else(*current_seq, {}, this->debug_info_);
+    auto dim_indvar = subset.at(this->dim_);
+    const auto* iedge_result = dfg.in_edge_for_connector(*this, this->result());
+    if (!iedge_result) {
+        throw InvalidSDFGException("ConcatNode: Cannot get in edge for connector: " + this->result());
+    }
+
+    symbolic::Expression offset = symbolic::zero();
+    for (size_t i = 0; i < this->tensor_layouts_.size(); i++) {
+        auto new_offset = symbolic::add(offset, this->tensor_layouts_[i].get_dim(this->dim_));
+        auto condition = symbolic::And(symbolic::Ge(dim_indvar, offset), symbolic::Lt(dim_indvar, new_offset));
+        auto& case_seq = builder.add_case(if_else, condition, this->debug_info_);
+
+        data_flow::Subset offset_subset(subset);
+        offset_subset[this->dim_] = symbolic::sub(dim_indvar, offset);
+
+        auto& block = builder.add_block(case_seq, {}, this->debug_info_);
+        auto& tensor_access = standalone->add_scalar_input_access(block, i);
+        auto& result_access = standalone->add_scalar_input_access(block, this->tensor_layouts_.size());
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info_);
+
+        const auto* iedge_tensor = dfg.in_edge_for_connector(*this, this->inputs_[i]);
+        if (!iedge_tensor) {
+            throw InvalidSDFGException("ConcatNode: Cannot get in edge for connector: " + this->inputs_[i]);
+        }
+        builder.add_computational_memlet(
+            block, tensor_access, tasklet, "_in", offset_subset, iedge_tensor->base_type(), iedge_tensor->debug_info()
+        );
+        builder.add_computational_memlet(
+            block, tasklet, "_out", result_access, subset, iedge_result->base_type(), iedge_result->debug_info()
+        );
+
+        offset = new_offset;
+    }
 
     return standalone->successfully_expanded();
 }

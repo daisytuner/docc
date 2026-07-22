@@ -106,6 +106,17 @@ public:
     std::unique_ptr<Tensor> squeeze() const;
 
     std::unique_ptr<Tensor> reshape(const symbolic::MultiExpression& new_shape) const;
+
+    /**
+     * @brief Replace symbolic expressions on this type
+     * @param old_expression Expression to replace
+     * @param new_expression Replacement expression
+     *
+     * Replaces occurrences of symbolic expressions on the type.
+     */
+    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
+        override;
+    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override;
 };
 
 } // namespace types

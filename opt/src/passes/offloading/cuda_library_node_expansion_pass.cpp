@@ -1,9 +1,12 @@
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
+
+#include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/math/tensor/batched_matmul_expander.h"
+#include "sdfg/targets/cuda/math/tensor/concat_expander.h"
 #include "sdfg/targets/cuda/math/tensor/conv_expander.h"
 
 namespace sdfg {
@@ -35,6 +38,10 @@ bool CudaExpansion::accept(structured_control_flow::Block& node) {
         } else if (lib_node_code == math::tensor::LibraryNodeType_Softmax) {
             library_node->implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
             made_changes = true;
+        } else if (lib_node_code == math::tensor::LibraryNodeType_TensorConcat) {
+            auto& concat_node = static_cast<math::tensor::ConcatNode&>(*library_node);
+            sdfg::offloading::CudaConcatExpander expander(concat_node);
+            made_changes |= expander.expand(builder_, analysis_manager_);
         } else {
             continue;
         }

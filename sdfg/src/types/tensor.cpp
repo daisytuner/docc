@@ -144,5 +144,15 @@ std::unique_ptr<Tensor> Tensor::reshape(const symbolic::MultiExpression& new_sha
     );
 }
 
+void Tensor::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    this->element_type_->replace_symbols(old_expression, new_expression);
+    this->layout_.replace_symbols(old_expression, new_expression);
+}
+
+void Tensor::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    this->element_type_->replace_symbols(replacements);
+    this->layout_.replace_symbols(replacements);
+}
+
 } // namespace types
 } // namespace sdfg

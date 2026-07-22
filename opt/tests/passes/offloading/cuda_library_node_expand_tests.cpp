@@ -2,7 +2,9 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
+#include "sdfg/targets/cuda/math/tensor/concat_expander.h"
 #include "sdfg/targets/cuda/math/tensor/conv_expander.h"
 
 #include "sdfg_debug_dump.h"
@@ -427,4 +429,51 @@ TEST(CudaConvExpanderTest, ExpandsValidConv1D_Group1) {
     bool expanded = expander.expand(builder, analysis_manager);
 
     EXPECT_TRUE(expanded);
+}
+
+TEST(CudaConcatExpanderTest, expands) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("A", desc, true);
+    builder.add_container("B", desc, true);
+    builder.add_container("C", desc, true);
+
+    math::tensor::TensorLayout A_layout({symbolic::integer(1), symbolic::integer(2), symbolic::integer(3)});
+    types::Tensor A_tensor(base_desc, A_layout);
+    math::tensor::TensorLayout B_layout({symbolic::integer(1), symbolic::integer(4), symbolic::integer(3)});
+    types::Tensor B_tensor(base_desc, B_layout);
+    math::tensor::TensorLayout C_layout({symbolic::integer(1), symbolic::integer(6), symbolic::integer(3)});
+    types::Tensor C_tensor(base_desc, C_layout);
+
+    auto& block = builder.add_block(root);
+    auto& A_access = builder.add_access(block, "A");
+    auto& B_access = builder.add_access(block, "B");
+    auto& C_access = builder.add_access(block, "C");
+    auto& libnode = builder.add_library_node<math::tensor::ConcatNode>(
+        block,
+        DebugInfo(),
+        "Y",
+        C_layout,
+        std::vector<std::string>({"X0", "X1"}),
+        std::vector<math::tensor::TensorLayout>({A_layout, B_layout}),
+        1
+    );
+    builder.add_computational_memlet(block, A_access, libnode, "X0", {}, A_tensor);
+    builder.add_computational_memlet(block, B_access, libnode, "X1", {}, B_tensor);
+    builder.add_computational_memlet(block, C_access, libnode, "Y", {}, C_tensor);
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    auto& concat_node = static_cast<math::tensor::ConcatNode&>(libnode);
+    analysis::AnalysisManager analysis_manager(sdfg);
+    offloading::CudaConcatExpander expander(concat_node);
+    ASSERT_TRUE(expander.expand(builder, analysis_manager));
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
 }

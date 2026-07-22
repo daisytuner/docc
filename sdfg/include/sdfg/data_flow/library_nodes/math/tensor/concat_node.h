@@ -32,18 +32,6 @@ private:
     std::vector<TensorLayout> tensor_layouts_;
     long long dim_;
 
-    void expand_naive(
-        passes::LibNodeExpander::AccessNodeExpand& standalone,
-        builder::StructuredSDFGBuilder& builder,
-        structured_control_flow::Sequence& sequence
-    );
-
-    void expand_separately(
-        passes::LibNodeExpander::AccessNodeExpand& standalone,
-        builder::StructuredSDFGBuilder& builder,
-        structured_control_flow::Sequence& sequence
-    );
-
 public:
     ConcatNode(
         size_t element_id,

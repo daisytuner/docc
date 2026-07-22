@@ -346,7 +346,7 @@ public:
      * @param old_expression Expression to replace
      * @param new_expression Replacement expression
      *
-     * Replaces occurrences in the subset vector.
+     * Replaces occurrences in the subset vector & the base type.
      */
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     void replace(const symbolic::ExpressionMapping& replacements) override;

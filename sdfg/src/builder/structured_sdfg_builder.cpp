@@ -2,6 +2,7 @@
 
 #include <cstddef>
 
+#include "sdfg/builder/function_builder.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -491,6 +492,17 @@ Element* StructuredSDFGBuilder::find_element_by_id(const size_t& element_id) con
 
     return nullptr;
 };
+
+void StructuredSDFGBuilder::
+    replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    FunctionBuilder::replace_symbols(old_expression, new_expression);
+    this->structured_sdfg_->root_->replace(old_expression, new_expression);
+}
+
+void StructuredSDFGBuilder::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    FunctionBuilder::replace_symbols(replacements);
+    this->structured_sdfg_->root_->replace(replacements);
+}
 
 Sequence& StructuredSDFGBuilder::
     add_sequence(Sequence& parent, const sdfg::control_flow::Assignments& assignments, const DebugInfo& debug_info) {

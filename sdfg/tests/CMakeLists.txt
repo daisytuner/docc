@@ -54,6 +54,7 @@ set(TEST_FILES
     data_flow/library_nodes/math/cmath/cmath_node_test.cpp
     data_flow/library_nodes/math/tensor/batchnorm_test.cpp
     data_flow/library_nodes/math/tensor/cmath_node_test.cpp
+    data_flow/library_nodes/math/tensor/concat_node_test.cpp
     data_flow/library_nodes/math/tensor/conv_test.cpp
     data_flow/library_nodes/math/tensor/copy_node_test.cpp
     data_flow/library_nodes/math/tensor/einsum_test.cpp
