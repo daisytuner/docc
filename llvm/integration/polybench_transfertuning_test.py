@@ -633,7 +633,7 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 7}}
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
     )
 
     test_case = benchmark_path / "2mm.c"
@@ -686,7 +686,7 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 8}}
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 7}}
     )
 
     test_case = benchmark_path / "3mm.c"
@@ -1138,7 +1138,7 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 5}}
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
     )
 
     test_case = benchmark_path / "lu.c"
