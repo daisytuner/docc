@@ -122,6 +122,14 @@ Expression abs(const Expression expr) {
 };
 
 Expression mod(const Expression lhs, const Expression rhs) {
+    if (eq(rhs, integer(1))) {
+        return integer(0);
+    }
+
+    if (eq(lhs, rhs)) {
+        return integer(0);
+    }
+
     auto mod = SymEngine::function_symbol("imod", {lhs, rhs});
     return mod;
 };

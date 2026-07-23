@@ -88,6 +88,10 @@ std::string MaxNode::identity(types::PrimitiveType primitive_type) const {
     }
 }
 
+std::optional<structured_control_flow::ReductionOperation> MaxNode::reduction_operation() const {
+    return std::make_optional(structured_control_flow::ReductionOperation::Max);
+}
+
 std::unique_ptr<data_flow::DataFlowNode> MaxNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(

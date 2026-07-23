@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_node.h"
 
 namespace sdfg {
@@ -31,6 +32,8 @@ public:
     ) override;
 
     std::string identity(types::PrimitiveType primitive_type) const override;
+
+    virtual std::optional<structured_control_flow::ReductionOperation> reduction_operation() const override;
 
     bool supports_integer_types() const override { return true; }
 

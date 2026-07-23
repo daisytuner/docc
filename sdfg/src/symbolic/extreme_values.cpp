@@ -1,5 +1,8 @@
 #include "sdfg/symbolic/extreme_values.h"
 
+#include <limits>
+#include <vector>
+
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "symengine/basic.h"
@@ -8,6 +11,45 @@
 
 namespace sdfg {
 namespace symbolic {
+
+namespace {
+
+// Type-derived "trivial" bounds (see `Assumption::create`) inject the primitive
+// type's numeric limits as loose lower/upper bounds — e.g. an `int64_t` loop
+// counter gets `[INT64_MIN, INT64_MAX]` alongside its real loop range. In a
+// `min`/`max` aggregation these sentinels are, by construction, the loosest
+// possible operand (>= / <= every value the variable can take), so they never
+// tighten the result. Worse, when a real bound is symbolic they leave an
+// irreducible `min(N-3, INT64_MAX)` that blocks coupled cancellation such as
+// proving `N - 2 - j >= 0` from `j <= N - 3`. We therefore drop these
+// sentinels from the aggregation whenever a real bound is also present.
+//
+// Only exact type-limit magnitudes are matched (a real bound coincidentally
+// equal to a type limit is astronomically unlikely, and dropping it from a
+// min/max is sound regardless — it only affects tightness). Unsigned lower
+// limits are 0, which is a common *real* bound, so they are intentionally NOT
+// treated as sentinels.
+bool matches_any(const Expression& e, const std::vector<int64_t>& values) {
+    if (!SymEngine::is_a<SymEngine::Integer>(*e)) return false;
+    for (auto v : values) {
+        if (SymEngine::eq(*e, *symbolic::integer(v))) return true;
+    }
+    return false;
+}
+
+bool is_type_upper_sentinel(const Expression& e) {
+    static const std::vector<int64_t> kMaxima = {
+        127, 255, 32767, 65535, 2147483647LL, 4294967295LL, 9223372036854775807LL
+    };
+    return matches_any(e, kMaxima);
+}
+
+bool is_type_lower_sentinel(const Expression& e) {
+    static const std::vector<int64_t> kMinima = {-128, -32768, -2147483648LL, std::numeric_limits<int64_t>::min()};
+    return matches_any(e, kMinima);
+}
+
+} // namespace
 
 // ============================================================================
 // BoundAnalysis implementation
@@ -144,35 +186,45 @@ Interval BoundAnalysis::visit_symbol(const SymEngine::RCP<const SymEngine::Symbo
             ub = visit(assum.tight_upper_bound(), depth + 1).upper;
         }
     } else {
-        // Loose mode: effective lower bound = max of all lower_bounds
+        // Loose mode: effective lower bound = max of all lower_bounds.
+        // Type-limit sentinels are pruned when a real bound exists (see
+        // `is_type_lower_sentinel`): they only ever loosen the max and would
+        // otherwise block coupled cancellation downstream.
+        Expression lb_real = SymEngine::null;
+        Expression lb_sentinel = SymEngine::null;
         for (auto& bound : assum.lower_bounds()) {
             auto bound_lb = visit(bound, depth + 1).lower;
             if (bound_lb.is_null()) {
                 continue;
             }
-            if (lb.is_null()) {
-                lb = bound_lb;
+            if (is_type_lower_sentinel(bound)) {
+                lb_sentinel = lb_sentinel.is_null() ? bound_lb : symbolic::max(lb_sentinel, bound_lb);
             } else {
-                lb = symbolic::max(lb, bound_lb);
+                lb_real = lb_real.is_null() ? bound_lb : symbolic::max(lb_real, bound_lb);
             }
         }
+        lb = !lb_real.is_null() ? lb_real : lb_sentinel;
         // Fall back to tight_lower_bound
         if (lb.is_null() && !assum.tight_lower_bound().is_null()) {
             lb = assum.tight_lower_bound();
         }
 
-        // Effective upper bound = min of all upper_bounds
+        // Effective upper bound = min of all upper_bounds (sentinels pruned
+        // when a real bound exists, mirroring the lower-bound handling).
+        Expression ub_real = SymEngine::null;
+        Expression ub_sentinel = SymEngine::null;
         for (auto& bound : assum.upper_bounds()) {
             auto bound_ub = visit(bound, depth + 1).upper;
             if (bound_ub.is_null()) {
                 continue;
             }
-            if (ub.is_null()) {
-                ub = bound_ub;
+            if (is_type_upper_sentinel(bound)) {
+                ub_sentinel = ub_sentinel.is_null() ? bound_ub : symbolic::min(ub_sentinel, bound_ub);
             } else {
-                ub = symbolic::min(ub, bound_ub);
+                ub_real = ub_real.is_null() ? bound_ub : symbolic::min(ub_real, bound_ub);
             }
         }
+        ub = !ub_real.is_null() ? ub_real : ub_sentinel;
         // Fall back to tight_upper_bound
         if (ub.is_null() && !assum.tight_upper_bound().is_null()) {
             ub = assum.tight_upper_bound();

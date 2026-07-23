@@ -32,6 +32,8 @@ public:
 
     std::string identity(types::PrimitiveType primitive_type) const override;
 
+    virtual std::optional<structured_control_flow::ReductionOperation> reduction_operation() const override;
+
     bool supports_integer_types() const override { return true; }
 
     std::unique_ptr<data_flow::DataFlowNode>

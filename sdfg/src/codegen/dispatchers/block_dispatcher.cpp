@@ -264,8 +264,14 @@ void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow
 
 
     stream << std::endl;
-    stream << out_conn << " = ";
-    stream << this->language_extension_.tasklet(tasklet) << ";" << std::endl;
+    if (data_flow::is_complex(tasklet.code())) {
+        // Complex tasklets lower to a component-wise (.x/.y) statement sequence rather than a
+        // single assignable expression, so the language extension emits the full computation.
+        stream << this->language_extension_.tasklet(tasklet) << std::endl;
+    } else {
+        stream << out_conn << " = ";
+        stream << this->language_extension_.tasklet(tasklet) << ";" << std::endl;
+    }
     stream << std::endl;
 
     // Write back
