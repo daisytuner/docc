@@ -85,17 +85,44 @@ void generate_fft(
     const std::string x_count = language_extension.expression(forward ? total_real : total_cplx);
     const std::string y_count = language_extension.expression(forward ? total_cplx : total_real);
 
+    // Build the hipFFT plan in function setup (outside the per-call hot path) and destroy it in
+    // teardown, mirroring the hipBLAS handle lifecycle: created once at function entry, released
+    // at function exit, so only the cheap hipfftExec* runs in the timed hot path.
+    const std::string plan_var = "__fft_plan_" + std::to_string(node.element_id());
+    {
+        codegen::PrettyPrinter setup;
+        setup << "hipfftHandle " << plan_var << ";" << std::endl;
+        setup << "{" << std::endl;
+        setup.setIndent(setup.indent() + 4);
+        setup << "int " << plan_var << "_n[" << node.rank() << "] = {";
+        for (size_t i = 0; i < node.shape().size(); ++i) {
+            setup << language_extension.expression(node.shape()[i]);
+            if (i + 1 < node.shape().size()) {
+                setup << ", ";
+            }
+        }
+        setup << "};" << std::endl;
+        setup << "hipfftResult " << plan_var << "_st = hipfftPlanMany(&" << plan_var << ", " << node.rank() << ", "
+              << plan_var << "_n, NULL, 1, " << language_extension.expression(idist) << ", NULL, 1, "
+              << language_extension.expression(odist) << ", " << plan_type << ", "
+              << language_extension.expression(batch) << ");" << std::endl;
+        hipfft_error_checking(setup, language_extension, plan_var + "_st");
+        setup.setIndent(setup.indent() - 4);
+        setup << "}" << std::endl;
+        library_snippet_factory.add_setup(setup.str());
+
+        codegen::PrettyPrinter teardown;
+        teardown << "{" << std::endl;
+        teardown.setIndent(teardown.indent() + 4);
+        teardown << "hipfftResult " << plan_var << "_dt = hipfftDestroy(" << plan_var << ");" << std::endl;
+        hipfft_error_checking(teardown, language_extension, plan_var + "_dt");
+        teardown.setIndent(teardown.indent() - 4);
+        teardown << "}" << std::endl;
+        library_snippet_factory.add_teardown(teardown.str());
+    }
+
     stream << "{" << std::endl;
     stream.setIndent(stream.indent() + 4);
-
-    stream << "int __fft_n[" << node.rank() << "] = {";
-    for (size_t i = 0; i < node.shape().size(); ++i) {
-        stream << language_extension.expression(node.shape()[i]);
-        if (i + 1 < node.shape().size()) {
-            stream << ", ";
-        }
-    }
-    stream << "};" << std::endl;
 
     std::string in_ptr = "__X";
     std::string out_ptr = "__Y";
@@ -117,20 +144,11 @@ void generate_fft(
         out_ptr = "__fft_dY";
     }
 
-    stream << "hipfftHandle __fft_plan;" << std::endl;
-    stream << "hipfftResult __fft_status;" << std::endl;
-    stream << "__fft_status = hipfftPlanMany(&__fft_plan, " << node.rank() << ", __fft_n, NULL, 1, "
-           << language_extension.expression(idist) << ", NULL, 1, " << language_extension.expression(odist) << ", "
-           << plan_type << ", " << language_extension.expression(batch) << ");" << std::endl;
-    hipfft_error_checking(stream, language_extension, "__fft_status");
-
     const std::string in_cast = forward ? real_cast : cplx_cast;
     const std::string out_cast = forward ? cplx_cast : real_cast;
-    stream << "__fft_status = " << exec_fn << "(__fft_plan, " << in_cast << in_ptr << ", " << out_cast << out_ptr
-           << ");" << std::endl;
+    stream << "hipfftResult __fft_status = " << exec_fn << "(" << plan_var << ", " << in_cast << in_ptr << ", "
+           << out_cast << out_ptr << ");" << std::endl;
     hipfft_error_checking(stream, language_extension, "__fft_status");
-
-    stream << "hipfftDestroy(__fft_plan);" << std::endl;
 
     if (with_transfers) {
         stream << "err_hip = hipMemcpy(__Y, __fft_dY, (" << y_count << ") * sizeof(" << y_dev_t
@@ -140,9 +158,6 @@ void generate_fft(
         rocm_error_checking(stream, language_extension, "err_hip");
         stream << "err_hip = hipFree(__fft_dY);" << std::endl;
         rocm_error_checking(stream, language_extension, "err_hip");
-    } else {
-        stream << "hipError_t err_hip_sync = hipDeviceSynchronize();" << std::endl;
-        rocm_error_checking(stream, language_extension, "err_hip_sync");
     }
 
     stream.setIndent(stream.indent() - 4);

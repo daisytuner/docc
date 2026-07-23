@@ -68,7 +68,11 @@ static std::string dispatch_fft(
     codegen::PrettyPrinter globals_stream;
     codegen::CodeSnippetFactory snippet_factory;
     EXPECT_NO_THROW(dispatcher->dispatch(stream, globals_stream, snippet_factory));
-    return stream.str();
+    std::string result = stream.str();
+    for (const auto& s : snippet_factory.setup_snippets()) {
+        result += s;
+    }
+    return result;
 }
 
 TEST(HIPFFTDispatcherTest, ForwardR2C_Float_WithTransfers) {

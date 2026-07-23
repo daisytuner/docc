@@ -137,6 +137,7 @@ bool ConvFFTExpander::expand_conv_fft(
 
     auto xpad = make_buffer("_fft_xpad", base_type, real_count);
     auto wpad = make_buffer("_fft_wpad", base_type, w_real_count);
+    auto wsrc = make_buffer("_fft_wsrc", base_type, symbolic::mul(C, symbolic::mul(Kh, Kw)));
     auto fx = make_buffer("_fft_fx", cplx_type, cplx_count);
     auto fw = make_buffer("_fft_fw", cplx_type, w_cplx_count);
     auto fy = make_buffer("_fft_fy", cplx_type, cplx_count);
@@ -194,6 +195,26 @@ bool ConvFFTExpander::expand_conv_fft(
         }
     }
 
+    // ---- 1b. Copy the weight into a contiguous intermediate buffer. The pad below then
+    //          reads a known-size malloc buffer instead of the raw weight argument, which
+    //          keeps it offloadable after loop collapsing rewrites accesses with div/mod
+    //          (argument-size analysis can only bound intermediate malloc buffers, not the
+    //          collapsed access range of a function argument). -----------------------------
+    {
+        Sequence* seq = &new_sequence;
+        auto c = add_loop(seq, "_c", C);
+        auto ki = add_loop(seq, "_ki", Kh);
+        auto kj = add_loop(seq, "_kj", Kw);
+        auto flat_ws = symbolic::add(symbolic::mul(symbolic::add(symbolic::mul(c, Kh), ki), Kw), kj);
+        auto& blk = builder.add_block(*seq, {}, dbg);
+        auto& wacc = builder.add_access(blk, b.access_W->data(), b.access_W->debug_info());
+        auto& dst = builder.add_access(blk, wsrc, dbg);
+        auto& t = builder.add_tasklet(blk, data_flow::TaskletCode::assign, "_out", {"_in"}, dbg);
+        builder
+            .add_computational_memlet(blk, wacc, t, "_in", {c, symbolic::zero(), ki, kj}, b.iedge_W->base_type(), dbg);
+        builder.add_computational_memlet(blk, t, "_out", dst, {flat_ws}, real_ptr, dbg);
+    }
+
     // ---- 2. Zero-pad and flip the weight into wpad (offset 0). --------------------------
     {
         Sequence* seq = &new_sequence;
@@ -211,11 +232,11 @@ bool ConvFFTExpander::expand_conv_fft(
         auto& out_seq = builder.add_case(branch, symbolic::Not(cond), dbg);
         {
             auto& blk = builder.add_block(in_seq, {}, dbg);
-            auto& wacc = builder.add_access(blk, b.access_W->data(), b.access_W->debug_info());
+            auto& wacc = builder.add_access(blk, wsrc, dbg);
             auto& dst = builder.add_access(blk, wpad, dbg);
             auto& t = builder.add_tasklet(blk, data_flow::TaskletCode::assign, "_out", {"_in"}, dbg);
-            builder
-                .add_computational_memlet(blk, wacc, t, "_in", {c, symbolic::zero(), wi, wj}, b.iedge_W->base_type(), dbg);
+            auto flat_ws = symbolic::add(symbolic::mul(symbolic::add(symbolic::mul(c, Kh), wi), Kw), wj);
+            builder.add_computational_memlet(blk, wacc, t, "_in", {flat_ws}, real_ptr, dbg);
             builder.add_computational_memlet(blk, t, "_out", dst, {flat_w}, real_ptr, dbg);
         }
         {
@@ -327,7 +348,7 @@ bool ConvFFTExpander::expand_conv_fft(
     }
 
     // ---- Free the intermediate buffers. -----------------------------------------------
-    for (const auto& buf : {xpad, wpad, fx, fw, fy, ifft_out}) {
+    for (const auto& buf : {xpad, wpad, wsrc, fx, fw, fy, ifft_out}) {
         const auto& buf_type = builder.subject().type(buf);
         stdlib::add_free_block(builder, new_sequence, buf, buf_type, dbg);
     }
