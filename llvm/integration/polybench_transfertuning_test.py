@@ -633,7 +633,7 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 7}}
     )
 
     test_case = benchmark_path / "2mm.c"
@@ -686,7 +686,7 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 7}}
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 8}}
     )
 
     test_case = benchmark_path / "3mm.c"
@@ -738,7 +738,7 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 4}}
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 5}}
     )
 
     test_case = benchmark_path / "atax.c"
@@ -796,7 +796,7 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 4}}
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 3}}
     )
 
     test_case = benchmark_path / "bicg.c"
@@ -910,7 +910,7 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 1}}
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 2}}
     )
 
     test_case = benchmark_path / "mvt.c"
@@ -968,7 +968,7 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 7}}
     )
 
     test_case = benchmark_path / "cholesky.c"

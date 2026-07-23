@@ -17,6 +17,9 @@ bool LoopSchedulingPass::run_pass_target(
     scheduler.set_report(report_);
     scheduler.set_recorder(recorder_);
 
+    UniqueLoopIndvars unique_indvar_pass;
+    unique_indvar_pass.run_pass(builder, analysis_manager);
+
     // ===== Phase 1: Find all applicable loops =====
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto& flop_analysis = analysis_manager.get<analysis::FlopAnalysis>();

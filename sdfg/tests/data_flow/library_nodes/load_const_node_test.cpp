@@ -52,15 +52,15 @@ TEST(LoadConstNodeTest, BuildInMemory2Code) {
         "0x0, 0x0, 0xb8, 0x41};\n";
     EXPECT_EQ(codeGen.globals().str(), expected_def);
 
-    auto expected_main = R"a(void* result;
-{
-    float *_out;
+    auto expected_main = R"a(    void* result;
+    {
+        float *_out;
 
-    _out = const_cast<float *>(reinterpret_cast<const float *>(&daisy_load_const_2[0]));
+        _out = const_cast<float *>(reinterpret_cast<const float *>(&daisy_load_const_2[0]));
 
-    result = _out;
-}
-return result;
+        result = _out;
+    }
+    return result;
 )a";
     EXPECT_EQ(codeGen.main().str(), expected_main);
 }

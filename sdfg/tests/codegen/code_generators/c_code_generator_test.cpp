@@ -51,7 +51,7 @@ TEST(CCodeGeneratorTest, Allocation_Stack_Transient) {
     codegen::CCodeGenerator generator(*sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan);
     generator.generate();
     auto result = generator.main().str();
-    EXPECT_EQ(result, "long long t0;\n");
+    EXPECT_EQ(result, "    long long t0;\n");
 }
 
 TEST(CCodeGeneratorTest, Allocation_Heap_Argument_Managed) {
@@ -75,7 +75,7 @@ TEST(CCodeGeneratorTest, Allocation_Heap_Argument_Managed) {
     codegen::CCodeGenerator generator(*sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan);
     generator.generate();
     auto result = generator.main().str();
-    EXPECT_EQ(result, "arg0 = malloc(8);\nfree(arg0);\n");
+    EXPECT_EQ(result, "    arg0 = malloc(8);\n    free(arg0);\n");
 }
 
 TEST(CCodeGeneratorTest, Allocation_Heap_Transient_Managed) {
@@ -99,7 +99,7 @@ TEST(CCodeGeneratorTest, Allocation_Heap_Transient_Managed) {
     codegen::CCodeGenerator generator(*sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan);
     generator.generate();
     auto result = generator.main().str();
-    EXPECT_EQ(result, "long long *t0;\nt0 = malloc(8);\nfree(t0);\n");
+    EXPECT_EQ(result, "    long long *t0;\n    t0 = malloc(8);\n    free(t0);\n");
 }
 
 TEST(CCodeGeneratorTest, Allocation_Heap_Argument_Default_Lifetime) {
@@ -123,7 +123,7 @@ TEST(CCodeGeneratorTest, Allocation_Heap_Argument_Default_Lifetime) {
     codegen::CCodeGenerator generator(*sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan);
     generator.generate();
     auto result = generator.main().str();
-    EXPECT_EQ(result, "arg0 = malloc(8);\n");
+    EXPECT_EQ(result, "    arg0 = malloc(8);\n");
 }
 
 TEST(CCodeGeneratorTest, Allocation_Heap_Transient_Default_Lifetime) {
@@ -147,7 +147,7 @@ TEST(CCodeGeneratorTest, Allocation_Heap_Transient_Default_Lifetime) {
     codegen::CCodeGenerator generator(*sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan);
     generator.generate();
     auto result = generator.main().str();
-    EXPECT_EQ(result, "long long *t0;\nt0 = malloc(8);\n");
+    EXPECT_EQ(result, "    long long *t0;\n    t0 = malloc(8);\n");
 }
 
 TEST(CCodeGeneratorTest, Deallocation_Heap_Argument_SDFG_Lifetime) {
@@ -171,7 +171,7 @@ TEST(CCodeGeneratorTest, Deallocation_Heap_Argument_SDFG_Lifetime) {
     codegen::CCodeGenerator generator(*sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan);
     generator.generate();
     auto result = generator.main().str();
-    EXPECT_EQ(result, "free(arg0);\n");
+    EXPECT_EQ(result, "    free(arg0);\n");
 }
 
 TEST(CCodeGeneratorTest, DispatchStructures_Basic) {

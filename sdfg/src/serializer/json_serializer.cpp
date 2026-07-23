@@ -744,8 +744,10 @@ void JSONSerializer::parse_legacy_transition_to_assignment_block(
 
     auto assignments = parse_assignments(assignments_arr);
 
-    auto& block = builder.add_assignments(parent, assignments, json_to_debug_info(j["debug_info"]));
-    block.element_id_ = j["element_id"];
+    if (!skip_empty_transitions || !assignments.empty()) {
+        auto& block = builder.add_assignments(parent, assignments, json_to_debug_info(j["debug_info"]));
+        block.element_id_ = j["element_id"];
+    }
 }
 
 void JSONSerializer::json_to_sequence(

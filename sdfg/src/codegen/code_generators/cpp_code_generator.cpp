@@ -166,6 +166,7 @@ void CPPCodeGenerator::dispatch_globals() {
 };
 
 void CPPCodeGenerator::dispatch_schedule() {
+    this->main_stream_.changeIndent(+4);
     // Allocate variables
     for (auto& container : sdfg_.containers()) {
         if (sdfg_.is_external(container)) {
@@ -233,6 +234,7 @@ void CPPCodeGenerator::dispatch_schedule() {
             }
         }
     }
+    this->main_stream_.changeIndent(-4);
 };
 
 } // namespace codegen
