@@ -262,14 +262,7 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
                     block.debug_info()
                 );
             } else {
-                last_loop = &builder.add_for(
-                    *last_scope,
-                    indvar,
-                    condition,
-                    init,
-                    update,
-                    block.debug_info()
-                );
+                last_loop = &builder.add_for(*last_scope, indvar, condition, init, update, block.debug_info());
             }
             last_scope = &last_loop->root();
             loop_vars_map[dim_idx] = indvar;
