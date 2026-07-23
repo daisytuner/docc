@@ -193,6 +193,33 @@ void register_cuda_plugin(plugins::Context& context) {
     );
 
 
+    // FFTConv - hand-tuned fused FFT depthwise conv (CUDA with data transfers)
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_FFTConv.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::FFTConvNodeDispatcher_CUDAWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::FFTConvNode&>(node)
+            );
+        }
+    );
+
+    // FFTConv - hand-tuned fused FFT depthwise conv (CUDA, device-resident operands)
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_FFTConv.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::FFTConvNodeDispatcher_CUDAWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::FFTConvNode&>(node)
+            );
+        }
+    );
+
+
     context.scheduler_registry
         .register_loop_scheduler<passes::scheduler::CUDAScheduler>(passes::scheduler::CUDAScheduler::target());
 }

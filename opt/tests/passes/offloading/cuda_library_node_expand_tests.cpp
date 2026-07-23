@@ -3,6 +3,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/fft_conv_node.h"
 #include "sdfg/targets/cuda/math/tensor/conv_expander.h"
 
 #include "sdfg_debug_dump.h"
@@ -427,4 +428,80 @@ TEST(CudaConvExpanderTest, ExpandsValidConv1D_Group1) {
     bool expanded = expander.expand(builder, analysis_manager);
 
     EXPECT_TRUE(expanded);
+}
+
+// Depthwise 2D conv takes the hand-tuned fused path (DOCC_CONV_FFT_TUNED=1), lowering the
+// ConvNode into a single FFTConvNode realized by the hardcoded Stockham FFT dispatcher.
+TEST(CudaConvExpanderTest, ExpandsDepthwiseConv2D_FFTTuned) {
+    setenv("DOCC_CONV_FFT_TUNED", "1", 1);
+
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+
+    builder.add_container("input", desc_ptr);
+    builder.add_container("weights", desc_ptr);
+    builder.add_container("output", desc_ptr);
+
+    auto& block = builder.add_block(sdfg.root());
+    auto& input_node = builder.add_access(block, "input");
+    auto& weights_node = builder.add_access(block, "weights");
+    auto& output_node = builder.add_access(block, "output");
+
+    std::vector<symbolic::Expression> kernel_shape = {symbolic::integer(3), symbolic::integer(3)};
+    std::vector<symbolic::Expression> strides = {symbolic::integer(1), symbolic::integer(1)};
+    std::vector<symbolic::Expression> pads = {
+        symbolic::integer(1), symbolic::integer(1), symbolic::integer(1), symbolic::integer(1)
+    };
+    std::vector<symbolic::Expression> dilations = {symbolic::integer(1), symbolic::integer(1)};
+    auto group = symbolic::integer(4); // depthwise: group == C_in == output_channels
+
+    std::vector<symbolic::Expression> shape = {
+        symbolic::integer(1), symbolic::integer(4), symbolic::integer(8), symbolic::integer(8)
+    };
+    types::Tensor desc_tensor_input(desc, shape);
+    types::Tensor desc_tensor_weights(
+        desc, {symbolic::integer(4), symbolic::integer(1), symbolic::integer(3), symbolic::integer(3)}
+    );
+    types::Tensor
+        desc_tensor_output(desc, {symbolic::integer(1), symbolic::integer(4), symbolic::integer(8), symbolic::integer(8)});
+
+    auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::integer(4), group, false
+    ));
+
+    builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
+    builder.add_computational_memlet(block, weights_node, conv_node, "W", {}, desc_tensor_weights, block.debug_info());
+    builder.add_computational_memlet(block, output_node, conv_node, "Y", {}, desc_tensor_output, block.debug_info());
+
+    EXPECT_NO_THROW(sdfg.validate());
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    offloading::CudaConvExpander expander(conv_node);
+    bool expanded = expander.expand(builder, analysis_manager);
+    EXPECT_TRUE(expanded) << "Depthwise conv should take the hand-tuned FFT path";
+
+    EXPECT_NO_THROW(sdfg.validate());
+    EXPECT_EQ(sdfg.root().size(), 1u);
+
+    // The lowering produces exactly one FFTConvNode.
+    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    ASSERT_NE(new_sequence, nullptr);
+    const math::tensor::FFTConvNode* fftconv = nullptr;
+    for (size_t i = 0; i < new_sequence->size(); ++i) {
+        if (auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence->at(i).first)) {
+            for (auto& n : blk->dataflow().nodes()) {
+                if (auto* f = dynamic_cast<const math::tensor::FFTConvNode*>(&n)) {
+                    fftconv = f;
+                }
+            }
+        }
+    }
+    ASSERT_NE(fftconv, nullptr);
+    EXPECT_EQ(fftconv->shape().size(), 4u);
+    EXPECT_FALSE(fftconv->with_bias());
+
+    unsetenv("DOCC_CONV_FFT_TUNED");
 }

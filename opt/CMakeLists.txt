@@ -25,6 +25,7 @@ configure_file(
 
 set(SOURCE_FILES
     src/analysis/data_transfer_elimination_analysis.cpp
+    src/expanders/conv_fft_tuned_expander.cpp
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
     src/passes/collapse_pass.cpp
@@ -70,6 +71,7 @@ set(SOURCE_FILES
     src/targets/cuda/cuda.cpp
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
     src/targets/cuda/math/tensor/conv_expander.cpp
+    src/targets/cuda/math/tensor/fft_conv.cpp
     src/targets/cuda/math/tensor/softmax.cpp
     src/targets/cuda/plugin.cpp
     src/targets/cuda/stdlib/memcpy.cpp
@@ -114,6 +116,7 @@ set(SOURCE_FILES
     src/transformations/map_fusion.cpp
     src/transformations/multi_level_tiling.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_fft_conv_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp

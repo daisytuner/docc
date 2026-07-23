@@ -3,6 +3,7 @@
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/expanders/conv_fft_tuned_expander.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/types/pointer.h"
@@ -19,8 +20,13 @@ bool CudaConvExpander::expand(builder::StructuredSDFGBuilder& builder, analysis:
 bool CudaConvExpander::expand_conv(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, math::tensor::ConvNode& node
 ) {
-    // First, try im2row expansion
-    if (expand_conv_im2row(builder, analysis_manager, node)) {
+    // Decision only: pick an expansion strategy. The actual lowering logic lives in the
+    // target-neutral `expanders` layer.
+    //   1) Hand-tuned fused FFT conv path (opt-in via DOCC_CONV_FFT_TUNED, self-gated on applicability).
+    //   2) Frequency-domain FFT path (opt-in via DOCC_CONV_FFT, self-gated on applicability).
+    //   3) im2row + GEMM (requires group == 1).
+    //   4) Naïve direct convolution (fallback, any grouping).
+    if (expanders::ConvFFTTunedExpander::expand_conv_fft_tuned(builder, analysis_manager, node)) {
         return true;
     }
     // When im2row fails, e.g., for grouped convolutions, use naïve expansion

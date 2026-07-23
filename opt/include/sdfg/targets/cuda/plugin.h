@@ -19,6 +19,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/cuda/cuda_map_dispatcher.h"
+#include "sdfg/targets/cuda/math/tensor/fft_conv.h"
 #include "sdfg/targets/cuda/math/tensor/softmax.h"
 #include "sdfg/targets/cuda/stdlib/memcpy.h"
 #include "sdfg/targets/cuda/stdlib/memset.h"
