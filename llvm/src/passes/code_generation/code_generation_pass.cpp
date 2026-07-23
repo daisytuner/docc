@@ -109,11 +109,13 @@ void add_schedule_type_specific_linker_args(const ScheduleType& schedule_type, s
     if (schedule_type.value() == sdfg::cuda::ScheduleType_CUDA::value()) {
         linker_args.emplace("/usr/local/cuda/lib64/libcudart.so");
         linker_args.emplace("/usr/local/cuda/lib64/libcublas.so");
+        linker_args.emplace("/usr/local/cuda/lib64/libcufft.so");
 
     } else if (schedule_type.value() == sdfg::rocm::ScheduleType_ROCM::value()) {
         linker_args.emplace("/opt/rocm/lib/libamdhip64.so");
         linker_args.emplace("/opt/rocm/lib/libhiprtc.so");
         linker_args.emplace("/opt/rocm/lib/libhipblas.so");
+        linker_args.emplace("/opt/rocm/lib/libhipfft.so");
     } else if (sdfg::tenstorrent::is_tenstorrent_schedule(schedule_type)) {
         if (auto tt_path = std::getenv("TT_METAL_INSTALL_DIR")) {
             linker_args.emplace("-L" + std::string(tt_path) + "/lib");

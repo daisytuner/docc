@@ -182,7 +182,7 @@ bool ConvFFTExpander::expand_conv_fft(
             auto& dst = builder.add_access(blk, xpad, dbg);
             auto& t = builder.add_tasklet(blk, data_flow::TaskletCode::assign, "_out", {"_in"}, dbg);
             builder.add_computational_memlet(blk, xacc, t, "_in", {n, c, i, j}, b.iedge_X->base_type(), dbg);
-            builder.add_computational_memlet(blk, t, "_out", dst, {flat_x}, base_type, dbg);
+            builder.add_computational_memlet(blk, t, "_out", dst, {flat_x}, real_ptr, dbg);
         }
         {
             auto& blk = builder.add_block(out_seq, {}, dbg);
@@ -190,7 +190,7 @@ bool ConvFFTExpander::expand_conv_fft(
             auto& dst = builder.add_access(blk, xpad, dbg);
             auto& t = builder.add_tasklet(blk, data_flow::TaskletCode::assign, "_out", {"_in"}, dbg);
             builder.add_computational_memlet(blk, zero, t, "_in", {}, base_type, dbg);
-            builder.add_computational_memlet(blk, t, "_out", dst, {flat_x}, base_type, dbg);
+            builder.add_computational_memlet(blk, t, "_out", dst, {flat_x}, real_ptr, dbg);
         }
     }
 
@@ -216,7 +216,7 @@ bool ConvFFTExpander::expand_conv_fft(
             auto& t = builder.add_tasklet(blk, data_flow::TaskletCode::assign, "_out", {"_in"}, dbg);
             builder
                 .add_computational_memlet(blk, wacc, t, "_in", {c, symbolic::zero(), wi, wj}, b.iedge_W->base_type(), dbg);
-            builder.add_computational_memlet(blk, t, "_out", dst, {flat_w}, base_type, dbg);
+            builder.add_computational_memlet(blk, t, "_out", dst, {flat_w}, real_ptr, dbg);
         }
         {
             auto& blk = builder.add_block(out_seq, {}, dbg);
@@ -224,7 +224,7 @@ bool ConvFFTExpander::expand_conv_fft(
             auto& dst = builder.add_access(blk, wpad, dbg);
             auto& t = builder.add_tasklet(blk, data_flow::TaskletCode::assign, "_out", {"_in"}, dbg);
             builder.add_computational_memlet(blk, zero, t, "_in", {}, base_type, dbg);
-            builder.add_computational_memlet(blk, t, "_out", dst, {flat_w}, base_type, dbg);
+            builder.add_computational_memlet(blk, t, "_out", dst, {flat_w}, real_ptr, dbg);
         }
     }
 
@@ -269,9 +269,9 @@ bool ConvFFTExpander::expand_conv_fft(
         auto& fw_acc = builder.add_access(blk, fw, dbg);
         auto& fy_acc = builder.add_access(blk, fy, dbg);
         auto& t = builder.add_tasklet(blk, data_flow::TaskletCode::complex_mul, "_out", {"_in1", "_in2"}, dbg);
-        builder.add_computational_memlet(blk, fx_acc, t, "_in1", {flat_fx}, cplx_type, dbg);
-        builder.add_computational_memlet(blk, fw_acc, t, "_in2", {flat_fw}, cplx_type, dbg);
-        builder.add_computational_memlet(blk, t, "_out", fy_acc, {flat_fx}, cplx_type, dbg);
+        builder.add_computational_memlet(blk, fx_acc, t, "_in1", {flat_fx}, cplx_ptr, dbg);
+        builder.add_computational_memlet(blk, fw_acc, t, "_in2", {flat_fw}, cplx_ptr, dbg);
+        builder.add_computational_memlet(blk, t, "_out", fy_acc, {flat_fx}, cplx_ptr, dbg);
     }
 
     // ---- 6. Inverse FFT: fy -> ifft_out. ----------------------------------------------
@@ -303,7 +303,7 @@ bool ConvFFTExpander::expand_conv_fft(
         auto& ifft_acc = builder.add_access(blk, ifft_out, dbg);
         auto& scale = builder.add_constant(blk, scale_expr->__str__(), base_type, dbg);
         auto& div = builder.add_tasklet(blk, data_flow::TaskletCode::fp_div, "_out", {"_in1", "_in2"}, dbg);
-        builder.add_computational_memlet(blk, ifft_acc, div, "_in1", {flat_ifft}, base_type, dbg);
+        builder.add_computational_memlet(blk, ifft_acc, div, "_in1", {flat_ifft}, real_ptr, dbg);
         builder.add_computational_memlet(blk, scale, div, "_in2", {}, base_type, dbg);
 
         data_flow::Subset y_subset{n, c, r, w};

@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
@@ -427,4 +429,69 @@ TEST(CudaConvExpanderTest, ExpandsValidConv1D_Group1) {
     bool expanded = expander.expand(builder, analysis_manager);
 
     EXPECT_TRUE(expanded);
+}
+
+// Depthwise 2D conv takes the frequency-domain path (DOCC_CONV_FFT=1). The generated
+// FFT -> complexMul -> IFFT pipeline must be a structurally valid SDFG. This guards the
+// intermediate-buffer memlet typing (flat Pointer buffers must use the pointer type, not the
+// scalar element type, otherwise type inference throws "Scalar type must have no subset").
+TEST(CudaConvExpanderTest, ExpandsDepthwiseConv2D_FFT) {
+    setenv("DOCC_CONV_FFT", "1", 1);
+
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+
+    builder.add_container("input", desc_ptr);
+    builder.add_container("weights", desc_ptr);
+    builder.add_container("output", desc_ptr);
+
+    auto& block = builder.add_block(sdfg.root());
+    auto& input_node = builder.add_access(block, "input");
+    auto& weights_node = builder.add_access(block, "weights");
+    auto& output_node = builder.add_access(block, "output");
+
+    std::vector<symbolic::Expression> kernel_shape = {symbolic::integer(3), symbolic::integer(3)};
+    std::vector<symbolic::Expression> strides = {symbolic::integer(1), symbolic::integer(1)};
+    std::vector<symbolic::Expression> pads = {
+        symbolic::integer(1), symbolic::integer(1), symbolic::integer(1), symbolic::integer(1)
+    };
+    std::vector<symbolic::Expression> dilations = {symbolic::integer(1), symbolic::integer(1)};
+    auto group = symbolic::integer(4); // depthwise: group == C_in == output_channels
+
+    // X shape: [N, C, H, W] = [1, 4, 8, 8]; depthwise weights [C_out, 1, kh, kw] = [4, 1, 3, 3].
+    std::vector<symbolic::Expression> shape = {
+        symbolic::integer(1), symbolic::integer(4), symbolic::integer(8), symbolic::integer(8)
+    };
+    types::Tensor desc_tensor_input(desc, shape);
+    types::Tensor desc_tensor_weights(
+        desc, {symbolic::integer(4), symbolic::integer(1), symbolic::integer(3), symbolic::integer(3)}
+    );
+    types::Tensor
+        desc_tensor_output(desc, {symbolic::integer(1), symbolic::integer(4), symbolic::integer(8), symbolic::integer(8)});
+
+    auto& conv_node = static_cast<math::tensor::ConvNode&>(builder.add_library_node<math::tensor::ConvNode>(
+        block, DebugInfo(), shape, kernel_shape, strides, pads, dilations, symbolic::integer(4), group, false
+    ));
+
+    builder.add_computational_memlet(block, input_node, conv_node, "X", {}, desc_tensor_input, block.debug_info());
+    builder.add_computational_memlet(block, weights_node, conv_node, "W", {}, desc_tensor_weights, block.debug_info());
+    builder.add_computational_memlet(block, output_node, conv_node, "Y", {}, desc_tensor_output, block.debug_info());
+
+    EXPECT_NO_THROW(sdfg.validate());
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    offloading::CudaConvExpander expander(conv_node);
+    bool expanded = expander.expand(builder, analysis_manager);
+    EXPECT_TRUE(expanded) << "Depthwise conv should take the FFT path";
+
+    // Key regression guard: the generated FFT pipeline is a valid SDFG.
+    EXPECT_NO_THROW(sdfg.validate());
+
+    // The convolution block was replaced by the FFT pipeline sequence.
+    EXPECT_EQ(sdfg.root().size(), 1u);
+
+    unsetenv("DOCC_CONV_FFT");
 }

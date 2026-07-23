@@ -21,6 +21,7 @@ static DoccTarget cuda_target = {
         builder.add_link_option("-lcuda");
         builder.add_link_option("/usr/local/cuda/lib64/libcudart.so");
         builder.add_link_option("/usr/local/cuda/lib64/libcublas.so");
+        builder.add_link_option("/usr/local/cuda/lib64/libcufft.so");
 
         compile::SrcFileCompilerBuilder b;
         b.inherit(builder, true);
@@ -69,6 +70,7 @@ static DoccTarget rocm_target = {
         builder.add_link_option(lib_path / "libamdhip64.so");
         builder.add_link_option(lib_path / "libhiprtc.so");
         builder.add_link_option(lib_path / "libhipblas.so");
+        builder.add_link_option(lib_path / "libhipfft.so");
 
         compile::SrcFileCompilerBuilder b;
         b.inherit(builder, true);
