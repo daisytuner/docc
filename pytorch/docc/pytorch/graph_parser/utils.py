@@ -1047,10 +1047,20 @@ class GraphParserModule(GraphParserBase, ABC):
                     node,
                     "Cannot copy non-tensor type for container: " + info.name(),
                 )
-            print((info.name(), sdfg_tensor, container, sdfg_types[1]))
-            builder.add_copy_op(
-                info.name(), sdfg_tensor, container, sdfg_types[1], debug_info
-            )
+            if sdfg_tensor.total_elements() != sdfg_types[1].total_elements():
+                builder.add_broadcast_op(
+                    info.name(),
+                    sdfg_tensor,
+                    container,
+                    sdfg_types[1],
+                    sdfg_tensor.shape,
+                    sdfg_types[1].shape,
+                    debug_info,
+                )
+            else:
+                builder.add_copy_op(
+                    info.name(), sdfg_tensor, container, sdfg_types[1], debug_info
+                )
         else:
             info.update(sdfg_type=sdfg_types[0], sdfg_tensor_type=sdfg_types[1])
 

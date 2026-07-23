@@ -58,6 +58,33 @@ def test_cat_many(target: str) -> None:
     check(CatManyNet(), (x, x, x, x, x, x, x, x, x, x), target=target)
 
 
+# --- expand_copy ---
+
+
+def test_expand_copy_simple(target: str) -> None:
+    class ExpandCopySimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.expand_copy(input, (3, 4))
+
+    check(ExpandCopySimpleNet(), torch.tensor([[1], [2], [3]]), target=target)
+
+
+def test_expand_copy_neg_dim(target: str) -> None:
+    class ExpandCopyNegDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.expand_copy(input, (-1, 4))
+
+    check(ExpandCopyNegDimNet(), torch.tensor([[1], [2], [3]]), target=target)
+
+
+def test_expand_copy_implicit(target: str) -> None:
+    class ExpandCopyImplicitNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.expand_copy(input, (3, 4), implicit=True)
+
+    check(ExpandCopyImplicitNet(), torch.tensor([[1], [2], [3]]), target=target)
+
+
 # --- permute ---
 
 

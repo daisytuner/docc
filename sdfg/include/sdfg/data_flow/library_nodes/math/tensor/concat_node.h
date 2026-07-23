@@ -26,6 +26,15 @@ namespace tensor {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_TensorConcat("ml::Concat");
 
+/** @brief Tensor concatenation node that can concatenate a number of tensors into another tensor
+ *
+ * The tensors can be multi-dimensional and the concatenation dimension is given (dim). All shapes
+ * of all tensors must be the same except for the conecatenation dimension. For this dimension, the
+ * dimensions of all input tensors must add up to the output tensor.
+ *
+ * The expansion is done with a map nest over the output dimensions. Inside, a if/else structure
+ * chooses the right tensor to copy from.
+ */
 class ConcatNode : public TensorNode {
 private:
     TensorLayout result_layout_;

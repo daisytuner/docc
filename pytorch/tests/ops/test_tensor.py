@@ -22,6 +22,40 @@ def test_clone_memory_format_contiguous(target: str) -> None:
     check(CloneMemoryFormatContiguousNet(), torch.randn(2, 3), target=target)
 
 
+# --- expand ---
+
+
+def test_expand_simple(target: str) -> None:
+    class ExpandSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.expand(3, 4)
+
+    check(ExpandSimpleNet(), torch.tensor([[1], [2], [3]]), target=target)
+
+
+def test_expand_neg_dim(target: str) -> None:
+    class ExpandNegDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.expand(-1, 4)
+
+    check(ExpandNegDimNet(), torch.tensor([[1], [2], [3]]), target=target)
+
+
+# --- expand_as ---
+
+
+def test_expand_as_simple(target: str) -> None:
+    class ExpandAsSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+            return input.expand_as(other)
+
+    check(
+        ExpandAsSimpleNet(),
+        *(torch.tensor([[1], [2], [3]]), torch.randn(3, 4)),
+        target=target
+    )
+
+
 # --- view ---
 
 

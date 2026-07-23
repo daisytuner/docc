@@ -1,6 +1,5 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/structured_control_flow/for.h"
 
 namespace sdfg {
@@ -174,6 +173,9 @@ passes::LibNodeExpander::ExpandOutcome BroadcastNode::
             break;
         } else if (symbolic::eq(output_shape_[i], input_shape_[j])) {
             input_subset.push_back(loop_vars[i]);
+            j++;
+        } else if (symbolic::eq(input_shape_[j], symbolic::one())) {
+            input_subset.push_back(symbolic::zero());
             j++;
         }
     }
