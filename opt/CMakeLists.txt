@@ -25,16 +25,22 @@ configure_file(
 
 set(SOURCE_FILES
     src/analysis/data_transfer_elimination_analysis.cpp
+    src/passes/code_motion/extended_block_hoisting.cpp
+    src/passes/code_motion/extended_block_sorting.cpp
+    src/passes/collapse_pass.cpp
+    src/passes/dot_expansion_pass.cpp
     src/passes/einsum.cpp
+    src/passes/gemm_expansion_pass.cpp
+    src/passes/map_fusion_by_domain_pass.cpp
     src/passes/normalization/loop_normal_form.cpp
+    src/passes/normalization/map_fusion.cpp
     src/passes/normalization/perfect_loop_distribution.cpp
     src/passes/normalization/stride_minimization.cpp
-    src/passes/normalization/map_fusion.cpp
-    src/passes/targets/target_mapping_pass.cpp
-    src/passes/offloading/cuda_library_node_rewriter_pass.cpp
-    src/passes/offloading/cuda_library_node_expansion_pass.cpp
     src/passes/offloading/code_motion/block_hoisting.cpp
     src/passes/offloading/code_motion/block_sorting.cpp
+    src/passes/offloading/cuda_library_node_expansion_pass.cpp
+    src/passes/offloading/cuda_library_node_rewriter_pass.cpp
+    src/passes/offloading/cuda_library_node_transfer_extraction_pass.cpp
     src/passes/offloading/data_transfer_minimization_pass.cpp
     src/passes/offloading/device_buffer_reuse_pass.cpp
     src/passes/offloading/device_resident_arg_promotion_pass.cpp
@@ -43,99 +49,91 @@ set(SOURCE_FILES
     src/passes/offloading/gpu_tiling_pass.cpp
     src/passes/offloading/rocm_library_node_expansion_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
-    src/passes/offloading/cuda_library_node_transfer_extraction_pass.cpp
     src/passes/offloading/rocm_library_node_transfer_extraction_pass.cpp
     src/passes/offloading/sync_condition_propagation.cpp
-    src/passes/collapse_pass.cpp
-    src/passes/readonly_transfer_hoisting_pass.cpp
-    src/passes/dot_expansion_pass.cpp
-    src/passes/gemm_expansion_pass.cpp
-    src/passes/map_fusion_by_domain_pass.cpp
     src/passes/opt_pipeline.cpp
+    src/passes/readonly_transfer_hoisting_pass.cpp
     src/passes/redundant_load_elimination_pass.cpp
     src/passes/scheduler/cuda_scheduler.cpp
-    src/passes/scheduler/rocm_scheduler.cpp
-    src/passes/scheduler/vectorize_scheduler.cpp
     src/passes/scheduler/loop_scheduling_pass.cpp
     src/passes/scheduler/omp_scheduler.cpp
+    src/passes/scheduler/rocm_scheduler.cpp
     src/passes/scheduler/scheduler_registry.cpp
+    src/passes/scheduler/vectorize_scheduler.cpp
+    src/passes/targets/target_mapping_pass.cpp
     src/targets/cuda/blas/batched_gemm.cpp
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp
-    src/targets/cuda/cuda.cpp
-    src/targets/cuda/math/tensor/batched_matmul_expander.cpp
-    src/targets/cuda/math/tensor/batchnorm_expander.cpp
-    src/targets/cuda/math/tensor/conv_expander.cpp
-    src/targets/cuda/math/tensor/softmax.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
+    src/targets/cuda/cuda.cpp
+    src/targets/cuda/math/tensor/batched_matmul_expander.cpp
+    src/targets/cuda/math/tensor/conv_expander.cpp
+    src/targets/cuda/math/tensor/softmax.cpp
     src/targets/cuda/plugin.cpp
-    src/targets/cuda/stdlib/memset.cpp
     src/targets/cuda/stdlib/memcpy.cpp
-    src/targets/rocm/blas/dot.cpp
-    src/targets/rocm/blas/gemm.cpp
-    src/targets/rocm/blas/gemm_handtuned.cpp
-    src/targets/rocm/blas/batched_gemm.cpp
-    src/targets/rocm/blas/utils.cpp
-    src/targets/rocm/math/tensor/batched_matmul_expander.cpp
-    src/targets/rocm/math/tensor/batchnorm_expander.cpp
-    src/targets/rocm/math/tensor/conv_expander.cpp
-    src/targets/rocm/stdlib/memset.cpp
-    src/targets/rocm/stdlib/memcpy.cpp
-    src/targets/rocm/plugin.cpp
-    src/targets/rocm/rocm.cpp
-    src/targets/rocm/rocm_data_offloading_node.cpp
-    src/targets/rocm/rocm_map_dispatcher.cpp
+    src/targets/cuda/stdlib/memset.cpp
     src/targets/gpu/gpu_map_utils.cpp
-    src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
-    src/transformations/offloading/cublas_data_transfer_extraction.cpp
-    src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
-    src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
-    src/transformations/offloading/rocblas_data_transfer_extraction.cpp
-    src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
-    src/transformations/offloading/cuda_parallelize_nested_map.cpp
-    src/transformations/offloading/cuda_transform.cpp
-    src/transformations/offloading/gpu_condition_propagation.cpp
-    src/transformations/offloading/gpu_loop_reordering.cpp
-    src/transformations/offloading/gpu_tiling.cpp
-    src/transformations/offloading/rocm_parallelize_nested_map.cpp
-    src/transformations/offloading/rocm_transform.cpp
-    src/transformations/offloading/kernel_local_storage.cpp
+    src/targets/rocm/blas/batched_gemm.cpp
+    src/targets/rocm/blas/dot.cpp
+    src/targets/rocm/blas/gemm_handtuned.cpp
+    src/targets/rocm/blas/gemm.cpp
+    src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/math/tensor/batched_matmul_expander.cpp
+    src/targets/rocm/math/tensor/conv_expander.cpp
+    src/targets/rocm/plugin.cpp
+    src/targets/rocm/rocm_data_offloading_node.cpp
+    src/targets/rocm/rocm_map_dispatcher.cpp
+    src/targets/rocm/rocm.cpp
+    src/targets/rocm/stdlib/memcpy.cpp
+    src/targets/rocm/stdlib/memset.cpp
+    src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/transformations/collapse_to_depth.cpp
-    src/transformations/vectorize_transform.cpp
-    src/transformations/omp_transform.cpp
-    src/transformations/offloading/offload_transform.cpp
-    src/transformations/map_collapse.cpp
-    src/transformations/loop_distribute.cpp
-    src/transformations/einsum2dot.cpp
-    src/transformations/einsum2gemm.cpp
     src/transformations/einsum_extend.cpp
     src/transformations/einsum_lift.cpp
     src/transformations/einsum_promotion.cpp
+    src/transformations/einsum2dot.cpp
+    src/transformations/einsum2gemm.cpp
+    src/transformations/in_local_storage.cpp
     src/transformations/loop_condition_normalize.cpp
+    src/transformations/loop_distribute.cpp
     src/transformations/loop_indvar_finalize.cpp
     src/transformations/loop_interchange.cpp
     src/transformations/loop_peeling.cpp
     src/transformations/loop_rotate.cpp
     src/transformations/loop_shift.cpp
-    src/transformations/loop_split.cpp
     src/transformations/loop_skewing.cpp
+    src/transformations/loop_split.cpp
     src/transformations/loop_tiling.cpp
     src/transformations/loop_unit_stride.cpp
+    src/transformations/map_collapse.cpp
     src/transformations/map_fusion.cpp
     src/transformations/multi_level_tiling.cpp
-    src/transformations/tile_fusion.cpp
+    src/transformations/offloading/cublas_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_parallelize_nested_map.cpp
+    src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_transform.cpp
+    src/transformations/offloading/gpu_condition_propagation.cpp
+    src/transformations/offloading/gpu_loop_reordering.cpp
+    src/transformations/offloading/gpu_tiling.cpp
+    src/transformations/offloading/kernel_local_storage.cpp
+    src/transformations/offloading/offload_transform.cpp
+    src/transformations/offloading/rocblas_data_transfer_extraction.cpp
+    src/transformations/offloading/rocm_parallelize_nested_map.cpp
+    src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
+    src/transformations/offloading/rocm_transform.cpp
+    src/transformations/omp_transform.cpp
     src/transformations/out_local_storage.cpp
-    src/transformations/in_local_storage.cpp
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
+    src/transformations/tile_fusion.cpp
     src/transformations/transformation_schema.cpp
-    src/passes/code_motion/extended_block_hoisting.cpp
-    src/passes/code_motion/extended_block_sorting.cpp
+    src/transformations/vectorize_transform.cpp
 )
 add_library(sdfgopt
     ${SOURCE_FILES}

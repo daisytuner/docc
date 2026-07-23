@@ -221,6 +221,7 @@ class CompiledSDFG:
         device_resident=False,
         device_backend=None,
         target=None,
+        sort_output_args=True,
     ):
         self.lib_path = lib_path
         self.sdfg = sdfg
@@ -256,6 +257,11 @@ class CompiledSDFG:
         # promotion did not apply to this artifact.
         self.target = target
         self._warned_residency_failed = False
+
+        # Whether to sort the output arguments or not. Default is True. This has to be disable for
+        # frontends that do not call there output arguments _docc_ret_[i] where [i] is the index.
+        # Those frontends have to ensure the correct ordering themselves.
+        self._sort_output_args = sort_output_args
 
         # Cache for ctypes structure definitions
         self._ctypes_structures = {}
@@ -348,14 +354,20 @@ class CompiledSDFG:
                             np_dtype,
                         )
                     )
-                    output_order.append((int(arg_name.split("_")[-1]), info_idx))
+                    if self._sort_output_args:
+                        output_order.append((int(arg_name.split("_")[-1]), info_idx))
+                    else:
+                        output_order.append(info_idx)
                 else:
                     # Scalar return
                     info_idx = len(self._arg_info)
                     self._arg_info.append(
                         (_ARG_TYPE_OUTPUT_SCALAR, arg_name, base_type, primitive_type)
                     )
-                    output_order.append((int(arg_name.split("_")[-1]), info_idx))
+                    if self._sort_output_args:
+                        output_order.append((int(arg_name.split("_")[-1]), info_idx))
+                    else:
+                        output_order.append(info_idx)
 
             elif arg_name.startswith("_s") and arg_name[2:].isdigit():
                 # Shape symbol argument - tuple: (arg_type, s_idx, key_str)
@@ -403,9 +415,13 @@ class CompiledSDFG:
 
         self._num_user_args = user_arg_counter
 
-        # Pre-sort output order and build position map
-        output_order.sort(key=lambda x: x[0])
-        self._output_order = tuple(idx for _, idx in output_order)
+        if self._sort_output_args:
+            # Pre-sort output order and build position map
+            output_order.sort(key=lambda x: x[0])
+            self._output_order = tuple(idx for _, idx in output_order)
+        else:
+            self._output_order = output_order
+
         # Map from _arg_info index to result position (for O(1) lookup)
         self._output_pos_map = {idx: pos for pos, idx in enumerate(self._output_order)}
 

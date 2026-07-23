@@ -81,7 +81,11 @@ public:
 
     symbolic::Expression total_elements() const;
 
+    symbolic::Expression total_size() const;
+
     bool is_scalar() const;
+
+    bool is_contiguous() const;
 
     virtual bool operator==(const IType& other) const override;
 

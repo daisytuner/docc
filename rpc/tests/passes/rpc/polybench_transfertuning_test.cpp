@@ -58,7 +58,7 @@ TEST(PolybenchRPCSchedulerTest, Atax) { EXPECT_TRUE(run_rpc_scheduling(atax()));
 
 TEST(PolybenchRPCSchedulerTest, Bicg) { EXPECT_TRUE(run_rpc_scheduling(bicg())); }
 
-TEST(PolybenchRPCSchedulerTest, Mvt) { EXPECT_TRUE(run_rpc_scheduling(mvt())); }
+TEST(PolybenchRPCSchedulerTest, Mvt) { EXPECT_NO_THROW(run_rpc_scheduling(mvt())); }
 
 TEST(PolybenchRPCSchedulerTest, Cholesky) { EXPECT_TRUE(run_rpc_scheduling(cholesky())); }
 

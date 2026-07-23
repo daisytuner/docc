@@ -29,9 +29,9 @@ set(SOURCE_FILES
     src/analysis/base_user_visitor.cpp
     src/analysis/control_flow_analysis.cpp
     src/analysis/data_dependency_analysis.cpp
+    src/analysis/dominance_analysis.cpp
     src/analysis/escape_analysis.cpp
     src/analysis/flop_analysis.cpp
-    src/analysis/dominance_analysis.cpp
     src/analysis/loop_analysis.cpp
     src/analysis/loop_carried_dependency_analysis.cpp
     src/analysis/memory_layout_analysis.cpp
@@ -41,7 +41,20 @@ set(SOURCE_FILES
     src/builder/function_builder.cpp
     src/builder/sdfg_builder.cpp
     src/builder/structured_sdfg_builder.cpp
+    src/codegen/code_generators/c_code_generator.cpp
+    src/codegen/code_generators/c_style_base_code_generator.cpp
+    src/codegen/code_generators/cpp_code_generator.cpp
+    src/codegen/code_generators/cuda_code_generator.cpp
     src/codegen/code_snippet_factory.cpp
+    src/codegen/dispatchers/block_dispatcher.cpp
+    src/codegen/dispatchers/for_dispatcher.cpp
+    src/codegen/dispatchers/if_else_dispatcher.cpp
+    src/codegen/dispatchers/map_dispatcher.cpp
+    src/codegen/dispatchers/node_dispatcher_registry.cpp
+    src/codegen/dispatchers/node_dispatcher.cpp
+    src/codegen/dispatchers/reduce_dispatcher.cpp
+    src/codegen/dispatchers/sequence_dispatcher.cpp
+    src/codegen/dispatchers/while_dispatcher.cpp
     src/codegen/instrumentation/arg_capture_plan.cpp
     src/codegen/instrumentation/instrumentation_info.cpp
     src/codegen/instrumentation/instrumentation_plan.cpp
@@ -49,21 +62,8 @@ set(SOURCE_FILES
     src/codegen/language_extensions/cpp_language_extension.cpp
     src/codegen/language_extensions/cuda_language_extension.cpp
     src/codegen/language_extensions/rocm_language_extension.cpp
-    src/codegen/utils.cpp
-    src/codegen/code_generators/c_code_generator.cpp
-    src/codegen/code_generators/c_style_base_code_generator.cpp
-    src/codegen/code_generators/cpp_code_generator.cpp
-    src/codegen/code_generators/cuda_code_generator.cpp
-    src/codegen/dispatchers/node_dispatcher.cpp
-    src/codegen/dispatchers/node_dispatcher_registry.cpp
-    src/codegen/dispatchers/block_dispatcher.cpp
-    src/codegen/dispatchers/if_else_dispatcher.cpp
-    src/codegen/dispatchers/sequence_dispatcher.cpp
-    src/codegen/dispatchers/for_dispatcher.cpp
-    src/codegen/dispatchers/map_dispatcher.cpp
-    src/codegen/dispatchers/reduce_dispatcher.cpp
-    src/codegen/dispatchers/while_dispatcher.cpp
     src/codegen/loop_report.cpp
+    src/codegen/utils.cpp
     src/control_flow/interstate_edge.cpp
     src/control_flow/state.cpp
     src/cutouts/cutout_serializer.cpp
@@ -73,23 +73,20 @@ set(SOURCE_FILES
     src/data_flow/data_flow_graph.cpp
     src/data_flow/data_flow_node.cpp
     src/data_flow/library_node.cpp
-    src/data_flow/memlet.cpp
-    src/data_flow/pointer_metadata.cpp
-    src/data_flow/tasklet.cpp
     src/data_flow/library_nodes/barrier_local_node.cpp
     src/data_flow/library_nodes/call_node.cpp
     src/data_flow/library_nodes/invoke_node.cpp
     src/data_flow/library_nodes/load_const_node.cpp
-    src/data_flow/library_nodes/metadata_node.cpp
-    src/data_flow/library_nodes/math/math_node.cpp
     src/data_flow/library_nodes/math/blas/batched_gemm_node.cpp
     src/data_flow/library_nodes/math/blas/blas_node.cpp
     src/data_flow/library_nodes/math/blas/dot_node.cpp
     src/data_flow/library_nodes/math/blas/gemm_node.cpp
     src/data_flow/library_nodes/math/cmath/cmath_node.cpp
+    src/data_flow/library_nodes/math/math_node.cpp
     src/data_flow/library_nodes/math/tensor/batchnorm_node.cpp
     src/data_flow/library_nodes/math/tensor/broadcast_node.cpp
     src/data_flow/library_nodes/math/tensor/conv_node.cpp
+    src/data_flow/library_nodes/math/tensor/copy_node.cpp
     src/data_flow/library_nodes/math/tensor/einsum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.cpp
@@ -98,8 +95,8 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/elu_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.cpp
+    src/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.cpp
@@ -126,6 +123,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/tensor_expansion_utils.cpp
     src/data_flow/library_nodes/math/tensor/tensor_layout.cpp
     src/data_flow/library_nodes/math/tensor/tensor_node.cpp
+    src/data_flow/library_nodes/metadata_node.cpp
     src/data_flow/library_nodes/stdlib/alloca.cpp
     src/data_flow/library_nodes/stdlib/assert.cpp
     src/data_flow/library_nodes/stdlib/calloc.cpp
@@ -137,30 +135,32 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/stdlib/stdlib_node.cpp
     src/data_flow/library_nodes/stdlib/trap.cpp
     src/data_flow/library_nodes/stdlib/unreachable.cpp
+    src/data_flow/memlet.cpp
+    src/data_flow/pointer_metadata.cpp
+    src/data_flow/tasklet.cpp
     src/deepcopy/structured_sdfg_deep_copy.cpp
+    src/element.cpp
+    src/function.cpp
     src/graph/graph.cpp
     src/offloading/data_offloading_node.cpp
     src/optimization_report/optimization_report.cpp
+    src/passes/dataflow/byte_reference_elimination.cpp
+    src/passes/dataflow/dead_data_elimination.cpp
+    src/passes/dataflow/dead_reference_elimination.cpp
+    src/passes/dataflow/memlet_linearization.cpp
+    src/passes/dataflow/memlet_simplification.cpp
+    src/passes/dataflow/reference_propagation.cpp
+    src/passes/dataflow/tasklet_fusion.cpp
+    src/passes/dataflow/tensor_to_pointer_conversion.cpp
+    src/passes/dataflow/trivial_array_elimination.cpp
+    src/passes/dataflow/trivial_reference_conversion.cpp
+    src/passes/debug_info_propagation.cpp
+    src/passes/expansion/lib_node_expansion_context.cpp
+    src/passes/expansion/library_node_expansion_pass.cpp
+    src/passes/memory/allocation_management.cpp
     src/passes/pass.cpp
     src/passes/pipeline.cpp
     src/passes/statistics.cpp
-    src/passes/dataflow/dead_data_elimination.cpp
-    src/passes/dataflow/dead_reference_elimination.cpp
-    src/passes/dataflow/tasklet_fusion.cpp
-    src/passes/dataflow/trivial_array_elimination.cpp
-    src/passes/dataflow/trivial_reference_conversion.cpp
-    src/passes/dataflow/reference_propagation.cpp
-    src/passes/dataflow/byte_reference_elimination.cpp
-    src/passes/dataflow/memlet_linearization.cpp
-    src/passes/dataflow/memlet_simplification.cpp
-    src/passes/dataflow/tensor_to_pointer_conversion.cpp
-    src/passes/expansion/library_node_expansion_pass.cpp
-    src/passes/expansion/lib_node_expansion_context.cpp
-    src/passes/memory/allocation_management.cpp
-    src/passes/symbolic/symbol_evolution.cpp
-    src/passes/symbolic/symbol_propagation.cpp
-    src/passes/symbolic/symbol_promotion.cpp
-    src/passes/symbolic/type_minimization.cpp
     src/passes/structured_control_flow/block_fusion.cpp
     src/passes/structured_control_flow/common_assignment_elimination.cpp
     src/passes/structured_control_flow/condition_elimination.cpp
@@ -171,7 +171,11 @@ set(SOURCE_FILES
     src/passes/structured_control_flow/unify_loop_exits.cpp
     src/passes/structured_control_flow/unique_loop_indvars.cpp
     src/passes/structured_control_flow/while_to_for_conversion.cpp
-    src/passes/debug_info_propagation.cpp
+    src/passes/symbolic/symbol_evolution.cpp
+    src/passes/symbolic/symbol_promotion.cpp
+    src/passes/symbolic/symbol_propagation.cpp
+    src/passes/symbolic/type_minimization.cpp
+    src/sdfg.cpp
     src/serializer/json_serializer.cpp
     src/structured_control_flow/block.cpp
     src/structured_control_flow/control_flow_node.cpp
@@ -183,6 +187,7 @@ set(SOURCE_FILES
     src/structured_control_flow/sequence.cpp
     src/structured_control_flow/structured_loop.cpp
     src/structured_control_flow/while.cpp
+    src/structured_sdfg.cpp
     src/symbolic/assumptions.cpp
     src/symbolic/conjunctive_normal_form.cpp
     src/symbolic/delinearization.cpp
@@ -204,10 +209,6 @@ set(SOURCE_FILES
     src/visitor/structured_sdfg_visitor.cpp
     src/visualizer/dot_visualizer.cpp
     src/visualizer/visualizer.cpp
-    src/element.cpp
-    src/function.cpp
-    src/sdfg.cpp
-    src/structured_sdfg.cpp
 )
 
 # Original Library

@@ -94,7 +94,7 @@ TEST(ReduceTest, SumNode_1D) {
 
     // Reduction loops
     {
-        auto sum_loop = dyn_cast<structured_control_flow::For*>(&new_sequence.at(1).first);
+        auto sum_loop = dyn_cast<structured_control_flow::Reduce*>(&new_sequence.at(1).first);
         EXPECT_NE(sum_loop, nullptr);
         EXPECT_EQ(sum_loop->root().size(), 1);
 
@@ -187,7 +187,7 @@ TEST(ReduceTest, SumNode_2D) {
         auto map_loop = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(1).first);
         EXPECT_NE(map_loop, nullptr);
 
-        auto for_loop = dyn_cast<structured_control_flow::For*>(&map_loop->root().at(0).first);
+        auto for_loop = dyn_cast<structured_control_flow::Reduce*>(&map_loop->root().at(0).first);
         EXPECT_NE(for_loop, nullptr);
 
         auto reduce_block = dyn_cast<structured_control_flow::Block*>(&for_loop->root().at(0).first);
@@ -259,7 +259,7 @@ TEST(ReduceTest, SumNode_2D_KeepDims) {
         auto map_loop = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(1).first);
         EXPECT_NE(map_loop, nullptr);
 
-        auto for_loop = dyn_cast<structured_control_flow::For*>(&map_loop->root().at(0).first);
+        auto for_loop = dyn_cast<structured_control_flow::Reduce*>(&map_loop->root().at(0).first);
         EXPECT_NE(for_loop, nullptr);
 
         auto reduce_block = dyn_cast<structured_control_flow::Block*>(&for_loop->root().at(0).first);
@@ -333,10 +333,10 @@ TEST(ReduceTest, SumNode_3D_Reduce_0_2) {
         auto map_loop = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(1).first);
         EXPECT_NE(map_loop, nullptr);
 
-        auto for_loop_0 = dyn_cast<structured_control_flow::For*>(&map_loop->root().at(0).first);
+        auto for_loop_0 = dyn_cast<structured_control_flow::Reduce*>(&map_loop->root().at(0).first);
         EXPECT_NE(for_loop_0, nullptr);
 
-        auto for_loop_2 = dyn_cast<structured_control_flow::For*>(&for_loop_0->root().at(0).first);
+        auto for_loop_2 = dyn_cast<structured_control_flow::Reduce*>(&for_loop_0->root().at(0).first);
         EXPECT_NE(for_loop_2, nullptr);
 
         auto reduce_block = dyn_cast<structured_control_flow::Block*>(&for_loop_2->root().at(0).first);

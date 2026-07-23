@@ -990,10 +990,10 @@ def test_particlefilter(compiler="clang-19"):
             "sdfgs": 17,
             "REDUCE": 1,
             "WHILE": 12,
-            "CPU_PARALLEL": 13,
+            "CPU_PARALLEL": 14,
             "MAP": 20,
-            "FOR": 30,
-            "SEQUENTIAL": 38,
+            "FOR": 29,
+            "SEQUENTIAL": 36,
         }
     )
     runner = TestRunner(

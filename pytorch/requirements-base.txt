@@ -1,0 +1,12 @@
+numpy>=1.19.0
+ml_dtypes>=0.5.4
+sympy>=1.14.0
+scikit-build-core>=0.10
+pybind11>=2.12
+build
+scipy
+
+pytest
+coverage
+black==25.9.0
+requests

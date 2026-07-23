@@ -1500,6 +1500,10 @@ void register_default_serializers() {
         .register_library_node_serializer(math::tensor::LibraryNodeType_MatMul.value(), []() {
             return std::make_unique<math::tensor::MatMulNodeSerializer>();
         });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_TensorCopy.value(), []() {
+            return std::make_unique<math::tensor::TensorCopyNodeSerializer>();
+        });
 
     // Elementwise
     LibraryNodeSerializerRegistry::instance()
