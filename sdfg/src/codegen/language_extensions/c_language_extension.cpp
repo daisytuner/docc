@@ -325,7 +325,7 @@ std::string CLanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
         case data_flow::TaskletCode::complex_div:
         case data_flow::TaskletCode::complex_eq:
         case data_flow::TaskletCode::complex_ne:
-            return complex_tasklet(this->function_, tasklet);
+            return complex_computation(tasklet, this->function_);
     };
     throw std::invalid_argument("Invalid tasklet code");
 };

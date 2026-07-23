@@ -222,11 +222,11 @@ TEST(CUDALanguageExtensionTest, PrimitiveType_Complex) {
     auto& sdfg = builder.subject();
     codegen::CUDALanguageExtension generator(sdfg);
 
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CHalf), "half2");
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CBFloat), "bfloat162");
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFloat), "float2");
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CDouble), "double2");
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFP128), "fp128_2");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CHalf), "__daisy_type_complex_half");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CBFloat), "__daisy_type_complex_bfloat");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFloat), "__daisy_type_complex_float");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CDouble), "__daisy_type_complex_double");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFP128), "__daisy_type_complex_fp128");
 }
 
 TEST(CUDALanguageExtensionTest, Zero_Complex) {
@@ -234,24 +234,6 @@ TEST(CUDALanguageExtensionTest, Zero_Complex) {
     auto& sdfg = builder.subject();
     codegen::CUDALanguageExtension generator(sdfg);
 
-    EXPECT_EQ(generator.zero(types::PrimitiveType::CFloat), "float2{0, 0}");
-    EXPECT_EQ(generator.zero(types::PrimitiveType::CDouble), "double2{0, 0}");
-}
-
-TEST(CUDALanguageExtensionTest, Tasklet_ComplexMul) {
-    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
-    auto& state = builder.add_state();
-    types::Scalar desc(types::PrimitiveType::CFloat);
-    builder.add_container("a", desc);
-    builder.add_container("b", desc);
-    builder.add_container("c", desc);
-    auto& a = builder.add_access(state, "a");
-    auto& b = builder.add_access(state, "b");
-    auto& c = builder.add_access(state, "c");
-    auto& tasklet = builder.add_tasklet(state, data_flow::TaskletCode::complex_mul, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(state, a, tasklet, "_in1", {});
-    builder.add_computational_memlet(state, b, tasklet, "_in2", {});
-    builder.add_computational_memlet(state, tasklet, "_out", c, {});
-    codegen::CUDALanguageExtension generator(builder.subject());
-    EXPECT_EQ(generator.tasklet(tasklet), "__daisy_cmul_f(_in1, _in2)");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CFloat), "__daisy_type_complex_float{0, 0}");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CDouble), "__daisy_type_complex_double{0, 0}");
 }

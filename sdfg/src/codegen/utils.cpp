@@ -86,130 +86,128 @@ std::string Reference::print() const { return "Reference(" + this->reference_->p
 std::string complex_type_name(types::PrimitiveType prim_type) {
     switch (prim_type) {
         case types::PrimitiveType::CHalf:
-            return "half2";
+            return "__daisy_type_complex_half";
         case types::PrimitiveType::CBFloat:
-            return "bfloat162";
+            return "__daisy_type_complex_bfloat";
         case types::PrimitiveType::CFloat:
-            return "float2";
+            return "__daisy_type_complex_float";
         case types::PrimitiveType::CDouble:
-            return "double2";
+            return "__daisy_type_complex_double";
         case types::PrimitiveType::CFP128:
-            return "fp128_2";
+            return "__daisy_type_complex_fp128";
         default:
             throw InvalidSDFGException("complex_type_name: not a complex primitive type");
     }
 };
 
-std::string complex_op_suffix(types::PrimitiveType prim_type) {
-    switch (prim_type) {
-        case types::PrimitiveType::CHalf:
-            return "h";
-        case types::PrimitiveType::CBFloat:
-            return "bf";
-        case types::PrimitiveType::CFloat:
-            return "f";
+namespace {
+
+// Real "compute type" used to evaluate a complex operation component-wise. Narrow element types
+// (half/bfloat) have limited native arithmetic support, so their components are widened to float
+// for the computation and narrowed back on assignment.
+std::string complex_compute_type(types::PrimitiveType prim) {
+    switch (prim) {
         case types::PrimitiveType::CDouble:
-            return "d";
+            return "double";
         case types::PrimitiveType::CFP128:
-            return "q";
+            return "__float128";
         default:
-            throw InvalidSDFGException("complex_op_suffix: not a complex primitive type");
+            return "float";
     }
-};
+}
 
-std::string complex_tasklet(sdfg::Function& function, const data_flow::Tasklet& tasklet) {
-    // Determine the element suffix from the (complex) operand type.
+} // namespace
+
+std::string complex_computation(const data_flow::Tasklet& tasklet, const Function& function) {
+    if (!data_flow::is_complex(tasklet.code())) {
+        throw InvalidSDFGException("complex_computation: tasklet is not a complex operation");
+    }
+
+    // The operand type (always complex) drives the component compute type.
     auto& graph = tasklet.get_parent();
-    auto in_edges = graph.in_edges(tasklet);
-    if (in_edges.begin() == in_edges.end()) {
-        throw InvalidSDFGException("complex_tasklet: tasklet has no inputs");
+    types::PrimitiveType operand_prim = types::PrimitiveType::CFloat;
+    for (auto& iedge : graph.in_edges(tasklet)) {
+        operand_prim = iedge.result_type(function)->primitive_type();
+        break;
     }
-    auto operand_type = (*in_edges.begin()).result_type(function);
-    std::string suffix = complex_op_suffix(operand_type->primitive_type());
+    const std::string re = "(" + complex_compute_type(operand_prim) + ")";
 
-    auto& inputs = tasklet.inputs();
+    const auto& inputs = tasklet.inputs();
+    const std::string& o = tasklet.output();
+    const std::string& a = inputs.at(0);
+
+    std::stringstream out;
     switch (tasklet.code()) {
+        case data_flow::TaskletCode::complex_add: {
+            const std::string& b = inputs.at(1);
+            out << o << ".x = " << re << a << ".x + " << re << b << ".x; ";
+            out << o << ".y = " << re << a << ".y + " << re << b << ".y;";
+            break;
+        }
+        case data_flow::TaskletCode::complex_sub: {
+            const std::string& b = inputs.at(1);
+            out << o << ".x = " << re << a << ".x - " << re << b << ".x; ";
+            out << o << ".y = " << re << a << ".y - " << re << b << ".y;";
+            break;
+        }
+        case data_flow::TaskletCode::complex_mul: {
+            const std::string& b = inputs.at(1);
+            out << o << ".x = " << re << a << ".x * " << re << b << ".x - " << re << a << ".y * " << re << b << ".y; ";
+            out << o << ".y = " << re << a << ".x * " << re << b << ".y + " << re << a << ".y * " << re << b << ".x;";
+            break;
+        }
+        case data_flow::TaskletCode::complex_div: {
+            const std::string& b = inputs.at(1);
+            const std::string denom = "(" + re + b + ".x * " + re + b + ".x + " + re + b + ".y * " + re + b + ".y)";
+            out << o << ".x = (" << re << a << ".x * " << re << b << ".x + " << re << a << ".y * " << re << b
+                << ".y) / " << denom << "; ";
+            out << o << ".y = (" << re << a << ".y * " << re << b << ".x - " << re << a << ".x * " << re << b
+                << ".y) / " << denom << ";";
+            break;
+        }
         case data_flow::TaskletCode::complex_neg:
-            return "__daisy_cneg_" + suffix + "(" + inputs.at(0) + ")";
+            out << o << ".x = -" << re << a << ".x; ";
+            out << o << ".y = -" << re << a << ".y;";
+            break;
         case data_flow::TaskletCode::complex_real:
-            return "__daisy_creal_" + suffix + "(" + inputs.at(0) + ")";
+            out << o << " = " << a << ".x;";
+            break;
         case data_flow::TaskletCode::complex_imag:
-            return "__daisy_cimag_" + suffix + "(" + inputs.at(0) + ")";
-        case data_flow::TaskletCode::complex_add:
-            return "__daisy_cadd_" + suffix + "(" + inputs.at(0) + ", " + inputs.at(1) + ")";
-        case data_flow::TaskletCode::complex_sub:
-            return "__daisy_csub_" + suffix + "(" + inputs.at(0) + ", " + inputs.at(1) + ")";
-        case data_flow::TaskletCode::complex_mul:
-            return "__daisy_cmul_" + suffix + "(" + inputs.at(0) + ", " + inputs.at(1) + ")";
-        case data_flow::TaskletCode::complex_div:
-            return "__daisy_cdiv_" + suffix + "(" + inputs.at(0) + ", " + inputs.at(1) + ")";
-        case data_flow::TaskletCode::complex_eq:
-            return "__daisy_ceq_" + suffix + "(" + inputs.at(0) + ", " + inputs.at(1) + ")";
-        case data_flow::TaskletCode::complex_ne:
-            return "__daisy_cne_" + suffix + "(" + inputs.at(0) + ", " + inputs.at(1) + ")";
+            out << o << " = " << a << ".y;";
+            break;
+        case data_flow::TaskletCode::complex_eq: {
+            const std::string& b = inputs.at(1);
+            out << o << " = (" << re << a << ".x == " << re << b << ".x && " << re << a << ".y == " << re << b
+                << ".y);";
+            break;
+        }
+        case data_flow::TaskletCode::complex_ne: {
+            const std::string& b = inputs.at(1);
+            out << o << " = !(" << re << a << ".x == " << re << b << ".x && " << re << a << ".y == " << re << b
+                << ".y);";
+            break;
+        }
         default:
-            throw InvalidSDFGException("complex_tasklet: not a complex tasklet code");
+            throw InvalidSDFGException("complex_computation: unhandled complex tasklet code");
     }
+    return out.str();
 };
 
 std::string complex_support_preamble(bool device) {
-    const std::string qual = device ? "__host__ __device__ static inline" : "static inline";
+    // Element type of the half-precision component. GPU toolchains expose __fp16, matching the
+    // scalar Half mapping of the CUDA/ROCm language extensions.
+    const std::string half_elem = device ? "__fp16" : "_Float16";
 
     std::stringstream out;
     out << "/* Complex type support (generated by sdfglib) */" << std::endl;
 
-    // Component vector types. On GPU, float2/double2/half2/__nv_bfloat162 are provided by the
-    // toolchain and reused; on CPU they are defined here. fp128_2 has no native type anywhere.
-    if (device) {
-        out << "typedef __nv_bfloat162 bfloat162;" << std::endl;
-    } else {
-        out << "typedef struct { float x; float y; } float2;" << std::endl;
-        out << "typedef struct { double x; double y; } double2;" << std::endl;
-        out << "typedef struct { _Float16 x; _Float16 y; } half2;" << std::endl;
-        out << "typedef struct { __bf16 x; __bf16 y; } bfloat162;" << std::endl;
-    }
-    out << "typedef struct { __float128 x; __float128 y; } fp128_2;" << std::endl;
-
-    // Element-wise helper functions. Arithmetic is carried out in a wide type (WT) so that
-    // narrow element types (half/bfloat) that lack native arithmetic are computed via float.
-    out << "#define __DAISY_DEFINE_COMPLEX(CT, ST, WT, SUF, QUAL) \\" << std::endl;
-    out << "  QUAL CT __daisy_cadd_##SUF(CT a, CT b) { CT r; r.x = (ST)((WT)a.x + (WT)b.x); r.y = "
-           "(ST)((WT)a.y + (WT)b.y); return r; } \\"
-        << std::endl;
-    out << "  QUAL CT __daisy_csub_##SUF(CT a, CT b) { CT r; r.x = (ST)((WT)a.x - (WT)b.x); r.y = "
-           "(ST)((WT)a.y - (WT)b.y); return r; } \\"
-        << std::endl;
-    out << "  QUAL CT __daisy_cmul_##SUF(CT a, CT b) { CT r; r.x = (ST)((WT)a.x * (WT)b.x - (WT)a.y * (WT)b.y); "
-           "r.y = (ST)((WT)a.x * (WT)b.y + (WT)a.y * (WT)b.x); return r; } \\"
-        << std::endl;
-    out << "  QUAL CT __daisy_cdiv_##SUF(CT a, CT b) { CT r; WT d = (WT)b.x * (WT)b.x + (WT)b.y * (WT)b.y; "
-           "r.x = (ST)(((WT)a.x * (WT)b.x + (WT)a.y * (WT)b.y) / d); "
-           "r.y = (ST)(((WT)a.y * (WT)b.x - (WT)a.x * (WT)b.y) / d); return r; } \\"
-        << std::endl;
-    out << "  QUAL CT __daisy_cneg_##SUF(CT a) { CT r; r.x = (ST)(-(WT)a.x); r.y = (ST)(-(WT)a.y); return r; } \\"
-        << std::endl;
-    out << "  QUAL ST __daisy_creal_##SUF(CT a) { return a.x; } \\" << std::endl;
-    out << "  QUAL ST __daisy_cimag_##SUF(CT a) { return a.y; } \\" << std::endl;
-    out << "  QUAL bool __daisy_ceq_##SUF(CT a, CT b) { return (WT)a.x == (WT)b.x && (WT)a.y == (WT)b.y; } \\"
-        << std::endl;
-    out << "  QUAL bool __daisy_cne_##SUF(CT a, CT b) { return !((WT)a.x == (WT)b.x && (WT)a.y == (WT)b.y); }"
-        << std::endl;
-
-    if (device) {
-        out << "__DAISY_DEFINE_COMPLEX(float2, float, float, f, " << qual << ")" << std::endl;
-        out << "__DAISY_DEFINE_COMPLEX(double2, double, double, d, " << qual << ")" << std::endl;
-        out << "__DAISY_DEFINE_COMPLEX(half2, __half, float, h, " << qual << ")" << std::endl;
-        out << "__DAISY_DEFINE_COMPLEX(bfloat162, __nv_bfloat16, float, bf, " << qual << ")" << std::endl;
-        // __float128 is a host-only type; keep fp128 helpers off the device.
-        out << "__DAISY_DEFINE_COMPLEX(fp128_2, __float128, __float128, q, __host__ inline)" << std::endl;
-    } else {
-        out << "__DAISY_DEFINE_COMPLEX(float2, float, float, f, " << qual << ")" << std::endl;
-        out << "__DAISY_DEFINE_COMPLEX(double2, double, double, d, " << qual << ")" << std::endl;
-        out << "__DAISY_DEFINE_COMPLEX(half2, _Float16, float, h, " << qual << ")" << std::endl;
-        out << "__DAISY_DEFINE_COMPLEX(bfloat162, __bf16, float, bf, " << qual << ")" << std::endl;
-        out << "__DAISY_DEFINE_COMPLEX(fp128_2, __float128, __float128, q, " << qual << ")" << std::endl;
-    }
-    out << "#undef __DAISY_DEFINE_COMPLEX" << std::endl;
+    // Dedicated 2-component vector types with `.x` (real) / `.y` (imaginary) members. Named with a
+    // reserved prefix so they never collide with a toolchain's native float2/double2 definitions.
+    out << "typedef struct { float x; float y; } __daisy_type_complex_float;" << std::endl;
+    out << "typedef struct { double x; double y; } __daisy_type_complex_double;" << std::endl;
+    out << "typedef struct { " << half_elem << " x; " << half_elem << " y; } __daisy_type_complex_half;" << std::endl;
+    out << "typedef struct { __bf16 x; __bf16 y; } __daisy_type_complex_bfloat;" << std::endl;
+    out << "typedef struct { __float128 x; __float128 y; } __daisy_type_complex_fp128;" << std::endl;
 
     return out.str();
 };

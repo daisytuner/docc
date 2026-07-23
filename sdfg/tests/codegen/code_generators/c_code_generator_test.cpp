@@ -259,16 +259,15 @@ TEST(CCodeGeneratorTest, ComplexSupportPreamble) {
     EXPECT_TRUE(generator.generate());
 
     auto includes = generator.includes().str();
-    // Reused vector types are defined on CPU targets.
-    EXPECT_NE(includes.find("typedef struct { float x; float y; } float2;"), std::string::npos);
-    EXPECT_NE(includes.find("typedef struct { double x; double y; } double2;"), std::string::npos);
-    EXPECT_NE(includes.find("typedef struct { _Float16 x; _Float16 y; } half2;"), std::string::npos);
-    EXPECT_NE(includes.find("typedef struct { __bf16 x; __bf16 y; } bfloat162;"), std::string::npos);
-    EXPECT_NE(includes.find("fp128_2;"), std::string::npos);
-    // Helper functions are instantiated for each element suffix.
-    EXPECT_NE(includes.find("__daisy_cadd_##SUF"), std::string::npos);
-    EXPECT_NE(includes.find("__DAISY_DEFINE_COMPLEX(float2, float, float, f,"), std::string::npos);
-    EXPECT_NE(includes.find("__DAISY_DEFINE_COMPLEX(double2, double, double, d,"), std::string::npos);
+    // Dedicated complex vector types are defined with a reserved prefix (no float2/double2 clash).
+    EXPECT_NE(includes.find("typedef struct { float x; float y; } __daisy_type_complex_float;"), std::string::npos);
+    EXPECT_NE(includes.find("typedef struct { double x; double y; } __daisy_type_complex_double;"), std::string::npos);
+    EXPECT_NE(includes.find("typedef struct { _Float16 x; _Float16 y; } __daisy_type_complex_half;"), std::string::npos);
+    EXPECT_NE(includes.find("typedef struct { __bf16 x; __bf16 y; } __daisy_type_complex_bfloat;"), std::string::npos);
+    EXPECT_NE(includes.find("__daisy_type_complex_fp128;"), std::string::npos);
+    // No external helper functions are generated; arithmetic is inlined by the dispatcher.
+    EXPECT_EQ(includes.find("__DAISY_DEFINE_COMPLEX"), std::string::npos);
+    EXPECT_EQ(includes.find("__daisy_cadd"), std::string::npos);
 }
 
 TEST(CCodeGeneratorTest, ComplexAddSchedule) {
@@ -298,6 +297,7 @@ TEST(CCodeGeneratorTest, ComplexAddSchedule) {
     EXPECT_TRUE(generator.generate());
 
     auto result = generator.main().str();
-    EXPECT_NE(result.find("__daisy_cadd_f(_in1, _in2)"), std::string::npos);
-    EXPECT_NE(result.find("float2 _in1"), std::string::npos);
+    EXPECT_NE(result.find("_out.x = (float)_in1.x + (float)_in2.x;"), std::string::npos);
+    EXPECT_NE(result.find("_out.y = (float)_in1.y + (float)_in2.y;"), std::string::npos);
+    EXPECT_NE(result.find("__daisy_type_complex_float _in1"), std::string::npos);
 }

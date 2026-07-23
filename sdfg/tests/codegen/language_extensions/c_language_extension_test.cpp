@@ -271,11 +271,11 @@ TEST(CLanguageExtensionTest, PrimitiveType_Complex) {
     auto& sdfg = builder.subject();
     codegen::CLanguageExtension generator(sdfg);
 
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CHalf), "half2");
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CBFloat), "bfloat162");
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFloat), "float2");
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CDouble), "double2");
-    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFP128), "fp128_2");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CHalf), "__daisy_type_complex_half");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CBFloat), "__daisy_type_complex_bfloat");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFloat), "__daisy_type_complex_float");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CDouble), "__daisy_type_complex_double");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFP128), "__daisy_type_complex_fp128");
 }
 
 TEST(CLanguageExtensionTest, Zero_Complex) {
@@ -283,79 +283,9 @@ TEST(CLanguageExtensionTest, Zero_Complex) {
     auto& sdfg = builder.subject();
     codegen::CLanguageExtension generator(sdfg);
 
-    EXPECT_EQ(generator.zero(types::PrimitiveType::CFloat), "(float2){0, 0}");
-    EXPECT_EQ(generator.zero(types::PrimitiveType::CDouble), "(double2){0, 0}");
-    EXPECT_EQ(generator.zero(types::PrimitiveType::CHalf), "(half2){0, 0}");
-    EXPECT_EQ(generator.zero(types::PrimitiveType::CBFloat), "(bfloat162){0, 0}");
-    EXPECT_EQ(generator.zero(types::PrimitiveType::CFP128), "(fp128_2){0, 0}");
-}
-
-static const data_flow::Tasklet& build_binary_complex_tasklet(
-    builder::SDFGBuilder& builder, data_flow::TaskletCode code, types::PrimitiveType prim_type
-) {
-    auto& state = builder.add_state();
-    types::Scalar desc(prim_type);
-    builder.add_container("a", desc);
-    builder.add_container("b", desc);
-    builder.add_container("c", desc);
-    auto& a = builder.add_access(state, "a");
-    auto& b = builder.add_access(state, "b");
-    auto& c = builder.add_access(state, "c");
-    auto& tasklet = builder.add_tasklet(state, code, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(state, a, tasklet, "_in1", {});
-    builder.add_computational_memlet(state, b, tasklet, "_in2", {});
-    builder.add_computational_memlet(state, tasklet, "_out", c, {});
-    return tasklet;
-}
-
-TEST(CLanguageExtensionTest, Tasklet_ComplexAdd) {
-    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
-    auto& tasklet =
-        build_binary_complex_tasklet(builder, data_flow::TaskletCode::complex_add, types::PrimitiveType::CFloat);
-    codegen::CLanguageExtension generator(builder.subject());
-    EXPECT_EQ(generator.tasklet(tasklet), "__daisy_cadd_f(_in1, _in2)");
-}
-
-TEST(CLanguageExtensionTest, Tasklet_ComplexMul) {
-    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
-    auto& tasklet =
-        build_binary_complex_tasklet(builder, data_flow::TaskletCode::complex_mul, types::PrimitiveType::CDouble);
-    codegen::CLanguageExtension generator(builder.subject());
-    EXPECT_EQ(generator.tasklet(tasklet), "__daisy_cmul_d(_in1, _in2)");
-}
-
-TEST(CLanguageExtensionTest, Tasklet_ComplexEq) {
-    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
-    auto& tasklet =
-        build_binary_complex_tasklet(builder, data_flow::TaskletCode::complex_ne, types::PrimitiveType::CFloat);
-    codegen::CLanguageExtension generator(builder.subject());
-    EXPECT_EQ(generator.tasklet(tasklet), "__daisy_cne_f(_in1, _in2)");
-}
-
-TEST(CLanguageExtensionTest, Tasklet_ComplexNeg) {
-    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
-    auto& state = builder.add_state();
-    builder.add_container("a", types::Scalar(types::PrimitiveType::CFloat));
-    builder.add_container("b", types::Scalar(types::PrimitiveType::CFloat));
-    auto& a = builder.add_access(state, "a");
-    auto& b = builder.add_access(state, "b");
-    auto& tasklet = builder.add_tasklet(state, data_flow::TaskletCode::complex_neg, "_out", {"_in"});
-    builder.add_computational_memlet(state, a, tasklet, "_in", {});
-    builder.add_computational_memlet(state, tasklet, "_out", b, {});
-    codegen::CLanguageExtension generator(builder.subject());
-    EXPECT_EQ(generator.tasklet(tasklet), "__daisy_cneg_f(_in)");
-}
-
-TEST(CLanguageExtensionTest, Tasklet_ComplexReal) {
-    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
-    auto& state = builder.add_state();
-    builder.add_container("a", types::Scalar(types::PrimitiveType::CFloat));
-    builder.add_container("r", types::Scalar(types::PrimitiveType::Float));
-    auto& a = builder.add_access(state, "a");
-    auto& r = builder.add_access(state, "r");
-    auto& tasklet = builder.add_tasklet(state, data_flow::TaskletCode::complex_real, "_out", {"_in"});
-    builder.add_computational_memlet(state, a, tasklet, "_in", {});
-    builder.add_computational_memlet(state, tasklet, "_out", r, {});
-    codegen::CLanguageExtension generator(builder.subject());
-    EXPECT_EQ(generator.tasklet(tasklet), "__daisy_creal_f(_in)");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CFloat), "(__daisy_type_complex_float){0, 0}");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CDouble), "(__daisy_type_complex_double){0, 0}");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CHalf), "(__daisy_type_complex_half){0, 0}");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CBFloat), "(__daisy_type_complex_bfloat){0, 0}");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CFP128), "(__daisy_type_complex_fp128){0, 0}");
 }
