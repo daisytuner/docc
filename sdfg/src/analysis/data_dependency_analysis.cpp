@@ -227,6 +227,54 @@ void DataDependencyAnalysis::visit_block(
     }
 }
 
+void DataDependencyAnalysis::visit_assignment_block(
+    AnalysisManager& analysis_manager,
+    structured_control_flow::AssignmentBlock& assignments,
+    std::unordered_set<User*>& undefined,
+    std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
+    std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
+) {
+    auto& users = analysis_manager.get<analysis::Users>();
+
+    // handle transitions read
+    for (auto& entry : assignments.assignments()) {
+        for (auto& atom : symbolic::atoms(entry.second)) {
+            if (symbolic::is_pointer(atom)) {
+                continue;
+            }
+            auto current_user = users.get_user(atom->get_name(), &assignments, Use::READ);
+
+            bool found = false;
+            for (auto& user : open_definitions) {
+                if (user.first->container() == atom->get_name()) {
+                    user.second.insert(current_user);
+                    found = true;
+                }
+            }
+            if (!found) {
+                undefined.insert(current_user);
+            }
+        }
+    }
+
+    // handle transitions write
+    for (auto& entry : assignments.assignments()) {
+        auto current_user = users.get_user(entry.first->get_name(), &assignments, Use::WRITE);
+
+        std::unordered_set<User*> to_close;
+        for (auto& user : open_definitions) {
+            if (this->closes(analysis_manager, *user.first, *current_user, true)) {
+                to_close.insert(user.first);
+            }
+        }
+        for (auto& user : to_close) {
+            closed_definitions.insert({user, open_definitions.at(user)});
+            open_definitions.erase(user);
+        }
+        open_definitions.insert({current_user, {}});
+    }
+}
+
 void DataDependencyAnalysis::visit_for(
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::StructuredLoop& for_loop,
@@ -655,60 +703,22 @@ void DataDependencyAnalysis::visit_sequence(
     std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
     std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
 ) {
-    auto& users = analysis_manager.get<analysis::Users>();
-
     for (size_t i = 0; i < sequence.size(); i++) {
-        auto child = sequence.at(i);
-        if (auto block = dyn_cast<structured_control_flow::Block*>(&child.first)) {
+        auto& child = sequence.at(i);
+        if (auto block = dyn_cast<structured_control_flow::Block*>(&child)) {
             visit_block(analysis_manager, *block, undefined, open_definitions, closed_definitions);
-        } else if (auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child.first)) {
+        } else if (auto assignments = dyn_cast<structured_control_flow::AssignmentBlock*>(&child)) {
+            visit_assignment_block(analysis_manager, *assignments, undefined, open_definitions, closed_definitions);
+        } else if (auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
             visit_for(analysis_manager, *for_loop, undefined, open_definitions, closed_definitions);
-        } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&child.first)) {
+        } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&child)) {
             visit_if_else(analysis_manager, *if_else, undefined, open_definitions, closed_definitions);
-        } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(&child.first)) {
+        } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(&child)) {
             visit_while(analysis_manager, *while_loop, undefined, open_definitions, closed_definitions);
-        } else if (auto return_statement = dyn_cast<structured_control_flow::Return*>(&child.first)) {
+        } else if (auto return_statement = dyn_cast<structured_control_flow::Return*>(&child)) {
             visit_return(analysis_manager, *return_statement, undefined, open_definitions, closed_definitions);
-        } else if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&child.first)) {
+        } else if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&child)) {
             visit_sequence(analysis_manager, *sequence, undefined, open_definitions, closed_definitions);
-        }
-
-        // handle transitions read
-        for (auto& entry : child.second.assignments()) {
-            for (auto& atom : symbolic::atoms(entry.second)) {
-                if (symbolic::is_pointer(atom)) {
-                    continue;
-                }
-                auto current_user = users.get_user(atom->get_name(), &child.second, Use::READ);
-
-                bool found = false;
-                for (auto& user : open_definitions) {
-                    if (user.first->container() == atom->get_name()) {
-                        user.second.insert(current_user);
-                        found = true;
-                    }
-                }
-                if (!found) {
-                    undefined.insert(current_user);
-                }
-            }
-        }
-
-        // handle transitions write
-        for (auto& entry : child.second.assignments()) {
-            auto current_user = users.get_user(entry.first->get_name(), &child.second, Use::WRITE);
-
-            std::unordered_set<User*> to_close;
-            for (auto& user : open_definitions) {
-                if (this->closes(analysis_manager, *user.first, *current_user, true)) {
-                    to_close.insert(user.first);
-                }
-            }
-            for (auto& user : to_close) {
-                closed_definitions.insert({user, open_definitions.at(user)});
-                open_definitions.erase(user);
-            }
-            open_definitions.insert({current_user, {}});
         }
     }
 }

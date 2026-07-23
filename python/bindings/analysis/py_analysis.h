@@ -16,7 +16,6 @@
 #include "py_assumptions_analysis.h"
 #include "py_control_flow_analysis.h"
 #include "py_dominance_analysis.h"
-#include "py_escape_analysis.h"
 #include "py_flop_analysis.h"
 #include "py_loop_analysis.h"
 #include "py_type_analysis.h"
@@ -40,7 +39,6 @@ private:
     std::optional<PyAssumptionsAnalysis> assumptions_analysis_;
     std::optional<PyControlFlowAnalysis> control_flow_analysis_;
     std::optional<PyDominanceAnalysis> dominance_analysis_;
-    std::optional<PyEscapeAnalysis> escape_analysis_;
     std::optional<PyFlopAnalysis> flop_analysis_;
     std::optional<PyLoopAnalysis> loop_analysis_;
     std::optional<PyTypeAnalysis> type_analysis_;
@@ -61,7 +59,6 @@ public:
         assumptions_analysis_.reset();
         control_flow_analysis_.reset();
         dominance_analysis_.reset();
-        escape_analysis_.reset();
         flop_analysis_.reset();
         loop_analysis_.reset();
         type_analysis_.reset();
@@ -96,13 +93,6 @@ public:
             dominance_analysis_.emplace(*manager_);
         }
         return *dominance_analysis_;
-    }
-
-    PyEscapeAnalysis& escape_analysis() {
-        if (!escape_analysis_) {
-            escape_analysis_.emplace(*manager_);
-        }
-        return *escape_analysis_;
     }
 
     PyFlopAnalysis& flop_analysis() {
@@ -168,12 +158,6 @@ inline void register_analysis(py::module& m) {
             "Get the DominanceAnalysis"
         )
         .def(
-            "escape_analysis",
-            &PyAnalysisManager::escape_analysis,
-            py::return_value_policy::reference_internal,
-            "Get the EscapeAnalysis"
-        )
-        .def(
             "flop_analysis",
             &PyAnalysisManager::flop_analysis,
             py::return_value_policy::reference_internal,
@@ -208,10 +192,6 @@ inline void register_analysis(py::module& m) {
 
     py::class_<PyDominanceAnalysis>(m, "DominanceAnalysis").def("__repr__", [](const PyDominanceAnalysis&) {
         return "<DominanceAnalysis>";
-    });
-
-    py::class_<PyEscapeAnalysis>(m, "EscapeAnalysis").def("__repr__", [](const PyEscapeAnalysis&) {
-        return "<EscapeAnalysis>";
     });
 
     py::class_<PyFlopAnalysis>(m, "FlopAnalysis").def("__repr__", [](const PyFlopAnalysis&) {

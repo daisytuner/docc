@@ -13,6 +13,10 @@ namespace builder {
 class StructuredSDFGBuilder;
 }
 
+namespace visitor {
+class ActualStructuredSDFGVisitor;
+}
+
 namespace structured_control_flow {
 
 /**
@@ -60,6 +64,8 @@ public:
 
     /// LLVM-style RTTI predicate: true if \p element is a ControlFlowNode.
     static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+
+    virtual bool accept(visitor::ActualStructuredSDFGVisitor& visitor) = 0;
 
     virtual ~ControlFlowNode() = default;
 

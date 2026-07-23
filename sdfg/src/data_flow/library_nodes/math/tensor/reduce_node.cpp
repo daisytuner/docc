@@ -164,7 +164,6 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 block.debug_info()
             );
             last_scope = &last_map->root();
@@ -234,7 +233,6 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 block.debug_info()
             );
             last_scope = &map.root();
@@ -261,11 +259,10 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
                     update,
                     {{.operation = reduction_operation.value(), .container = accum_container}},
                     structured_control_flow::ScheduleType_Sequential::create(),
-                    {},
                     block.debug_info()
                 );
             } else {
-                last_loop = &builder.add_for(*last_scope, indvar, condition, init, update, {}, block.debug_info());
+                last_loop = &builder.add_for(*last_scope, indvar, condition, init, update, block.debug_info());
             }
             last_scope = &last_loop->root();
             loop_vars_map[dim_idx] = indvar;

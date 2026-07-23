@@ -63,17 +63,17 @@ void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
 
     dump_sdfg(builder.subject(), "1.expanded");
 
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Navigate to the innermost map
     structured_control_flow::Sequence* current_scope = &new_sequence;
     for (size_t i = 0; i < shape_dims.size(); ++i) {
-        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
         current_scope = &map_loop->root();
     }
 
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that the block is not empty (contains either tasklets or library nodes)
@@ -155,17 +155,17 @@ void TestBinary(std::vector<size_t> shape_dims) {
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Navigate to the innermost map
     structured_control_flow::Sequence* current_scope = &new_sequence;
     for (size_t i = 0; i < shape_dims.size(); ++i) {
-        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
         current_scope = &map_loop->root();
     }
 
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     bool has_content = !code_block->dataflow().tasklets().empty() || !code_block->dataflow().library_nodes().empty();
@@ -338,17 +338,17 @@ void TestCast(std::vector<size_t> shape_dims) {
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Navigate to the innermost map
     structured_control_flow::Sequence* current_scope = &new_sequence;
     for (size_t i = 0; i < shape_dims.size(); ++i) {
-        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
         current_scope = &map_loop->root();
     }
 
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that the block is not empty (contains either tasklets or library nodes)

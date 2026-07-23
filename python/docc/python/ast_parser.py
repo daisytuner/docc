@@ -679,9 +679,9 @@ class ASTParser(ast.NodeVisitor):
         self.builder.add_container(tmp_name, dtype, False)
 
         self.builder.begin_if(expr_str)
-        self.builder.add_transition(tmp_name, "true")
+        self.builder.add_assignments(tmp_name, "true")
         self.builder.begin_else()
-        self.builder.add_transition(tmp_name, "false")
+        self.builder.add_assignments(tmp_name, "false")
         self.builder.end_if()
 
         self.container_table[tmp_name] = dtype

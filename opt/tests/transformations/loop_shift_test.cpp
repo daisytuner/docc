@@ -6,7 +6,9 @@
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/transformations/loop_shift.h"
+
 #include "sdfg/types/array.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -58,7 +60,7 @@ TEST(LoopShiftTest, ShiftToZero) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Verify initial state: i = 3..N
@@ -86,14 +88,15 @@ TEST(LoopShiftTest, ShiftToZero) {
     ASSERT_EQ(loop->root().size(), 2); // new empty block + original block
 
     // The first block should have the assignment in its transition
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
-    ASSERT_EQ(transition.assignments().size(), 1);
+    auto& first_child = loop->root().at(0);
+    auto transition = dyn_cast<AssignmentBlock*>(&first_child);
+    ASSERT_TRUE(transition);
+    ASSERT_EQ(transition->assignments().size(), 1);
 
     // Assignment should be: __i_orig__ = i + 3
     auto shifted_var = symbolic::symbol(shift.shifted_container_name());
-    ASSERT_TRUE(transition.assignments().count(shifted_var) > 0);
-    auto assigned_value = transition.assignments().at(shifted_var);
+    ASSERT_TRUE(transition->assignments().count(shifted_var) > 0);
+    auto assigned_value = transition->assignments().at(shifted_var);
     auto expected = symbolic::add(symbolic::symbol("i"), symbolic::integer(3));
     EXPECT_TRUE(symbolic::eq(assigned_value, expected));
 }
@@ -132,7 +135,7 @@ TEST(LoopShiftTest, ShiftByOffset) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Verify initial state: i = 5..N
@@ -150,14 +153,14 @@ TEST(LoopShiftTest, ShiftByOffset) {
     EXPECT_TRUE(builder2.subject().exists(shift.shifted_container_name()));
 
     // The first block should have the assignment in its transition
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
-    ASSERT_EQ(transition.assignments().size(), 1);
+    auto transition = dyn_cast<AssignmentBlock*>(&loop->root().at(0));
+    ASSERT_TRUE(transition);
+    ASSERT_EQ(transition->assignments().size(), 1);
 
     // Assignment should be: __i_orig__ = i + 2
     auto shifted_var = symbolic::symbol(shift.shifted_container_name());
-    ASSERT_TRUE(transition.assignments().count(shifted_var) > 0);
-    auto assigned_value = transition.assignments().at(shifted_var);
+    ASSERT_TRUE(transition->assignments().count(shifted_var) > 0);
+    auto assigned_value = transition->assignments().at(shifted_var);
     auto expected = symbolic::add(symbolic::symbol("i"), symbolic::integer(2));
     EXPECT_TRUE(symbolic::eq(assigned_value, expected));
 }
@@ -198,7 +201,7 @@ TEST(LoopShiftTest, IndvarUsedInAccessNode) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopShift with default constructor (shifts to 0)
@@ -213,7 +216,7 @@ TEST(LoopShiftTest, IndvarUsedInAccessNode) {
 
     // Get the second block (original block, now with updated references)
     ASSERT_EQ(loop->root().size(), 2);
-    auto* original_block = dyn_cast<structured_control_flow::Block*>(&loop->root().at(1).first);
+    auto* original_block = dyn_cast<structured_control_flow::Block*>(&loop->root().at(1));
     ASSERT_NE(original_block, nullptr);
 
     // Find the access node for A
@@ -266,7 +269,7 @@ TEST(LoopShiftTest, NoOpWhenOffsetIsZero) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     size_t original_body_size = loop->root().size();
@@ -308,6 +311,8 @@ TEST(LoopShiftTest, IndvarFinalValueAfterLoop) {
     builder.add_computational_memlet(block, const_node, tasklet, "_in1", {});
     builder.add_computational_memlet(block, tasklet, "_out", a_node, {symbolic::symbol("i")});
 
+    dump_sdfg(builder.subject(), "0.init");
+
     auto sdfg = builder.move();
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
@@ -315,7 +320,7 @@ TEST(LoopShiftTest, IndvarFinalValueAfterLoop) {
     auto& sdfg_root = builder2.subject().root();
     ASSERT_EQ(sdfg_root.size(), 1); // Just the loop
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopShift (shifts to 0 by default, offset = 5)
@@ -323,22 +328,21 @@ TEST(LoopShiftTest, IndvarFinalValueAfterLoop) {
     ASSERT_TRUE(shift.can_be_applied(builder2, am));
     shift.apply(builder2, am);
 
+    dump_sdfg(builder2.subject(), "1.shifted");
+
     // After transformation, root should have: loop + reconstruction block
     ASSERT_EQ(sdfg_root.size(), 2);
 
     // Verify the second element is a block (reconstruction)
-    auto* post_loop_block = dyn_cast<structured_control_flow::Block*>(&sdfg_root.at(1).first);
-    ASSERT_NE(post_loop_block, nullptr);
-
+    auto* post_loop_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&sdfg_root.at(1));
     // Check the reconstruction block's transition contains the reconstruction assignment
-    // (add_block_after puts assignments in the new block's transition)
-    auto& post_loop_transition = sdfg_root.at(1).second;
-    ASSERT_EQ(post_loop_transition.assignments().size(), 1);
+    ASSERT_TRUE(post_loop_block);
+    ASSERT_EQ(post_loop_block->assignments().size(), 1);
 
     // Assignment should be: i = i + 5
     auto indvar = symbolic::symbol("i");
-    ASSERT_TRUE(post_loop_transition.assignments().count(indvar) > 0);
-    auto reconstruction = post_loop_transition.assignments().at(indvar);
+    ASSERT_TRUE(post_loop_block->assignments().count(indvar) > 0);
+    auto reconstruction = post_loop_block->assignments().at(indvar);
     auto expected = symbolic::add(indvar, symbolic::integer(5));
     EXPECT_TRUE(symbolic::eq(reconstruction, expected));
 }

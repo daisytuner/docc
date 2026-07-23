@@ -167,7 +167,6 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
         symbolic::zero(),
         symbolic::add(n_var, symbolic::one()),
         structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
     current_scope = &map_n.root();
@@ -184,7 +183,6 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
         symbolic::zero(),
         symbolic::add(c_var, symbolic::one()),
         structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
     current_scope = &map_c.root();
@@ -202,7 +200,6 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
             symbolic::zero(),
             symbolic::add(od_var, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             block.debug_info()
         );
         current_scope = &map_od.root();
@@ -269,7 +266,6 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
             symbolic::add(k_var, symbolic::one()),
             {{.operation = reduce_op, .container = accum_var}},
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             block.debug_info()
         );
         loop_scope = &reduce_k.root();
@@ -302,7 +298,7 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
                         And(symbolic::Lt(input_spatial_indices[i], input_spatial_dims[i]),
                             symbolic::Ge(input_spatial_indices[i], symbolic::zero())));
         }
-        auto& branch = builder.add_if_else(*loop_scope, {}, block.debug_info());
+        auto& branch = builder.add_if_else(*loop_scope, block.debug_info());
         auto& comp_case = builder.add_case(branch, comp_condition, block.debug_info());
         loop_scope = &comp_case;
     }

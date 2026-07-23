@@ -34,7 +34,7 @@ namespace {
 /// Collect all Block nodes reachable from a Sequence, including through nested For/Map loops.
 void collect_blocks(structured_control_flow::Sequence& seq, std::vector<structured_control_flow::Block*>& blocks) {
     for (size_t i = 0; i < seq.size(); ++i) {
-        auto& child = seq.at(i).first;
+        auto& child = seq.at(i);
         if (auto* block = dyn_cast<structured_control_flow::Block*>(&child)) {
             blocks.push_back(block);
         } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
@@ -46,7 +46,7 @@ void collect_blocks(structured_control_flow::Sequence& seq, std::vector<structur
 /// Get the first block from a sequence, recursively descending into loops.
 structured_control_flow::Block* get_first_block(structured_control_flow::Sequence& seq) {
     for (size_t i = 0; i < seq.size(); ++i) {
-        auto& child = seq.at(i).first;
+        auto& child = seq.at(i);
         if (auto* block = dyn_cast<structured_control_flow::Block*>(&child)) {
             return block;
         } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
@@ -202,14 +202,6 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     }
 
     // ==========================================================================
-    // Criterion 2: Transition between them is empty
-    // ==========================================================================
-    auto& transition = parent_sequence->at(first_index).second;
-    if (!transition.empty()) {
-        return false;
-    }
-
-    // ==========================================================================
     // Criterion 3: Both are perfectly nested tile structures with Maps
     // Structure required: outer tile Map -> inner iteration Map(s) -> Block(s)
     // ==========================================================================
@@ -244,7 +236,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     if (first_map_.root().size() != 1) {
         return false;
     }
-    auto* first_inner_map = dyn_cast<structured_control_flow::Map*>(&first_map_.root().at(0).first);
+    auto* first_inner_map = dyn_cast<structured_control_flow::Map*>(&first_map_.root().at(0));
     if (first_inner_map == nullptr) {
         return false;
     }
@@ -252,7 +244,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     if (second_map_.root().size() != 1) {
         return false;
     }
-    auto* second_inner_map = dyn_cast<structured_control_flow::Map*>(&second_map_.root().at(0).first);
+    auto* second_inner_map = dyn_cast<structured_control_flow::Map*>(&second_map_.root().at(0));
     if (second_inner_map == nullptr) {
         return false;
     }
@@ -605,8 +597,8 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     auto tile_size_expr = stride;
 
     // Get references to inner maps before moving
-    auto* first_inner_map = dyn_cast<structured_control_flow::Map*>(&first_map_.root().at(0).first);
-    auto* second_inner_map = dyn_cast<structured_control_flow::Map*>(&second_map_.root().at(0).first);
+    auto* first_inner_map = dyn_cast<structured_control_flow::Map*>(&first_map_.root().at(0));
+    auto* second_inner_map = dyn_cast<structured_control_flow::Map*>(&second_map_.root().at(0));
 
     // Extract inner map properties before they get moved
     auto first_inner_indvar = first_inner_map->indvar();
@@ -642,7 +634,6 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
         new_tile_condition,
         tile_init,
         symbolic::subs(tile_update, tile_indvar, new_tile_indvar),
-        {},
         first_map_.debug_info()
     );
 
@@ -912,10 +903,9 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
         auto init_tiled_base = symbolic::sub(symbolic::add(tile_init, min_offset_expr), radius_expr);
 
         // Get a reference to the pre-fetch map (first child of fused_for) to insert before it
-        auto& first_child_in_fused = fused_for.root().at(0).first;
+        auto& first_child_in_fused = fused_for.root().at(0);
 
-        auto& init_if_else =
-            builder.add_if_else_before(fused_for.root(), first_child_in_fused, sdfg::control_flow::Assignments{});
+        auto& init_if_else = builder.add_if_else_before(fused_for.root(), first_child_in_fused);
         auto init_cond = symbolic::Eq(new_tile_indvar, tile_init);
         auto& init_then = builder.add_case(init_if_else, init_cond);
         // Empty else branch (on subsequent iters, buf_cur has data from swap)
@@ -986,7 +976,7 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
                 }
             } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
                 for (size_t i = 0; i < seq->size(); i++) {
-                    rewrite_accesses(seq->at(i).first);
+                    rewrite_accesses(seq->at(i));
                 }
             } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
                 rewrite_accesses(loop->root());

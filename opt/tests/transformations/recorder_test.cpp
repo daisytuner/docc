@@ -294,11 +294,11 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
 
     EXPECT_EQ(j[1]["transformation_type"], "LoopTiling");
     EXPECT_EQ(j[1]["parameters"]["tile_size"], 16);
-    EXPECT_EQ(j[1]["subgraph"]["0"]["element_id"], 4);
+    EXPECT_EQ(j[1]["subgraph"]["0"]["element_id"], 3);
 
     EXPECT_EQ(j[2]["transformation_type"], "LoopInterchange");
     EXPECT_EQ(j[2]["subgraph"]["0"]["element_id"], 1);
-    EXPECT_EQ(j[2]["subgraph"]["1"]["element_id"], 19);
+    EXPECT_EQ(j[2]["subgraph"]["1"]["element_id"], 15);
 }
 
 TEST_F(RecorderMultiTransformationTest, Replay_Transformations) {
@@ -313,13 +313,13 @@ TEST_F(RecorderMultiTransformationTest, Replay_Transformations) {
 
     nlohmann::json j1;
     j1["transformation_type"] = "LoopTiling";
-    j1["subgraph"] = {{"0", {{"element_id", 4}, {"type", "map"}}}};
+    j1["subgraph"] = {{"0", {{"element_id", 3}, {"type", "map"}}}};
     j1["parameters"] = {{"tile_size", 16}};
     j_array.push_back(j1);
 
     nlohmann::json j2;
     j2["transformation_type"] = "LoopInterchange";
-    j2["subgraph"] = {{"0", {{"element_id", 1}, {"type", "for"}}}, {"1", {{"element_id", 19}, {"type", "map"}}}};
+    j2["subgraph"] = {{"0", {{"element_id", 1}, {"type", "for"}}}, {"1", {{"element_id", 15}, {"type", "map"}}}};
     j_array.push_back(j2);
 
     EXPECT_NO_THROW(recorder.replay(*builder_, *analysis_manager_, j_array));
@@ -425,12 +425,12 @@ TEST_F(ReplayerTest, Replay_Transformations) {
     );
     j.push_back(
         {{"transformation_type", "LoopTiling"},
-         {"subgraph", {{"0", {{"element_id", 4}, {"type", "map"}}}}},
+         {"subgraph", {{"0", {{"element_id", 3}, {"type", "map"}}}}},
          {"parameters", {{"tile_size", 16}}}}
     );
     j.push_back(
         {{"transformation_type", "LoopInterchange"},
-         {"subgraph", {{"0", {{"element_id", 1}, {"type", "map"}}}, {"1", {{"element_id", 19}, {"type", "map"}}}}}}
+         {"subgraph", {{"0", {{"element_id", 1}, {"type", "map"}}}, {"1", {{"element_id", 15}, {"type", "map"}}}}}}
     );
 
     EXPECT_NO_THROW(recorder.replay(*builder_, *analysis_manager_, j));

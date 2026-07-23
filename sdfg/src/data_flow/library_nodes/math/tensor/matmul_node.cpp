@@ -334,7 +334,6 @@ passes::LibNodeExpander::ExpandOutcome MatMulNode::expand(passes::LibNodeExpande
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 block.debug_info()
             );
             last_scope = &last_map->root();

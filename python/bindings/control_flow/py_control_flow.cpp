@@ -34,58 +34,29 @@ void register_control_flow(py::module& m) {
             return oss.str();
         });
 
-    // Transition class
-    py::class_<Transition>(m, "Transition")
-        .def_property_readonly("element_id", &Transition::element_id, "Get the unique element identifier")
-        .def_property_readonly(
-            "assignments",
-            [](const Transition& trans) {
-                std::unordered_map<std::string, std::string> result;
-                for (const auto& [sym, expr] : trans.assignments()) {
-                    result[sym->__str__()] = expr->__str__();
-                }
-                return result;
-            },
-            "Get the symbol assignments as a dictionary"
-        )
-        .def_property_readonly("empty", &Transition::empty, "Check if this transition has no assignments")
-        .def_property_readonly("size", &Transition::size, "Get the number of assignments")
-        .def("__repr__", [](const Transition& trans) {
-            std::ostringstream oss;
-            oss << "<Transition assignments=" << trans.size() << " id=" << trans.element_id() << ">";
-            return oss.str();
-        });
-
     // Sequence class (inherits from ControlFlowNode)
     py::class_<Sequence, ControlFlowNode>(m, "Sequence")
         .def_property_readonly("size", &Sequence::size, "Get the number of children")
         .def(
             "at",
-            [](Sequence& seq, size_t i) -> std::pair<ControlFlowNode&, Transition&> { return seq.at(i); },
+            [](Sequence& seq, size_t i) -> ControlFlowNode& { return seq.at(i); },
             py::arg("index"),
             py::return_value_policy::reference,
             "Get child and transition at index"
         )
         .def(
             "child",
-            [](Sequence& seq, size_t i) -> ControlFlowNode& { return seq.at(i).first; },
+            [](Sequence& seq, size_t i) -> ControlFlowNode& { return seq.at(i); },
             py::arg("index"),
             py::return_value_policy::reference,
             "Get child node at index"
-        )
-        .def(
-            "transition",
-            [](Sequence& seq, size_t i) -> Transition& { return seq.at(i).second; },
-            py::arg("index"),
-            py::return_value_policy::reference,
-            "Get transition at index"
         )
         .def(
             "children",
             [](Sequence& seq) {
                 std::vector<ControlFlowNode*> result;
                 for (size_t i = 0; i < seq.size(); ++i) {
-                    result.push_back(&seq.at(i).first);
+                    result.push_back(&seq.at(i));
                 }
                 return result;
             },
@@ -107,7 +78,7 @@ void register_control_flow(py::module& m) {
                 if (i >= seq.size()) {
                     throw py::index_error("Sequence index out of range");
                 }
-                return seq.at(i).first;
+                return seq.at(i);
             },
             py::arg("index"),
             py::return_value_policy::reference,
@@ -130,6 +101,28 @@ void register_control_flow(py::module& m) {
         .def("__repr__", [](const Block& block) {
             std::ostringstream oss;
             oss << "<Block id=" << block.element_id() << ">";
+            return oss.str();
+        });
+
+    // Transition class
+    py::class_<AssignmentBlock>(m, "AssignmentBlock")
+        .def_property_readonly("element_id", &AssignmentBlock::element_id, "Get the unique element identifier")
+        .def_property_readonly(
+            "assignments",
+            [](const AssignmentBlock& trans) {
+                std::unordered_map<std::string, std::string> result;
+                for (const auto& [sym, expr] : trans.assignments()) {
+                    result[sym->__str__()] = expr->__str__();
+                }
+                return result;
+            },
+            "Get the symbol assignments as a dictionary"
+        )
+        .def_property_readonly("empty", &AssignmentBlock::empty, "Check if this transition has no assignments")
+        .def_property_readonly("size", &AssignmentBlock::size, "Get the number of assignments")
+        .def("__repr__", [](const AssignmentBlock& trans) {
+            std::ostringstream oss;
+            oss << "<AssignmentBlock assignments=" << trans.size() << " id=" << trans.element_id() << ">";
             return oss.str();
         });
 

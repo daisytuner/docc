@@ -262,7 +262,7 @@ private:
         const ExposedType* current = &in;
         bool updating = true;
         for (size_t i = 0; i < seq.size() && updating; ++i) {
-            auto [child, transition] = seq.at(i);
+            auto& child = seq.at(i);
             auto [changed, output] = solve(child, *current);
             updating = changed;
             current = &output;

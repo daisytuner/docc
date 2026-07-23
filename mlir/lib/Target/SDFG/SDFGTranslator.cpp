@@ -589,7 +589,7 @@ std::string SDFGTranslator::store_in_c_order(
 
         auto& loop =
             builder_
-                .add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create(), {}, deb_info);
+                .add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create(), deb_info);
         current_scope = &loop.root();
         loop_vars.push_back(indvar);
     }
@@ -640,7 +640,7 @@ void SDFGTranslator::copy_to_output(
 
         auto& loop =
             builder_
-                .add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create(), {}, deb_info);
+                .add_map(*current_scope, indvar, condition, init, update, ScheduleType_Sequential::create(), deb_info);
         current_scope = &loop.root();
         loop_vars.push_back(indvar);
     }

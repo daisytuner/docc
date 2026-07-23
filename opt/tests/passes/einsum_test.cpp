@@ -93,7 +93,7 @@ TEST(EinsumDetectionPassTest, GEMM) {
     EXPECT_EQ(root.size(), 1);
     ASSERT_GE(root.size(), 1);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&root.at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&root.at(0));
     ASSERT_TRUE(new_block);
     EXPECT_EQ(new_block->dataflow().data_nodes().size(), 5);
     EXPECT_EQ(new_block->dataflow().tasklets().size(), 0);
@@ -178,22 +178,22 @@ TEST(EinsumLowerPassTest, GEMM) {
     EXPECT_EQ(root.size(), 1);
     ASSERT_GE(root.size(), 1);
 
-    auto* new_einsum_map1 = dyn_cast<structured_control_flow::Map*>(&root.at(0).first);
+    auto* new_einsum_map1 = dyn_cast<structured_control_flow::Map*>(&root.at(0));
     ASSERT_TRUE(new_einsum_map1);
     EXPECT_EQ(new_einsum_map1->root().size(), 1);
     ASSERT_GE(new_einsum_map1->root().size(), 1);
 
-    auto* new_einsum_map2 = dyn_cast<structured_control_flow::Map*>(&new_einsum_map1->root().at(0).first);
+    auto* new_einsum_map2 = dyn_cast<structured_control_flow::Map*>(&new_einsum_map1->root().at(0));
     ASSERT_TRUE(new_einsum_map2);
     EXPECT_EQ(new_einsum_map2->root().size(), 1);
     ASSERT_GE(new_einsum_map2->root().size(), 1);
 
-    auto* new_einsum_for_node = dyn_cast<structured_control_flow::For*>(&new_einsum_map2->root().at(0).first);
+    auto* new_einsum_for_node = dyn_cast<structured_control_flow::For*>(&new_einsum_map2->root().at(0));
     ASSERT_TRUE(new_einsum_for_node);
     EXPECT_EQ(new_einsum_for_node->root().size(), 1);
     ASSERT_GE(new_einsum_for_node->root().size(), 1);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&new_einsum_for_node->root().at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&new_einsum_for_node->root().at(0));
     ASSERT_TRUE(new_block);
     EXPECT_EQ(new_block->dataflow().data_nodes().size(), 6);
     EXPECT_EQ(new_block->dataflow().tasklets().size(), 2);
@@ -275,26 +275,26 @@ TEST(EinsumDetectionPassTest, Means) {
     EXPECT_EQ(root.size(), 1);
     ASSERT_GE(root.size(), 1);
 
-    auto* new_for_node1 = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* new_for_node1 = dyn_cast<structured_control_flow::For*>(&root.at(0));
     ASSERT_TRUE(new_for_node1);
     ASSERT_EQ(new_for_node1, &for_node1);
     EXPECT_EQ(for_node1.root().size(), 3);
     ASSERT_GE(for_node1.root().size(), 3);
 
-    auto* new_block_init = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(0).first);
+    auto* new_block_init = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(0));
     ASSERT_TRUE(new_block_init);
     ASSERT_EQ(new_block_init, &block_init);
     EXPECT_EQ(block_init.dataflow().data_nodes().size(), 2);
     EXPECT_EQ(block_init.dataflow().tasklets().size(), 1);
     EXPECT_EQ(block_init.dataflow().library_nodes().size(), 0);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(1).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(1));
     ASSERT_TRUE(new_block);
     EXPECT_EQ(new_block->dataflow().data_nodes().size(), 3);
     EXPECT_EQ(new_block->dataflow().tasklets().size(), 0);
     EXPECT_EQ(new_block->dataflow().library_nodes().size(), 1);
 
-    auto* new_block_div = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(2).first);
+    auto* new_block_div = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(2));
     ASSERT_TRUE(new_block_div);
     ASSERT_EQ(new_block_div, &block_div);
     EXPECT_EQ(block_div.dataflow().data_nodes().size(), 4);
@@ -379,31 +379,31 @@ TEST(EinsumLowerPassTest, Means) {
     EXPECT_EQ(root.size(), 1);
     ASSERT_GE(root.size(), 1);
 
-    auto* new_for_node1 = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* new_for_node1 = dyn_cast<structured_control_flow::For*>(&root.at(0));
     ASSERT_TRUE(new_for_node1);
     ASSERT_EQ(new_for_node1, &for_node1);
     EXPECT_EQ(for_node1.root().size(), 3);
     ASSERT_GE(for_node1.root().size(), 3);
 
-    auto* new_block_init = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(0).first);
+    auto* new_block_init = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(0));
     ASSERT_TRUE(new_block_init);
     ASSERT_EQ(new_block_init, &block_init);
     EXPECT_EQ(block_init.dataflow().data_nodes().size(), 2);
     EXPECT_EQ(block_init.dataflow().tasklets().size(), 1);
     EXPECT_EQ(block_init.dataflow().library_nodes().size(), 0);
 
-    auto* new_einsum_for_node = dyn_cast<structured_control_flow::For*>(&for_node1.root().at(1).first);
+    auto* new_einsum_for_node = dyn_cast<structured_control_flow::For*>(&for_node1.root().at(1));
     ASSERT_TRUE(new_einsum_for_node);
     EXPECT_EQ(new_einsum_for_node->root().size(), 1);
     ASSERT_GE(new_einsum_for_node->root().size(), 1);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&new_einsum_for_node->root().at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&new_einsum_for_node->root().at(0));
     ASSERT_TRUE(new_block);
     EXPECT_EQ(new_block->dataflow().data_nodes().size(), 3);
     EXPECT_EQ(new_block->dataflow().tasklets().size(), 1);
     EXPECT_EQ(new_block->dataflow().library_nodes().size(), 0);
 
-    auto* new_block_div = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(2).first);
+    auto* new_block_div = dyn_cast<structured_control_flow::Block*>(&for_node1.root().at(2));
     ASSERT_TRUE(new_block_div);
     ASSERT_EQ(new_block_div, &block_div);
     EXPECT_EQ(block_div.dataflow().data_nodes().size(), 4);
@@ -476,20 +476,20 @@ TEST(EinsumDetectionPassTest, Mean) {
     EXPECT_EQ(root.size(), 3);
     ASSERT_GE(root.size(), 3);
 
-    auto* new_block_init = dyn_cast<structured_control_flow::Block*>(&root.at(0).first);
+    auto* new_block_init = dyn_cast<structured_control_flow::Block*>(&root.at(0));
     ASSERT_TRUE(new_block_init);
     ASSERT_EQ(new_block_init, &block_init);
     EXPECT_EQ(block_init.dataflow().data_nodes().size(), 2);
     EXPECT_EQ(block_init.dataflow().tasklets().size(), 1);
     EXPECT_EQ(block_init.dataflow().library_nodes().size(), 0);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&root.at(1).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&root.at(1));
     ASSERT_TRUE(new_block);
     EXPECT_EQ(new_block->dataflow().data_nodes().size(), 3);
     EXPECT_EQ(new_block->dataflow().tasklets().size(), 0);
     EXPECT_EQ(new_block->dataflow().library_nodes().size(), 1);
 
-    auto* new_block_div = dyn_cast<structured_control_flow::Block*>(&root.at(2).first);
+    auto* new_block_div = dyn_cast<structured_control_flow::Block*>(&root.at(2));
     ASSERT_TRUE(new_block_div);
     ASSERT_EQ(new_block_div, &block_div);
     EXPECT_EQ(block_div.dataflow().data_nodes().size(), 4);
@@ -564,25 +564,25 @@ TEST(EinsumLowerPassTest, Mean) {
     EXPECT_EQ(root.size(), 3);
     ASSERT_GE(root.size(), 3);
 
-    auto* new_block_init = dyn_cast<structured_control_flow::Block*>(&root.at(0).first);
+    auto* new_block_init = dyn_cast<structured_control_flow::Block*>(&root.at(0));
     ASSERT_TRUE(new_block_init);
     ASSERT_EQ(new_block_init, &block_init);
     EXPECT_EQ(block_init.dataflow().data_nodes().size(), 2);
     EXPECT_EQ(block_init.dataflow().tasklets().size(), 1);
     EXPECT_EQ(block_init.dataflow().library_nodes().size(), 0);
 
-    auto* new_einsum_for_node = dyn_cast<structured_control_flow::For*>(&root.at(1).first);
+    auto* new_einsum_for_node = dyn_cast<structured_control_flow::For*>(&root.at(1));
     ASSERT_TRUE(new_einsum_for_node);
     EXPECT_EQ(new_einsum_for_node->root().size(), 1);
     ASSERT_GE(new_einsum_for_node->root().size(), 1);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&new_einsum_for_node->root().at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&new_einsum_for_node->root().at(0));
     ASSERT_TRUE(new_block);
     EXPECT_EQ(new_block->dataflow().data_nodes().size(), 3);
     EXPECT_EQ(new_block->dataflow().tasklets().size(), 1);
     EXPECT_EQ(new_block->dataflow().library_nodes().size(), 0);
 
-    auto* new_block_div = dyn_cast<structured_control_flow::Block*>(&root.at(2).first);
+    auto* new_block_div = dyn_cast<structured_control_flow::Block*>(&root.at(2));
     ASSERT_TRUE(new_block_div);
     ASSERT_EQ(new_block_div, &block_div);
     EXPECT_EQ(block_div.dataflow().data_nodes().size(), 4);

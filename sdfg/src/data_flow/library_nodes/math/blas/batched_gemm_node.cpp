@@ -247,7 +247,6 @@ passes::LibNodeExpander::ExpandOutcome BatchedGEMMNode::
         symbolic::zero(),
         symbolic::add(batch_indvar, symbolic::one()),
         structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
 
@@ -281,11 +280,10 @@ passes::LibNodeExpander::ExpandOutcome BatchedGEMMNode::
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 block.debug_info()
             );
         } else {
-            last_map = &builder.add_for(*last_scope, indvar, condition, init, update, {}, block.debug_info());
+            last_map = &builder.add_for(*last_scope, indvar, condition, init, update, block.debug_info());
         }
         last_scope = &last_map->root();
 
@@ -302,7 +300,7 @@ passes::LibNodeExpander::ExpandOutcome BatchedGEMMNode::
     auto c_batch_offset = symbolic::mul(batch_indvar, stride_c_);
 
     // Init sum = 0
-    auto& init_block = builder.add_block_before(output_loop->root(), *last_map, {}, block.debug_info());
+    auto& init_block = builder.add_block_before(output_loop->root(), *last_map, block.debug_info());
     auto& sum_init = builder.add_access(init_block, sum_var, block.debug_info());
 
     auto& zero_node = builder.add_constant(init_block, "0.0", alpha_edge->base_type(), block.debug_info());
@@ -343,7 +341,7 @@ passes::LibNodeExpander::ExpandOutcome BatchedGEMMNode::
     builder.add_computational_memlet(code_block, core_fma, "_out", sum_out, {}, iedge_c->debug_info());
 
     // Flush: C[batch*stride_c + ldc*i + j] = alpha * sum + beta * C[...]
-    auto& flush_block = builder.add_block_after(output_loop->root(), *last_map, {}, block.debug_info());
+    auto& flush_block = builder.add_block_after(output_loop->root(), *last_map, block.debug_info());
     auto& sum_final = builder.add_access(flush_block, sum_var, block.debug_info());
     auto& input_node_c_new = standalone->add_indirect_read_access(flush_block, C_INPUT_IDX);
     symbolic::Expression c_idx =

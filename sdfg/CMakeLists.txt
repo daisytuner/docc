@@ -30,7 +30,6 @@ set(SOURCE_FILES
     src/analysis/control_flow_analysis.cpp
     src/analysis/data_dependency_analysis.cpp
     src/analysis/dominance_analysis.cpp
-    src/analysis/escape_analysis.cpp
     src/analysis/flop_analysis.cpp
     src/analysis/loop_analysis.cpp
     src/analysis/loop_carried_dependency_analysis.cpp
@@ -85,6 +84,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/math_node.cpp
     src/data_flow/library_nodes/math/tensor/batchnorm_node.cpp
     src/data_flow/library_nodes/math/tensor/broadcast_node.cpp
+    src/data_flow/library_nodes/math/tensor/concat_node.cpp
     src/data_flow/library_nodes/math/tensor/conv_node.cpp
     src/data_flow/library_nodes/math/tensor/copy_node.cpp
     src/data_flow/library_nodes/math/tensor/einsum_node.cpp
@@ -208,6 +208,7 @@ set(SOURCE_FILES
     src/types/utils.cpp
     src/visitor/immutable_structured_sdfg_visitor.cpp
     src/visitor/structured_sdfg_visitor.cpp
+    src/visitor/structured_sdfg_walker.cpp
     src/visualizer/dot_visualizer.cpp
     src/visualizer/visualizer.cpp
 )

@@ -8,6 +8,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/return.h"
 
 using namespace sdfg;
 
@@ -18,9 +19,11 @@ TEST(DeadCFGEliminationTest, AssignmentsAfterReturn) {
     builder.add_container("i", int_type, true);
 
     auto& root = builder.subject().root();
-    auto& return_node = builder.add_return(root, "i", {{sdfg::symbolic::symbol("i"), sdfg::symbolic::integer(10)}});
-    EXPECT_EQ(root.size(), 1);
-    EXPECT_EQ(root.at(0).second.size(), 1);
+    auto& return_node = builder.add_return(root, "i");
+    auto& assignments = builder.add_assignments(root, {{sdfg::symbolic::symbol("i"), sdfg::symbolic::integer(10)}});
+
+    EXPECT_EQ(root.size(), 2);
+    EXPECT_EQ(dyn_cast<AssignmentBlock&>(root.at(1)).assignments().size(), 1);
 
     // Dead CFG Elimination
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -28,7 +31,7 @@ TEST(DeadCFGEliminationTest, AssignmentsAfterReturn) {
     EXPECT_TRUE(dce_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_EQ(root.at(0).second.size(), 0);
+    EXPECT_TRUE(dyn_cast<Return*>(&root.at(0)) != nullptr);
 }
 
 TEST(DeadCFGEliminationTest, NodesAfterReturn) {
@@ -38,11 +41,12 @@ TEST(DeadCFGEliminationTest, NodesAfterReturn) {
     builder.add_container("i", int_type, true);
 
     auto& root = builder.subject().root();
-    auto& return_node = builder.add_return(root, "i", {{sdfg::symbolic::symbol("i"), sdfg::symbolic::integer(10)}});
+    auto& return_node = builder.add_return(root, "i");
+    auto& assignments = builder.add_assignments(root, {{sdfg::symbolic::symbol("i"), sdfg::symbolic::integer(10)}});
     auto& block = builder.add_block(root);
 
-    EXPECT_EQ(root.size(), 2);
-    EXPECT_EQ(root.at(0).second.size(), 1);
+    EXPECT_EQ(root.size(), 3);
+    EXPECT_EQ(dyn_cast<AssignmentBlock&>(root.at(1)).assignments().size(), 1);
 
     // Dead CFG Elimination
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -50,7 +54,7 @@ TEST(DeadCFGEliminationTest, NodesAfterReturn) {
     EXPECT_TRUE(dce_pass.run(builder, analysis_manager));
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_EQ(root.at(0).second.size(), 0);
+    EXPECT_TRUE(dyn_cast<Return*>(&root.at(0)) != nullptr);
 }
 
 TEST(DeadCFGEliminationTest, TrivialMap) {
@@ -77,7 +81,7 @@ TEST(DeadCFGEliminationTest, TrivialMap) {
     auto& body_block = builder.add_block(map_loop.root());
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0)) != nullptr);
 
     // Dead CFG Elimination
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -149,7 +153,7 @@ TEST(DeadCFGEliminationTest, NonTrivialMap) {
     auto& body_block = builder.add_block(for_loop.root());
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0)) != nullptr);
 
     // Dead CFG Elimination
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -157,7 +161,7 @@ TEST(DeadCFGEliminationTest, NonTrivialMap) {
     dce_pass.run(builder, analysis_manager);
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0).first) != nullptr);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0)) != nullptr);
 }
 
 TEST(DeadCFGEliminationTest, TrivialMapWithLessThanOrEqual) {

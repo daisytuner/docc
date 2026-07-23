@@ -81,7 +81,7 @@ structured_control_flow::Block& TenstorrentOffloadingExpansion::require_allocate
         auto& parent_scope = require_parent_scope();
         auto& copy_in_block = require_copy_in_block();
         ControlFlowNode& scope = scope_;
-        auto& before = builder_.add_block_before(parent_scope, copy_in_block, {}, scope.debug_info());
+        auto& before = builder_.add_block_before(parent_scope, copy_in_block, scope.debug_info());
         alloc_block_ = &before;
         return before;
     }
@@ -93,7 +93,7 @@ structured_control_flow::Block& TenstorrentOffloadingExpansion::require_copy_in_
     } else {
         auto& parent_scope = require_parent_scope();
         ControlFlowNode& scope = scope_;
-        auto& before = builder_.add_block_before(parent_scope, scope, {}, scope.debug_info());
+        auto& before = builder_.add_block_before(parent_scope, scope, scope.debug_info());
         copy_in_block_ = &before;
         return before;
     }
@@ -105,7 +105,7 @@ structured_control_flow::Block& TenstorrentOffloadingExpansion::require_copy_out
     } else {
         auto& parent_scope = require_parent_scope();
         ControlFlowNode& scope = scope_;
-        auto& after = builder_.add_block_after(parent_scope, scope, {}, scope.debug_info());
+        auto& after = builder_.add_block_after(parent_scope, scope, scope.debug_info());
         copy_out_block_ = &after;
         return after;
     }
@@ -261,7 +261,7 @@ void TenstorrentOffloadingExpansion::create_offloaded_memory_handling(std::vecto
             continue;
         }
         auto argument_device = copy_prefix() + arg.name;
-        auto& new_block = builder_.add_block_before(require_parent_scope(), scope_, {}, scope_.debug_info());
+        auto& new_block = builder_.add_block_before(require_parent_scope(), scope_, scope_.debug_info());
         if (arg.meta.is_input) {
             copy_to_device_with_allocation(
                 builder_, scope_, arg.name, argument_device, arg.data_size, new_block, arg.page_size
@@ -285,7 +285,7 @@ void TenstorrentOffloadingExpansion::create_offloaded_memory_handling(std::vecto
             continue;
         }
         auto argument_device = copy_prefix() + arg.name;
-        auto& new_block = builder_.add_block_after(require_parent_scope(), scope_, {}, scope_.debug_info());
+        auto& new_block = builder_.add_block_after(require_parent_scope(), scope_, scope_.debug_info());
         if (arg.meta.is_output) {
             copy_from_device(builder_, scope_, new_block, arg.name, argument_device, arg.data_size, arg.page_size);
         } else {

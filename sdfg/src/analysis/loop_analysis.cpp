@@ -93,14 +93,16 @@ void LoopAnalysis::
                     }
                 }
             }
+        } else if (auto assign_block = dyn_cast<structured_control_flow::AssignmentBlock*>(current)) {
+            // Nothing to do
         } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(current)) {
             auto seq_entries = sequence_stmt->size();
             if (current != &scope) { // the body-root of each loop is expected to be a sequence
                 non_perfectly_nested = true;
             }
             for (size_t i = 0; i < seq_entries; i++) {
-                auto entry = sequence_stmt->at(i);
-                queue.push_back(&entry.first);
+                auto& entry = sequence_stmt->at(i);
+                queue.push_back(&entry);
             }
         } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(current)) {
             non_perfectly_nested = true;

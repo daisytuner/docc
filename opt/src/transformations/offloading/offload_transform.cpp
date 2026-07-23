@@ -130,7 +130,7 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
             continue;
         }
         auto argument_device = container_prefix + argument;
-        auto& new_block = builder.add_block_before(*parent_scope, this->map_, {}, this->map_.debug_info());
+        auto& new_block = builder.add_block_before(*parent_scope, this->map_, this->map_.debug_info());
         auto& size = argument_sizes.at(argument);
         copy_to_device_with_allocation(builder, argument, argument_device, size, SymEngine::null, new_block);
     }
@@ -143,7 +143,7 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
             continue;
         }
         auto argument_device = container_prefix + argument;
-        auto& new_block = builder.add_block_after(*parent_scope, this->map_, {}, this->map_.debug_info());
+        auto& new_block = builder.add_block_after(*parent_scope, this->map_, this->map_.debug_info());
         auto& size = argument_sizes.at(argument);
         if (!skip_unneeded_d2h_ || meta.is_output) {
             copy_from_device_with_free(builder, new_block, argument, argument_device, size, SymEngine::null);

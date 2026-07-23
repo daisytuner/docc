@@ -61,5 +61,17 @@ std::string Pointer::print() const {
     }
 };
 
+void Pointer::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    if (this->has_pointee_type()) {
+        this->pointee_type_->get()->replace_symbols(old_expression, new_expression);
+    }
+}
+
+void Pointer::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    if (this->has_pointee_type()) {
+        this->pointee_type_->get()->replace_symbols(replacements);
+    }
+}
+
 } // namespace types
 } // namespace sdfg

@@ -15,10 +15,14 @@ bool StructuredSDFGVisitor::visit_internal(structured_control_flow::Sequence& pa
     }
 
     for (size_t i = 0; i < parent.size(); i++) {
-        auto& current = parent.at(i).first;
+        auto& current = parent.at(i);
 
         if (auto block_stmt = dyn_cast<structured_control_flow::Block*>(&current)) {
             if (this->accept(*block_stmt)) {
+                return true;
+            }
+        } else if (auto assignment_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&current)) {
+            if (this->accept(*assignment_block)) {
                 return true;
             }
         } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&current)) {
@@ -85,7 +89,9 @@ bool StructuredSDFGVisitor::visit_internal(structured_control_flow::Sequence& pa
     return false;
 };
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::Block& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::Block& node) { return false; }
+
+bool StructuredSDFGVisitor::accept(structured_control_flow::AssignmentBlock& node) { return false; }
 
 bool StructuredSDFGVisitor::accept(structured_control_flow::Sequence& node) { return false; };
 
@@ -119,10 +125,12 @@ bool NonStoppingStructuredSDFGVisitor::visit_internal(structured_control_flow::S
     applied_ |= this->accept(parent);
 
     for (size_t i = 0; i < parent.size(); i++) {
-        auto& current = parent.at(i).first;
+        auto& current = parent.at(i);
 
         if (auto block_stmt = dyn_cast<structured_control_flow::Block*>(&current)) {
             applied_ |= this->accept(*block_stmt);
+        } else if (auto assignment_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&current)) {
+            applied_ |= this->accept(*assignment_block);
         } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&current)) {
             this->visit_internal(*sequence_stmt);
         } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&current)) {
@@ -157,40 +165,14 @@ bool NonStoppingStructuredSDFGVisitor::visit_internal(structured_control_flow::S
 
 bool ActualStructuredSDFGVisitor::visit(sdfg::structured_control_flow::ControlFlowNode& node) { return dispatch(node); }
 
-bool ActualStructuredSDFGVisitor::dispatch(ControlFlowNode& node) {
-    //// ARGH. The most inefficient variant of them all. Is there a good way to
-    if (auto block_stmt = dyn_cast<structured_control_flow::Block*>(&node)) {
-        return this->visit(*block_stmt);
-    } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&node)) {
-        return this->visit(*sequence_stmt);
-    } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&node)) {
-        return this->visit(*if_else_stmt);
-    } else if (auto for_stmt = dyn_cast<structured_control_flow::For*>(&node)) {
-        return this->visit(*for_stmt);
-    } else if (auto map_stmt = dyn_cast<structured_control_flow::Map*>(&node)) {
-        return this->visit(*map_stmt);
-    } else if (auto reduce_stmt = dyn_cast<structured_control_flow::Reduce*>(&node)) {
-        return this->visit(*reduce_stmt);
-    } else if (auto while_stmt = dyn_cast<structured_control_flow::While*>(&node)) {
-        return this->visit(*while_stmt);
-    } else if (auto continue_stmt = dyn_cast<structured_control_flow::Continue*>(&node)) {
-        return this->visit(*continue_stmt);
-    } else if (auto break_stmt = dyn_cast<structured_control_flow::Break*>(&node)) {
-        return this->visit(*break_stmt);
-    } else if (auto return_stmt = dyn_cast<structured_control_flow::Return*>(&node)) {
-        return this->visit(*return_stmt);
-    }
 
-    return false;
-}
-
-
-ActualStructuredSDFGVisitor::ActualStructuredSDFGVisitor() {}
+ActualStructuredSDFGVisitor::ActualStructuredSDFGVisitor() = default;
 
 bool ActualStructuredSDFGVisitor::visit(Block& node) { return false; }
+bool ActualStructuredSDFGVisitor::visit(AssignmentBlock& node) { return false; }
 bool ActualStructuredSDFGVisitor::visit(Sequence& node) {
     for (int i = 0; i < node.size(); ++i) {
-        dispatch(node.at(i).first);
+        node.at(i).accept(*this);
     }
 
     return true;

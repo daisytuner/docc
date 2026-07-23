@@ -191,7 +191,7 @@ bool BlockHoisting::equal_lib_blocks(structured_control_flow::Block& block1, str
 void BlockHoisting::if_else_extract_invariant_libnode_front(
     structured_control_flow::Sequence& parent, structured_control_flow::IfElse& if_else
 ) {
-    auto& first_block = static_cast<structured_control_flow::Block&>(if_else.at(0).first.at(0).first);
+    auto& first_block = static_cast<structured_control_flow::Block&>(if_else.at(0).first.at(0));
     auto& first_dfg = first_block.dataflow();
     if (!first_dfg.library_nodes().empty()) {
         auto* first_libnode = *first_dfg.library_nodes().begin();
@@ -205,7 +205,7 @@ void BlockHoisting::if_else_extract_invariant_libnode_front(
                 std::string first_device_container = first_src.data();
 
                 for (size_t i = 1; i < if_else.size(); i++) {
-                    auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(0).first);
+                    auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(0));
                     auto& other_dfg = other_block.dataflow();
                     auto* other_offloading_node =
                         dynamic_cast<offloading::DataOffloadingNode*>(*other_dfg.library_nodes().begin());
@@ -226,7 +226,7 @@ void BlockHoisting::if_else_extract_invariant_libnode_front(
                 std::string first_device_container = first_dst.data();
 
                 for (size_t i = 1; i < if_else.size(); i++) {
-                    auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(0).first);
+                    auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(0));
                     auto& other_dfg = other_block.dataflow();
                     auto* other_libnode =
                         dynamic_cast<offloading::DataOffloadingNode*>(*other_dfg.library_nodes().begin());
@@ -250,7 +250,7 @@ void BlockHoisting::if_else_extract_invariant_libnode_back(
     structured_control_flow::Sequence& parent, structured_control_flow::IfElse& if_else
 ) {
     size_t first_size = if_else.at(0).first.size();
-    auto& first_block = static_cast<structured_control_flow::Block&>(if_else.at(0).first.at(first_size - 1).first);
+    auto& first_block = static_cast<structured_control_flow::Block&>(if_else.at(0).first.at(first_size - 1));
     auto& first_dfg = first_block.dataflow();
     if (!first_dfg.library_nodes().empty()) {
         auto* first_libnode = *first_dfg.library_nodes().begin();
@@ -266,7 +266,7 @@ void BlockHoisting::if_else_extract_invariant_libnode_back(
                 for (size_t i = 1; i < if_else.size(); i++) {
                     size_t other_size = if_else.at(i).first.size();
                     auto& other_block =
-                        static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1).first);
+                        static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1));
                     auto& other_dfg = other_block.dataflow();
                     auto* other_offloading_node =
                         dynamic_cast<offloading::DataOffloadingNode*>(*other_dfg.library_nodes().begin());
@@ -289,7 +289,7 @@ void BlockHoisting::if_else_extract_invariant_libnode_back(
                 for (size_t i = 1; i < if_else.size(); i++) {
                     size_t other_size = if_else.at(i).first.size();
                     auto& other_block =
-                        static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1).first);
+                        static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1));
                     auto& other_dfg = other_block.dataflow();
                     auto* other_libnode =
                         dynamic_cast<offloading::DataOffloadingNode*>(*other_dfg.library_nodes().begin());
@@ -549,11 +549,7 @@ bool BlockHoisting::map_invariant_front(structured_control_flow::Sequence& paren
     if (body.size() == 0) {
         return false;
     }
-    auto first_child = body.at(0);
-    if (!first_child.second.assignments().empty()) {
-        return false;
-    }
-    auto& first_node = first_child.first;
+    auto& first_node = body.at(0);
 
     auto* block = dyn_cast<structured_control_flow::Block*>(&first_node);
     if (!block) {
@@ -578,11 +574,7 @@ bool BlockHoisting::map_invariant_back(structured_control_flow::Sequence& parent
     if (body.size() == 0) {
         return false;
     }
-    auto last_child = body.at(body.size() - 1);
-    if (!last_child.second.assignments().empty()) {
-        return false;
-    }
-    auto& last_node = last_child.first;
+    auto& last_node = body.at(body.size() - 1);
 
     auto* block = dyn_cast<structured_control_flow::Block*>(&last_node);
     if (!block) {
@@ -667,11 +659,8 @@ bool BlockHoisting::
     if (if_else.at(0).first.size() == 0) {
         return false;
     }
-    auto first_child = if_else.at(0).first.at(0);
-    if (!first_child.second.assignments().empty()) {
-        return false;
-    }
-    auto* first_block = dyn_cast<structured_control_flow::Block*>(&first_child.first);
+    auto& first_child = if_else.at(0).first.at(0);
+    auto* first_block = dyn_cast<structured_control_flow::Block*>(&first_child);
     if (!first_block) {
         return false;
     }
@@ -682,11 +671,8 @@ bool BlockHoisting::
         if (if_else.at(i).first.size() == 0) {
             return false;
         }
-        auto other_child = if_else.at(i).first.at(0);
-        if (!other_child.second.assignments().empty()) {
-            return false;
-        }
-        auto* other_block = dyn_cast<structured_control_flow::Block*>(&other_child.first);
+        auto& other_child = if_else.at(i).first.at(0);
+        auto* other_block = dyn_cast<structured_control_flow::Block*>(&other_child);
         if (!other_block) {
             return false;
         }
@@ -738,11 +724,8 @@ bool BlockHoisting::
     if (if_else.at(0).first.size() == 0) {
         return false;
     }
-    auto last_child = if_else.at(0).first.at(if_else.at(0).first.size() - 1);
-    if (!last_child.second.assignments().empty()) {
-        return false;
-    }
-    auto* last_block = dyn_cast<structured_control_flow::Block*>(&last_child.first);
+    auto& last_child = if_else.at(0).first.at(if_else.at(0).first.size() - 1);
+    auto* last_block = dyn_cast<structured_control_flow::Block*>(&last_child);
     if (!last_block) {
         return false;
     }
@@ -753,11 +736,8 @@ bool BlockHoisting::
         if (if_else.at(i).first.size() == 0) {
             return false;
         }
-        auto other_child = if_else.at(i).first.at(if_else.at(i).first.size() - 1);
-        if (!other_child.second.assignments().empty()) {
-            return false;
-        }
-        auto* other_block = dyn_cast<structured_control_flow::Block*>(&other_child.first);
+        auto& other_child = if_else.at(i).first.at(if_else.at(i).first.size() - 1);
+        auto* other_block = dyn_cast<structured_control_flow::Block*>(&other_child);
         if (!other_block) {
             return false;
         }

@@ -3,6 +3,7 @@
 
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/visitor/structured_sdfg_visitor.h"
 #include "symengine/expression.h"
 #include "symengine/symengine_rcp.h"
 
@@ -19,6 +20,8 @@ Map::
         symbolic::Condition condition,
         const ScheduleType& schedule_type)
     : StructuredLoop(element_id, debug_info, parent, indvar, init, update, condition, schedule_type) {};
+
+bool Map::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
 
 void Map::validate(const Function& function) const { StructuredLoop::validate(function); };
 

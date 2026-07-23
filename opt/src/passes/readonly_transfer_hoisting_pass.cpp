@@ -256,7 +256,7 @@ long long ReadonlyTransferHoistingPass::find_matching_free_block(
     std::string device_container = static_cast<data_flow::AccessNode&>(oedge.dst()).data();
 
     for (size_t i = parent->index(*block) + 1; i < parent->size(); i++) {
-        auto* other_block = dyn_cast<structured_control_flow::Block*>(&parent->at(i).first);
+        auto* other_block = dyn_cast<structured_control_flow::Block*>(&parent->at(i));
         if (!other_block) {
             continue;
         }
@@ -387,7 +387,7 @@ std::pair<structured_control_flow::Sequence*, size_t> ReadonlyTransferHoistingPa
         }
     }
 
-    structured_control_flow::ControlFlowNode* current = &sequence->at(index).first;
+    structured_control_flow::ControlFlowNode* current = &sequence->at(index);
     structured_control_flow::ControlFlowNode* current_parent = sequence;
     while (current_parent != nullptr) {
         if (auto* current_sequence = dyn_cast<structured_control_flow::Sequence*>(current_parent)) {

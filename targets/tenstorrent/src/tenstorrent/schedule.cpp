@@ -842,8 +842,8 @@ void TenstorrentMapDispatcher::dispatch_node(
         throw std::runtime_error("TT Map " + instance_suffix + " has more than one child!");
     }
     for (int ci = 0; ci < outer_map_body.size(); ++ci) {
-        auto child = outer_map_body.at(ci);
-        if (auto* map_candidate = dyn_cast<structured_control_flow::Map*>(&child.first)) {
+        auto& child = outer_map_body.at(ci);
+        if (auto* map_candidate = dyn_cast<structured_control_flow::Map*>(&child)) {
             if (map_candidate->schedule_type().value() == ScheduleType_Tenstorrent_Kernel::value()) {
                 inner_map_ptr = map_candidate;
             }

@@ -54,7 +54,7 @@ bool LibNodeExpansionVisitor::visit(sdfg::structured_control_flow::Sequence& seq
         }
 
         for (; i < total_children; ++i) {
-            auto& child = seq.at(i).first;
+            auto& child = seq.at(i);
             if (auto* block = dyn_cast<structured_control_flow::Block*>(&child)) {
                 auto outcome = handle_block(seq, i, *block);
 

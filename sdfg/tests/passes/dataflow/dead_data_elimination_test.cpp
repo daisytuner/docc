@@ -50,7 +50,7 @@ TEST(DeadDataEliminationTest, WriteWithoutRead_Transition) {
     auto sym1 = symbolic::symbol("i");
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, {{sym1, symbolic::integer(0)}});
+    auto& block = builder.add_assignments(root, {{sym1, symbolic::integer(0)}});
 
     auto sdfg = builder.move();
 
@@ -66,8 +66,9 @@ TEST(DeadDataEliminationTest, WriteWithoutRead_Transition) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 1);
-    auto child1 = sdfg->root().at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 0);
+    auto* child1 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    EXPECT_TRUE(child1);
+    EXPECT_EQ(child1->assignments().size(), 0);
 
     EXPECT_EQ(sdfg->containers().size(), 0);
 }
@@ -101,7 +102,7 @@ TEST(DeadDataEliminationTest, WriteWithoutRead_Dataflow) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 1);
-    auto& block1 = static_cast<const structured_control_flow::Block&>(sdfg->root().at(0).first);
+    auto& block1 = static_cast<const structured_control_flow::Block&>(sdfg->root().at(0));
     EXPECT_EQ(block1.dataflow().nodes().size(), 0);
     EXPECT_EQ(block1.dataflow().edges().size(), 0);
 
@@ -179,7 +180,7 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_For) {
     auto sym = symbolic::symbol("i");
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, {{sym, symbolic::integer(0)}});
+    auto& block = builder.add_assignments(root, {{sym, symbolic::integer(0)}});
     auto& loop = builder.add_for(
         root,
         sym,
@@ -202,8 +203,10 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_For) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child0 = sdfg->root().at(0);
-    EXPECT_EQ(child0.second.assignments().size(), 0);
+    auto& child0 = sdfg->root().at(0);
+    auto* assignments = dyn_cast<AssignmentBlock*>(&child0);
+    EXPECT_TRUE(assignments);
+    EXPECT_EQ(assignments->assignments().size(), 0);
 
     EXPECT_EQ(sdfg->containers().size(), 1);
 }
@@ -218,11 +221,11 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_WhileBody) {
     auto symN = symbolic::symbol("N");
 
     auto& root = builder.subject().root();
-    auto& before = builder.add_block(root, {{sym, symbolic::integer(0)}});
+    auto& before = builder.add_assignments(root, {{sym, symbolic::integer(0)}});
 
     auto& loop = builder.add_while(root);
-    auto& block1 = builder.add_block(loop.root(), {{sym, symbolic::integer(0)}});
-    auto& block2 = builder.add_block(loop.root(), {{symN, sym}});
+    auto& block1 = builder.add_assignments(loop.root(), {{sym, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(loop.root(), {{symN, sym}});
 
     auto sdfg = builder.move();
 
@@ -237,13 +240,14 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_WhileBody) {
     sdfg = builder_opt.move();
 
     // Check result
-    auto child0 = sdfg->root().at(0);
-    EXPECT_EQ(child0.second.assignments().size(), 0);
+    auto* child0 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    EXPECT_TRUE(child0);
+    EXPECT_EQ(child0->assignments().size(), 0);
 
-    auto& child1 = static_cast<structured_control_flow::While&>(sdfg->root().at(1).first);
+    auto& child1 = static_cast<structured_control_flow::While&>(sdfg->root().at(1));
     auto& body = child1.root();
-    EXPECT_EQ(body.at(0).second.assignments().size(), 1);
-    EXPECT_EQ(body.at(1).second.assignments().size(), 1);
+    EXPECT_EQ(dyn_cast<AssignmentBlock*>(&body.at(0))->assignments().size(), 1);
+    EXPECT_EQ(dyn_cast<AssignmentBlock*>(&body.at(1))->assignments().size(), 1);
 
     EXPECT_EQ(sdfg->containers().size(), 2);
 }
@@ -259,15 +263,15 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_ClosedBranches) {
 
     auto& root = builder.subject().root();
 
-    auto& before = builder.add_block(root, {{sym, symbolic::integer(0)}});
+    auto& before = builder.add_assignments(root, {{sym, symbolic::integer(0)}});
 
     auto& if_else = builder.add_if_else(root);
     auto& case1 = builder.add_case(if_else, symbolic::__true__());
     auto& case2 = builder.add_case(if_else, symbolic::__false__());
-    auto& block1 = builder.add_block(case1, {{sym, symbolic::integer(0)}});
-    auto& block2 = builder.add_block(case2, {{sym, symbolic::integer(1)}});
+    auto& block1 = builder.add_assignments(case1, {{sym, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(case2, {{sym, symbolic::integer(1)}});
 
-    auto& after = builder.add_block(root, {{symN, sym}});
+    auto& after = builder.add_assignments(root, {{symN, sym}});
 
     auto sdfg = builder.move();
 
@@ -282,11 +286,11 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_ClosedBranches) {
     sdfg = builder_opt.move();
 
     // Check result
-    auto child0 = sdfg->root().at(0);
-    EXPECT_EQ(child0.second.assignments().size(), 0);
+    auto child0 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    EXPECT_EQ(child0->assignments().size(), 0);
 
-    auto child2 = sdfg->root().at(2);
-    EXPECT_EQ(child2.second.assignments().size(), 1);
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(2));
+    EXPECT_EQ(child2->assignments().size(), 1);
 
     EXPECT_EQ(sdfg->containers().size(), 2);
 }
@@ -302,15 +306,15 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_OpenBranches) {
 
     auto& root = builder.subject().root();
 
-    auto& before = builder.add_block(root, {{sym, symbolic::integer(0)}});
+    auto& before = builder.add_assignments(root, {{sym, symbolic::integer(0)}});
 
     auto& if_else = builder.add_if_else(root);
     auto& case1 = builder.add_case(if_else, symbolic::__true__());
     auto& case2 = builder.add_case(if_else, symbolic::__false__());
-    auto& block1 = builder.add_block(case1, {{sym, symbolic::integer(0)}});
-    auto& block2 = builder.add_block(case2, control_flow::Assignments{});
+    auto& block1 = builder.add_assignments(case1, {{sym, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(case2, control_flow::Assignments{});
 
-    auto& after = builder.add_block(root, {{symN, sym}});
+    auto& after = builder.add_assignments(root, {{symN, sym}});
 
     auto sdfg = builder.move();
 
@@ -325,11 +329,11 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_OpenBranches) {
     sdfg = builder_opt.move();
 
     // Check result
-    auto child0 = sdfg->root().at(0);
-    EXPECT_EQ(child0.second.assignments().size(), 1);
+    auto child0 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    EXPECT_EQ(child0->assignments().size(), 1);
 
-    auto child2 = sdfg->root().at(2);
-    EXPECT_EQ(child2.second.assignments().size(), 1);
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(2));
+    EXPECT_EQ(child2->assignments().size(), 1);
 
     EXPECT_EQ(sdfg->containers().size(), 2);
 }
@@ -345,13 +349,13 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_IncompleteBranches) {
 
     auto& root = builder.subject().root();
 
-    auto& before = builder.add_block(root, {{sym, symbolic::integer(0)}});
+    auto& before = builder.add_assignments(root, {{sym, symbolic::integer(0)}});
 
     auto& if_else = builder.add_if_else(root);
     auto& case1 = builder.add_case(if_else, symbolic::Lt(symN, symbolic::integer(10)));
-    auto& block1 = builder.add_block(case1, {{sym, symbolic::integer(0)}});
+    auto& block1 = builder.add_assignments(case1, {{sym, symbolic::integer(0)}});
 
-    auto& after = builder.add_block(root, {{symN, sym}});
+    auto& after = builder.add_assignments(root, {{symN, sym}});
 
     auto sdfg = builder.move();
 
@@ -366,11 +370,11 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_IncompleteBranches) {
     sdfg = builder_opt.move();
 
     // Check result
-    auto child0 = sdfg->root().at(0);
-    EXPECT_EQ(child0.second.assignments().size(), 1);
+    auto child0 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    EXPECT_EQ(child0->assignments().size(), 1);
 
-    auto child2 = sdfg->root().at(2);
-    EXPECT_EQ(child2.second.assignments().size(), 1);
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(2));
+    EXPECT_EQ(child2->assignments().size(), 1);
 
     EXPECT_EQ(sdfg->containers().size(), 2);
 }
@@ -388,14 +392,14 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_ContinueBreak_NoReads) {
     auto& loop = builder.add_while(root);
     auto& body = loop.root();
 
-    auto& before = builder.add_block(body, {{sym, symbolic::integer(0)}});
+    auto& before = builder.add_assignments(body, {{sym, symbolic::integer(0)}});
 
     auto& if_else = builder.add_if_else(body);
     auto& case1 = builder.add_case(if_else, symbolic::Lt(sym, symbolic::integer(10)));
-    auto& block1 = builder.add_block(case1, {{sym, symbolic::integer(10)}});
+    auto& block1 = builder.add_assignments(case1, {{sym, symbolic::integer(10)}});
     auto& cont1 = builder.add_continue(case1);
     auto& case2 = builder.add_case(if_else, symbolic::Ge(sym, symbolic::integer(10)));
-    auto& block2 = builder.add_block(case2, {{sym, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(case2, {{sym, symbolic::integer(0)}});
     auto& break1 = builder.add_break(case2);
 
     auto sdfg = builder.move();
@@ -411,18 +415,18 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_ContinueBreak_NoReads) {
     sdfg = builder_opt.move();
 
     // Check result
-    auto& new_loop = static_cast<structured_control_flow::While&>(sdfg->root().at(0).first);
+    auto& new_loop = static_cast<structured_control_flow::While&>(sdfg->root().at(0));
     auto& new_body = new_loop.root();
 
-    auto child1 = new_body.at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    auto child1 = dyn_cast<AssignmentBlock*>(&new_body.at(0));
+    EXPECT_EQ(child1->assignments().size(), 1);
 
-    auto& child2 = static_cast<structured_control_flow::IfElse&>(new_body.at(1).first);
-    auto case1_1 = child2.at(0).first.at(0);
-    EXPECT_EQ(case1_1.second.assignments().size(), 0);
+    auto& child2 = static_cast<structured_control_flow::IfElse&>(new_body.at(1));
+    auto case1_1 = dyn_cast<AssignmentBlock*>(&child2.at(0).first.at(0));
+    EXPECT_EQ(case1_1->assignments().size(), 0);
 
-    auto case2_1 = child2.at(1).first.at(0);
-    EXPECT_EQ(case2_1.second.assignments().size(), 0);
+    auto case2_1 = dyn_cast<AssignmentBlock*>(&child2.at(1).first.at(0));
+    EXPECT_EQ(case2_1->assignments().size(), 0);
 
     EXPECT_EQ(sdfg->containers().size(), 2);
 }
@@ -440,17 +444,17 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_ContinueBreak_Read) {
     auto& loop = builder.add_while(root);
     auto& body = loop.root();
 
-    auto& before = builder.add_block(body, {{sym, symbolic::integer(0)}});
+    auto& before = builder.add_assignments(body, {{sym, symbolic::integer(0)}});
 
     auto& if_else = builder.add_if_else(body);
     auto& case1 = builder.add_case(if_else, symbolic::Lt(sym, symbolic::integer(10)));
-    auto& block1 = builder.add_block(case1, {{sym, symbolic::integer(10)}});
+    auto& block1 = builder.add_assignments(case1, {{sym, symbolic::integer(10)}});
     auto& cont1 = builder.add_continue(case1);
     auto& case2 = builder.add_case(if_else, symbolic::Ge(sym, symbolic::integer(10)));
-    auto& block2 = builder.add_block(case2, {{sym, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(case2, {{sym, symbolic::integer(0)}});
     auto& break1 = builder.add_break(case2);
 
-    auto& after2 = builder.add_block(root, {{symN, sym}});
+    auto& after2 = builder.add_assignments(root, {{symN, sym}});
 
     auto sdfg = builder.move();
 
@@ -465,23 +469,23 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_ContinueBreak_Read) {
     sdfg = builder_opt.move();
 
     // Check result
-    auto& new_loop = static_cast<structured_control_flow::While&>(sdfg->root().at(0).first);
+    auto& new_loop = static_cast<structured_control_flow::While&>(sdfg->root().at(0));
     auto& new_body = new_loop.root();
 
-    auto child1 = new_body.at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
+    auto child1 = dyn_cast<AssignmentBlock*>(&new_body.at(0));
+    EXPECT_EQ(child1->assignments().size(), 1);
 
-    auto& child2 = static_cast<structured_control_flow::IfElse&>(new_body.at(1).first);
+    auto& child2 = static_cast<structured_control_flow::IfElse&>(new_body.at(1));
 
     // Over-approximation. Can be zero when analysis becomes more precise.
-    auto case1_1 = child2.at(0).first.at(0);
-    EXPECT_EQ(case1_1.second.assignments().size(), 1);
+    auto case1_1 = dyn_cast<AssignmentBlock*>(&child2.at(0).first.at(0));
+    EXPECT_EQ(case1_1->assignments().size(), 1);
 
-    auto case2_1 = child2.at(1).first.at(0);
-    EXPECT_EQ(case2_1.second.assignments().size(), 1);
+    auto case2_1 = dyn_cast<AssignmentBlock*>(&child2.at(1).first.at(0));
+    EXPECT_EQ(case2_1->assignments().size(), 1);
 
-    auto child3 = sdfg->root().at(1);
-    EXPECT_EQ(child3.second.assignments().size(), 1);
+    auto child3 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
+    EXPECT_EQ(child3->assignments().size(), 1);
 
     EXPECT_EQ(sdfg->containers().size(), 2);
 }
@@ -501,10 +505,10 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_ContinueBreak_OpenRead) {
 
     auto& if_else = builder.add_if_else(body);
     auto& case1 = builder.add_case(if_else, symbolic::Lt(sym, symbolic::integer(10)));
-    auto& block1 = builder.add_block(case1, {{sym, symbolic::integer(10)}});
+    auto& block1 = builder.add_assignments(case1, {{sym, symbolic::integer(10)}});
     auto& cont1 = builder.add_continue(case1);
     auto& case2 = builder.add_case(if_else, symbolic::Ge(sym, symbolic::integer(10)));
-    auto& block2 = builder.add_block(case2, {{sym, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(case2, {{sym, symbolic::integer(0)}});
     auto& break1 = builder.add_break(case2);
 
     auto sdfg = builder.move();
@@ -520,17 +524,17 @@ TEST(DeadDataEliminationTest, WriteAfterWrite_ContinueBreak_OpenRead) {
     sdfg = builder_opt.move();
 
     // Check result
-    auto& new_loop = static_cast<structured_control_flow::While&>(sdfg->root().at(0).first);
+    auto& new_loop = static_cast<structured_control_flow::While&>(sdfg->root().at(0));
     auto& new_body = new_loop.root();
 
-    auto& child1 = static_cast<structured_control_flow::IfElse&>(new_body.at(0).first);
+    auto& child1 = static_cast<structured_control_flow::IfElse&>(new_body.at(0));
 
-    auto case1_1 = child1.at(0).first.at(0);
-    EXPECT_EQ(case1_1.second.assignments().size(), 1);
+    auto case1_1 = dyn_cast<AssignmentBlock*>(&child1.at(0).first.at(0));
+    EXPECT_EQ(case1_1->assignments().size(), 1);
 
     // Over-approximation. Can be zero when analysis becomes more precise.
-    auto case2_1 = child1.at(1).first.at(0);
-    EXPECT_EQ(case2_1.second.assignments().size(), 1);
+    auto case2_1 = dyn_cast<AssignmentBlock*>(&child1.at(1).first.at(0));
+    EXPECT_EQ(case2_1->assignments().size(), 1);
 
     EXPECT_EQ(sdfg->containers().size(), 2);
 }
@@ -584,7 +588,7 @@ TEST(DeadDataEliminationTest, DanglingRead) {
         builder.add_computational_memlet(block3, tasklet, "_out", c, {});
     }
 
-    auto& block4 = builder.add_block(if_else_1_case_2, {{symbolic::symbol("b"), a}});
+    auto& block4 = builder.add_assignments(if_else_1_case_2, {{symbolic::symbol("b"), a}});
 
     auto& if_else_3 = builder.add_if_else(if_else_1_case_2);
     auto& if_else_3_case_1 = builder.add_case(if_else_3, symbolic::Lt(a, symbolic::integer(10)));
@@ -621,7 +625,7 @@ TEST(DeadDataEliminationTest, DanglingRead) {
 
     // Check that assignment was eliminated
     EXPECT_EQ(if_else_1_case_2.size(), 2);
-    EXPECT_TRUE(if_else_1_case_2.at(0).second.empty());
+    EXPECT_TRUE(dyn_cast<AssignmentBlock*>(&if_else_1_case_2.at(0))->empty());
 
     // Check that container is still there for dangling read
     EXPECT_TRUE(sdfg.exists("b"));
@@ -1288,9 +1292,9 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaSymbol) {
         symbolic::Lt(it_symbol, symbolic::add(tmp_symbol, symbolic::symbol("N"))),
         tmp_symbol,
         symbolic::add(tmp_symbol, symbolic::integer(1)),
-        ScheduleType_Sequential::create(),
-        {{symbolic::symbol("scalar_res"), symbolic::integer(0)}}
+        ScheduleType_Sequential::create()
     );
+    builder.add_assignments(root, {{symbolic::symbol("scalar_res"), symbolic::integer(0)}});
 
     auto& use_map_body = use_map.root();
     auto& read_block = builder.add_block(use_map_body);
@@ -1324,7 +1328,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaSymbol) {
     EXPECT_TRUE(sdfg->exists("out"));
     EXPECT_TRUE(sdfg->exists("i"));
     EXPECT_TRUE(sdfg->exists("scalar_res"));
-    EXPECT_EQ(sdfg->root().size(), 4);
+    EXPECT_EQ(sdfg->root().size(), 5);
 }
 
 TEST(DeadDataEliminationTest, OwnedHeapMemoryElementRead) {

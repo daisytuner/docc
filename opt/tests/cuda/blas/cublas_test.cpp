@@ -156,18 +156,18 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers) {
     builder.subject().validate();
 
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0));
     EXPECT_NE(new_sequence, nullptr);
 
-    auto map_1 = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0).first);
+    auto map_1 = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0));
     EXPECT_NE(map_1, nullptr);
     EXPECT_EQ(map_1->root().size(), 1);
 
-    auto map_2 = dyn_cast<structured_control_flow::Map*>(&map_1->root().at(0).first);
+    auto map_2 = dyn_cast<structured_control_flow::Map*>(&map_1->root().at(0));
     EXPECT_NE(map_2, nullptr);
     EXPECT_EQ(map_2->root().size(), 3);
 
-    auto block_init = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(0).first);
+    auto block_init = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(0));
     EXPECT_NE(block_init, nullptr);
     EXPECT_EQ(block_init->dataflow().nodes().size(), 3);
     auto init_tasklet = *block_init->dataflow().tasklets().begin();
@@ -175,11 +175,11 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers) {
     EXPECT_EQ(init_tasklet->inputs().at(0), "_in");
     EXPECT_EQ(init_tasklet->output(), "_out");
 
-    auto map_3 = dyn_cast<structured_control_flow::For*>(&map_2->root().at(1).first);
+    auto map_3 = dyn_cast<structured_control_flow::For*>(&map_2->root().at(1));
     EXPECT_NE(map_3, nullptr);
     EXPECT_EQ(map_3->root().size(), 1);
 
-    auto block_fma = dyn_cast<structured_control_flow::Block*>(&map_3->root().at(0).first);
+    auto block_fma = dyn_cast<structured_control_flow::Block*>(&map_3->root().at(0));
     EXPECT_NE(block_fma, nullptr);
     EXPECT_EQ(block_fma->dataflow().nodes().size(), 5);
 
@@ -191,7 +191,7 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers) {
     EXPECT_EQ(tasklet->inputs().at(2), "_in3");
     EXPECT_EQ(tasklet->output(), "_out");
 
-    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(2).first);
+    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(2));
     EXPECT_NE(block_flush, nullptr);
     EXPECT_EQ(block_flush->dataflow().nodes().size(), 10);
     auto flush_tasklets = block_flush->dataflow().tasklets();
@@ -267,18 +267,18 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers) {
     builder.subject().validate();
 
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0));
     EXPECT_NE(new_sequence, nullptr);
 
-    auto map_1 = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0).first);
+    auto map_1 = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0));
     EXPECT_NE(map_1, nullptr);
     EXPECT_EQ(map_1->root().size(), 1);
 
-    auto map_2 = dyn_cast<structured_control_flow::Map*>(&map_1->root().at(0).first);
+    auto map_2 = dyn_cast<structured_control_flow::Map*>(&map_1->root().at(0));
     EXPECT_NE(map_2, nullptr);
     EXPECT_EQ(map_2->root().size(), 3);
 
-    auto block_init = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(0).first);
+    auto block_init = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(0));
     EXPECT_NE(block_init, nullptr);
     EXPECT_EQ(block_init->dataflow().nodes().size(), 3);
     auto init_tasklet = *block_init->dataflow().tasklets().begin();
@@ -286,11 +286,11 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers) {
     EXPECT_EQ(init_tasklet->inputs().at(0), "_in");
     EXPECT_EQ(init_tasklet->output(), "_out");
 
-    auto map_3 = dyn_cast<structured_control_flow::For*>(&map_2->root().at(1).first);
+    auto map_3 = dyn_cast<structured_control_flow::For*>(&map_2->root().at(1));
     EXPECT_NE(map_3, nullptr);
     EXPECT_EQ(map_3->root().size(), 1);
 
-    auto block_fma = dyn_cast<structured_control_flow::Block*>(&map_3->root().at(0).first);
+    auto block_fma = dyn_cast<structured_control_flow::Block*>(&map_3->root().at(0));
     EXPECT_NE(block_fma, nullptr);
     EXPECT_EQ(block_fma->dataflow().nodes().size(), 5);
 
@@ -302,7 +302,7 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers) {
     EXPECT_EQ(tasklet->inputs().at(2), "_in3");
     EXPECT_EQ(tasklet->output(), "_out");
 
-    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(2).first);
+    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_2->root().at(2));
     EXPECT_NE(block_flush, nullptr);
     EXPECT_EQ(block_flush->dataflow().nodes().size(), 10);
     auto flush_tasklets = block_flush->dataflow().tasklets();
@@ -384,44 +384,44 @@ TEST(CuBlasTest, BatchedGemmNodeWithDataTransfers) {
 
     // After expansion: root should contain a single sequence
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0));
     EXPECT_NE(new_sequence, nullptr);
 
     // Outermost map is the batch loop
-    auto batch_map = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0).first);
+    auto batch_map = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0));
     EXPECT_NE(batch_map, nullptr);
     EXPECT_EQ(batch_map->root().size(), 1);
 
     // Inside batch loop: map for i dimension
-    auto map_i = dyn_cast<structured_control_flow::Map*>(&batch_map->root().at(0).first);
+    auto map_i = dyn_cast<structured_control_flow::Map*>(&batch_map->root().at(0));
     EXPECT_NE(map_i, nullptr);
     EXPECT_EQ(map_i->root().size(), 1);
 
     // Inside i loop: map for j dimension, containing init, k-loop, flush
-    auto map_j = dyn_cast<structured_control_flow::Map*>(&map_i->root().at(0).first);
+    auto map_j = dyn_cast<structured_control_flow::Map*>(&map_i->root().at(0));
     EXPECT_NE(map_j, nullptr);
     EXPECT_EQ(map_j->root().size(), 3);
 
     // Init block
-    auto block_init = dyn_cast<structured_control_flow::Block*>(&map_j->root().at(0).first);
+    auto block_init = dyn_cast<structured_control_flow::Block*>(&map_j->root().at(0));
     EXPECT_NE(block_init, nullptr);
     EXPECT_EQ(block_init->dataflow().nodes().size(), 3);
     auto init_tasklet = *block_init->dataflow().tasklets().begin();
     EXPECT_EQ(init_tasklet->code(), data_flow::TaskletCode::assign);
 
     // K-loop
-    auto for_k = dyn_cast<structured_control_flow::For*>(&map_j->root().at(1).first);
+    auto for_k = dyn_cast<structured_control_flow::For*>(&map_j->root().at(1));
     EXPECT_NE(for_k, nullptr);
     EXPECT_EQ(for_k->root().size(), 1);
 
-    auto block_fma = dyn_cast<structured_control_flow::Block*>(&for_k->root().at(0).first);
+    auto block_fma = dyn_cast<structured_control_flow::Block*>(&for_k->root().at(0));
     EXPECT_NE(block_fma, nullptr);
     EXPECT_EQ(block_fma->dataflow().nodes().size(), 5);
     auto fma_tasklet = *block_fma->dataflow().tasklets().begin();
     EXPECT_EQ(fma_tasklet->code(), data_flow::TaskletCode::fp_fma);
 
     // Flush block
-    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_j->root().at(2).first);
+    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_j->root().at(2));
     EXPECT_NE(block_flush, nullptr);
     EXPECT_EQ(block_flush->dataflow().nodes().size(), 10);
     auto flush_tasklets = block_flush->dataflow().tasklets();
@@ -503,28 +503,28 @@ TEST(CuBlasTest, BatchedGemmNodeWithoutDataTransfers) {
 
     // Same structure as WithTransfers - batch loop wrapping i/j/k
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0));
     EXPECT_NE(new_sequence, nullptr);
 
-    auto batch_map = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0).first);
+    auto batch_map = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0));
     EXPECT_NE(batch_map, nullptr);
 
-    auto map_i = dyn_cast<structured_control_flow::Map*>(&batch_map->root().at(0).first);
+    auto map_i = dyn_cast<structured_control_flow::Map*>(&batch_map->root().at(0));
     EXPECT_NE(map_i, nullptr);
 
-    auto map_j = dyn_cast<structured_control_flow::Map*>(&map_i->root().at(0).first);
+    auto map_j = dyn_cast<structured_control_flow::Map*>(&map_i->root().at(0));
     EXPECT_NE(map_j, nullptr);
     EXPECT_EQ(map_j->root().size(), 3);
 
-    auto for_k = dyn_cast<structured_control_flow::For*>(&map_j->root().at(1).first);
+    auto for_k = dyn_cast<structured_control_flow::For*>(&map_j->root().at(1));
     EXPECT_NE(for_k, nullptr);
 
-    auto block_fma = dyn_cast<structured_control_flow::Block*>(&for_k->root().at(0).first);
+    auto block_fma = dyn_cast<structured_control_flow::Block*>(&for_k->root().at(0));
     EXPECT_NE(block_fma, nullptr);
     auto fma_tasklet = *block_fma->dataflow().tasklets().begin();
     EXPECT_EQ(fma_tasklet->code(), data_flow::TaskletCode::fp_fma);
 
-    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_j->root().at(2).first);
+    auto block_flush = dyn_cast<structured_control_flow::Block*>(&map_j->root().at(2));
     EXPECT_NE(block_flush, nullptr);
     EXPECT_EQ(block_flush->dataflow().nodes().size(), 10);
 }

@@ -31,7 +31,34 @@ void BlockDispatcher::dispatch_node(
 
     DataFlowDispatcher dispatcher(this->language_extension_, sdfg_, node_.dataflow(), instrumentation_plan_);
     dispatcher.dispatch(main_stream, globals_stream, library_snippet_factory);
-};
+}
+
+AssignmentDispatcher::AssignmentDispatcher(
+    LanguageExtension& language_extension,
+    StructuredSDFG& sdfg,
+    analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::AssignmentBlock& node,
+    InstrumentationPlan& instrumentation_plan,
+    ArgCapturePlan& arg_capture_plan
+)
+    : NodeDispatcher(language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan),
+      node_(node) {}
+
+void AssignmentDispatcher::dispatch_node(
+    PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
+) {
+    auto& assignments = node_.assignments();
+    if (!assignments.empty()) {
+        main_stream << "{" << std::endl;
+        main_stream.changeIndent(+4);
+        for (auto assign : assignments) {
+            main_stream << language_extension_.expression(assign.first) << " = "
+                        << language_extension_.expression(assign.second) << ";" << std::endl;
+        }
+        main_stream.changeIndent(-4);
+        main_stream << "}" << std::endl;
+    }
+}
 
 DataFlowDispatcher::DataFlowDispatcher(
     LanguageExtension& language_extension,

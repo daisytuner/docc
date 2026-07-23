@@ -51,7 +51,7 @@ TEST(LoopIndvarFinalizeTest, AfterLoopShift) {
     analysis::AnalysisManager am(builder2.subject());
 
     auto& sdfg_root = builder2.subject().root();
-    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopShift
@@ -74,12 +74,13 @@ TEST(LoopIndvarFinalizeTest, AfterLoopShift) {
     ASSERT_EQ(sdfg_root.size(), 3);
 
     // Check the closed-form block (index 1, right after loop): i = num_iterations = 5
-    auto& closed_form_transition = sdfg_root.at(1).second;
-    ASSERT_EQ(closed_form_transition.assignments().size(), 1);
+    auto closed_form_transition = dyn_cast<AssignmentBlock*>(&sdfg_root.at(1));
+    ASSERT_TRUE(closed_form_transition);
+    ASSERT_EQ(closed_form_transition->assignments().size(), 1);
 
     auto indvar = symbolic::symbol("i");
-    ASSERT_TRUE(closed_form_transition.assignments().count(indvar) > 0);
-    auto closed_form = closed_form_transition.assignments().at(indvar);
+    ASSERT_TRUE(closed_form_transition->assignments().count(indvar) > 0);
+    auto closed_form = closed_form_transition->assignments().at(indvar);
     auto expected = symbolic::integer(5); // num_iterations = 10 - 5 = 5
     EXPECT_TRUE(symbolic::eq(closed_form, expected));
 }
@@ -120,7 +121,7 @@ TEST(LoopIndvarFinalizeTest, AfterLoopShiftAndUnitStride) {
     analysis::AnalysisManager am(builder2.subject());
 
     auto& sdfg_root = builder2.subject().root();
-    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopShift (shifts init from 2 to 0)
@@ -151,12 +152,13 @@ TEST(LoopIndvarFinalizeTest, AfterLoopShiftAndUnitStride) {
     ASSERT_EQ(sdfg_root.size(), 4);
 
     // Check the closed-form block (index 1, right after loop): i = num_iterations = 4
-    auto& closed_form_transition = sdfg_root.at(1).second;
-    ASSERT_EQ(closed_form_transition.assignments().size(), 1);
+    auto closed_form_transition = dyn_cast<AssignmentBlock*>(&sdfg_root.at(1));
+    ASSERT_TRUE(closed_form_transition);
+    ASSERT_EQ(closed_form_transition->assignments().size(), 1);
 
     auto indvar = symbolic::symbol("i");
-    ASSERT_TRUE(closed_form_transition.assignments().count(indvar) > 0);
-    auto closed_form = closed_form_transition.assignments().at(indvar);
+    ASSERT_TRUE(closed_form_transition->assignments().count(indvar) > 0);
+    auto closed_form = closed_form_transition->assignments().at(indvar);
     auto expected = symbolic::integer(4); // num_iterations = (10 - 2) / 2 = 4
     EXPECT_TRUE(symbolic::eq(closed_form, expected));
 }
@@ -186,7 +188,7 @@ TEST(LoopIndvarFinalizeTest, CanApplyToNormalizedLoop) {
     analysis::AnalysisManager am(builder2.subject());
 
     auto& sdfg_root = builder2.subject().root();
-    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0));
     ASSERT_NE(loop, nullptr);
 
     // Loop is already normalized
@@ -201,11 +203,12 @@ TEST(LoopIndvarFinalizeTest, CanApplyToNormalizedLoop) {
     ASSERT_EQ(sdfg_root.size(), 2);
 
     // Check the closed-form: i = num_iterations = 10
-    auto& closed_form_transition = sdfg_root.at(1).second;
-    ASSERT_EQ(closed_form_transition.assignments().size(), 1);
+    auto closed_form_transition = dyn_cast<AssignmentBlock*>(&sdfg_root.at(1));
+    ASSERT_TRUE(closed_form_transition);
+    ASSERT_EQ(closed_form_transition->assignments().size(), 1);
 
     auto indvar = symbolic::symbol("i");
-    auto closed_form = closed_form_transition.assignments().at(indvar);
+    auto closed_form = closed_form_transition->assignments().at(indvar);
     auto expected = symbolic::integer(10);
     EXPECT_TRUE(symbolic::eq(closed_form, expected));
 }
@@ -234,7 +237,7 @@ TEST(LoopIndvarFinalizeTest, CannotApplyNotNormalForm) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Loop is not in normal form

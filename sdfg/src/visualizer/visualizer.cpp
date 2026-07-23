@@ -75,47 +75,31 @@ std::string Visualizer::expression(const std::string expr) {
 }
 
 void Visualizer::visualizeNode(const StructuredSDFG& sdfg, const structured_control_flow::ControlFlowNode& node) {
-    if (auto block = dynamic_cast<const structured_control_flow::Block*>(&node)) {
+    if (auto block = dyn_cast<const structured_control_flow::Block*>(&node)) {
         this->visualizeBlock(sdfg, *block);
-        return;
-    }
-    if (auto sequence = dynamic_cast<const structured_control_flow::Sequence*>(&node)) {
+    } else if (auto assign_block = dyn_cast<const structured_control_flow::AssignmentBlock*>(&node)) {
+        this->visualizeAssignmentBlock(sdfg, *assign_block);
+    } else if (auto sequence = dyn_cast<const structured_control_flow::Sequence*>(&node)) {
         this->visualizeSequence(sdfg, *sequence);
-        return;
-    }
-    if (auto if_else = dynamic_cast<const structured_control_flow::IfElse*>(&node)) {
+    } else if (auto if_else = dyn_cast<const structured_control_flow::IfElse*>(&node)) {
         this->visualizeIfElse(sdfg, *if_else);
-        return;
-    }
-    if (auto while_loop = dynamic_cast<const structured_control_flow::While*>(&node)) {
+    } else if (auto while_loop = dyn_cast<const structured_control_flow::While*>(&node)) {
         this->visualizeWhile(sdfg, *while_loop);
-        return;
-    }
-    if (auto loop = dynamic_cast<const structured_control_flow::For*>(&node)) {
+    } else if (auto loop = dyn_cast<const structured_control_flow::For*>(&node)) {
         this->visualizeFor(sdfg, *loop);
-        return;
-    }
-    if (auto return_node = dynamic_cast<const structured_control_flow::Return*>(&node)) {
+    } else if (auto return_node = dyn_cast<const structured_control_flow::Return*>(&node)) {
         this->visualizeReturn(sdfg, *return_node);
-        return;
-    }
-    if (auto break_node = dynamic_cast<const structured_control_flow::Break*>(&node)) {
+    } else if (auto break_node = dyn_cast<const structured_control_flow::Break*>(&node)) {
         this->visualizeBreak(sdfg, *break_node);
-        return;
-    }
-    if (auto continue_node = dynamic_cast<const structured_control_flow::Continue*>(&node)) {
+    } else if (auto continue_node = dyn_cast<const structured_control_flow::Continue*>(&node)) {
         this->visualizeContinue(sdfg, *continue_node);
-        return;
-    }
-    if (auto reduce_node = dynamic_cast<const structured_control_flow::Reduce*>(&node)) {
+    } else if (auto reduce_node = dyn_cast<const structured_control_flow::Reduce*>(&node)) {
         this->visualizeReduce(sdfg, *reduce_node);
-        return;
-    }
-    if (auto map_node = dynamic_cast<const structured_control_flow::Map*>(&node)) {
+    } else if (auto map_node = dyn_cast<const structured_control_flow::Map*>(&node)) {
         this->visualizeMap(sdfg, *map_node);
-        return;
+    } else {
+        throw std::runtime_error("Unsupported control flow node");
     }
-    throw std::runtime_error("Unsupported control flow node");
 }
 
 void Visualizer::visualizeTasklet(data_flow::Tasklet const& tasklet) {

@@ -25,243 +25,207 @@ steps:
     pip install --no-build-isolation -v -e python/
 
   run:
-    adi_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --numpy --size=M
+    adi:
       energy: true
       env:
         DOCC_CI: regions
-    adi_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --target=openmp
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    atax:
       energy: true
       env:
         DOCC_CI: regions
-    adi_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --target=cuda
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    gemm:
       energy: true
       env:
         DOCC_CI: regions
-    adi_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --target=sequential --remote-tuning
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    gesummv:
       energy: true
       env:
         DOCC_CI: regions
-    atax_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --numpy --size=M
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    gemver:
       energy: true
       env:
         DOCC_CI: regions
-    atax_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --target=openmp
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    k2mm:
       energy: true
       env:
         DOCC_CI: regions
-    atax_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --target=cuda
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    k3mm:
       energy: true
       env:
         DOCC_CI: regions
-    atax_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --target=sequential --remote-tuning
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    mvt:
       energy: true
       env:
         DOCC_CI: regions
-    gemm_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --numpy --size=M
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    symm:
       energy: true
       env:
         DOCC_CI: regions
-    gemm_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --target=openmp
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        # cuda:
+        #   command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --target=cuda
+        #   tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    syr2k:
       energy: true
       env:
         DOCC_CI: regions
-    gemm_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --target=cuda
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    syrk:
       energy: true
       env:
         DOCC_CI: regions
-    gemm_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --target=sequential --remote-tuning
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }
+    trmm:
       energy: true
       env:
         DOCC_CI: regions
-    gesummv_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    gesummv_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    gesummv_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-    gesummv_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --target=sequential --remote-tuning
-      energy: true
-      env:
-        DOCC_CI: regions
-    gemver_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    gemver_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    gemver_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-    gemver_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --target=sequential --remote-tuning
-      energy: true
-      env:
-        DOCC_CI: regions
-    k2mm_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    k2mm_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    k2mm_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-    k2mm_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --target=sequential --remote-tuning
-      energy: true
-      env:
-        DOCC_CI: regions
-    k3mm_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    k3mm_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    k3mm_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-    k3mm_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --target=sequential --remote-tuning
-      energy: true
-      env:
-        DOCC_CI: regions
-    mvt_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    mvt_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    mvt_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-    mvt_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --target=sequential --remote-tuning
-      energy: true
-      env:
-        DOCC_CI: regions
-    symm_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    symm_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    symm_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --target=sequential --remote-tuning
-      energy: true
-      env:
-        DOCC_CI: regions
-    # symm_cuda:
-    #   command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --target=cuda
-    #   energy: true
-      # env:
-      #   DOCC_CI: regions
-    syr2k_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    syr2k_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    syr2k_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-    syr2k_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --target=sequential --remote-tuning
-      energy: true
-      env:
-        DOCC_CI: regions
-    syrk_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    syrk_omp:
-      command:   venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    syrk_cuda:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-    syrk_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --target=sequential --remote-tuning
-      energy: true
-      env:
-        DOCC_CI: regions
-    trmm_numpy:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --numpy --size=M
-      energy: true
-      env:
-        DOCC_CI: regions
-    trmm_omp:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-    trmm_seq_tuning:
-      command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --target=sequential --remote-tuning
-      energy: true
-      env:
-        DOCC_CI: regions
-    # trmm_cuda:
-    #   command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --target=cuda
-    #   energy: true
-      # env:
-      #   DOCC_CI: regions
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --numpy --size=M
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        # cuda:
+        #   command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --target=cuda
+        #   tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        tt-seq:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double }

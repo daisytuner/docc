@@ -154,7 +154,6 @@ passes::LibNodeExpander::ExpandOutcome BroadcastNode::
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 this->debug_info()
             );
             inner_scope = &loop.root();

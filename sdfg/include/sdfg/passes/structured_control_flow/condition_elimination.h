@@ -8,11 +8,7 @@ namespace passes {
 
 class ConditionElimination : public visitor::NonStoppingStructuredSDFGVisitor {
 private:
-    bool eliminate_condition(
-        structured_control_flow::Sequence& root,
-        structured_control_flow::IfElse& match_node,
-        structured_control_flow::Transition& match_transition
-    );
+    bool eliminate_condition(structured_control_flow::Sequence& root, structured_control_flow::IfElse& match_node);
 
 public:
     ConditionElimination(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);

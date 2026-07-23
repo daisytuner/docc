@@ -75,7 +75,7 @@ TEST(OMPSchedulerTest, OuterParallelMapWithInnerMap) {
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
-    auto& schedule_loop = sdfg.root().at(0).first;
+    auto& schedule_loop = sdfg.root().at(0);
     EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&schedule_loop));
     auto& scheduled_map = static_cast<structured_control_flow::Map&>(schedule_loop);
 
@@ -151,7 +151,7 @@ TEST(OMPSchedulerTest, OuterWhileWith2DMap) {
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
-    auto& schedule_loop = loop.root().at(0).first;
+    auto& schedule_loop = loop.root().at(0);
     EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&schedule_loop));
 
     auto& scheduled_map = static_cast<structured_control_flow::Map&>(schedule_loop);

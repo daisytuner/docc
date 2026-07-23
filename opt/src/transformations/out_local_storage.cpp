@@ -480,7 +480,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         // INIT: barrier → cooperative copy-in → barrier (if has_read)
         if (tile_info_.has_read) {
             // Barrier before init
-            auto& barrier_block1 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
+            auto& barrier_block1 = builder.add_block_before(*parent, loop_, loop_.debug_info());
             builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block1, {});
 
             // Cooperative copy-in loop
@@ -497,7 +497,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 coop_flat,
                 symbolic::add(idx_var, total_coop_threads),
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 loop_.debug_info()
             );
 
@@ -513,14 +512,14 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, init_dst_subset, buffer_type);
 
             // Barrier after init
-            auto& barrier_block2 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
+            auto& barrier_block2 = builder.add_block_before(*parent, loop_, loop_.debug_info());
             builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block2, {});
         }
 
         // WRITEBACK: barrier → cooperative copy-out → barrier
         {
             // Barrier before writeback
-            auto& barrier_block3 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
+            auto& barrier_block3 = builder.add_block_after(*parent, loop_, loop_.debug_info());
             builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block3, {});
 
             // Cooperative writeback loop
@@ -537,7 +536,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 coop_flat,
                 symbolic::add(idx_var, total_coop_threads),
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 loop_.debug_info()
             );
 
@@ -553,7 +551,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
 
             // Barrier after writeback
-            auto& barrier_block4 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
+            auto& barrier_block4 = builder.add_block_after(*parent, loop_, loop_.debug_info());
             builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block4, {});
         }
     } else {
@@ -564,7 +562,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             std::vector<symbolic::Symbol> init_indvars;
             int copy_index = parent->index(loop_);
             structured_control_flow::Sequence* copy_scope =
-                &builder.add_sequence_before(*parent, loop_, {}, loop_.debug_info());
+                &builder.add_sequence_before(*parent, loop_, loop_.debug_info());
             structured_control_flow::Sequence* current_scope = copy_scope;
             for (size_t i = 0; i < varying_dims.size(); i++) {
                 size_t d = varying_dims[i];
@@ -586,7 +584,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                     init,
                     update,
                     structured_control_flow::ScheduleType_Sequential::create(),
-                    {},
                     loop_.debug_info()
                 );
                 current_scope = &init_loop.root();
@@ -614,7 +611,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             std::vector<symbolic::Symbol> wb_indvars;
             int copy_index = parent->index(loop_) + 1;
             structured_control_flow::Sequence* copy_scope =
-                &builder.add_sequence_after(*parent, loop_, {}, loop_.debug_info());
+                &builder.add_sequence_after(*parent, loop_, loop_.debug_info());
             structured_control_flow::Sequence* current_scope = copy_scope;
             for (size_t i = 0; i < varying_dims.size(); i++) {
                 size_t d = varying_dims[i];
@@ -636,7 +633,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                     init,
                     update,
                     structured_control_flow::ScheduleType_Sequential::create(),
-                    {},
                     loop_.debug_info()
                 );
                 current_scope = &wb_loop.root();
@@ -771,7 +767,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             }
         } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
             for (size_t i = 0; i < seq->size(); i++) {
-                rewrite_accesses(seq->at(i).first);
+                rewrite_accesses(seq->at(i));
             }
         } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
             rewrite_accesses(loop->root());

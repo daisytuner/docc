@@ -266,7 +266,7 @@ bool MemletSimplification::accept(structured_control_flow::Map& map) {
         } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(current)) {
             // Add children of sequences to the queue
             for (size_t i = 0; i < seq->size(); ++i) {
-                queue.push_back(&seq->at(i).first);
+                queue.push_back(&seq->at(i));
             }
         } else if (auto* if_stmt = dyn_cast<structured_control_flow::IfElse*>(current)) {
             // Add branches of if statements to the queue

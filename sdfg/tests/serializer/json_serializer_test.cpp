@@ -657,7 +657,7 @@ TEST(JSONSerializerTest, SequenceToJSON) {
 
     auto& scope = builder.add_sequence(root);
     auto& block1 = builder.add_block(scope);
-    auto& block2 = builder.add_block(scope, {{symbolic::symbol("i"), symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(scope, {{symbolic::symbol("i"), symbolic::integer(0)}});
 
     // Create a JSONSerializer object
     std::string filename = "test_sdfg.json";
@@ -674,26 +674,18 @@ TEST(JSONSerializerTest, SequenceToJSON) {
     EXPECT_TRUE(j.contains("children"));
     EXPECT_EQ(j["children"].size(), 2);
     EXPECT_EQ(j["children"][0]["type"], "block");
-    EXPECT_EQ(j["children"][1]["type"], "block");
+    EXPECT_EQ(j["children"][1]["type"], "assignment_block");
 
-    EXPECT_TRUE(j.contains("transitions"));
-    EXPECT_TRUE(j["transitions"].is_array());
-    EXPECT_EQ(j["transitions"].size(), 2);
-    EXPECT_TRUE(j["transitions"][0].contains("type"));
-    EXPECT_EQ(j["transitions"][0]["type"], "transition");
-    EXPECT_TRUE(j["transitions"][0].contains("assignments"));
-    EXPECT_TRUE(j["transitions"][0]["assignments"].is_array());
-    EXPECT_EQ(j["transitions"][0]["assignments"].size(), 0);
+    EXPECT_FALSE(j.contains("transitions"));
+    EXPECT_FALSE(j["children"][0].contains("assignments"));
 
-    EXPECT_TRUE(j["transitions"][1].contains("type"));
-    EXPECT_EQ(j["transitions"][1]["type"], "transition");
-    EXPECT_TRUE(j["transitions"][1].contains("assignments"));
-    EXPECT_TRUE(j["transitions"][1]["assignments"].is_array());
-    EXPECT_EQ(j["transitions"][1]["assignments"].size(), 1);
-    EXPECT_TRUE(j["transitions"][1]["assignments"][0].contains("symbol"));
-    EXPECT_EQ(j["transitions"][1]["assignments"][0]["symbol"], "i");
-    EXPECT_TRUE(j["transitions"][1]["assignments"][0].contains("expression"));
-    // EXPECT_TRUE(j["transitions"][1]["assignments"][0]["expression"], "0");
+    EXPECT_TRUE(j["children"][1].contains("assignments"));
+    EXPECT_TRUE(j["children"][1]["assignments"].is_array());
+    EXPECT_EQ(j["children"][1]["assignments"].size(), 1);
+    EXPECT_TRUE(j["children"][1]["assignments"][0].contains("symbol"));
+    EXPECT_EQ(j["children"][1]["assignments"][0]["symbol"], "i");
+    EXPECT_TRUE(j["children"][1]["assignments"][0].contains("expression"));
+    // EXPECT_TRUE(j["children"][1]["assignments"][0]["expression"], "0");
 }
 
 TEST(JSONSerializerTest, MapToJSON) {
@@ -1044,7 +1036,7 @@ TEST(JSONSerializerTest, SerializeDeserialize_DataflowGraph) {
     sdfg::serializer::JSONSerializer serializer;
     nlohmann::json j;
     // Serialize the DataflowGraph to JSON
-    auto& block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(sdfg->root().at(0).first);
+    auto& block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(sdfg->root().at(0));
 
     serializer.dataflow_to_json(j, block_new.dataflow());
 
@@ -1058,7 +1050,7 @@ TEST(JSONSerializerTest, SerializeDeserialize_DataflowGraph) {
     serializer.json_to_dataflow(j, des_builder, block2);
     auto des_sdfg = des_builder.move();
 
-    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_sdfg->root().at(0).first);
+    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_sdfg->root().at(0));
 
     auto& des_dataflow = des_block_new.dataflow();
     auto& data_flow = block_new.dataflow();
@@ -1171,7 +1163,7 @@ TEST(JSONSerializerTest, SerializeDeserializeBlock_DataflowGraph) {
     sdfg::serializer::JSONSerializer serializer;
     nlohmann::json j;
     // Serialize the DataflowGraph to JSON
-    auto& block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(sdfg->root().at(0).first);
+    auto& block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(sdfg->root().at(0));
 
     serializer.block_to_json(j, block_new);
 
@@ -1181,12 +1173,10 @@ TEST(JSONSerializerTest, SerializeDeserializeBlock_DataflowGraph) {
     des_builder.add_container("A", opaque_desc);
     des_builder.add_container("C", base_desc);
 
-    control_flow::Assignments assignments;
-
-    serializer.json_to_block_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_block_node(j, des_builder, des_builder.subject().root());
     auto des_sdfg = des_builder.move();
 
-    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_sdfg->root().at(0).first);
+    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_sdfg->root().at(0));
 
     auto& des_dataflow = des_block_new.dataflow();
     auto& data_flow = block_new.dataflow();
@@ -1300,7 +1290,7 @@ TEST(JSONSerializerTest, SerializeDeserializeSequence_DataflowGraph) {
     sdfg::serializer::JSONSerializer serializer;
     nlohmann::json j;
     // Serialize the DataflowGraph to JSON
-    auto& block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(sdfg->root().at(0).first);
+    auto& block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(sdfg->root().at(0));
 
     serializer.sequence_to_json(j, sdfg->root());
 
@@ -1317,9 +1307,9 @@ TEST(JSONSerializerTest, SerializeDeserializeSequence_DataflowGraph) {
     EXPECT_EQ(des_sdfg->containers().size(), 2);
     EXPECT_EQ(des_sdfg->root().size(), 1);
 
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_sdfg->root().at(0).first) != nullptr);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_sdfg->root().at(0)) != nullptr);
 
-    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_sdfg->root().at(0).first);
+    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_sdfg->root().at(0));
 
     auto& des_dataflow = des_block_new.dataflow();
     auto& data_flow = block_new.dataflow();
@@ -1433,7 +1423,7 @@ TEST(JSONSerializerTest, SerializeDeserializeSDFG_DataflowGraph) {
     sdfg::serializer::JSONSerializer serializer;
     nlohmann::json j;
     // Serialize the DataflowGraph to JSON
-    auto& block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(sdfg->root().at(0).first);
+    auto& block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(sdfg->root().at(0));
 
     j = serializer.serialize(*sdfg);
 
@@ -1444,9 +1434,9 @@ TEST(JSONSerializerTest, SerializeDeserializeSDFG_DataflowGraph) {
     EXPECT_EQ(des_sdfg->containers().size(), 2);
     EXPECT_EQ(des_sdfg->root().size(), 1);
 
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_sdfg->root().at(0).first) != nullptr);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_sdfg->root().at(0)) != nullptr);
 
-    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_sdfg->root().at(0).first);
+    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_sdfg->root().at(0));
 
     auto& des_dataflow = des_block_new.dataflow();
     auto& data_flow = block_new.dataflow();
@@ -1570,23 +1560,21 @@ TEST(JSONSerializerTest, SerializeDeserialize_forloop) {
     des_builder.add_container("i", base_desc);
     des_builder.add_container("N", base_desc);
 
-    control_flow::Assignments assignments;
-
-    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root());
     auto des_sdfg = des_builder.move();
 
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 2);
     EXPECT_EQ(des_sdfg->root().size(), 1);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::For*>(&des_sdfg->root().at(0).first) != nullptr);
-    auto& des_for_loop = sdfg::dyn_cast<sdfg::structured_control_flow::For&>(des_sdfg->root().at(0).first);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::For*>(&des_sdfg->root().at(0)) != nullptr);
+    auto& des_for_loop = sdfg::dyn_cast<sdfg::structured_control_flow::For&>(des_sdfg->root().at(0));
     EXPECT_TRUE(symbolic::eq(des_for_loop.indvar(), loopvar));
     EXPECT_TRUE(symbolic::eq(des_for_loop.condition(), bound));
     EXPECT_TRUE(symbolic::eq(des_for_loop.update(), update));
     EXPECT_TRUE(symbolic::eq(des_for_loop.init(), init));
 
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_for_loop.root().at(0).first) != nullptr);
-    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_for_loop.root().at(0).first);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_for_loop.root().at(0)) != nullptr);
+    auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_for_loop.root().at(0));
 }
 
 TEST(JSONSerializerTest, SerializeDeserialize_ifelse) {
@@ -1615,15 +1603,14 @@ TEST(JSONSerializerTest, SerializeDeserialize_ifelse) {
     // Deserialize the JSON back into an IfElse node
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
     des_builder.add_container("i", sym_desc);
-    control_flow::Assignments assignments;
-    serializer.json_to_if_else_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_if_else_node(j, des_builder, des_builder.subject().root());
     auto des_sdfg = des_builder.move();
 
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 1);
     EXPECT_EQ(des_sdfg->root().size(), 1);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::IfElse*>(&des_sdfg->root().at(0).first) != nullptr);
-    auto& des_if_else = sdfg::dyn_cast<sdfg::structured_control_flow::IfElse&>(des_sdfg->root().at(0).first);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::IfElse*>(&des_sdfg->root().at(0)) != nullptr);
+    auto& des_if_else = sdfg::dyn_cast<sdfg::structured_control_flow::IfElse&>(des_sdfg->root().at(0));
 
     EXPECT_EQ(des_if_else.size(), 2);
 
@@ -1635,8 +1622,8 @@ TEST(JSONSerializerTest, SerializeDeserialize_ifelse) {
     auto& des_false_case = sdfg::dyn_cast<sdfg::structured_control_flow::Sequence&>(des_if_else.at(1).first);
     EXPECT_EQ(des_true_case.size(), 1);
     EXPECT_EQ(des_false_case.size(), 1);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_true_case.at(0).first) != nullptr);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_false_case.at(0).first) != nullptr);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_true_case.at(0)) != nullptr);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_false_case.at(0)) != nullptr);
 }
 
 TEST(JSONSerializerTest, SerializeDeserialize_sequence) {
@@ -1648,7 +1635,7 @@ TEST(JSONSerializerTest, SerializeDeserialize_sequence) {
 
     auto& scope = builder.add_sequence(root);
     auto& block1 = builder.add_block(scope);
-    auto& block2 = builder.add_block(scope, {{symbolic::symbol("i"), symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(scope, {{symbolic::symbol("i"), symbolic::integer(0)}});
 
     // Create a JSONSerializer object
     std::string filename = "test_sdfg.json";
@@ -1668,13 +1655,10 @@ TEST(JSONSerializerTest, SerializeDeserialize_sequence) {
     EXPECT_EQ(des_sdfg->containers().size(), 1);
     EXPECT_EQ(des_sdfg->root().size(), 2);
 
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_sdfg->root().at(0).first) != nullptr);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_sdfg->root().at(1).first) != nullptr);
-    auto& transition0 = des_sdfg->root().at(0).second;
-    auto& transition1 = des_sdfg->root().at(1).second;
-    EXPECT_TRUE(transition0.empty());
-    EXPECT_EQ(transition1.size(), 1);
-    auto& assignment = transition1.assignments();
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_sdfg->root().at(0)) != nullptr);
+    auto* assignments = sdfg::dyn_cast<sdfg::structured_control_flow::AssignmentBlock*>(&des_sdfg->root().at(1));
+    EXPECT_TRUE(assignments != nullptr);
+    auto& assignment = assignments->assignments();
     EXPECT_EQ(assignment.size(), 1);
     EXPECT_TRUE(symbolic::eq(assignment.begin()->first, symbolic::symbol("i")));
     EXPECT_TRUE(symbolic::eq(assignment.begin()->second, symbolic::integer(0)));
@@ -1704,18 +1688,16 @@ TEST(JSONSerializerTest, SerializeDeserialize_while) {
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
     des_builder.add_container("i", sym_desc);
 
-    control_flow::Assignments assignments;
-
-    serializer.json_to_while_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_while_node(j, des_builder, des_builder.subject().root());
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 1);
     EXPECT_EQ(des_sdfg->root().size(), 1);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::While*>(&des_sdfg->root().at(0).first) != nullptr);
-    auto& des_while = sdfg::dyn_cast<sdfg::structured_control_flow::While&>(des_sdfg->root().at(0).first);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::While*>(&des_sdfg->root().at(0)) != nullptr);
+    auto& des_while = sdfg::dyn_cast<sdfg::structured_control_flow::While&>(des_sdfg->root().at(0));
 
     EXPECT_EQ(des_while.root().size(), 1);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_while.root().at(0).first) != nullptr);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&des_while.root().at(0)) != nullptr);
 }
 
 TEST(JSONSerializerTest, SerializeDeserialize_while_break) {
@@ -1742,19 +1724,17 @@ TEST(JSONSerializerTest, SerializeDeserialize_while_break) {
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
     des_builder.add_container("i", sym_desc);
 
-    control_flow::Assignments assignments;
-
-    serializer.json_to_while_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_while_node(j, des_builder, des_builder.subject().root());
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 1);
     EXPECT_EQ(des_sdfg->root().size(), 1);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::While*>(&des_sdfg->root().at(0).first) != nullptr);
-    auto& des_while = sdfg::dyn_cast<sdfg::structured_control_flow::While&>(des_sdfg->root().at(0).first);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Break*>(&des_while.root().at(0).first) != nullptr);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::While*>(&des_sdfg->root().at(0)) != nullptr);
+    auto& des_while = sdfg::dyn_cast<sdfg::structured_control_flow::While&>(des_sdfg->root().at(0));
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Break*>(&des_while.root().at(0)) != nullptr);
 
     EXPECT_EQ(des_while.root().size(), 1);
-    auto& des_break = sdfg::dyn_cast<sdfg::structured_control_flow::Break&>(des_while.root().at(0).first);
+    auto& des_break = sdfg::dyn_cast<sdfg::structured_control_flow::Break&>(des_while.root().at(0));
 }
 
 TEST(JSONSerializerTest, SerializeDeserialize_while_continue) {
@@ -1781,18 +1761,16 @@ TEST(JSONSerializerTest, SerializeDeserialize_while_continue) {
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
     des_builder.add_container("i", sym_desc);
 
-    control_flow::Assignments assignments;
-
-    serializer.json_to_while_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_while_node(j, des_builder, des_builder.subject().root());
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 1);
     EXPECT_EQ(des_sdfg->root().size(), 1);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::While*>(&des_sdfg->root().at(0).first) != nullptr);
-    auto& des_while = sdfg::dyn_cast<sdfg::structured_control_flow::While&>(des_sdfg->root().at(0).first);
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Continue*>(&des_while.root().at(0).first) != nullptr);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::While*>(&des_sdfg->root().at(0)) != nullptr);
+    auto& des_while = sdfg::dyn_cast<sdfg::structured_control_flow::While&>(des_sdfg->root().at(0));
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Continue*>(&des_while.root().at(0)) != nullptr);
     EXPECT_EQ(des_while.root().size(), 1);
-    auto& des_continue = sdfg::dyn_cast<sdfg::structured_control_flow::Continue&>(des_while.root().at(0).first);
+    auto& des_continue = sdfg::dyn_cast<sdfg::structured_control_flow::Continue&>(des_while.root().at(0));
 }
 
 TEST(JSONSerializerTest, SerializeDeserialize_Map) {
@@ -1820,16 +1798,14 @@ TEST(JSONSerializerTest, SerializeDeserialize_Map) {
     // Deserialize the JSON back into a Sequence node
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
 
-    control_flow::Assignments assignments;
-
-    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root());
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 0);
     EXPECT_EQ(des_sdfg->root().size(), 1);
 
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Map*>(&des_sdfg->root().at(0).first) != nullptr);
-    auto& des_map = sdfg::dyn_cast<sdfg::structured_control_flow::Map&>(des_sdfg->root().at(0).first);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Map*>(&des_sdfg->root().at(0)) != nullptr);
+    auto& des_map = sdfg::dyn_cast<sdfg::structured_control_flow::Map&>(des_sdfg->root().at(0));
     EXPECT_TRUE(symbolic::eq(des_map.indvar(), symbolic::symbol("i")));
     EXPECT_TRUE(symbolic::eq(des_map.condition(), symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10))));
     EXPECT_TRUE(symbolic::eq(des_map.init(), symbolic::integer(0)));
@@ -1861,16 +1837,14 @@ TEST(JSONSerializerTest, SerializeDeserialize_Reduce) {
 
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
 
-    control_flow::Assignments assignments;
-
-    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root());
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 0);
     EXPECT_EQ(des_sdfg->root().size(), 1);
 
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Reduce*>(&des_sdfg->root().at(0).first) != nullptr);
-    auto& des_reduce = sdfg::dyn_cast<sdfg::structured_control_flow::Reduce&>(des_sdfg->root().at(0).first);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Reduce*>(&des_sdfg->root().at(0)) != nullptr);
+    auto& des_reduce = sdfg::dyn_cast<sdfg::structured_control_flow::Reduce&>(des_sdfg->root().at(0));
     EXPECT_TRUE(symbolic::eq(des_reduce.indvar(), symbolic::symbol("i")));
     EXPECT_TRUE(symbolic::eq(des_reduce.condition(), symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10))));
     EXPECT_TRUE(symbolic::eq(des_reduce.init(), symbolic::integer(0)));
@@ -1901,16 +1875,14 @@ TEST(JSONSerializerTest, SerializeDeserialize_return) {
     // Deserialize the JSON back into a Sequence node
     auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
 
-    control_flow::Assignments assignments;
-
-    serializer.json_to_return_node(j, des_builder, des_builder.subject().root(), assignments);
+    serializer.json_to_return_node(j, des_builder, des_builder.subject().root());
     auto des_sdfg = des_builder.move();
     EXPECT_EQ(des_sdfg->name(), sdfg->name());
     EXPECT_EQ(des_sdfg->containers().size(), 0);
     EXPECT_EQ(des_sdfg->root().size(), 1);
 
-    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Return*>(&des_sdfg->root().at(0).first) != nullptr);
-    auto& des_ret = sdfg::dyn_cast<sdfg::structured_control_flow::Return&>(des_sdfg->root().at(0).first);
+    EXPECT_TRUE(sdfg::dyn_cast<sdfg::structured_control_flow::Return*>(&des_sdfg->root().at(0)) != nullptr);
+    auto& des_ret = sdfg::dyn_cast<sdfg::structured_control_flow::Return&>(des_sdfg->root().at(0));
     EXPECT_EQ(des_ret.data(), "");
 }
 
@@ -2035,4 +2007,120 @@ TEST(JSONSerializerTest, SerializeDeserialize_LibraryNode) {
 
     EXPECT_TRUE(dynamic_cast<data_flow::BarrierLocalNode*>(&lib_node_new));
     auto barrier_local_node = dynamic_cast<data_flow::BarrierLocalNode*>(&lib_node_new);
+}
+
+TEST(JsonSerializerTest, DeseríalizeLegacyTransitions) {
+    std::string json_str = R"a(
+{
+    "children": [
+        {
+            "dataflow": {
+                "edges": [],
+                "nodes": [],
+                "type": "dataflow"
+            },
+            "debug_info": {
+                "end_column": 38,
+                "end_line": 39,
+                "filename": "",
+                "function": "init_array",
+                "has": true,
+                "start_column": 38,
+                "start_line": 39
+            },
+            "element_id": 69,
+            "type": "block"
+        },
+        {
+            "dataflow": {
+                "edges": [],
+                "nodes": [],
+                "type": "dataflow"
+            },
+            "debug_info": {
+                "end_column": 38,
+                "end_line": 39,
+                "filename": "",
+                "function": "init_array",
+                "has": true,
+                "start_column": 38,
+                "start_line": 39
+            },
+            "element_id": 69,
+            "type": "block"
+        }
+    ],
+    "debug_info": {
+        "end_column": 15,
+        "end_line": 39,
+        "filename": "",
+        "function": "",
+        "has": true,
+        "start_column": 19,
+        "start_line": 38
+    },
+    "element_id": 1392,
+    "transitions": [
+        {
+            "assignments": [
+                {
+                    "expression": "1 + trunc_i32(_7*_12)",
+                    "symbol": "_17"
+                }
+            ],
+            "debug_info": {
+                "end_column": 38,
+                "end_line": 39,
+                "filename": "",
+                "function": "init_array",
+                "has": true,
+                "start_column": 38,
+                "start_line": 39
+            },
+            "element_id": 70,
+            "type": "transition"
+        },
+        {
+            "assignments": [],
+            "debug_info": {
+                "end_column": 38,
+                "end_line": 39,
+                "filename": "",
+                "function": "init_array",
+                "has": true,
+                "start_column": 38,
+                "start_line": 39
+            },
+            "element_id": 77,
+            "type": "transition"
+        }
+    ],
+    "type": "sequence"
+}
+)a";
+
+    nlohmann::json j = nlohmann::json::parse(json_str);
+
+    serializer::JSONSerializer ser;
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    ser.json_to_sequence(j, builder, builder.subject().root());
+
+    auto& root_seq = builder.subject().root();
+    EXPECT_EQ(root_seq.size(), 4);
+
+    EXPECT_TRUE(dyn_cast<Block*>(&root_seq.at(0)));
+    EXPECT_TRUE(dyn_cast<Block*>(&root_seq.at(2)));
+    auto& recovered_transition1 = root_seq.at(1);
+    auto& recovered_transition2 = root_seq.at(3);
+    auto assignBlock1 = dyn_cast<AssignmentBlock*>(&recovered_transition1);
+    EXPECT_TRUE(assignBlock1);
+    EXPECT_EQ(assignBlock1->element_id(), 70);
+    EXPECT_EQ(assignBlock1->size(), 1);
+    auto s = symbolic::symbol("_17");
+    auto expr = assignBlock1->assignments().at(s);
+    EXPECT_TRUE(symbolic::null_safe_eq(expr, symbolic::parse("1 + trunc_i32(_7*_12)")));
+    auto assignBlock2 = dyn_cast<AssignmentBlock*>(&recovered_transition2);
+    EXPECT_TRUE(assignBlock2);
+    EXPECT_EQ(assignBlock2->element_id(), 77);
+    EXPECT_EQ(assignBlock2->size(), 0);
 }

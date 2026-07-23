@@ -127,7 +127,7 @@ data_flow::AccessNode* find_access_by_suffix(structured_control_flow::ControlFlo
             }
         } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&n)) {
             for (size_t i = 0; i < seq->size(); ++i) {
-                if (auto* hit = walk(seq->at(i).first)) {
+                if (auto* hit = walk(seq->at(i))) {
                     return hit;
                 }
             }
@@ -176,7 +176,7 @@ std::string find_container_by_suffix(const sdfg::Function& fn, const std::string
 // Find the first For loop under `seq`.
 structured_control_flow::For* find_first_for(structured_control_flow::Sequence& seq) {
     for (size_t i = 0; i < seq.size(); ++i) {
-        if (auto* f = dyn_cast<structured_control_flow::For*>(&seq.at(i).first)) {
+        if (auto* f = dyn_cast<structured_control_flow::For*>(&seq.at(i))) {
             return f;
         }
     }
@@ -186,7 +186,7 @@ structured_control_flow::For* find_first_for(structured_control_flow::Sequence& 
 // Find the first Map under `seq`.
 structured_control_flow::Map* find_first_map(structured_control_flow::Sequence& seq) {
     for (size_t i = 0; i < seq.size(); ++i) {
-        if (auto* m = dyn_cast<structured_control_flow::Map*>(&seq.at(i).first)) {
+        if (auto* m = dyn_cast<structured_control_flow::Map*>(&seq.at(i))) {
             return m;
         }
     }
@@ -645,7 +645,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     // it should be the only For directly under map_i_body.
     structured_control_flow::For* kk_loop = nullptr;
     for (size_t i = 0; i < map_i_body.size(); ++i) {
-        if (auto* f = dyn_cast<structured_control_flow::For*>(&map_i_body.at(i).first)) {
+        if (auto* f = dyn_cast<structured_control_flow::For*>(&map_i_body.at(i))) {
             const std::string indvar = f->indvar()->get_name();
             if (indvar.compare(0, std::strlen("k_tile"), "k_tile") == 0) {
                 kk_loop = f;
@@ -669,13 +669,13 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
             if (ie->size() != 1) return nullptr;
             auto& inner = ie->at(0).first;
             if (inner.size() != 1) return nullptr;
-            node = &inner.at(0).first;
+            node = &inner.at(0);
         }
         return node;
     };
 
     // Last child of kk_body must be (a wrapper around) for_kI.
-    auto* last_raw = &kk_body.at(kk_body.size() - 1).first;
+    auto* last_raw = &kk_body.at(kk_body.size() - 1);
     auto* last_unwrapped = unwrap_if_else(last_raw);
     ASSERT_NE(last_unwrapped, nullptr) << "last kk_body child does not unwrap to a single inner node";
 
@@ -711,7 +711,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     // in IfElse by SyncConditionPropagation.
     int copy_map_count = 0;
     for (size_t i = 0; i < kk_body.size(); ++i) {
-        auto* unwrapped = unwrap_if_else(&kk_body.at(i).first);
+        auto* unwrapped = unwrap_if_else(&kk_body.at(i));
         if (unwrapped && dyn_cast<structured_control_flow::Map*>(unwrapped)) {
             ++copy_map_count;
         }
@@ -722,7 +722,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     // -> 4 total. Barriers are NOT wrapped (they must execute for all threads).
     int barrier_block_count = 0;
     for (size_t i = 0; i < kk_body.size(); ++i) {
-        auto* blk = dyn_cast<structured_control_flow::Block*>(&kk_body.at(i).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&kk_body.at(i));
         if (!blk) continue;
         for (auto& n : blk->dataflow().nodes()) {
             if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&n)) {

@@ -789,12 +789,12 @@ TEST(LocalBufferReuseTest, Negative_NonEmptyTransition) {
     {
         auto& root = setup.builder.subject().root();
         setup.builder.add_container("extra_sym", types::Scalar(types::PrimitiveType::Int32));
-        auto& block =
-            setup.builder.add_block(root, {{symbolic::symbol("extra_sym"), symbolic::integer(42)}}); // Non-empty
-                                                                                                     // transition
+        auto& block = setup.builder.add_block(root);
         auto& access = setup.builder.add_access(block, "ptr2");
         auto& malloc_node = setup.builder.add_library_node<stdlib::MallocNode>(block, DebugInfo(), setup.malloc_size);
         setup.builder.add_computational_memlet(block, malloc_node, "_ret", access, {}, setup.ptr_desc, DebugInfo());
+
+        setup.builder.add_assignments(root, {{symbolic::symbol("extra_sym"), symbolic::integer(42)}});
     }
 
     setup.add_reference_block("ptr2", "ref2");

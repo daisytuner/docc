@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -16,8 +17,8 @@ TEST(SymbolPropagationTest, Transition2Transition_Constant) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::integer(0)}});
-    auto& block2 = builder.add_block(root, {{sym2, sym1}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(root, {{sym2, sym1}});
 
     auto sdfg = builder.move();
 
@@ -30,14 +31,14 @@ TEST(SymbolPropagationTest, Transition2Transition_Constant) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto child2 = sdfg->root().at(1);
+    auto child1 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
 
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symbolic::integer(0)));
+    EXPECT_EQ(child1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child1->assignments().at(sym1), *symbolic::integer(0)));
 
-    EXPECT_EQ(child2.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child2.second.assignments().at(sym2), *symbolic::integer(0)));
+    EXPECT_EQ(child2->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child2->assignments().at(sym2), *symbolic::integer(0)));
 }
 
 TEST(SymbolPropagationTest, Transition2Transition_Symbol) {
@@ -52,8 +53,8 @@ TEST(SymbolPropagationTest, Transition2Transition_Symbol) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symN}});
-    auto& block2 = builder.add_block(root, {{sym2, sym1}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symN}});
+    auto& block2 = builder.add_assignments(root, {{sym2, sym1}});
 
     auto sdfg = builder.move();
 
@@ -66,14 +67,16 @@ TEST(SymbolPropagationTest, Transition2Transition_Symbol) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto child2 = sdfg->root().at(1);
+    auto* child1 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    auto* child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
 
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symN));
+    EXPECT_TRUE(child1);
+    EXPECT_EQ(child1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child1->assignments().at(sym1), *symN));
 
-    EXPECT_EQ(child2.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child2.second.assignments().at(sym2), *symN));
+    EXPECT_TRUE(child2);
+    EXPECT_EQ(child2->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child2->assignments().at(sym2), *symN));
 }
 
 TEST(SymbolPropagationTest, Transition2Transition_DataRace) {
@@ -88,9 +91,9 @@ TEST(SymbolPropagationTest, Transition2Transition_DataRace) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symN}});
-    auto& block2 = builder.add_block(root, {{symN, symbolic::integer(0)}});
-    auto& block3 = builder.add_block(root, {{sym2, sym1}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symN}});
+    auto& block2 = builder.add_assignments(root, {{symN, symbolic::integer(0)}});
+    auto& block3 = builder.add_assignments(root, {{sym2, sym1}});
 
     auto sdfg = builder.move();
 
@@ -103,18 +106,18 @@ TEST(SymbolPropagationTest, Transition2Transition_DataRace) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 3);
-    auto child1 = sdfg->root().at(0);
-    auto child2 = sdfg->root().at(1);
-    auto child3 = sdfg->root().at(2);
+    auto child1 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
+    auto child3 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(2));
 
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symN));
+    EXPECT_EQ(child1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child1->assignments().at(sym1), *symN));
 
-    EXPECT_EQ(child2.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child2.second.assignments().at(symN), *symbolic::integer(0)));
+    EXPECT_EQ(child2->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child2->assignments().at(symN), *symbolic::integer(0)));
 
-    EXPECT_EQ(child3.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child3.second.assignments().at(sym2), *sym1));
+    EXPECT_EQ(child3->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child3->assignments().at(sym2), *sym1));
 }
 
 TEST(SymbolPropagationTest, Transition2Memlet_Constant) {
@@ -127,7 +130,7 @@ TEST(SymbolPropagationTest, Transition2Memlet_Constant) {
     auto sym1 = symbolic::symbol("i");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::integer(0)}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::integer(0)}});
     auto& block2 = builder.add_block(root);
     auto& output_node = builder.add_access(block2, "A");
     auto& one_node = builder.add_constant(block2, "1", desc);
@@ -144,15 +147,19 @@ TEST(SymbolPropagationTest, Transition2Memlet_Constant) {
     pass.run(builder_opt, analysis_manager);
     sdfg = builder_opt.move();
 
+    dump_sdfg(*sdfg, "1.after");
+
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto child2 = sdfg->root().at(1);
+    auto child1 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    ASSERT_TRUE(child1);
+    auto child2 = dyn_cast<Block*>(&sdfg->root().at(1));
+    ASSERT_TRUE(child2);
 
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symbolic::integer(0)));
 
-    EXPECT_EQ(child2.second.assignments().size(), 0);
+    EXPECT_EQ(child1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child1->assignments().at(sym1), *symbolic::integer(0)));
+
     EXPECT_TRUE(SymEngine::eq(*edge.subset().at(0), *symbolic::integer(0)));
 }
 
@@ -166,7 +173,7 @@ TEST(SymbolPropagationTest, Transition2Memlet_Argument) {
     auto sym1 = symbolic::symbol("i");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::symbol("A")}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::symbol("A")}});
     auto& block2 = builder.add_block(root);
     auto& output_node = builder.add_access(block2, "A");
     auto& one_node = builder.add_constant(block2, "1", desc);
@@ -187,13 +194,13 @@ TEST(SymbolPropagationTest, Transition2Memlet_Argument) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    auto child2 = sdfg->root().at(1);
+    auto child1 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    auto child2 = dyn_cast<Block*>(&sdfg->root().at(1));
 
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symbolic::symbol("A")));
+    EXPECT_EQ(child1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child1->assignments().at(sym1), *symbolic::symbol("A")));
 
-    EXPECT_EQ(child2.second.assignments().size(), 0);
+    EXPECT_TRUE(child2);
     EXPECT_TRUE(SymEngine::eq(*edge.subset().at(0), *symbolic::symbol("A")));
 }
 
@@ -207,15 +214,15 @@ TEST(SymbolPropagationTest, Transition2IfElse_Constant) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::integer(0)}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::integer(0)}});
 
     auto& if_else = builder.add_if_else(root);
 
     auto& case1 = builder.add_case(if_else, symbolic::Lt(sym2, symbolic::integer(10)));
-    auto& block2 = builder.add_block(case1, {{sym2, sym1}});
+    auto& block2 = builder.add_assignments(case1, {{sym2, sym1}});
 
     auto& case2 = builder.add_case(if_else, symbolic::Ge(sym2, symbolic::integer(10)));
-    auto& block3 = builder.add_block(case2, {{sym2, symbolic::add(sym1, symbolic::integer(1))}});
+    auto& block3 = builder.add_assignments(case2, {{sym2, symbolic::add(sym1, symbolic::integer(1))}});
 
     auto sdfg = builder.move();
 
@@ -228,18 +235,18 @@ TEST(SymbolPropagationTest, Transition2IfElse_Constant) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symbolic::integer(0)));
+    auto child1 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    EXPECT_EQ(child1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child1->assignments().at(sym1), *symbolic::integer(0)));
 
-    auto& child2 = dyn_cast<structured_control_flow::IfElse&>(sdfg->root().at(1).first);
-    auto case1_1 = child2.at(0).first.at(0);
-    EXPECT_EQ(case1_1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*case1_1.second.assignments().at(sym2), *symbolic::integer(0)));
+    auto& child2 = dyn_cast<structured_control_flow::IfElse&>(sdfg->root().at(1));
+    auto case1_1 = dyn_cast<AssignmentBlock*>(&child2.at(0).first.at(0));
+    EXPECT_EQ(case1_1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*case1_1->assignments().at(sym2), *symbolic::integer(0)));
 
-    auto case2_1 = child2.at(1).first.at(0);
-    EXPECT_EQ(case2_1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*case2_1.second.assignments().at(sym2), *symbolic::integer(1)));
+    auto case2_1 = dyn_cast<AssignmentBlock*>(&child2.at(1).first.at(0));
+    EXPECT_EQ(case2_1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*case2_1->assignments().at(sym2), *symbolic::integer(1)));
 }
 
 TEST(SymbolPropagationTest, Transition2IfElse_Argument) {
@@ -254,15 +261,15 @@ TEST(SymbolPropagationTest, Transition2IfElse_Argument) {
     auto sym3 = symbolic::symbol("A");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::symbol("A")}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::symbol("A")}});
 
     auto& if_else = builder.add_if_else(root);
 
     auto& case1 = builder.add_case(if_else, symbolic::Lt(sym2, symbolic::symbol("A")));
-    auto& block2 = builder.add_block(case1, {{sym2, sym1}});
+    auto& block2 = builder.add_assignments(case1, {{sym2, sym1}});
 
     auto& case2 = builder.add_case(if_else, symbolic::Ge(sym2, symbolic::symbol("A")));
-    auto& block3 = builder.add_block(case2, {{sym2, symbolic::add(sym1, symbolic::integer(1))}});
+    auto& block3 = builder.add_assignments(case2, {{sym2, symbolic::add(sym1, symbolic::integer(1))}});
 
     auto sdfg = builder.move();
 
@@ -275,20 +282,19 @@ TEST(SymbolPropagationTest, Transition2IfElse_Argument) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child1 = sdfg->root().at(0);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symbolic::symbol("A")));
+    auto child1 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    EXPECT_EQ(child1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child1->assignments().at(sym1), *symbolic::symbol("A")));
 
-    auto& child2 = dyn_cast<structured_control_flow::IfElse&>(sdfg->root().at(1).first);
-    auto case1_1 = child2.at(0).first.at(0);
-    EXPECT_EQ(case1_1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*case1_1.second.assignments().at(sym2), *symbolic::symbol("A")));
+    auto& child2 = dyn_cast<structured_control_flow::IfElse&>(sdfg->root().at(1));
+    auto case1_1 = dyn_cast<AssignmentBlock*>(&child2.at(0).first.at(0));
+    EXPECT_EQ(case1_1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*case1_1->assignments().at(sym2), *symbolic::symbol("A")));
 
-    auto case2_1 = child2.at(1).first.at(0);
-    EXPECT_EQ(case2_1.second.assignments().size(), 1);
+    auto case2_1 = dyn_cast<AssignmentBlock*>(&child2.at(1).first.at(0));
+    EXPECT_EQ(case2_1->assignments().size(), 1);
     EXPECT_TRUE(SymEngine::
-                    eq(*case2_1.second.assignments().at(sym2),
-                       *symbolic::add(symbolic::symbol("A"), symbolic::integer(1))));
+                    eq(*case2_1->assignments().at(sym2), *symbolic::add(symbolic::symbol("A"), symbolic::integer(1))));
 }
 
 TEST(SymbolPropagationTest, Transition2IfElse_Negative) {
@@ -306,12 +312,12 @@ TEST(SymbolPropagationTest, Transition2IfElse_Negative) {
     auto& if_else = builder.add_if_else(root);
 
     auto& case1 = builder.add_case(if_else, symbolic::Lt(sym2, symbolic::symbol("A")));
-    auto& block2 = builder.add_block(case1, {{sym2, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(case1, {{sym2, symbolic::integer(0)}});
 
     auto& case2 = builder.add_case(if_else, symbolic::Ge(sym2, symbolic::symbol("A")));
-    auto& block3 = builder.add_block(case2, {{sym2, symbolic::integer(1)}});
+    auto& block3 = builder.add_assignments(case2, {{sym2, symbolic::integer(1)}});
 
-    auto& block1 = builder.add_block(root, {{sym1, sym2}});
+    auto& block1 = builder.add_assignments(root, {{sym1, sym2}});
 
     auto sdfg = builder.move();
 
@@ -324,9 +330,9 @@ TEST(SymbolPropagationTest, Transition2IfElse_Negative) {
 
     // Check result
     EXPECT_EQ(sdfg->root().size(), 2);
-    auto child2 = sdfg->root().at(1);
-    EXPECT_EQ(child2.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child2.second.assignments().at(sym1), *sym2));
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
+    EXPECT_EQ(child2->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child2->assignments().at(sym1), *sym2));
 }
 
 TEST(SymbolPropagationTest, Transition2For_Init) {
@@ -337,7 +343,7 @@ TEST(SymbolPropagationTest, Transition2For_Init) {
     auto sym = symbolic::symbol("i");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym, symbolic::integer(0)}});
+    auto& block1 = builder.add_assignments(root, {{sym, symbolic::integer(0)}});
 
     auto& loop =
         builder
@@ -366,7 +372,7 @@ TEST(SymbolPropagationTest, Transition2For_Condition) {
     auto symN = symbolic::symbol("N");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{symN, symbolic::integer(10)}});
+    auto& block1 = builder.add_assignments(root, {{symN, symbolic::integer(10)}});
 
     auto& loop =
         builder
@@ -396,7 +402,7 @@ TEST(SymbolPropagationTest, Transition2For_Update) {
 
     auto& root = builder.subject().root();
     auto& loop = builder.add_for(root, sym, symbolic::Lt(sym, symbolic::integer(10)), symbolic::integer(0), sym2);
-    auto& body = builder.add_block(loop.root(), {{sym2, symbolic::add(sym, symbolic::integer(1))}});
+    auto& body = builder.add_assignments(loop.root(), {{sym2, symbolic::add(sym, symbolic::integer(1))}});
 
     auto sdfg = builder.move();
 
@@ -421,10 +427,10 @@ TEST(SymbolPropagationTest, Transition2While_In) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, {{sym, symbolic::integer(0)}});
+    auto& block = builder.add_assignments(root, {{sym, symbolic::integer(0)}});
 
     auto& loop = builder.add_while(root);
-    auto& body1 = builder.add_block(loop.root(), {{sym2, sym}});
+    auto& body1 = builder.add_assignments(loop.root(), {{sym2, sym}});
 
     auto sdfg = builder.move();
 
@@ -436,8 +442,10 @@ TEST(SymbolPropagationTest, Transition2While_In) {
     sdfg = builder_opt.move();
 
     // Check result
-    auto& child1 = dyn_cast<structured_control_flow::While&>(sdfg->root().at(1).first);
-    EXPECT_TRUE(SymEngine::eq(*child1.root().at(0).second.assignments().at(sym2), *symbolic::integer(0)));
+    auto& child1 = dyn_cast<structured_control_flow::While&>(sdfg->root().at(1));
+    auto child1_1 = dyn_cast<AssignmentBlock*>(&child1.root().at(0));
+    EXPECT_TRUE(child1_1);
+    EXPECT_TRUE(SymEngine::eq(*child1_1->assignments().at(sym2), *symbolic::integer(0)));
 }
 
 // ========== Negative Test Cases ==========
@@ -457,8 +465,8 @@ TEST(SymbolPropagationTest, Negative_NonTransient) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::integer(0)}});
-    auto& block2 = builder.add_block(root, {{sym2, sym1}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(root, {{sym2, sym1}});
 
     auto sdfg = builder.move();
 
@@ -471,12 +479,12 @@ TEST(SymbolPropagationTest, Negative_NonTransient) {
 
     // Check result - non-transient symbols should not be propagated
     EXPECT_FALSE(modified);
-    auto child1 = sdfg->root().at(0);
-    auto child2 = sdfg->root().at(1);
-    EXPECT_EQ(child1.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child1.second.assignments().at(sym1), *symbolic::integer(0)));
-    EXPECT_EQ(child2.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child2.second.assignments().at(sym2), *sym1)); // Not propagated
+    auto child1 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(0));
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
+    EXPECT_EQ(child1->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child1->assignments().at(sym1), *symbolic::integer(0)));
+    EXPECT_EQ(child2->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child2->assignments().at(sym2), *sym1)); // Not propagated
 }
 
 /**
@@ -494,8 +502,8 @@ TEST(SymbolPropagationTest, Negative_RecursiveAssignment) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, sym1}}); // Recursive assignment
-    auto& block2 = builder.add_block(root, {{sym2, sym1}});
+    auto& block1 = builder.add_assignments(root, {{sym1, sym1}}); // Recursive assignment
+    auto& block2 = builder.add_assignments(root, {{sym2, sym1}});
 
     auto sdfg = builder.move();
 
@@ -508,8 +516,8 @@ TEST(SymbolPropagationTest, Negative_RecursiveAssignment) {
 
     // Check result - recursive assignments should not be propagated
     EXPECT_FALSE(modified);
-    auto child2 = sdfg->root().at(1);
-    EXPECT_TRUE(SymEngine::eq(*child2.second.assignments().at(sym2), *sym1)); // Not propagated
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
+    EXPECT_TRUE(SymEngine::eq(*child2->assignments().at(sym2), *sym1)); // Not propagated
 }
 
 /**
@@ -528,8 +536,8 @@ TEST(SymbolPropagationTest, Negative_RhsUsesLhs) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::add(sym1, symbolic::integer(1))}}); // i = i + 1
-    auto& block2 = builder.add_block(root, {{sym2, sym1}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::add(sym1, symbolic::integer(1))}}); // i = i + 1
+    auto& block2 = builder.add_assignments(root, {{sym2, sym1}});
 
     auto sdfg = builder.move();
 
@@ -542,8 +550,8 @@ TEST(SymbolPropagationTest, Negative_RhsUsesLhs) {
 
     // Check result - should not propagate when RHS uses LHS
     EXPECT_FALSE(modified);
-    auto child2 = sdfg->root().at(1);
-    EXPECT_TRUE(SymEngine::eq(*child2.second.assignments().at(sym2), *sym1)); // Not propagated
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
+    EXPECT_TRUE(SymEngine::eq(*child2->assignments().at(sym2), *sym1)); // Not propagated
 }
 
 /**
@@ -566,12 +574,12 @@ TEST(SymbolPropagationTest, Negative_WriteDominatesRead) {
     auto& if_else = builder.add_if_else(root);
 
     auto& case1 = builder.add_case(if_else, symbolic::Lt(sym3, symbolic::integer(10)));
-    auto& block1 = builder.add_block(case1, {{sym1, symbolic::integer(5)}});
+    auto& block1 = builder.add_assignments(case1, {{sym1, symbolic::integer(5)}});
 
     auto& case2 = builder.add_case(if_else, symbolic::Ge(sym3, symbolic::integer(10)));
-    auto& block2 = builder.add_block(case2); // No assignment to i
+    auto& block2 = builder.add_assignments(case2, {}); // No assignment to i
 
-    auto& block3 = builder.add_block(root, {{sym2, sym1}}); // Read i, but not dominated
+    auto& block3 = builder.add_assignments(root, {{sym2, sym1}}); // Read i, but not dominated
 
     auto sdfg = builder.move();
 
@@ -584,8 +592,8 @@ TEST(SymbolPropagationTest, Negative_WriteDominatesRead) {
 
     // Check result - should not propagate when not dominated
     // The assignment might still be present, but not propagated to block3
-    auto child3 = sdfg->root().at(1);
-    EXPECT_TRUE(SymEngine::eq(*child3.second.assignments().at(sym2), *sym1)); // Not propagated
+    auto child3 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
+    EXPECT_TRUE(SymEngine::eq(*child3->assignments().at(sym2), *sym1)); // Not propagated
 }
 
 /**
@@ -607,9 +615,9 @@ TEST(SymbolPropagationTest, Negative_ReversePropagationMultipleUses) {
     auto sym3 = symbolic::symbol("k");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symN}});
-    auto& block2 = builder.add_block(root, {{sym2, sym1}}); // First use
-    auto& block3 = builder.add_block(root, {{sym3, sym1}}); // Second use
+    auto& block1 = builder.add_assignments(root, {{sym1, symN}});
+    auto& block2 = builder.add_assignments(root, {{sym2, sym1}}); // First use
+    auto& block3 = builder.add_assignments(root, {{sym3, sym1}}); // Second use
 
     auto sdfg = builder.move();
 
@@ -622,11 +630,11 @@ TEST(SymbolPropagationTest, Negative_ReversePropagationMultipleUses) {
 
     // Check result - forward propagation should work, but verify
     EXPECT_TRUE(modified);
-    auto child2 = sdfg->root().at(1);
-    auto child3 = sdfg->root().at(2);
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
+    auto child3 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(2));
     // Both should be propagated to N
-    EXPECT_TRUE(SymEngine::eq(*child2.second.assignments().at(sym2), *symN));
-    EXPECT_TRUE(SymEngine::eq(*child3.second.assignments().at(sym3), *symN));
+    EXPECT_TRUE(SymEngine::eq(*child2->assignments().at(sym2), *symN));
+    EXPECT_TRUE(SymEngine::eq(*child3->assignments().at(sym3), *symN));
 }
 
 // ========== Additional Comprehensive Tests ==========
@@ -646,8 +654,8 @@ TEST(SymbolPropagationTest, ExpressionSimplification) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::integer(5)}});
-    auto& block2 = builder.add_block(root, {{sym2, symbolic::add(sym1, symbolic::integer(3))}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::integer(5)}});
+    auto& block2 = builder.add_assignments(root, {{sym2, symbolic::add(sym1, symbolic::integer(3))}});
 
     auto sdfg = builder.move();
 
@@ -660,9 +668,9 @@ TEST(SymbolPropagationTest, ExpressionSimplification) {
 
     // Check result - should simplify to 5 + 3 = 8
     EXPECT_TRUE(modified);
-    auto child2 = sdfg->root().at(1);
-    EXPECT_EQ(child2.second.assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*child2.second.assignments().at(sym2), *symbolic::integer(8)));
+    auto child2 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(1));
+    EXPECT_EQ(child2->assignments().size(), 1);
+    EXPECT_TRUE(SymEngine::eq(*child2->assignments().at(sym2), *symbolic::integer(8)));
 }
 
 /**
@@ -682,9 +690,9 @@ TEST(SymbolPropagationTest, MultiLevelPropagation) {
     auto sym3 = symbolic::symbol("k");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::integer(5)}});
-    auto& block2 = builder.add_block(root, {{sym2, sym1}});
-    auto& block3 = builder.add_block(root, {{sym3, sym2}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::integer(5)}});
+    auto& block2 = builder.add_assignments(root, {{sym2, sym1}});
+    auto& block3 = builder.add_assignments(root, {{sym3, sym2}});
 
     auto sdfg = builder.move();
 
@@ -702,8 +710,8 @@ TEST(SymbolPropagationTest, MultiLevelPropagation) {
     sdfg = builder_opt.move();
 
     // Check result - after multiple iterations, k should be 5
-    auto child3 = sdfg->root().at(2);
-    EXPECT_TRUE(SymEngine::eq(*child3.second.assignments().at(sym3), *symbolic::integer(5)));
+    auto child3 = dyn_cast<AssignmentBlock*>(&sdfg->root().at(2));
+    EXPECT_TRUE(SymEngine::eq(*child3->assignments().at(sym3), *symbolic::integer(5)));
 }
 
 /**
@@ -721,8 +729,8 @@ TEST(SymbolPropagationTest, ReturnValueWhenModified) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::integer(0)}});
-    auto& block2 = builder.add_block(root, {{sym2, sym1}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::integer(0)}});
+    auto& block2 = builder.add_assignments(root, {{sym2, sym1}});
 
     auto sdfg = builder.move();
 
@@ -749,7 +757,7 @@ TEST(SymbolPropagationTest, ReturnValueWhenUnmodified) {
     auto sym1 = symbolic::symbol("i");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::integer(0)}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::integer(0)}});
 
     auto sdfg = builder.move();
 
@@ -780,8 +788,8 @@ TEST(SymbolPropagationTest, ComplexMemletPropagation) {
     auto sym2 = symbolic::symbol("j");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::integer(5)}});
-    auto& block2 = builder.add_block(root, {{sym2, symbolic::integer(10)}});
+    auto& block1 = builder.add_assignments(root, {{sym1, symbolic::integer(5)}});
+    auto& block2 = builder.add_assignments(root, {{sym2, symbolic::integer(10)}});
     auto& block3 = builder.add_block(root);
     auto& output_node = builder.add_access(block3, "A");
     auto& one_node = builder.add_constant(block3, "1", desc);

@@ -463,7 +463,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 
         // Emit: barrier → cooperative copy loop → barrier → main loop
         // 1. Barrier before copy
-        auto& barrier_block1 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
+        auto& barrier_block1 = builder.add_block_before(*parent, loop_, loop_.debug_info());
         builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block1, {});
 
         // 2. Cooperative copy: for (idx = coop_flat; idx < varying_flat_size; idx += total_coop_threads)
@@ -480,7 +480,6 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
             coop_flat,
             symbolic::add(idx_var, total_coop_threads),
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             loop_.debug_info()
         );
 
@@ -520,7 +519,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         builder.add_computational_memlet(copy_block, copy_tasklet, "_out", copy_dst, copy_dst_subset, buffer_type);
 
         // 3. Barrier after copy
-        auto& barrier_block2 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
+        auto& barrier_block2 = builder.add_block_before(*parent, loop_, loop_.debug_info());
         builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block2, {});
     } else {
         // ============================================================
@@ -534,7 +533,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         int copy_index = parent->index(loop_);
         assert(copy_index >= 0);
         structured_control_flow::Sequence* copy_scope =
-            &builder.add_sequence_before(*parent, loop_, {}, loop_.debug_info());
+            &builder.add_sequence_before(*parent, loop_, loop_.debug_info());
         structured_control_flow::Sequence* current_scope = copy_scope;
 
         for (size_t i = 0; i < varying_dims.size(); i++) {
@@ -556,7 +555,6 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 loop_.debug_info()
             );
             current_scope = &copy_loop.root();
@@ -683,7 +681,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
             }
         } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
             for (size_t i = 0; i < seq->size(); i++) {
-                rewrite_accesses(seq->at(i).first);
+                rewrite_accesses(seq->at(i));
             }
         } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
             rewrite_accesses(loop->root());

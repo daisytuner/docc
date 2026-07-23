@@ -557,7 +557,7 @@ LogicalResult translateArithSelectOp(SDFGTranslator& translator, arith::SelectOp
 
     if (is_sdfg_primitive(condition.getType()) && is_sdfg_primitive(true_value.getType()) &&
         is_sdfg_primitive(false_value.getType()) && is_sdfg_primitive(result.getType())) {
-        auto& if_else = builder.add_if_else(translator.insertion_point(), {}, deb_info);
+        auto& if_else = builder.add_if_else(translator.insertion_point(), deb_info);
         auto& true_case = builder.add_case(
             if_else,
             ::sdfg::symbolic::Eq(::sdfg::symbolic::symbol(condition_container), ::sdfg::symbolic::__true__()),

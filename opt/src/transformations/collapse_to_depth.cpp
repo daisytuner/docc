@@ -22,7 +22,7 @@ static size_t perfectly_nested_map_depth(structured_control_flow::Map& map) {
         if (body.size() != 1) {
             break;
         }
-        auto* next = dyn_cast<structured_control_flow::Map*>(&body.at(0).first);
+        auto* next = dyn_cast<structured_control_flow::Map*>(&body.at(0));
         if (!next) {
             break;
         }
@@ -83,7 +83,7 @@ bool CollapseToDepth::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     if (inner_count >= 2) {
         auto* inner_start = &loop_;
         for (size_t i = 0; i < outer_count; ++i) {
-            inner_start = dyn_cast<structured_control_flow::Map*>(&inner_start->root().at(0).first);
+            inner_start = dyn_cast<structured_control_flow::Map*>(&inner_start->root().at(0));
         }
         MapCollapse t_inner(*inner_start, inner_count);
         if (!t_inner.can_be_applied(builder, analysis_manager)) {
@@ -130,7 +130,7 @@ void CollapseToDepth::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         if (inner_count >= 2) {
             auto* inner_start = &loop_;
             for (size_t i = 0; i < outer_count; ++i) {
-                inner_start = dyn_cast<structured_control_flow::Map*>(&inner_start->root().at(0).first);
+                inner_start = dyn_cast<structured_control_flow::Map*>(&inner_start->root().at(0));
             }
             MapCollapse t_inner(*inner_start, inner_count);
             t_inner.apply(builder, analysis_manager);
@@ -139,7 +139,7 @@ void CollapseToDepth::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             // inner half is a single map, no collapse needed — find it
             auto* m = &loop_;
             for (size_t i = 0; i < outer_count; ++i) {
-                m = dyn_cast<structured_control_flow::Map*>(&m->root().at(0).first);
+                m = dyn_cast<structured_control_flow::Map*>(&m->root().at(0));
             }
             inner_loop_ = m;
         }

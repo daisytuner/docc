@@ -19,7 +19,7 @@ std::string TenstorrentTransform::name() const { return "TenstorrentTransform"; 
 void TenstorrentTransform::setup_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) {
     auto& sdfg = builder.subject();
 
-    auto& block = builder.add_block_before(sdfg.root(), global_alloc_block, {}, {});
+    auto& block = builder.add_block_before(sdfg.root(), global_alloc_block, {});
 }
 
 void TenstorrentTransform::teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) {}
@@ -39,10 +39,7 @@ bool has_no_nested_loops(const structured_control_flow::ControlFlowNode& root) {
             // }
         } else if (auto sequence = dynamic_cast<const structured_control_flow::Sequence*>(node)) {
             for (size_t i = 0; i < sequence->size(); i++) {
-                if (sequence->at(i).second.assignments().size() > 0) {
-                    return false;
-                }
-                queue.push_back(&sequence->at(i).first);
+                queue.push_back(&sequence->at(i));
             }
         } else {
             return false;
@@ -311,7 +308,7 @@ void TenstorrentTransform::apply_plan(
                                                                                    // loops type
 
     allocate_locals_on_device_stack(builder, analysis_manager, plan->locals_);
-    auto& outer_map = dyn_cast<structured_control_flow::Map&>(parent_scope.at(outer_map_idx).first);
+    auto& outer_map = dyn_cast<structured_control_flow::Map&>(parent_scope.at(outer_map_idx));
 
     builder.subject().type(outer_map.indvar()->get_name()).storage_type() = local_device_storage_type();
     if (report_) report_->transform_applied(this);

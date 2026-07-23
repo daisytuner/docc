@@ -441,7 +441,7 @@ void KernelLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis
 
     auto parent = loop_.get_parent();
     auto parent_seq = static_cast<structured_control_flow::Sequence*>(parent);
-    auto& seq = builder.add_sequence_before(*parent_seq, loop_, {}, loop_.debug_info());
+    auto& seq = builder.add_sequence_before(*parent_seq, loop_, loop_.debug_info());
 
     // 1. Add new shared memory container
     auto& type_analysis = analysis_manager.get<analysis::TypeAnalysis>();

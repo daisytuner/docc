@@ -44,7 +44,7 @@ TEST(LoopUnitStrideTest, BasicPositiveStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -70,14 +70,14 @@ TEST(LoopUnitStrideTest, BasicPositiveStride) {
 
     // Verify assignment was added
     ASSERT_EQ(loop->root().size(), 2); // new block + original block
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
-    ASSERT_EQ(transition.assignments().size(), 1);
+    auto assgns = dyn_cast<AssignmentBlock*>(&loop->root().at(0));
+    ASSERT_TRUE(assgns);
+    ASSERT_EQ(assgns->assignments().size(), 1);
 
     // Assignment: __i_orig__ = 0 + 2 * i = 2 * i
     auto strided_var = symbolic::symbol(unit_stride.strided_container_name());
-    ASSERT_TRUE(transition.assignments().count(strided_var) > 0);
-    auto assigned_value = transition.assignments().at(strided_var);
+    ASSERT_TRUE(assgns->assignments().count(strided_var) > 0);
+    auto assigned_value = assgns->assignments().at(strided_var);
     auto expected = symbolic::mul(symbolic::integer(2), symbolic::symbol("i"));
     EXPECT_TRUE(symbolic::eq(assigned_value, expected));
 }
@@ -116,7 +116,7 @@ TEST(LoopUnitStrideTest, SymbolicBoundPositiveStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -138,10 +138,10 @@ TEST(LoopUnitStrideTest, SymbolicBoundPositiveStride) {
     EXPECT_TRUE(symbolic::eq(loop->condition(), expected_cond));
 
     // Assignment: __i_orig__ = 0 + 4 * i = 4 * i
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
+    auto assgns = dyn_cast<AssignmentBlock*>(&loop->root().at(0));
+    ASSERT_TRUE(assgns);
     auto strided_var = symbolic::symbol(unit_stride.strided_container_name());
-    auto assigned_value = transition.assignments().at(strided_var);
+    auto assigned_value = assgns->assignments().at(strided_var);
     auto expected = symbolic::mul(symbolic::integer(4), symbolic::symbol("i"));
     EXPECT_TRUE(symbolic::eq(assigned_value, expected));
 }
@@ -179,7 +179,7 @@ TEST(LoopUnitStrideTest, CannotApplyNonZeroInit) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Cannot apply to non-zero init - need LoopShift first
@@ -223,7 +223,7 @@ TEST(LoopUnitStrideTest, NegativeStridePreservesDirection) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -248,10 +248,10 @@ TEST(LoopUnitStrideTest, NegativeStridePreservesDirection) {
 
     // Assignment: __i_orig__ = 2 * i (using absolute value)
     // When i' = 0, -1, -2, -3, -4, we get __i_orig__ = 0, -2, -4, -6, -8
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
+    auto assgns = dyn_cast<AssignmentBlock*>(&loop->root().at(0));
+    ASSERT_TRUE(assgns);
     auto strided_var = symbolic::symbol(unit_stride.strided_container_name());
-    auto assigned_value = transition.assignments().at(strided_var);
+    auto assigned_value = assgns->assignments().at(strided_var);
     EXPECT_TRUE(symbolic::eq(assigned_value, strided_expr));
 }
 
@@ -288,7 +288,7 @@ TEST(LoopUnitStrideTest, PositiveStridePreservesDirection) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -304,10 +304,10 @@ TEST(LoopUnitStrideTest, PositiveStridePreservesDirection) {
 
     // When i' = 0, 1, 2, 3, we get __i_orig__ = 0, 3, 6, 9
     auto strided_expr = symbolic::mul(symbolic::integer(3), symbolic::symbol("i"));
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
+    auto assgns = dyn_cast<AssignmentBlock*>(&loop->root().at(0));
+    ASSERT_TRUE(assgns);
     auto strided_var = symbolic::symbol(unit_stride.strided_container_name());
-    auto assigned_value = transition.assignments().at(strided_var);
+    auto assigned_value = assgns->assignments().at(strided_var);
     EXPECT_TRUE(symbolic::eq(assigned_value, strided_expr));
 }
 
@@ -344,7 +344,7 @@ TEST(LoopUnitStrideTest, CannotApplyUnitStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Cannot apply to unit stride
@@ -385,7 +385,7 @@ TEST(LoopUnitStrideTest, CannotApplyNegativeUnitStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Cannot apply to stride = -1 (use LoopRotate instead)
@@ -427,7 +427,7 @@ TEST(LoopUnitStrideTest, MapLoop) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -478,7 +478,7 @@ TEST(LoopUnitStrideTest, JsonRoundTrip) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Create transformation and serialize
@@ -527,7 +527,7 @@ TEST(LoopUnitStrideTest, LargeStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -541,10 +541,10 @@ TEST(LoopUnitStrideTest, LargeStride) {
     EXPECT_TRUE(symbolic::eq(loop->condition(), expected_cond));
 
     // Assignment: __i_orig__ = 64 * i
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
+    auto assgns = dyn_cast<AssignmentBlock*>(&loop->root().at(0));
+    ASSERT_TRUE(assgns);
     auto strided_var = symbolic::symbol(unit_stride.strided_container_name());
-    auto assigned_value = transition.assignments().at(strided_var);
+    auto assigned_value = assgns->assignments().at(strided_var);
     auto expected = symbolic::mul(symbolic::integer(64), symbolic::symbol("i"));
     EXPECT_TRUE(symbolic::eq(assigned_value, expected));
 }
@@ -588,7 +588,7 @@ TEST(LoopUnitStrideTest, IndvarFinalValueAfterLoop) {
     auto& sdfg_root = builder2.subject().root();
     ASSERT_EQ(sdfg_root.size(), 1); // Just the loop
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopUnitStride
@@ -600,18 +600,15 @@ TEST(LoopUnitStrideTest, IndvarFinalValueAfterLoop) {
     ASSERT_EQ(sdfg_root.size(), 2);
 
     // Verify the second element is a block (reconstruction)
-    auto* post_loop_block = dyn_cast<structured_control_flow::Block*>(&sdfg_root.at(1).first);
-    ASSERT_NE(post_loop_block, nullptr);
-
+    auto* post_loop_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&sdfg_root.at(1));
     // Check the reconstruction block's transition contains the reconstruction assignment
-    // (add_block_after puts assignments in the new block's transition)
-    auto& post_loop_transition = sdfg_root.at(1).second;
-    ASSERT_EQ(post_loop_transition.assignments().size(), 1);
+    ASSERT_TRUE(post_loop_block);
+    ASSERT_EQ(post_loop_block->assignments().size(), 1);
 
     // Assignment should be: i = 2 * i
     auto indvar = symbolic::symbol("i");
-    ASSERT_TRUE(post_loop_transition.assignments().count(indvar) > 0);
-    auto reconstruction = post_loop_transition.assignments().at(indvar);
+    ASSERT_TRUE(post_loop_block->assignments().count(indvar) > 0);
+    auto reconstruction = post_loop_block->assignments().at(indvar);
     auto expected = symbolic::mul(symbolic::integer(2), indvar);
     EXPECT_TRUE(symbolic::eq(reconstruction, expected));
 }

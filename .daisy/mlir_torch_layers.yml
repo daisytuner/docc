@@ -60,187 +60,145 @@ steps:
   run:
 
     # layer batchnorm
-
-    batchnorm_torch:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --torch
+    batchnorm:
       energy: true
       measurements: 3
-    batchnorm_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=none
-      energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
-    batchnorm_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=sequential
-      energy: true
-      env:
-        DOCC_CI: true
-        DOCC_REUSE_BINARIES: 1
-    batchnorm_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
-    batchnorm_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+      variants:
+        torch:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --torch
+          tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
+        # none:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=none
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        # sequential:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=sequential
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        openmp:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: float }
+        cuda:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/batchnorm.py --device docc --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: float }
 
     # layer conv2d
-
-    conv2d_torch:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --torch
+    conv2d:
       energy: true
       measurements: 3
-    # conv2d_run_none:
-    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=none
-    #   energy: true
-    #   env:
-    #     DOCC_CI: regions
-    #     DOCC_REUSE_BINARIES: 1
-    # conv2d_run_sequential:
-    #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=sequential
-    #   energy: true
-    #   env:
-    #     DOCC_CI: regions
-    #     DOCC_REUSE_BINARIES: 1
-    conv2d_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=openmp
-      energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
-    conv2d_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+      variants:
+        torch:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --torch
+          tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
+        # none:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=none
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        # sequential:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=sequential
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        openmp:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: float }
+        cuda:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/conv2d.py --device docc --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: float }
 
     # layer linear
-
-    linear_torch:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --torch
+    linear:
       energy: true
       measurements: 3
-    linear_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=none
-      energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
-    linear_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=sequential
-      energy: true
-      env:
-        DOCC_CI: true
-        DOCC_REUSE_BINARIES: 1
-    linear_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
-    linear_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+      variants:
+        torch:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --torch
+          tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
+        # none:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=none
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        # sequential:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=sequential
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        openmp:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: float }
+        cuda:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/linear.py --device docc --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: float }
 
     # layer matmul
-
-    matmul_torch:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --torch
+    matmul:
       energy: true
       measurements: 3
-    matmul_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=none
-      energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
-    matmul_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=sequential
-      energy: true
-      env:
-        DOCC_CI: true
-        DOCC_REUSE_BINARIES: 1
-    matmul_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
-    matmul_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+      variants:
+        torch:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --torch
+          tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
+        # none:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=none
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        # sequential:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=sequential
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        openmp:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: float }
+        cuda:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/matmul.py --device docc --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: float }
 
     # layer pooling
-
-    pooling_torch:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --torch
+    pooling:
       energy: true
       measurements: 3
-    pooling_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=none
-      energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
-    pooling_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=sequential
-      energy: true
-      env:
-        DOCC_CI: true
-        DOCC_REUSE_BINARIES: 1
-    pooling_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
-    pooling_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+      variants:
+        torch:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --torch
+          tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
+        # none:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=none
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        # sequential:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=sequential
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        openmp:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: float }
+        cuda:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/pooling.py --device docc --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: float }
 
     # layer relu
-
-    relu_torch:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --torch
+    relu:
       energy: true
       measurements: 3
-    relu_run_none:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=none
-      energy: true
       env:
         DOCC_CI: regions
         DOCC_REUSE_BINARIES: 1
-    relu_run_sequential:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=sequential
-      energy: true
-      env:
-        DOCC_CI: true
-        DOCC_REUSE_BINARIES: 1
-    relu_run_openmp:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=openmp
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
-    relu_run_cuda:
-      command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=cuda
-      energy: true
-      env:
-        DOCC_CI: regions
-        DOCC_REUSE_BINARIES: 1
+      variants:
+        torch:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --torch
+          tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
+        # none:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=none
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        # sequential:
+        #   command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=sequential
+        #   tags: { framework: docc, device: cpu, model: sequential, precision: float }
+        openmp:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: float }
+        cuda:
+          command: venv/bin/python3 mlir/benchmarks/torch/layers/relu.py --device docc --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: float }

@@ -3,6 +3,61 @@ import torch.nn as nn
 
 from tests import check
 
+# --- argwhere ---
+
+
+def test_argwhere_simple(target: str) -> None:
+    class ArgwhereSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.argwhere(input)
+
+    check(ArgwhereSimpleNet(), torch.tensor([1, 0, 1]), target=target)
+
+
+def test_argwhere_bigger(target: str) -> None:
+    class ArgwhereBiggerNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.argwhere(input)
+
+    check(ArgwhereBiggerNet(), torch.tensor([[1, 0, 1], [0, 1, 1]]), target=target)
+
+
+# --- cat ---
+
+
+def test_cat_simple(target: str) -> None:
+    class CatSimpleNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.cat((input1, input2), 0)
+
+    check(CatSimpleNet(), *(torch.randn(2, 3), torch.randn(2, 3)), target=target)
+
+
+def test_cat_dim_1(target: str) -> None:
+    class CatDim1Net(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.cat((input1, input2), 1)
+
+    check(CatDim1Net(), *(torch.randn(2, 3), torch.randn(2, 3)), target=target)
+
+
+def test_cat_dim_neg1(target: str) -> None:
+    class CatDimNeg1Net(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.cat((input1, input2), -1)
+
+    check(CatDimNeg1Net(), *(torch.randn(2, 3), torch.randn(2, 3)), target=target)
+
+
+def test_cat_many(target: str) -> None:
+    class CatManyNet(nn.Module):
+        def forward(self, inputs: tuple[torch.Tensor, ...]) -> torch.Tensor:
+            return torch.cat(inputs, 0)
+
+    x = torch.randn(2, 3)
+    check(CatManyNet(), (x, x, x, x, x, x, x, x, x, x), target=target)
+
+
 # --- permute ---
 
 

@@ -69,9 +69,9 @@ TEST(LoopSkewingTest, Map_2D_Basic) {
 
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0));
     EXPECT_TRUE(outer_loop != nullptr);
-    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0));
     EXPECT_TRUE(inner_loop != nullptr);
 
     // Verify that both loops still use their original induction variables
@@ -81,7 +81,7 @@ TEST(LoopSkewingTest, Map_2D_Basic) {
     // Verify structure
     EXPECT_EQ(outer_loop->root().size(), 1);
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_EQ(&inner_loop->root().at(0).first, &block);
+    EXPECT_EQ(&inner_loop->root().at(0), &block);
 }
 
 TEST(LoopSkewingTest, DependentLoops_ShouldFail) {
@@ -384,12 +384,12 @@ TEST(LoopSkewingTest, VerifyBoundsAdjustment) {
     // Verify the transformation succeeded
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0));
     EXPECT_TRUE(outer_loop != nullptr);
 
     // Verify inner loop exists
     EXPECT_EQ(outer_loop->root().size(), 1);
-    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0));
     EXPECT_TRUE(inner_loop != nullptr);
 
     // Verify outer loop is unchanged
@@ -468,11 +468,11 @@ TEST(LoopSkewingTest, InnerLoopFor_ShouldPass) {
     // Verify structure
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto* outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto* outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0));
     EXPECT_NE(outer_loop, nullptr);
 
     EXPECT_EQ(outer_loop->root().size(), 1);
-    auto* inner_loop = dyn_cast<structured_control_flow::For*>(&outer_loop->root().at(0).first);
+    auto* inner_loop = dyn_cast<structured_control_flow::For*>(&outer_loop->root().at(0));
     EXPECT_NE(inner_loop, nullptr);
 
     // Verify inner loop init now depends on outer indvar
@@ -548,11 +548,11 @@ TEST(LoopSkewingTest, SkewFactorTwo) {
     // Verify the transformation
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0));
     EXPECT_TRUE(outer_loop != nullptr);
 
     EXPECT_EQ(outer_loop->root().size(), 1);
-    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0));
     EXPECT_TRUE(inner_loop != nullptr);
 
     // Verify init uses outer loop indvar
@@ -623,11 +623,11 @@ TEST(LoopSkewingTest, BothLoopsMaps) {
     // Verify both loops still exist and are Maps
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0).first);
+    auto outer_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(0));
     EXPECT_TRUE(outer_loop != nullptr);
 
     EXPECT_EQ(outer_loop->root().size(), 1);
-    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0).first);
+    auto inner_loop = dyn_cast<structured_control_flow::Map*>(&outer_loop->root().at(0));
     EXPECT_TRUE(inner_loop != nullptr);
 }
 
@@ -693,11 +693,11 @@ TEST(LoopSkewingTest, ForFor_Basic) {
     // Verify structure — both loops remain For
     auto& new_sdfg = builder.subject();
     EXPECT_EQ(new_sdfg.root().size(), 1);
-    auto* outer_loop = dyn_cast<structured_control_flow::For*>(&new_sdfg.root().at(0).first);
+    auto* outer_loop = dyn_cast<structured_control_flow::For*>(&new_sdfg.root().at(0));
     EXPECT_NE(outer_loop, nullptr);
 
     EXPECT_EQ(outer_loop->root().size(), 1);
-    auto* inner_loop = dyn_cast<structured_control_flow::For*>(&outer_loop->root().at(0).first);
+    auto* inner_loop = dyn_cast<structured_control_flow::For*>(&outer_loop->root().at(0));
     EXPECT_NE(inner_loop, nullptr);
 
     // Verify outer loop is unchanged
@@ -710,5 +710,5 @@ TEST(LoopSkewingTest, ForFor_Basic) {
 
     // Verify body preserved
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_EQ(&inner_loop->root().at(0).first, &block);
+    EXPECT_EQ(&inner_loop->root().at(0), &block);
 }

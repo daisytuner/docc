@@ -13,12 +13,7 @@ BlockFusion::BlockFusion(
 )
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), ignore_libnodes_(ignore_libnodes) {}
 
-bool BlockFusion::can_be_applied(
-    data_flow::DataFlowGraph& first_graph,
-    control_flow::Assignments& first_assignments,
-    data_flow::DataFlowGraph& second_graph,
-    control_flow::Assignments& second_assignments
-) {
+bool BlockFusion::can_be_applied(data_flow::DataFlowGraph& first_graph, data_flow::DataFlowGraph& second_graph) {
     // Criterion: No side-effect nodes
     std::unordered_set<std::string> first_write_symbols;
     for (auto& node : first_graph.nodes()) {
@@ -83,11 +78,6 @@ bool BlockFusion::can_be_applied(
                 return false;
             }
         }
-    }
-
-    // Criterion: Transition must be empty
-    if (!first_assignments.empty()) {
-        return false;
     }
 
     // Criterion: Keep references and dereference in separate blocks
@@ -160,19 +150,9 @@ bool BlockFusion::can_be_applied(
     return true;
 };
 
-void BlockFusion::apply(
-    structured_control_flow::Block& first_block,
-    control_flow::Assignments& first_assignments,
-    structured_control_flow::Block& second_block,
-    control_flow::Assignments& second_assignments
-) {
+void BlockFusion::apply(structured_control_flow::Block& first_block, structured_control_flow::Block& second_block) {
     data_flow::DataFlowGraph& first_graph = first_block.dataflow();
     data_flow::DataFlowGraph& second_graph = second_block.dataflow();
-
-    // Update symbols
-    for (auto& entry : second_assignments) {
-        first_assignments[entry.first] = entry.second;
-    }
 
     // Collect nodes to connect to
     auto pdoms = first_graph.post_dominators();
@@ -236,27 +216,22 @@ bool BlockFusion::accept(structured_control_flow::Sequence& node) {
     // Traverse node to find pairs of blocks
     size_t i = 0;
     while (i < (node.size() - 1)) {
-        auto current_entry = node.at(i);
-        if (dyn_cast<structured_control_flow::Block*>(&current_entry.first) == nullptr) {
+        auto& current_entry = node.at(i);
+        if (dyn_cast<structured_control_flow::Block*>(&current_entry) == nullptr) {
             i++;
             continue;
         }
-        auto current_block = static_cast<structured_control_flow::Block*>(&current_entry.first);
+        auto current_block = static_cast<structured_control_flow::Block*>(&current_entry);
 
-        auto next_entry = node.at(i + 1);
-        if (dyn_cast<structured_control_flow::Block*>(&next_entry.first) == nullptr) {
+        auto& next_entry = node.at(i + 1);
+        if (dyn_cast<structured_control_flow::Block*>(&next_entry) == nullptr) {
             i++;
             continue;
         }
-        auto next_block = static_cast<structured_control_flow::Block*>(&next_entry.first);
+        auto next_block = static_cast<structured_control_flow::Block*>(&next_entry);
 
-        if (this->can_be_applied(
-                current_block->dataflow(),
-                current_entry.second.assignments(),
-                next_block->dataflow(),
-                next_entry.second.assignments()
-            )) {
-            this->apply(*current_block, current_entry.second.assignments(), *next_block, next_entry.second.assignments());
+        if (this->can_be_applied(current_block->dataflow(), next_block->dataflow())) {
+            this->apply(*current_block, *next_block);
             builder_.remove_child(node, i + 1);
             applied = true;
 

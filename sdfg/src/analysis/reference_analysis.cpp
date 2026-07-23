@@ -313,18 +313,18 @@ void ReferenceAnalysis::visit_sequence(
     std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
 ) {
     for (size_t i = 0; i < sequence.size(); i++) {
-        auto child = sequence.at(i);
-        if (auto block = dyn_cast<structured_control_flow::Block*>(&child.first)) {
+        auto& child = sequence.at(i);
+        if (auto block = dyn_cast<structured_control_flow::Block*>(&child)) {
             visit_block(users, *block, undefined, open_definitions, closed_definitions);
-        } else if (auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child.first)) {
+        } else if (auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
             visit_for(users, *for_loop, undefined, open_definitions, closed_definitions);
-        } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&child.first)) {
+        } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&child)) {
             visit_if_else(users, *if_else, undefined, open_definitions, closed_definitions);
-        } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(&child.first)) {
+        } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(&child)) {
             visit_while(users, *while_loop, undefined, open_definitions, closed_definitions);
-        } else if (auto return_statement = dyn_cast<structured_control_flow::Return*>(&child.first)) {
+        } else if (auto return_statement = dyn_cast<structured_control_flow::Return*>(&child)) {
             visit_return(users, *return_statement, undefined, open_definitions, closed_definitions);
-        } else if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&child.first)) {
+        } else if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&child)) {
             visit_sequence(users, *sequence, undefined, open_definitions, closed_definitions);
         }
     }

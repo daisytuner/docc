@@ -305,7 +305,7 @@ PatternHandler::MatchResult MapFusionHandler::fuse_contents(
     } else {
         // there currently is no way to prepend-copy with replace, so add to new sequence,
         // replace on it, then flatten it into the existing
-        append_root = &state_.builder.add_sequence_before(target_root, target_root.at(0).first, {}, {});
+        append_root = &state_.builder.add_sequence_before(target_root, target_root.at(0), {});
     }
 
     std::optional<std::unordered_map<const ControlFlowNode*, const ControlFlowNode*>> copy_mapping;
@@ -641,7 +641,7 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
     size_t i = 0;
     structured_control_flow::ControlFlowNode* override_last = nullptr;
     while (i < node.size()) {
-        auto& child_node = node.at(i).first;
+        auto& child_node = node.at(i);
         auto* first = dyn_cast<structured_control_flow::Map*>(&child_node);
         if (!first) {
             i++;
@@ -656,7 +656,7 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
         Map* second = nullptr;
 
         if (i + 1 < node.size()) {
-            second = dyn_cast<structured_control_flow::Map*>(&node.at(i + 1).first);
+            second = dyn_cast<structured_control_flow::Map*>(&node.at(i + 1));
             if (second) {
                 if (second->root().size() == 0) {
                     i++;
@@ -678,7 +678,7 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
                     continue;
                 }
             } else if (i + 2 < node.size()) {
-                auto* mid_block = dyn_cast<structured_control_flow::Block*>(&node.at(i + 1).first);
+                auto* mid_block = dyn_cast<structured_control_flow::Block*>(&node.at(i + 1));
                 bool skippable = false;
                 std::unordered_set<std::string> skipped_containers;
                 if (mid_block) {
@@ -694,7 +694,7 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
                     }
                 }
                 if (skippable) {
-                    second = dyn_cast<structured_control_flow::Map*>(&node.at(i + 2).first);
+                    second = dyn_cast<structured_control_flow::Map*>(&node.at(i + 2));
                     if (second) {
                         if (second->root().size() == 0) {
                             i += 2;

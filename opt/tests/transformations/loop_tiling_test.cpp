@@ -54,16 +54,16 @@ TEST(LoopTilingTest, For_Integer) {
     EXPECT_NO_THROW(transformation.outer_loop());
 
     EXPECT_EQ(sdfg.root().size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0).first) != nullptr);
-    auto& loop = static_cast<structured_control_flow::For&>(sdfg.root().at(0).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0)) != nullptr);
+    auto& loop = static_cast<structured_control_flow::For&>(sdfg.root().at(0));
 
     EXPECT_EQ(loop.root().size(), 1);
     EXPECT_EQ(loop.indvar()->get_name(), "i_tile0");
     EXPECT_EQ(builder.subject().exists("i_tile0"), true);
     EXPECT_TRUE(symbolic::eq(loop.update(), symbolic::add(loop.indvar(), symbolic::integer(4))));
 
-    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&loop.root().at(0).first) != nullptr);
-    auto inner_loop = static_cast<structured_control_flow::For*>(&loop.root().at(0).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&loop.root().at(0)) != nullptr);
+    auto inner_loop = static_cast<structured_control_flow::For*>(&loop.root().at(0));
     EXPECT_EQ(inner_loop, &orig_loop);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
     EXPECT_TRUE(symbolic::eq(inner_loop->init(), loop.indvar()));
@@ -75,7 +75,7 @@ TEST(LoopTilingTest, For_Integer) {
     EXPECT_TRUE(symbolic::eq(inner_loop->update(), symbolic::add(inner_loop->indvar(), symbolic::integer(1))));
 
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_TRUE(&inner_loop->root().at(0).first == &block);
+    EXPECT_TRUE(&inner_loop->root().at(0) == &block);
 }
 
 TEST(LoopTilingTest, For_Symbolic) {
@@ -124,16 +124,16 @@ TEST(LoopTilingTest, For_Symbolic) {
     EXPECT_NO_THROW(transformation.outer_loop());
 
     EXPECT_EQ(sdfg.root().size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0).first) != nullptr);
-    auto& loop = static_cast<structured_control_flow::For&>(sdfg.root().at(0).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0)) != nullptr);
+    auto& loop = static_cast<structured_control_flow::For&>(sdfg.root().at(0));
 
     EXPECT_EQ(loop.root().size(), 1);
     EXPECT_EQ(loop.indvar()->get_name(), "i_tile0");
     EXPECT_EQ(builder.subject().exists("i_tile0"), true);
     EXPECT_TRUE(symbolic::eq(loop.update(), symbolic::add(loop.indvar(), symbolic::integer(32))));
 
-    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&loop.root().at(0).first) != nullptr);
-    auto inner_loop = static_cast<structured_control_flow::For*>(&loop.root().at(0).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&loop.root().at(0)) != nullptr);
+    auto inner_loop = static_cast<structured_control_flow::For*>(&loop.root().at(0));
     EXPECT_EQ(inner_loop, &orig_loop);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
     EXPECT_TRUE(symbolic::eq(inner_loop->init(), loop.indvar()));
@@ -145,7 +145,7 @@ TEST(LoopTilingTest, For_Symbolic) {
     EXPECT_TRUE(symbolic::eq(inner_loop->update(), symbolic::add(inner_loop->indvar(), symbolic::integer(1))));
 
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_TRUE(&inner_loop->root().at(0).first == &block);
+    EXPECT_TRUE(&inner_loop->root().at(0) == &block);
 }
 
 TEST(LoopTilingTest, For_WithTransition) {
@@ -172,8 +172,9 @@ TEST(LoopTilingTest, For_WithTransition) {
     auto condition = symbolic::Lt(indvar, bound);
     auto update = symbolic::add(indvar, symbolic::integer(1));
 
-    auto& orig_loop = builder.add_for(root, indvar, condition, init, update, {{indvar, symbolic::zero()}});
+    auto& orig_loop = builder.add_for(root, indvar, condition, init, update);
     auto& body = orig_loop.root();
+    builder.add_assignments(root, {{indvar, symbolic::zero()}});
 
     // Add computation
     auto& block = builder.add_block(body);
@@ -193,19 +194,21 @@ TEST(LoopTilingTest, For_WithTransition) {
     EXPECT_NO_THROW(transformation.inner_loop());
     EXPECT_NO_THROW(transformation.outer_loop());
 
-    EXPECT_EQ(sdfg.root().size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0).first) != nullptr);
-    auto& loop = static_cast<structured_control_flow::For&>(sdfg.root().at(0).first);
-    EXPECT_EQ(sdfg.root().at(0).second.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(sdfg.root().at(0).second.assignments().at(indvar), symbolic::zero()));
+    EXPECT_EQ(sdfg.root().size(), 2);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&sdfg.root().at(0)) != nullptr);
+    auto& loop = static_cast<structured_control_flow::For&>(sdfg.root().at(0));
+    auto assignments = dyn_cast<AssignmentBlock*>(&sdfg.root().at(1));
+    ASSERT_TRUE(assignments);
+    EXPECT_EQ(assignments->assignments().size(), 1);
+    EXPECT_TRUE(symbolic::eq(assignments->assignments().at(indvar), symbolic::zero()));
 
     EXPECT_EQ(loop.root().size(), 1);
     EXPECT_EQ(loop.indvar()->get_name(), "i_tile0");
     EXPECT_EQ(builder.subject().exists("i_tile0"), true);
     EXPECT_TRUE(symbolic::eq(loop.update(), symbolic::add(loop.indvar(), symbolic::integer(32))));
 
-    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&loop.root().at(0).first) != nullptr);
-    auto inner_loop = static_cast<structured_control_flow::For*>(&loop.root().at(0).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::For*>(&loop.root().at(0)) != nullptr);
+    auto inner_loop = static_cast<structured_control_flow::For*>(&loop.root().at(0));
     EXPECT_EQ(inner_loop, &orig_loop);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
     EXPECT_TRUE(symbolic::eq(inner_loop->init(), loop.indvar()));
@@ -217,7 +220,7 @@ TEST(LoopTilingTest, For_WithTransition) {
     EXPECT_TRUE(symbolic::eq(inner_loop->update(), symbolic::add(inner_loop->indvar(), symbolic::integer(1))));
 
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_TRUE(&inner_loop->root().at(0).first == &block);
+    EXPECT_TRUE(&inner_loop->root().at(0) == &block);
 }
 
 TEST(LoopTilingTest, Map_Symbolic) {
@@ -244,16 +247,11 @@ TEST(LoopTilingTest, Map_Symbolic) {
     auto condition = symbolic::Lt(indvar, bound);
     auto update = symbolic::add(indvar, symbolic::integer(1));
 
-    auto& orig_loop = builder.add_map(
-        root,
-        indvar,
-        condition,
-        init,
-        update,
-        structured_control_flow::ScheduleType_Sequential::create(),
-        {{indvar, symbolic::zero()}}
-    );
+    auto& orig_loop =
+        builder
+            .add_map(root, indvar, condition, init, update, structured_control_flow::ScheduleType_Sequential::create());
     auto& body = orig_loop.root();
+    builder.add_assignments(root, {{indvar, symbolic::zero()}});
 
     // Add computation
     auto& block = builder.add_block(body);
@@ -273,19 +271,21 @@ TEST(LoopTilingTest, Map_Symbolic) {
     EXPECT_NO_THROW(transformation.inner_loop());
     EXPECT_NO_THROW(transformation.outer_loop());
 
-    EXPECT_EQ(sdfg.root().size(), 1);
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&sdfg.root().at(0).first) != nullptr);
-    auto& loop = static_cast<structured_control_flow::Map&>(sdfg.root().at(0).first);
-    EXPECT_EQ(sdfg.root().at(0).second.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(sdfg.root().at(0).second.assignments().at(indvar), symbolic::zero()));
+    EXPECT_EQ(sdfg.root().size(), 2);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&sdfg.root().at(0)) != nullptr);
+    auto& loop = static_cast<structured_control_flow::Map&>(sdfg.root().at(0));
+    auto assignments = dyn_cast<AssignmentBlock*>(&sdfg.root().at(1));
+    ASSERT_TRUE(assignments);
+    EXPECT_EQ(assignments->assignments().size(), 1);
+    EXPECT_TRUE(symbolic::eq(assignments->assignments().at(indvar), symbolic::zero()));
 
     EXPECT_EQ(loop.root().size(), 1);
     EXPECT_EQ(loop.indvar()->get_name(), "i_tile0");
     EXPECT_EQ(builder.subject().exists("i_tile0"), true);
     EXPECT_TRUE(symbolic::eq(loop.update(), symbolic::add(loop.indvar(), symbolic::integer(32))));
 
-    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&loop.root().at(0).first) != nullptr);
-    auto inner_loop = static_cast<structured_control_flow::Map*>(&loop.root().at(0).first);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&loop.root().at(0)) != nullptr);
+    auto inner_loop = static_cast<structured_control_flow::Map*>(&loop.root().at(0));
     EXPECT_EQ(inner_loop, &orig_loop);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
     EXPECT_TRUE(symbolic::eq(inner_loop->init(), loop.indvar()));
@@ -297,7 +297,7 @@ TEST(LoopTilingTest, Map_Symbolic) {
     EXPECT_TRUE(symbolic::eq(inner_loop->update(), symbolic::add(inner_loop->indvar(), symbolic::integer(1))));
 
     EXPECT_EQ(inner_loop->root().size(), 1);
-    EXPECT_TRUE(&inner_loop->root().at(0).first == &block);
+    EXPECT_TRUE(&inner_loop->root().at(0) == &block);
 }
 
 TEST(LoopTilingTest, InvalidTileSize) {

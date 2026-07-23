@@ -22,10 +22,10 @@ bool PerfectLoopDistributionPass::can_be_applied(
     bool has_subloop = false;
     for (size_t i = 0; i < loop.root().size(); i++) {
         // skip blocks
-        if (dyn_cast<structured_control_flow::Block*>(&loop.root().at(i).first)) {
+        if (dyn_cast<structured_control_flow::Block*>(&loop.root().at(i))) {
             continue;
         }
-        if (dyn_cast<structured_control_flow::StructuredLoop*>(&loop.root().at(i).first)) {
+        if (dyn_cast<structured_control_flow::StructuredLoop*>(&loop.root().at(i))) {
             has_subloop = true;
             break;
         }

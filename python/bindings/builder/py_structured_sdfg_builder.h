@@ -117,9 +117,11 @@ public:
 
     void end_map();
 
-    void add_transition(
+    void add_assignments(
         const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
+
+    void add_empty_assignments(const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
 
     void add_assignment(
         const std::string& target, const std::string& value, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
@@ -322,6 +324,15 @@ public:
         const sdfg::types::Tensor& X_type,
         const std::string& Y,
         const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_concat_op(
+        const std::vector<std::string>& tensors,
+        const std::vector<const sdfg::types::Tensor*>& tensor_types,
+        const std::string& result,
+        const sdfg::types::Tensor& result_type,
+        long long dim,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 

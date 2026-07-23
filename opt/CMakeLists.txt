@@ -70,6 +70,7 @@ set(SOURCE_FILES
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/cuda/cuda.cpp
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
+    src/targets/cuda/math/tensor/concat_expander.cpp
     src/targets/cuda/math/tensor/conv_expander.cpp
     src/targets/cuda/math/tensor/fft_conv.cpp
     src/targets/cuda/math/tensor/softmax.cpp
@@ -86,6 +87,7 @@ set(SOURCE_FILES
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp
+    src/targets/rocm/math/tensor/concat_expander.cpp
     src/targets/rocm/math/tensor/conv_expander.cpp
     src/targets/rocm/plugin.cpp
     src/targets/rocm/rocm_data_offloading_node.cpp

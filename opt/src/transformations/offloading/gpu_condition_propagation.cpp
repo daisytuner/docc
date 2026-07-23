@@ -61,20 +61,20 @@ void GPUConditionPropagation::apply(builder::StructuredSDFGBuilder& builder, ana
 
         if (auto block_node = dyn_cast<structured_control_flow::Block*>(current_node)) {
             if (!barrier_finder.visit(block_node)) {
-                auto& if_else = builder.add_if_else_before(*parent_sequence, *block_node, {}, DebugInfo());
+                auto& if_else = builder.add_if_else_before(*parent_sequence, *block_node);
                 auto& branch = builder.add_case(if_else, map_.condition());
                 builder.move_child(*parent_sequence, parent_sequence->index(*block_node), branch);
             }
         } else if (auto seq_node = dyn_cast<structured_control_flow::Sequence*>(current_node)) {
             if (barrier_finder.visit(seq_node)) {
                 for (int i = 0; i < seq_node->size(); i++) {
-                    nodes_to_visit.push_back(&seq_node->at(i).first);
+                    nodes_to_visit.push_back(&seq_node->at(i));
                 }
             } else {
-                auto& if_else = builder.add_if_else_before(*parent_sequence, seq_node->at(0).first, {}, DebugInfo());
+                auto& if_else = builder.add_if_else_before(*parent_sequence, seq_node->at(0));
                 auto& branch = builder.add_case(if_else, map_.condition());
                 for (int i = 0; i < seq_node->size(); i++) {
-                    builder.move_child(*seq_node, seq_node->index(seq_node->at(0).first), branch);
+                    builder.move_child(*seq_node, seq_node->index(seq_node->at(0)), branch);
                 }
             }
         } else if (auto ifelse_node = dyn_cast<structured_control_flow::IfElse*>(current_node)) {
@@ -83,7 +83,7 @@ void GPUConditionPropagation::apply(builder::StructuredSDFGBuilder& builder, ana
                     nodes_to_visit.push_back(&ifelse_node->at(i).first);
                 }
             } else {
-                auto& if_else = builder.add_if_else_before(*parent_sequence, *ifelse_node, {}, DebugInfo());
+                auto& if_else = builder.add_if_else_before(*parent_sequence, *ifelse_node);
                 auto& branch = builder.add_case(if_else, map_.condition());
                 builder.move_child(*parent_sequence, parent_sequence->index(*ifelse_node), branch);
             }
@@ -91,7 +91,7 @@ void GPUConditionPropagation::apply(builder::StructuredSDFGBuilder& builder, ana
             if (barrier_finder.visit(for_node)) {
                 nodes_to_visit.push_back(&for_node->root());
             } else {
-                auto& if_else = builder.add_if_else_before(*parent_sequence, *for_node, {}, DebugInfo());
+                auto& if_else = builder.add_if_else_before(*parent_sequence, *for_node);
                 auto& branch = builder.add_case(if_else, map_.condition());
                 builder.move_child(*parent_sequence, parent_sequence->index(*for_node), branch);
             }
@@ -99,7 +99,7 @@ void GPUConditionPropagation::apply(builder::StructuredSDFGBuilder& builder, ana
             if (barrier_finder.visit(while_node)) {
                 nodes_to_visit.push_back(&while_node->root());
             } else {
-                auto& if_else = builder.add_if_else_before(*parent_sequence, *while_node, {}, DebugInfo());
+                auto& if_else = builder.add_if_else_before(*parent_sequence, *while_node);
                 auto& branch = builder.add_case(if_else, map_.condition());
                 builder.move_child(*parent_sequence, parent_sequence->index(*while_node), branch);
             }
@@ -107,7 +107,7 @@ void GPUConditionPropagation::apply(builder::StructuredSDFGBuilder& builder, ana
             if (barrier_finder.visit(map_node)) {
                 nodes_to_visit.push_back(&map_node->root());
             } else {
-                auto& if_else = builder.add_if_else_before(*parent_sequence, *map_node, {}, DebugInfo());
+                auto& if_else = builder.add_if_else_before(*parent_sequence, *map_node);
                 auto& branch = builder.add_case(if_else, map_.condition());
                 builder.move_child(*parent_sequence, parent_sequence->index(*map_node), branch);
             }

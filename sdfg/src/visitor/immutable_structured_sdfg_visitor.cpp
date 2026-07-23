@@ -15,10 +15,14 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
     }
 
     for (size_t i = 0; i < parent.size(); i++) {
-        auto& current = parent.at(i).first;
+        auto& current = parent.at(i);
 
         if (auto block_stmt = dyn_cast<structured_control_flow::Block*>(&current)) {
             if (this->accept(*block_stmt)) {
+                return true;
+            }
+        } else if (auto assignment_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&current)) {
+            if (this->accept(*assignment_block)) {
                 return true;
             }
         } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&current)) {
@@ -85,7 +89,9 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
     return false;
 };
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Block& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Block& node) { return false; }
+
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::AssignmentBlock& node) { return false; }
 
 bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Sequence& node) { return false; };
 

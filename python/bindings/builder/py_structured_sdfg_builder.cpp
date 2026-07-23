@@ -151,12 +151,12 @@ sdfg::structured_control_flow::Sequence& PyStructuredSDFGBuilder::current_sequen
 }
 
 void PyStructuredSDFGBuilder::add_return(const std::string& data, const sdfg::DebugInfo& debug_info) {
-    builder_.add_return(current_sequence(), data, {}, debug_info);
+    builder_.add_return(current_sequence(), data, debug_info);
 }
 
 void PyStructuredSDFGBuilder::
     add_constant_return(const std::string& value, const sdfg::types::IType& type, const sdfg::DebugInfo& debug_info) {
-    builder_.add_constant_return(current_sequence(), value, type, {}, debug_info);
+    builder_.add_constant_return(current_sequence(), value, type, debug_info);
 }
 
 sdfg::structured_control_flow::IfElse& PyStructuredSDFGBuilder::
@@ -169,7 +169,7 @@ sdfg::structured_control_flow::IfElse& PyStructuredSDFGBuilder::
         throw std::runtime_error("Condition must be a boolean expression: " + condition);
     }
 
-    auto& if_node = builder_.add_if_else(parent, {}, debug_info);
+    auto& if_node = builder_.add_if_else(parent, debug_info);
     auto& then_block = builder_.add_case(if_node, cond_bool, debug_info);
 
     scope_stack.push_back({&then_block, &if_node, 0});
@@ -203,7 +203,7 @@ void PyStructuredSDFGBuilder::end_if() {
 
 sdfg::structured_control_flow::While& PyStructuredSDFGBuilder::begin_while(const sdfg::DebugInfo& debug_info) {
     auto& parent = current_sequence();
-    auto& while_node = builder_.add_while(parent, {}, debug_info);
+    auto& while_node = builder_.add_while(parent, debug_info);
 
     auto& while_body = while_node.root();
 
@@ -214,12 +214,12 @@ sdfg::structured_control_flow::While& PyStructuredSDFGBuilder::begin_while(const
 
 void PyStructuredSDFGBuilder::add_break(const sdfg::DebugInfo& debug_info) {
     auto& parent = current_sequence();
-    builder_.add_break(parent, {}, debug_info);
+    builder_.add_break(parent, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_continue(const sdfg::DebugInfo& debug_info) {
     auto& parent = current_sequence();
-    builder_.add_continue(parent, {}, debug_info);
+    builder_.add_continue(parent, debug_info);
 }
 
 void PyStructuredSDFGBuilder::end_while() {
@@ -262,7 +262,7 @@ sdfg::structured_control_flow::For& PyStructuredSDFGBuilder::begin_for(
 
     auto update = SymEngine::add(var_sym, step_expr);
 
-    auto& for_node = builder_.add_for(parent, var_sym, condition, start_expr, update, {}, debug_info);
+    auto& for_node = builder_.add_for(parent, var_sym, condition, start_expr, update, debug_info);
 
     scope_stack.push_back({&for_node.root(), &for_node, 0});
 
@@ -316,7 +316,6 @@ sdfg::structured_control_flow::Map& PyStructuredSDFGBuilder::begin_map(
         start_expr,
         update,
         sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         debug_info
     );
 
@@ -335,13 +334,19 @@ void PyStructuredSDFGBuilder::end_map() {
 }
 
 void PyStructuredSDFGBuilder::
-    add_transition(const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info) {
+    add_assignments(const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info) {
     auto& parent = current_sequence();
 
     sdfg::symbolic::Symbol lhs_sym = SymEngine::rcp_dynamic_cast<const SymEngine::Symbol>(parse_and_expand(lhs));
     sdfg::symbolic::Expression rhs_sym = parse_and_expand(rhs);
 
-    builder_.add_block(parent, {{lhs_sym, rhs_sym}}, debug_info);
+    builder_.add_assignments(parent, {{lhs_sym, rhs_sym}}, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_empty_assignments(const sdfg::DebugInfo& debug_info) {
+    auto& parent = current_sequence();
+
+    builder_.add_assignments(parent, {}, debug_info);
 }
 
 void PyStructuredSDFGBuilder::
@@ -815,8 +820,8 @@ Block& PyStructuredSDFGBuilder::insert_block_at_root_start(const sdfg::DebugInfo
     }
 
     // Get first child and insert before it
-    auto& first_child = root.at(0).first;
-    return builder_.add_block_before(root, first_child, {}, debug_info);
+    auto& first_child = root.at(0);
+    return builder_.add_block_before(root, first_child, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_gemm(
@@ -1468,6 +1473,45 @@ void PyStructuredSDFGBuilder::add_copy_op(
             .add_library_node<sdfg::math::tensor::TensorCopyNode>(block, debug_info, X_type.layout(), Y_type.layout());
     builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_concat_op(
+    const std::vector<std::string>& tensors,
+    const std::vector<const sdfg::types::Tensor*>& tensor_types,
+    const std::string& result,
+    const sdfg::types::Tensor& result_type,
+    long long dim,
+    const sdfg::DebugInfo& debug_info
+) {
+    size_t num_inputs = tensors.size();
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    std::vector<sdfg::data_flow::AccessNode*> tensor_accesses;
+    tensor_accesses.reserve(num_inputs);
+    std::unordered_map<std::string, sdfg::data_flow::AccessNode*> tensor_access_map;
+    std::vector<std::string> inputs;
+    inputs.reserve(num_inputs);
+    std::vector<sdfg::math::tensor::TensorLayout> input_layouts;
+    input_layouts.reserve(num_inputs);
+    for (size_t i = 0; i < num_inputs; i++) {
+        const auto& tensor = tensors[i];
+        if (tensor_access_map.contains(tensor)) {
+            tensor_accesses.push_back(tensor_access_map.at(tensor));
+        } else {
+            auto& tensor_access = builder_.add_access(block, tensor, debug_info);
+            tensor_access_map.insert({tensor, &tensor_access});
+            tensor_accesses.push_back(&tensor_access);
+        }
+        inputs.push_back("X" + std::to_string(i));
+        input_layouts.push_back(tensor_types[i]->layout());
+    }
+    auto& result_access = builder_.add_access(block, result, debug_info);
+    auto& libnode = builder_.add_library_node<
+        sdfg::math::tensor::ConcatNode>(block, debug_info, "Y", result_type.layout(), inputs, input_layouts, dim);
+    for (size_t i = 0; i < num_inputs; i++) {
+        builder_
+            .add_computational_memlet(block, *tensor_accesses[i], libnode, inputs[i], {}, *tensor_types[i], debug_info);
+    }
+    builder_.add_computational_memlet(block, result_access, libnode, "Y", {}, result_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_reduce_op(
