@@ -35,11 +35,7 @@ bool CudaConcatExpander::expand_concat_separately(
         return false;
     }
     int parent_block_index = parent_sequence->index(*parent_block);
-    auto& new_sequence = builder.add_sequence_before(
-        *parent_sequence,
-        *parent_block,
-        parent_block->debug_info()
-    );
+    auto& new_sequence = builder.add_sequence_before(*parent_sequence, *parent_block, parent_block->debug_info());
 
     types::Scalar indvar_type(types::PrimitiveType::UInt64);
     size_t num_tensors = node.inputs().size() - 1;
