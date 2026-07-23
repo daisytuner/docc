@@ -8,5 +8,5 @@ scipy
 
 pytest
 coverage
-black==25.9.0
+black==26.3.1
 requests

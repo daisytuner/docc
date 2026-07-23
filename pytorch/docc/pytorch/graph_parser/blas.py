@@ -56,6 +56,7 @@ class MMParser(GraphParserModule):
 
 
 register_module("aten.mm.default", MMParser())
+register_module("aten.bmm.default", MMParser())
 
 
 class AddMMParser(GraphParserModule):

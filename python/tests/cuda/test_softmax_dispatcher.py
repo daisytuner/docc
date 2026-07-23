@@ -21,7 +21,6 @@ from docc.sdfg import (
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
 
-
 pytestmark = pytest.mark.cuda()
 
 
