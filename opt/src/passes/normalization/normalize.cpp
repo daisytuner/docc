@@ -4,7 +4,6 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/passes/dataflow/dead_data_elimination.h"
 #include "sdfg/passes/dataflow/tasklet_fusion.h"
-#include "sdfg/passes/map_fusion_by_domain_pass.h"
 #include "sdfg/passes/normalization/normalization.h"
 #include "sdfg/passes/redundant_load_elimination_pass.h"
 #include "sdfg/structured_sdfg.h"

@@ -372,6 +372,18 @@ std::unordered_set<sdfg::structured_control_flow::ControlFlowNode*> LoopAnalysis
     return desc;
 }
 
+std::vector<sdfg::structured_control_flow::ControlFlowNode*>::const_iterator LoopAnalysis::
+    get_loop_iterator(structured_control_flow::ControlFlowNode* loop) {
+    return loops_.begin() + this->loop_infos_.at(loop).local.loop_id;
+}
+
+std::vector<sdfg::structured_control_flow::ControlFlowNode*>::const_iterator LoopAnalysis::
+    get_subtree_end(structured_control_flow::ControlFlowNode* parent) {
+    auto last_child_idx = this->loop_infos_.at(parent).local.last_child_id;
+
+    return loops_.begin() + last_child_idx + 1;
+}
+
 void LoopAnalysis::dump_to_file(std::filesystem::path file) const {
     nlohmann::json arr;
     for (auto& loop : this->loops_) {

@@ -31,7 +31,8 @@ set(SOURCE_FILES
     src/passes/dot_expansion_pass.cpp
     src/passes/einsum.cpp
     src/passes/gemm_expansion_pass.cpp
-    src/passes/map_fusion_by_domain_pass.cpp
+    src/passes/map_fusion/map_fusion_by_access.cpp
+    src/passes/map_fusion/new_map_fusion_pass.cpp
     src/passes/normalization/loop_normal_form.cpp
     src/passes/normalization/map_fusion.cpp
     src/passes/normalization/normalize.cpp

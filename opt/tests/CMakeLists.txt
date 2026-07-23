@@ -16,6 +16,7 @@ set(TEST_FILES
     rocm/rocm_library_nodes_test.cpp
     cuda/cuda_library_nodes_test.cpp
     passes/einsum_test.cpp
+    passes/map_fusion/new_map_fusion_test.cpp
     passes/normalization/loop_normal_form_test.cpp
     passes/normalization/map_fusion_test.cpp
     passes/normalization/perfect_loop_distribution_test.cpp

@@ -1,11 +1,13 @@
 #pragma once
 
+#include "sdfg/passes/map_fusion/fusion_types.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/transformations/transformation.h"
+#include "sdfg/visitor/structured_sdfg_visitor.h"
 
 namespace sdfg {
 namespace transformations {
@@ -37,6 +39,7 @@ class MapFusion : public Transformation {
     // rejected. This lets the pipeline restrict hoisting to a single, final map-fusion run
     // so that loop distribution and earlier fusion runs do not fight each other.
     bool allow_init_hoist_ = true;
+    bool cons_into_prod_only_;
 
     enum class FusionDirection {
         None = 0,
@@ -44,13 +47,7 @@ class MapFusion : public Transformation {
         ConsumerIntoProducer,
     };
     FusionDirection direction_;
-
-    struct FusionCandidate {
-        std::string container;
-        data_flow::Subset consumer_subset;
-        std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> index_mappings;
-    };
-    std::vector<FusionCandidate> fusion_candidates_;
+    std::vector<passes::map_fusion::FusionRegCandidate> fusion_candidates_;
 
     // Resolved locations populated during can_be_applied()
     std::vector<structured_control_flow::StructuredLoop*> producer_loops_;
@@ -116,12 +113,14 @@ public:
      * @param second_loop The second loop (consumer, can be Map or For) to be fused
      * @param require_consecutive Whether the maps must be consecutive in the sequence for fusion to be applied
      * @param allow_init_hoist Whether Case 2 (init-into-reduction hoisting) may be applied
+     * @param cons_into_prod_only Ignore all cases of ProducerIntoConsumer
      */
     MapFusion(
         structured_control_flow::Map& first_map,
         structured_control_flow::StructuredLoop& second_loop,
         bool require_consecutive = true,
-        bool allow_init_hoist = true
+        bool allow_init_hoist = true,
+        bool cons_into_prod_only = false
     );
 
     /**
@@ -164,6 +163,50 @@ public:
      * @return The deserialized transformation
      */
     static MapFusion from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
+};
+
+class FusionConsumerSubsetVisitor : public visitor::ActualStructuredSDFGVisitor {
+    friend MapFusion;
+
+    std::unordered_map<std::string, const data_flow::Subset*>& target_containers_;
+    std::unordered_map<std::string, std::vector<data_flow::Subset>> unique_subsets_per_container_;
+
+protected:
+    bool abort() { return true; }
+
+public:
+    FusionConsumerSubsetVisitor(std::unordered_map<std::string, const data_flow::Subset*>& target_containers);
+
+    bool visit(sdfg::structured_control_flow::Block& block) override;
+
+    bool visit(sdfg::structured_control_flow::Sequence& node) override;
+
+    bool visit(IfElse& node) override;
+
+    const std::unordered_map<std::string, std::vector<data_flow::Subset>>& unique_subsets_per_container();
+};
+
+class FusionConsumerUpdateVisitor : public visitor::ActualStructuredSDFGVisitor {
+    friend MapFusion;
+
+    builder::StructuredSDFGBuilder& builder_;
+    const std::vector<passes::map_fusion::FusionRegCandidate>& fusion_candidates_;
+    const std::vector<std::string>& candidate_temps_;
+
+public:
+    FusionConsumerUpdateVisitor(
+        builder::StructuredSDFGBuilder& builder,
+        const std::vector<passes::map_fusion::FusionRegCandidate>& fusion_candidates,
+        const std::vector<std::string>& candidate_temps
+    );
+
+    bool dispatch_partial_sequence(Sequence& node, size_t first, size_t end);
+
+    bool visit(sdfg::structured_control_flow::Block& block) override;
+
+    bool visit(sdfg::structured_control_flow::Sequence& node) override;
+
+    bool visit(IfElse& node) override;
 };
 
 } // namespace transformations

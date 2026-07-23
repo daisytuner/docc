@@ -230,6 +230,15 @@ public:
     std::unordered_set<sdfg::structured_control_flow::ControlFlowNode*>
     descendants(sdfg::structured_control_flow::ControlFlowNode* loop) const;
 
+    std::vector<sdfg::structured_control_flow::ControlFlowNode*>::const_iterator
+    get_loop_iterator(structured_control_flow::ControlFlowNode* loop);
+    /**
+     * For a given loop, return the end-iterator of its subtree (the iterator after the last descendant loop)
+     * This is essentially an iterator on the loops_in_pre_order() list
+     */
+    std::vector<sdfg::structured_control_flow::ControlFlowNode*>::const_iterator
+    get_subtree_end(structured_control_flow::ControlFlowNode* loop);
+
     void dump_to_file(std::filesystem::path file) const;
 
     // update with changes

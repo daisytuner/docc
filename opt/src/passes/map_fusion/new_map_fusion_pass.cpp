@@ -1,4 +1,4 @@
-#include "sdfg/passes/map_fusion_by_domain_pass.h"
+#include "../../../include/sdfg/passes/map_fusion/new_map_fusion_pass.h"
 
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/base_user_visitor.h"
@@ -10,7 +10,7 @@
 #include "sdfg/visualizer/dot_visualizer.h"
 #include "symengine/subs.h"
 
-namespace sdfg::passes {
+namespace sdfg::passes::map_fusion {
 
 static const symbolic::Symbol lower_indvar_placeholder = symbolic::symbol("__lower_it");
 
@@ -129,15 +129,19 @@ public:
         symbolic::Expression expr
     ) override {}
 
-    void found_indirect_arg_access(
-        const std::string& container, const data_flow::Memlet& edge, LoopEntry* current, bool is_write
+    static void found_indirect_arg_access(
+        const std::string& container,
+        const data_flow::Memlet& edge,
+        const Block& block,
+        LoopEntry* current,
+        bool is_write
     ) {
         auto& cand = current->fusion_candidate;
         auto arg_it = cand.args.find(container);
         if (arg_it != cand.args.end()) {
             auto& fusion_arg = arg_it->second;
-            fusion_arg.local_access.merge_into(edge.subset(), false, nullptr);
-            fusion_arg.nested_access.merge_into(edge.subset(), false, nullptr);
+            fusion_arg.local_access.merge_into(const_cast<Block*>(&block), edge.subset(), false, is_write);
+            fusion_arg.nested_access.merge_into(const_cast<Block*>(&block), edge.subset(), false, is_write);
         }
     }
 
@@ -165,7 +169,7 @@ public:
     ) override {
         auto current = get_current_loop();
         if (current && edge.is_dst_pointed_to_write()) {
-            found_indirect_arg_access(container, edge, current, true);
+            found_indirect_arg_access(container, edge, block, current, true);
         }
     }
     void use_as_return_src(const std::string& container, const Return& ret) override {}
@@ -183,7 +187,7 @@ public:
         if (current && (edge.is_src_address_leak() || edge.is_src_pointed_to_address_leak(sdfg_.type(container)))) {
             current->fusion_candidate.aliasing_encountered();
         } else if (current && edge.is_src_pointed_to_read()) {
-            found_indirect_arg_access(container, edge, current, false);
+            found_indirect_arg_access(container, edge, block, current, false);
         }
     }
     void use_as_symbol_write(
@@ -191,7 +195,7 @@ public:
     ) override {}
 };
 
-FusionLoopCandidate* MapFusionByDomainPass::State::get_next_level_map_stack(FusionLoopCandidate& current) {
+FusionLoopCandidate* NewMapFusionPass::State::get_next_level_map_stack(FusionLoopCandidate& current) {
     auto& children = loop_analysis->children(current.loop);
     if (children.empty()) {
         return nullptr;
@@ -201,7 +205,7 @@ FusionLoopCandidate* MapFusionByDomainPass::State::get_next_level_map_stack(Fusi
     return fuse_candidates.at(next->element_id()).get();
 }
 
-FusionLoopCandidate* MapFusionByDomainPass::State::get_parent(FusionLoopCandidate& current) {
+FusionLoopCandidate* NewMapFusionPass::State::get_parent(FusionLoopCandidate& current) {
     auto* parent = loop_analysis->parent_loop(current.loop);
     if (!parent) {
         return nullptr;
@@ -214,7 +218,9 @@ FusionLoopCandidate* MapFusionByDomainPass::State::get_parent(FusionLoopCandidat
     }
 }
 
-bool MapFusionByDomainPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+uint32_t NewMapFusionPass::State::total_fused_count() const { return fused_by_domain_count + fused_by_access_count; }
+
+bool NewMapFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto loop_ana = std::make_unique<analysis::LoopAnalysis>(builder.subject());
     loop_ana->run(analysis_manager);
 
@@ -232,7 +238,7 @@ bool MapFusionByDomainPass::run_pass(builder::StructuredSDFGBuilder& builder, an
             if (indvar_boundaries && !indvar_boundaries->tight_lower_bound().is_null() &&
                 !indvar_boundaries->tight_upper_bound().is_null() && !indvar_boundaries->map().is_null()) {
                 auto& args = arguments_analysis.arguments(analysis_manager, *map);
-                auto cand = std::make_unique<FusionLoopCandidate>(map, indvar_boundaries);
+                auto cand = std::make_unique<FusionLoopCandidate>(map, indvar_boundaries, assumpts);
                 for (auto [name, arg] : args) {
                     cand->args.emplace(name, arg);
                 }
@@ -245,7 +251,7 @@ bool MapFusionByDomainPass::run_pass(builder::StructuredSDFGBuilder& builder, an
     indirect_access_finder.dispatch(builder.subject().root());
 
     const std::string* dir = nullptr;
-    if (dump_infos) {
+    if (dump_loop_infos) {
         dir = builder.subject().metadata_if_exists("output_dir");
         if (dir) {
             state.loop_analysis->dump_to_file(std::filesystem::path(*dir) / "loop_infos.pre-fusion.json");
@@ -261,10 +267,10 @@ bool MapFusionByDomainPass::run_pass(builder::StructuredSDFGBuilder& builder, an
         state.loop_analysis->dump_to_file(std::filesystem::path(*dir) / "loop_infos.post-fusion.json");
     }
 
-    return state.fused_count;
+    return state.total_fused_count();
 }
 
-const symbolic::Assumption* MapFusionByDomainPass::
+const symbolic::Assumption* NewMapFusionPass::
     find_indvar_boundaries(const symbolic::Symbol& indvar, const symbolic::Assumptions& assumptions) {
     auto it = assumptions.find(indvar);
     if (it != assumptions.end()) {
@@ -274,7 +280,7 @@ const symbolic::Assumption* MapFusionByDomainPass::
     return nullptr;
 }
 
-MapFusionHandler::MapFusionHandler(MapFusionByDomainPass::State& state) : state_(state) {}
+MapFusionHandler::MapFusionHandler(NewMapFusionPass::State& state) : state_(state) {}
 
 PatternHandler::MatchResult MapFusionHandler::fuse_contents(
     ControlFlowNode* first_top,
@@ -346,18 +352,60 @@ PatternHandler::MatchResult MapFusionHandler::fuse_contents(
         removed_first = true;
     }
 
-    state_.fused_count++;
+    if constexpr (NewMapFusionPass::dump_graphs) {
+        auto dir = state_.builder.subject().metadata_if_exists("output_dir");
+        if (dir) {
+            std::filesystem::path pdir = *dir;
+            visualizer::DotVisualizer::writeToFile(
+                state_.builder.subject(),
+                pdir / ("map_fusion_by_domain_pass_dump_" + std::to_string(state_.fused_by_domain_count++) + "_" +
+                        std::to_string(second_innermost->loop->element_id()) + ".dot")
+            );
+        }
+    }
 
-    static auto count = 0;
-    std::filesystem::path dir = state_.builder.subject().metadata("output_dir");
-    visualizer::DotVisualizer::writeToFile(
-        state_.builder.subject(),
-        dir /
-            ("map_fusion_by_domain_pass_dump_" + std::to_string(count++) + "_" + std::to_string(first_elem_id) + ".dot")
-    );
+    state_.fused_by_domain_count++;
 
     // if there are further loops inside the now fused body, visit those as well
     return {.removed_first = removed_first, .visit_second_body = keep_visiting_second};
+}
+
+analysis::LoopAnalysis& MapFusionHandler::get_loop_analysis() { return *state_.loop_analysis; }
+
+FusionLoopCandidate* MapFusionHandler::get_fuse_candidate(StructuredLoop& loop) {
+    return state_.fuse_candidates.at(loop.element_id()).get();
+}
+
+builder::StructuredSDFGBuilder& MapFusionHandler::builder() { return state_.builder; }
+
+void MapFusionHandler::update_copied_leaf_contents_from_first_to_second(const Plan& plan) {
+    auto first_top = &plan.first;
+
+    auto first_current = get_fuse_candidate(*plan.producer_loops_.back());
+    auto second_current = get_fuse_candidate(*plan.consumer_loops_.back());
+    auto& fusion_regs = plan.fusion_candidates_;
+
+    std::unordered_map<std::string, const map_fusion::FusionRegCandidate*> cand_map;
+    for (const auto& cand : fusion_regs) {
+        cand_map[cand.container] = &cand;
+    }
+
+    update_candidate_args_up(first_top, first_current, second_current, [&](auto& name, auto& source_arg, auto& target_args) {
+        auto cand_it = cand_map.find(name);
+        if (cand_it == cand_map.end()) {
+            auto it = target_args.find(name);
+            if (it != target_args.end()) {
+                auto& second_arg = it->second;
+                second_arg.local_access.merge_into(source_arg.local_access);
+                second_arg.nested_access.merge_into(source_arg.nested_access);
+                second_arg.arg.merge(source_arg.arg);
+            } else {
+                auto [it, fresh] = target_args.emplace(name, source_arg); // copy over
+            }
+        } else {
+            // was remapped
+        }
+    });
 }
 
 PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, bool no_uses_between) {
@@ -391,7 +439,7 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
     bool more_first = true;
     bool more_second = true;
     bool fusing_option = true;
-    bool data_fusible;
+
 
     // descend the map stacks down. Last level on which everything matches is the one we can fuse.
     // In case there are any further maps nested inside either one of the candidates, we then need to run verification
@@ -420,10 +468,8 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
             return {};
         }
         if (res.subset_mismatch) { // If subsets mismatch on any level, we cannot guarantee correctness without much
-                                   // more
-            // extensive checks, like done by the existing map_fusion
-            // Future work: let the previous map_fusion check if it can prove non-conflicting on a more granular level
-            return {};
+                                   // more checks, so fusion-by-domain is out
+            break;
         }
 
         if (fusing_option) {
@@ -441,7 +487,11 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
         }
     } while (more_first && more_second);
 
+    bool domains_match;
     if (last_matched_level >= 0) {
+        domains_match = last_matched_level == first_max_stack_depth && last_matched_level == second_max_stack_depth;
+        // we found a match for fusion-by-domain. In case their are nested loops we still need to verify they don't
+        // conflict as well
         auto nested_check = this->check_ins_outs(*first_current, *second_current, indvar_mapping, false);
 
         if (nested_check.no_conflicts && !nested_check.subset_mismatch) {
@@ -453,13 +503,28 @@ PatternHandler::MatchResult MapFusionHandler::match(Map& first, Map& second, boo
 
             auto& target_root = second_current->loop->root();
             return fuse_contents(&first, first_current, second_current, indvar_mapping, target_root, no_uses_between);
-        } else {
-            // loop domains matched, but some indirect accesses of fusion-args did not match exactly
-            // we can do more complex checks here
         }
+    } else {
+        domains_match = false;
     }
 
-    return {};
+    // we did not find an absolute blocker for fusing, but simple fusion by domain also did not work out, so try the
+    // fusion-by-access
+    return try_complex_fuse_producer_into_consumer(first, second, no_uses_between, domains_match);
+}
+
+PatternHandler::MatchResult MapFusionHandler::
+    try_complex_fuse_producer_into_consumer(Map& first, Map& second, bool no_uses_between, bool domains_match) {
+    auto first_cand = state_.fuse_candidates.at(first.element_id()).get();
+    auto second_cand = state_.fuse_candidates.at(second.element_id()).get();
+
+    auto outcome = try_fuse_by_access(*first_cand, *second_cand, domains_match);
+
+    if (outcome.fused) {
+        state_.fused_by_access_count++;
+    }
+
+    return outcome.pattern_result;
 }
 
 bool MapFusionHandler::
@@ -531,25 +596,45 @@ void MapFusionHandler::update_candidate_state(
     // merge metadata from first -> second
     update_child_candidate_states(first_current, canonical_indvars);
 
+    update_candidate_args_up(
+        first_top,
+        first_current,
+        second_current,
+        [&](const std::string& name, FusionArg& source_arg, std::unordered_map<std::string, FusionArg>& target_args) {
+            // skip the induction variable, we already know those match and they would not be useful to track for
+            // the next levels up
+            if (first_current->loop->indvar()->get_name() != name) {
+                auto it = target_args.find(name);
+                if (it != target_args.end()) {
+                    auto& second_arg = it->second;
+                    second_arg.local_access.merge_into(source_arg.local_access);
+                    second_arg.nested_access.merge_into(source_arg.nested_access);
+                    second_arg.arg.merge(source_arg.arg);
+                } else {
+                    auto [it, fresh] = target_args.emplace(name, source_arg); // copy over
+                }
+            }
+        }
+    );
+}
+
+void MapFusionHandler::update_candidate_args_up(
+    ControlFlowNode* first_top,
+    FusionLoopCandidate* first_current,
+    FusionLoopCandidate* second_current,
+    const std::function<
+        void(const std::string& name, FusionArg& source_arg, std::unordered_map<std::string, FusionArg>& target_args)>&
+        action
+) {
     auto terminate_at = state_.loop_analysis->parent_loop(first_top);
     do {
         auto& second_args = second_current->args;
         for (auto& [name, arg] : first_current->args) {
-            if (first_current->loop->indvar()->get_name() == name) {
-                // skip the induction variable, we already know those match and they would not be useful to track for
-                // the next levels up
-                continue;
-            }
-            auto it = second_args.find(name);
-            if (it != second_args.end()) {
-                auto& second_arg = it->second;
-                second_arg.local_access.merge_into(arg.local_access);
-                second_arg.nested_access.merge_into(arg.nested_access);
-                second_arg.arg.merge(arg.arg);
-            } else {
-                auto [it, fresh] = second_args.emplace(name, arg); // copy over
-            }
+            action(name, arg, second_args);
         }
+        // assumptions depend on loop and outer scopes, so they remain identical for the loop that is used as basis
+        // (that the other gets inlined into) for now we always inline into 2nd.
+
         first_current = state_.get_parent(*first_current);
         second_current = state_.get_parent(*second_current);
     } while (first_current && first_current->loop != terminate_at);
@@ -588,7 +673,7 @@ MapFusionHandler::InOutCheckResult MapFusionHandler::check_ins_outs(
                 overlap = true;
                 auto& prod_collected_accesses = local_not_nested ? prod_meta.local_access : prod_meta.nested_access;
                 auto& cons_collected_accesses = local_not_nested ? cons_meta.local_access : cons_meta.nested_access;
-                if (prod_collected_accesses.conflicts_with(cons_collected_accesses, canonical_indvars)) {
+                if (prod_collected_accesses.subset_conflicts_with(cons_collected_accesses, canonical_indvars)) {
                     return {false, overlap, true};
                 }
             }
@@ -608,6 +693,74 @@ void MapFusionHandler::update_fused_seq(Sequence& sequence, const symbolic::Expr
  * subset and mark it not_understood. Returns true if `into` was modified.
  */
 bool FusionArgCommonAccesses::merge_into(
+    Block* block,
+    const std::optional<data_flow::Subset>& subset,
+    bool not_understood,
+    bool write_not_read,
+    const symbolic::ExpressionMapping* lower_indvars
+) {
+    bool updated = merge_subset(subset, not_understood, lower_indvars);
+
+    if (write_not_read) {
+        updated |= wr_block.merge_into(block, false);
+    } else {
+        updated |= rd_block.merge_into(block, false);
+    }
+
+    return updated;
+}
+
+bool FusionArgCommonBlock::merge_into(Block* other_block, bool other_conflict) {
+    bool updated = false;
+
+    if (other_conflict && !this->block_conflict) {
+        this->block_conflict = true;
+        updated = true;
+    } else if (!this->block_conflict && this->common_block && other_block) {
+        if (this->common_block != other_block) {
+            this->block_conflict = true;
+            this->common_block = nullptr;
+            updated = true;
+        }
+    } else if (!this->block_conflict && !this->common_block && other_block) {
+        this->common_block = other_block;
+        updated = true;
+    }
+
+    return updated;
+}
+
+bool FusionArgCommonBlock::merge_into(const FusionArgCommonBlock& other) {
+    return merge_into(other.common_block, other.block_conflict);
+}
+
+bool FusionArgCommonAccesses::
+    merge_into(const FusionArgCommonAccesses& other, const symbolic::ExpressionMapping* lower_indvars) {
+    bool update = merge_subset(other.common_subset, other.subsets_conflict, lower_indvars);
+    update |= wr_block.merge_into(other.wr_block);
+    update |= rd_block.merge_into(other.rd_block);
+    return update;
+}
+
+bool FusionArgCommonAccesses::subset_conflicts_with(
+    const FusionArgCommonAccesses& other_common_acceses, symbolic::ExpressionMapping& canonical_indvars
+) const {
+    if (subsets_conflict || other_common_acceses.subsets_conflict) {
+        return true;
+    }
+
+    if (common_subset.has_value() && other_common_acceses.common_subset.has_value()) {
+        if (!symbolic::vectors_of_expressions_match(
+                common_subset.value(), other_common_acceses.common_subset.value(), canonical_indvars
+            )) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool FusionArgCommonAccesses::merge_subset(
     const std::optional<data_flow::Subset>& subset,
     bool not_understood,
     const symbolic::ExpressionMapping* lower_indvars
@@ -629,29 +782,6 @@ bool FusionArgCommonAccesses::merge_into(
         updated = true;
     }
     return updated;
-}
-
-bool FusionArgCommonAccesses::
-    merge_into(const FusionArgCommonAccesses& other, const symbolic::ExpressionMapping* lower_indvars) {
-    return merge_into(other.common_subset, other.subsets_conflict, lower_indvars);
-}
-
-bool FusionArgCommonAccesses::conflicts_with(
-    const FusionArgCommonAccesses& other_common_acceses, symbolic::ExpressionMapping& canonical_indvars
-) const {
-    if (subsets_conflict || other_common_acceses.subsets_conflict) {
-        return true;
-    }
-
-    if (common_subset.has_value() && other_common_acceses.common_subset.has_value()) {
-        if (!symbolic::vectors_of_expressions_match(
-                common_subset.value(), other_common_acceses.common_subset.value(), canonical_indvars
-            )) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 bool FusionArg::saw_access_locally() const {
@@ -783,4 +913,4 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
     return true;
 }
 
-} // namespace sdfg::passes
+} // namespace sdfg::passes::map_fusion

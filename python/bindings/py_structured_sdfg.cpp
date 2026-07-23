@@ -58,7 +58,7 @@
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/dataflow/tasklet_fusion.h"
-#include "sdfg/passes/map_fusion_by_domain_pass.h"
+#include "sdfg/passes/map_fusion/new_map_fusion_pass.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
@@ -338,7 +338,7 @@ void PyStructuredSDFG::simplify() {
         dump_debug("py3.1.pre-fusion");
 
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
-        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
+        sdfg::passes::map_fusion::NewMapFusionPass map_fusion_by_domain_pass;
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
 
         dump_debug("py3.2.post-fusion");

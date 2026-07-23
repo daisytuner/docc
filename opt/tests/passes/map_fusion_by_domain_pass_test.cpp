@@ -1,4 +1,4 @@
-#include "sdfg/passes/map_fusion_by_domain_pass.h"
+#include "sdfg/passes/map_fusion/new_map_fusion_pass.h"
 
 #include <gtest/gtest.h>
 
@@ -16,6 +16,7 @@
 
 using namespace sdfg;
 using namespace sdfg::passes;
+using namespace sdfg::passes::map_fusion;
 
 class MultiNestBuilder {
 public:
@@ -145,7 +146,7 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    MapFusionByDomainPass pass;
+    NewMapFusionPass pass;
     pass.run_pass(builder, analysis_manager);
 
     auto& loops2 = analysis_manager.get<analysis::LoopAnalysis>();
@@ -288,7 +289,7 @@ TEST(MapFusionByDomainTest, FindNonStackedNestedConflicts) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    MapFusionByDomainPass pass;
+    NewMapFusionPass pass;
     pass.run_pass(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.after");
@@ -361,7 +362,7 @@ TEST(MapFusionByDomainTest, DoNotFuseTransposedProducerConsumer) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    MapFusionByDomainPass pass;
+    NewMapFusionPass pass;
     pass.run_pass(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.after");
@@ -459,7 +460,7 @@ TEST(MapFusionByDomainTest, DoNotFuseTransposedSharedBand_Segformer) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    MapFusionByDomainPass pass;
+    NewMapFusionPass pass;
     pass.run_pass(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.after");
@@ -514,7 +515,7 @@ TEST(MapFusionByDomainTest, DoNotCauseIndvarReuse) {
 
     dump_sdfg(builder.subject(), "0.init");
 
-    MapFusionByDomainPass pass;
+    map_fusion::NewMapFusionPass pass;
     analysis::AnalysisManager ana(builder.subject());
     pass.run_pass(builder, ana);
 
