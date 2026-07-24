@@ -3,6 +3,45 @@ import torch.nn as nn
 
 from tests import check
 
+# --- new_full ---
+
+
+def test_new_full_simple(target: str) -> None:
+    class NewFullSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.new_full((3, 4), 3.141592)
+
+    check(
+        NewFullSimpleNet(),
+        torch.ones((2,)),
+        target=target,
+    )
+
+
+def test_new_full_dtype(target: str) -> None:
+    class NewFullDtypeNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.new_full((3, 4), 3.141592)
+
+    check(
+        NewFullDtypeNet(),
+        torch.ones((2,), dtype=torch.float64),
+        target=target,
+    )
+
+
+def test_new_full_dtype_change(target: str) -> None:
+    class NewFullDtypeChangeNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.new_full((3, 4), 3.141592, dtype=torch.float32)
+
+    check(
+        NewFullDtypeChangeNet(),
+        torch.ones((2,), dtype=torch.float64),
+        target=target,
+    )
+
+
 # --- clone ---
 
 
@@ -54,6 +93,17 @@ def test_expand_as_simple(target: str) -> None:
         *(torch.tensor([[1], [2], [3]]), torch.randn(3, 4)),
         target=target
     )
+
+
+# --- fill_ ---
+
+
+def test_fill__simple(target: str) -> None:
+    class Fill_SimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.fill_(3.141592)
+
+    check(Fill_SimpleNet(), torch.ones(2, 3), target=target)
 
 
 # --- softmax ---

@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import copy
 from math import isnan
@@ -13,8 +14,8 @@ def compare_shapes(res_shape: torch.Size, ref_shape: torch.Size) -> None:
 
 
 def compare(
-    res: None | int | float | torch.Tensor | tuple,
-    ref: None | int | float | torch.Tensor | tuple,
+    res: None | int | float | np.ndarray | torch.Tensor | tuple,
+    ref: None | int | float | np.ndarray | torch.Tensor | tuple,
     rtol: float = 1e-4,
     atol: float = 1e-5,
     equal_nan: bool = False,
@@ -30,6 +31,13 @@ def compare(
             assert equal_nan and isnan(res)
         else:
             assert abs(res - ref) <= atol + rtol * abs(ref)
+    elif type(res) == np.ndarray and type(ref) == np.ndarray:
+        assert res.dtype == ref.dtype
+        assert res.shape == ref.shape
+        if np.issubdtype(res.dtype, np.floating):
+            assert np.allclose(res, ref, rtol=rtol, atol=atol, equal_nan=equal_nan)
+        else:
+            assert np.all(res == ref)
     elif type(res) == torch.Tensor and type(ref) == torch.Tensor:
         assert res.dtype == ref.dtype
         compare_shapes(res.shape, ref.shape)
@@ -37,6 +45,9 @@ def compare(
             assert torch.allclose(res, ref, rtol=rtol, atol=atol, equal_nan=equal_nan)
         else:
             assert torch.all(res == ref)
+    elif type(res) == np.ndarray and type(ref) == torch.Tensor:
+        # Happens when there is a PyTorch model without inputs
+        compare(torch.from_numpy(res), ref, rtol=rtol, atol=atol, equal_nan=equal_nan)
     elif type(res) == tuple and type(ref) == tuple:
         assert len(res) == len(ref)
         for res_elem, ref_elem in zip(res, ref):

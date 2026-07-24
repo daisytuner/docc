@@ -367,6 +367,14 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_fill_op(
+        const std::string& X,
+        const sdfg::types::Scalar& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo& = sdfg::DebugInfo()
+    );
+
     void add_einsum(
         const std::vector<std::string>& inputs,
         const std::string& output,

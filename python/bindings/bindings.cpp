@@ -676,6 +676,15 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_fill_op",
+            &PyStructuredSDFGBuilder::add_fill_op,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_einsum",
             [](PyStructuredSDFGBuilder& self,
                const std::vector<std::string>& inputs,

@@ -10,6 +10,7 @@
 #include <symengine/logic.h>
 #include <symengine/real_double.h>
 #include "py_structured_sdfg.h"
+#include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
@@ -1601,6 +1602,26 @@ void PyStructuredSDFGBuilder::add_matmul_op(
         builder_.add_library_node<sdfg::math::tensor::MatMulNode>(block, debug_info, A_type.layout(), B_type.layout());
     builder_.add_computational_memlet(block, A_access, libnode, "A", {}, A_type, debug_info);
     builder_.add_computational_memlet(block, B_access, libnode, "B", {}, B_type, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_fill_op(
+    const std::string& X,
+    const sdfg::types::Scalar& X_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    sdfg::data_flow::AccessNode* X_access = nullptr;
+    if (builder_.subject().exists(X)) {
+        X_access = &builder_.add_access(block, X, debug_info);
+    } else {
+        X_access = &builder_.add_constant(block, X, X_type, debug_info);
+    }
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::FillNode>(block, debug_info, Y_type.shape());
+    builder_.add_computational_memlet(block, *X_access, libnode, "X", {}, X_type, debug_info);
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
 }
 
