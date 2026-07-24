@@ -178,26 +178,56 @@ __device__ float* %P%_stockhamRun(float* aR, float* aI, float* bR, float* bI,
     return pR;
 }
 
-__global__ void %P%_fftRows(float2* data, int total_rows, int N, const int* radices, int nrad,
-                            float sign, int doScale, int linesPerBlock) {
+// Forward real-to-complex FFT along the row width: real [total_rows x fftW] input
+// produces complex [total_rows x halfW] output (halfW = fftW/2+1). The redundant
+// upper half of each row's Hermitian spectrum is never materialised.
+__global__ void %P%_fftRowsR2C(float2* out, const float* in, int total_rows, int fftW, int halfW,
+                              const int* radices, int nrad, int linesPerBlock) {
     int line0 = blockIdx.x * linesPerBlock;
     int L = min(linesPerBlock, total_rows - line0);
     if (L <= 0) return;
     extern __shared__ float smem[];
-    float* aR = smem; float* aI = aR + L * N; float* bR = aI + L * N; float* bI = bR + L * N;
-    size_t g0 = (size_t)line0 * N;
-    for (int t = threadIdx.x; t < L * N; t += blockDim.x) {
-        int c = t / N, e = t - c * N;
-        float2 v = data[g0 + (size_t)c * N + e];
-        aR[e + c * N] = v.x; aI[e + c * N] = v.y;
+    float* aR = smem; float* aI = aR + L * fftW; float* bR = aI + L * fftW; float* bI = bR + L * fftW;
+    size_t g0 = (size_t)line0 * fftW;
+    for (int t = threadIdx.x; t < L * fftW; t += blockDim.x) {
+        int c = t / fftW, e = t - c * fftW;
+        aR[e + c * fftW] = in[g0 + (size_t)c * fftW + e]; aI[e + c * fftW] = 0.0f;
     }
     __syncthreads();
-    float* rR = %P%_stockhamRun(aR, aI, bR, bI, N, L, 1, N, radices, nrad, sign);
+    float* rR = %P%_stockhamRun(aR, aI, bR, bI, fftW, L, 1, fftW, radices, nrad, -1.0f);
     float* rI = (rR == aR) ? aI : bI;
-    float scale = doScale ? (1.0f / (float)N) : 1.0f;
-    for (int t = threadIdx.x; t < L * N; t += blockDim.x) {
-        int c = t / N, e = t - c * N;
-        data[g0 + (size_t)c * N + e] = make_float2(rR[e + c * N] * scale, rI[e + c * N] * scale);
+    for (int t = threadIdx.x; t < L * halfW; t += blockDim.x) {
+        int c = t / halfW, e = t - c * halfW;
+        out[(size_t)(line0 + c) * halfW + e] = make_float2(rR[e + c * fftW], rI[e + c * fftW]);
+    }
+}
+
+// Inverse complex-to-real FFT along the row width: complex [total_rows x halfW]
+// input produces real [total_rows x fftW] output, scaled by 1/fftW. The redundant
+// upper half of each row is rebuilt on the fly from conjugate symmetry at load time.
+__global__ void %P%_fftRowsC2R(float* out, const float2* in, int total_rows, int fftW, int halfW,
+                              const int* radices, int nrad, int linesPerBlock) {
+    int line0 = blockIdx.x * linesPerBlock;
+    int L = min(linesPerBlock, total_rows - line0);
+    if (L <= 0) return;
+    extern __shared__ float smem[];
+    float* aR = smem; float* aI = aR + L * fftW; float* bR = aI + L * fftW; float* bI = bR + L * fftW;
+    for (int t = threadIdx.x; t < L * fftW; t += blockDim.x) {
+        int c = t / fftW, e = t - c * fftW;
+        if (e < halfW) {
+            float2 v = in[(size_t)(line0 + c) * halfW + e];
+            aR[e + c * fftW] = v.x; aI[e + c * fftW] = v.y;
+        } else {
+            float2 v = in[(size_t)(line0 + c) * halfW + (fftW - e)];
+            aR[e + c * fftW] = v.x; aI[e + c * fftW] = -v.y;
+        }
+    }
+    __syncthreads();
+    float* rR = %P%_stockhamRun(aR, aI, bR, bI, fftW, L, 1, fftW, radices, nrad, 1.0f);
+    float scale = 1.0f / (float)fftW;
+    for (int t = threadIdx.x; t < L * fftW; t += blockDim.x) {
+        int c = t / fftW, e = t - c * fftW;
+        out[(size_t)(line0 + c) * fftW + e] = rR[e + c * fftW] * scale;
     }
 }
 
@@ -227,20 +257,21 @@ __global__ void %P%_fftCols(float2* data, int matrices, int rows, int cols, int 
     }
 }
 
-__global__ void %P%_complexMul(float2* a, const float2* b, int batch, int channels, int fftH, int fftW) {
+// Pointwise complex multiply over the half-width spectrum [., fftH, halfW]. Both
+// operands are stored half-width (R2C), so no full-width remapping is needed; the
+// kernel spectrum is broadcast across the batch (channel-indexed).
+__global__ void %P%_complexMul(float2* a, const float2* b, int batch, int channels, int fftH, int halfW) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int per = fftH * fftW;
+    int per = fftH * halfW;
     int total = batch * channels * per;
     if (idx >= total) return;
-    int matrix_idx = idx / per;
-    int rem = idx % per;
-    int channel_idx = matrix_idx % channels;
-    int w_idx = channel_idx * per + rem;
+    int channel_idx = (idx / per) % channels;
+    int w_idx = channel_idx * per + (idx % per);
     float2 x = a[idx]; float2 w = b[w_idx];
     a[idx] = make_float2(x.x * w.x - x.y * w.y, x.x * w.y + x.y * w.x);
 }
 
-__global__ void %P%_pad(float2* dst, const float* src, int batch, int channels, int inH, int inW,
+__global__ void %P%_pad(float* dst, const float* src, int batch, int channels, int inH, int inW,
                         int fftH, int fftW, int shiftH, int shiftW, int flip) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total = batch * channels * fftH * fftW;
@@ -255,10 +286,10 @@ __global__ void %P%_pad(float2* dst, const float* src, int batch, int channels, 
         if (flip) { sr = inH - 1 - sr; sw = inW - 1 - sw; }
         val = src[b * (channels * inH * inW) + c * (inH * inW) + sr * inW + sw];
     }
-    dst[idx] = make_float2(val, 0.0f);
+    dst[idx] = val;
 }
 
-__global__ void %P%_crop(float* dst, const float2* src, const float* bias,
+__global__ void %P%_crop(float* dst, const float* src, const float* bias,
                          int batch, int channels, int inH, int inW, int fftH, int fftW,
                          int shiftH, int shiftW, int hasBias) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -269,7 +300,7 @@ __global__ void %P%_crop(float* dst, const float2* src, const float* bias,
     int c = (idx / (inW * inH)) % channels;
     int b = idx / (inW * inH * channels);
     int srcIdx = b * (channels * fftH * fftW) + c * (fftH * fftW) + (r + shiftH) * fftW + (w + shiftW);
-    float v = src[srcIdx].x;
+    float v = src[srcIdx];
     if (hasBias) v += bias[c];
     dst[idx] = v;
 }
@@ -327,15 +358,17 @@ void emit_fft_conv(
 
     // Forward-declare the launched kernels in the header so the caller TU sees them.
     out.globals_stream << "__global__ void " << prefix
-                       << "_fftRows(float2*, int, int, const int*, int, float, int, int);" << std::endl;
+                       << "_fftRowsR2C(float2*, const float*, int, int, int, const int*, int, int);" << std::endl;
+    out.globals_stream << "__global__ void " << prefix
+                       << "_fftRowsC2R(float*, const float2*, int, int, int, const int*, int, int);" << std::endl;
     out.globals_stream << "__global__ void " << prefix
                        << "_fftCols(float2*, int, int, int, int, const int*, int, float, int, int);" << std::endl;
     out.globals_stream << "__global__ void " << prefix << "_complexMul(float2*, const float2*, int, int, int, int);"
                        << std::endl;
     out.globals_stream << "__global__ void " << prefix
-                       << "_pad(float2*, const float*, int, int, int, int, int, int, int, int, int);" << std::endl;
+                       << "_pad(float*, const float*, int, int, int, int, int, int, int, int, int);" << std::endl;
     out.globals_stream << "__global__ void " << prefix
-                       << "_crop(float*, const float2*, const float*, int, int, int, int, int, int, int, int, int);"
+                       << "_crop(float*, const float*, const float*, int, int, int, int, int, int, int, int, int);"
                        << std::endl;
 
     // Emit the kernel bodies into a per-node .cu snippet.
@@ -357,12 +390,17 @@ void emit_fft_conv(
       << std::endl;
     s << "const int __fc_Kh = " << Kh << ", __fc_Kw = " << Kw << ";" << std::endl;
     s << "const int __fc_fftH = " << fftH << ", __fc_fftW = " << fftW << ";" << std::endl;
+    // Real input => Hermitian spectrum; only the first fftW/2+1 columns are unique (R2C/C2R).
+    s << "const int __fc_halfW = __fc_fftW / 2 + 1;" << std::endl;
     // Operands are placed at the spectral origin (shift 0); the "same"-padding output
     // window is recovered by the crop offset below.
     s << "const int __fc_shiftH = 0, __fc_shiftW = 0;" << std::endl;
     s << "const int __fc_spatial = __fc_N * __fc_C * __fc_H * __fc_W;" << std::endl;
-    s << "const int __fc_fft_elems = __fc_N * __fc_C * __fc_fftH * __fc_fftW;" << std::endl;
-    s << "const int __fc_ker_elems = __fc_C * __fc_fftH * __fc_fftW;" << std::endl;
+    // Real padded buffers are full width; the complex spectra keep only halfW columns.
+    s << "const int __fc_pad_img_elems = __fc_N * __fc_C * __fc_fftH * __fc_fftW;" << std::endl;
+    s << "const int __fc_pad_ker_elems = __fc_C * __fc_fftH * __fc_fftW;" << std::endl;
+    s << "const int __fc_spec_img_elems = __fc_N * __fc_C * __fc_fftH * __fc_halfW;" << std::endl;
+    s << "const int __fc_spec_ker_elems = __fc_C * __fc_fftH * __fc_halfW;" << std::endl;
     s << "const int __fc_weight_elems = __fc_C * __fc_Kh * __fc_Kw;" << std::endl;
 
     // Radix tables.
@@ -381,6 +419,7 @@ void emit_fft_conv(
     if (with_transfers) {
         s << "float *__fc_dX, *__fc_dW, *__fc_dBias = nullptr, *__fc_dOut;" << std::endl;
     }
+    s << "float *__fc_dPadImg, *__fc_dPadKer;" << std::endl;
     s << "float2 *__fc_dImg, *__fc_dKer;" << std::endl;
     s << "int *__fc_dRadW, *__fc_dRadH;" << std::endl;
 
@@ -394,8 +433,10 @@ void emit_fft_conv(
         malloc_check("__fc_dW", "__fc_weight_elems * sizeof(float)", "float");
         malloc_check("__fc_dOut", "__fc_spatial * sizeof(float)", "float");
     }
-    malloc_check("__fc_dImg", "__fc_fft_elems * sizeof(float2)", "float2");
-    malloc_check("__fc_dKer", "__fc_ker_elems * sizeof(float2)", "float2");
+    malloc_check("__fc_dPadImg", "__fc_pad_img_elems * sizeof(float)", "float");
+    malloc_check("__fc_dPadKer", "__fc_pad_ker_elems * sizeof(float)", "float");
+    malloc_check("__fc_dImg", "__fc_spec_img_elems * sizeof(float2)", "float2");
+    malloc_check("__fc_dKer", "__fc_spec_ker_elems * sizeof(float2)", "float2");
     malloc_check("__fc_dRadW", "__fc_nRadW * sizeof(int)", "int");
     malloc_check("__fc_dRadH", "__fc_nRadH * sizeof(int)", "int");
     if (with_transfers && has_bias) {
@@ -429,7 +470,9 @@ void emit_fft_conv(
       << std::endl;
     s << "size_t __fc_colSmem = (size_t)4 * __fc_fftH * __fc_colTile * sizeof(float);" << std::endl;
     s << "cudaFuncSetAttribute(" << prefix
-      << "_fftRows, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)__fc_rowSmem);" << std::endl;
+      << "_fftRowsR2C, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)__fc_rowSmem);" << std::endl;
+    s << "cudaFuncSetAttribute(" << prefix
+      << "_fftRowsC2R, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)__fc_rowSmem);" << std::endl;
     s << "cudaFuncSetAttribute(" << prefix
       << "_fftCols, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)__fc_colSmem);" << std::endl;
 
@@ -437,46 +480,53 @@ void emit_fft_conv(
     s << "int __fc_ker_rows = __fc_C * __fc_fftH;" << std::endl;
     s << "int __fc_img_row_blocks = (__fc_img_rows + __fc_rowLines - 1) / __fc_rowLines;" << std::endl;
     s << "int __fc_ker_row_blocks = (__fc_ker_rows + __fc_rowLines - 1) / __fc_rowLines;" << std::endl;
-    s << "int __fc_colTilesFull = (__fc_fftW + __fc_colTile - 1) / __fc_colTile;" << std::endl;
-    s << "int __fc_img_col_blocks = __fc_N * __fc_C * __fc_colTilesFull;" << std::endl;
-    s << "int __fc_ker_col_blocks = __fc_C * __fc_colTilesFull;" << std::endl;
-    s << "int __fc_fft_blocks = (__fc_fft_elems + __fc_threads - 1) / __fc_threads;" << std::endl;
-    s << "int __fc_ker_pad_blocks = (__fc_ker_elems + __fc_threads - 1) / __fc_threads;" << std::endl;
+    s << "int __fc_colTilesHalf = (__fc_halfW + __fc_colTile - 1) / __fc_colTile;" << std::endl;
+    // Every pass after the forward R2C row transform operates on the half spectrum.
+    s << "int __fc_img_half_col_blocks = __fc_N * __fc_C * __fc_colTilesHalf;" << std::endl;
+    s << "int __fc_ker_half_col_blocks = __fc_C * __fc_colTilesHalf;" << std::endl;
+    s << "int __fc_mul_half_blocks = (__fc_spec_img_elems + __fc_threads - 1) / __fc_threads;" << std::endl;
+    s << "int __fc_img_pad_blocks = (__fc_pad_img_elems + __fc_threads - 1) / __fc_threads;" << std::endl;
+    s << "int __fc_ker_pad_blocks = (__fc_pad_ker_elems + __fc_threads - 1) / __fc_threads;" << std::endl;
     s << "int __fc_spatial_blocks = (__fc_spatial + __fc_threads - 1) / __fc_threads;" << std::endl;
 
-    // Weight FFT.
-    s << prefix << "_pad<<<__fc_ker_pad_blocks, __fc_threads>>>(__fc_dKer, " << dW << ", 1, __fc_C, __fc_Kh, __fc_Kw, "
+    // Weight FFT (pad+flip -> R2C rows -> half-width cols).
+    s << prefix << "_pad<<<__fc_ker_pad_blocks, __fc_threads>>>(__fc_dPadKer, " << dW
+      << ", 1, __fc_C, __fc_Kh, __fc_Kw, "
       << "__fc_fftH, __fc_fftW, __fc_shiftH, __fc_shiftW, 1);" << std::endl;
-    s << prefix << "_fftRows<<<__fc_ker_row_blocks, __fc_threads, __fc_rowSmem>>>(__fc_dKer, __fc_ker_rows, __fc_fftW, "
-      << "__fc_dRadW, __fc_nRadW, -1.0f, 0, __fc_rowLines);" << std::endl;
-    s << prefix << "_fftCols<<<__fc_ker_col_blocks, __fc_threads, __fc_colSmem>>>(__fc_dKer, __fc_C, __fc_fftH, "
-      << "__fc_fftW, __fc_fftW, __fc_dRadH, __fc_nRadH, -1.0f, 0, __fc_colTile);" << std::endl;
+    s << prefix
+      << "_fftRowsR2C<<<__fc_ker_row_blocks, __fc_threads, __fc_rowSmem>>>(__fc_dKer, __fc_dPadKer, __fc_ker_rows, "
+      << "__fc_fftW, __fc_halfW, __fc_dRadW, __fc_nRadW, __fc_rowLines);" << std::endl;
+    s << prefix << "_fftCols<<<__fc_ker_half_col_blocks, __fc_threads, __fc_colSmem>>>(__fc_dKer, __fc_C, __fc_fftH, "
+      << "__fc_halfW, __fc_halfW, __fc_dRadH, __fc_nRadH, -1.0f, 0, __fc_colTile);" << std::endl;
 
-    // Image FFT.
-    s << prefix << "_pad<<<__fc_fft_blocks, __fc_threads>>>(__fc_dImg, " << dX << ", __fc_N, __fc_C, __fc_H, __fc_W, "
+    // Image FFT (pad -> R2C rows -> half-width cols).
+    s << prefix << "_pad<<<__fc_img_pad_blocks, __fc_threads>>>(__fc_dPadImg, " << dX
+      << ", __fc_N, __fc_C, __fc_H, __fc_W, "
       << "__fc_fftH, __fc_fftW, __fc_shiftH, __fc_shiftW, 0);" << std::endl;
-    s << prefix << "_fftRows<<<__fc_img_row_blocks, __fc_threads, __fc_rowSmem>>>(__fc_dImg, __fc_img_rows, __fc_fftW, "
-      << "__fc_dRadW, __fc_nRadW, -1.0f, 0, __fc_rowLines);" << std::endl;
     s << prefix
-      << "_fftCols<<<__fc_img_col_blocks, __fc_threads, __fc_colSmem>>>(__fc_dImg, __fc_N * __fc_C, __fc_fftH, "
-      << "__fc_fftW, __fc_fftW, __fc_dRadH, __fc_nRadH, -1.0f, 0, __fc_colTile);" << std::endl;
-
-    // Pointwise complex multiply.
-    s << prefix << "_complexMul<<<__fc_fft_blocks, __fc_threads>>>(__fc_dImg, __fc_dKer, __fc_N, __fc_C, __fc_fftH, "
-      << "__fc_fftW);" << std::endl;
-
-    // Inverse FFT (cols then rows, scaled).
+      << "_fftRowsR2C<<<__fc_img_row_blocks, __fc_threads, __fc_rowSmem>>>(__fc_dImg, __fc_dPadImg, __fc_img_rows, "
+      << "__fc_fftW, __fc_halfW, __fc_dRadW, __fc_nRadW, __fc_rowLines);" << std::endl;
     s << prefix
-      << "_fftCols<<<__fc_img_col_blocks, __fc_threads, __fc_colSmem>>>(__fc_dImg, __fc_N * __fc_C, __fc_fftH, "
-      << "__fc_fftW, __fc_fftW, __fc_dRadH, __fc_nRadH, 1.0f, 1, __fc_colTile);" << std::endl;
-    s << prefix << "_fftRows<<<__fc_img_row_blocks, __fc_threads, __fc_rowSmem>>>(__fc_dImg, __fc_img_rows, __fc_fftW, "
-      << "__fc_dRadW, __fc_nRadW, 1.0f, 1, __fc_rowLines);" << std::endl;
+      << "_fftCols<<<__fc_img_half_col_blocks, __fc_threads, __fc_colSmem>>>(__fc_dImg, __fc_N * __fc_C, __fc_fftH, "
+      << "__fc_halfW, __fc_halfW, __fc_dRadH, __fc_nRadH, -1.0f, 0, __fc_colTile);" << std::endl;
+
+    // Pointwise complex multiply over the half spectrum.
+    s << prefix << "_complexMul<<<__fc_mul_half_blocks, __fc_threads>>>(__fc_dImg, __fc_dKer, __fc_N, __fc_C, "
+      << "__fc_fftH, __fc_halfW);" << std::endl;
+
+    // Inverse FFT: half-width cols, then C2R rows write the real result buffer.
+    s << prefix
+      << "_fftCols<<<__fc_img_half_col_blocks, __fc_threads, __fc_colSmem>>>(__fc_dImg, __fc_N * __fc_C, __fc_fftH, "
+      << "__fc_halfW, __fc_halfW, __fc_dRadH, __fc_nRadH, 1.0f, 1, __fc_colTile);" << std::endl;
+    s << prefix
+      << "_fftRowsC2R<<<__fc_img_row_blocks, __fc_threads, __fc_rowSmem>>>(__fc_dPadImg, __fc_dImg, __fc_img_rows, "
+      << "__fc_fftW, __fc_halfW, __fc_dRadW, __fc_nRadW, __fc_rowLines);" << std::endl;
 
     // Crop + bias. Cross-correlation (torch Conv2d): the kernel is flipped in the
     // spectral domain and both operands sit at the origin, so the valid "same"-padding
     // output window starts at (K - 1 - pad).
     s << "const int __fc_cropH = " << (Kh - 1 - pad_h) << ", __fc_cropW = " << (Kw - 1 - pad_w) << ";" << std::endl;
-    s << prefix << "_crop<<<__fc_spatial_blocks, __fc_threads>>>(" << dOut << ", __fc_dImg, " << dBias
+    s << prefix << "_crop<<<__fc_spatial_blocks, __fc_threads>>>(" << dOut << ", __fc_dPadImg, " << dBias
       << ", __fc_N, __fc_C, "
       << "__fc_H, __fc_W, __fc_fftH, __fc_fftW, __fc_cropH, __fc_cropW, " << (has_bias ? 1 : 0) << ");" << std::endl;
     check_cuda_kernel_launch_errors(s, lang, false);
@@ -488,7 +538,8 @@ void emit_fft_conv(
         cuda_error_checking(s, lang, "err_cuda");
     }
 
-    for (const std::string& var : {"__fc_dImg", "__fc_dKer", "__fc_dRadW", "__fc_dRadH"}) {
+    for (const std::string& var :
+         {"__fc_dPadImg", "__fc_dPadKer", "__fc_dImg", "__fc_dKer", "__fc_dRadW", "__fc_dRadH"}) {
         s << "err_cuda = cudaFree(" << var << ");" << std::endl;
         cuda_error_checking(s, lang, "err_cuda");
     }
