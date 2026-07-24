@@ -11,8 +11,8 @@
 namespace sdfg {
 namespace omp {
 
-inline void register_omp_plugin() {
-    codegen::MapDispatcherRegistry::instance().register_map_dispatcher(
+inline void register_omp_plugin(sdfg::plugins::Context& context) {
+    context.get_map_dispatcher_registry().register_map_dispatcher(
         ScheduleType_OMP::value(),
         [](codegen::LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -28,6 +28,11 @@ inline void register_omp_plugin() {
 
     passes::scheduler::SchedulerRegistry::instance()
         .register_loop_scheduler<passes::scheduler::OMPScheduler>(passes::scheduler::OMPScheduler::target());
+}
+
+inline void register_omp_plugin() {
+    auto ctx = plugins::Context::global_context();
+    register_omp_plugin(ctx);
 }
 
 } // namespace omp

@@ -6,6 +6,6 @@ namespace docc {
 
 extern docc::PluginRegistry plugin_registry;
 
-void register_sdfg_dispatchers();
+std::shared_ptr<sdfg::plugins::Context> register_sdfg_dispatchers();
 
 } // namespace docc

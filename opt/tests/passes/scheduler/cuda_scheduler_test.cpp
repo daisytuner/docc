@@ -13,9 +13,10 @@
 
 using namespace sdfg;
 
-static passes::scheduler::CUDAScheduler* get_cuda_sched() {
-    static passes::scheduler::CUDAScheduler instance;
-    return &instance;
+static std::shared_ptr<passes::scheduler::CUDAScheduler> get_cuda_sched() {
+    static std::shared_ptr<passes::scheduler::CUDAScheduler> instance =
+        std::make_shared<passes::scheduler::CUDAScheduler>();
+    return instance;
 }
 
 TEST(CUDASchedulerTest, OuterParallelMapWithInnerMap) {

@@ -8,9 +8,10 @@
 
 using namespace sdfg;
 
-static passes::scheduler::OMPScheduler* get_omp_sched() {
-    static passes::scheduler::OMPScheduler instance;
-    return &instance;
+static std::shared_ptr<passes::scheduler::OMPScheduler> get_omp_sched() {
+    static std::shared_ptr<passes::scheduler::OMPScheduler> instance =
+        std::make_shared<passes::scheduler::OMPScheduler>();
+    return instance;
 }
 
 TEST(OMPSchedulerTest, OuterParallelMapWithInnerMap) {

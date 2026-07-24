@@ -12,7 +12,7 @@ RPCScheduler::RPCScheduler(
     std::shared_ptr<rpc::RpcContext> rpc_context, std::string target, std::string category, bool print_steps
 )
     : LoopScheduler(), rpc_context_(std::move(rpc_context)), target_(std::move(target)), category_(std::move(category)),
-      print_steps_(print_steps) {}
+      print_steps_(print_steps), dump_rpc_cutouts_(false) {}
 
 scheduler::SchedulerAction RPCScheduler::find(
     builder::StructuredSDFGBuilder& builder,
@@ -60,7 +60,7 @@ bool RPCScheduler::can_apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    transformations::RPCNodeTransform rpc_transform(loop, target_, category_, *rpc_context_);
+    transformations::RPCNodeTransform rpc_transform(loop, target_, category_, *rpc_context_, dump_rpc_cutouts_);
     rpc_transform.set_report(report_);
     return rpc_transform.can_be_applied(builder, analysis_manager);
 }
@@ -71,7 +71,8 @@ void RPCScheduler::apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    transformations::RPCNodeTransform rpc_transform(loop, target_, category_, *rpc_context_, print_steps_);
+    transformations::RPCNodeTransform
+        rpc_transform(loop, target_, category_, *rpc_context_, print_steps_, dump_rpc_cutouts_);
     rpc_transform.set_report(report_);
     if (rpc_transform.can_be_applied(builder, analysis_manager)) {
         rpc_transform.apply(builder, analysis_manager);

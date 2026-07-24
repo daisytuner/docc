@@ -16,7 +16,7 @@ namespace scheduler {
 
 class LoopSchedulingPass : public Pass {
 private:
-    std::vector<LoopScheduler*> targets_;
+    std::vector<std::shared_ptr<LoopScheduler>> targets_;
     sdfg::PassReportConsumer* report_;
     bool offload_unknown_sizes_;
     sdfg::transformations::Recorder* recorder_ = nullptr;
@@ -27,7 +27,9 @@ private:
 
 public:
     LoopSchedulingPass(
-        const std::vector<LoopScheduler*>& targets, sdfg::PassReportConsumer* report, bool offload_unknown_sizes = false
+        const std::vector<std::shared_ptr<LoopScheduler>>& targets,
+        sdfg::PassReportConsumer* report,
+        bool offload_unknown_sizes = false
     )
         : targets_(targets), report_(report), offload_unknown_sizes_(offload_unknown_sizes) {}
     ~LoopSchedulingPass() override = default;

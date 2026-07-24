@@ -77,24 +77,17 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
         .PluginVersion = "v0.0.1",
         .RegisterPassBuilderCallbacks =
             [](llvm::PassBuilder &PB) {
-                docc::register_sdfg_dispatchers();
+                auto context = docc::register_sdfg_dispatchers();
 
                 auto target = docc::DOCC_TUNE.getValue();
                 auto category = docc::DOCC_TRANSFERTUNE_CATEGORY.getValue();
 
                 auto remote_tuning = docc::DOCC_TRANSFERTUNE.getValue();
 
-                auto &sched_registry = sdfg::passes::scheduler::SchedulerRegistry::instance();
-
-                if (remote_tuning) {
-                    std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
-                        sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-                    sdfg::passes::rpc::register_rpc_loop_opt(context, target, category);
-                    // TODO don't use global state here
-                }
+                docc::target::TargetOptions target_options(target, category, remote_tuning);
 
                 // Compile-Time Pass Registration
-                PB.registerPipelineStartEPCallback([&sched_registry](
+                PB.registerPipelineStartEPCallback([context, target_options](
                                                        llvm::ModulePassManager &MPM, llvm::OptimizationLevel Level
                                                    ) {
                     // Simplification
@@ -184,10 +177,7 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
                         MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
                     }
 
-                    std::shared_ptr<docc::passes::PassReportCollector> report_consumer;
                     bool generate_opt_report_file = true;
-
-                    report_consumer = std::make_shared<docc::passes::PassReportCollector>();
 
                     // Lift SDFGs from functions
                     MPM.addPass(docc::passes::createDOCCPass(docc::passes::FunctionToSDFGPass(docc::plugin_registry), AM)
@@ -209,17 +199,16 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
                     if (docc::DOCC_TUNE != "none") {
                         // Dump sdfg and features after all seuquential optimizations are done but
                         // before offloading
-                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::DumpSDFGPass(), AM));
+                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::DumpSDFGPass("", true), AM));
                         MPM.addPass(docc::passes::createDOCCPass(
-                            docc::passes::SchedulingPass(
-                                sched_registry, false, false, enable_offloading_transfer_opt, report_consumer.get()
-                            ),
+                            docc::passes::
+                                SchedulingPass(context, target_options, false, false, enable_offloading_transfer_opt),
                             AM
                         ));
                     }
 
                     if (generate_opt_report_file) {
-                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::OPTReportPass(report_consumer), AM));
+                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::OPTReportPass(), AM));
                     }
 
                     MPM.addPass(docc::passes::createDOCCPass(

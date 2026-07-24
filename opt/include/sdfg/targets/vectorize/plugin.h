@@ -11,8 +11,8 @@
 namespace sdfg {
 namespace vectorize {
 
-inline void register_vectorize_plugin() {
-    codegen::MapDispatcherRegistry::instance().register_map_dispatcher(
+inline void register_vectorize_plugin(plugins::Context& context) {
+    context.get_map_dispatcher_registry().register_map_dispatcher(
         ScheduleType_Vectorize::value(),
         [](codegen::LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -26,7 +26,7 @@ inline void register_vectorize_plugin() {
         }
     );
 
-    codegen::ReduceDispatcherRegistry::instance().register_reduce_dispatcher(
+    context.get_reduce_dispatcher_registry().register_reduce_dispatcher(
         ScheduleType_Vectorize::value(),
         [](codegen::LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -40,9 +40,14 @@ inline void register_vectorize_plugin() {
         }
     );
 
-    passes::scheduler::SchedulerRegistry::instance()
+    context.get_scheduler_registry()
         .register_loop_scheduler<passes::scheduler::VectorizeScheduler>(passes::scheduler::VectorizeScheduler::target()
         );
+}
+
+inline void register_vectorize_plugin() {
+    auto ctx = sdfg::plugins::Context::global_context();
+    register_vectorize_plugin(ctx);
 }
 
 } // namespace vectorize

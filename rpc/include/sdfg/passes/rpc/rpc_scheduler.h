@@ -16,6 +16,7 @@ private:
     const std::string target_;
     const std::string category_;
     const bool print_steps_;
+    bool dump_rpc_cutouts_;
 
 public:
     scheduler::SchedulerAction find(

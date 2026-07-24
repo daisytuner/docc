@@ -1,5 +1,6 @@
 #include "sdfg/visualizer/dot_visualizer.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -370,7 +371,17 @@ void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flo
         }
 
         std::unordered_set<std::string> unused_connectors(in_connectors.begin(), in_connectors.end());
-        for (const data_flow::Memlet& iedge : dfg.in_edges(*node)) {
+        auto _in_edges = dfg.in_edges(*node);
+        std::vector<const data_flow::Memlet*> sorted_edges;
+        for (const data_flow::Memlet& iedge : _in_edges) {
+            sorted_edges.push_back(&iedge);
+        }
+        std::sort(sorted_edges.begin(), sorted_edges.end(), [](const data_flow::Memlet* a, const data_flow::Memlet* b) {
+            if (a->src().element_id() != b->src().element_id()) return a->src().element_id() < b->src().element_id();
+            return a->dst().element_id() < b->dst().element_id();
+        });
+        for (const data_flow::Memlet* iedge_ptr : sorted_edges) {
+            const data_flow::Memlet& iedge = *iedge_ptr;
             auto& src = iedge.src();
             auto& dst_conn = iedge.dst_conn();
             bool nonexistent_conn = false;

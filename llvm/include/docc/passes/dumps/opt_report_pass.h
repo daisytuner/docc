@@ -12,10 +12,9 @@ namespace passes {
 
 class OPTReportPass : public llvm::PassInfoMixin<OPTReportPass> {
 private:
-    std::shared_ptr<docc::passes::PassReportCollector> report_;
 
 public:
-    explicit OPTReportPass(std::shared_ptr<docc::passes::PassReportCollector> report) : report_(std::move(report)) {}
+    explicit OPTReportPass() {}
 
     static bool available(analysis::AnalysisManager &AM) { return true; }
 

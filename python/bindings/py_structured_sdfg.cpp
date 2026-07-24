@@ -495,10 +495,7 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         dce.run(builder, analysis_manager);
     }
 
-    auto mapped = schedulers | std::views::transform([&](auto& n) { return n.get(); });
-    std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
-
-    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
+    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, nullptr);
     bool loop_scheduling_changes = loop_scheduling_pass.run(builder, analysis_manager);
     if (loop_scheduling_changes) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
