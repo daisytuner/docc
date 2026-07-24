@@ -14,6 +14,7 @@
 // Tensor
 #include "sdfg/data_flow/library_nodes/math/tensor/batchnorm_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/c2r_fft2d_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/copy_node.h"
@@ -40,6 +41,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/fft_conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/pooling_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/r2c_fft2d_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/max_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/min_node.h"

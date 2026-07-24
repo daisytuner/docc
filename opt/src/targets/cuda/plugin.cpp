@@ -219,6 +219,58 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
 
+    // R2CFFT2D - forward 2D real-to-complex FFT (CUDA with data transfers)
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_R2CFFT2D.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::R2CFFT2DNodeDispatcher_CUDAWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::R2CFFT2DNode&>(node)
+            );
+        }
+    );
+
+    // R2CFFT2D - forward 2D real-to-complex FFT (CUDA, device-resident operands)
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_R2CFFT2D.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::R2CFFT2DNodeDispatcher_CUDAWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::R2CFFT2DNode&>(node)
+            );
+        }
+    );
+
+    // C2RFFT2D - inverse 2D complex-to-real FFT (CUDA with data transfers)
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_C2RFFT2D.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::C2RFFT2DNodeDispatcher_CUDAWithTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::C2RFFT2DNode&>(node)
+            );
+        }
+    );
+
+    // C2RFFT2D - inverse 2D complex-to-real FFT (CUDA, device-resident operands)
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_C2RFFT2D.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<tensor::C2RFFT2DNodeDispatcher_CUDAWithoutTransfers>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::C2RFFT2DNode&>(node)
+            );
+        }
+    );
+
 
     context.scheduler_registry
         .register_loop_scheduler<passes::scheduler::CUDAScheduler>(passes::scheduler::CUDAScheduler::target());

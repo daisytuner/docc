@@ -1512,6 +1512,14 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::FFTConvNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_R2CFFT2D.value(), []() {
+            return std::make_unique<math::tensor::R2CFFT2DNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_C2RFFT2D.value(), []() {
+            return std::make_unique<math::tensor::C2RFFT2DNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Pooling.value(), []() {
             return std::make_unique<math::tensor::PoolingNodeSerializer>();
         });

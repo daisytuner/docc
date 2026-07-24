@@ -73,6 +73,8 @@ set(SOURCE_FILES
     src/targets/cuda/math/tensor/concat_expander.cpp
     src/targets/cuda/math/tensor/conv_expander.cpp
     src/targets/cuda/math/tensor/fft_conv.cpp
+    src/targets/cuda/math/tensor/r2c_fft2d.cpp
+    src/targets/cuda/math/tensor/c2r_fft2d.cpp
     src/targets/cuda/math/tensor/softmax.cpp
     src/targets/cuda/plugin.cpp
     src/targets/cuda/stdlib/memcpy.cpp
@@ -119,6 +121,7 @@ set(SOURCE_FILES
     src/transformations/multi_level_tiling.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_fft_conv_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_fft2d_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp

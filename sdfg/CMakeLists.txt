@@ -89,6 +89,8 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/copy_node.cpp
     src/data_flow/library_nodes/math/tensor/einsum_node.cpp
     src/data_flow/library_nodes/math/tensor/fft_conv_node.cpp
+    src/data_flow/library_nodes/math/tensor/r2c_fft2d_node.cpp
+    src/data_flow/library_nodes/math/tensor/c2r_fft2d_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.cpp
