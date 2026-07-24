@@ -30,6 +30,7 @@
 /mlir/ @Moehre2 @daisytuner/compiler
 /opt/ @Atrisan @daisytuner/compiler
 /python/ @Moehre2 @daisytuner/compiler
+/pytorch/ @Moehre2 @daisytuner/compiler
 /rpc/ @NoraHagmeyer @daisytuner/tuning-interface
 /rtl/ @Atrisan @daisytuner/compiler
 /sdfg/ @ramonwirsch @daisytuner/compiler
