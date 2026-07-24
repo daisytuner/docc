@@ -922,6 +922,67 @@ public:
             evict_region.papi_eventset = -1;
         }
     }
+
+public:
+    // Read the running aggregate runtime stats for a region (aggregate mode).
+    // Returns false if the region is unknown or has no samples yet. Units:
+    // mean in microseconds, variance in microseconds^2.
+    bool get_runtime_stats(size_t region_id, double* mean_us, double* variance_us2, long long* count) {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = regions.find(region_id);
+        if (it == regions.end()) {
+            return false;
+        }
+        DaisyRegion& region = it->second;
+        if (region.runtime_n <= 0) {
+            return false;
+        }
+        if (mean_us) *mean_us = region.runtime_mean / 1000.0;
+        if (variance_us2) *variance_us2 = region.runtime_variance / 1.0e6;
+        if (count) *count = region.runtime_n;
+        return true;
+    }
+
+    // Aggregate over all regions (sum of means/variances, min count). Mirrors
+    // parse_region_runtime summing every event's duration.
+    bool get_total_stats(double* mean_us, double* variance_us2, long long* count) {
+        std::lock_guard<std::mutex> lock(mutex);
+        double sum_mean_ns = 0.0;
+        double sum_var_ns2 = 0.0;
+        long long min_n = 0;
+        bool any = false;
+        for (auto& kv : regions) {
+            DaisyRegion& region = kv.second;
+            if (region.runtime_n <= 0) {
+                continue;
+            }
+            sum_mean_ns += region.runtime_mean;
+            sum_var_ns2 += region.runtime_variance;
+            min_n = any ? std::min(min_n, region.runtime_n) : region.runtime_n;
+            any = true;
+        }
+        if (!any) {
+            return false;
+        }
+        if (mean_us) *mean_us = sum_mean_ns / 1000.0;
+        if (variance_us2) *variance_us2 = sum_var_ns2 / 1.0e6;
+        if (count) *count = min_n;
+        return true;
+    }
+
+    // Clear running aggregate runtime stats for all regions (keeps registration).
+    void reset_all_stats() {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto& kv : regions) {
+            DaisyRegion& region = kv.second;
+            region.runtime_n = 0;
+            region.runtime_mean = 0.0;
+            region.runtime_variance = 0.0;
+            region.first_start = 0;
+            region.starts.clear();
+            region.durations.clear();
+        }
+    }
 };
 
 static DaisyInstrumentationState& get_daisy_state() {
@@ -953,6 +1014,16 @@ void __daisy_instrumentation_increment(size_t region_id, const char* name, long 
 void __daisy_instrumentation_metric(size_t region_id, const char* name, double value) {
     get_daisy_state().provided_metric(region_id, name, value);
 }
+
+bool __daisy_instrumentation_stats(size_t region_id, double* mean_us, double* variance_us2, long long* count) {
+    return get_daisy_state().get_runtime_stats(region_id, mean_us, variance_us2, count);
+}
+
+bool __daisy_instrumentation_total_stats(double* mean_us, double* variance_us2, long long* count) {
+    return get_daisy_state().get_total_stats(mean_us, variance_us2, count);
+}
+
+void __daisy_instrumentation_reset_all(void) { get_daisy_state().reset_all_stats(); }
 
 #ifdef __cplusplus
 } // extern "C"

@@ -41,5 +41,15 @@ std::unique_ptr<IType> Array::clone() const {
 
 std::string Array::print() const { return "Array(" + this->element_type_->print() + ")"; };
 
+void Array::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    this->element_type_->replace_symbols(old_expression, new_expression);
+    this->num_elements_ = symbolic::subs(this->num_elements_, old_expression, new_expression);
+}
+
+void Array::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    this->element_type_->replace_symbols(replacements);
+    this->num_elements_ = symbolic::subs(this->num_elements_, replacements);
+}
+
 } // namespace types
 } // namespace sdfg

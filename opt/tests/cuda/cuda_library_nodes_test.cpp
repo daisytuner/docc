@@ -300,8 +300,8 @@ TEST(CUDAD2HTransferTest, SerializeDeserializeTest) {
     EXPECT_TRUE(deserialized_sdfg != nullptr);
 
     EXPECT_TRUE(deserialized_sdfg->root().size() == 1);
-    auto& des_block = deserialized_sdfg->root().at(0).first;
-    auto& des_dataflow = dynamic_cast<sdfg::structured_control_flow::Block&>(des_block).dataflow();
+    auto& des_block = deserialized_sdfg->root().at(0);
+    auto& des_dataflow = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_block).dataflow();
     EXPECT_TRUE(des_dataflow.nodes().size() == 3);
     EXPECT_TRUE(des_dataflow.edges().size() == 2);
     bool found_d2h_transfer = false;
@@ -355,8 +355,8 @@ TEST(CUDAH2DTransferTest, SerializeDeserializeTest) {
     EXPECT_TRUE(deserialized_sdfg != nullptr);
 
     EXPECT_TRUE(deserialized_sdfg->root().size() == 1);
-    auto& des_block = deserialized_sdfg->root().at(0).first;
-    auto& des_dataflow = dynamic_cast<sdfg::structured_control_flow::Block&>(des_block).dataflow();
+    auto& des_block = deserialized_sdfg->root().at(0);
+    auto& des_dataflow = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_block).dataflow();
     EXPECT_TRUE(des_dataflow.nodes().size() == 3);
     EXPECT_TRUE(des_dataflow.edges().size() == 2);
 
@@ -411,8 +411,8 @@ TEST(CUDAMallocTest, SerializeDeserializeTest) {
     EXPECT_TRUE(deserialized_sdfg != nullptr);
 
     EXPECT_TRUE(deserialized_sdfg->root().size() == 1);
-    auto& des_block = deserialized_sdfg->root().at(0).first;
-    auto& des_dataflow = dynamic_cast<sdfg::structured_control_flow::Block&>(des_block).dataflow();
+    auto& des_block = deserialized_sdfg->root().at(0);
+    auto& des_dataflow = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_block).dataflow();
     EXPECT_TRUE(des_dataflow.nodes().size() == 2);
     EXPECT_TRUE(des_dataflow.edges().size() == 1);
 
@@ -464,8 +464,8 @@ TEST(CUDAFreeTest, SerializeDeserializeTest) {
     EXPECT_TRUE(deserialized_sdfg != nullptr);
 
     EXPECT_TRUE(deserialized_sdfg->root().size() == 1);
-    auto& des_block = deserialized_sdfg->root().at(0).first;
-    auto& des_dataflow = dynamic_cast<sdfg::structured_control_flow::Block&>(des_block).dataflow();
+    auto& des_block = deserialized_sdfg->root().at(0);
+    auto& des_dataflow = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_block).dataflow();
     EXPECT_EQ(des_dataflow.nodes().size(), 2);
     EXPECT_EQ(des_dataflow.edges().size(), 1);
 

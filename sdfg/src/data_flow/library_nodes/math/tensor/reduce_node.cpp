@@ -105,27 +105,42 @@ data_flow::PointerAccessType ReduceNode::pointer_access_type(int input_idx) cons
     }
 }
 
-bool ReduceNode::expand_inner(
-    builder::StructuredSDFGBuilder& builder,
-    analysis::AnalysisManager& analysis_manager,
+std::ostream& operator<<(std::ostream& os, const std::vector<int64_t>& list) {
+    os << "[";
+    for (size_t i = 0; i < list.size(); ++i) {
+        if (i > 0) os << ", ";
+        os << list[i];
+    }
+    os << "]";
+    return os;
+}
+
+std::string ReduceNode::toStr() const {
+    std::stringstream ss;
+    ss << this->code_.value();
+    ss << "(shape=";
+    TensorLayout::emit_symbolic_list(ss, shape_);
+    ss << ", axes=" << axes_;
+    ss << ", keep=" << this->keepdims_;
+    ss << ")";
+    return ss.str();
+}
+
+passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
+    passes::LibNodeExpander::AccessNodeExpand& expansion,
     structured_control_flow::Block& block,
-    data_flow::DataFlowGraph& dataflow,
-    structured_control_flow::Sequence& parent,
-    Transition& transition,
     const data_flow::Memlet* iedge_input,
     const data_flow::Memlet* iedge_result,
-    const data_flow::AccessNode* input_node,
-    const data_flow::AccessNode* output_node,
     const std::vector<symbolic::Expression>& output_shape,
     const std::vector<int64_t>& sorted_axes
 ) {
-    auto org_idx = parent.index(block);
-
     sdfg::types::Scalar element_type(iedge_result->base_type().primitive_type());
     types::Tensor scalar_tensor(element_type.primitive_type(), {});
 
     // Add new sequence
-    auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
+    auto& new_sequence = expansion.replace_with_sequence();
+    auto& builder = expansion.builder();
+    std::string accum_container;
 
     // 1. Initialization Loop
     {
@@ -149,7 +164,6 @@ bool ReduceNode::expand_inner(
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 block.debug_info()
             );
             last_scope = &last_map->root();
@@ -164,13 +178,14 @@ bool ReduceNode::expand_inner(
         auto& const_node =
             builder
                 .add_constant(init_block, this->identity(element_type.primitive_type()), element_type, block.debug_info());
-        auto& out_access = builder.add_access(init_block, output_node->data(), block.debug_info());
+        auto& out_access = expansion.add_indirect_write_access(init_block, RESULT_PTR_IDX);
 
         builder
             .add_computational_memlet(init_block, const_node, init_tasklet, "_in", {}, scalar_tensor, block.debug_info());
         builder.add_computational_memlet(
             init_block, init_tasklet, "_out", out_access, init_subset, iedge_result->base_type(), block.debug_info()
         );
+        accum_container = out_access.data();
     }
 
     // 2. Reduction Loop
@@ -218,14 +233,14 @@ bool ReduceNode::expand_inner(
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 block.debug_info()
             );
             last_scope = &map.root();
             loop_vars_map[dim_idx] = indvar;
         }
 
-        // Generate inner sequential loops (Fors)
+        // Generate inner sequential loops (Fors / Reduces)
+        auto reduction_operation = this->reduction_operation();
         for (size_t dim_idx : inner_dims) {
             std::string indvar_str = builder.find_new_name("_k");
             builder.add_container(indvar_str, types::Scalar(types::PrimitiveType::Int64));
@@ -235,7 +250,20 @@ bool ReduceNode::expand_inner(
             auto update = symbolic::add(indvar, symbolic::one());
             auto condition = symbolic::Lt(indvar, shape_[dim_idx]);
 
-            last_loop = &builder.add_for(*last_scope, indvar, condition, init, update, {}, block.debug_info());
+            if (reduction_operation.has_value()) {
+                last_loop = &builder.add_reduce(
+                    *last_scope,
+                    indvar,
+                    condition,
+                    init,
+                    update,
+                    {{.operation = reduction_operation.value(), .container = accum_container}},
+                    structured_control_flow::ScheduleType_Sequential::create(),
+                    block.debug_info()
+                );
+            } else {
+                last_loop = &builder.add_for(*last_scope, indvar, condition, init, update, block.debug_info());
+            }
             last_scope = &last_loop->root();
             loop_vars_map[dim_idx] = indvar;
         }
@@ -263,11 +291,9 @@ bool ReduceNode::expand_inner(
         }
 
         this->expand_reduction(
+            expansion,
             builder,
-            analysis_manager,
             *last_scope,
-            input_node->data(),
-            output_node->data(),
             static_cast<const types::Tensor&>(iedge_input->base_type()),
             static_cast<const types::Tensor&>(iedge_result->base_type()),
             input_indices,
@@ -275,36 +301,18 @@ bool ReduceNode::expand_inner(
         );
     }
 
-    // Clean up block
-    builder.clear_code_node_legacy(block, *this);
-    // WARNING: this has been deallocated at this point!!
-    builder.remove_child(parent, org_idx + 1);
-
-    return true;
+    return expansion.successfully_expanded();
 }
 
-bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+passes::LibNodeExpander::ExpandOutcome ReduceNode::expand(passes::LibNodeExpander::ExpandContext& context, Block& block) {
     auto& dataflow = this->get_parent();
-    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
 
     if (dataflow.in_degree(*this) != 2) {
-        return false;
+        return context.unable();
     }
-
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
-    int index = parent.index(block);
-    auto& transition = parent.at(index).second;
 
     auto* iedge_input = dataflow.in_edge_for_connector(*this, inputs_.at(1));
     auto* iedge_result = dataflow.in_edge_for_connector(*this, inputs_.at(0));
-
-
-    auto* input_node = dataflow.find_standalone_entry(iedge_input);
-    auto* output_node = dataflow.find_standalone_entry(iedge_result);
-
-    if (!input_node || !output_node) {
-        return false;
-    }
 
     // Calculate output shape
     std::vector<symbolic::Expression> output_shape;
@@ -342,21 +350,15 @@ bool ReduceNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         }
     }
 
-
-    return expand_inner(
-        builder,
-        analysis_manager,
-        block,
-        dataflow,
-        parent,
-        transition,
-        iedge_input,
-        iedge_result,
-        input_node,
-        output_node,
-        output_shape,
-        sorted_axes
+    auto expansion = context.replacement_requires_access_nodes(
+        {passes::LibNodeExpander::InputUse::IndirectReadWrite, passes::LibNodeExpander::InputUse::IndirectRead}
     );
+
+    if (!expansion) {
+        return context.unable();
+    }
+
+    return expand_inner(*expansion.get(), block, iedge_input, iedge_result, output_shape, sorted_axes);
 }
 
 } // namespace tensor

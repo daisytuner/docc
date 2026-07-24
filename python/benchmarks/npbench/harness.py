@@ -176,6 +176,7 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
         parser.add_argument("--numpy", action="store_true")
         parser.add_argument("--target", type=str, default="none")
         parser.add_argument("--n_runs", type=int, default=10)
+        parser.add_argument("--cold_run", action="store_true", default=False)
         parser.add_argument("--remote-tuning", action="store_true", default=False)
         args = parser.parse_args()
 
@@ -242,11 +243,13 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
                 kernel_with_target(*inputs_docc)
 
         times = []
-        start = time.time()
-        _run_docc()
-        end = time.time()
-        times.append(end - start)
-        print(f"Docc execution time: {end - start:.6f} seconds")
+
+        if args.cold_run:
+            start = time.time()
+            _run_docc()
+            end = time.time()
+            times.append(end - start)
+            print(f"Docc execution time (init): {end - start:.6f} seconds")
 
         for _ in range(args.n_runs):
             start = time.time()

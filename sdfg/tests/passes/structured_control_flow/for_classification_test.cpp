@@ -58,7 +58,7 @@ TEST(ForClassificationTest, Basic) {
     auto& sdfg_map = builder_opt.subject();
 
     // Check
-    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0).first);
+    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0));
     EXPECT_TRUE(map != nullptr);
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
@@ -110,7 +110,7 @@ TEST(ForClassificationTest, MultiBound) {
     auto& sdfg_map = builder_opt.subject();
 
     // Check
-    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0).first);
+    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0));
     EXPECT_TRUE(map != nullptr);
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
@@ -161,7 +161,7 @@ TEST(ForClassificationTest, NonContiguousDomain) {
     auto& sdfg_map = builder_opt.subject();
 
     // Check
-    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0).first);
+    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0));
     EXPECT_TRUE(map != nullptr);
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
@@ -212,7 +212,7 @@ TEST(ForClassificationTest, NonCanonicalBound) {
     auto& sdfg_map = builder_opt.subject();
 
     // Check
-    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0).first);
+    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0));
     EXPECT_TRUE(map != nullptr);
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
@@ -263,7 +263,7 @@ TEST(ForClassificationTest, Shift) {
     auto& sdfg_map = builder_opt.subject();
 
     // Check
-    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0).first);
+    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0));
     EXPECT_TRUE(map != nullptr);
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
@@ -314,7 +314,7 @@ TEST(ForClassificationTest, LastValue) {
     auto& sdfg_map = builder_opt.subject();
 
     // Check
-    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0).first);
+    auto map = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0));
     EXPECT_TRUE(map != nullptr);
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
@@ -377,11 +377,11 @@ TEST(ForClassificationTest, Tiled) {
     auto& sdfg_map = builder_opt.subject();
 
     // Check
-    auto map_outer = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0).first);
+    auto map_outer = dynamic_cast<const structured_control_flow::Map*>(&sdfg_map.root().at(0));
     EXPECT_TRUE(map_outer != nullptr);
     EXPECT_TRUE(symbolic::eq(map_outer->indvar(), symbolic::symbol("i_tile")));
 
-    auto map_inner = dynamic_cast<const structured_control_flow::Map*>(&map_outer->root().at(0).first);
+    auto map_inner = dynamic_cast<const structured_control_flow::Map*>(&map_outer->root().at(0));
     EXPECT_TRUE(map_inner != nullptr);
     EXPECT_TRUE(symbolic::eq(map_inner->indvar(), symbolic::symbol("i")));
 }
@@ -490,7 +490,7 @@ TEST(ForClassificationTest, ScalarSumReduction) {
     auto& sdfg_red = builder_opt.subject();
 
     // Check
-    auto reduce = dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_red.root().at(0).first);
+    auto reduce = dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_red.root().at(0));
     ASSERT_TRUE(reduce != nullptr);
     EXPECT_TRUE(symbolic::eq(reduce->indvar(), symbolic::symbol("i")));
     ASSERT_EQ(reduce->reductions().size(), 1);
@@ -542,7 +542,7 @@ TEST(ForClassificationTest, ScalarProductReduction) {
 
     auto& sdfg_red = builder_opt.subject();
 
-    auto reduce = dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_red.root().at(0).first);
+    auto reduce = dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_red.root().at(0));
     ASSERT_TRUE(reduce != nullptr);
     ASSERT_EQ(reduce->reductions().size(), 1);
     EXPECT_EQ(reduce->reductions()[0].operation, structured_control_flow::ReductionOperation::Mul);
@@ -595,7 +595,7 @@ TEST(ForClassificationTest, FloatMaxReductionCMath) {
 
     auto& sdfg_red = builder_opt.subject();
 
-    auto reduce = dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_red.root().at(0).first);
+    auto reduce = dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_red.root().at(0));
     ASSERT_TRUE(reduce != nullptr);
     ASSERT_EQ(reduce->reductions().size(), 1);
     EXPECT_EQ(reduce->reductions()[0].operation, structured_control_flow::ReductionOperation::Max);
@@ -660,7 +660,7 @@ TEST(ForClassificationTest, FusedSumAndProductReduction) {
 
     auto& sdfg_red = builder_opt.subject();
 
-    auto reduce = dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_red.root().at(0).first);
+    auto reduce = dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_red.root().at(0));
     ASSERT_TRUE(reduce != nullptr);
     ASSERT_EQ(reduce->reductions().size(), 2);
 
@@ -719,7 +719,7 @@ TEST(ForClassificationTest, RecurrenceIsNotReduction) {
     auto& sdfg_res = builder_opt.subject();
 
     // Must remain a plain For: neither Map nor Reduce
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::For*>(&sdfg_res.root().at(0).first) != nullptr);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Map*>(&sdfg_res.root().at(0).first) == nullptr);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_res.root().at(0).first) == nullptr);
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::For*>(&sdfg_res.root().at(0)) != nullptr);
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Map*>(&sdfg_res.root().at(0)) == nullptr);
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Reduce*>(&sdfg_res.root().at(0)) == nullptr);
 }

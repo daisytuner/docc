@@ -1,3 +1,4 @@
+import os
 import pytest
 
 import torch
@@ -242,7 +243,7 @@ def test_multi_output_strides():
         1,
     ), f"res2 strides should be (4, 1), got {res2.stride()}"
 
-
+@pytest.mark.skipif(os.environ.get("DOCC_INFERENCE") == "ON", reason="Failing due to AOTAutograd FunctionalTensor bug in torch-mlir")
 def test_training():
     """Verify gradient descent learns a known linear function."""
 

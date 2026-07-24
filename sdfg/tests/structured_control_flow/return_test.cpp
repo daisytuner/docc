@@ -147,8 +147,8 @@ TEST(ReturnTest, ReturnAtEndOfSequence) {
     auto& root = builder.subject().root();
 
     // Add some blocks
-    builder.add_block(root, control_flow::Assignments{});
-    builder.add_block(root, control_flow::Assignments{});
+    builder.add_block(root);
+    builder.add_block(root);
 
     // Add return at the end
     auto& return_node = builder.add_return(root, "result");
@@ -156,7 +156,7 @@ TEST(ReturnTest, ReturnAtEndOfSequence) {
     EXPECT_EQ(root.size(), 3);
 
     // Verify last element is the return
-    auto [node, transition] = root.at(2);
+    auto& node = root.at(2);
     EXPECT_TRUE(dynamic_cast<const Return*>(&node) != nullptr);
 }
 

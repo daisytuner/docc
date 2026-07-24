@@ -287,7 +287,7 @@ TEST(PrintfDataOffloadingNode, InstrumentationInfoTest) {
     auto info = dispatcher.instrumentation_info();
 
     EXPECT_EQ(info.target_type().value(), TargetType_Printf.value());
-    EXPECT_EQ(info.element_type(), codegen::ElementType_H2DTransfer);
+    EXPECT_EQ(info.element_desc(), "h2d_transfer");
 }
 
 TEST(PrintfDataOffloadingNode, SerializationTest) {

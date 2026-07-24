@@ -13,9 +13,15 @@ PARAMETERS = {
 def initialize(NI, NJ, NK, datatype=np.float64):
     alpha = datatype(1.5)
     beta = datatype(1.2)
-    C = np.fromfunction(lambda i, j: ((i * j + 1) % NI) / NI, (NI, NJ), dtype=datatype)
-    A = np.fromfunction(lambda i, k: (i * (k + 1) % NK) / NK, (NI, NK), dtype=datatype)
-    B = np.fromfunction(lambda k, j: (k * (j + 2) % NJ) / NJ, (NK, NJ), dtype=datatype)
+    i = np.arange(NI).reshape(-1, 1)
+    j = np.arange(NJ)
+    C = ((i * j + 1) % NI) / NI
+    i = np.arange(NI).reshape(-1, 1)
+    k = np.arange(NK)
+    A = (i * (k + 1) % NK) / NK
+    k = np.arange(NK).reshape(-1, 1)
+    j = np.arange(NJ)
+    B = (k * (j + 2) % NJ) / NJ
 
     return alpha, beta, C, A, B
 

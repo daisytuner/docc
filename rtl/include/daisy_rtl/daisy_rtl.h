@@ -70,6 +70,22 @@ void __daisy_instrumentation_exit(size_t region_id);
 void __daisy_instrumentation_increment(size_t region_id, const char* name, long long value);
 void __daisy_instrumentation_metric(size_t region_id, const char* name, double value);
 
+// Read a region's running aggregate runtime stats (only populated in
+// __DAISY_INSTRUMENTATION_MODE=aggregate). ``mean_us`` and ``variance_us2`` are
+// in microseconds / microseconds^2. Returns false if the region has no samples
+// yet. Lets an in-process harness decide when to stop dynamic sampling.
+bool __daisy_instrumentation_stats(size_t region_id, double* mean_us, double* variance_us2, long long* count);
+
+// Aggregate running runtime stats over ALL regions (aggregate mode): per-iteration
+// mean is the sum of the regions' means (mirrors the trace's summed durations),
+// variance the sum of variances, count the min sample count across regions.
+// Returns false if no region has samples yet. For the in-harness sampler.
+bool __daisy_instrumentation_total_stats(double* mean_us, double* variance_us2, long long* count);
+
+// Reset all regions' running aggregate stats (e.g. to drop warmup samples
+// before the timed sampling loop). Leaves region registration intact.
+void __daisy_instrumentation_reset_all(void);
+
 typedef struct __daisy_capture __daisy_capture_t;
 
 __daisy_capture_t* __daisy_capture_init(const char* name, const char* base_dir);

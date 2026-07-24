@@ -193,9 +193,9 @@ TEST(GPUTilingTest, WithOffset) {
     EXPECT_TRUE(found_container);
 
     EXPECT_EQ(outer_loop->root().size(), 7);
-    auto sync1 = dynamic_cast<Block*>(&outer_loop->root().at(0).first);
-    auto if_else = dynamic_cast<IfElse*>(&outer_loop->root().at(1).first);
-    auto sync2 = dynamic_cast<Block*>(&outer_loop->root().at(2).first);
+    auto sync1 = dynamic_cast<Block*>(&outer_loop->root().at(0));
+    auto if_else = dynamic_cast<IfElse*>(&outer_loop->root().at(1));
+    auto sync2 = dynamic_cast<Block*>(&outer_loop->root().at(2));
 
     EXPECT_TRUE(sync1);
     EXPECT_TRUE(if_else);
@@ -227,7 +227,7 @@ TEST(GPUTilingTest, WithOffset) {
     auto& branch = if_else->at(0).first;
     EXPECT_EQ(branch.size(), 1);
 
-    auto inner_if_else = dynamic_cast<IfElse*>(&branch.at(0).first);
+    auto inner_if_else = dynamic_cast<IfElse*>(&branch.at(0));
     EXPECT_TRUE(inner_if_else);
 
     EXPECT_EQ(inner_if_else->size(), 1);
@@ -235,7 +235,7 @@ TEST(GPUTilingTest, WithOffset) {
     auto& inner_branch = inner_if_else->at(0).first;
     EXPECT_EQ(inner_branch.size(), 1);
 
-    auto if_else_block = dynamic_cast<Block*>(&inner_branch.at(0).first);
+    auto if_else_block = dynamic_cast<Block*>(&inner_branch.at(0));
     EXPECT_TRUE(if_else_block);
 
     EXPECT_EQ(if_else_block->dataflow().nodes().size(), 3);
@@ -262,9 +262,9 @@ TEST(GPUTilingTest, WithOffset) {
     EXPECT_TRUE(found_out);
     EXPECT_TRUE(found_tasklet);
 
-    auto sync3 = dynamic_cast<Block*>(&outer_loop->root().at(3).first);
-    auto if_else2 = dynamic_cast<IfElse*>(&outer_loop->root().at(4).first);
-    auto sync4 = dynamic_cast<Block*>(&outer_loop->root().at(5).first);
+    auto sync3 = dynamic_cast<Block*>(&outer_loop->root().at(3));
+    auto if_else2 = dynamic_cast<IfElse*>(&outer_loop->root().at(4));
+    auto sync4 = dynamic_cast<Block*>(&outer_loop->root().at(5));
 
     EXPECT_TRUE(sync3);
     EXPECT_TRUE(if_else2);
@@ -295,7 +295,7 @@ TEST(GPUTilingTest, WithOffset) {
     auto& branch2 = if_else2->at(0).first;
     EXPECT_EQ(branch2.size(), 1);
 
-    auto inner_if_else2 = dynamic_cast<IfElse*>(&branch2.at(0).first);
+    auto inner_if_else2 = dynamic_cast<IfElse*>(&branch2.at(0));
     EXPECT_TRUE(inner_if_else2);
 
     EXPECT_EQ(inner_if_else2->size(), 1);
@@ -303,7 +303,7 @@ TEST(GPUTilingTest, WithOffset) {
     auto& inner_branch2 = inner_if_else2->at(0).first;
     EXPECT_EQ(inner_branch2.size(), 1);
 
-    auto if_else_block2 = dynamic_cast<Block*>(&inner_branch2.at(0).first);
+    auto if_else_block2 = dynamic_cast<Block*>(&inner_branch2.at(0));
     EXPECT_TRUE(if_else_block2);
 
     EXPECT_EQ(if_else_block2->dataflow().nodes().size(), 3);

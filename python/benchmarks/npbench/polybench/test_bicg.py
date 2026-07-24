@@ -11,9 +11,11 @@ PARAMETERS = {
 
 
 def initialize(M, N, datatype=np.float64):
-    A = np.fromfunction(lambda i, j: (i * (j + 1) % N) / N, (N, M), dtype=datatype)
-    p = np.fromfunction(lambda i: (i % M) / M, (M,), dtype=datatype)
-    r = np.fromfunction(lambda i: (i % N) / N, (N,), dtype=datatype)
+    i = np.arange(N).reshape(-1, 1)
+    j = np.arange(M)
+    A = (i * (j + 1) % N) / N
+    p = (np.arange(M) % M) / M
+    r = (np.arange(N) % N) / N
 
     return A, p, r
 

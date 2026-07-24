@@ -103,7 +103,8 @@ public:
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    passes::LibNodeExpander::ExpandOutcome
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override;
 };
 
 class BatchedGEMMNodeSerializer : public serializer::LibraryNodeSerializer {

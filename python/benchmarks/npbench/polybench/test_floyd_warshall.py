@@ -6,7 +6,9 @@ PARAMETERS = {"S": {"N": 200}, "M": {"N": 400}, "L": {"N": 850}, "paper": {"N": 
 
 
 def initialize(N, datatype=np.int64):  # originally np.int32
-    path = np.fromfunction(lambda i, j: i * j % 7 + 1, (N, N), dtype=datatype)
+    i = np.arange(N, dtype=datatype).reshape(-1, 1)
+    j = np.arange(N, dtype=datatype)
+    path = i * j % 7 + 1
     for i in range(N):
         for j in range(N):
             if (i + j) % 13 == 0 or (i + j) % 7 == 0 or (i + j) % 11 == 0:

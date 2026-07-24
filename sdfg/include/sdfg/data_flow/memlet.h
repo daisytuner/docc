@@ -176,6 +176,10 @@ public:
     Memlet(const Memlet& memlet) = delete;
     Memlet& operator=(const Memlet&) = delete;
 
+    ElementType type_id() const override { return ElementType::Memlet; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::Memlet; }
+
     /**
      * @brief Validate the memlet
      * @param function Function context for validation
@@ -342,7 +346,7 @@ public:
      * @param old_expression Expression to replace
      * @param new_expression Replacement expression
      *
-     * Replaces occurrences in the subset vector.
+     * Replaces occurrences in the subset vector & the base type.
      */
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     void replace(const symbolic::ExpressionMapping& replacements) override;

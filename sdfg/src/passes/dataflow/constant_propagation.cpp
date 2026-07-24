@@ -58,7 +58,7 @@ inputs(const std::string& container, structured_control_flow::Transition* transi
 std::unordered_set<analysis::User*> inputs(analysis::User& user, analysis::Users& users) {
     if (auto access_node = dynamic_cast<data_flow::AccessNode*>(user.element())) {
         return inputs(user.container(), access_node, users);
-    } else if (auto transition = dynamic_cast<structured_control_flow::Transition*>(user.element())) {
+    } else if (auto transition = dyn_cast<structured_control_flow::Transition*>(user.element())) {
         return inputs(user.container(), transition, users);
     } else {
         return {};
@@ -239,12 +239,12 @@ bool ConstantPropagation::run_pass(builder::StructuredSDFGBuilder& builder, anal
 
         // Eliminate the dominated definition
         auto write = define2->element();
-        if (auto transition = dynamic_cast<structured_control_flow::Transition*>(write)) {
+        if (auto transition = dyn_cast<structured_control_flow::Transition*>(write)) {
             transition->assignments().erase(symbolic::symbol(name));
             applied = true;
         } else if (auto access_node = dynamic_cast<data_flow::AccessNode*>(write)) {
             auto& graph = access_node->get_parent();
-            auto& block = dynamic_cast<structured_control_flow::Block&>(*graph.get_parent());
+            auto& block = dyn_cast<structured_control_flow::Block&>(*graph.get_parent());
             builder.clear_node(block, *access_node);
             applied = true;
         }

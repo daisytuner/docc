@@ -41,7 +41,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           uv pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          uv pip install numpy scipy ml_dtypes
+          uv pip install sympy numpy scipy ml_dtypes
 
       - name: Build
         run: |

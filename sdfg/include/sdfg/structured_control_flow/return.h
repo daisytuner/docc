@@ -52,6 +52,12 @@ public:
     Return(const Return& Return) = delete;
     Return& operator=(const Return&) = delete;
 
+    ElementType type_id() const override { return ElementType::Return; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::Return; }
+
+    bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
+
     /**
      * @brief Get the data or constant value being returned
      * @return Container name (for data returns) or constant value string (for constant returns)

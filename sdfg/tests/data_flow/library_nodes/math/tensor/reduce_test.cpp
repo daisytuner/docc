@@ -2,9 +2,12 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/std_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -39,6 +42,8 @@ TEST(ReduceTest, SumNode_1D) {
     builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
     builder.add_computational_memlet(block, b_node, sum_node, "Y", {}, output_tensor, block.debug_info());
 
+    dump_sdfg(builder.subject(), "0.init");
+
     // Check inputs and outputs
     EXPECT_EQ(sum_node.inputs().size(), 2);
     EXPECT_EQ(sum_node.input(1), "X");
@@ -47,16 +52,20 @@ TEST(ReduceTest, SumNode_1D) {
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
     sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(sum_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, sum_node);
+
+    dump_sdfg(builder.subject(), "1.expanded");
+
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     EXPECT_EQ(new_sequence.size(), 2);
 
     // Init block
     {
-        auto init_block = dynamic_cast<structured_control_flow::Block*>(&new_sequence.at(0).first);
+        auto init_block = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(0));
         EXPECT_NE(init_block, nullptr);
         EXPECT_EQ(init_block->dataflow().nodes().size(), 3);
         EXPECT_EQ(init_block->dataflow().edges().size(), 2);
@@ -85,11 +94,11 @@ TEST(ReduceTest, SumNode_1D) {
 
     // Reduction loops
     {
-        auto sum_loop = dynamic_cast<structured_control_flow::For*>(&new_sequence.at(1).first);
+        auto sum_loop = dyn_cast<structured_control_flow::Reduce*>(&new_sequence.at(1));
         EXPECT_NE(sum_loop, nullptr);
         EXPECT_EQ(sum_loop->root().size(), 1);
 
-        auto reduce_block = dynamic_cast<structured_control_flow::Block*>(&sum_loop->root().at(0).first);
+        auto reduce_block = dyn_cast<structured_control_flow::Block*>(&sum_loop->root().at(0));
         EXPECT_EQ(reduce_block->dataflow().nodes().size(), 4);
         EXPECT_EQ(reduce_block->dataflow().edges().size(), 3);
         EXPECT_EQ(reduce_block->dataflow().tasklets().size(), 1);
@@ -159,23 +168,29 @@ TEST(ReduceTest, SumNode_2D) {
     builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
     builder.add_computational_memlet(block, b_node, sum_node, "Y", {}, output_tensor, block.debug_info());
 
-    sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(sum_node.expand(builder, analysis_manager));
+    dump_sdfg(builder.subject(), "0.init");
 
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    sdfg.validate();
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, sum_node);
+
+    dump_sdfg(builder.subject(), "1.expanded");
+
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
+
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Reduction loops
     // Outer loop: dim 0 (Map)
     // Inner loop: dim 1 (For)
     {
-        auto map_loop = dynamic_cast<structured_control_flow::Map*>(&new_sequence.at(1).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(1));
         EXPECT_NE(map_loop, nullptr);
 
-        auto for_loop = dynamic_cast<structured_control_flow::For*>(&map_loop->root().at(0).first);
+        auto for_loop = dyn_cast<structured_control_flow::Reduce*>(&map_loop->root().at(0));
         EXPECT_NE(for_loop, nullptr);
 
-        auto reduce_block = dynamic_cast<structured_control_flow::Block*>(&for_loop->root().at(0).first);
+        auto reduce_block = dyn_cast<structured_control_flow::Block*>(&for_loop->root().at(0));
         auto reduce_tasklet = *reduce_block->dataflow().tasklets().begin();
         auto& dataflow = reduce_tasklet->get_parent();
 
@@ -225,23 +240,29 @@ TEST(ReduceTest, SumNode_2D_KeepDims) {
     builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
     builder.add_computational_memlet(block, b_node, sum_node, "Y", {}, output_tensor, block.debug_info());
 
-    sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(sum_node.expand(builder, analysis_manager));
+    dump_sdfg(builder.subject(), "0.init");
 
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    sdfg.validate();
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, sum_node);
+
+    dump_sdfg(builder.subject(), "1.expanded");
+
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
+
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Reduction loops
     // Outer loop: dim 0 (Map)
     // Inner loop: dim 1 (For)
     {
-        auto map_loop = dynamic_cast<structured_control_flow::Map*>(&new_sequence.at(1).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(1));
         EXPECT_NE(map_loop, nullptr);
 
-        auto for_loop = dynamic_cast<structured_control_flow::For*>(&map_loop->root().at(0).first);
+        auto for_loop = dyn_cast<structured_control_flow::Reduce*>(&map_loop->root().at(0));
         EXPECT_NE(for_loop, nullptr);
 
-        auto reduce_block = dynamic_cast<structured_control_flow::Block*>(&for_loop->root().at(0).first);
+        auto reduce_block = dyn_cast<structured_control_flow::Block*>(&for_loop->root().at(0));
         auto reduce_tasklet = *reduce_block->dataflow().tasklets().begin();
         auto& dataflow = reduce_tasklet->get_parent();
 
@@ -293,26 +314,32 @@ TEST(ReduceTest, SumNode_3D_Reduce_0_2) {
     builder.add_computational_memlet(block, a_node, sum_node, "X", {}, input_tensor, block.debug_info());
     builder.add_computational_memlet(block, b_node, sum_node, "Y", {}, output_tensor, block.debug_info());
 
-    sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(sum_node.expand(builder, analysis_manager));
+    dump_sdfg(builder.subject(), "0.init");
 
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    sdfg.validate();
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, sum_node);
+
+    dump_sdfg(builder.subject(), "1.expanded");
+
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
+
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Reduction loops
     // Outer loop: dim 1 (Map)
     // Inner loops: dim 0 (For), dim 2 (For)
     {
-        auto map_loop = dynamic_cast<structured_control_flow::Map*>(&new_sequence.at(1).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(1));
         EXPECT_NE(map_loop, nullptr);
 
-        auto for_loop_0 = dynamic_cast<structured_control_flow::For*>(&map_loop->root().at(0).first);
+        auto for_loop_0 = dyn_cast<structured_control_flow::Reduce*>(&map_loop->root().at(0));
         EXPECT_NE(for_loop_0, nullptr);
 
-        auto for_loop_2 = dynamic_cast<structured_control_flow::For*>(&for_loop_0->root().at(0).first);
+        auto for_loop_2 = dyn_cast<structured_control_flow::Reduce*>(&for_loop_0->root().at(0));
         EXPECT_NE(for_loop_2, nullptr);
 
-        auto reduce_block = dynamic_cast<structured_control_flow::Block*>(&for_loop_2->root().at(0).first);
+        auto reduce_block = dyn_cast<structured_control_flow::Block*>(&for_loop_2->root().at(0));
         auto reduce_tasklet = *reduce_block->dataflow().tasklets().begin();
         auto& dataflow = reduce_tasklet->get_parent();
 
@@ -375,26 +402,28 @@ TEST(ReduceTest, MeanNode_1D) {
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
     sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(mean_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, mean_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     dump_sdfg(builder.subject(), "1.expanded");
 
-    EXPECT_EQ(sdfg.root().size(), 3);
-    auto& sum_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(0).first);
+    EXPECT_EQ(sdfg.root().size(), 1);
+    auto& repl_seq = dynamic_cast<Sequence&>(sdfg.root().at(0));
+    EXPECT_EQ(repl_seq.size(), 3);
+    auto& sum_block = dyn_cast<structured_control_flow::Block&>(repl_seq.at(0));
     EXPECT_EQ(sum_block.dataflow().nodes().size(), 3);
     EXPECT_EQ(sum_block.dataflow().edges().size(), 2);
     EXPECT_EQ(sum_block.dataflow().library_nodes().size(), 1);
 
-    auto& count_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(1).first);
-    EXPECT_EQ(count_block.dataflow().nodes().size(), 0);
-    auto& count_transition = sdfg.root().at(1).second;
-    EXPECT_EQ(count_transition.assignments().size(), 1);
-    auto count_var = count_transition.assignments().begin()->first;
-    auto count_expr = count_transition.assignments().begin()->second;
+    auto count_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&repl_seq.at(1));
+    ASSERT_TRUE(count_block);
+    EXPECT_EQ(count_block->assignments().size(), 1);
+    auto count_var = count_block->assignments().begin()->first;
+    auto count_expr = count_block->assignments().begin()->second;
     EXPECT_TRUE(symbolic::eq(count_expr, symbolic::integer(32)));
 
-    auto& div_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(2).first);
+    auto& div_block = dyn_cast<structured_control_flow::Block&>(repl_seq.at(2));
     EXPECT_EQ(div_block.dataflow().nodes().size(), 3);
     EXPECT_EQ(div_block.dataflow().edges().size(), 3);
     EXPECT_EQ(div_block.dataflow().library_nodes().size(), 1);
@@ -438,24 +467,26 @@ TEST(ReduceTest, MeanNode_2D) {
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
     sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(mean_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, mean_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
-    EXPECT_EQ(sdfg.root().size(), 3);
-    auto& sum_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(0).first);
+    EXPECT_EQ(sdfg.root().size(), 1);
+    auto& repl_seq = dynamic_cast<Sequence&>(sdfg.root().at(0));
+    EXPECT_EQ(repl_seq.size(), 3);
+    auto& sum_block = dyn_cast<structured_control_flow::Block&>(repl_seq.at(0));
     EXPECT_EQ(sum_block.dataflow().nodes().size(), 3);
     EXPECT_EQ(sum_block.dataflow().edges().size(), 2);
     EXPECT_EQ(sum_block.dataflow().library_nodes().size(), 1);
 
-    auto& count_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(1).first);
-    EXPECT_EQ(count_block.dataflow().nodes().size(), 0);
-    auto& count_transition = sdfg.root().at(1).second;
-    EXPECT_EQ(count_transition.assignments().size(), 1);
-    auto count_var = count_transition.assignments().begin()->first;
-    auto count_expr = count_transition.assignments().begin()->second;
+    auto count_transition = dyn_cast<structured_control_flow::AssignmentBlock*>(&repl_seq.at(1));
+    ASSERT_TRUE(count_transition);
+    EXPECT_EQ(count_transition->assignments().size(), 1);
+    auto count_var = count_transition->assignments().begin()->first;
+    auto count_expr = count_transition->assignments().begin()->second;
     EXPECT_TRUE(symbolic::eq(count_expr, symbolic::integer(16)));
 
-    auto& div_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(2).first);
+    auto& div_block = dyn_cast<structured_control_flow::Block&>(repl_seq.at(2));
     EXPECT_EQ(div_block.dataflow().nodes().size(), 3);
     EXPECT_EQ(div_block.dataflow().edges().size(), 3);
     EXPECT_EQ(div_block.dataflow().library_nodes().size(), 1);
@@ -501,22 +532,25 @@ TEST(ReduceTest, StdNode_1D) {
     EXPECT_EQ(block.dataflow().nodes().size(), 3);
 
     sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(std_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, std_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     dump_sdfg(builder.subject(), "1.expanded");
 
-    EXPECT_EQ(sdfg.root().size(), 7);
+    EXPECT_EQ(sdfg.root().size(), 1);
+    auto& repl_seq = dynamic_cast<Sequence&>(sdfg.root().at(0));
+    EXPECT_EQ(repl_seq.size(), 7);
 
     // Check first block (Pow X^2)
-    auto& pow_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(1).first);
+    auto& pow_block = dyn_cast<structured_control_flow::Block&>(repl_seq.at(1));
     EXPECT_EQ(pow_block.dataflow().library_nodes().size(), 1);
 
     // Check second block (Mean X^2)
-    auto& mean_x2_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(2).first);
+    auto& mean_x2_block = dyn_cast<structured_control_flow::Block&>(repl_seq.at(2));
     EXPECT_EQ(mean_x2_block.dataflow().library_nodes().size(), 1);
 
     // Check last block (Sqrt)
-    auto& sqrt_block = dynamic_cast<structured_control_flow::Block&>(sdfg.root().at(6).first);
+    auto& sqrt_block = dyn_cast<structured_control_flow::Block&>(repl_seq.at(6));
     EXPECT_EQ(sqrt_block.dataflow().library_nodes().size(), 1);
 }

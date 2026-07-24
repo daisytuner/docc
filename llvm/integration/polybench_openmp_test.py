@@ -282,8 +282,8 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 8,
-            "MAP": 6,
+            "SEQUENTIAL": 7,
+            "MAP": 5,
             "CPU_PARALLEL": 4,
             "FOR": 2,
         },
@@ -341,9 +341,9 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "MAP": 5,
+            "MAP": 4,
             "CPU_PARALLEL": 4,
-            "SEQUENTIAL": 6,
+            "SEQUENTIAL": 5,
             "FOR": 1,
         },
     )
@@ -933,9 +933,9 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "MAP": 4,
+            "MAP": 3,
             "CPU_PARALLEL": 2,
-            "SEQUENTIAL": 9,
+            "SEQUENTIAL": 8,
             "FOR": 3,
         },
     )

@@ -78,7 +78,7 @@ void StructuredLoop::replace(const symbolic::ExpressionMapping& replacements) {
     this->root_->replace(replacements);
 }
 
-symbolic::Integer StructuredLoop::stride() {
+symbolic::Integer StructuredLoop::stride() const {
     auto expr = this->update();
     auto indvar = this->indvar();
 
@@ -117,7 +117,7 @@ symbolic::Integer StructuredLoop::stride() {
     return SymEngine::integer(int_add_coeff);
 };
 
-bool StructuredLoop::is_contiguous() {
+bool StructuredLoop::is_contiguous() const {
     auto stride = this->stride();
     if (stride.is_null()) {
         return false;
@@ -126,7 +126,7 @@ bool StructuredLoop::is_contiguous() {
     return stride_int == 1;
 }
 
-bool StructuredLoop::is_monotonic() {
+bool StructuredLoop::is_monotonic() const {
     auto stride = this->stride();
     if (stride.is_null()) {
         return false;
@@ -135,7 +135,7 @@ bool StructuredLoop::is_monotonic() {
     return stride_int > 0;
 }
 
-symbolic::Expression StructuredLoop::canonical_bound() {
+symbolic::Expression StructuredLoop::canonical_bound() const {
     auto stride = this->stride();
     if (stride.is_null()) {
         return SymEngine::null;
@@ -148,7 +148,7 @@ symbolic::Expression StructuredLoop::canonical_bound() {
     }
 }
 
-symbolic::Expression StructuredLoop::canonical_bound_upper() {
+symbolic::Expression StructuredLoop::canonical_bound_upper() const {
     symbolic::CNF cnf;
     try {
         cnf = symbolic::conjunctive_normal_form(condition_);
@@ -249,7 +249,7 @@ symbolic::Expression StructuredLoop::canonical_bound_upper() {
     return min_bound;
 }
 
-symbolic::Expression StructuredLoop::canonical_bound_lower() {
+symbolic::Expression StructuredLoop::canonical_bound_lower() const {
     symbolic::CNF cnf;
     try {
         cnf = symbolic::conjunctive_normal_form(condition_);
@@ -347,7 +347,7 @@ symbolic::Expression StructuredLoop::canonical_bound_lower() {
     return max_bound;
 }
 
-symbolic::Expression StructuredLoop::num_iterations() {
+symbolic::Expression StructuredLoop::num_iterations() const {
     auto stride = this->stride();
     if (stride.is_null()) {
         return SymEngine::null;
@@ -374,7 +374,7 @@ symbolic::Expression StructuredLoop::num_iterations() {
     return num_iters;
 }
 
-symbolic::Expression StructuredLoop::num_iterations_approx() {
+symbolic::Expression StructuredLoop::num_iterations_approx() const {
     // Conservative upper bound on the iteration count. Same formula as
     // num_iterations(), but the numerator (bound - init for positive stride,
     // init - bound for negative stride) is fed through symbolic::overapproximate
@@ -413,7 +413,7 @@ symbolic::Expression StructuredLoop::num_iterations_approx() {
     return num_iters;
 }
 
-bool StructuredLoop::is_loop_normal_form() {
+bool StructuredLoop::is_loop_normal_form() const {
     // Check if init is zero
     if (!symbolic::eq(this->init_, symbolic::zero())) {
         return false;

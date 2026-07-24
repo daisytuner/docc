@@ -100,7 +100,7 @@ LogicalResult translateFuncReturnOp(SDFGTranslator& translator, func::ReturnOp* 
     }
 
     // Void return
-    translator.builder().add_return(translator.insertion_point(), "", {}, deb_info);
+    translator.builder().add_return(translator.insertion_point(), "", deb_info);
 
     return success();
 }

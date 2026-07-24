@@ -103,6 +103,8 @@ public:
     std::unique_ptr<TensorLayout> squeeze() const;
 
     std::unique_ptr<TensorLayout> reshape(const symbolic::MultiExpression& new_shape) const;
+
+    static std::ostream& emit_symbolic_list(std::ostream& stream, const symbolic::MultiExpression& list);
 };
 
 std::ostream& operator<<(std::ostream& stream, const TensorLayout& layout);

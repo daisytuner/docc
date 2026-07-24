@@ -176,7 +176,7 @@ bool ArgCapturePlan::add_capture_plan(
 std::unordered_map<std::string, CaptureVarPlan> ArgCapturePlan::create_capture_plan(
     StructuredSDFG& sdfg, analysis::AnalysisManager& analysis_manager, structured_control_flow::ControlFlowNode& node
 ) {
-    if (auto loop_node = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+    if (auto loop_node = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
         DEBUG_PRINTLN("Creating capture plan for loop node " << loop_node->indvar()->__str__());
     } else {
         DEBUG_PRINTLN("Creating capture plan for node " << node.element_id());

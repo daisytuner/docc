@@ -109,7 +109,7 @@ void PrintfMapDispatcher::dispatch_printf_body(
 
 codegen::InstrumentationInfo PrintfMapDispatcher::instrumentation_info() const {
     return codegen::
-        InstrumentationInfo(node_.element_id(), codegen::ElementType_Map, TargetType_Printf, analysis::LoopInfo{}, {});
+        InstrumentationInfo(node_.element_id(), node_.element_type(), TargetType_Printf, analysis::LoopInfo{}, {});
 }
 
 } // namespace printf_target

@@ -29,18 +29,17 @@ TEST(SequenceTest, ChildrenAndTransitions) {
 
     auto& root = builder.subject().root();
 
-    // Add blocks with transitions
-    builder.add_block(root, control_flow::Assignments{{symbolic::symbol("x"), symbolic::integer(1)}});
-    builder.add_block(root, control_flow::Assignments{{symbolic::symbol("x"), symbolic::integer(2)}});
-    builder.add_block(root, control_flow::Assignments{{symbolic::symbol("x"), symbolic::integer(3)}});
+    // Add assignment blocks
+    builder.add_assignments(root, control_flow::Assignments{{symbolic::symbol("x"), symbolic::integer(1)}});
+    builder.add_assignments(root, control_flow::Assignments{{symbolic::symbol("x"), symbolic::integer(2)}});
+    builder.add_assignments(root, control_flow::Assignments{{symbolic::symbol("x"), symbolic::integer(3)}});
 
     EXPECT_EQ(root.size(), 3);
 
     // Verify each child has a transition
     for (size_t i = 0; i < root.size(); ++i) {
-        auto [node, transition] = root.at(i);
-        EXPECT_TRUE(dynamic_cast<const ControlFlowNode*>(&node) != nullptr);
-        EXPECT_TRUE(dynamic_cast<const Transition*>(&transition) != nullptr);
+        auto& node = root.at(i);
+        EXPECT_TRUE(dynamic_cast<const AssignmentBlock*>(&node) != nullptr);
     }
 }
 
@@ -50,20 +49,20 @@ TEST(SequenceTest, AtMethod) {
 
     auto& root = builder.subject().root();
 
-    builder.add_block(root, control_flow::Assignments{});
-    builder.add_block(root, control_flow::Assignments{});
+    builder.add_block(root);
+    builder.add_block(root);
 
     // Test const version
     const auto& const_root = root;
-    auto [const_node1, const_trans1] = const_root.at(0);
-    auto [const_node2, const_trans2] = const_root.at(1);
+    auto& const_node1 = const_root.at(0);
+    auto& const_node2 = const_root.at(1);
 
     EXPECT_TRUE(dynamic_cast<const Block*>(&const_node1) != nullptr);
     EXPECT_TRUE(dynamic_cast<const Block*>(&const_node2) != nullptr);
 
     // Test non-const version
-    auto [mut_node1, mut_trans1] = root.at(0);
-    auto [mut_node2, mut_trans2] = root.at(1);
+    auto& mut_node1 = root.at(0);
+    auto& mut_node2 = root.at(1);
 
     EXPECT_TRUE(dynamic_cast<Block*>(&mut_node1) != nullptr);
     EXPECT_TRUE(dynamic_cast<Block*>(&mut_node2) != nullptr);
@@ -84,19 +83,21 @@ TEST(SequenceTest, TransitionAssignments) {
         {symbolic::symbol("x"), symbolic::integer(20)}, {symbolic::symbol("y"), symbolic::integer(30)}
     };
 
-    builder.add_block(root, assignments1);
-    builder.add_block(root, assignments2);
+    builder.add_assignments(root, assignments1);
+    builder.add_assignments(root, assignments2);
 
     // Verify assignments
-    auto [node1, trans1] = root.at(0);
-    auto [node2, trans2] = root.at(1);
+    auto node1 = dyn_cast<AssignmentBlock*>(&root.at(0));
+    auto node2 = dyn_cast<AssignmentBlock*>(&root.at(1));
 
-    EXPECT_EQ(trans1.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(trans1.assignments().at(symbolic::symbol("x")), symbolic::integer(10)));
+    EXPECT_TRUE(node1);
+    EXPECT_EQ(node1->assignments().size(), 1);
+    EXPECT_TRUE(symbolic::eq(node1->assignments().at(symbolic::symbol("x")), symbolic::integer(10)));
 
-    EXPECT_EQ(trans2.assignments().size(), 2);
-    EXPECT_TRUE(symbolic::eq(trans2.assignments().at(symbolic::symbol("x")), symbolic::integer(20)));
-    EXPECT_TRUE(symbolic::eq(trans2.assignments().at(symbolic::symbol("y")), symbolic::integer(30)));
+    EXPECT_TRUE(node2);
+    EXPECT_EQ(node2->assignments().size(), 2);
+    EXPECT_TRUE(symbolic::eq(node2->assignments().at(symbolic::symbol("x")), symbolic::integer(20)));
+    EXPECT_TRUE(symbolic::eq(node2->assignments().at(symbolic::symbol("y")), symbolic::integer(30)));
 }
 
 // Test empty transition
@@ -105,12 +106,13 @@ TEST(SequenceTest, EmptyTransition) {
 
     auto& root = builder.subject().root();
 
-    builder.add_block(root, control_flow::Assignments{});
+    builder.add_assignments(root, {});
 
-    auto [node, transition] = root.at(0);
+    auto node = dyn_cast<AssignmentBlock*>(&root.at(0));
 
-    EXPECT_TRUE(transition.empty());
-    EXPECT_EQ(transition.size(), 0);
+    EXPECT_TRUE(node);
+    EXPECT_TRUE(node->empty());
+    EXPECT_EQ(node->size(), 0);
 }
 
 // Test non-empty transition
@@ -122,12 +124,13 @@ TEST(SequenceTest, NonEmptyTransition) {
 
     auto& root = builder.subject().root();
 
-    builder.add_block(root, control_flow::Assignments{{symbolic::symbol("x"), symbolic::integer(5)}});
+    builder.add_assignments(root, control_flow::Assignments{{symbolic::symbol("x"), symbolic::integer(5)}});
 
-    auto [node, transition] = root.at(0);
+    auto node = dyn_cast<AssignmentBlock*>(&root.at(0));
 
-    EXPECT_FALSE(transition.empty());
-    EXPECT_EQ(transition.size(), 1);
+    EXPECT_TRUE(node);
+    EXPECT_FALSE(node->empty());
+    EXPECT_EQ(node->size(), 1);
 }
 
 // Test transition parent
@@ -136,16 +139,16 @@ TEST(SequenceTest, TransitionParent) {
 
     auto& root = builder.subject().root();
 
-    builder.add_block(root, control_flow::Assignments{});
+    builder.add_assignments(root, control_flow::Assignments{});
 
-    auto [node, transition] = root.at(0);
+    auto node = dyn_cast<AssignmentBlock*>(&root.at(0));
 
     // Verify transition knows its parent
-    EXPECT_EQ(&transition.parent(), &root);
+    EXPECT_EQ(root.at(0).get_parent(), &root);
 
     // Const version
-    const auto& const_transition = transition;
-    EXPECT_EQ(&const_transition.parent(), &root);
+    const auto& const_transition = node;
+    EXPECT_EQ(const_transition->get_parent(), &root);
 }
 
 // Test nested sequences
@@ -167,8 +170,8 @@ TEST(SequenceTest, NestedSequences) {
     EXPECT_TRUE(dynamic_cast<const Sequence*>(&else_seq) != nullptr);
 
     // Add blocks to nested sequences
-    builder.add_block(if_seq, control_flow::Assignments{});
-    builder.add_block(else_seq, control_flow::Assignments{});
+    builder.add_block(if_seq);
+    builder.add_block(else_seq);
 
     EXPECT_EQ(if_seq.size(), 1);
     EXPECT_EQ(else_seq.size(), 1);

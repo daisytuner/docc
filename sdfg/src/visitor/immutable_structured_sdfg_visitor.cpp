@@ -15,17 +15,21 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
     }
 
     for (size_t i = 0; i < parent.size(); i++) {
-        auto& current = parent.at(i).first;
+        auto& current = parent.at(i);
 
-        if (auto block_stmt = dynamic_cast<structured_control_flow::Block*>(&current)) {
+        if (auto block_stmt = dyn_cast<structured_control_flow::Block*>(&current)) {
             if (this->accept(*block_stmt)) {
                 return true;
             }
-        } else if (auto sequence_stmt = dynamic_cast<structured_control_flow::Sequence*>(&current)) {
+        } else if (auto assignment_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&current)) {
+            if (this->accept(*assignment_block)) {
+                return true;
+            }
+        } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&current)) {
             if (this->visit_internal(*sequence_stmt)) {
                 return true;
             }
-        } else if (auto if_else_stmt = dynamic_cast<structured_control_flow::IfElse*>(&current)) {
+        } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&current)) {
             if (this->accept(*if_else_stmt)) {
                 return true;
             }
@@ -35,7 +39,7 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
                     return true;
                 }
             }
-        } else if (auto for_stmt = dynamic_cast<structured_control_flow::For*>(&current)) {
+        } else if (auto for_stmt = dyn_cast<structured_control_flow::For*>(&current)) {
             if (this->accept(*for_stmt)) {
                 return true;
             }
@@ -43,7 +47,7 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
             if (this->visit_internal(for_stmt->root())) {
                 return true;
             }
-        } else if (auto map_stmt = dynamic_cast<structured_control_flow::Map*>(&current)) {
+        } else if (auto map_stmt = dyn_cast<structured_control_flow::Map*>(&current)) {
             if (this->accept(*map_stmt)) {
                 return true;
             }
@@ -51,7 +55,7 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
             if (this->visit_internal(map_stmt->root())) {
                 return true;
             }
-        } else if (auto reduce_stmt = dynamic_cast<structured_control_flow::Reduce*>(&current)) {
+        } else if (auto reduce_stmt = dyn_cast<structured_control_flow::Reduce*>(&current)) {
             if (this->accept(*reduce_stmt)) {
                 return true;
             }
@@ -59,7 +63,7 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
             if (this->visit_internal(reduce_stmt->root())) {
                 return true;
             }
-        } else if (auto while_stmt = dynamic_cast<structured_control_flow::While*>(&current)) {
+        } else if (auto while_stmt = dyn_cast<structured_control_flow::While*>(&current)) {
             if (this->accept(*while_stmt)) {
                 return true;
             }
@@ -67,15 +71,15 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
             if (this->visit_internal(while_stmt->root())) {
                 return true;
             }
-        } else if (auto continue_stmt = dynamic_cast<structured_control_flow::Continue*>(&current)) {
+        } else if (auto continue_stmt = dyn_cast<structured_control_flow::Continue*>(&current)) {
             if (this->accept(*continue_stmt)) {
                 return true;
             }
-        } else if (auto break_stmt = dynamic_cast<structured_control_flow::Break*>(&current)) {
+        } else if (auto break_stmt = dyn_cast<structured_control_flow::Break*>(&current)) {
             if (this->accept(*break_stmt)) {
                 return true;
             }
-        } else if (auto return_stmt = dynamic_cast<structured_control_flow::Return*>(&current)) {
+        } else if (auto return_stmt = dyn_cast<structured_control_flow::Return*>(&current)) {
             if (this->accept(*return_stmt)) {
                 return true;
             }
@@ -85,7 +89,9 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
     return false;
 };
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Block& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Block& node) { return false; }
+
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::AssignmentBlock& node) { return false; }
 
 bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Sequence& node) { return false; };
 

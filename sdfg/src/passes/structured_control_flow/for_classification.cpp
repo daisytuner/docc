@@ -5,7 +5,6 @@
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/loop_carried_dependency_analysis.h"
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/passes/pipeline.h"
 
@@ -46,9 +45,11 @@ ForClassificationPass::Classification ForClassificationPass::classify(
                     }
                 }
             }
+        } else if (auto assgn = dyn_cast<const structured_control_flow::AssignmentBlock*>(current)) {
+            // nothing to check
         } else if (auto seq = dynamic_cast<const structured_control_flow::Sequence*>(current)) {
             for (size_t i = 0; i < seq->size(); i++) {
-                auto& child = seq->at(i).first;
+                auto& child = seq->at(i);
                 queue.push_back(&child);
             }
         } else if (auto ifelse = dynamic_cast<const structured_control_flow::IfElse*>(current)) {
@@ -113,7 +114,7 @@ ForClassificationPass::Classification ForClassificationPass::classify(
                 if (writes.size() == 1 && reads.empty()) {
                     auto write = writes.front();
                     if (auto write_transition =
-                            dynamic_cast<const structured_control_flow::Transition*>(write->element())) {
+                            dynamic_cast<const structured_control_flow::AssignmentBlock*>(write->element())) {
                         auto lhs = symbolic::symbol(container);
                         auto rhs = write_transition->assignments().at(lhs);
                         if (SymEngine::is_a<SymEngine::Integer>(*rhs)) {
@@ -170,7 +171,7 @@ bool ForClassificationPass::run_pass(builder::StructuredSDFGBuilder& builder, an
     // Traverse loops in bottom-up fashion (reverse loop)
     std::list<structured_control_flow::For*> for_queue;
     for (auto& loop : loop_analysis.loops_in_pre_order()) {
-        if (auto for_stmt = dynamic_cast<structured_control_flow::For*>(loop)) {
+        if (auto for_stmt = dyn_cast<structured_control_flow::For*>(loop)) {
             for_queue.push_front(for_stmt);
         }
     }

@@ -23,7 +23,7 @@ symbolic::Expression find_nested_gpu_blocksize(
         bool foundY = false;
         bool foundZ = false;
         for (auto& loop : path) {
-            if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+            if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
                 if (map->schedule_type().value() == ScheduleT::value()) {
                     auto dim = ScheduleT::dimension(map->schedule_type());
                     if (dim == GPUDimension::X) {
@@ -49,7 +49,7 @@ symbolic::Expression find_nested_gpu_blocksize(
 
     // Find block size for the requested dimension
     for (auto loop : loops) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
             if (map->schedule_type().value() != ScheduleT::value() &&
                 map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value()) {
                 throw InvalidSDFGException("Nested map in GPU kernel not GPU or Sequential");
@@ -75,8 +75,10 @@ symbolic::Expression find_nested_gpu_iterations(
     auto loops = loop_analysis.descendants(&node);
     loops.insert(&node);
 
+    symbolic::Expression max_num_iterations = symbolic::one();
+
     for (auto loop : loops) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
             if (map->schedule_type().value() != ScheduleT::value() &&
                 map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value()) {
                 throw InvalidSDFGException("Nested map in GPU kernel not GPU or Sequential");
@@ -96,10 +98,10 @@ symbolic::Expression find_nested_gpu_iterations(
             if (num_iterations.is_null()) {
                 throw InvalidSDFGException("Cannot determine number of iterations for nested map in GPU kernel");
             }
-            return num_iterations;
+            max_num_iterations = symbolic::max(max_num_iterations, num_iterations);
         }
     }
-    return symbolic::one();
+    return max_num_iterations;
 }
 
 template<typename ScheduleT>
@@ -108,7 +110,7 @@ bool is_outermost_gpu_map(structured_control_flow::Map& node, analysis::Analysis
     auto& loop_tree = loop_analysis.loop_tree();
     structured_control_flow::ControlFlowNode* ancestor = loop_tree.at(&node);
     while (ancestor != nullptr) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(ancestor)) {
+        if (auto map = dyn_cast<structured_control_flow::Map*>(ancestor)) {
             if (map->schedule_type().value() == ScheduleT::value()) {
                 return false;
             }
@@ -127,7 +129,7 @@ symbolic::SymbolSet get_gpu_indvars(
     loops.insert(&node);
     symbolic::SymbolSet indvars;
     for (const auto& loop : loops) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
             if (map->schedule_type().value() == ScheduleT::value()) {
                 if (ScheduleT::dimension(map->schedule_type()) == dimension) {
                     indvars.insert(map->indvar());
@@ -146,7 +148,7 @@ get_gpu_maps(structured_control_flow::Map& node, analysis::AnalysisManager& anal
     loops.insert(&node);
     std::vector<structured_control_flow::Map*> maps;
     for (const auto& loop : loops) {
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
             if (map->schedule_type().value() == ScheduleT::value()) {
                 if (ScheduleT::dimension(map->schedule_type()) == dimension) {
                     maps.push_back(map);

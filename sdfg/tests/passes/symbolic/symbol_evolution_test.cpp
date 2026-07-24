@@ -23,7 +23,7 @@ TEST(SymbolEvolutionTest, ConstantIncrement) {
 
     // Initialize: sum = 0
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { sum = sum + 5; }
     auto& loop =
@@ -31,7 +31,7 @@ TEST(SymbolEvolutionTest, ConstantIncrement) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::integer(5))}}, loop_block.debug_info()
     );
 
@@ -43,8 +43,10 @@ TEST(SymbolEvolutionTest, ConstantIncrement) {
     EXPECT_TRUE(applied);
 
     // Verify the closed-form solution is: sum = 5*i
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
 
     EXPECT_TRUE(assignments.find(sum) != assignments.end());
     if (assignments.find(sum) != assignments.end()) {
@@ -68,7 +70,7 @@ TEST(SymbolEvolutionTest, ConditionalConstantIncrement) {
 
     // Initialize: sum = 0
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { if (i == 2) sum = sum + 5; }
     auto& loop =
@@ -77,7 +79,7 @@ TEST(SymbolEvolutionTest, ConditionalConstantIncrement) {
 
     auto& if_block = builder.add_if_else(loop.root());
     auto& if_case = builder.add_case(if_block, symbolic::Eq(i, symbolic::integer(2)));
-    builder.add_block(if_case, {{sum, symbolic::add(sum, symbolic::integer(5))}});
+    builder.add_assignments(if_case, {{sum, symbolic::add(sum, symbolic::integer(5))}});
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -102,7 +104,7 @@ TEST(SymbolEvolutionTest, Pattern4_AffineUpdate_Subtraction) {
 
     // Initialize: count = 100
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{count, symbolic::integer(100)}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{count, symbolic::integer(100)}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { count = count - 3; }
     auto& loop =
@@ -110,7 +112,7 @@ TEST(SymbolEvolutionTest, Pattern4_AffineUpdate_Subtraction) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(), loop_block, {{count, symbolic::sub(count, symbolic::integer(3))}}, loop_block.debug_info()
     );
 
@@ -122,8 +124,10 @@ TEST(SymbolEvolutionTest, Pattern4_AffineUpdate_Subtraction) {
     EXPECT_TRUE(applied);
 
     // Verify the closed-form solution is: count = 100 - 3*i
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
 
     EXPECT_TRUE(assignments.find(count) != assignments.end());
     if (assignments.find(count) != assignments.end()) {
@@ -148,7 +152,7 @@ TEST(SymbolEvolutionTest, Pattern4_AffineUpdate_Negative_Multiplication) {
 
     // Initialize: prod = 1
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{prod, symbolic::one()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{prod, symbolic::one()}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { prod = prod * 2; }
     auto& loop =
@@ -156,7 +160,7 @@ TEST(SymbolEvolutionTest, Pattern4_AffineUpdate_Negative_Multiplication) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(), loop_block, {{prod, symbolic::mul(prod, symbolic::integer(2))}}, loop_block.debug_info()
     );
 
@@ -183,7 +187,7 @@ TEST(SymbolEvolutionTest, Pattern1_Constant) {
 
     // Initialize: c = 42
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{c, symbolic::integer(42)}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{c, symbolic::integer(42)}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { c = 42; }
     auto& loop =
@@ -191,7 +195,7 @@ TEST(SymbolEvolutionTest, Pattern1_Constant) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(loop.root(), loop_block, {{c, symbolic::integer(42)}}, loop_block.debug_info());
+    builder.add_assignments_after(loop.root(), loop_block, {{c, symbolic::integer(42)}}, loop_block.debug_info());
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -201,8 +205,10 @@ TEST(SymbolEvolutionTest, Pattern1_Constant) {
     EXPECT_TRUE(applied);
 
     // Verify the closed-form solution: c = 42
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
 
     EXPECT_TRUE(assignments.find(c) != assignments.end());
     if (assignments.find(c) != assignments.end()) {
@@ -227,7 +233,7 @@ TEST(SymbolEvolutionTest, Pattern2_LoopAlias) {
 
     // Initialize: j = 0 (same as i)
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{j, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{j, symbolic::zero()}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { j = i + 1; }
     auto& loop =
@@ -235,7 +241,8 @@ TEST(SymbolEvolutionTest, Pattern2_LoopAlias) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(loop.root(), loop_block, {{j, symbolic::add(i, symbolic::one())}}, loop_block.debug_info());
+    builder
+        .add_assignments_after(loop.root(), loop_block, {{j, symbolic::add(i, symbolic::one())}}, loop_block.debug_info());
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -245,8 +252,10 @@ TEST(SymbolEvolutionTest, Pattern2_LoopAlias) {
     EXPECT_TRUE(applied);
 
     // Verify the closed-form solution: j = i
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
 
     EXPECT_TRUE(assignments.find(j) != assignments.end());
     if (assignments.find(j) != assignments.end()) {
@@ -276,7 +285,7 @@ TEST(SymbolEvolutionTest, Negative_UsedAfterUpdate) {
 
     // Initialize: sum = 0
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { sum = sum + 5; temp = sum; }
     auto& loop =
@@ -284,12 +293,12 @@ TEST(SymbolEvolutionTest, Negative_UsedAfterUpdate) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block1 = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(), loop_block1, {{sum, symbolic::add(sum, symbolic::integer(5))}}, loop_block1.debug_info()
     );
 
     auto& loop_block2 = builder.add_block(loop.root());
-    builder.add_block_after(loop.root(), loop_block2, {{temp, sum}}, loop_block2.debug_info());
+    builder.add_assignments_after(loop.root(), loop_block2, {{temp, sum}}, loop_block2.debug_info());
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -313,7 +322,7 @@ TEST(SymbolEvolutionTest, Negative_MultipleWrites) {
 
     // Initialize: x = 0
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{x, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{x, symbolic::zero()}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { x = x + 1; x = x + 2; }
     auto& loop =
@@ -321,11 +330,12 @@ TEST(SymbolEvolutionTest, Negative_MultipleWrites) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block1 = builder.add_block(loop.root());
-    builder
-        .add_block_after(loop.root(), loop_block1, {{x, symbolic::add(x, symbolic::one())}}, loop_block1.debug_info());
+    builder.add_assignments_after(
+        loop.root(), loop_block1, {{x, symbolic::add(x, symbolic::one())}}, loop_block1.debug_info()
+    );
 
     auto& loop_block2 = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(), loop_block2, {{x, symbolic::add(x, symbolic::integer(2))}}, loop_block2.debug_info()
     );
 
@@ -359,7 +369,7 @@ TEST(SymbolEvolutionTest, Pattern3_Quadratic) {
     // For Pattern 3 to work: init value should equal f(init - stride)
     // f(i) = i*i, so f(-1) = 1, but we're testing if init = 0 works
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{sq, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{sq, symbolic::zero()}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { sq = i*i; }
     auto& loop =
@@ -367,7 +377,7 @@ TEST(SymbolEvolutionTest, Pattern3_Quadratic) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(loop.root(), loop_block, {{sq, symbolic::mul(i, i)}}, loop_block.debug_info());
+    builder.add_assignments_after(loop.root(), loop_block, {{sq, symbolic::mul(i, i)}}, loop_block.debug_info());
 
     // Apply pass
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -393,7 +403,7 @@ TEST(SymbolEvolutionTest, Pattern3_LinearFunction) {
 
     // Initialize: double_i = -2 (which is 2*(0-1))
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{double_i, symbolic::integer(-2)}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{double_i, symbolic::integer(-2)}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { double_i = 2*i; }
     auto& loop =
@@ -401,7 +411,7 @@ TEST(SymbolEvolutionTest, Pattern3_LinearFunction) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(), loop_block, {{double_i, symbolic::mul(symbolic::integer(2), i)}}, loop_block.debug_info()
     );
 
@@ -413,8 +423,10 @@ TEST(SymbolEvolutionTest, Pattern3_LinearFunction) {
     EXPECT_TRUE(applied);
 
     // Verify the closed-form solution: double_i = 2*(i-1)
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
 
     EXPECT_TRUE(assignments.find(double_i) != assignments.end());
     if (assignments.find(double_i) != assignments.end()) {
@@ -441,7 +453,7 @@ TEST(SymbolEvolutionTest, Pattern4_AffineWithOffset) {
 
     // Initialize: sum = 10
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{sum, symbolic::integer(10)}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{sum, symbolic::integer(10)}}, init_block.debug_info());
 
     // Loop: for (i = 0; i < 10; i++) { sum = sum + 5; }
     auto& loop =
@@ -449,7 +461,7 @@ TEST(SymbolEvolutionTest, Pattern4_AffineWithOffset) {
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::integer(5))}}, loop_block.debug_info()
     );
 
@@ -461,8 +473,10 @@ TEST(SymbolEvolutionTest, Pattern4_AffineWithOffset) {
     EXPECT_TRUE(applied);
 
     // Verify the closed-form solution: sum = 10 + 5*i
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
 
     EXPECT_TRUE(assignments.find(sum) != assignments.end());
     if (assignments.find(sum) != assignments.end()) {
@@ -489,7 +503,7 @@ TEST(SymbolEvolutionTest, Pattern4_FinalValueVerification) {
 
     // Initialize: sum = 0
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
 
     // Loop: for (i = 5; i < 10; i++) { sum = sum + 3; }
     auto& loop = builder.add_for(
@@ -497,7 +511,7 @@ TEST(SymbolEvolutionTest, Pattern4_FinalValueVerification) {
     );
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::integer(3))}}, loop_block.debug_info()
     );
 
@@ -509,8 +523,10 @@ TEST(SymbolEvolutionTest, Pattern4_FinalValueVerification) {
     EXPECT_TRUE(applied);
 
     // Verify: sum = 0 + 3*(i-5) = 3*i - 15
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
 
     EXPECT_TRUE(assignments.find(sum) != assignments.end());
     if (assignments.find(sum) != assignments.end()) {
@@ -539,14 +555,14 @@ TEST(SymbolEvolutionTest, AffineInIndvar_NonUnit) {
     auto& root = builder.subject().root();
 
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{k, symbolic::integer(2)}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{k, symbolic::integer(2)}}, init_block.debug_info());
 
     auto& loop =
         builder
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(),
         loop_block,
         {{k, symbolic::add(symbolic::mul(symbolic::integer(3), i), symbolic::integer(5))}},
@@ -559,8 +575,11 @@ TEST(SymbolEvolutionTest, AffineInIndvar_NonUnit) {
 
     EXPECT_TRUE(applied);
 
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
+
     ASSERT_TRUE(assignments.find(k) != assignments.end());
     auto evolved = assignments.at(k);
     auto expected =
@@ -583,15 +602,16 @@ TEST(SymbolEvolutionTest, NegativeStride_Accumulator) {
     auto& root = builder.subject().root();
 
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
 
     auto& loop =
         builder
             .add_for(root, i, symbolic::Gt(i, symbolic::zero()), symbolic::integer(10), symbolic::sub(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder
-        .add_block_after(loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::one())}}, loop_block.debug_info());
+    builder.add_assignments_after(
+        loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::one())}}, loop_block.debug_info()
+    );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::SymbolEvolution pass;
@@ -599,8 +619,11 @@ TEST(SymbolEvolutionTest, NegativeStride_Accumulator) {
 
     EXPECT_TRUE(applied);
 
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
+
     ASSERT_TRUE(assignments.find(sum) != assignments.end());
     auto evolved = assignments.at(sum);
     auto expected = symbolic::sub(symbolic::integer(10), i);
@@ -627,14 +650,14 @@ TEST(SymbolEvolutionTest, NonUnitStride_Accumulator) {
     auto& root = builder.subject().root();
 
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
 
     auto& loop = builder.add_for(
         root, i, symbolic::Lt(i, symbolic::integer(20)), symbolic::zero(), symbolic::add(i, symbolic::integer(2))
     );
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(
+    builder.add_assignments_after(
         loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::integer(5))}}, loop_block.debug_info()
     );
 
@@ -644,8 +667,11 @@ TEST(SymbolEvolutionTest, NonUnitStride_Accumulator) {
 
     EXPECT_TRUE(applied);
 
-    auto first_elem = loop.root().at(0);
-    auto& assignments = first_elem.second.assignments();
+    auto& first_elem = loop.root().at(0);
+    auto* assignment_block = dyn_cast<AssignmentBlock*>(&first_elem);
+    EXPECT_TRUE(assignment_block);
+    auto& assignments = assignment_block->assignments();
+
     ASSERT_TRUE(assignments.find(sum) != assignments.end());
     auto evolved = assignments.at(sum);
     auto expected = symbolic::mul(symbolic::integer(5), symbolic::div(i, symbolic::integer(2)));
@@ -667,14 +693,14 @@ TEST(SymbolEvolutionTest, Constant_DifferentInit_Negative) {
     auto& root = builder.subject().root();
 
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{c, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{c, symbolic::zero()}}, init_block.debug_info());
 
     auto& loop =
         builder
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder.add_block_after(loop.root(), loop_block, {{c, symbolic::integer(42)}}, loop_block.debug_info());
+    builder.add_assignments_after(loop.root(), loop_block, {{c, symbolic::integer(42)}}, loop_block.debug_info());
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::SymbolEvolution pass;
@@ -700,17 +726,19 @@ TEST(SymbolEvolutionTest, CoEvolving_FixpointRewrites) {
     auto& root = builder.subject().root();
 
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{a, symbolic::zero()}, {b, symbolic::zero()}}, init_block.debug_info());
+    builder
+        .add_assignments_after(root, init_block, {{a, symbolic::zero()}, {b, symbolic::zero()}}, init_block.debug_info());
 
     auto& loop =
         builder
             .add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::one()));
 
     auto& a_block = builder.add_block(loop.root());
-    builder.add_block_after(loop.root(), a_block, {{a, symbolic::add(a, symbolic::one())}}, a_block.debug_info());
+    builder.add_assignments_after(loop.root(), a_block, {{a, symbolic::add(a, symbolic::one())}}, a_block.debug_info());
 
     auto& b_block = builder.add_block(loop.root());
-    builder.add_block_after(loop.root(), b_block, {{b, symbolic::add(b, symbolic::integer(2))}}, b_block.debug_info());
+    builder
+        .add_assignments_after(loop.root(), b_block, {{b, symbolic::add(b, symbolic::integer(2))}}, b_block.debug_info());
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::SymbolEvolution pass;
@@ -721,9 +749,11 @@ TEST(SymbolEvolutionTest, CoEvolving_FixpointRewrites) {
     bool a_rewritten = false;
     bool b_rewritten = false;
     for (size_t k = 0; k < loop.root().size(); ++k) {
-        auto& tr = loop.root().at(k).second;
-        if (tr.assignments().find(a) != tr.assignments().end()) a_rewritten = true;
-        if (tr.assignments().find(b) != tr.assignments().end()) b_rewritten = true;
+        auto* tr = dyn_cast<AssignmentBlock*>(&loop.root().at(k));
+        if (tr) {
+            if (tr->assignments().find(a) != tr->assignments().end()) a_rewritten = true;
+            if (tr->assignments().find(b) != tr->assignments().end()) b_rewritten = true;
+        }
     }
     EXPECT_TRUE(a_rewritten);
     EXPECT_TRUE(b_rewritten);
@@ -747,7 +777,7 @@ TEST(SymbolEvolutionTest, NestedLoop_OuterIndvarAsCoeff) {
     auto& root = builder.subject().root();
 
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{j, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{j, symbolic::zero()}}, init_block.debug_info());
 
     auto& outer =
         builder
@@ -757,15 +787,16 @@ TEST(SymbolEvolutionTest, NestedLoop_OuterIndvarAsCoeff) {
     );
 
     auto& inner_block = builder.add_block(inner.root());
-    builder.add_block_after(inner.root(), inner_block, {{j, symbolic::add(j, i)}}, inner_block.debug_info());
+    builder.add_assignments_after(inner.root(), inner_block, {{j, symbolic::add(j, i)}}, inner_block.debug_info());
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::SymbolEvolution pass;
     bool applied = pass.run(builder, analysis_manager);
 
     EXPECT_TRUE(applied);
-    auto& first_inner = inner.root().at(0).second;
-    EXPECT_TRUE(first_inner.assignments().find(j) != first_inner.assignments().end());
+    EXPECT_EQ(inner.root().size(), 3);
+    auto* first_inner = dyn_cast<AssignmentBlock*>(&inner.root().at(0));
+    EXPECT_TRUE(first_inner->assignments().find(j) != first_inner->assignments().end());
 }
 
 // Symbolic (non-constant) stride: loop.stride() returns null, so the pass
@@ -784,14 +815,15 @@ TEST(SymbolEvolutionTest, SymbolicStride_Skipped) {
     auto& root = builder.subject().root();
 
     auto& init_block = builder.add_block(root);
-    builder.add_block_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
+    builder.add_assignments_after(root, init_block, {{sum, symbolic::zero()}}, init_block.debug_info());
 
     auto& loop =
         builder.add_for(root, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, N));
 
     auto& loop_block = builder.add_block(loop.root());
-    builder
-        .add_block_after(loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::one())}}, loop_block.debug_info());
+    builder.add_assignments_after(
+        loop.root(), loop_block, {{sum, symbolic::add(sum, symbolic::one())}}, loop_block.debug_info()
+    );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::SymbolEvolution pass;

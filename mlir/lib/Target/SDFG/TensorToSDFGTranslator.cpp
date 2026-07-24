@@ -2,19 +2,24 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/LogicalResult.h>
 
-#include <memory>
-#include <string>
-#include <vector>
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Target/SDFG/SDFGTranslator.h"
 #include "mlir/Target/SDFG/helper.h"
+#include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -85,10 +90,11 @@ LogicalResult translateTensorCollapseOp(SDFGTranslator& translator, tensor::Coll
 
 LogicalResult translateTensorConcatOp(SDFGTranslator& translator, tensor::ConcatOp* concat_op) {
     OperandRange inputs = concat_op->getInputs();
+    size_t num_inputs = inputs.size();
     std::vector<std::string> inputs_container;
-    inputs_container.reserve(inputs.size());
+    inputs_container.reserve(num_inputs);
     std::vector<std::unique_ptr<::sdfg::types::Tensor>> inputs_sdfg_tensor;
-    inputs_sdfg_tensor.reserve(inputs.size());
+    inputs_sdfg_tensor.reserve(num_inputs);
     for (Value input : inputs) {
         auto input_container = translator.get_or_create_container(input);
         inputs_container.push_back(input_container);
@@ -126,62 +132,38 @@ LogicalResult translateTensorConcatOp(SDFGTranslator& translator, tensor::Concat
         deb_info
     );
 
-    // Create maps
+    // Create concat node
     auto& builder = translator.builder();
-    ::sdfg::structured_control_flow::Sequence* current_seq = &translator.insertion_point();
-    std::vector<std::string> indvars;
-    ::sdfg::data_flow::Subset subset;
-    for (size_t i = 0; i < result_tensor_info.shape().size(); i++) {
-        int64_t dim = result_tensor_info.shape().at(i);
-        auto indvar_container = builder.find_new_name("_i");
-        builder.add_container(indvar_container, ::sdfg::types::Scalar(sdfg_index_type));
-        indvars.push_back(indvar_container);
-        subset.push_back(::sdfg::symbolic::symbol(indvar_container));
-        auto indvar = ::sdfg::symbolic::symbol(indvar_container);
-        auto bound = ::sdfg::symbolic::integer(dim);
-        auto condition = ::sdfg::symbolic::Lt(indvar, bound);
-        auto init = ::sdfg::symbolic::zero();
-        auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
-
-        auto& map = builder.add_map(
-            *current_seq,
-            indvar,
-            condition,
-            init,
-            update,
-            ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-            {},
-            deb_info
-        );
-        current_seq = &map.root();
+    auto& block = builder.add_block(translator.insertion_point(), deb_info);
+    std::vector<::sdfg::data_flow::AccessNode*> input_accesses;
+    input_accesses.reserve(num_inputs);
+    std::unordered_map<std::string, ::sdfg::data_flow::AccessNode*> input_access_map;
+    std::vector<std::string> in_conns;
+    in_conns.reserve(num_inputs);
+    std::vector<::sdfg::math::tensor::TensorLayout> in_layouts;
+    in_layouts.reserve(num_inputs);
+    for (size_t i = 0; i < num_inputs; i++) {
+        auto& input_container = inputs_container[i];
+        if (input_access_map.contains(input_container)) {
+            input_accesses.push_back(input_access_map.at(input_container));
+        } else {
+            auto& input_access = builder.add_access(block, input_container, deb_info);
+            input_accesses.push_back(&input_access);
+            input_access_map.insert({input_container, &input_access});
+        }
+        in_conns.push_back("X" + std::to_string(i));
+        in_layouts.push_back(inputs_sdfg_tensor[i]->layout());
     }
+    auto& result_access = builder.add_access(block, result_container, deb_info);
+    auto& libnode = builder.add_library_node<
+        ::sdfg::math::tensor::ConcatNode>(block, deb_info, "Y", result_sdfg_tensor->layout(), in_conns, in_layouts, dim);
 
-    // Create if/else
-    auto& if_else = builder.add_if_else(*current_seq, {}, deb_info);
-    auto dim_indvar = subset.at(dim);
-
-    // Create conditional copy for every input
-    ::sdfg::symbolic::Expression offset = ::sdfg::symbolic::zero();
-    for (size_t i = 0; i < inputs.size(); i++) {
-        auto new_offset = ::sdfg::symbolic::add(offset, inputs_sdfg_tensor.at(i)->shape().at(dim));
-        auto condition =
-            ::sdfg::symbolic::And(::sdfg::symbolic::Ge(dim_indvar, offset), ::sdfg::symbolic::Lt(dim_indvar, new_offset));
-        auto& sequence = builder.add_case(if_else, condition, deb_info);
-
-        ::sdfg::data_flow::Subset offset_subset(subset);
-        offset_subset[dim] = ::sdfg::symbolic::sub(dim_indvar, offset);
-
-        auto& block = builder.add_block(sequence, {}, deb_info);
-        auto& input_access = builder.add_access(block, inputs_container.at(i), deb_info);
-        auto& result_access = builder.add_access(block, result_container, deb_info);
-        auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+    for (size_t i = 0; i < num_inputs; i++) {
         builder.add_computational_memlet(
-            block, input_access, tasklet, "_in", offset_subset, *inputs_sdfg_tensor.at(i), deb_info
+            block, *input_accesses[i], libnode, in_conns[i], {}, *inputs_sdfg_tensor[i], deb_info
         );
-        builder.add_computational_memlet(block, tasklet, "_out", result_access, subset, *result_sdfg_tensor, deb_info);
-
-        offset = new_offset;
     }
+    builder.add_computational_memlet(block, result_access, libnode, "Y", {}, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -254,6 +236,7 @@ LogicalResult translateTensorInsertSliceOp(SDFGTranslator& translator, tensor::I
     Value source = insert_slice_op->getSource();
     Value dest = insert_slice_op->getDest();
     Value result = insert_slice_op->getResult();
+    auto deb_info = translator.get_debug_info(insert_slice_op->getOperationName(), insert_slice_op->getLoc());
 
     auto source_tensor_type = llvm::dyn_cast<TensorType>(source.getType());
     auto dest_tensor_type = llvm::dyn_cast<TensorType>(dest.getType());
@@ -325,7 +308,8 @@ LogicalResult translateTensorInsertSliceOp(SDFGTranslator& translator, tensor::I
     }
     translator.handle_malloc(
         result_container,
-        ::sdfg::symbolic::mul(::sdfg::symbolic::integer(size), ::sdfg::symbolic::size_of_type(*result_element_type))
+        ::sdfg::symbolic::mul(::sdfg::symbolic::integer(size), ::sdfg::symbolic::size_of_type(*result_element_type)),
+        deb_info
     );
 
     // Step 1: Copy destination to result (full copy)
@@ -350,18 +334,22 @@ LogicalResult translateTensorInsertSliceOp(SDFGTranslator& translator, tensor::I
             condition,
             init,
             update,
-            ::sdfg::structured_control_flow::ScheduleType_Sequential::create()
+            ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
+            deb_info
         );
         current_seq = &map.root();
     }
 
-    auto& dest_block = builder.add_block(*current_seq);
-    auto& dest_access = builder.add_access(dest_block, dest_container);
-    auto& result_access_1 = builder.add_access(dest_block, result_container);
-    auto& dest_tasklet = builder.add_tasklet(dest_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-    builder.add_computational_memlet(dest_block, dest_access, dest_tasklet, "_in", dest_subset, *dest_sdfg_tensor);
+    auto& dest_block = builder.add_block(*current_seq, {}, deb_info);
+    auto& dest_access = builder.add_access(dest_block, dest_container, deb_info);
+    auto& result_access_1 = builder.add_access(dest_block, result_container, deb_info);
+    auto& dest_tasklet =
+        builder.add_tasklet(dest_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
     builder
-        .add_computational_memlet(dest_block, dest_tasklet, "_out", result_access_1, dest_subset, *result_sdfg_tensor);
+        .add_computational_memlet(dest_block, dest_access, dest_tasklet, "_in", dest_subset, *dest_sdfg_tensor, deb_info);
+    builder.add_computational_memlet(
+        dest_block, dest_tasklet, "_out", result_access_1, dest_subset, *result_sdfg_tensor, deb_info
+    );
 
     // Step 2: Insert source at offset
     current_seq = &translator.insertion_point();
@@ -391,20 +379,135 @@ LogicalResult translateTensorInsertSliceOp(SDFGTranslator& translator, tensor::I
             condition,
             init,
             update,
-            ::sdfg::structured_control_flow::ScheduleType_Sequential::create()
+            ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
+            deb_info
         );
         current_seq = &map.root();
     }
 
-    auto& source_block = builder.add_block(*current_seq);
-    auto& source_access = builder.add_access(source_block, source_container);
-    auto& result_access_2 = builder.add_access(source_block, result_container);
-    auto& source_tasklet = builder.add_tasklet(source_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"});
-    builder
-        .add_computational_memlet(source_block, source_access, source_tasklet, "_in", source_subset, *source_sdfg_tensor);
+    auto& source_block = builder.add_block(*current_seq, {}, deb_info);
+    auto& source_access = builder.add_access(source_block, source_container, deb_info);
+    auto& result_access_2 = builder.add_access(source_block, result_container, deb_info);
+    auto& source_tasklet =
+        builder.add_tasklet(source_block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
     builder.add_computational_memlet(
-        source_block, source_tasklet, "_out", result_access_2, result_offset_subset, *result_sdfg_tensor
+        source_block, source_access, source_tasklet, "_in", source_subset, *source_sdfg_tensor, deb_info
     );
+    builder.add_computational_memlet(
+        source_block, source_tasklet, "_out", result_access_2, result_offset_subset, *result_sdfg_tensor, deb_info
+    );
+
+    return success();
+}
+
+LogicalResult translateTensorExtractSliceOp(SDFGTranslator& translator, tensor::ExtractSliceOp* extract_slice_op) {
+    Value source = extract_slice_op->getSource();
+    Value result = extract_slice_op->getResult();
+    auto deb_info = translator.get_debug_info(extract_slice_op->getOperationName(), extract_slice_op->getLoc());
+
+    auto source_container = translator.get_or_create_container(source);
+    auto result_container = translator.get_or_create_container(result);
+
+    auto source_type = llvm::dyn_cast<TensorType>(source.getType());
+    auto& source_tensor_info = translator.get_or_create_tensor_info(source_container, source_type);
+    auto source_element_type = translator.convertType(source_type.getElementType());
+    auto source_sdfg_tensor =
+        source_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*source_element_type));
+
+    auto result_type = llvm::dyn_cast<TensorType>(result.getType());
+    auto& result_tensor_info = translator.get_or_create_tensor_info(result_container, result_type);
+    auto result_element_type = translator.convertType(result_type.getElementType());
+    auto result_sdfg_tensor =
+        result_tensor_info.get_sdfg_tensor(static_cast<::sdfg::types::Scalar&>(*result_element_type));
+
+    // Get offsets, sizes, and strides
+    SmallVector<OpFoldResult> mixed_offsets = extract_slice_op->getMixedOffsets();
+    SmallVector<OpFoldResult> mixed_sizes = extract_slice_op->getMixedSizes();
+    SmallVector<OpFoldResult> mixed_strides = extract_slice_op->getMixedStrides();
+
+    // Convert to symbolic expressions
+    std::vector<::sdfg::symbolic::Expression> offsets, sizes, strides;
+    offsets.reserve(mixed_offsets.size());
+    sizes.reserve(mixed_sizes.size());
+    strides.reserve(mixed_strides.size());
+
+    for (const auto& offset : mixed_offsets) {
+        if (offset.is<Attribute>()) {
+            auto attr = mlir::cast<IntegerAttr>(offset.get<Attribute>());
+            offsets.push_back(::sdfg::symbolic::integer(attr.getInt()));
+        } else {
+            Value offset_val = offset.get<Value>();
+            offsets.push_back(::sdfg::symbolic::symbol(translator.get_or_create_container(offset_val)));
+        }
+    }
+
+    for (const auto& size : mixed_sizes) {
+        if (size.is<Attribute>()) {
+            auto attr = mlir::cast<IntegerAttr>(size.get<Attribute>());
+            sizes.push_back(::sdfg::symbolic::integer(attr.getInt()));
+        } else {
+            Value size_val = size.get<Value>();
+            sizes.push_back(::sdfg::symbolic::symbol(translator.get_or_create_container(size_val)));
+        }
+    }
+
+    for (const auto& stride : mixed_strides) {
+        if (stride.is<Attribute>()) {
+            auto attr = mlir::cast<IntegerAttr>(stride.get<Attribute>());
+            strides.push_back(::sdfg::symbolic::integer(attr.getInt()));
+        } else {
+            Value stride_val = stride.get<Value>();
+            strides.push_back(::sdfg::symbolic::symbol(translator.get_or_create_container(stride_val)));
+        }
+    }
+
+    translator.handle_malloc(
+        result_container,
+        ::sdfg::symbolic::mul(result_sdfg_tensor->total_elements(), ::sdfg::symbolic::size_of_type(*result_element_type)),
+        deb_info
+    );
+
+    auto& builder = translator.builder();
+    ::sdfg::structured_control_flow::Sequence* current_seq = &translator.insertion_point();
+    ::sdfg::types::Scalar indvar_type(sdfg_index_type);
+
+    int64_t dims = sizes.size();
+    std::vector<::sdfg::symbolic::Symbol> indvars;
+    for (int64_t i = 0; i < dims; i++) {
+        auto indvar_container = builder.find_new_name("_i");
+        builder.add_container(indvar_container, indvar_type);
+        auto indvar = ::sdfg::symbolic::symbol(indvar_container);
+        indvars.push_back(indvar);
+        auto& map = builder.add_map(
+            *current_seq,
+            indvar,
+            ::sdfg::symbolic::Lt(indvar, sizes[i]),
+            ::sdfg::symbolic::zero(),
+            ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one()),
+            ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
+            deb_info
+        );
+        current_seq = &map.root();
+    }
+
+    ::sdfg::data_flow::Subset source_subset, result_subset;
+    source_subset.reserve(dims);
+    result_subset.reserve(dims);
+    int64_t dropped_dims = dims - result_sdfg_tensor->shape().size();
+    for (int64_t i = 0; i < dims; i++) {
+        source_subset.push_back(::sdfg::symbolic::add(offsets[i], ::sdfg::symbolic::mul(indvars[i], strides[i])));
+        if (i >= dropped_dims) {
+            result_subset.push_back(indvars[i]);
+        }
+    }
+
+    auto& block = builder.add_block(*current_seq, {}, deb_info);
+    auto& source_access = builder.add_access(block, source_container, deb_info);
+    auto& result_access = builder.add_access(block, result_container, deb_info);
+    auto& tasklet = builder.add_tasklet(block, ::sdfg::data_flow::TaskletCode::assign, "_out", {"_in"}, deb_info);
+    builder.add_computational_memlet(block, source_access, tasklet, "_in", source_subset, *source_sdfg_tensor, deb_info);
+    builder
+        .add_computational_memlet(block, tasklet, "_out", result_access, result_subset, *result_sdfg_tensor, deb_info);
 
     return success();
 }
@@ -504,14 +607,13 @@ LogicalResult translateTensorPadOp(SDFGTranslator& translator, tensor::PadOp* pa
             init,
             update,
             ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             deb_info
         );
         current_seq = &map.root();
     }
 
     // Create if/else
-    auto& if_else = builder.add_if_else(*current_seq, {}, deb_info);
+    auto& if_else = builder.add_if_else(*current_seq, deb_info);
     auto& copy_case =
         builder.add_case(if_else, ::sdfg::symbolic::Eq(copy_condition, ::sdfg::symbolic::__true__()), deb_info);
     auto& fill_case =
@@ -600,6 +702,9 @@ LogicalResult translateTensorOp(SDFGTranslator& translator, Operation* op) {
         })
         .Case<tensor::InsertSliceOp>([&](tensor::InsertSliceOp insert_slice_op) {
             return translateTensorInsertSliceOp(translator, &insert_slice_op);
+        })
+        .Case<tensor::ExtractSliceOp>([&](tensor::ExtractSliceOp extract_slice_op) {
+            return translateTensorExtractSliceOp(translator, &extract_slice_op);
         })
         .Case<tensor::PadOp>([&](tensor::PadOp pad_op) { return translateTensorPadOp(translator, &pad_op); })
         .Default([&](Operation* op) {

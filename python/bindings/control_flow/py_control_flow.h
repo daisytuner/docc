@@ -8,6 +8,7 @@
 #include <sdfg/structured_control_flow/for.h>
 #include <sdfg/structured_control_flow/if_else.h>
 #include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/structured_control_flow/return.h>
 #include <sdfg/structured_control_flow/sequence.h>
 #include <sdfg/structured_control_flow/while.h>
@@ -20,10 +21,12 @@ namespace py = pybind11;
  * This function registers the Python bindings for the control flow hierarchy:
  * - ControlFlowNode: Abstract base class
  * - Block: Basic block containing a DataFlowGraph
+ * - AssignmentBlock: Unordered set of symbol-assignments, executed simultaneously
  * - Sequence: Sequential container of control flow nodes
  * - Transition: Element connecting nodes in a Sequence
  * - IfElse: Conditional branching
  * - For: Traditional for loop
+ * - Reduce: Reduction operation
  * - Map: Parallel map loop
  * - While: While loop
  * - Break: Loop break statement

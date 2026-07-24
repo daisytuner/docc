@@ -100,7 +100,7 @@ void EinsumLift::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     std::vector<data_flow::Subset> in_indices;
     bool subtraction = false;
     auto& dfg = this->tasklet_.get_parent();
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
     // Collect information

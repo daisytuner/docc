@@ -12,9 +12,9 @@ PARAMETERS = {
 
 def initialize(W, H, datatype=np.float64):
     alpha = datatype(0.25)
-    imgIn = np.fromfunction(
-        lambda i, j: ((313 * i + 991 * j) % 65536) / 65535.0, (W, H), dtype=datatype
-    )
+    i = np.arange(W, dtype=datatype).reshape(-1, 1)
+    j = np.arange(H, dtype=datatype)
+    imgIn = ((313 * i + 991 * j) % 65536) / 65535.0
 
     return alpha, imgIn
 

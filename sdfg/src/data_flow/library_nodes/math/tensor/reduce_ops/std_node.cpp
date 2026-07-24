@@ -24,26 +24,21 @@ StdNode::StdNode(
 )
     : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Std, shape, axes, keepdims) {}
 
-bool StdNode::expand_inner(
-    builder::StructuredSDFGBuilder& builder,
-    analysis::AnalysisManager& analysis_manager,
+passes::LibNodeExpander::ExpandOutcome StdNode::expand_inner(
+    passes::LibNodeExpander::AccessNodeExpand& expansion,
     structured_control_flow::Block& block,
-    data_flow::DataFlowGraph& dataflow,
-    structured_control_flow::Sequence& parent,
-    Transition& transition,
     const data_flow::Memlet* iedge_input,
     const data_flow::Memlet* iedge_result,
-    const data_flow::AccessNode* input_node,
-    const data_flow::AccessNode* output_node,
     const std::vector<symbolic::Expression>& output_shape,
     const std::vector<int64_t>& sorted_axes
 ) {
-    auto output_cont = output_node->data();
     auto& out_type = iedge_result->base_type();
     auto& in_type = iedge_input->base_type();
-    auto in_cont = input_node->data();
-    types::Scalar element_type(this->primitive_type(dataflow));
+    types::Scalar element_type(this->primitive_type(get_parent()));
     types::Pointer pointer_type(element_type);
+
+    auto& seq = expansion.replace_with_sequence();
+    auto& builder = expansion.builder();
 
     std::string tmp_x2_name = builder.find_new_name("_std_x2");
     builder.add_container(tmp_x2_name, pointer_type);
@@ -55,7 +50,7 @@ bool StdNode::expand_inner(
         bytes_in = symbolic::mul(dim, bytes_in);
     }
     {
-        auto& alloc_block = builder.add_block_before(parent, block, {}, this->debug_info());
+        auto& alloc_block = builder.add_block(seq, {}, this->debug_info());
         auto& tmp_x2_name_access = builder.add_access(alloc_block, tmp_x2_name);
         auto& tmp_x2_name_malloc_node =
             builder.add_library_node<stdlib::MallocNode>(alloc_block, this->debug_info(), bytes_in);
@@ -71,7 +66,7 @@ bool StdNode::expand_inner(
         }
         builder.add_container(tmp_mean_x2_name, pointer_type);
         {
-            auto& alloc_block = builder.add_block_before(parent, block, {}, this->debug_info());
+            auto& alloc_block = builder.add_block(seq, {}, this->debug_info());
             auto& tmp_mean_x2_name_access = builder.add_access(alloc_block, tmp_mean_x2_name);
             auto& tmp_mean_x2_name_malloc_node =
                 builder.add_library_node<stdlib::MallocNode>(alloc_block, this->debug_info(), bytes_out);
@@ -88,7 +83,7 @@ bool StdNode::expand_inner(
 
         builder.add_container(tmp_mean_x_name, pointer_type);
         {
-            auto& alloc_block = builder.add_block_before(parent, block, {}, this->debug_info());
+            auto& alloc_block = builder.add_block(seq, {}, this->debug_info());
             auto& tmp_mean_x_name_access = builder.add_access(alloc_block, tmp_mean_x_name);
             auto& tmp_mean_x_name_malloc_node =
                 builder.add_library_node<stdlib::MallocNode>(alloc_block, this->debug_info(), bytes_out);
@@ -108,8 +103,8 @@ bool StdNode::expand_inner(
     }
 
     // 1. X^2
-    auto& pow_block = builder.add_block_before(parent, block, {}, this->debug_info());
-    auto& pow_in_node = builder.add_access(pow_block, in_cont, this->debug_info());
+    auto& pow_block = builder.add_block(seq, {}, this->debug_info());
+    auto& pow_in_node = expansion.add_scalar_input_access(pow_block, X_INPUT_IDX);
     auto& pow_out_node = builder.add_access(pow_block, tmp_x2_name, this->debug_info());
 
     auto& pow_node_1 = builder.add_library_node<MulNode>(pow_block, this->debug_info(), shape_);
@@ -118,7 +113,7 @@ bool StdNode::expand_inner(
     builder.add_computational_memlet(pow_block, pow_out_node, pow_node_1, "C", {}, in_type, this->debug_info());
 
     // 2. Mean(X^2)
-    auto& mean_x2_block = builder.add_block_before(parent, block, {}, this->debug_info());
+    auto& mean_x2_block = builder.add_block(seq, {}, this->debug_info());
     auto& mean_x2_in_node = builder.add_access(mean_x2_block, tmp_x2_name, this->debug_info());
     auto& mean_x2_out_node = builder.add_access(mean_x2_block, tmp_mean_x2_name, this->debug_info());
 
@@ -128,8 +123,8 @@ bool StdNode::expand_inner(
         .add_computational_memlet(mean_x2_block, mean_x2_out_node, mean_node_1, "Y", {}, out_type, this->debug_info());
 
     // 3. Mean(X)
-    auto& mean_x_block = builder.add_block_before(parent, block, {}, this->debug_info());
-    auto& mean_x_in_node = builder.add_access(mean_x_block, in_cont, this->debug_info());
+    auto& mean_x_block = builder.add_block(seq, {}, this->debug_info());
+    auto& mean_x_in_node = expansion.add_scalar_input_access(mean_x_block, X_INPUT_IDX);
     auto& mean_x_out_node = builder.add_access(mean_x_block, tmp_mean_x_name, this->debug_info());
 
     auto& mean_node_2 = builder.add_library_node<MeanNode>(mean_x_block, this->debug_info(), shape_, axes_, keepdims_);
@@ -137,7 +132,7 @@ bool StdNode::expand_inner(
     builder.add_computational_memlet(mean_x_block, mean_x_out_node, mean_node_2, "Y", {}, out_type, this->debug_info());
 
     // 4. Mean(X)^2
-    auto& pow_mean_x_block = builder.add_block_before(parent, block, {}, this->debug_info());
+    auto& pow_mean_x_block = builder.add_block(seq, {}, this->debug_info());
     auto& pow_mean_x_in_node = builder.add_access(pow_mean_x_block, tmp_mean_x_name, this->debug_info());
 
     auto& pow_node_2 = builder.add_library_node<MulNode>(pow_mean_x_block, this->debug_info(), output_shape);
@@ -150,10 +145,10 @@ bool StdNode::expand_inner(
         .add_computational_memlet(pow_mean_x_block, pow_mean_x_in_node, pow_node_2, "C", {}, out_type, this->debug_info());
 
     // 5. Mean(X^2) - Mean(X)^2
-    auto& sub_block = builder.add_block_before(parent, block, {}, this->debug_info());
+    auto& sub_block = builder.add_block(seq, {}, this->debug_info());
     auto& sub_in1_node = builder.add_access(sub_block, tmp_mean_x2_name, this->debug_info());
     auto& sub_in2_node = builder.add_access(sub_block, tmp_mean_x_name, this->debug_info());
-    auto& sub_out_node = builder.add_access(sub_block, output_cont, this->debug_info());
+    auto& sub_out_node = expansion.add_scalar_input_access(sub_block, RESULT_PTR_IDX);
 
     auto& sub_node = builder.add_library_node<SubNode>(sub_block, this->debug_info(), output_shape);
     builder.add_computational_memlet(sub_block, sub_in1_node, sub_node, "A", {}, out_type, this->debug_info());
@@ -161,32 +156,20 @@ bool StdNode::expand_inner(
     builder.add_computational_memlet(sub_block, sub_out_node, sub_node, "C", {}, out_type, this->debug_info());
 
     // 6. Sqrt(...)
-    auto& sqrt_block = builder.add_block_before(parent, block, transition.assignments(), this->debug_info());
-    auto& sqrt_in_node = builder.add_access(sqrt_block, output_cont, this->debug_info());
+    auto& sqrt_block = builder.add_block(seq, {}, this->debug_info());
+    auto& sqrt_in_node = expansion.add_scalar_input_access(sqrt_block, RESULT_PTR_IDX);
 
     auto& sqrt_node = builder.add_library_node<SqrtNode>(sqrt_block, this->debug_info(), output_shape);
     builder.add_computational_memlet(sqrt_block, sqrt_in_node, sqrt_node, "X", {}, out_type, this->debug_info());
     builder.add_computational_memlet(sqrt_block, sqrt_in_node, sqrt_node, "Y", {}, out_type, this->debug_info());
 
-    // Cleanup
-    builder.remove_memlet(block, *iedge_input);
-    builder.remove_memlet(block, *iedge_result);
-    builder.remove_node(block, *input_node);
-    builder.remove_node(block, *output_node);
-    builder.remove_node(block, *this);
-
-    int last_index = parent.index(block);
-    builder.remove_child(parent, last_index);
-
-    return true;
+    return expansion.successfully_expanded();
 }
 
 bool StdNode::expand_reduction(
+    passes::LibNodeExpander::AccessNodeExpand& expansion,
     builder::StructuredSDFGBuilder& builder,
-    analysis::AnalysisManager& analysis_manager,
     structured_control_flow::Sequence& body,
-    const std::string& input_name,
-    const std::string& output_name,
     const types::Tensor& input_type,
     const types::Tensor& output_type,
     const data_flow::Subset& input_subset,

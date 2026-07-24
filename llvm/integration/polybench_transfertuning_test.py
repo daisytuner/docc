@@ -11,7 +11,7 @@ from functools import partial
 from test_runner import TestRunner, TransformationVerification
 
 
-def verify(reference_file: Path, test_file: Path, dtype, max_ulps = None):
+def verify(reference_file: Path, test_file: Path, dtype, max_ulps=None):
     cmd = [reference_file]
     process = subprocess.Popen(
         cmd,
@@ -103,9 +103,18 @@ def verify(reference_file: Path, test_file: Path, dtype, max_ulps = None):
     ],
 )
 def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+    )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 10}})
+    transformation_verification = TransformationVerification(
+        {
+            # "RPCNodeTransform": {
+            #     "loop_nests": {},
+            #     "tuned_loops": 9,
+            # }
+        }
+    )
 
     test_case = benchmark_path / "correlation.c"
     runner = TestRunner(
@@ -119,9 +128,12 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -130,7 +142,13 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -143,9 +161,13 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance"
+    )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 6}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
+    )
 
     test_case = benchmark_path / "covariance.c"
     runner = TestRunner(
@@ -159,9 +181,12 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -170,7 +195,13 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -184,10 +215,17 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "gemm"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 5}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 4}}
+    )
 
     test_case = benchmark_path / "gemm.c"
     runner = TestRunner(
@@ -201,9 +239,12 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -226,10 +267,22 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemver"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "gemver"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 5}})
+    transformation_verification = TransformationVerification(
+        {
+            # "RPCNodeTransform": {
+            #     "loop_nests": {},
+            #     "tuned_loops": 2,
+            # }
+        }
+    )
 
     test_case = benchmark_path / "gemver.c"
     runner = TestRunner(
@@ -243,9 +296,12 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -255,7 +311,13 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             max_ulps=1e2,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -269,10 +331,17 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gesummv"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "gesummv"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 4}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 3}}
+    )
 
     test_case = benchmark_path / "gesummv.c"
     runner = TestRunner(
@@ -286,9 +355,12 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -297,7 +369,13 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -311,10 +389,17 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "symm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "symm"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 2}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 3}}
+    )
 
     test_case = benchmark_path / "symm.c"
     runner = TestRunner(
@@ -328,9 +413,12 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -339,7 +427,13 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -353,10 +447,22 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syr2k"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "syr2k"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 3}})
+    transformation_verification = TransformationVerification(
+        {
+            # "RPCNodeTransform": {
+            #     "loop_nests": {},
+            #     "tuned_loops": 4,
+            # }
+        }
+    )
 
     test_case = benchmark_path / "syr2k.c"
     runner = TestRunner(
@@ -370,9 +476,12 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -381,7 +490,13 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -395,10 +510,17 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syrk"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "syrk"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 3}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 4}}
+    )
 
     test_case = benchmark_path / "syrk.c"
     runner = TestRunner(
@@ -412,9 +534,12 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -423,7 +548,13 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -437,7 +568,12 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "trmm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "trmm"
     )
 
     transformation_verification = TransformationVerification({})
@@ -454,9 +590,12 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -465,7 +604,13 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -479,10 +624,17 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "2mm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "2mm"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 8}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
+    )
 
     test_case = benchmark_path / "2mm.c"
     runner = TestRunner(
@@ -496,9 +648,12 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -522,10 +677,17 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "3mm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "3mm"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 10}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 7}}
+    )
 
     test_case = benchmark_path / "3mm.c"
     runner = TestRunner(
@@ -539,9 +701,12 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -564,10 +729,17 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "atax"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "atax"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 6}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 5}}
+    )
 
     test_case = benchmark_path / "atax.c"
     runner = TestRunner(
@@ -581,9 +753,12 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -592,7 +767,13 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -606,10 +787,17 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "bicg"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "bicg"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 4}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 3}}
+    )
 
     test_case = benchmark_path / "bicg.c"
     runner = TestRunner(
@@ -623,9 +811,12 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -634,7 +825,13 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -648,7 +845,12 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "doitgen"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "doitgen"
     )
 
     transformation_verification = TransformationVerification({})
@@ -665,9 +867,12 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -676,7 +881,13 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -690,10 +901,17 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "mvt"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "mvt"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 3}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 2}}
+    )
 
     test_case = benchmark_path / "mvt.c"
     runner = TestRunner(
@@ -707,9 +925,12 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -717,8 +938,14 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
-        transformation_verification = transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        transformation_verification=transformation_verification,
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -732,10 +959,17 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "cholesky"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "cholesky"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 5}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 7}}
+    )
 
     test_case = benchmark_path / "cholesky.c"
     runner = TestRunner(
@@ -749,9 +983,12 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -760,7 +997,13 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -774,7 +1017,12 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "durbin"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "durbin"
     )
 
     transformation_verification = TransformationVerification({})
@@ -791,9 +1039,12 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -802,7 +1053,13 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -838,9 +1095,12 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -849,7 +1109,13 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -863,10 +1129,17 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "lu"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "lu"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 4}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
+    )
 
     test_case = benchmark_path / "lu.c"
     runner = TestRunner(
@@ -880,9 +1153,12 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -891,48 +1167,13 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
-    )
-    return runner.run(timeout=120)
-
-
-@pytest.mark.parametrize(
-    "datatype",
-    [
-        pytest.param("-DDATA_TYPE_IS_DOUBLE"),
-        pytest.param("-DDATA_TYPE_IS_FLOAT"),
-    ],
-)
-def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "ludcmp"
-    )
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 7}})
-
-    test_case = benchmark_path / "ludcmp.c"
-    runner = TestRunner(
-        "Polybench",
-        test_case,
-        "docc",
-        compiler,
-        [
-            "-g",
-            "-O3",
-            "-DPOLYBENCH_DUMP_ARRAYS",
-            "-D" + size,
-            datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
-            "-lm",
-            "-lblas"
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
         ],
-        "sequential",
-        [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
-        partial(
-            verify,
-            dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-        ),
-        transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
     )
     return runner.run(timeout=120)
 
@@ -946,10 +1187,17 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 )
 def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "trisolv"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "trisolv"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 3}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 2}}
+    )
 
     test_case = benchmark_path / "trisolv.c"
     runner = TestRunner(
@@ -963,9 +1211,12 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -974,7 +1225,13 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -987,9 +1244,13 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "medley" / "deriche"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "medley" / "deriche"
+    )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {}, 'tuned_loops': 7}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 3}}
+    )
 
     test_case = benchmark_path / "deriche.c"
     runner = TestRunner(
@@ -1003,9 +1264,12 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -1014,15 +1278,23 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
 
 def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "medley" / "floyd-warshall"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "medley" / "floyd-warshall"
+    )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{1}})
+    transformation_verification = TransformationVerification({"RPCNodeTransform": {1}})
 
     test_case = benchmark_path / "floyd-warshall.c"
     runner = TestRunner(
@@ -1036,21 +1308,32 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             "-DDATA_TYPE_IS_INT",
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
         partial(verify, dtype=np.int64),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
 
 def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "medley" / "nussinov"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "medley" / "nussinov"
+    )
 
     transformation_verification = TransformationVerification({})
 
@@ -1066,15 +1349,24 @@ def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             "-DDATA_TYPE_IS_INT",
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
         partial(verify, dtype=np.int64),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -1102,9 +1394,12 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -1113,7 +1408,13 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -1126,7 +1427,9 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "fdtd-2d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "fdtd-2d"
+    )
 
     transformation_verification = TransformationVerification({})
 
@@ -1142,9 +1445,12 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -1153,7 +1459,13 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -1166,7 +1478,9 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "heat-3d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "heat-3d"
+    )
 
     transformation_verification = TransformationVerification({})
 
@@ -1182,9 +1496,12 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -1193,7 +1510,13 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -1206,7 +1529,9 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-1d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-1d"
+    )
 
     transformation_verification = TransformationVerification({})
 
@@ -1222,9 +1547,12 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -1233,7 +1561,13 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -1246,7 +1580,9 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-2d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-2d"
+    )
 
     transformation_verification = TransformationVerification({})
 
@@ -1262,9 +1598,12 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -1273,7 +1612,13 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)
 
@@ -1286,9 +1631,13 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     ],
 )
 def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "seidel-2d"
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "seidel-2d"
+    )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform":{'loop_nests': {1}, 'tuned_loops': 2}})
+    transformation_verification = TransformationVerification(
+        {"RPCNodeTransform": {"loop_nests": {1}, "tuned_loops": 2}}
+    )
     test_case = benchmark_path / "seidel-2d.c"
     runner = TestRunner(
         "Polybench",
@@ -1301,9 +1650,12 @@ def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
-            "-lblas"
+            "-lblas",
         ],
         "sequential",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
@@ -1312,6 +1664,12 @@ def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         transformation_verification=transformation_verification,
-        docc_flags=["-mllvm", "-docc-einsum", "-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
+        docc_flags=[
+            "-mllvm",
+            "-docc-einsum",
+            "-docc-transfer-tune",
+            "-docc-tune=sequential",
+            "-docc-save-temps",
+        ],
     )
     return runner.run(timeout=120)

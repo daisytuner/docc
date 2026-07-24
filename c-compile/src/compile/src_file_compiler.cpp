@@ -1,5 +1,7 @@
 #include "docc/compile/src_file_compiler.h"
 
+#include <sstream>
+
 #include "docc/util/docc_paths.h"
 
 namespace docc::compile {
@@ -20,11 +22,22 @@ CodegenCompiler& FileCompileState::creator() const { return compiler_; }
 bool FileCompileState::codegen() {
     if (generator_) {
         std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-        std::ofstream outfile(src_path_, std::ofstream::out | std::ofstream::trunc);
 
-        generator_(outfile);
+        if (compiler_.reuse_sources_ && std::filesystem::exists(src_path_)) {
+            // Preserve the existing (possibly hand-edited) source file. Still run
+            // the generator so its side effects happen (e.g. the main source
+            // generator populates the library snippets), but discard the output
+            // instead of overwriting the file on disk.
+            std::ostringstream sink;
+            generator_(sink);
+        } else {
+            std::ofstream outfile(src_path_, std::ofstream::out | std::ofstream::trunc);
 
-        outfile.close();
+            generator_(outfile);
+
+            outfile.close();
+        }
+
         std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
         src_done_ = true;
         gen_time_ = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -97,6 +110,10 @@ SrcFileCompiler::SrcFileCompiler(
 std::filesystem::path SrcFileCompiler::
     emit_header(const sdfg::StructuredSDFG& sdfg, sdfg::codegen::CodeGenerator& generator) {
     auto p = generate_header_path(sdfg);
+    if (reuse_sources_ && std::filesystem::exists(p)) {
+        // Keep the existing header when reusing sources.
+        return p;
+    }
     std::ofstream header_file(p, std::ofstream::out | std::ofstream::trunc);
     sdfg::codegen::PrettyPrinter os(header_file);
     generator.emit_header(os);
@@ -181,8 +198,19 @@ void SrcFileCompiler::for_each_file_snippet(
     }
 }
 
-std::filesystem::path SrcFileCompiler::
-    process(sdfg::codegen::CodeGenerator& generator, CompileExecutor& executor, const std::string& output_file_name) {
+std::filesystem::path SrcFileCompiler::process(
+    sdfg::codegen::CodeGenerator& generator,
+    CompileExecutor& executor,
+    const std::string& output_file_name,
+    bool reuse_sources
+) {
+    reuse_sources_ = reuse_sources;
+    // Propagate to redirect compilers (e.g. the .cu/nvcc compiler) so their
+    // snippet sources are reused as well.
+    for (auto& [ext, redirect] : redirects_) {
+        redirect->reuse_sources_ = reuse_sources;
+    }
+
     auto& sdfg = generator.sdfg();
     auto header_path = emit_header(sdfg, generator);
 

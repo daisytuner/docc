@@ -12,7 +12,9 @@ PARAMETERS = {
 
 def initialize(M, N, datatype=np.float64):
     float_n = datatype(N)
-    data = np.fromfunction(lambda i, j: (i * j) / M + i, (N, M), dtype=datatype)
+    i = np.arange(N, dtype=datatype).reshape(-1, 1)
+    j = np.arange(M, dtype=datatype)
+    data = (i * j) / M + i
 
     return M, float_n, data
 
@@ -31,19 +33,26 @@ def kernel(M, float_n, data):
     return corr
 
 
-@pytest.mark.skip(reason="sdfg does not validate")
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "none",
+        "sequential",
+        "openmp",
+        # "cuda",
+        # "rocm"
+    ],
+)
 def test_correlation(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
                 "CMath": 2,
-                "Memset": 1,
-                "SEQUENTIAL": 23,
-                "FOR": 27,
-                "MAP": 23,
-                "Malloc": 7,
+                "REDUCE": 3,
+                "MAP": 25,
+                "FOR": 1,
+                "SEQUENTIAL": 29,
             }
         )
     elif target == "sequential":
@@ -51,26 +60,24 @@ def test_correlation(target):
             verification={
                 "GEMM": 1,
                 "CMath": 2,
-                "VECTORIZE": 12,
-                "Memset": 1,
-                "SEQUENTIAL": 11,
-                "FOR": 27,
-                "MAP": 23,
-                "Malloc": 7,
+                "VECTORIZE": 16,
+                "REDUCE": 3,
+                "MAP": 22,
+                "FOR": 1,
+                "SEQUENTIAL": 10,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 3,
+                "VECTORIZE": 5,
+                "REDUCE": 3,
                 "CMath": 2,
-                "CPU_PARALLEL": 17,
-                "Memset": 1,
-                "SEQUENTIAL": 3,
-                "FOR": 27,
-                "MAP": 23,
-                "Malloc": 7,
+                "CPU_PARALLEL": 14,
+                "MAP": 16,
+                "SEQUENTIAL": 1,
+                "FOR": 1,
             }
         )
     elif target == "cuda":

@@ -789,7 +789,7 @@ LoopConditionNormalize LoopConditionNormalize::
         throw std::runtime_error("Element with ID " + std::to_string(loop_id) + " not found.");
     }
 
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw std::runtime_error("Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop.");
     }

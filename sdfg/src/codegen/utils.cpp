@@ -77,6 +77,14 @@ bool Reference::operator==(const types::IType& other) const {
 
 std::string Reference::print() const { return "Reference(" + this->reference_->print() + ")"; };
 
+void Reference::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    this->reference_->replace_symbols(old_expression, new_expression);
+}
+
+void Reference::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    this->reference_->replace_symbols(replacements);
+}
+
 
 } // namespace codegen
 } // namespace sdfg

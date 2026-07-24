@@ -12,10 +12,14 @@ PARAMETERS = {
 
 def initialize(M, N, datatype=np.float64):
     alpha = datatype(1.5)
-    A = np.fromfunction(lambda i, j: ((i * j) % M) / M, (M, M), dtype=datatype)
+    i = np.arange(M).reshape(-1, 1)
+    j = np.arange(M)
+    A = ((i * j) % M) / M
     for i in range(M):
         A[i, i] = 1.0
-    B = np.fromfunction(lambda i, j: ((N + i - j) % N) / N, (M, N), dtype=datatype)
+    i = np.arange(M).reshape(-1, 1)
+    j = np.arange(N)
+    B = ((N + i - j) % N) / N
 
     return alpha, A, B
 

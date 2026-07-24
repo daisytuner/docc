@@ -199,7 +199,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_LoopInterchange) {
     structured_control_flow::Map* loop_1_ = nullptr;
     structured_control_flow::Map* loop_2_ = nullptr;
     for (auto& loop : loop_analysis.loops()) {
-        auto* structured_loop = dynamic_cast<structured_control_flow::Map*>(loop);
+        auto* structured_loop = dyn_cast<structured_control_flow::Map*>(loop);
         if (structured_loop->indvar()->get_name() == "i") {
             loop_1_ = structured_loop;
         } else if (structured_loop->indvar()->get_name() == "j") {
@@ -227,7 +227,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
     auto& loop_analysis_1 = analysis_manager_->get<analysis::LoopAnalysis>();
     structured_control_flow::Map* loop_1_ = nullptr;
     for (auto& loop : loop_analysis_1.loops()) {
-        auto* structured_loop = dynamic_cast<structured_control_flow::Map*>(loop);
+        auto* structured_loop = dyn_cast<structured_control_flow::Map*>(loop);
         if (structured_loop->indvar()->get_name() == "i") {
             loop_1_ = structured_loop;
         }
@@ -240,7 +240,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
     auto& loop_analysis_2 = analysis_manager_->get<analysis::LoopAnalysis>();
     structured_control_flow::Map* loop_2_ = nullptr;
     for (auto& loop : loop_analysis_2.loops()) {
-        auto* structured_loop = dynamic_cast<structured_control_flow::Map*>(loop);
+        auto* structured_loop = dyn_cast<structured_control_flow::Map*>(loop);
         if (structured_loop->indvar()->get_name() == "j") {
             loop_2_ = structured_loop;
         }
@@ -255,7 +255,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
     structured_control_flow::Map* loop_j_outer = nullptr;
     structured_control_flow::Map* loop_i_tile = nullptr;
     for (auto& loop : loop_analysis_3.loops()) {
-        auto* structured_loop = dynamic_cast<structured_control_flow::Map*>(loop);
+        auto* structured_loop = dyn_cast<structured_control_flow::Map*>(loop);
         if (structured_loop->indvar()->get_name() == "i") {
             loop_i_tile = structured_loop;
         } else if (structured_loop->indvar()->get_name() == "j_tile0") {
@@ -294,11 +294,11 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
 
     EXPECT_EQ(j[1]["transformation_type"], "LoopTiling");
     EXPECT_EQ(j[1]["parameters"]["tile_size"], 16);
-    EXPECT_EQ(j[1]["subgraph"]["0"]["element_id"], 4);
+    EXPECT_EQ(j[1]["subgraph"]["0"]["element_id"], 3);
 
     EXPECT_EQ(j[2]["transformation_type"], "LoopInterchange");
     EXPECT_EQ(j[2]["subgraph"]["0"]["element_id"], 1);
-    EXPECT_EQ(j[2]["subgraph"]["1"]["element_id"], 19);
+    EXPECT_EQ(j[2]["subgraph"]["1"]["element_id"], 15);
 }
 
 TEST_F(RecorderMultiTransformationTest, Replay_Transformations) {
@@ -313,13 +313,13 @@ TEST_F(RecorderMultiTransformationTest, Replay_Transformations) {
 
     nlohmann::json j1;
     j1["transformation_type"] = "LoopTiling";
-    j1["subgraph"] = {{"0", {{"element_id", 4}, {"type", "map"}}}};
+    j1["subgraph"] = {{"0", {{"element_id", 3}, {"type", "map"}}}};
     j1["parameters"] = {{"tile_size", 16}};
     j_array.push_back(j1);
 
     nlohmann::json j2;
     j2["transformation_type"] = "LoopInterchange";
-    j2["subgraph"] = {{"0", {{"element_id", 1}, {"type", "for"}}}, {"1", {{"element_id", 19}, {"type", "map"}}}};
+    j2["subgraph"] = {{"0", {{"element_id", 1}, {"type", "for"}}}, {"1", {{"element_id", 15}, {"type", "map"}}}};
     j_array.push_back(j2);
 
     EXPECT_NO_THROW(recorder.replay(*builder_, *analysis_manager_, j_array));
@@ -425,12 +425,12 @@ TEST_F(ReplayerTest, Replay_Transformations) {
     );
     j.push_back(
         {{"transformation_type", "LoopTiling"},
-         {"subgraph", {{"0", {{"element_id", 4}, {"type", "map"}}}}},
+         {"subgraph", {{"0", {{"element_id", 3}, {"type", "map"}}}}},
          {"parameters", {{"tile_size", 16}}}}
     );
     j.push_back(
         {{"transformation_type", "LoopInterchange"},
-         {"subgraph", {{"0", {{"element_id", 1}, {"type", "map"}}}, {"1", {{"element_id", 19}, {"type", "map"}}}}}}
+         {"subgraph", {{"0", {{"element_id", 1}, {"type", "map"}}}, {"1", {{"element_id", 15}, {"type", "map"}}}}}}
     );
 
     EXPECT_NO_THROW(recorder.replay(*builder_, *analysis_manager_, j));

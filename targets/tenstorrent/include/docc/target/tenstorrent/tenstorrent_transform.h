@@ -65,7 +65,7 @@ public:
             throw transformations::
                 InvalidTransformationDescriptionException("Element with ID " + std::to_string(map_id) + " not found.");
         }
-        auto* map = dynamic_cast<structured_control_flow::Map*>(element);
+        auto* map = dyn_cast<structured_control_flow::Map*>(element);
         if (!map) {
             throw transformations::InvalidTransformationDescriptionException(
                 "Element with ID " + std::to_string(map_id) + " is not a Map."

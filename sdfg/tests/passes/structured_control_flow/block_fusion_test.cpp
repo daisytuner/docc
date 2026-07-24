@@ -18,7 +18,7 @@ TEST(BlockFusionTest, Computational_Chain) {
     builder.add_container("A", desc_array);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "A");
     auto& node2_1 = builder.add_access(block1, "A");
@@ -30,7 +30,7 @@ TEST(BlockFusionTest, Computational_Chain) {
     builder.add_computational_memlet(block1, two_node_1, tasklet_1, "_in3", {});
     builder.add_computational_memlet(block1, tasklet_1, "_out", node2_1, {symbolic::integer(0)});
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node1_2 = builder.add_access(block2, "A");
     auto& node2_2 = builder.add_access(block2, "A");
@@ -56,7 +56,7 @@ TEST(BlockFusionTest, Computational_Chain) {
     sdfg = builder_opt.move();
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto first_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0).first);
+    auto first_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0));
     EXPECT_EQ(first_block->dataflow().nodes().size(), 7);
 }
 
@@ -69,7 +69,7 @@ TEST(BlockFusionTest, SymbolUsedInSubset_Dataflow) {
     builder.add_container("i", desc_element);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "i");
     auto& zero_node = builder.add_constant(block1, "0", desc_element);
@@ -77,7 +77,7 @@ TEST(BlockFusionTest, SymbolUsedInSubset_Dataflow) {
     builder.add_computational_memlet(block1, zero_node, tasklet_1, "_in", {});
     builder.add_computational_memlet(block1, tasklet_1, "_out", node1_1, {});
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node2_1 = builder.add_access(block2, "A");
     auto& one_node = builder.add_constant(block2, "1", desc_element);
@@ -106,9 +106,9 @@ TEST(BlockFusionTest, SymbolUsedWithSubset_Transition) {
     builder.add_container("i", desc_element);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{symbolic::symbol("i"), symbolic::integer(0)}});
+    auto& block1 = builder.add_assignments(root, {{symbolic::symbol("i"), symbolic::integer(0)}});
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node2_1 = builder.add_access(block2, "A");
     auto& one_node = builder.add_constant(block2, "1", desc_element);
@@ -137,7 +137,7 @@ TEST(BlockFusionTest, Computational_IndependentSubgraphs) {
     builder.add_container("B", desc_array);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "A");
     auto& node2_1 = builder.add_access(block1, "A");
@@ -149,7 +149,7 @@ TEST(BlockFusionTest, Computational_IndependentSubgraphs) {
     builder.add_computational_memlet(block1, two_node_1, tasklet_1, "_in3", {});
     builder.add_computational_memlet(block1, tasklet_1, "_out", node2_1, {symbolic::integer(0)});
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node1_2 = builder.add_access(block2, "B");
     auto& node2_2 = builder.add_access(block2, "B");
@@ -175,7 +175,7 @@ TEST(BlockFusionTest, Computational_IndependentSubgraphs) {
     sdfg = builder_opt.move();
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0).first)->dataflow();
+    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0))->dataflow();
     EXPECT_EQ(dataflow.nodes().size(), 10);
     EXPECT_EQ(dataflow.edges().size(), 8);
     EXPECT_EQ(dataflow.weakly_connected_components().first, 2);
@@ -229,7 +229,7 @@ TEST(BlockFusionTest, Computational_LibraryNode_WithoutSideEffects) {
     sdfg = builder_opt.move();
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0).first)->dataflow();
+    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0))->dataflow();
     EXPECT_EQ(dataflow.nodes().size(), 5);
     EXPECT_EQ(dataflow.edges().size(), 4);
     EXPECT_EQ(dataflow.weakly_connected_components().first, 1);
@@ -244,13 +244,13 @@ TEST(BlockFusionTest, Reference) {
     builder.add_container("B", desc_pointer);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "A");
     auto& node2_1 = builder.add_access(block1, "B");
     builder.add_reference_memlet(block1, node1_1, node2_1, {symbolic::integer(0)}, desc_pointer);
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node1_2 = builder.add_access(block2, "B");
     auto& node2_2 = builder.add_access(block2, "B");
@@ -285,7 +285,7 @@ TEST(BlockFusionTest, Dereference) {
     builder.add_container("B", opaque_ptr);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "A");
     auto& node2_1 = builder.add_access(block1, "B");
@@ -293,7 +293,7 @@ TEST(BlockFusionTest, Dereference) {
     types::Pointer desc_ptr_2(static_cast<const types::IType&>(opaque_ptr));
     builder.add_dereference_memlet(block1, node1_1, node2_1, true, desc_ptr_2);
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     types::Scalar desc_element(types::PrimitiveType::Double);
     types::Pointer desc_ptr(desc_element);

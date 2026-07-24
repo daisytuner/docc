@@ -23,7 +23,7 @@ SchedulerAction CUDAScheduler::find(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    if (dynamic_cast<structured_control_flow::Map*>(&loop)) {
+    if (dyn_cast<structured_control_flow::Map*>(&loop)) {
         return NEXT;
     }
 
@@ -59,7 +59,7 @@ bool CUDAScheduler::can_apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    auto* map = dynamic_cast<structured_control_flow::Map*>(&loop);
+    auto* map = dyn_cast<structured_control_flow::Map*>(&loop);
     if (!map) {
         return false;
     }
@@ -73,9 +73,13 @@ void CUDAScheduler::apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    auto* map = dynamic_cast<structured_control_flow::Map*>(&loop);
-    cuda::CUDATransform cuda_transform(*map, 32, offload_unknown_sizes);
-    cuda_transform.apply(builder, analysis_manager);
+    auto* map = dyn_cast<structured_control_flow::Map*>(&loop);
+    if (recorder_ != nullptr) {
+        recorder_->apply<cuda::CUDATransform>(builder, analysis_manager, false, *map, 32, offload_unknown_sizes);
+    } else {
+        cuda::CUDATransform cuda_transform(*map, 32, offload_unknown_sizes);
+        cuda_transform.apply(builder, analysis_manager);
+    }
 }
 
 void CUDAScheduler::pre_schedule(
@@ -85,7 +89,7 @@ void CUDAScheduler::pre_schedule(
 ) {
     std::vector<structured_control_flow::Map*> applicable_maps;
     for (auto* loop : applicable_loops) {
-        if (auto* map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (auto* map = dyn_cast<structured_control_flow::Map*>(loop)) {
             applicable_maps.push_back(map);
         }
     }
@@ -121,7 +125,7 @@ void CUDAScheduler::post_schedule(
 ) {
     std::vector<structured_control_flow::Map*> gpu_maps;
     for (auto* loop : scheduled_loops) {
-        if (auto* map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+        if (auto* map = dyn_cast<structured_control_flow::Map*>(loop)) {
             gpu_maps.push_back(map);
         }
     }

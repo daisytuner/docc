@@ -51,7 +51,8 @@ public:
 
     std::string toStr() const override;
 
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    passes::LibNodeExpander::ExpandOutcome
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override;
 
     symbolic::Expression flop() const override;
 

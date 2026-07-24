@@ -21,11 +21,9 @@ public:
     );
 
     bool expand_reduction(
+        passes::LibNodeExpander::AccessNodeExpand& expansion,
         builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
         structured_control_flow::Sequence& body,
-        const std::string& input_name,
-        const std::string& output_name,
         const types::Tensor& input_type,
         const types::Tensor& output_type,
         const data_flow::Subset& input_subset,
@@ -33,6 +31,8 @@ public:
     ) override;
 
     std::string identity(types::PrimitiveType primitive_type) const override;
+
+    virtual std::optional<structured_control_flow::ReductionOperation> reduction_operation() const override;
 
     bool supports_integer_types() const override { return true; }
 

@@ -1,5 +1,10 @@
 #pragma once
 
+#include <string>
+#include "sdfg/analysis/analysis.h"
+#include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/passes/scheduler/loop_scheduler.h"
+
 namespace docc::compile {
 class SrcFileCompilerBuilder;
 }
@@ -13,9 +18,9 @@ struct TargetOptions {
 };
 
 struct DoccTarget {
-    static constexpr int NEWEST_API_VER = 1;
+    static constexpr int NEWEST_API_VER = 2;
 
-    int api_ver;
+    int api_ver = NEWEST_API_VER;
     std::string short_name;
 
     bool (*apply_additional_compile_options)(docc::compile::SrcFileCompilerBuilder& src_compile_builder);
@@ -64,6 +69,17 @@ struct DoccTarget {
             return apply_sched_time_mapping;
         } else {
             return nullptr;
+        }
+    }
+
+    std::vector<std::shared_ptr<
+        sdfg::passes::scheduler::LoopScheduler>> (*get_target_loop_schedulers)(const TargetOptions& options);
+    [[nodiscard]] std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>>
+    safe_get_target_loop_schedulers(const TargetOptions& options) const {
+        if (api_ver >= 2 && get_target_loop_schedulers != nullptr) {
+            return get_target_loop_schedulers(options);
+        } else {
+            return {};
         }
     }
 };

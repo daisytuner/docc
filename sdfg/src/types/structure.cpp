@@ -84,5 +84,18 @@ const size_t StructureDefinition::vector_size() const {
     return this->num_members();
 }
 
+void StructureDefinition::
+    replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    for (size_t i = 0; i < this->num_members(); i++) {
+        this->members_[i]->replace_symbols(old_expression, new_expression);
+    }
+}
+
+void StructureDefinition::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    for (size_t i = 0; i < this->num_members(); i++) {
+        this->members_[i]->replace_symbols(replacements);
+    }
+}
+
 } // namespace types
 } // namespace sdfg

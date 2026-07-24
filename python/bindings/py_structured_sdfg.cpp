@@ -27,6 +27,7 @@
 #include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
+#include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
 #include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
@@ -66,7 +67,10 @@
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduler.h"
+#include "sdfg/passes/scheduler/vectorize_scheduler.h"
+#include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
+#include "sdfg/targets/omp/schedule.h"
 #include "sdfg/util/offloading_instrumentation_plan.h"
 #include "targets/target_mapping.h"
 
@@ -75,12 +79,14 @@
 #endif
 
 // Platform-specific compiler selection
+#ifndef DOCC_CXX_COMPILER
 #if defined(__APPLE__)
 #define DOCC_CXX_COMPILER "clang++"
 #elif defined(__linux__)
 #define DOCC_CXX_COMPILER "clang-19"
 #else
 #error "Unsupported platform"
+#endif
 #endif
 
 namespace fs = std::filesystem;
@@ -190,9 +196,15 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     auto local_buffer_reuse_pipeline = sdfg::passes::local_buffer_reuse_pipeline();
     local_buffer_reuse_pipeline.run(builder_opt, analysis_manager);
 
-    // Expand library nodes
-    sdfg::passes::Pipeline libnode_expansion = sdfg::passes::Pipeline::expansion();
-    libnode_expansion.run(builder_opt, analysis_manager);
+    // Special expansion for einsum, because it can cut blocks apart manually, and the new expansion is not capable of
+    // doing that generically
+    sdfg::passes::Pipeline einsum_expand_pipe("EinsumExpansion");
+    einsum_expand_pipe.register_pass<sdfg::passes::EinsumExpansionPass>();
+    einsum_expand_pipe.run(builder_opt, analysis_manager);
+
+    // Expand Math library nodes
+    sdfg::passes::LibraryNodeExpansionPass math_expand;
+    math_expand.run(builder_opt, analysis_manager);
 
     sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;
     tensor_to_pointer_conversion_pass.run(builder_opt, analysis_manager);
@@ -322,9 +334,13 @@ void PyStructuredSDFG::simplify() {
     dataflow_simplification.run(builder_opt, analysis_manager);
 
     if (use_new_fusion_in_simplify_) {
+        dump_debug("py3.1.pre-fusion");
+
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
         sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
+
+        dump_debug("py3.2.post-fusion");
 
         // Cleanup of artifacts of MapFusion
         dde.run(builder_opt, analysis_manager);
@@ -344,6 +360,18 @@ void PyStructuredSDFG::simplify() {
     // normalize() map-fusion run so loop distribution and fusion do not fight)
     auto map_fusion = sdfg::passes::normalization::map_fusion(false);
     map_fusion.run(builder_opt, analysis_manager);
+}
+
+constexpr bool DEBUG_SDFG_DUMPS = false;
+
+void PyStructuredSDFG::dump_debug(const std::string& type, bool dump_dot, bool dump_json) {
+    if constexpr (DEBUG_SDFG_DUMPS) {
+        auto* dir = sdfg_->metadata_if_exists("output_dir");
+
+        if (dir) {
+            dump(*dir, type, dump_dot, dump_json);
+        }
+    }
 }
 
 void PyStructuredSDFG::dump(
@@ -440,13 +468,21 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
 
     docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, options);
 
-    std::vector<std::string> schedulers;
+    std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
 
     if (options.remote_tuning) {
         std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
             sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-        sdfg::passes::rpc::register_rpc_loop_opt(context, options.target, options.category);
-        schedulers.push_back("rpc");
+        schedulers.push_back(std::make_shared<sdfg::passes::rpc::RPCScheduler>(context, options.target, options.category)
+        );
+    }
+
+    auto* handler = docc_context_.get_target_handler(options.target);
+    if (handler) {
+        auto target_schedulers = handler->safe_get_target_loop_schedulers(options);
+        if (!target_schedulers.empty()) {
+            schedulers.insert(schedulers.end(), target_schedulers.begin(), target_schedulers.end());
+        }
     }
 
     // CPU Opt Pipeline
@@ -457,21 +493,18 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         symbol_propagation_pass.run(builder, analysis_manager);
         dde.run(builder, analysis_manager);
         dce.run(builder, analysis_manager);
+    }
 
-        if (options.target == "openmp") {
-            schedulers.push_back(options.target);
-        }
-        schedulers.push_back("vectorize");
-    }
-    // GPU Opt Pipeline
-    else if (options.target == "cuda" || options.target == "rocm") {
-        schedulers.push_back(options.target);
-    }
-    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, nullptr);
+    auto mapped = schedulers | std::views::transform([&](auto& n) { return n.get(); });
+    std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
+
+    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
     bool loop_scheduling_changes = loop_scheduling_pass.run(builder, analysis_manager);
     if (loop_scheduling_changes) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
         data_transfer_minimization_pass.run(builder, analysis_manager);
+        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
+        device_buffer_reuse_pass.run(builder, analysis_manager);
         sdfg::passes::DeadDataElimination dde(false);
         dde.run(builder, analysis_manager);
         sdfg::passes::DeadCFGElimination dead_cfg_elimination;
@@ -496,17 +529,20 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     if (promoted) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
         sdfg::passes::DeadDataElimination dead_data_elimination;
+        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
 
         // 1st round
         reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
         data_transfer_minimization.run(builder, analysis_manager);
+        device_buffer_reuse_pass.run(builder, analysis_manager);
         dead_data_elimination.run(builder, analysis_manager);
 
         // 2nd round
         reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
         data_transfer_minimization.run(builder, analysis_manager);
+        device_buffer_reuse_pass.run(builder, analysis_manager);
         dead_data_elimination.run(builder, analysis_manager);
     }
 
@@ -524,7 +560,8 @@ std::string PyStructuredSDFG::compile(
     const std::string& instrumentation_mode,
     bool capture_args,
     bool debug_build,
-    int threads
+    int threads,
+    bool reuse_sources
 ) const {
     fs::path build_path(output_folder);
     if (!fs::exists(build_path)) {
@@ -535,10 +572,7 @@ std::string PyStructuredSDFG::compile(
 
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
-    // Run expansion pass
-    sdfg::passes::Pipeline expansion = sdfg::passes::Pipeline::expansion();
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
-    expansion.run(builder_opt, analysis_manager);
 
     // Instrumentation plan
     std::unique_ptr<sdfg::codegen::InstrumentationPlan> instrumentation_plan;
@@ -573,6 +607,8 @@ std::string PyStructuredSDFG::compile(
         .add_common_option("-fstack-protector-strong")
         .add_common_option("-D_FORTIFY_SOURCE=3")
         .add_common_option("-O3")
+        // C/C++ codegen for memlets may generate code that violates strict aliasing rules, so we disable it.
+        .add_common_option("-fno-strict-aliasing")
         .add_common_option("-march=native")
         .add_common_option("-mtune=native")
         .add_compile_option("-funroll-loops")
@@ -630,7 +666,7 @@ std::string PyStructuredSDFG::compile(
         global_constructor
     );
 
-    return fcomp_handler->process(generator, pool, "lib" + sdfg_->name());
+    return fcomp_handler->process(generator, pool, "lib" + sdfg_->name(), reuse_sources);
 }
 
 std::string PyStructuredSDFG::metadata(const std::string& key) const {

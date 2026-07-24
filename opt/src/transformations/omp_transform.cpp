@@ -42,7 +42,7 @@ OMPTransform OMPTransform::from_json(builder::StructuredSDFGBuilder& builder, co
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(map_id) + " not found.");
     }
 
-    auto loop = dynamic_cast<structured_control_flow::Map*>(element);
+    auto loop = dyn_cast<structured_control_flow::Map*>(element);
 
     if (loop == nullptr) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(map_id) + " is not a Map.");

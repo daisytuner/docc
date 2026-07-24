@@ -35,7 +35,7 @@ InstrumentationInfo WhileDispatcher::instrumentation_info() const {
     auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
     analysis::LoopInfo loop_info = loop_analysis.loop_info(&node_);
 
-    return InstrumentationInfo(node_.element_id(), ElementType_While, TargetType_SEQUENTIAL, loop_info);
+    return InstrumentationInfo(node_.element_id(), node_.element_type(), TargetType_SEQUENTIAL, loop_info);
 };
 
 BreakDispatcher::BreakDispatcher(

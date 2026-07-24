@@ -165,11 +165,12 @@ public:
      * 3. Computing matrix multiplication using FMA (fused multiply-add) tasklets
      * 4. Writing results to output tensor
      *
-     * @param builder SDFG builder
-     * @param analysis_manager Analysis manager
-     * @return True if expansion succeeded
+     * @param context way to request isolation of node or add new blocks, loops etc.
+     * @param block the block in which the node is contained
+     * @return outcome of expand, created by context
      */
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    virtual passes::LibNodeExpander::ExpandOutcome
+    expand(passes::LibNodeExpander::ExpandContext&, structured_control_flow::Block& block) override;
 
     symbolic::SymbolSet symbols() const override;
 

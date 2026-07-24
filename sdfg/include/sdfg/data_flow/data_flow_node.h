@@ -124,6 +124,13 @@ protected:
     DataFlowNode(size_t element_id, const DebugInfo& debug_info, const graph::Vertex vertex, DataFlowGraph& parent);
 
 public:
+    /// Bitmask of all concrete ElementTypes that are DataFlowNodes.
+    static constexpr ElementType TypeGroup = ElementType::AccessNode | ElementType::ConstantNode |
+                                             ElementType::Tasklet | ElementType::LibraryNode;
+
+    /// LLVM-style RTTI predicate: true if \p element is a DataFlowNode.
+    static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+
     // Remark: Exclusive resource
     DataFlowNode(const DataFlowNode& data_node) = delete;
     DataFlowNode& operator=(const DataFlowNode&) = delete;

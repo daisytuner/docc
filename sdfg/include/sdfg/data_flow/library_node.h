@@ -136,6 +136,10 @@ public:
 
     virtual ~LibraryNode() = default;
 
+    ElementType type_id() const override { return ElementType::LibraryNode; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::LibraryNode; }
+
     /**
      * @brief Get the operation code
      * @return Library node code identifier

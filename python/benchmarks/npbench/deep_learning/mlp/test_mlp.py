@@ -86,7 +86,7 @@ def test_mlp(target):
                 "CUDA": 16,
                 "MAP": 16,
                 "REDUCE": 2,
-                "CUDAOffloading": 22,
+                "CUDAOffloading": 6,
                 "GEMM": 3,
             }
         )
@@ -96,7 +96,7 @@ def test_mlp(target):
                 "ROCM": 16,
                 "MAP": 16,
                 "REDUCE": 2,
-                "ROCMOffloading": 22,
+                "ROCMOffloading": 6,
                 "GEMM": 3,
             }
         )

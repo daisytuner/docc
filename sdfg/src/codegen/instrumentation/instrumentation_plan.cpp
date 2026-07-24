@@ -81,7 +81,7 @@ void InstrumentationPlan::begin_instrumentation(
 
     // Element metadata
     stream << metadata_var << ".element_id = " << info.element_id() << ";" << std::endl;
-    stream << metadata_var << ".element_type = \"" << info.element_type().value() << "\";" << std::endl;
+    stream << metadata_var << ".element_type = \"" << info.element_desc() << "\";" << std::endl;
     stream << metadata_var << ".target_type = \"" << info.target_type().value() << "\";" << std::endl;
 
     // Loop info metadata

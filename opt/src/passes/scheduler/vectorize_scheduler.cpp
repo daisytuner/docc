@@ -55,8 +55,12 @@ void VectorizeScheduler::apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    transformations::VectorizeTransform vectorize_transform(loop);
-    vectorize_transform.apply(builder, analysis_manager);
+    if (recorder_ != nullptr) {
+        recorder_->apply<transformations::VectorizeTransform>(builder, analysis_manager, false, loop);
+    } else {
+        transformations::VectorizeTransform vectorize_transform(loop);
+        vectorize_transform.apply(builder, analysis_manager);
+    }
 }
 
 std::unordered_set<ScheduleTypeCategory> VectorizeScheduler::compatible_types() {

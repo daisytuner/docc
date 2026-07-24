@@ -13,6 +13,11 @@ pybuild-*/
 __pycache__/
 .docc-*/
 test_outputs/
+*.log
+*.dot
+*.externals.json
+*.resolution.txt
+
 
 # Prerequisites
 *.d
@@ -22,6 +27,7 @@ test_outputs/
 *.lo
 *.o
 *.obj
+*.bc
 
 # Precompiled Headers
 *.gch
@@ -47,6 +53,7 @@ test_outputs/
 *.out
 *.app
 _codeql_build_dir/
+*.elf
 
 # Documentation
 docs/

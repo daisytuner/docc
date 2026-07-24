@@ -47,10 +47,9 @@ void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::
 
     auto parent2 = static_cast<structured_control_flow::Sequence*>(inner.get_parent());
     size_t index2 = parent2->index(inner);
-    auto& transition2 = parent2->at(index2).second;
 
     structured_control_flow::StructuredLoop* middle_loop = nullptr;
-    if (auto map = dynamic_cast<structured_control_flow::Map*>(&inner)) {
+    if (auto map = dyn_cast<structured_control_flow::Map*>(&inner)) {
         middle_loop = &builder.add_map_before(
             *parent2,
             inner,
@@ -59,10 +58,9 @@ void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::
             inner.init(),
             middle_update,
             map->schedule_type(),
-            transition2.assignments(),
             inner.debug_info()
         );
-    } else if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(&inner)) {
+    } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(&inner)) {
         middle_loop = &builder.add_reduce_before(
             *parent2,
             inner,
@@ -72,19 +70,11 @@ void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::
             middle_update,
             reduce->reductions(),
             reduce->schedule_type(),
-            transition2.assignments(),
             inner.debug_info()
         );
     } else {
         middle_loop = &builder.add_for_before(
-            *parent2,
-            inner,
-            middle_indvar,
-            middle_condition,
-            inner.init(),
-            middle_update,
-            transition2.assignments(),
-            inner.debug_info()
+            *parent2, inner, middle_indvar, middle_condition, inner.init(), middle_update, inner.debug_info()
         );
     }
 
@@ -97,7 +87,6 @@ void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::
     builder.update_loop(inner, inner_indvar2, innermost_condition, innermost_init, innermost_update);
 
     // Move inner loop into middle loop
-    transition2.assignments().clear();
     builder.move_child(*parent2, index2 + 1, middle_loop->root());
 
     analysis_manager.invalidate_all();
@@ -119,7 +108,7 @@ MultiLevelTiling MultiLevelTiling::from_json(builder::StructuredSDFGBuilder& bui
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
 
     return MultiLevelTiling(*loop, tile_size, tile_size_2);
 };

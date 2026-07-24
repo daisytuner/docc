@@ -7,8 +7,6 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
-#include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
-#include "sdfg/passes/structured_control_flow/sequence_fusion.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -75,17 +73,6 @@ TEST(OutLocalStorageTest, For_Array_RW) {
     EXPECT_TRUE(transformation.can_be_applied(builder, am));
     transformation.apply(builder, am);
 
-    // Cleanup for simpler verification
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Verify: local buffer was created
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     types::Array array_desc(elem_desc, symbolic::integer(4));
@@ -96,7 +83,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
     EXPECT_EQ(new_root.size(), 3);
 
     // First element should be init loop
-    auto* init_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(init_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(init_loop->condition(), symbolic::Lt(init_loop->indvar(), symbolic::integer(4))));
@@ -104,7 +91,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
 
     auto& init_body = init_loop->root();
     EXPECT_EQ(init_body.size(), 1);
-    auto* init_block = dynamic_cast<structured_control_flow::Block*>(&init_body.at(0).first);
+    auto* init_block = dyn_cast<structured_control_flow::Block*>(&init_body.at(0));
     EXPECT_NE(init_block, nullptr);
 
     EXPECT_EQ(init_block->dataflow().nodes().size(), 3);
@@ -136,13 +123,13 @@ TEST(OutLocalStorageTest, For_Array_RW) {
     EXPECT_TRUE(writes_C_local);
 
     // Second element should be the main loop
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
     // Verify main loop uses local buffer
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1);
-    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(main_block, nullptr);
 
     bool uses_C_local = false;
@@ -169,7 +156,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
     EXPECT_FALSE(uses_C_original);
 
     // Third element should be writeback loop
-    auto* wb_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(2).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2));
     EXPECT_NE(wb_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), symbolic::integer(4))));
@@ -177,7 +164,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
 
     auto& wb_body = wb_loop->root();
     EXPECT_EQ(wb_body.size(), 1);
-    auto* wb_block = dynamic_cast<structured_control_flow::Block*>(&wb_body.at(0).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_body.at(0));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -256,16 +243,6 @@ TEST(OutLocalStorageTest, For_Array_WO) {
     EXPECT_TRUE(transformation.can_be_applied(builder, am));
     transformation.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Verify: local buffer was created
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     types::Array array_desc(elem_desc, symbolic::integer(4));
@@ -275,13 +252,13 @@ TEST(OutLocalStorageTest, For_Array_WO) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0));
     EXPECT_NE(main_loop, nullptr);
 
     // Verify main loop uses local buffer
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1);
-    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(main_block, nullptr);
 
     bool uses_C_local = false;
@@ -305,14 +282,14 @@ TEST(OutLocalStorageTest, For_Array_WO) {
     EXPECT_FALSE(uses_C_original);
 
     // Second element should be writeback loop
-    auto* wb_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1));
     EXPECT_NE(wb_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), symbolic::integer(4))));
 
     auto& wb_body = wb_loop->root();
     EXPECT_EQ(wb_body.size(), 1);
-    auto* wb_block = dynamic_cast<structured_control_flow::Block*>(&wb_body.at(0).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_body.at(0));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -395,16 +372,6 @@ TEST(OutLocalStorageTest, For_Array_Linearized_RW) {
     EXPECT_TRUE(ols.can_be_applied(builder, am));
     ols.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Verify: buffer created
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     types::Array array_desc(elem, symbolic::integer(16));
@@ -417,14 +384,14 @@ TEST(OutLocalStorageTest, For_Array_Linearized_RW) {
     auto& outer_body = outer_loop.root();
     EXPECT_EQ(outer_body.size(), 3u);
 
-    auto* init_map = dynamic_cast<structured_control_flow::Map*>(&outer_body.at(0).first);
+    auto* init_map = dyn_cast<structured_control_flow::Map*>(&outer_body.at(0));
     EXPECT_NE(init_map, nullptr);
     EXPECT_TRUE(symbolic::eq(init_map->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(init_map->condition(), symbolic::Lt(init_map->indvar(), symbolic::integer(16))));
 
     auto& init_body = init_map->root();
     EXPECT_EQ(init_body.size(), 1);
-    auto* init_block = dynamic_cast<structured_control_flow::Block*>(&init_body.at(0).first);
+    auto* init_block = dyn_cast<structured_control_flow::Block*>(&init_body.at(0));
     EXPECT_NE(init_block, nullptr);
 
     EXPECT_EQ(init_block->dataflow().nodes().size(), 3);
@@ -445,10 +412,10 @@ TEST(OutLocalStorageTest, For_Array_Linearized_RW) {
         }
     }
 
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&outer_body.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&outer_body.at(1));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_map = dynamic_cast<structured_control_flow::Map*>(&outer_body.at(2).first);
+    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&outer_body.at(2));
     EXPECT_NE(wb_map, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_map->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_map->condition(), symbolic::Lt(wb_map->indvar(), symbolic::integer(16))));
@@ -456,7 +423,7 @@ TEST(OutLocalStorageTest, For_Array_Linearized_RW) {
     // Verify the compute memlets use LOCAL indices (k, zero-based)
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1u);
-    auto* compute_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* compute_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(compute_block, nullptr);
 
     bool found_local_access = false;
@@ -530,17 +497,6 @@ TEST(OutLocalStorageTest, For_Array_Linearized_WO) {
     EXPECT_TRUE(ols.can_be_applied(builder_opt, am));
     ols.apply(builder_opt, am);
 
-    // Cleanup
-    am.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder_opt, am);
-        applies |= sf_pass.run(builder_opt, am);
-    } while (applies);
 
     // Verify: buffer created
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
@@ -549,10 +505,10 @@ TEST(OutLocalStorageTest, For_Array_Linearized_WO) {
     auto& outer_body = outer_loop.root();
     EXPECT_EQ(outer_body.size(), 2u);
 
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&outer_body.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&outer_body.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_map = dynamic_cast<structured_control_flow::Map*>(&outer_body.at(1).first);
+    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&outer_body.at(1));
     EXPECT_NE(wb_map, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_map->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_map->condition(), symbolic::Lt(wb_map->indvar(), symbolic::integer(16))));
@@ -560,7 +516,7 @@ TEST(OutLocalStorageTest, For_Array_Linearized_WO) {
     // Verify the compute memlet uses LOCAL indices (k, zero-based)
     auto& main_body = main_loop->root();
     EXPECT_EQ(main_body.size(), 1u);
-    auto* compute_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* compute_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(compute_block, nullptr);
 
     bool found_local_access = false;
@@ -636,16 +592,6 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_WO) {
     EXPECT_TRUE(transformation.can_be_applied(builder, am));
     transformation.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Verify: local buffer was created (flattened to 32)
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     types::Array array_desc_ref(elem_desc, symbolic::integer(32));
@@ -655,18 +601,18 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_WO) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_outer = dynamic_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    auto* wb_outer = dyn_cast<structured_control_flow::Map*>(&new_root.at(1));
     EXPECT_NE(wb_outer, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_outer->condition(), symbolic::Lt(wb_outer->indvar(), symbolic::integer(4))));
 
-    auto* wb_inner = dynamic_cast<structured_control_flow::Map*>(&wb_outer->root().at(0).first);
+    auto* wb_inner = dyn_cast<structured_control_flow::Map*>(&wb_outer->root().at(0));
     EXPECT_NE(wb_inner, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_inner->condition(), symbolic::Lt(wb_inner->indvar(), symbolic::integer(8))));
 
-    auto* wb_block = dynamic_cast<structured_control_flow::Block*>(&wb_inner->root().at(0).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_inner->root().at(0));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -694,9 +640,9 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_WO) {
     // Verify main loop uses local buffer
     bool uses_C_local = false;
     bool uses_C_original = false;
-    auto* main_inner = dynamic_cast<structured_control_flow::For*>(&main_loop->root().at(0).first);
+    auto* main_inner = dyn_cast<structured_control_flow::For*>(&main_loop->root().at(0));
     EXPECT_NE(main_inner, nullptr);
-    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_inner->root().at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_inner->root().at(0));
     EXPECT_NE(main_block, nullptr);
     for (auto* node : main_block->dataflow().data_nodes()) {
         if (node->data() == "__daisy_out_local_storage_C0") {
@@ -762,17 +708,6 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_RW) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, am));
     transformation.apply(builder_opt, am);
 
-    // Cleanup
-    am.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder_opt, am);
-        applies |= sf_pass.run(builder_opt, am);
-    } while (applies);
     builder_opt.subject().validate();
 
     // Verify local buffer was created
@@ -783,7 +718,7 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_RW) {
     EXPECT_EQ(new_root.size(), 3);
 
     // Init should be a for loop (first dimension)
-    auto* init_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(init_loop, nullptr);
     // Should iterate 0..4 (first dim extent)
     EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
@@ -792,13 +727,13 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_RW) {
     // Init loop should contain nested loop for second dimension
     auto& init_body = init_loop->root();
     EXPECT_EQ(init_body.size(), 1);
-    auto* inner_init = dynamic_cast<structured_control_flow::Map*>(&init_body.at(0).first);
+    auto* inner_init = dyn_cast<structured_control_flow::Map*>(&init_body.at(0));
     EXPECT_NE(inner_init, nullptr);
     EXPECT_TRUE(symbolic::eq(inner_init->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(inner_init->condition(), symbolic::Lt(inner_init->indvar(), symbolic::integer(8))));
 
     // check that accesses got converted into linearized accesses
-    auto* inner_init_body = dynamic_cast<structured_control_flow::Block*>(&inner_init->root().at(0).first);
+    auto* inner_init_body = dyn_cast<structured_control_flow::Block*>(&inner_init->root().at(0));
     EXPECT_NE(inner_init_body, nullptr);
     for (auto& edge : inner_init_body->dataflow().edges()) {
         auto inferred_type = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
@@ -807,23 +742,23 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_RW) {
     }
 
     // Compute loop preserved
-    auto* compute_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* compute_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(compute_loop, nullptr);
 
     // Writeback should be a for loop
-    auto* wb_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(2).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2));
     EXPECT_NE(wb_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), symbolic::integer(4))));
 
     auto& wb_body = wb_loop->root();
     EXPECT_EQ(wb_body.size(), 1);
-    auto* inner_wb = dynamic_cast<structured_control_flow::Map*>(&wb_body.at(0).first);
+    auto* inner_wb = dyn_cast<structured_control_flow::Map*>(&wb_body.at(0));
     EXPECT_NE(inner_wb, nullptr);
     EXPECT_TRUE(symbolic::eq(inner_wb->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(inner_wb->condition(), symbolic::Lt(inner_wb->indvar(), symbolic::integer(8))));
 
-    auto* inner_wb_body = dynamic_cast<structured_control_flow::Block*>(&inner_wb->root().at(0).first);
+    auto* inner_wb_body = dyn_cast<structured_control_flow::Block*>(&inner_wb->root().at(0));
     EXPECT_NE(inner_wb_body, nullptr);
     for (auto& edge : inner_wb_body->dataflow().edges()) {
         auto inferred_type = types::infer_type(builder_opt.subject(), edge.base_type(), edge.subset());
@@ -881,16 +816,6 @@ TEST(OutLocalStorageTest, For_Scalar_RW) {
     EXPECT_TRUE(transformation.can_be_applied(builder, am));
     transformation.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Verify: local buffer was created (size 1)
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     types::Array array_desc(elem_desc, symbolic::integer(1));
@@ -901,7 +826,7 @@ TEST(OutLocalStorageTest, For_Scalar_RW) {
     EXPECT_EQ(new_root.size(), 3);
 
     // First element should be init block (no loop because extent is 1)
-    auto* init_block = dynamic_cast<structured_control_flow::Block*>(&new_root.at(0).first);
+    auto* init_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(0));
     EXPECT_NE(init_block, nullptr);
 
     EXPECT_EQ(init_block->dataflow().nodes().size(), 3);
@@ -927,11 +852,11 @@ TEST(OutLocalStorageTest, For_Scalar_RW) {
     EXPECT_TRUE(writes_C_local);
 
     // Second element should be the main loop
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
     auto& main_body = main_loop->root();
-    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_body.at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_body.at(0));
     EXPECT_NE(main_block, nullptr);
     bool uses_C_local = false;
     bool uses_C_original = false;
@@ -953,7 +878,7 @@ TEST(OutLocalStorageTest, For_Scalar_RW) {
     EXPECT_FALSE(uses_C_original);
 
     // Third element should be writeback block (no loop)
-    auto* wb_block = dynamic_cast<structured_control_flow::Block*>(&new_root.at(2).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(2));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -1024,16 +949,6 @@ TEST(OutLocalStorageTest, For_Scalar_WO) {
     EXPECT_TRUE(transformation.can_be_applied(builder, am));
     transformation.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Verify: local buffer was created (size 1)
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     types::Array array_desc(elem_desc, symbolic::integer(1));
@@ -1043,10 +958,10 @@ TEST(OutLocalStorageTest, For_Scalar_WO) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_block = dynamic_cast<structured_control_flow::Block*>(&new_root.at(1).first);
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(1));
     EXPECT_NE(wb_block, nullptr);
 
     EXPECT_EQ(wb_block->dataflow().nodes().size(), 3);
@@ -1064,7 +979,7 @@ TEST(OutLocalStorageTest, For_Scalar_WO) {
     }
 
     // Verify main loop uses local buffer
-    auto* main_block = dynamic_cast<structured_control_flow::Block*>(&main_loop->root().at(0).first);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop->root().at(0));
     EXPECT_NE(main_block, nullptr);
     bool uses_C_local = false;
     bool uses_C_original = false;
@@ -1119,16 +1034,6 @@ TEST(OutLocalStorageTest, Map_Array_RW) {
     EXPECT_TRUE(transformation.can_be_applied(builder, am));
     transformation.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Verify: local buffer was created
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     types::Array array_desc(elem_desc, symbolic::integer(4));
@@ -1138,13 +1043,13 @@ TEST(OutLocalStorageTest, Map_Array_RW) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 3);
 
-    auto* init_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(init_loop, nullptr);
 
-    auto* main_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    auto* main_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(2).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2));
     EXPECT_NE(wb_loop, nullptr);
 }
 
@@ -1189,16 +1094,6 @@ TEST(OutLocalStorageTest, Map_Array_WO) {
     EXPECT_TRUE(transformation.can_be_applied(builder, am));
     transformation.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Verify: local buffer was created
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     types::Array array_desc(elem_desc, symbolic::integer(4));
@@ -1208,10 +1103,10 @@ TEST(OutLocalStorageTest, Map_Array_WO) {
     auto& new_root = builder.subject().root();
     EXPECT_EQ(new_root.size(), 2);
 
-    auto* main_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* wb_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(1).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(1));
     EXPECT_NE(wb_loop, nullptr);
 }
 
@@ -1283,28 +1178,10 @@ TEST(OutLocalStorageTest, For_MultipleGroups_RW) {
     ASSERT_TRUE(ols_ik.can_be_applied(builder, am));
     ols_ik.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Second OLS: pack C[j,k] group
     transformations::OutLocalStorage ols_jk(k_loop, cjk_out);
     EXPECT_TRUE(ols_jk.can_be_applied(builder, am));
     ols_jk.apply(builder, am);
-
-    am.invalidate_all();
-    applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
 
     // Verify: two local buffers were created
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
@@ -1316,7 +1193,7 @@ TEST(OutLocalStorageTest, For_MultipleGroups_RW) {
     // No raw C accesses should remain inside the k-loop
     auto& k_body = k_loop.root();
     for (size_t bi = 0; bi < k_body.size(); ++bi) {
-        auto* blk = dynamic_cast<structured_control_flow::Block*>(&k_body.at(bi).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&k_body.at(bi));
         if (!blk) continue;
         for (auto* node : blk->dataflow().data_nodes()) {
             EXPECT_NE(node->data(), "C") << "All C accesses inside k-loop should be rewritten";
@@ -1384,27 +1261,9 @@ TEST(OutLocalStorageTest, For_MultipleGroups_WO) {
     ASSERT_TRUE(ols_ik.can_be_applied(builder, am));
     ols_ik.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     transformations::OutLocalStorage ols_jk(k_loop, cjk_out);
     EXPECT_TRUE(ols_jk.can_be_applied(builder, am));
     ols_jk.apply(builder, am);
-
-    am.invalidate_all();
-    applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
 
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C1"));
@@ -1415,7 +1274,7 @@ TEST(OutLocalStorageTest, For_MultipleGroups_WO) {
     // No raw C accesses should remain inside the k-loop
     auto& k_body = k_loop.root();
     for (size_t bi = 0; bi < k_body.size(); ++bi) {
-        auto* blk = dynamic_cast<structured_control_flow::Block*>(&k_body.at(bi).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&k_body.at(bi));
         if (!blk) continue;
         for (auto* node : blk->dataflow().data_nodes()) {
             EXPECT_NE(node->data(), "C") << "All C accesses inside k-loop should be rewritten";
@@ -1484,16 +1343,6 @@ TEST(OutLocalStorageTest, For_MultipleGroups_SplitNode_WO) {
     ASSERT_TRUE(ols_ik.can_be_applied(builder, am));
     ols_ik.apply(builder, am);
 
-    am.invalidate_all();
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     // Find the remaining "C" access node (should be exactly one after split)
     const data_flow::AccessNode* new_c_out = nullptr;
     for (auto* node : block.dataflow().data_nodes()) {
@@ -1509,14 +1358,6 @@ TEST(OutLocalStorageTest, For_MultipleGroups_SplitNode_WO) {
     EXPECT_TRUE(ols_jk.can_be_applied(builder, am));
     ols_jk.apply(builder, am);
 
-    am.invalidate_all();
-    applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, am);
-        applies |= sf_pass.run(builder, am);
-    } while (applies);
-
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C0"));
     EXPECT_TRUE(builder.subject().exists("__daisy_out_local_storage_C1"));
     types::Array array_desc(elem_desc, symbolic::integer(16));
@@ -1526,7 +1367,7 @@ TEST(OutLocalStorageTest, For_MultipleGroups_SplitNode_WO) {
     // No raw C accesses should remain inside the k-loop
     auto& k_body = k_loop.root();
     for (size_t bi = 0; bi < k_body.size(); ++bi) {
-        auto* blk = dynamic_cast<structured_control_flow::Block*>(&k_body.at(bi).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&k_body.at(bi));
         if (!blk) continue;
         for (auto* node : blk->dataflow().data_nodes()) {
             EXPECT_NE(node->data(), "C") << "All C accesses inside k-loop should be rewritten";
@@ -1819,17 +1660,6 @@ TEST(OutLocalStorageTest, FlatPointer_Linearized2D) {
     EXPECT_TRUE(transformation.can_be_applied(builder_opt, am));
     transformation.apply(builder_opt, am);
 
-    // Cleanup
-    am.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder_opt, am);
-        applies |= sf_pass.run(builder_opt, am);
-    } while (applies);
 
     // Verify local buffer was created
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
@@ -1839,7 +1669,7 @@ TEST(OutLocalStorageTest, FlatPointer_Linearized2D) {
     EXPECT_EQ(new_root.size(), 3);
 
     // Init should be a for loop (first dimension)
-    auto* init_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(0).first);
+    auto* init_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     EXPECT_NE(init_loop, nullptr);
     // Should iterate 0..4 (first dim extent)
     EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
@@ -1848,17 +1678,17 @@ TEST(OutLocalStorageTest, FlatPointer_Linearized2D) {
     // Init loop should contain nested loop for second dimension
     auto& init_body = init_loop->root();
     EXPECT_EQ(init_body.size(), 1);
-    auto* inner_init = dynamic_cast<structured_control_flow::Map*>(&init_body.at(0).first);
+    auto* inner_init = dyn_cast<structured_control_flow::Map*>(&init_body.at(0));
     EXPECT_NE(inner_init, nullptr);
     EXPECT_TRUE(symbolic::eq(inner_init->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(inner_init->condition(), symbolic::Lt(inner_init->indvar(), symbolic::integer(8))));
 
     // Compute loop preserved
-    auto* compute_loop = dynamic_cast<structured_control_flow::For*>(&new_root.at(1).first);
+    auto* compute_loop = dyn_cast<structured_control_flow::For*>(&new_root.at(1));
     EXPECT_NE(compute_loop, nullptr);
 
     // Writeback should be a for loop
-    auto* wb_loop = dynamic_cast<structured_control_flow::Map*>(&new_root.at(2).first);
+    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&new_root.at(2));
     EXPECT_NE(wb_loop, nullptr);
     EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), symbolic::integer(4))));
@@ -1972,17 +1802,6 @@ TEST(OutLocalStorageTest, TiledAccumulator_2D) {
     if (can_apply) {
         transformation.apply(builder_opt, am);
 
-        // Cleanup
-        am.invalidate_all();
-
-        passes::SequenceFusion sf_pass;
-        passes::DeadCFGElimination dce_pass;
-        bool applies = false;
-        do {
-            applies = false;
-            applies |= dce_pass.run(builder_opt, am);
-            applies |= sf_pass.run(builder_opt, am);
-        } while (applies);
 
         // Verify local buffer was created
         EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
@@ -1992,7 +1811,7 @@ TEST(OutLocalStorageTest, TiledAccumulator_2D) {
         EXPECT_EQ(k_tile_body.size(), 3);
 
         // Init: nested for loops (MC x KC)
-        auto* init_loop = dynamic_cast<structured_control_flow::Map*>(&k_tile_body.at(0).first);
+        auto* init_loop = dyn_cast<structured_control_flow::Map*>(&k_tile_body.at(0));
         EXPECT_NE(init_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(init_loop->condition(), symbolic::Lt(init_loop->indvar(), MC)));
@@ -2000,17 +1819,17 @@ TEST(OutLocalStorageTest, TiledAccumulator_2D) {
         // Check nested second dimension
         auto& init_inner_body = init_loop->root();
         EXPECT_EQ(init_inner_body.size(), 1);
-        auto* init_inner = dynamic_cast<structured_control_flow::Map*>(&init_inner_body.at(0).first);
+        auto* init_inner = dyn_cast<structured_control_flow::Map*>(&init_inner_body.at(0));
         EXPECT_NE(init_inner, nullptr);
         EXPECT_TRUE(symbolic::eq(init_inner->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(init_inner->condition(), symbolic::Lt(init_inner->indvar(), KC)));
 
         // Compute loop preserved
-        auto* compute_loop = dynamic_cast<structured_control_flow::For*>(&k_tile_body.at(1).first);
+        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&k_tile_body.at(1));
         EXPECT_NE(compute_loop, nullptr);
 
         // Writeback: nested for loops (MC x KC)
-        auto* wb_loop = dynamic_cast<structured_control_flow::Map*>(&k_tile_body.at(2).first);
+        auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&k_tile_body.at(2));
         EXPECT_NE(wb_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), MC)));
@@ -2018,11 +1837,11 @@ TEST(OutLocalStorageTest, TiledAccumulator_2D) {
         // Verify the compute memlet uses LOCAL indices: (i-i_tile)*KC + (k-k_tile)
         auto& compute_i_body = compute_loop->root();
         EXPECT_GE(compute_i_body.size(), 1u);
-        auto* compute_k_loop = dynamic_cast<structured_control_flow::For*>(&compute_i_body.at(0).first);
+        auto* compute_k_loop = dyn_cast<structured_control_flow::For*>(&compute_i_body.at(0));
         EXPECT_NE(compute_k_loop, nullptr);
         auto& compute_k_body = compute_k_loop->root();
         EXPECT_EQ(compute_k_body.size(), 1u);
-        auto* compute_block = dynamic_cast<structured_control_flow::Block*>(&compute_k_body.at(0).first);
+        auto* compute_block = dyn_cast<structured_control_flow::Block*>(&compute_k_body.at(0));
         EXPECT_NE(compute_block, nullptr);
 
         bool found_local_read = false;
@@ -2123,17 +1942,6 @@ TEST(OutLocalStorageTest, TiledWriteOnly_1D) {
     if (can_apply) {
         transformation.apply(builder_opt, am);
 
-        // Cleanup
-        am.invalidate_all();
-
-        passes::SequenceFusion sf_pass;
-        passes::DeadCFGElimination dce_pass;
-        bool applies = false;
-        do {
-            applies = false;
-            applies |= dce_pass.run(builder_opt, am);
-            applies |= sf_pass.run(builder_opt, am);
-        } while (applies);
 
         // Verify local buffer was created
         EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
@@ -2143,11 +1951,11 @@ TEST(OutLocalStorageTest, TiledWriteOnly_1D) {
         EXPECT_EQ(tile_body.size(), 2);
 
         // First: compute loop
-        auto* compute_loop = dynamic_cast<structured_control_flow::For*>(&tile_body.at(0).first);
+        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&tile_body.at(0));
         EXPECT_NE(compute_loop, nullptr);
 
         // Second: writeback loop (0..TILE)
-        auto* wb_loop = dynamic_cast<structured_control_flow::Map*>(&tile_body.at(1).first);
+        auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&tile_body.at(1));
         EXPECT_NE(wb_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), TILE)));
@@ -2155,7 +1963,7 @@ TEST(OutLocalStorageTest, TiledWriteOnly_1D) {
         // Writeback body: C_local → assign → C
         auto& wb_body = wb_loop->root();
         EXPECT_EQ(wb_body.size(), 1);
-        auto* wb_block = dynamic_cast<structured_control_flow::Block*>(&wb_body.at(0).first);
+        auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_body.at(0));
         EXPECT_NE(wb_block, nullptr);
         bool has_c = false, has_local = false;
         for (auto* node : wb_block->dataflow().data_nodes()) {
@@ -2251,17 +2059,6 @@ TEST(OutLocalStorageTest, TiledAccumulator_1D_NonZeroBase) {
     if (can_apply) {
         transformation.apply(builder_opt, am);
 
-        // Cleanup
-        am.invalidate_all();
-
-        passes::SequenceFusion sf_pass;
-        passes::DeadCFGElimination dce_pass;
-        bool applies = false;
-        do {
-            applies = false;
-            applies |= dce_pass.run(builder_opt, am);
-            applies |= sf_pass.run(builder_opt, am);
-        } while (applies);
 
         // Verify local buffer was created
         EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
@@ -2271,7 +2068,7 @@ TEST(OutLocalStorageTest, TiledAccumulator_1D_NonZeroBase) {
         EXPECT_EQ(tile_body.size(), 3);
 
         // Init loop: 0..TILE
-        auto* init_loop = dynamic_cast<structured_control_flow::Map*>(&tile_body.at(0).first);
+        auto* init_loop = dyn_cast<structured_control_flow::Map*>(&tile_body.at(0));
         EXPECT_NE(init_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(init_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(init_loop->condition(), symbolic::Lt(init_loop->indvar(), TILE)));
@@ -2279,7 +2076,7 @@ TEST(OutLocalStorageTest, TiledAccumulator_1D_NonZeroBase) {
         // Init body should read from C and write to C_local
         auto& init_body = init_loop->root();
         EXPECT_EQ(init_body.size(), 1);
-        auto* init_block = dynamic_cast<structured_control_flow::Block*>(&init_body.at(0).first);
+        auto* init_block = dyn_cast<structured_control_flow::Block*>(&init_body.at(0));
         EXPECT_NE(init_block, nullptr);
         bool has_c = false, has_local = false;
         for (auto* node : init_block->dataflow().data_nodes()) {
@@ -2290,11 +2087,11 @@ TEST(OutLocalStorageTest, TiledAccumulator_1D_NonZeroBase) {
         EXPECT_TRUE(has_local);
 
         // Compute loop (j_loop) preserved
-        auto* compute_loop = dynamic_cast<structured_control_flow::For*>(&tile_body.at(1).first);
+        auto* compute_loop = dyn_cast<structured_control_flow::For*>(&tile_body.at(1));
         EXPECT_NE(compute_loop, nullptr);
 
         // Writeback loop: 0..TILE
-        auto* wb_loop = dynamic_cast<structured_control_flow::Map*>(&tile_body.at(2).first);
+        auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&tile_body.at(2));
         EXPECT_NE(wb_loop, nullptr);
         EXPECT_TRUE(symbolic::eq(wb_loop->init(), symbolic::integer(0)));
         EXPECT_TRUE(symbolic::eq(wb_loop->condition(), symbolic::Lt(wb_loop->indvar(), TILE)));
@@ -2370,6 +2167,97 @@ TEST(OutLocalStorageTest, GPU_NoCoop_Rejected) {
     analysis::AnalysisManager am(builder_opt.subject());
 
     transformations::OutLocalStorage ols(loop, c_out, types::StorageType::NV_Shared());
+    EXPECT_FALSE(ols.can_be_applied(builder_opt, am));
+}
+
+/**
+ * Test: OutLocalStorage with NV_Shared rejects when applied to the outermost loop
+ *
+ * Setup:
+ *   Map X (i, 0..N, block_size=32) → Map Y (j, 0..M, block_size=8) → For k = 0..16
+ *   C[j*16 + k] is written — the nested structure is cooperative (i not in base),
+ *   so the inner For would be a valid staging target.
+ *
+ * However, the transformation is applied to the OUTERMOST loop (Map X), which is
+ * the CUDA kernel itself. Staging into shared memory at this level would place the
+ * copy-out loops outside the kernel and force the per-block __shared__ buffer to be
+ * passed across the kernel boundary as an argument — which is illegal in CUDA.
+ * Hence it must be rejected.
+ */
+TEST(OutLocalStorageTest, GPU_OutermostLoop_Rejected) {
+    builder::StructuredSDFGBuilder builder("ols_gpu_outermost", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("N", loop_var, true);
+    builder.add_container("M", loop_var, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    // GPU Map X: i = 0..N (block_size=32) — outermost loop / kernel boundary
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        seq,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), N),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // GPU Map Y: j = 0..M (block_size=8)
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
+    gpu::gpu_block_size(sched_y, symbolic::integer(8));
+    auto& map_y = builder.add_map(
+        map_x.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), M),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        sched_y
+    );
+
+    // For loop: k = 0..16
+    auto& loop = builder.add_for(
+        map_y.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {symbolic::symbol("k")}, ptr);
+    // C[j*16 + k] — base depends on j only; i (the kernel/X dim) is free → cooperative
+    builder.add_computational_memlet(
+        block,
+        tasklet,
+        "_out",
+        c_out,
+        {symbolic::add(symbolic::mul(symbolic::symbol("j"), symbolic::integer(16)), symbolic::symbol("k"))},
+        ptr
+    );
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // Applied to the outermost loop (Map X = kernel) → must be rejected for NV_Shared
+    transformations::OutLocalStorage ols(map_x, c_out, types::StorageType::NV_Shared());
     EXPECT_FALSE(ols.can_be_applied(builder_opt, am));
 }
 
@@ -2459,17 +2347,6 @@ TEST(OutLocalStorageTest, GPU_Cooperative_FlatPointer) {
     EXPECT_TRUE(ols.can_be_applied(builder_opt, am));
     ols.apply(builder_opt, am);
 
-    // Cleanup
-    am.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder_opt, am);
-        applies |= sf_pass.run(builder_opt, am);
-    } while (applies);
 
     // Verify: shared buffer was created with resolved size (M→8)
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
@@ -2484,16 +2361,16 @@ TEST(OutLocalStorageTest, GPU_Cooperative_FlatPointer) {
     auto& map_y_body = map_y.root();
     EXPECT_GE(map_y_body.size(), 4u);
 
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&map_y_body.at(0).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(0));
     EXPECT_NE(main_loop, nullptr);
 
-    auto* barrier1 = dynamic_cast<structured_control_flow::Block*>(&map_y_body.at(1).first);
+    auto* barrier1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(1));
     EXPECT_NE(barrier1, nullptr);
 
-    auto* wb_map = dynamic_cast<structured_control_flow::Map*>(&map_y_body.at(2).first);
+    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(2));
     EXPECT_NE(wb_map, nullptr);
 
-    auto* barrier2 = dynamic_cast<structured_control_flow::Block*>(&map_y_body.at(3).first);
+    auto* barrier2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(3));
     EXPECT_NE(barrier2, nullptr);
 }
 
@@ -2578,17 +2455,6 @@ TEST(OutLocalStorageTest, GPU_Cooperative_ReadWrite) {
     EXPECT_TRUE(ols.can_be_applied(builder_opt, am));
     ols.apply(builder_opt, am);
 
-    // Cleanup
-    am.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder_opt, am);
-        applies |= sf_pass.run(builder_opt, am);
-    } while (applies);
 
     // Verify: shared buffer created with resolved size (N→32)
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
@@ -2605,19 +2471,19 @@ TEST(OutLocalStorageTest, GPU_Cooperative_ReadWrite) {
     auto& map_y_body = map_y.root();
     EXPECT_GE(map_y_body.size(), 7u);
 
-    auto* b1 = dynamic_cast<structured_control_flow::Block*>(&map_y_body.at(0).first);
+    auto* b1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(0));
     EXPECT_NE(b1, nullptr);
-    auto* init_map = dynamic_cast<structured_control_flow::Map*>(&map_y_body.at(1).first);
+    auto* init_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(1));
     EXPECT_NE(init_map, nullptr);
-    auto* b2 = dynamic_cast<structured_control_flow::Block*>(&map_y_body.at(2).first);
+    auto* b2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(2));
     EXPECT_NE(b2, nullptr);
-    auto* main_loop = dynamic_cast<structured_control_flow::For*>(&map_y_body.at(3).first);
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(3));
     EXPECT_NE(main_loop, nullptr);
-    auto* b3 = dynamic_cast<structured_control_flow::Block*>(&map_y_body.at(4).first);
+    auto* b3 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(4));
     EXPECT_NE(b3, nullptr);
-    auto* wb_map = dynamic_cast<structured_control_flow::Map*>(&map_y_body.at(5).first);
+    auto* wb_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(5));
     EXPECT_NE(wb_map, nullptr);
-    auto* b4 = dynamic_cast<structured_control_flow::Block*>(&map_y_body.at(6).first);
+    auto* b4 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(6));
     EXPECT_NE(b4, nullptr);
 }
 
@@ -2701,17 +2567,6 @@ TEST(OutLocalStorageTest, GPU_Cooperative_AllDimsFree) {
     EXPECT_TRUE(ols.can_be_applied(builder_opt, am));
     ols.apply(builder_opt, am);
 
-    // Cleanup
-    am.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder_opt, am);
-        applies |= sf_pass.run(builder_opt, am);
-    } while (applies);
 
     // Verify buffer: extent N resolved to 32
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
@@ -2868,17 +2723,6 @@ TEST(OutLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     EXPECT_TRUE(ols.can_be_applied(builder_opt, am));
     ols.apply(builder_opt, am);
 
-    // Cleanup
-    am.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder_opt, am);
-        applies |= sf_pass.run(builder_opt, am);
-    } while (applies);
 
     // Verify: buffer created with M→8
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_out_local_storage_C0"));
@@ -2888,4 +2732,277 @@ TEST(OutLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     // Total = 32 * 8 = 256.
     EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(256)));
     EXPECT_EQ(buf_type.storage_type(), types::StorageType::NV_Shared());
+}
+
+/**
+ * Test: OutLocalStorage with CPU_Stack (default) rejects when inside a GPU region.
+ *
+ * Setup:
+ *   Map X (i, 0..N, CUDA block_size=32) → For k = 0..K
+ *   C[i*K + k] = A[k]
+ *
+ * Applying OutLocalStorage with CPU_Stack on the For loop inside the GPU Map
+ * should fail because CPU_Stack is invalid inside a GPU kernel (the codegen
+ * would emit a stack array in device code, which is not a valid device pointer).
+ */
+TEST(OutLocalStorageTest, GPU_CPUStack_InsideGPU_Rejected) {
+    builder::StructuredSDFGBuilder builder("ols_cpustack_in_gpu", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    auto N = symbolic::symbol("N");
+    auto K = symbolic::symbol("K");
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("N", loop_var, true);
+    builder.add_container("K", loop_var, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("k", loop_var);
+
+    // GPU Map X: i = 0..N (block_size=32)
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        seq,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), N),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // For loop k = 0..K
+    auto& loop = builder.add_for(
+        map_x.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), K),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {symbolic::symbol("k")}, ptr);
+    builder.add_computational_memlet(
+        block,
+        tasklet,
+        "_out",
+        c_out,
+        {symbolic::add(symbolic::mul(symbolic::symbol("i"), K), symbolic::symbol("k"))},
+        ptr
+    );
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // CPU_Stack (default) inside GPU region → must be rejected
+    transformations::OutLocalStorage ols(loop, c_out);
+    EXPECT_FALSE(ols.can_be_applied(builder_opt, am));
+}
+
+/**
+ * Test: OutLocalStorage with CPU_Stack rejects when applied to the outermost
+ * GPU-scheduled map itself.
+ *
+ * Setup:
+ *   Map X (i, 0..32, CUDA) → For k = 0..4
+ *   C[i*4 + k] = A[k]
+ *
+ * The GPU indvar 'i' appears in C's tile bases (per-thread), so there is no
+ * cooperative dimension — the existing cooperative check would NOT reject this.
+ * However, applying CPU_Stack OLS to the outermost CUDA map would place the
+ * init/writeback copies outside the kernel on the host, which is invalid.
+ */
+TEST(OutLocalStorageTest, GPU_CPUStack_OutermostCUDAMap_Rejected) {
+    builder::StructuredSDFGBuilder builder("ols_cpustack_outermost_cuda", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("i", loop_var);
+    builder.add_container("k", loop_var);
+
+    // GPU Map X: i = 0..32 (outermost — this is the kernel boundary)
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        seq,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // For loop k = 0..4
+    auto& loop = builder.add_for(
+        map_x.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(4)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {symbolic::symbol("k")}, ptr);
+    // C[i*4 + k] — base depends on 'i' (GPU indvar), so per-thread (no coop dim)
+    builder.add_computational_memlet(
+        block,
+        tasklet,
+        "_out",
+        c_out,
+        {symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(4)), symbolic::symbol("k"))},
+        ptr
+    );
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // CPU_Stack applied to the outermost CUDA map → must be rejected
+    transformations::OutLocalStorage ols(map_x, c_out);
+    EXPECT_FALSE(ols.can_be_applied(builder_opt, am));
+}
+
+// CUDA map wrapped by a regular For loop — still the kernel boundary.
+// CPU_Stack must be rejected because the buffer would be host-allocated.
+TEST(OutLocalStorageTest, GPU_CPUStack_CUDAMapWrappedByFor_Rejected) {
+    builder::StructuredSDFGBuilder builder("ols_cpustack_cuda_wrapped_for", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("i", loop_var);
+    builder.add_container("k", loop_var);
+    builder.add_container("n", loop_var);
+
+    // Outer For loop n = 0..2 (regular, not GPU)
+    auto& outer_for = builder.add_for(
+        seq,
+        symbolic::symbol("n"),
+        symbolic::Lt(symbolic::symbol("n"), symbolic::integer(2)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("n"), symbolic::integer(1))
+    );
+
+    // GPU Map: i = 0..32 (kernel boundary — no GPU ancestors)
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        outer_for.root(),
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // For loop k = 0..4
+    auto& loop = builder.add_for(
+        map_x.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(4)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {symbolic::symbol("k")}, ptr);
+    builder.add_computational_memlet(
+        block,
+        tasklet,
+        "_out",
+        c_out,
+        {symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(4)), symbolic::symbol("k"))},
+        ptr
+    );
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // CPU_Stack on CUDA map wrapped by For — still kernel boundary, must reject
+    transformations::OutLocalStorage ols(map_x, c_out);
+    EXPECT_FALSE(ols.can_be_applied(builder_opt, am));
+}
+
+// For loop wrapping a CUDA map — CPU_Stack applied to the For loop itself.
+// Buffer would be host-allocated but referenced inside the descendant kernel.
+TEST(OutLocalStorageTest, GPU_CPUStack_ForContainingCUDAMap_Rejected) {
+    builder::StructuredSDFGBuilder builder("ols_cpustack_for_contains_cuda", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("i", loop_var);
+    builder.add_container("k", loop_var);
+
+    // Outer For loop k = 0..4 (regular, not GPU)
+    auto& outer_for = builder.add_for(
+        seq,
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(4)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    // GPU Map: i = 0..32 (inside the For loop)
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        outer_for.root(),
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // C[i*4 + k] write inside GPU map
+    auto& block = builder.add_block(map_x.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {symbolic::symbol("k")}, ptr);
+    builder.add_computational_memlet(
+        block,
+        tasklet,
+        "_out",
+        c_out,
+        {symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(4)), symbolic::symbol("k"))},
+        ptr
+    );
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // CPU_Stack on the For loop that contains a CUDA map — must reject
+    transformations::OutLocalStorage ols(outer_for, c_out);
+    EXPECT_FALSE(ols.can_be_applied(builder_opt, am));
 }

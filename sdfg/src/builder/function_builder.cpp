@@ -67,6 +67,26 @@ void FunctionBuilder::set_element_counter(size_t element_counter) {
     this->function().element_counter_ = element_counter;
 };
 
+void FunctionBuilder::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    this->function().return_type_->replace_symbols(old_expression, new_expression);
+    for (auto& container : this->function().containers_) {
+        container.second->replace_symbols(old_expression, new_expression);
+    }
+    for (auto& structure : this->function().structures_) {
+        structure.second->replace_symbols(old_expression, new_expression);
+    }
+}
+
+void FunctionBuilder::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    this->function().return_type_->replace_symbols(replacements);
+    for (auto& container : this->function().containers_) {
+        container.second->replace_symbols(replacements);
+    }
+    for (auto& structure : this->function().structures_) {
+        structure.second->replace_symbols(replacements);
+    }
+}
+
 void FunctionBuilder::set_return_type(const types::IType& type) const { this->function().return_type_ = type.clone(); };
 
 const types::IType& FunctionBuilder::

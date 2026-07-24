@@ -35,6 +35,9 @@ struct MapDimension {
 };
 
 // Find a usable input access node for a given connector
+/**
+ * @deprecated not compatible with new expansion scheme
+ */
 InputContainerInfo find_usable_input_access_node(
     data_flow::DataFlowGraph& dataflow, data_flow::LibraryNode& node, const std::string& input_conn
 );

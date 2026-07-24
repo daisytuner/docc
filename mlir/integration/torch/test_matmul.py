@@ -3,7 +3,6 @@ import torch.nn as nn
 
 from integration.torch.check import check_backend, check_compile
 
-
 # --- Self matmul (x @ x) ---
 
 
@@ -203,6 +202,41 @@ def test_batched_matmul_backend():
 
     weight = torch.randn(4, 10, 5)
     check_backend(BatchedMatmulNet(weight).eval(), torch.randn(4, 8, 10), rtol=1e-4)
+
+
+# --- Batched matmul with explicit transpose (3D) ---
+
+
+def test_batched_matmul_explicit_transpose_compile():
+    class BatchedMatmulExplicitTransposeNet(nn.Module):
+        def __init__(self, weight: torch.Tensor):
+            super().__init__()
+            self.W = nn.Parameter(weight)
+
+        def forward(self, x: torch.Tensor):
+            transposed = torch.transpose(x, 0, 1)
+            return torch.matmul(transposed, self.W)
+
+    weight = torch.randn(4, 10, 5)
+    check_compile(
+        BatchedMatmulExplicitTransposeNet(weight).eval(), torch.randn(8, 4, 10)
+    )
+
+
+def test_batched_matmul_explicit_transpose_backend():
+    class BatchedMatmulExplicitTransposeNet(nn.Module):
+        def __init__(self, weight: torch.Tensor):
+            super().__init__()
+            self.W = nn.Parameter(weight)
+
+        def forward(self, x: torch.Tensor):
+            transposed = torch.transpose(x, 0, 1)
+            return torch.matmul(transposed, self.W)
+
+    weight = torch.randn(4, 10, 5)
+    check_backend(
+        BatchedMatmulExplicitTransposeNet(weight).eval(), torch.randn(8, 4, 10)
+    )
 
 
 # --- Chained matmul (x @ W1 @ W2) ---

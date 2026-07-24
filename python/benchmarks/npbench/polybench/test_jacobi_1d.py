@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 import numpy as np
 from benchmarks.npbench.harness import SDFGVerification, run_benchmark, run_pytest
@@ -11,8 +13,9 @@ PARAMETERS = {
 
 
 def initialize(TSTEPS, N, datatype=np.float64):
-    A = np.fromfunction(lambda i: (i + 2) / N, (N,), dtype=datatype)
-    B = np.fromfunction(lambda i: (i + 3) / N, (N,), dtype=datatype)
+    i = np.arange(N, dtype=datatype)
+    A = (i + 2) / N
+    B = (i + 3) / N
 
     return TSTEPS, A, B
 
@@ -24,25 +27,27 @@ def kernel(TSTEPS, A, B):
         A[1:-1] = 0.33333 * (B[:-2] + B[1:-1] + B[2:])
 
 
-@pytest.mark.skip(reason="Numerical validation")
+@pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_jacobi_1d(target):
     if target == "none":
-        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 2, "FOR": 3})
+        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 3, "FOR": 1})
     elif target == "sequential":
-        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 2, "FOR": 3})
+        verifier = SDFGVerification(
+            verification={"VECTORIZE": 2, "MAP": 2, "SEQUENTIAL": 1, "FOR": 1}
+        )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"CPU_PARALLEL": 2, "MAP": 2, "FOR": 3}
+            verification={"CPU_PARALLEL": 2, "MAP": 2, "SEQUENTIAL": 1, "FOR": 1}
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={"CUDA": 2, "MAP": 2, "CUDAOffloading": 8, "FOR": 3},
+            verification={"CUDA": 2, "MAP": 2, "SEQUENTIAL": 1, "FOR": 1},
             device_resident=True,
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={"ROCM": 2, "MAP": 2, "ROCMOffloading": 8, "FOR": 3},
+            verification={"ROCM": 2, "MAP": 2, "SEQUENTIAL": 1, "FOR": 1},
             device_resident=True,
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)

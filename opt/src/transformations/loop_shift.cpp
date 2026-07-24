@@ -88,19 +88,14 @@ void LoopShift::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
     loop_.root().replace(indvar, shifted_var);
 
     // Add an empty block before the first child to set the shifted variable in the transition
-    if (loop_.root().size() > 0) {
-        auto& first_child = loop_.root().at(0).first;
-        builder.add_block_before(loop_.root(), first_child, control_flow::Assignments{{shifted_var, shifted_value}});
-    } else {
-        builder.add_block(loop_.root(), control_flow::Assignments{{shifted_var, shifted_value}});
-    }
+    builder.add_assignments_at(loop_.root(), 0, control_flow::Assignments{{shifted_var, shifted_value}});
 
     // Reconstruct original indvar value after loop exit
     // After loop, indvar holds transformed final value; we restore: indvar = indvar + offset
     auto parent_node = loop_.get_parent();
-    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);
+    auto* parent = dyn_cast<structured_control_flow::Sequence*>(parent_node);
     if (parent) {
-        builder.add_block_after(*parent, loop_, {{indvar, shifted_value}}, loop_.debug_info());
+        builder.add_assignments_after(*parent, loop_, {{indvar, shifted_value}}, loop_.debug_info());
     }
 }
 
@@ -124,7 +119,7 @@ LoopShift LoopShift::from_json(builder::StructuredSDFGBuilder& builder, const nl
         throw std::runtime_error("Element with ID " + std::to_string(loop_id) + " not found.");
     }
 
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw std::runtime_error("Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop.");
     }

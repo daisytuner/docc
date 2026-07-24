@@ -795,6 +795,120 @@ def test_reshape_large():
     assert np.array_equal(result, expected)
 
 
+# =============================================================================
+# SQUEEZE / UNSQUEEZE VIA RESHAPE (size-1 axis insertion / removal)
+# =============================================================================
+
+
+def test_reshape_unsqueeze():
+    """Reshape that inserts size-1 axes (unsqueeze). Always a valid view."""
+
+    # Insert size-1 axis in the middle
+    @native
+    def unsqueeze_middle(a):
+        return np.reshape(a, (2, 1, 3))
+
+    a = np.arange(6, dtype=np.float64).reshape(2, 3)
+    result = unsqueeze_middle(a)
+    expected = np.reshape(a, (2, 1, 3))
+    assert result.shape == (2, 1, 3)
+    assert result.dtype == np.float64
+    assert np.array_equal(result, expected)
+
+    # Insert size-1 axis at the front
+    @native
+    def unsqueeze_front(a):
+        return np.reshape(a, (1, 2, 3))
+
+    a = np.arange(6, dtype=np.float64).reshape(2, 3)
+    result = unsqueeze_front(a)
+    expected = np.reshape(a, (1, 2, 3))
+    assert result.shape == (1, 2, 3)
+    assert np.array_equal(result, expected)
+
+    # Insert size-1 axis at the back
+    @native
+    def unsqueeze_back(a):
+        return np.reshape(a, (2, 3, 1))
+
+    a = np.arange(6, dtype=np.float64).reshape(2, 3)
+    result = unsqueeze_back(a)
+    expected = np.reshape(a, (2, 3, 1))
+    assert result.shape == (2, 3, 1)
+    assert np.array_equal(result, expected)
+
+
+def test_reshape_squeeze():
+    """Reshape that removes size-1 axes (squeeze). Always a valid view."""
+
+    # Remove a middle size-1 axis
+    @native
+    def squeeze_middle(a):
+        return np.reshape(a, (2, 3))
+
+    a = np.arange(6, dtype=np.float64).reshape(2, 1, 3)
+    result = squeeze_middle(a)
+    expected = np.reshape(a, (2, 3))
+    assert result.shape == (2, 3)
+    assert result.dtype == np.float64
+    assert np.array_equal(result, expected)
+
+    # Remove a leading size-1 axis
+    @native
+    def squeeze_front(a):
+        return np.reshape(a, (2, 3))
+
+    a = np.arange(6, dtype=np.float64).reshape(1, 2, 3)
+    result = squeeze_front(a)
+    expected = np.reshape(a, (2, 3))
+    assert result.shape == (2, 3)
+    assert np.array_equal(result, expected)
+
+    # Remove a trailing size-1 axis
+    @native
+    def squeeze_back(a):
+        return np.reshape(a, (2, 3))
+
+    a = np.arange(6, dtype=np.float64).reshape(2, 3, 1)
+    result = squeeze_back(a)
+    expected = np.reshape(a, (2, 3))
+    assert result.shape == (2, 3)
+    assert np.array_equal(result, expected)
+
+
+def test_reshape_unsqueeze_squeeze_roundtrip():
+    """(NR, NQ, NP) -> (NR, NQ, 1, NP) -> (NR, NQ, NP): the doitgen reshape pattern.
+
+    Exercises reshape of a contiguous run-time-shaped argument by inserting and
+    then removing a size-1 axis.
+    """
+
+    @native
+    def roundtrip(a):
+        b = np.reshape(a, (4, 5, 1, 6))
+        return np.reshape(b, (4, 5, 6))
+
+    a = np.arange(120, dtype=np.float64).reshape(4, 5, 6)
+    result = roundtrip(a)
+    assert result.shape == (4, 5, 6)
+    assert np.array_equal(result, a)
+
+
+def test_reshape_contiguous_argument():
+    """Reshape of a contiguous run-time-shaped argument (regression for the
+    contiguity check wrongly rejecting genuinely contiguous arrays)."""
+
+    @native
+    def flatten(a):
+        return np.reshape(a, (12,))
+
+    a = np.arange(12, dtype=np.float64).reshape(3, 4)
+    result = flatten(a)
+    expected = np.reshape(a, (12,))
+    assert result.shape == (12,)
+    assert np.array_equal(result, expected)
+
+
 def test_view_expressions():
 
     # Test flip of 1D slice

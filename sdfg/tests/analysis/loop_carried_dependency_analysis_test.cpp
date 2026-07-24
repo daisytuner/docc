@@ -590,9 +590,9 @@ TEST(LoopCarriedDependencyAnalysisTest, LoopLocal_Conditional) {
 
     auto& ifelse = builder.add_if_else(body1);
     auto& branch1 = builder.add_case(ifelse, symbolic::Eq(indvar1, symbolic::integer(0)));
-    auto& block1 = builder.add_block(branch1, {{symbolic::symbol("tmp"), symbolic::zero()}});
+    auto& block1 = builder.add_assignments(branch1, {{symbolic::symbol("tmp"), symbolic::zero()}});
     auto& branch2 = builder.add_case(ifelse, symbolic::Ne(indvar1, symbolic::integer(0)));
-    auto& block2 = builder.add_block(branch2, {{symbolic::symbol("tmp"), symbolic::one()}});
+    auto& block2 = builder.add_assignments(branch2, {{symbolic::symbol("tmp"), symbolic::one()}});
 
     // Add computation
     auto& block = builder.add_block(body1);
@@ -640,7 +640,7 @@ TEST(LoopCarriedDependencyAnalysisTest, LoopLocal_Conditional_Incomplete) {
 
     auto& ifelse = builder.add_if_else(body1);
     auto& branch1 = builder.add_case(ifelse, symbolic::Eq(indvar1, symbolic::integer(0)));
-    auto& block1 = builder.add_block(branch1, {{symbolic::symbol("tmp"), symbolic::zero()}});
+    auto& block1 = builder.add_assignments(branch1, {{symbolic::symbol("tmp"), symbolic::zero()}});
 
     // Add computation
     auto& block = builder.add_block(body1);

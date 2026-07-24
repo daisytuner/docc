@@ -13,6 +13,11 @@
 
 using namespace sdfg;
 
+static passes::scheduler::CUDAScheduler* get_cuda_sched() {
+    static passes::scheduler::CUDAScheduler instance;
+    return &instance;
+}
+
 TEST(CUDASchedulerTest, OuterParallelMapWithInnerMap) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
@@ -71,7 +76,7 @@ TEST(CUDASchedulerTest, OuterParallelMapWithInnerMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -143,7 +148,7 @@ TEST(CUDASchedulerTest, OuterSequentialForWith2DMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -224,7 +229,7 @@ TEST(CUDASchedulerTest, OuterWhileWithInnerMaps) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -288,7 +293,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // Maps a, c, e should now be CUDA-scheduled
@@ -416,7 +421,7 @@ TEST(CUDASchedulerTest, MultipleTargetsNoDoubleScheduling) {
 
     // Run CUDA scheduler — it must see map_1 is already CUDA and skip it
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // map_2 should now be CUDA
@@ -560,7 +565,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({"cuda"}, nullptr);
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 

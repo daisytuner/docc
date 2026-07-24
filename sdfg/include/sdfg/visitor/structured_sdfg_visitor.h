@@ -29,6 +29,8 @@ public:
 
     virtual bool accept(structured_control_flow::Block& node);
 
+    virtual bool accept(structured_control_flow::AssignmentBlock& node);
+
     virtual bool accept(structured_control_flow::Sequence& node);
 
     virtual bool accept(structured_control_flow::Return& node);
@@ -63,8 +65,7 @@ public:
 
 /**
  * Visitor for Structured SDFG (not a builder).
- * follows the actual type hierarchy for the visit methods, but still does the hack of dyn-casting instead of an actual
- * visitor pattern, but this is hidden from users, just less efficient.
+ * follows the actual type hierarchy for the visit methods
  *
  */
 class ActualStructuredSDFGVisitor {
@@ -75,12 +76,11 @@ public:
 
     bool visit(sdfg::structured_control_flow::ControlFlowNode& node);
 
-    bool dispatch(sdfg::structured_control_flow::ControlFlowNode& node); // return value really has no meaning yet.
-                                                                         // Don't know how to do generic results
-                                                                         // efficiently for C++ without making all the
-                                                                         // actual node-types
+    bool dispatch(sdfg::structured_control_flow::ControlFlowNode& node) { return node.accept(*this); }
 
     virtual bool visit(sdfg::structured_control_flow::Block& node);
+
+    virtual bool visit(sdfg::structured_control_flow::AssignmentBlock& node);
 
     virtual bool visit(sdfg::structured_control_flow::Sequence& node);
 

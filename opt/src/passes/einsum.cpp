@@ -172,5 +172,27 @@ bool EinsumLower::accept(structured_control_flow::Block& block) {
     return false;
 }
 
+EinsumExpansion::EinsumExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
+    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {}
+
+bool EinsumExpansion::accept(structured_control_flow::Block& node) {
+    auto& dataflow = node.dataflow();
+
+    bool applied = false;
+    for (auto* library_node : dataflow.library_nodes()) {
+        if (library_node->implementation_type() != data_flow::ImplementationType_NONE) {
+            continue;
+        }
+
+        if (library_node->code() == math::tensor::LibraryNodeType_Einsum) {
+            auto enode = dynamic_cast<math::tensor::EinsumNode*>(library_node);
+            if (enode->expand(this->builder_, this->analysis_manager_)) {
+                return true;
+            }
+        }
+    }
+    return applied;
+}
+
 } // namespace passes
 } // namespace sdfg

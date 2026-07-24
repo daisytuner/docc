@@ -42,7 +42,7 @@ void ROCMStdlibDataTransferExtraction::create_allocate(
     const symbolic::Expression& size,
     const types::Pointer& type
 ) {
-    auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    auto& alloc_block = builder.add_block_before(sequence, block, block.debug_info());
     offloading::add_offloading_node<ROCMDataOffloadingNode>(
         builder,
         alloc_block,
@@ -65,7 +65,7 @@ void ROCMStdlibDataTransferExtraction::create_deallocate(
     const std::string& device_container,
     const types::Pointer& type
 ) {
-    auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
+    auto& dealloc_block = builder.add_block_after(sequence, block, block.debug_info());
     offloading::add_offloading_node<ROCMDataOffloadingNode>(
         builder,
         dealloc_block,
@@ -90,7 +90,7 @@ void ROCMStdlibDataTransferExtraction::create_copy_from_device_with_deallocation
     const symbolic::Expression& size,
     const types::Pointer& type
 ) {
-    auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
+    auto& copy_block = builder.add_block_after(sequence, block, block.debug_info());
     offloading::add_offloading_node<ROCMDataOffloadingNode>(
         builder,
         copy_block,
@@ -115,7 +115,7 @@ void ROCMStdlibDataTransferExtraction::create_copy_to_device_with_allocation(
     const symbolic::Expression& size,
     const types::Pointer& type
 ) {
-    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    auto& copy_block = builder.add_block_before(sequence, block, block.debug_info());
     offloading::add_offloading_node<ROCMDataOffloadingNode>(
         builder,
         copy_block,
@@ -162,11 +162,11 @@ void ROCMStdlibDataTransferExtraction::
     apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get data flow graph and block
     auto& dfg = this->lib_node_.get_parent();
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
     // Get sequence
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
+    auto* sequence = dyn_cast<structured_control_flow::Sequence*>(block->get_parent());
     assert(sequence);
 
     if (dynamic_cast<stdlib::MemsetNode*>(&this->lib_node_)) {

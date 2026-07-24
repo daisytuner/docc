@@ -19,6 +19,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sqrt_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 
 using namespace sdfg;
 
@@ -56,22 +57,23 @@ void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
     dump_sdfg(builder.subject(), "0.init");
 
     sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     dump_sdfg(builder.subject(), "1.expanded");
 
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Navigate to the innermost map
     structured_control_flow::Sequence* current_scope = &new_sequence;
     for (size_t i = 0; i < shape_dims.size(); ++i) {
-        auto map_loop = dynamic_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
         current_scope = &map_loop->root();
     }
 
-    auto code_block = dynamic_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that the block is not empty (contains either tasklets or library nodes)
@@ -149,19 +151,21 @@ void TestBinary(std::vector<size_t> shape_dims) {
 
     sdfg.validate();
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Navigate to the innermost map
     structured_control_flow::Sequence* current_scope = &new_sequence;
     for (size_t i = 0; i < shape_dims.size(); ++i) {
-        auto map_loop = dynamic_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
         current_scope = &map_loop->root();
     }
 
-    auto code_block = dynamic_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     bool has_content = !code_block->dataflow().tasklets().empty() || !code_block->dataflow().library_nodes().empty();
@@ -330,20 +334,21 @@ void TestCast(std::vector<size_t> shape_dims) {
     builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_target, block.debug_info());
 
     sdfg.validate();
-    analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Navigate to the innermost map
     structured_control_flow::Sequence* current_scope = &new_sequence;
     for (size_t i = 0; i < shape_dims.size(); ++i) {
-        auto map_loop = dynamic_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
         current_scope = &map_loop->root();
     }
 
-    auto code_block = dynamic_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that the block is not empty (contains either tasklets or library nodes)

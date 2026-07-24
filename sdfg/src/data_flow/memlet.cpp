@@ -473,6 +473,7 @@ void Memlet::replace(const symbolic::Expression old_expression, const symbolic::
         new_subset.push_back(symbolic::subs(dim, old_expression, new_expression));
     }
     this->subset_ = new_subset;
+    this->base_type_->replace_symbols(old_expression, new_expression);
 }
 
 void Memlet::replace(const symbolic::ExpressionMapping& replacements) {
@@ -481,7 +482,8 @@ void Memlet::replace(const symbolic::ExpressionMapping& replacements) {
         new_subset.push_back(SymEngine::subs(dim, replacements));
     }
     this->subset_ = new_subset;
-};
+    this->base_type_->replace_symbols(replacements);
+}
 
 } // namespace data_flow
 } // namespace sdfg

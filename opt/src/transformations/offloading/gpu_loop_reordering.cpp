@@ -27,7 +27,7 @@ bool GPULoopReordering::
     }
 
     // Criterion: first loop must be a GPU map
-    auto first_loop = dynamic_cast<structured_control_flow::Map*>(nested_loops.at(0));
+    auto first_loop = dyn_cast<structured_control_flow::Map*>(nested_loops.at(0));
     if (!first_loop) {
         return false;
     }
@@ -46,8 +46,8 @@ void GPULoopReordering::apply(builder::StructuredSDFGBuilder& builder, analysis:
     // Bubble sort permutation indices
     for (size_t i = 0; i < nested_loops.size(); i++) {
         for (size_t j = 0; j < nested_loops.size() - i - 1; j++) {
-            auto for_loop = dynamic_cast<structured_control_flow::For*>(nested_loops.at(j));
-            auto map = dynamic_cast<structured_control_flow::Map*>(nested_loops.at(j + 1));
+            auto for_loop = dyn_cast<structured_control_flow::For*>(nested_loops.at(j));
+            auto map = dyn_cast<structured_control_flow::Map*>(nested_loops.at(j + 1));
 
             if (!for_loop || !map) {
                 continue;
@@ -80,7 +80,7 @@ GPULoopReordering GPULoopReordering::from_json(builder::StructuredSDFGBuilder& b
     const auto& node_desc = j.at("subgraph").at("0");
     first_loop_id = node_desc.at("element_id").get<size_t>();
 
-    auto* first_loop = dynamic_cast<structured_control_flow::Map*>(builder.find_element_by_id(first_loop_id));
+    auto* first_loop = dyn_cast<structured_control_flow::Map*>(builder.find_element_by_id(first_loop_id));
     if (!first_loop) {
         throw std::runtime_error("Invalid first_loop_id in GPULoopReordering deserialization");
     }

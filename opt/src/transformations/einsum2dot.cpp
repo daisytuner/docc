@@ -76,7 +76,7 @@ void Einsum2Dot::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     auto& dfg = this->einsum_node_.get_parent();
 
     // Get the block in which the einsum node lives
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
     // Get the number of iterations (n)

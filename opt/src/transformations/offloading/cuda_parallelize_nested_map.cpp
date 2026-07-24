@@ -29,7 +29,7 @@ bool CUDAParallelizeNestedMap::
     }
 
     // Condition: Check if parent loop is a CUDA map, and not Z dimension (final dimension)
-    if (auto map = dynamic_cast<structured_control_flow::Map*>(parent)) {
+    if (auto map = dyn_cast<structured_control_flow::Map*>(parent)) {
         if (map->schedule_type().value() != cuda::ScheduleType_CUDA::value()) {
             return false;
         }
@@ -39,7 +39,7 @@ bool CUDAParallelizeNestedMap::
         auto parent_indvar = map->indvar();
         auto ancestor = parent;
         while (ancestor) {
-            if (auto map_ancestor = dynamic_cast<structured_control_flow::Map*>(ancestor)) {
+            if (auto map_ancestor = dyn_cast<structured_control_flow::Map*>(ancestor)) {
                 parent_indvar = map_ancestor->indvar();
                 for (auto& arg : symbolic::atoms(loop_.condition())) {
                     if (symbolic::eq(arg, parent_indvar)) {
@@ -118,7 +118,7 @@ CUDAParallelizeNestedMap CUDAParallelizeNestedMap::
     size_t loop_id = node_desc.at("element_id").get<size_t>();
 
     size_t block_size = j.at("parameters").at("block_size").get<size_t>();
-    auto loop = dynamic_cast<structured_control_flow::Map*>(builder.find_element_by_id(loop_id));
+    auto loop = dyn_cast<structured_control_flow::Map*>(builder.find_element_by_id(loop_id));
     if (!loop) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " is not a loop.");
     }

@@ -6,7 +6,6 @@ find_package(nlohmann_json REQUIRED)
 # Define module
 set(PYTHON_SOURCES
     bindings/bindings.cpp
-    bindings/py_structured_sdfg.cpp
     bindings/builder/py_structured_sdfg_builder.cpp
     bindings/control_flow/py_control_flow.cpp
     bindings/data_flow/py_cmath.cpp
@@ -16,6 +15,7 @@ set(PYTHON_SOURCES
     bindings/data_flow/py_memlet.cpp
     bindings/data_flow/py_tasklet.cpp
     bindings/passes/py_passes.cpp
+    bindings/py_structured_sdfg.cpp
     bindings/targets/target_mapping.cpp
     bindings/transformations/py_transformations.cpp
     bindings/types/py_types.cpp
@@ -40,7 +40,21 @@ target_include_directories(sdfg-py
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bindings>
 )
 
-target_link_libraries(sdfg-py PRIVATE sdfg::sdfg sdfg::opt sdfg::rpc docc::c-compile nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
+if(DEFINED DOCC_CXX_COMPILER)
+    target_compile_definitions(sdfg-py PRIVATE
+        DOCC_CXX_COMPILER="${DOCC_CXX_COMPILER}"
+    )
+endif()
+
+target_link_libraries(sdfg-py PRIVATE
+    ${DAISY_STACKTRACE_LIBS}
+    sdfg::sdfg
+    sdfg::opt
+    sdfg::rpc
+    docc::c-compile
+    nlohmann_json::nlohmann_json
+    ${CMAKE_DL_LIBS}
+)
 
 if(TARGET docc::target::et)
     target_link_libraries(sdfg-py PRIVATE docc::target::et)

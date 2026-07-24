@@ -66,6 +66,8 @@ struct FusionLoopCandidate {
 
     void non_indvar_writes();
 
+    void aliasing_encountered();
+
     void replace(const symbolic::ExpressionMapping& mapping);
 };
 

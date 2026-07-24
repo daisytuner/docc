@@ -72,7 +72,24 @@ def element_type_from_sdfg_type(sdfg_type: Type):
         )
 
 
-def element_type_from_ast_node(ast_node, container_table=None):
+def _element_type_from_dtype_value(value):
+    """Map a runtime dtype value to an SDFG scalar element type.
+
+    Accepts a numpy scalar type (e.g. ``np.float64``), a python type
+    (``float``/``int``/``bool``), or an ``np.dtype`` instance. Returns None if
+    the value is not a recognizable dtype.
+    """
+    try:
+        np_dtype = np.dtype(value)
+    except (TypeError, ValueError):
+        return None
+    try:
+        return sdfg_type_from_type(np_dtype.type)
+    except ValueError:
+        return None
+
+
+def element_type_from_ast_node(ast_node, container_table=None, globals_dict=None):
     # Default to double
     if ast_node is None:
         return Scalar(PrimitiveType.Double)
@@ -85,6 +102,13 @@ def element_type_from_ast_node(ast_node, container_table=None):
             return Scalar(PrimitiveType.Int64)
         if ast_node.id == "bool":
             return Scalar(PrimitiveType.Bool)
+        # Resolve a module-global dtype alias, e.g. `RealT = np.float64` used
+        # as `np.zeros(shape, RealT)`. The global may hold a numpy scalar type,
+        # a python type, or an np.dtype instance.
+        if globals_dict is not None and ast_node.id in globals_dict:
+            elem_type = _element_type_from_dtype_value(globals_dict[ast_node.id])
+            if elem_type is not None:
+                return elem_type
 
     # Handle complex types
     if isinstance(ast_node, ast.Attribute):

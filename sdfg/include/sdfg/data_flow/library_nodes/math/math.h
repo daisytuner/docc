@@ -14,7 +14,9 @@
 // Tensor
 #include "sdfg/data_flow/library_nodes/math/tensor/batchnorm_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/copy_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.h"
@@ -43,4 +45,3 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/std_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/transpose_node.h"

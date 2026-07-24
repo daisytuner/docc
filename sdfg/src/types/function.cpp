@@ -83,5 +83,19 @@ std::string Function::print() const {
     return "Function(" + this->return_type_->print() + ", " + params + ")";
 };
 
+void Function::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    for (size_t i = 0; i < this->num_params(); i++) {
+        this->params_[i]->replace_symbols(old_expression, new_expression);
+    }
+    this->return_type_->replace_symbols(old_expression, new_expression);
+}
+
+void Function::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    for (size_t i = 0; i < this->num_params(); i++) {
+        this->params_[i]->replace_symbols(replacements);
+    }
+    this->return_type_->replace_symbols(replacements);
+}
+
 } // namespace types
 } // namespace sdfg

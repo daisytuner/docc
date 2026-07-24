@@ -6,6 +6,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -68,13 +69,15 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     dump_sdfg(sdfg, "1.expanded");
 
     // After expansion, the root should contain a new sequence
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // The sequence should contain:
     // 1. Reference block (creating references for batch offsets)
@@ -85,7 +88,7 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
     // Find the GEMM block - it should contain the GEMMNode
     bool found_gemm = false;
     for (size_t i = 0; i < new_sequence.size(); ++i) {
-        auto* blk = dynamic_cast<structured_control_flow::Block*>(&new_sequence.at(i).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(i));
         if (blk) {
             for (auto& node : blk->dataflow().library_nodes()) {
                 if (auto* gemm = dynamic_cast<math::blas::GEMMNode*>(node)) {
@@ -158,16 +161,18 @@ TEST(MatMulTest, MatMul_3D_Batched) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     // After expansion, should have a map for the batch dimension
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Look for a Map (batch loop)
     bool found_batch_map = false;
     for (size_t i = 0; i < new_sequence.size(); ++i) {
-        if (dynamic_cast<structured_control_flow::Map*>(&new_sequence.at(i).first)) {
+        if (dyn_cast<structured_control_flow::Map*>(&new_sequence.at(i))) {
             found_batch_map = true;
             break;
         }
@@ -232,13 +237,15 @@ TEST(MatMulTest, MatMul_WithSymbolicDimensions) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     // Verify GEMM node has symbolic dimensions
     bool found_gemm = false;
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     for (size_t i = 0; i < new_sequence.size(); ++i) {
-        auto* blk = dynamic_cast<structured_control_flow::Block*>(&new_sequence.at(i).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(i));
         if (blk) {
             for (auto& node : blk->dataflow().library_nodes()) {
                 if (auto* gemm = dynamic_cast<math::blas::GEMMNode*>(node)) {
@@ -292,7 +299,9 @@ TEST(MatMulTest, MatMul_IntegerType_ReturnsFailure) {
 
     // Test expansion - should fail for integer types
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_FALSE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_FALSE(outcome.expanded);
+    EXPECT_FALSE(outcome.block_removed);
 }
 
 TEST(MatMulTest, MatMul_NoCopyForDefaultStrides) {
@@ -346,18 +355,20 @@ TEST(MatMulTest, MatMul_NoCopyForDefaultStrides) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    EXPECT_TRUE(matmul_node.expand(builder, analysis_manager));
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
 
     // Verify no malloc or free nodes exist (no copies needed)
     EXPECT_EQ(sdfg.root().size(), 1);
-    auto& new_sequence = dynamic_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     int malloc_count = 0;
     int free_count = 0;
     bool found_gemm = false;
 
     for (size_t i = 0; i < new_sequence.size(); ++i) {
-        auto* blk = dynamic_cast<structured_control_flow::Block*>(&new_sequence.at(i).first);
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence.at(i));
         if (blk) {
             for (auto& node : blk->dataflow().library_nodes()) {
                 if (dynamic_cast<stdlib::MallocNode*>(node)) {

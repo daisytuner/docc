@@ -32,7 +32,7 @@ def test_replayer():
             "parameters": {
                 "tile_size": 16,
             },
-            "subgraph": {"0": {"element_id": 4, "type": "for"}},
+            "subgraph": {"0": {"element_id": 3, "type": "for"}},
         },
         {
             "transformation_type": "LoopTiling",

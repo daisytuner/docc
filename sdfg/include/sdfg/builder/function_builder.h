@@ -44,6 +44,14 @@ public:
 
     void set_element_counter(size_t element_counter);
 
+    /**
+     * @brief Replace symbolic expressions on the whole SDFG
+     * @param old_expression Expression to replace
+     * @param new_expression Replacement expression
+     */
+    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression);
+    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements);
+
     /** Common Dataflow Operations **/
 
     void update_tasklet(data_flow::Tasklet& tasklet, const data_flow::TaskletCode code);

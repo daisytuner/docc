@@ -34,7 +34,7 @@ void CUDASoftmaxDataTransferExtraction::create_allocate(
     const symbolic::Expression& size,
     const types::Pointer& type
 ) {
-    auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    auto& alloc_block = builder.add_block_before(sequence, block, block.debug_info());
     offloading::add_offloading_node<CUDADataOffloadingNode>(
         builder,
         alloc_block,
@@ -57,7 +57,7 @@ void CUDASoftmaxDataTransferExtraction::create_deallocate(
     const std::string& device_container,
     const types::Pointer& type
 ) {
-    auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
+    auto& dealloc_block = builder.add_block_after(sequence, block, block.debug_info());
     offloading::add_offloading_node<CUDADataOffloadingNode>(
         builder,
         dealloc_block,
@@ -82,7 +82,7 @@ void CUDASoftmaxDataTransferExtraction::create_copy_to_device_with_allocation(
     const symbolic::Expression& size,
     const types::Pointer& type
 ) {
-    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    auto& copy_block = builder.add_block_before(sequence, block, block.debug_info());
     offloading::add_offloading_node<CUDADataOffloadingNode>(
         builder,
         copy_block,
@@ -107,7 +107,7 @@ void CUDASoftmaxDataTransferExtraction::create_copy_from_device_with_deallocatio
     const symbolic::Expression& size,
     const types::Pointer& type
 ) {
-    auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
+    auto& copy_block = builder.add_block_after(sequence, block, block.debug_info());
     offloading::add_offloading_node<CUDADataOffloadingNode>(
         builder,
         copy_block,
@@ -145,10 +145,10 @@ bool CUDASoftmaxDataTransferExtraction::
 void CUDASoftmaxDataTransferExtraction::
     apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& dfg = this->softmax_node_.get_parent();
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     assert(block);
 
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
+    auto* sequence = dyn_cast<structured_control_flow::Sequence*>(block->get_parent());
     assert(sequence);
 
     auto* x_edge = dfg.in_edge_for_connector(this->softmax_node_, "X");

@@ -126,7 +126,7 @@ TEST_F(CutoutTest, TestCutoutInstrumentation) {
     EXPECT_TRUE(cutout_sdfg != nullptr);
 
     EXPECT_GE(cutout_sdfg->root().size(), 1u);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Sequence*>(&(cutout_sdfg->root().at(0).first)) == nullptr);
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Sequence*>(&(cutout_sdfg->root().at(0))) == nullptr);
 
     auto cutout_analysis_manager = sdfg::analysis::AnalysisManager(*cutout_sdfg);
     auto& cutoutloop_analysis = cutout_analysis_manager.get<sdfg::analysis::LoopAnalysis>();

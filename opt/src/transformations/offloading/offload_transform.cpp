@@ -19,25 +19,6 @@
 namespace sdfg {
 namespace transformations {
 
-class SideEffectFinder : public visitor::ImmutableStructuredSDFGVisitor {
-private:
-    structured_control_flow::Map& map_;
-
-public:
-    SideEffectFinder(StructuredSDFG& sdfg, analysis::AnalysisManager& analysis_manager, structured_control_flow::Map& map)
-        : visitor::ImmutableStructuredSDFGVisitor(sdfg, analysis_manager), map_(map) {}
-
-    bool visit() override { return visit_internal(map_.root()); }
-
-    bool accept(structured_control_flow::Block& node) override {
-        for (const auto& lib_node : node.dataflow().library_nodes()) {
-            if (lib_node->side_effect()) {
-                return true;
-            }
-        }
-        return false;
-    }
-};
 
 OffloadTransform::OffloadTransform(structured_control_flow::Map& map, bool allow_dynamic_sizes)
     : map_(map), allow_dynamic_sizes_(allow_dynamic_sizes) {}
@@ -149,7 +130,7 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
             continue;
         }
         auto argument_device = container_prefix + argument;
-        auto& new_block = builder.add_block_before(*parent_scope, this->map_, {}, this->map_.debug_info());
+        auto& new_block = builder.add_block_before(*parent_scope, this->map_, this->map_.debug_info());
         auto& size = argument_sizes.at(argument);
         copy_to_device_with_allocation(builder, argument, argument_device, size, SymEngine::null, new_block);
     }
@@ -162,7 +143,7 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
             continue;
         }
         auto argument_device = container_prefix + argument;
-        auto& new_block = builder.add_block_after(*parent_scope, this->map_, {}, this->map_.debug_info());
+        auto& new_block = builder.add_block_after(*parent_scope, this->map_, this->map_.debug_info());
         auto& size = argument_sizes.at(argument);
         if (!skip_unneeded_d2h_ || meta.is_output) {
             copy_from_device_with_free(builder, new_block, argument, argument_device, size, SymEngine::null);
@@ -203,6 +184,24 @@ void OffloadTransform::
         }
     }
 }
+
+bool ::sdfg::transformations::SideEffectFinder::accept(structured_control_flow::Block& node) {
+    for (const auto& lib_node : node.dataflow().library_nodes()) {
+        if (lib_node->side_effect()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ::sdfg::transformations::SideEffectFinder::visit() {
+    return visitor::ImmutableStructuredSDFGVisitor::visit_internal(map_.StructuredLoop::root());
+}
+
+::sdfg::transformations::SideEffectFinder::SideEffectFinder(
+    StructuredSDFG& sdfg, analysis::AnalysisManager& analysis_manager, structured_control_flow::Map& map
+)
+    : visitor::ImmutableStructuredSDFGVisitor(sdfg, analysis_manager), map_(map) {}
 
 } // namespace transformations
 } // namespace sdfg

@@ -57,8 +57,8 @@ TEST(BlockSortingTest, Compute_Before_Move) {
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
     EXPECT_EQ(root.size(), 2);
-    EXPECT_EQ(&root.at(0).first, &block2);
-    EXPECT_EQ(&root.at(1).first, &block1);
+    EXPECT_EQ(&root.at(0), &block2);
+    EXPECT_EQ(&root.at(1), &block1);
 }
 
 TEST(BlockSortingTest, Compute_Before_Malloc) {
@@ -102,8 +102,8 @@ TEST(BlockSortingTest, Compute_Before_Malloc) {
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
     EXPECT_EQ(root.size(), 2);
-    EXPECT_EQ(&root.at(0).first, &block2);
-    EXPECT_EQ(&root.at(1).first, &block1);
+    EXPECT_EQ(&root.at(0), &block2);
+    EXPECT_EQ(&root.at(1), &block1);
 }
 
 TEST(BlockSortingTest, Move_Before_Malloc) {
@@ -144,8 +144,8 @@ TEST(BlockSortingTest, Move_Before_Malloc) {
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
     EXPECT_EQ(root.size(), 2);
-    EXPECT_EQ(&root.at(0).first, &block2);
-    EXPECT_EQ(&root.at(1).first, &block1);
+    EXPECT_EQ(&root.at(0), &block2);
+    EXPECT_EQ(&root.at(1), &block1);
 }
 
 TEST(BlockSortingTest, Free_Before_Move) {
@@ -186,8 +186,8 @@ TEST(BlockSortingTest, Free_Before_Move) {
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
     EXPECT_EQ(root.size(), 2);
-    EXPECT_EQ(&root.at(0).first, &block2);
-    EXPECT_EQ(&root.at(1).first, &block1);
+    EXPECT_EQ(&root.at(0), &block2);
+    EXPECT_EQ(&root.at(1), &block1);
 }
 
 TEST(BlockSortingTest, Free_Before_Malloc) {
@@ -227,6 +227,6 @@ TEST(BlockSortingTest, Free_Before_Malloc) {
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
     EXPECT_EQ(root.size(), 2);
-    EXPECT_EQ(&root.at(0).first, &block2);
-    EXPECT_EQ(&root.at(1).first, &block1);
+    EXPECT_EQ(&root.at(0), &block2);
+    EXPECT_EQ(&root.at(1), &block1);
 }

@@ -61,6 +61,14 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
         return false;
     }
 
+    // Criterion (GPU path): Loop must not be outermost (shared memory is per-block, not global)
+    if (storage_type_.is_nv_shared()) {
+        auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+        if (loop_analysis.is_outermost_loop(&this->loop_)) {
+            return false;
+        }
+    }
+
     // Determine if container is also read (read-write vs write-only)
     tile_info_.has_read = !body_users.reads(this->container_).empty();
 
@@ -122,7 +130,7 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 
         // Build substitution map: symbolic GPU map bounds → integer block sizes
         for (auto* node : ancestors) {
-            if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+            if (auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
                 if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
                     continue;
                 }
@@ -156,7 +164,7 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
         // Criterion: At least one cooperative dimension
         bool has_cooperative_dim = false;
         for (auto* node : ancestors) {
-            if (auto* ancestor_map = dynamic_cast<structured_control_flow::Map*>(node)) {
+            if (auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
                 if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
                     continue;
                 }
@@ -183,6 +191,64 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
                 return false;
             }
         }
+
+        // CPU_Stack must not be applied at or above the GPU kernel boundary.
+        // Check whether the loop is outside any GPU region by looking for
+        // GPU-scheduled ancestors.
+        auto ancestors = ControlFlowNode::parent_chain(loop_);
+        bool has_gpu_ancestor = false;
+        for (auto* node : ancestors) {
+            if (auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
+                if (gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
+                    has_gpu_ancestor = true;
+                    break;
+                }
+            }
+        }
+
+        if (!has_gpu_ancestor) {
+            // The loop is outside any GPU kernel.  Reject if the loop itself
+            // is GPU-scheduled (it IS the kernel boundary) or if its body
+            // contains GPU-scheduled maps (buffer on host, referenced in kernel).
+            if (auto* self_map = dyn_cast<structured_control_flow::Map*>(&loop_)) {
+                if (gpu::is_gpu_schedule(self_map->schedule_type())) {
+                    return false;
+                }
+            }
+
+            auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+            for (auto* desc : loop_analysis.descendants(&loop_)) {
+                if (auto* desc_map = dyn_cast<structured_control_flow::Map*>(desc)) {
+                    if (gpu::is_gpu_schedule(desc_map->schedule_type())) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        // Criterion: CPU_Stack inside a GPU region is only valid for per-thread
+        // locals (all GPU map indvars appear in the tile bases). If there is a
+        // cooperative dimension (a GPU indvar NOT in the bases), the buffer must
+        // be NV_Shared so all threads in the block can see each other's writes.
+        for (auto* node : ancestors) {
+            if (auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
+                if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
+                    continue;
+                }
+                bool appears_in_bases = false;
+                for (auto& base : tile_info_.bases) {
+                    if (symbolic::uses(base, ancestor_map->indvar())) {
+                        appears_in_bases = true;
+                        break;
+                    }
+                }
+                if (!appears_in_bases) {
+                    // Cooperative dimension detected with CPU_Stack — invalid.
+                    // The buffer requires NV_Shared for cross-thread visibility.
+                    return false;
+                }
+            }
+        }
     }
 
     return true;
@@ -193,7 +259,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     auto& users = analysis_manager.get<analysis::Users>();
 
     auto parent_node = loop_.get_parent();
-    auto parent = dynamic_cast<structured_control_flow::Sequence*>(parent_node);
+    auto parent = dyn_cast<structured_control_flow::Sequence*>(parent_node);
     if (!parent) {
         throw InvalidSDFGException("OutLocalStorage: Parent of loop must be a Sequence!");
     }
@@ -243,7 +309,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     if (storage_type_.is_nv_shared()) {
         auto ancestors = ControlFlowNode::parent_chain(loop_);
         for (auto* node : ancestors) {
-            auto* m = dynamic_cast<structured_control_flow::Map*>(node);
+            auto* m = dyn_cast<structured_control_flow::Map*>(node);
             if (!m || !gpu::is_gpu_schedule(m->schedule_type())) continue;
             if (m->schedule_type().value() == "ROCM") {
                 is_rocm = true;
@@ -263,7 +329,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             return "?";
         };
         for (auto* node : ancestors) {
-            auto* m = dynamic_cast<structured_control_flow::Map*>(node);
+            auto* m = dyn_cast<structured_control_flow::Map*>(node);
             if (!m || !gpu::is_gpu_schedule(m->schedule_type())) continue;
             GpuDim gd;
             gd.dim = gpu::gpu_dimension(m->schedule_type());
@@ -414,7 +480,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         // INIT: barrier → cooperative copy-in → barrier (if has_read)
         if (tile_info_.has_read) {
             // Barrier before init
-            auto& barrier_block1 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
+            auto& barrier_block1 = builder.add_block_before(*parent, loop_, loop_.debug_info());
             builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block1, {});
 
             // Cooperative copy-in loop
@@ -431,7 +497,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 coop_flat,
                 symbolic::add(idx_var, total_coop_threads),
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 loop_.debug_info()
             );
 
@@ -447,14 +512,14 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, init_dst_subset, buffer_type);
 
             // Barrier after init
-            auto& barrier_block2 = builder.add_block_before(*parent, loop_, {}, loop_.debug_info());
+            auto& barrier_block2 = builder.add_block_before(*parent, loop_, loop_.debug_info());
             builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block2, {});
         }
 
         // WRITEBACK: barrier → cooperative copy-out → barrier
         {
             // Barrier before writeback
-            auto& barrier_block3 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
+            auto& barrier_block3 = builder.add_block_after(*parent, loop_, loop_.debug_info());
             builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block3, {});
 
             // Cooperative writeback loop
@@ -471,7 +536,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 coop_flat,
                 symbolic::add(idx_var, total_coop_threads),
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 loop_.debug_info()
             );
 
@@ -487,7 +551,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
             builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
 
             // Barrier after writeback
-            auto& barrier_block4 = builder.add_block_after(*parent, loop_, {}, loop_.debug_info());
+            auto& barrier_block4 = builder.add_block_after(*parent, loop_, loop_.debug_info());
             builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block4, {});
         }
     } else {
@@ -496,8 +560,10 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         // ============================================================
         if (tile_info_.has_read) {
             std::vector<symbolic::Symbol> init_indvars;
-            structured_control_flow::Sequence* init_scope =
-                &builder.add_sequence_before(*parent, loop_, {}, loop_.debug_info());
+            int copy_index = parent->index(loop_);
+            structured_control_flow::Sequence* copy_scope =
+                &builder.add_sequence_before(*parent, loop_, loop_.debug_info());
+            structured_control_flow::Sequence* current_scope = copy_scope;
             for (size_t i = 0; i < varying_dims.size(); i++) {
                 size_t d = varying_dims[i];
                 auto indvar_name =
@@ -512,20 +578,19 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 auto update = symbolic::add(indvar, symbolic::integer(1));
 
                 auto& init_loop = builder.add_map(
-                    *init_scope,
+                    *current_scope,
                     indvar,
                     condition,
                     init,
                     update,
                     structured_control_flow::ScheduleType_Sequential::create(),
-                    {},
                     loop_.debug_info()
                 );
-                init_scope = &init_loop.root();
+                current_scope = &init_loop.root();
             }
 
             // Create init copy block
-            auto& init_block = builder.add_block(*init_scope);
+            auto& init_block = builder.add_block(*current_scope);
             auto& init_src = builder.add_access(init_block, this->container_);
             auto& init_dst = builder.add_access(init_block, local_name_);
             auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "_out", {"_in"});
@@ -536,13 +601,18 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
             builder.add_computational_memlet(init_block, init_src, init_tasklet, "_in", init_src_subset, pointer_type);
             builder.add_computational_memlet(init_block, init_tasklet, "_out", init_dst, init_dst_subset, buffer_type);
+
+            builder.move_children(*copy_scope, *parent, copy_index + 1);
+            builder.remove_child(*parent, copy_index);
         }
 
         // Writeback Maps
         {
             std::vector<symbolic::Symbol> wb_indvars;
-            structured_control_flow::Sequence* wb_scope =
-                &builder.add_sequence_after(*parent, loop_, {}, loop_.debug_info());
+            int copy_index = parent->index(loop_) + 1;
+            structured_control_flow::Sequence* copy_scope =
+                &builder.add_sequence_after(*parent, loop_, loop_.debug_info());
+            structured_control_flow::Sequence* current_scope = copy_scope;
             for (size_t i = 0; i < varying_dims.size(); i++) {
                 size_t d = varying_dims[i];
                 auto indvar_name =
@@ -557,20 +627,19 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 auto update = symbolic::add(indvar, symbolic::integer(1));
 
                 auto& wb_loop = builder.add_map(
-                    *wb_scope,
+                    *current_scope,
                     indvar,
                     condition,
                     init,
                     update,
                     structured_control_flow::ScheduleType_Sequential::create(),
-                    {},
                     loop_.debug_info()
                 );
-                wb_scope = &wb_loop.root();
+                current_scope = &wb_loop.root();
             }
 
             // Create writeback copy block
-            auto& wb_block = builder.add_block(*wb_scope);
+            auto& wb_block = builder.add_block(*current_scope);
             auto& wb_src = builder.add_access(wb_block, local_name_);
             auto& wb_dst = builder.add_access(wb_block, this->container_);
             auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
@@ -581,6 +650,9 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
             builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", wb_src_subset, buffer_type);
             builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, wb_dst_subset, pointer_type);
+
+            builder.move_children(*copy_scope, *parent, copy_index + 1);
+            builder.remove_child(*parent, copy_index);
         }
     }
 
@@ -592,7 +664,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     // Recursive helper to traverse all blocks in the loop body
     std::function<void(structured_control_flow::ControlFlowNode&)> rewrite_accesses;
     rewrite_accesses = [&](structured_control_flow::ControlFlowNode& node) {
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
             auto& dfg = block->dataflow();
 
             // Collect access nodes to process (avoid iterator invalidation when splitting)
@@ -693,13 +765,13 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                     }
                 }
             }
-        } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
             for (size_t i = 0; i < seq->size(); i++) {
-                rewrite_accesses(seq->at(i).first);
+                rewrite_accesses(seq->at(i));
             }
-        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
             rewrite_accesses(loop->root());
-        } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+        } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
             for (size_t i = 0; i < if_else->size(); i++) {
                 rewrite_accesses(if_else->at(i).first);
             }
@@ -709,15 +781,6 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
     // Cleanup
     analysis_manager.invalidate_all();
-
-    passes::SequenceFusion sf_pass;
-    passes::DeadCFGElimination dce_pass;
-    bool applies = false;
-    do {
-        applies = false;
-        applies |= dce_pass.run(builder, analysis_manager);
-        applies |= sf_pass.run(builder, analysis_manager);
-    } while (applies);
 };
 
 void OutLocalStorage::to_json(nlohmann::json& j) const {
@@ -744,7 +807,7 @@ OutLocalStorage OutLocalStorage::from_json(builder::StructuredSDFGBuilder& build
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
 
     auto access_node = dynamic_cast<
         data_flow::AccessNode*>(builder.find_element_by_id(desc.at("subgraph").at("1").at("element_id").get<size_t>()));

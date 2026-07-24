@@ -377,6 +377,10 @@ public:
     Tasklet(const Tasklet& data_node) = delete;
     Tasklet& operator=(const Tasklet&) = delete;
 
+    ElementType type_id() const override { return ElementType::Tasklet; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::Tasklet; }
+
     /**
      * @brief Validate the tasklet
      * @param function Function context for validation

@@ -140,22 +140,27 @@ symbolic::SymbolSet EinsumNode::internal_symbols() const {
     return result;
 }
 
+passes::LibNodeExpander::ExpandOutcome EinsumNode::
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
+    return context.unapplicable();
+}
+
 bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get data flow graph and block
     auto& dfg = this->get_parent();
-    auto* block = dynamic_cast<structured_control_flow::Block*>(dfg.get_parent());
+    auto* block = dyn_cast<structured_control_flow::Block*>(dfg.get_parent());
     if (!block) {
         return false;
     }
 
     // Get parent sequence
-    auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(block->get_parent());
+    auto* sequence = dyn_cast<structured_control_flow::Sequence*>(block->get_parent());
     if (!sequence) {
         return false;
     }
 
     // Create block after this block
-    auto& block_after = builder.add_block_after(*sequence, *block, {}, block->debug_info());
+    auto& block_after = builder.add_block_after(*sequence, *block, block->debug_info());
 
     // Collect and transfer nodes after the EinsumNode
     bool before = true;
@@ -285,11 +290,10 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
                     init,
                     update,
                     ScheduleType_Sequential::create(),
-                    {},
                     this->debug_info()
                 );
             } else {
-                loop = &builder.add_for(*current_sequence, indvar, condition, init, update, {}, this->debug_info());
+                loop = &builder.add_for(*current_sequence, indvar, condition, init, update, this->debug_info());
             }
             current_sequence = &loop->root();
         } else {
@@ -303,12 +307,10 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
                     init,
                     update,
                     ScheduleType_Sequential::create(),
-                    {},
                     this->debug_info()
                 );
             } else {
-                loop =
-                    &builder.add_for_after(*sequence, *block, indvar, condition, init, update, {}, this->debug_info());
+                loop = &builder.add_for_after(*sequence, *block, indvar, condition, init, update, this->debug_info());
             }
             current_sequence = &loop->root();
         }
@@ -319,7 +321,7 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     if (current_sequence) {
         new_block = &builder.add_block(*current_sequence);
     } else {
-        new_block = &builder.add_block_after(*sequence, *block, {}, this->debug_info());
+        new_block = &builder.add_block_after(*sequence, *block, this->debug_info());
     }
 
     // Transfer the access nodes of the EinsumNode
@@ -511,8 +513,7 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
     builder.remove_node(*block, *this);
 
     // Remove block before loops if empty
-    size_t block_index = sequence->index(*block);
-    if (dfg.nodes().size() == 0 && sequence->at(block_index).second.empty()) {
+    if (dfg.nodes().size() == 0) {
         builder.remove_child(*sequence, sequence->index(*block));
     }
 

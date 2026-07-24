@@ -1337,6 +1337,38 @@ entry:
     EXPECT_TRUE(found_store);
 }
 
+TEST(LiftingTest, VisitStoreInst_Function) {
+    const std::string ir = R"(
+; ModuleID = 'test'
+source_filename = "test.ll"
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+
+declare void @bar()
+
+define void @foo(ptr %p) {
+entry:
+  store ptr @bar, ptr %p
+  ret void
+}
+)";
+
+    llvm::LLVMContext context;
+    auto module = loadModuleFromIR(ir, context);
+    ASSERT_NE(module, nullptr);
+
+    // Construct the TargetLibraryInfo required by the lifting pass
+    llvm::TargetLibraryInfoImpl TLIImpl(llvm::Triple(module->getTargetTriple()));
+    llvm::TargetLibraryInfo TLI(TLIImpl);
+
+    llvm::Function* function = module->getFunction("foo");
+    ASSERT_NE(function, nullptr);
+
+    // Run the lifting pass
+    lifting::Lifting lifting(TLI, *function, sdfg::FunctionType_CPU);
+    EXPECT_THROW(lifting.run(), lifting::NotImplementedException);
+}
+
 TEST(LiftingTest, VisitLoadInst_Scalar) {
     const std::string ir = R"(
 ; ModuleID = 'test'

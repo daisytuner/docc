@@ -29,7 +29,7 @@ bool GPUTilingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::
     // Find targets for normal loop tiling
     for (auto* map : maps_) {
         for (auto* descendant : loop_analysis.descendants(map)) {
-            auto* struc_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant);
+            auto* struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(descendant);
             if (!struc_loop) continue;
 
 
@@ -61,7 +61,7 @@ bool GPUTilingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::
 
     for (auto* map : candidates) {
         for (auto* descendant : loop_analysis.descendants(map)) {
-            if (auto* target_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant)) {
+            if (auto* target_loop = dyn_cast<structured_control_flow::StructuredLoop*>(descendant)) {
                 transformations::GPUTiling tiling(*target_loop, tile_size_);
                 if (tiling.can_be_applied(builder, analysis_manager)) {
                     tilable_loops.push_back(target_loop);

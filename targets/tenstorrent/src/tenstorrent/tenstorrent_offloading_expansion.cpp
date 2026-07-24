@@ -81,7 +81,7 @@ structured_control_flow::Block& TenstorrentOffloadingExpansion::require_allocate
         auto& parent_scope = require_parent_scope();
         auto& copy_in_block = require_copy_in_block();
         ControlFlowNode& scope = scope_;
-        auto& before = builder_.add_block_before(parent_scope, copy_in_block, {}, scope.debug_info());
+        auto& before = builder_.add_block_before(parent_scope, copy_in_block, scope.debug_info());
         alloc_block_ = &before;
         return before;
     }
@@ -93,7 +93,7 @@ structured_control_flow::Block& TenstorrentOffloadingExpansion::require_copy_in_
     } else {
         auto& parent_scope = require_parent_scope();
         ControlFlowNode& scope = scope_;
-        auto& before = builder_.add_block_before(parent_scope, scope, {}, scope.debug_info());
+        auto& before = builder_.add_block_before(parent_scope, scope, scope.debug_info());
         copy_in_block_ = &before;
         return before;
     }
@@ -105,7 +105,7 @@ structured_control_flow::Block& TenstorrentOffloadingExpansion::require_copy_out
     } else {
         auto& parent_scope = require_parent_scope();
         ControlFlowNode& scope = scope_;
-        auto& after = builder_.add_block_after(parent_scope, scope, {}, scope.debug_info());
+        auto& after = builder_.add_block_after(parent_scope, scope, scope.debug_info());
         copy_out_block_ = &after;
         return after;
     }
@@ -244,50 +244,52 @@ void TenstorrentOffloadingExpansion::copy_from_device(
 
 void TenstorrentOffloadingExpansion::create_offloaded_memory_handling(std::vector<TransferArg>& transfer_args) {
     // Create containers for on-device data
-    for (auto& [argument, type, arg_size, page_size, alloc_size, meta] : transfer_args) {
-        if (builder_.subject().exists(copy_prefix() + argument)) {
+    for (auto& arg : transfer_args) {
+        if (builder_.subject().exists(copy_prefix() + arg.name)) {
             continue;
         }
-        auto argument_device = copy_prefix() + argument;
+        auto argument_device = copy_prefix() + arg.name;
 
         auto buf_type = types::Structure("std::shared_ptr<tt::tt_metal::Buffer>");
-        buf_type.storage_type(global_device_storage_type(alloc_size, page_size));
+        buf_type.storage_type(global_device_storage_type(arg.allocated_size, arg.page_size));
         builder_.add_container(argument_device, buf_type);
     }
 
     //  Copy-In & allocate arguments on device memory
-    for (auto& [argument, type, arg_size, page_size, alloc_size, meta] : transfer_args) {
-        if (!meta.is_ptr) {
+    for (auto& arg : transfer_args) {
+        if (!arg.meta.is_ptr) {
             continue;
         }
-        auto argument_device = copy_prefix() + argument;
-        auto& new_block = builder_.add_block_before(require_parent_scope(), scope_, {}, scope_.debug_info());
-        if (meta.is_input) {
-            copy_to_device_with_allocation(builder_, scope_, argument, argument_device, arg_size, new_block, page_size);
+        auto argument_device = copy_prefix() + arg.name;
+        auto& new_block = builder_.add_block_before(require_parent_scope(), scope_, scope_.debug_info());
+        if (arg.meta.is_input) {
+            copy_to_device_with_allocation(
+                builder_, scope_, arg.name, argument_device, arg.data_size, new_block, arg.page_size
+            );
         } else {
-            allocate_device_arg(builder_, scope_, new_block, argument, argument_device, arg_size, page_size);
+            allocate_device_arg(builder_, scope_, new_block, arg.name, argument_device, arg.data_size, arg.page_size);
         }
     }
 
     // Replace args inside with on-device pointers
-    for (auto& [argument, type, arg_size, page_size, alloc_size, meta] : transfer_args) {
-        if (meta.is_ptr) {
-            auto argument_device = copy_prefix() + argument;
-            scope_.replace(symbolic::symbol(argument), symbolic::symbol(argument_device));
+    for (auto& arg : transfer_args) {
+        if (arg.meta.is_ptr) {
+            auto argument_device = copy_prefix() + arg.name;
+            scope_.replace(symbolic::symbol(arg.name), symbolic::symbol(argument_device));
         }
     }
 
     // Copy-Out & free
-    for (auto& [argument, type, arg_size, page_size, alloc_size, meta] : transfer_args) {
-        if (!meta.is_ptr) {
+    for (auto& arg : transfer_args) {
+        if (!arg.meta.is_ptr) {
             continue;
         }
-        auto argument_device = copy_prefix() + argument;
-        auto& new_block = builder_.add_block_after(require_parent_scope(), scope_, {}, scope_.debug_info());
-        if (meta.is_output) {
-            copy_from_device(builder_, scope_, new_block, argument, argument_device, arg_size, page_size);
+        auto argument_device = copy_prefix() + arg.name;
+        auto& new_block = builder_.add_block_after(require_parent_scope(), scope_, scope_.debug_info());
+        if (arg.meta.is_output) {
+            copy_from_device(builder_, scope_, new_block, arg.name, argument_device, arg.data_size, arg.page_size);
         } else {
-            deallocate_device_arg(builder_, scope_, new_block, argument_device, arg_size, page_size);
+            deallocate_device_arg(builder_, scope_, new_block, argument_device, arg.data_size, arg.page_size);
         }
     }
 

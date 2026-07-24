@@ -222,7 +222,7 @@ ROCMTransform ROCMTransform::from_json(builder::StructuredSDFGBuilder& builder, 
         throw transformations::
             InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto map = dynamic_cast<structured_control_flow::Map*>(element);
+    auto map = dyn_cast<structured_control_flow::Map*>(element);
 
     return ROCMTransform(*map, block_size);
 };

@@ -142,6 +142,12 @@ protected:
     static constexpr size_t REQUIRED_ELEMENT_IDS = 2;
 
 public:
+    /// Bitmask of all concrete ElementTypes that are StructuredLoops.
+    static constexpr ElementType TypeGroup = ElementType::For | ElementType::Map | ElementType::Reduce;
+
+    /// LLVM-style RTTI predicate: true if \p element is a StructuredLoop.
+    static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+
     virtual ~StructuredLoop() = default;
 
     StructuredLoop(const StructuredLoop& node) = delete;
@@ -199,21 +205,21 @@ public:
      *
      * @return The stride of the loop's update as a constant, otherwise null.
      */
-    symbolic::Integer stride();
+    symbolic::Integer stride() const;
 
     /**
      * @brief Checks if the loop has a positive unit stride (i.e., update is indvar + 1).
      *
      * @return True if the loop has a positive unit stride, false otherwise.
      */
-    bool is_contiguous();
+    bool is_contiguous() const;
 
     /**
      * @brief Checks if the loop is monotonic (i.e., stride is a positive integer).
      *
      * @return True if the loop is monotonic, false otherwise.
      */
-    bool is_monotonic();
+    bool is_monotonic() const;
 
     /**
      * @brief Describes the bound of a loop as a closed-form expression.
@@ -222,7 +228,7 @@ public:
      *
      * @return The bound of the loop as a closed-form expression, otherwise null.
      */
-    symbolic::Expression canonical_bound();
+    symbolic::Expression canonical_bound() const;
 
     /**
      * @brief Describes the upper bound of a loop (for positive stride).
@@ -234,7 +240,7 @@ public:
      *
      * @return The upper bound expression, or null if not extractable.
      */
-    symbolic::Expression canonical_bound_upper();
+    symbolic::Expression canonical_bound_upper() const;
 
     /**
      * @brief Describes the lower bound of a loop (for negative stride).
@@ -245,14 +251,14 @@ public:
      *
      * @return The lower bound expression, or null if not extractable.
      */
-    symbolic::Expression canonical_bound_lower();
+    symbolic::Expression canonical_bound_lower() const;
 
     /**
      * @brief Describes the number of iterations of a loop as a closed-form expression.
      *
      * @return The number of iterations of the loop as a closed-form expression, otherwise null.
      */
-    symbolic::Expression num_iterations();
+    symbolic::Expression num_iterations() const;
 
     /**
      * @brief Overapproximated (upper-bound) number of iterations.
@@ -271,7 +277,7 @@ public:
      *
      * @return An expression that upper-bounds the iteration count, otherwise null.
      */
-    symbolic::Expression num_iterations_approx();
+    symbolic::Expression num_iterations_approx() const;
 
     /**
      * @brief Checks if the loop is in a normal form.
@@ -281,7 +287,7 @@ public:
      *      - Loop has positive unit stride (i + 1)
      *      - Loop has canonical bound
      */
-    bool is_loop_normal_form();
+    bool is_loop_normal_form() const;
 };
 
 } // namespace structured_control_flow

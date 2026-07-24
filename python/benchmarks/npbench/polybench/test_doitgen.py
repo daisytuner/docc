@@ -11,10 +11,13 @@ PARAMETERS = {
 
 
 def initialize(NR, NQ, NP, datatype=np.float64):
-    A = np.fromfunction(
-        lambda i, j, k: ((i * j + k) % NP) / NP, (NR, NQ, NP), dtype=datatype
-    )
-    C4 = np.fromfunction(lambda i, j: (i * j % NP) / NP, (NP, NP), dtype=datatype)
+    i = np.arange(NR).reshape(-1, 1, 1)
+    j = np.arange(NQ).reshape(-1, 1)
+    k = np.arange(NP)
+    A = ((i * j + k) % NP) / NP
+    i = np.arange(NP).reshape(-1, 1)
+    j = np.arange(NP)
+    C4 = (i * j % NP) / NP
 
     return NR, NQ, NP, A, C4
 
@@ -23,75 +26,54 @@ def kernel(NR, NQ, NP, A, C4):
     A[:] = np.reshape(np.reshape(A, (NR, NQ, 1, NP)) @ C4, (NR, NQ, NP))
 
 
-@pytest.mark.skip(
-    reason="Broadcast on non-contiguous arrays is currently not supported"
+@pytest.mark.xfail()
+@pytest.mark.parametrize(
+    "target",
+    [
+        "none",
+        "sequential",
+        "openmp",
+        pytest.param("cuda", marks=pytest.mark.xfail(reason="nan mismatch")),
+        "rocm",
+    ],
 )
-@pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_doitgen(target):
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "MAP": 3,
+                "GEMM": 1,
+                "SEQUENTIAL": 5,
+                "FOR": 2,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "VECTORIZE": 1,
+                "MAP": 3,
+                "GEMM": 1,
+                "SEQUENTIAL": 4,
+                "FOR": 2,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
+                "CPU_PARALLEL": 1,
+                "MAP": 1,
+                "GEMM": 1,
+                "SEQUENTIAL": 2,
+                "FOR": 2,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "CUDA": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"REDUCE": 1, "SEQUENTIAL": 5, "MAP": 4}
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={
-                "FOR": 0,
-                "MAP": 0,
-                "SEQUENTIAL": 0,
-                "ROCM": 0,
-                "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
-                "GEMM": 0,
-                "DOT": 0,
-            }
+            verification={"REDUCE": 1, "SEQUENTIAL": 5, "MAP": 4}
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

@@ -2,6 +2,7 @@
 
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/while.h"
@@ -24,7 +25,7 @@ bool DotExpansion::accept(structured_control_flow::Block& block) {
     for (auto lib_node : block.dataflow().library_nodes()) {
         if (lib_node->code() == math::blas::LibraryNodeType_DOT) {
             auto dot_node = static_cast<math::blas::DotNode*>(lib_node);
-            if (dot_node->expand(builder_, analysis_manager_)) {
+            if (expansion::expand_single_math_node(builder_, block, *dot_node).expanded) {
                 return true;
             }
         }

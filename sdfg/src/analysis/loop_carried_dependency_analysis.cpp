@@ -337,7 +337,7 @@ void collect_body_blocks(
         out.push_back(block);
     } else if (auto* seq = dynamic_cast<const structured_control_flow::Sequence*>(&node)) {
         for (size_t i = 0; i < seq->size(); i++) {
-            collect_body_blocks(seq->at(i).first, out);
+            collect_body_blocks(seq->at(i), out);
         }
     } else if (auto* ifelse = dynamic_cast<const structured_control_flow::IfElse*>(&node)) {
         for (size_t i = 0; i < ifelse->size(); i++) {
@@ -394,7 +394,7 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
     for (auto* loop_node : loop_analysis.loops()) {
-        auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop_node);
+        auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop_node);
         if (loop == nullptr) {
             continue;
         }

@@ -690,6 +690,7 @@ bool CodeGenerationPass::compile_to_object_file(
     for (auto& arg : compile_args) {
         cmd.push_back(arg);
     }
+    cmd.push_back("-fno-strict-aliasing");
     cmd.push_back("-fopenmp");
     cmd.push_back("-Wno-parentheses-equality");
     cmd.push_back("-c");
@@ -729,7 +730,7 @@ std::unique_ptr<llvm::Module> CodeGenerationPass::compile_to_ir_in_memory(
     }
 
     cmd << "-fopenmp ";
-
+    cmd << "-fno-strict-aliasing ";
 
     cmd << source_path.string() << " -o -";
 
@@ -806,7 +807,7 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
     // If return is present, remove it and everything after it
     size_t return_index = kernel_root.size();
     for (size_t i = 0; i < kernel_root.size(); i++) {
-        if (dynamic_cast<sdfg::structured_control_flow::Return*>(&kernel_root.at(i).first)) {
+        if (sdfg::dyn_cast<sdfg::structured_control_flow::Return*>(&kernel_root.at(i))) {
             return_index = i;
             break;
         }
@@ -829,13 +830,8 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
 
     // Create copy-ins and allocations at the beginning of SDFG
     while (kernel_root.size() > 0) {
-        // Assignments are not allowed
-        if (!kernel_root.at(0).second.empty()) {
-            break;
-        }
-
         // Child must be a block
-        auto* block = dynamic_cast<sdfg::structured_control_flow::Block*>(&kernel_root.at(0).first);
+        auto* block = sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&kernel_root.at(0));
         if (!block) {
             break;
         }
@@ -1235,14 +1231,8 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
 
     // Create copy-outs and frees at the end of SDFG
     while (kernel_root.size() > 0) {
-        // Assignments are not allowed
-        if (!kernel_root.at(kernel_root.size() - 1).second.empty()) {
-            break;
-        }
-
         // Child must be a block
-        auto* block = dynamic_cast<sdfg::structured_control_flow::Block*>(&kernel_root.at(kernel_root.size() - 1).first
-        );
+        auto* block = sdfg::dyn_cast<sdfg::structured_control_flow::Block*>(&kernel_root.at(kernel_root.size() - 1));
         if (!block) {
             break;
         }
@@ -1734,7 +1724,7 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
             continue;
         }
         if (attrs.alloc || attrs.copy_in) {
-            auto& block = wrapper_builder.add_block_before(wrapper_root, kernel_block, {}, sdfg::DebugInfo());
+            auto& block = wrapper_builder.add_block_before(wrapper_root, kernel_block, sdfg::DebugInfo());
             std::vector<std::string> inputs;
             for (size_t j = 0; j < sdfg.arguments().size(); j++) {
                 inputs.push_back("_arg" + std::to_string(j));
@@ -1770,7 +1760,7 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
                 .add_computational_memlet(block, libnode, "_ret", access_node, {}, sdfg.type(attrs.copy_buffer));
         }
         if (attrs.copy_out || attrs.free) {
-            auto& block = wrapper_builder.add_block_after(wrapper_root, kernel_block, {}, sdfg::DebugInfo());
+            auto& block = wrapper_builder.add_block_after(wrapper_root, kernel_block, sdfg::DebugInfo());
             std::vector<std::string> inputs;
             for (size_t j = 0; j < sdfg.arguments().size(); j++) {
                 inputs.push_back("_arg" + std::to_string(j));

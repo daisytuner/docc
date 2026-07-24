@@ -190,11 +190,19 @@ class TorchProgram(DoccProgram):
         # Generate cache key
         cache_key = self._get_cache_key(self.example_input)
 
-        cached_available = cache_key in self.cache
+        # In-memory cache key: the structural cache key plus the resolved compile
+        # options, so repeated in-process compiles with different
+        # instrumentation/arg-capture/remote-tuning do not alias to the first
+        # built binary (the on-disk hash already accounts for these options).
+        mem_cache_key = (
+            f"{cache_key}|{capture_args}|{instrumentation_mode}|{remote_tuning}"
+        )
+
+        cached_available = mem_cache_key in self.cache
 
         if original_output_folder and cached_available:
             if not self.force_rebuild:
-                return self.cache[cache_key]
+                return self.cache[mem_cache_key]
 
         # Determine output folder
         if output_folder is None:
@@ -218,7 +226,7 @@ class TorchProgram(DoccProgram):
                 except Exception:
                     pass
 
-            hash_input = f"{self.name}|{self.target}|{self.category}|{cache_key}|{model_code}".encode(
+            hash_input = f"{self.name}|{self.target}|{self.category}|{cache_key}|{model_code}|{capture_args}|{instrumentation_mode}|{remote_tuning}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
@@ -235,9 +243,24 @@ class TorchProgram(DoccProgram):
         # Reuse already built binaries
         docc_reuse_binaries = os.environ.get("DOCC_REUSE_BINARIES")
 
+        # Reuse already generated sources (recompile without regenerating them).
+        # Unlike binary reuse this still runs the full pipeline, but the build
+        # step recompiles the existing source files instead of overwriting them.
+        docc_reuse_sources = os.environ.get("DOCC_REUSE_SOURCES")
+
+        if (docc_reuse_binaries or docc_reuse_sources) and not self.debug_dump:
+            self.debug_dump = True  # Required for source reuse
+
+        if not os.path.exists(output_folder) and docc_reuse_sources:
+            docc_reuse_sources = None
+
         if not os.path.exists(output_folder) and docc_reuse_binaries:
             docc_reuse_binaries = None
-        elif os.path.exists(output_folder) and not docc_reuse_binaries:
+        elif (
+            os.path.exists(output_folder)
+            and not docc_reuse_binaries
+            and not docc_reuse_sources
+        ):
             shutil.rmtree(output_folder)
 
         # Populate input info from example input
@@ -280,6 +303,27 @@ class TorchProgram(DoccProgram):
             self._device_resident = sdfg.metadata("device_resident") == "1"
             backend = sdfg.metadata("device_backend")
             self._device_backend = backend or None
+        elif docc_reuse_sources:
+
+            sdfg_path = f"{output_folder}/__docc_{self.name}.py5.post_sched.json"
+            if not os.path.exists(sdfg_path):
+                raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
+            sdfg = StructuredSDFG.from_file(sdfg_path)
+
+            main_file = f"{output_folder}/__docc_{self.name}.cpp"
+            if not os.path.exists(main_file):
+                raise ValueError(
+                    f"Tried reusing sources '{main_file}' but does not exist"
+                )
+
+            lib_path = self.sdfg_pipe(
+                sdfg,
+                output_folder,
+                instrumentation_mode,
+                capture_args,
+                remote_tuning,
+                reuse_sources=True,
+            )
         else:
             # Build SDFG if not already done
             if self._sdfg is None:
@@ -336,7 +380,7 @@ class TorchProgram(DoccProgram):
 
         # Cache
         if original_output_folder is None:
-            self.cache[cache_key] = compiled
+            self.cache[mem_cache_key] = compiled
 
         self._compiled = compiled
 
@@ -436,12 +480,21 @@ class TorchProgram(DoccProgram):
     def _convert_inputs(self, args: tuple) -> tuple:
         import torch
         import numpy as np
+        import ml_dtypes
 
         converted = []
         for arg in args:
             if isinstance(arg, torch.Tensor):
                 # Ensure contiguous and convert to numpy
-                arr = arg.detach().cpu().contiguous().numpy()
+                contiguous_arg = arg.detach().cpu().contiguous()
+                if arg.dtype == torch.bfloat16:
+                    arr = (
+                        contiguous_arg.view(dtype=torch.uint16)
+                        .numpy()
+                        .view(dtype=ml_dtypes.bfloat16)
+                    )
+                else:
+                    arr = contiguous_arg.numpy()
                 converted.append(arr)
             elif isinstance(arg, np.ndarray):
                 converted.append(arg)
@@ -452,6 +505,7 @@ class TorchProgram(DoccProgram):
 
     def _convert_outputs(self, result: Any, original_args: tuple) -> Any:
         import torch
+        import ml_dtypes
 
         # Determine target device from input
         device = torch.device("cpu")
@@ -469,7 +523,12 @@ class TorchProgram(DoccProgram):
                 # For non-CPU devices, .to(device) creates a copy anyway
                 # For CPU, the shared memory is fine since CompiledSDFG
                 # allocates new buffers on each call
-                t = torch.from_numpy(val)
+                if val.dtype == ml_dtypes.bfloat16:
+                    t = torch.from_numpy(val.view(dtype=np.uint16)).view(
+                        dtype=torch.bfloat16
+                    )
+                else:
+                    t = torch.from_numpy(val)
                 if not is_cpu:
                     t = t.to(device)
                 return t

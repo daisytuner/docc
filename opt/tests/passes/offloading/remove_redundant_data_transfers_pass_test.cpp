@@ -90,7 +90,7 @@ TEST(RemoveRedundantTransfersPassTest, MultiMapTest) {
     int d2h_count = 0;
     for (int i = 0; i < root.size(); i++) {
         auto& cf_node = root.at(i).first;
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&cf_node)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&cf_node)) {
             for (auto& node : block->dataflow().nodes()) {
                 if (auto* data_transfer = dynamic_cast<offloading::DataOffloadingNode*>(&node)) {
                     if (data_transfer->is_d2h()) {
@@ -159,7 +159,7 @@ TEST(RemoveRedundantTransfersPassTest, MultiMapWithLatterUseTest) {
     int d2h_count = 0;
     for (int i = 0; i < root.size(); i++) {
         auto& cf_node = root.at(i).first;
-        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&cf_node)) {
+        if (auto* block = dyn_cast<structured_control_flow::Block*>(&cf_node)) {
             for (auto& node : block->dataflow().nodes()) {
                 if (auto* data_transfer = dynamic_cast<offloading::DataOffloadingNode*>(&node)) {
                     if (data_transfer->is_h2d()) {

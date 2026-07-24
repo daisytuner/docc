@@ -1,0 +1,38 @@
+[project]
+name = "docc-pytorch"
+dynamic = ["version"]
+description = "A backend for PyTorch compile based on the Daisytuner Optimizing Compiler Collection (DOCC)."
+authors = [{ name = "Daisytuner", email = "hello@daisytuner.com" }]
+maintainers = [{ name = "Daisytuner", email = "hello@daisytuner.com" }]
+license = { text = "BSD-3-Clause" }
+requires-python = ">=3.11"
+readme = "README.md"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: BSD License",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: C++",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Software Development :: Compilers",
+]
+keywords = ["pytorch", "sdfg", "compiler", "optimization"]
+dependencies = [
+    # "docc-compiler",
+    "numpy>=1.19.0",
+    "ml_dtypes>=0.5.4",
+    "sympy>=1.14.0"
+]
+
+[project.urls]
+Homepage = "https://daisytuner.com"
+Documentation = "https://docs.daisytuner.com"
+Repository = "https://github.com/daisytuner/docc"
+Issues = "https://github.com/daisytuner/docc/issues"

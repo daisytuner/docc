@@ -55,7 +55,7 @@
 #include <docc/target/et/target.h>
 #endif
 #include <docc/target/tenstorrent/target.h>
-
+#include "boost/stacktrace/stacktrace.hpp"
 #include "targets/target_mapping.h"
 
 namespace py = pybind11;
@@ -76,6 +76,25 @@ PYBIND11_MODULE(_sdfg, m) {
     docc::target::et::register_plugin(docc_context);
 #endif
     docc::target::tenstorrent::register_plugin(docc_context);
+
+    // last handler, to dump stacktraces of uncaught exceptions
+    py::register_local_exception_translator([](std::exception_ptr p) {
+        try {
+            if (p) {
+                std::rethrow_exception(p);
+            }
+        } catch (const std::exception& e) {
+            auto c = std::current_exception();
+            boost::stacktrace::stacktrace trace = boost::stacktrace::stacktrace::from_current_exception();
+            std::cerr << "Uncaught exception: '" << e.what() << "'";
+            if (!trace.empty()) {
+                std::cerr << ", trace:\n" << trace;
+            }
+            std::cerr << std::endl;
+
+            throw;
+        }
+    });
 
     register_types(m);
     register_data_flow_node(m);
@@ -261,7 +280,8 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("instrumentation_mode") = "",
             py::arg("capture_args") = false,
             py::arg("debug_build") = false,
-            py::arg("threads") = 0 // means hardware-threads
+            py::arg("threads") = 0, // means hardware-threads
+            py::arg("reuse_sources") = false
         )
         .def("metadata", &PyStructuredSDFG::metadata, py::arg("key"), "Get metadata value")
         .def_property(
@@ -294,6 +314,29 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def(py::init<PyStructuredSDFG&>(), py::arg("sdfg"), "Create a StructuredSDFGBuilder to modify an existing SDFG")
         .def("move", &PyStructuredSDFGBuilder::move, "Move the built StructuredSDFG and return it")
+        .def(
+            "add_metadata",
+            &PyStructuredSDFGBuilder::add_metadata,
+            py::arg("key"),
+            py::arg("value"),
+            "Add metadata to the SDFG"
+        )
+        .def(
+            "remove_metadata", &PyStructuredSDFGBuilder::remove_metadata, py::arg("key"), "Remove metadata from the SDFG"
+        )
+        .def(
+            "has_metadata",
+            &PyStructuredSDFGBuilder::has_metadata,
+            py::arg("key"),
+            "True iff the key exists in the metadata of the SDFG"
+        )
+        .def(
+            "get_metadata",
+            &PyStructuredSDFGBuilder::get_metadata,
+            py::arg("key"),
+            "Gets the metadata value corresponding to the provided key in the SDFG"
+        )
+        .def("metadata", &PyStructuredSDFGBuilder::metadata, "Returns all the metadata")
         .def(
             "add_container",
             &PyStructuredSDFGBuilder::add_container,
@@ -389,10 +432,26 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def("end_for", &PyStructuredSDFGBuilder::end_for)
         .def(
-            "add_transition",
-            &PyStructuredSDFGBuilder::add_transition,
+            "begin_map",
+            &PyStructuredSDFGBuilder::begin_map,
+            py::arg("var"),
+            py::arg("start"),
+            py::arg("end"),
+            py::arg("step"),
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
+        )
+        .def("end_map", &PyStructuredSDFGBuilder::end_map)
+        .def(
+            "add_assignments",
+            &PyStructuredSDFGBuilder::add_assignments,
             py::arg("lhs"),
             py::arg("rhs"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_empty_assignments",
+            &PyStructuredSDFGBuilder::add_empty_assignments,
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
@@ -442,6 +501,18 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_elementwise_cmath_op",
+            &PyStructuredSDFGBuilder::add_elementwise_cmath_op,
+            py::arg("func"),
+            py::arg("A"),
+            py::arg("A_type"),
+            py::arg("B"),
+            py::arg("B_type"),
+            py::arg("C"),
+            py::arg("C_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_elementwise_unary_op",
             &PyStructuredSDFGBuilder::add_elementwise_unary_op,
             py::arg("op_type"),
@@ -452,11 +523,33 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_elementwise_unary_cmath_op",
+            &PyStructuredSDFGBuilder::add_elementwise_unary_cmath_op,
+            py::arg("func"),
+            py::arg("A"),
+            py::arg("A_type"),
+            py::arg("C"),
+            py::arg("C_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_relu",
+            &PyStructuredSDFGBuilder::add_relu,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_conv",
             &PyStructuredSDFGBuilder::add_conv,
             py::arg("X"),
+            py::arg("X_type"),
             py::arg("W"),
+            py::arg("W_type"),
             py::arg("Y"),
+            py::arg("Y_type"),
             py::arg("shape"),
             py::arg("kernel_shape"),
             py::arg("strides"),
@@ -464,6 +557,60 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("dilations"),
             py::arg("output_channels"),
             py::arg("group"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_conv_with_bias",
+            &PyStructuredSDFGBuilder::add_conv_with_bias,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("W"),
+            py::arg("W_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("B"),
+            py::arg("B_type"),
+            py::arg("shape"),
+            py::arg("kernel_shape"),
+            py::arg("strides"),
+            py::arg("pads"),
+            py::arg("dilations"),
+            py::arg("output_channels"),
+            py::arg("group"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_batchnorm_with_bias",
+            &PyStructuredSDFGBuilder::add_batchnorm_with_bias,
+            py::arg("Batch"),
+            py::arg("Batch_type"),
+            py::arg("Var"),
+            py::arg("Var_type"),
+            py::arg("E"),
+            py::arg("E_type"),
+            py::arg("Gamma"),
+            py::arg("Gamma_type"),
+            py::arg("Beta"),
+            py::arg("Beta_type"),
+            py::arg("epsilon"),
+            py::arg("epsilon_type"),
+            py::arg("B_out"),
+            py::arg("B_out_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_pooling",
+            &PyStructuredSDFGBuilder::add_pooling,
+            py::arg("mode_type"),
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("shape"),
+            py::arg("kernel_shape"),
+            py::arg("strides"),
+            py::arg("pads"),
+            py::arg("dilations"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
@@ -476,6 +623,25 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_copy_op",
+            &PyStructuredSDFGBuilder::add_copy_op,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_concat_op",
+            &PyStructuredSDFGBuilder::add_concat_op,
+            py::arg("tensors"),
+            py::arg("tensor_types"),
+            py::arg("result"),
+            py::arg("result_type"),
+            py::arg("dim"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_reduce_op",
             &PyStructuredSDFGBuilder::add_reduce_op,
             py::arg("op_type"),
@@ -485,6 +651,28 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("output_type"),
             py::arg("axes"),
             py::arg("keepdims"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_broadcast_op",
+            &PyStructuredSDFGBuilder::add_broadcast_op,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("input_shape"),
+            py::arg("output_shape"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_matmul_op",
+            &PyStructuredSDFGBuilder::add_matmul_op,
+            py::arg("A"),
+            py::arg("A_type"),
+            py::arg("B"),
+            py::arg("B_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
@@ -564,6 +752,13 @@ PYBIND11_MODULE(_sdfg, m) {
             py::return_value_policy::reference
         )
         .def(
+            "add_malloc_block",
+            &PyStructuredSDFGBuilder::add_malloc_block,
+            py::arg("container"),
+            py::arg("size"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_memset",
             &PyStructuredSDFGBuilder::add_memset,
             py::arg("block"),
@@ -581,11 +776,25 @@ PYBIND11_MODULE(_sdfg, m) {
             py::return_value_policy::reference
         )
         .def(
+            "add_memcpy_block",
+            &PyStructuredSDFGBuilder::add_memcpy_block,
+            py::arg("src_container"),
+            py::arg("dst_container"),
+            py::arg("count"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_free",
             &PyStructuredSDFGBuilder::add_free,
             py::arg("block"),
             py::arg("debug_info") = sdfg::DebugInfo(),
             py::return_value_policy::reference
+        )
+        .def(
+            "add_free_block",
+            &PyStructuredSDFGBuilder::add_free_block,
+            py::arg("container"),
+            py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
             "is_hoistable_size",
@@ -608,6 +817,16 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("src"),
             py::arg("dst"),
             py::arg("subset") = "",
+            py::arg("type") = nullptr,
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_dereference_memlet",
+            &PyStructuredSDFGBuilder::add_dereference_memlet,
+            py::arg("block"),
+            py::arg("src"),
+            py::arg("dst"),
+            py::arg("derefs_src") = true,
             py::arg("type") = nullptr,
             py::arg("debug_info") = sdfg::DebugInfo()
         )

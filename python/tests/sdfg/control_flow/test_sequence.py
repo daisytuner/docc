@@ -51,28 +51,15 @@ class TestSequence:
         assert child0.element_id != child1.element_id
 
     def test_at_method(self):
-        """Test at() method returns (child, transition) pair."""
+        """Test at() method returns child."""
         builder = StructuredSDFGBuilder("test_sdfg")
         builder.add_block()
 
         sdfg = builder.move()
         root = sdfg.root
 
-        child, transition = root.at(0)
+        child = root.at(0)
         assert isinstance(child, Block)
-        assert transition is not None
-
-    def test_transition_method(self):
-        """Test transition() method returns transition at index."""
-        builder = StructuredSDFGBuilder("test_sdfg")
-        builder.add_block()
-
-        sdfg = builder.move()
-        root = sdfg.root
-
-        transition = root.transition(0)
-        assert transition is not None
-        assert transition.element_id >= 0
 
     def test_children_method(self):
         """Test children() method returns all children."""
@@ -167,51 +154,51 @@ class TestSequence:
         assert body.size == 1
 
 
-class TestTransition:
-    """Test suite for Transition properties."""
+class TestAssignmentBlock:
+    """Test suite for AssignmentBlock properties."""
 
-    def test_transition_element_id(self):
+    def test_assignment_block_element_id(self):
         """Test that element_id is accessible."""
         builder = StructuredSDFGBuilder("test_sdfg")
-        builder.add_block()
+        builder.add_empty_assignments()
 
         sdfg = builder.move()
         root = sdfg.root
 
-        transition = root.transition(0)
-        assert transition.element_id >= 0
+        assignment_block = root.at(0)
+        assert assignment_block.element_id >= 0
 
-    def test_transition_empty(self):
-        """Test empty property for transitions without assignments."""
+    def test_assignment_block_empty(self):
+        """Test empty property for assignmentBlock without assignments."""
         builder = StructuredSDFGBuilder("test_sdfg")
-        builder.add_block()
+        builder.add_empty_assignments()
 
         sdfg = builder.move()
         root = sdfg.root
 
-        transition = root.transition(0)
-        assert transition.empty is True
+        assignment_block = root.at(0)
+        assert assignment_block.empty is True
 
-    def test_transition_size(self):
-        """Test size property for transitions."""
+    def test_assignment_block_size(self):
+        """Test size property for assignment_blocks."""
         builder = StructuredSDFGBuilder("test_sdfg")
-        builder.add_block()
+        builder.add_empty_assignments()
 
         sdfg = builder.move()
         root = sdfg.root
 
-        transition = root.transition(0)
-        assert transition.size == 0
+        assignment_block = root.at(0)
+        assert assignment_block.size == 0
 
-    def test_transition_repr(self):
-        """Test Transition string representation."""
+    def test_assignment_block_repr(self):
+        """Test AssignmentBlock string representation."""
         builder = StructuredSDFGBuilder("test_sdfg")
-        builder.add_block()
+        builder.add_empty_assignments()
 
         sdfg = builder.move()
         root = sdfg.root
 
-        transition = root.transition(0)
-        repr_str = repr(transition)
-        assert "Transition" in repr_str
+        assignment_block = root.at(0)
+        repr_str = repr(assignment_block)
+        assert "AssignmentBlock" in repr_str
         assert "assignments=" in repr_str

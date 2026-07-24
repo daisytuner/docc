@@ -60,10 +60,7 @@ bool LoopSkewing::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
     if (outer_loop_.root().size() != 1) {
         return false;
     }
-    if (outer_loop_.root().at(0).second.assignments().size() > 0) {
-        return false;
-    }
-    if (&outer_loop_.root().at(0).first != &inner_loop_) {
+    if (&outer_loop_.root().at(0) != &inner_loop_) {
         return false;
     }
 
@@ -129,12 +126,12 @@ LoopSkewing LoopSkewing::from_json(builder::StructuredSDFGBuilder& builder, cons
         throw std::runtime_error("Element with ID " + std::to_string(inner_loop_id) + " not found.");
     }
 
-    auto outer_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(outer_element);
+    auto outer_loop = dyn_cast<structured_control_flow::StructuredLoop*>(outer_element);
     if (outer_loop == nullptr) {
         throw std::runtime_error("Element with ID " + std::to_string(outer_loop_id) + " is not a StructuredLoop.");
     }
 
-    auto inner_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(inner_element);
+    auto inner_loop = dyn_cast<structured_control_flow::StructuredLoop*>(inner_element);
     if (inner_loop == nullptr) {
         throw std::runtime_error("Element with ID " + std::to_string(inner_loop_id) + " is not a StructuredLoop.");
     }

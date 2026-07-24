@@ -24,8 +24,12 @@ def compare(
         else:
             assert abs(res - ref) <= atol + rtol * abs(ref)
     elif type(res) == torch.Tensor and type(ref) == torch.Tensor:
+        assert res.dtype == ref.dtype
         assert res.shape == ref.shape
-        assert torch.allclose(res, ref, rtol=rtol, atol=atol, equal_nan=equal_nan)
+        if torch.is_floating_point(res):
+            assert torch.allclose(res, ref, rtol=rtol, atol=atol, equal_nan=equal_nan)
+        else:
+            assert torch.all(res == ref)
     elif type(res) == tuple and type(ref) == tuple:
         assert len(res) == len(ref)
         for res_elem, ref_elem in zip(res, ref):

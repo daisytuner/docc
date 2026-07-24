@@ -66,36 +66,26 @@ void PoolingNode::validate(const Function& function) const {
     }
 }
 
-bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+passes::LibNodeExpander::ExpandOutcome PoolingNode::
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
     auto& dataflow = this->get_parent();
-    auto& block = static_cast<structured_control_flow::Block&>(*dataflow.get_parent());
-    auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
-    int index = parent.index(block);
-    auto& transition = parent.at(index).second;
 
     auto primitive_type = this->primitive_type(dataflow);
     types::Scalar scalar_type(primitive_type);
 
     auto x_edge = dataflow.in_edge_for_connector(*this, "X");
     if (!x_edge) {
-        return false;
+        return context.unable();
     }
 
     auto y_edge = dataflow.in_edge_for_connector(*this, "Y");
     if (!y_edge) {
-        return false;
-    }
-
-    auto* x_node = static_cast<const data_flow::AccessNode*>(&x_edge->src());
-    auto* y_node = static_cast<const data_flow::AccessNode*>(&y_edge->src());
-
-    if (!x_node || !y_node) {
-        return false;
+        return context.unable();
     }
 
     size_t spatial_dims = kernel_shape_.size();
     if (spatial_dims == 0) {
-        return false;
+        return context.unable();
     }
 
     // Get strides (default to 1)
@@ -133,9 +123,6 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         }
     }
 
-    auto& X_var = x_node->data();
-    auto& Y_var = y_node->data();
-
     // Input shape: [N, C, D0, D1, ..., Dn]
     symbolic::Expression N = shape_[0];
     symbolic::Expression C = shape_[1];
@@ -155,7 +142,15 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         output_spatial_dims.push_back(d_out);
     }
 
-    auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
+    using Use = passes::LibNodeExpander::InputUse;
+    auto standalone = context.replacement_requires_access_nodes({Use::IndirectWrite, Use::IndirectRead});
+
+    if (!standalone) {
+        return context.unable();
+    }
+
+    auto& new_sequence = standalone->replace_with_sequence();
+    auto& builder = standalone->builder();
 
     structured_control_flow::Sequence* current_scope = &new_sequence;
     std::vector<symbolic::Expression> output_indices;
@@ -172,7 +167,6 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         symbolic::zero(),
         symbolic::add(n_var, symbolic::one()),
         structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
     current_scope = &map_n.root();
@@ -189,7 +183,6 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         symbolic::zero(),
         symbolic::add(c_var, symbolic::one()),
         structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
     current_scope = &map_c.root();
@@ -207,7 +200,6 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
             symbolic::zero(),
             symbolic::add(od_var, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             block.debug_info()
         );
         current_scope = &map_od.root();
@@ -256,23 +248,27 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
     builder.add_computational_memlet(init_block, zero_const, init_tasklet, "_in", {}, scalar_type, block.debug_info());
     builder.add_computational_memlet(init_block, init_tasklet, "_out", accum_init, {}, scalar_type, block.debug_info());
 
-    // For loops over kernel spatial dimensions
+    // Reduce over kernel spatial dimensions
     auto* loop_scope = current_scope;
     std::vector<symbolic::Expression> kernel_vars;
+    structured_control_flow::ReductionOperation reduce_op =
+        (mode_ == PoolingMode::Max ? structured_control_flow::ReductionOperation::Max
+                                   : structured_control_flow::ReductionOperation::Add);
     for (size_t i = 0; i < spatial_dims; ++i) {
         std::string k_str = builder.find_new_name("k" + std::to_string(i));
         builder.add_container(k_str, types::Scalar(types::PrimitiveType::UInt64));
         auto k_var = symbolic::symbol(k_str);
-        auto& for_k = builder.add_for(
+        auto& reduce_k = builder.add_reduce(
             *loop_scope,
             k_var,
             symbolic::Lt(k_var, kernel_shape_[i]),
             symbolic::zero(),
             symbolic::add(k_var, symbolic::one()),
-            {},
+            {{.operation = reduce_op, .container = accum_var}},
+            structured_control_flow::ScheduleType_Sequential::create(),
             block.debug_info()
         );
-        loop_scope = &for_k.root();
+        loop_scope = &reduce_k.root();
         kernel_vars.push_back(k_var);
     }
 
@@ -302,7 +298,7 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
                         And(symbolic::Lt(input_spatial_indices[i], input_spatial_dims[i]),
                             symbolic::Ge(input_spatial_indices[i], symbolic::zero())));
         }
-        auto& branch = builder.add_if_else(*loop_scope, {}, block.debug_info());
+        auto& branch = builder.add_if_else(*loop_scope, block.debug_info());
         auto& comp_case = builder.add_case(branch, comp_condition, block.debug_info());
         loop_scope = &comp_case;
     }
@@ -314,7 +310,7 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
 
     // Computation block: accumulate
     auto& comp_block = builder.add_block(*loop_scope, {}, block.debug_info());
-    auto& x_access = builder.add_access(comp_block, X_var, x_node->debug_info());
+    auto& x_access = standalone->add_indirect_read_access(comp_block, 1);
     auto& accum_read = builder.add_access(comp_block, accum_var, block.debug_info());
     auto& accum_write = builder.add_access(comp_block, accum_var, block.debug_info());
 
@@ -358,7 +354,7 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
 
     auto& output_block = builder.add_block(*current_scope, {}, block.debug_info());
     auto& accum_final = builder.add_access(output_block, accum_var, block.debug_info());
-    auto& y_access = builder.add_access(output_block, Y_var, y_node->debug_info());
+    auto& y_access = standalone->add_indirect_write_access(output_block, 0);
 
     if (mode_ == PoolingMode::Avg) {
         // Divide by window size: product of kernel_shape dimensions
@@ -407,13 +403,7 @@ bool PoolingNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Anal
         );
     }
 
-    // Clean up original block
-    builder.clear_code_node_legacy(block, *this);
-    // WARNING: this has been deallocated at this point!!
-
-    builder.remove_child(parent, index + 1);
-
-    return true;
+    return standalone->successfully_expanded();
 }
 
 std::unique_ptr<data_flow::DataFlowNode> PoolingNode::

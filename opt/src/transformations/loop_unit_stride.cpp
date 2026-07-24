@@ -2,7 +2,6 @@
 
 #include <stdexcept>
 
-#include "sdfg/analysis/scope_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -113,17 +112,18 @@ void LoopUnitStride::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 
     // Add an empty block before the first child to set the strided variable in the transition
     if (loop_.root().size() > 0) {
-        auto& first_child = loop_.root().at(0).first;
-        builder.add_block_before(loop_.root(), first_child, control_flow::Assignments{{strided_var, strided_expr}});
+        auto& first_child = loop_.root().at(0);
+        builder
+            .add_assignments_before(loop_.root(), first_child, control_flow::Assignments{{strided_var, strided_expr}});
     } else {
-        builder.add_block(loop_.root(), control_flow::Assignments{{strided_var, strided_expr}});
+        builder.add_assignments(loop_.root(), control_flow::Assignments{{strided_var, strided_expr}});
     }
 
     // Reconstruct original indvar value after loop exit
     // After loop, indvar holds transformed final value; we restore: indvar = |stride| * indvar
-    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(loop_.get_parent());
+    auto* parent = dyn_cast<structured_control_flow::Sequence*>(loop_.get_parent());
     if (parent) {
-        builder.add_block_after(*parent, loop_, {{indvar, strided_expr}}, loop_.debug_info());
+        builder.add_assignments_after(*parent, loop_, {{indvar, strided_expr}}, loop_.debug_info());
     }
 }
 
@@ -145,7 +145,7 @@ LoopUnitStride LoopUnitStride::from_json(builder::StructuredSDFGBuilder& builder
         throw std::runtime_error("LoopUnitStride: Element with ID " + std::to_string(loop_id) + " not found.");
     }
 
-    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw std::runtime_error("LoopUnitStride: Element with ID " + std::to_string(loop_id) + " is not a loop.");
     }

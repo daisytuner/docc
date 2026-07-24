@@ -58,6 +58,12 @@ public:
     IfElse(const IfElse& node) = delete;
     IfElse& operator=(const IfElse&) = delete;
 
+    ElementType type_id() const override { return ElementType::IfElse; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::IfElse; }
+
+    bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
+
     void validate(const Function& function) const override;
 
     /**
@@ -81,6 +87,13 @@ public:
      * @throws std::out_of_range if i >= size()
      */
     std::pair<Sequence&, const symbolic::Condition> at(size_t i);
+
+    /**
+     * @brief Find the index of a child sequence (the root seq of one of our branches)
+     * @param child Child node to search for
+     * @return Index of the child, or -1 if not found
+     */
+    int index(const Sequence& child) const;
 
     /**
      * @brief Checks if this IfElse is complete (all cases are covered)

@@ -196,7 +196,7 @@ void PrintfTransform::to_json(nlohmann::json& j) const {
 PrintfTransform PrintfTransform::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
     auto map_element_id = desc["map_element_id"].get<size_t>();
 
-    auto map = dynamic_cast<structured_control_flow::Map*>(builder.find_element_by_id(map_element_id));
+    auto map = dyn_cast<structured_control_flow::Map*>(builder.find_element_by_id(map_element_id));
 
     return PrintfTransform(*map);
 }

@@ -15,6 +15,7 @@ set_target_properties(sdfg-mlir PROPERTIES
 
 # Link against only the MLIR libraries we need (reduces wheel size significantly)
 target_link_libraries(sdfg-mlir PRIVATE
+    ${DAISY_STACKTRACE_LIBS}
     # Core MLIR
     MLIRIR
     MLIRSupport

@@ -1,0 +1,66 @@
+on: # Deactivated because torch mlir breaks here
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+parameters:
+  container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+  timeout: 120
+  partitions:
+    - zinnia
+
+steps:
+  build: |
+    python3.11 -m venv venv
+    . venv/bin/activate
+
+    python -m pip install --upgrade pip
+    pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+    pip install numpy scipy transformers ml_dtypes
+
+    pip install --no-build-isolation -e python/
+    pip install --no-build-isolation -e mlir/
+
+    # Build cupy-rocm from source for ROCm 6x
+    # To be removed when docker image is updated to ROCm 7x
+    export CUPY_INSTALL_USE_HIP=1
+    export ROCM_HOME=/opt/rocm
+    export HCC_AMDGPU_TARGET=$(rocminfo | grep -m1 -o 'gfx[0-9a-f]*')
+    pip install cupy --no-cache-dir
+
+    pip install -r mlir/requirements.txt
+    pip uninstall -y torch torchvision
+    pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/rocm6.4
+
+    # Warm start
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --device cpu
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --device docc --target=rocm
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --n_runs=1 --device cpu --variant segformer --batch-size 16
+    venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --n_runs=1 --device rocm --variant segformer --batch-size 16
+    DOCC_CI=regions venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --n_runs=1 --device docc --target=rocm --variant segformer --batch-size 16
+
+  run:
+    resnet18_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --device cpu
+      energy: true
+    resnet18_docc_rocm:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --device docc --target=rocm
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1
+    # model segformer
+    segformer_torch:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device cpu --variant segformer --batch-size 16
+      energy: true
+    segformer_torch_rocm:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device rocm --variant segformer --batch-size 16
+      energy: true
+    segformer_docc_rocm:
+      command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device docc --target=rocm --variant segformer --batch-size 16
+      energy: true
+      env:
+        DOCC_CI: regions
+        DOCC_REUSE_BINARIES: 1

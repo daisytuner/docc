@@ -110,7 +110,7 @@ TEST(PrintfMapDispatcher, InstrumentationInfoTest) {
     auto info = dispatcher.instrumentation_info();
 
     EXPECT_EQ(info.target_type().value(), TargetType_Printf.value());
-    EXPECT_EQ(info.element_type(), codegen::ElementType_Map);
+    EXPECT_EQ(info.element_desc(), "map");
 }
 
 } // namespace sdfg::printf_target

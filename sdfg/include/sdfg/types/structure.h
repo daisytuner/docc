@@ -92,6 +92,17 @@ public:
      * @return true if this structure is pointer-like, false otherwise
      */
     bool is_pointer_like() const override;
+
+    /**
+     * @brief Replace symbolic expressions on this type
+     * @param old_expression Expression to replace
+     * @param new_expression Replacement expression
+     *
+     * Nothing to do.
+     */
+    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
+        override {}
+    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override {}
 };
 
 /**
@@ -188,6 +199,16 @@ public:
      */
     static const Structure&
     create_vector_type(const builder::FunctionBuilder& builder, const Scalar& element_type, size_t vector_size);
+
+    /**
+     * @brief Replace symbolic expressions on the members
+     * @param old_expression Expression to replace
+     * @param new_expression Replacement expression
+     *
+     * Replaces occurrences of symbolic expressions on the member types.
+     */
+    void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression);
+    void replace_symbols(const symbolic::ExpressionMapping& replacements);
 };
 
 } // namespace types

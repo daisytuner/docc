@@ -48,7 +48,8 @@ public:
 
     void validate(const Function& function) const override;
 
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    passes::LibNodeExpander::ExpandOutcome
+    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override;
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;

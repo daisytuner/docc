@@ -12,7 +12,9 @@ PARAMETERS = {
 
 
 def initialize(TSTEPS, N, datatype=np.float64):
-    A = np.fromfunction(lambda i, j: (i * (j + 2) + 2) / N, (N, N), dtype=datatype)
+    i = np.arange(N, dtype=datatype).reshape(-1, 1)
+    j = np.arange(N, dtype=datatype)
+    A = (i * (j + 2) + 2) / N
 
     return TSTEPS, N, A
 

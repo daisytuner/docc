@@ -14,7 +14,7 @@ TEST(UsersTest, Transition_WAR) {
     auto sym1 = symbolic::symbol("A");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::add(sym1, symbolic::one())}});
+    auto& transition1 = builder.add_assignments(root, {{sym1, symbolic::add(sym1, symbolic::one())}});
 
     auto sdfg = builder.move();
 
@@ -22,8 +22,6 @@ TEST(UsersTest, Transition_WAR) {
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
     auto& users = analysis_manager.get<analysis::Users>();
-
-    auto& transition1 = builder_opt.subject().root().at(0).second;
 
     // Check result
     auto reads = users.reads("A");
@@ -54,8 +52,8 @@ TEST(UsersTest, Transition_WAW) {
     auto sym1 = symbolic::symbol("A");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::zero()}});
-    auto& block2 = builder.add_block(root, {{sym1, symbolic::zero()}});
+    auto& transition1 = builder.add_assignments(root, {{sym1, symbolic::zero()}});
+    auto& transition2 = builder.add_assignments(root, {{sym1, symbolic::zero()}});
 
     auto sdfg = builder.move();
 
@@ -63,9 +61,6 @@ TEST(UsersTest, Transition_WAW) {
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
     auto& users = analysis_manager.get<analysis::Users>();
-
-    auto& transition1 = builder_opt.subject().root().at(0).second;
-    auto& transition2 = builder_opt.subject().root().at(1).second;
 
     // Check result
     auto reads = users.reads("A");
@@ -102,8 +97,8 @@ TEST(UsersTest, Transition_RAW) {
     auto sym2 = symbolic::symbol("B");
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{sym1, symbolic::zero()}});
-    auto& block2 = builder.add_block(root, {{sym2, sym1}});
+    auto& transition1 = builder.add_assignments(root, {{sym1, symbolic::zero()}});
+    auto& transition2 = builder.add_assignments(root, {{sym2, sym1}});
 
     auto sdfg = builder.move();
 
@@ -111,9 +106,6 @@ TEST(UsersTest, Transition_RAW) {
     builder::StructuredSDFGBuilder builder_opt(sdfg);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
     auto& users = analysis_manager.get<analysis::Users>();
-
-    auto& transition1 = builder_opt.subject().root().at(0).second;
-    auto& transition2 = builder_opt.subject().root().at(1).second;
 
     // Check result
     auto reads = users.reads("A");
@@ -380,7 +372,7 @@ TEST(UsersTest, Locals_Argument) {
     builder.add_container("a", types::Scalar(types::PrimitiveType::Int32), true);
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, {{symbolic::symbol("a"), symbolic::integer(0)}});
+    auto& block = builder.add_assignments(root, {{symbolic::symbol("a"), symbolic::integer(0)}});
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     auto& users = analysis_manager.get<analysis::Users>();
@@ -395,7 +387,7 @@ TEST(UsersTest, Locals_External) {
     builder.add_container("a", types::Scalar(types::PrimitiveType::Int32), false, true);
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, {{symbolic::symbol("a"), symbolic::integer(0)}});
+    auto& block = builder.add_assignments(root, {{symbolic::symbol("a"), symbolic::integer(0)}});
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     auto& users = analysis_manager.get<analysis::Users>();
@@ -414,7 +406,7 @@ TEST(UsersTest, Locals_Transient) {
     auto& sequence_1 = builder.add_sequence(root);
     auto& sequence_2 = builder.add_sequence(root);
     auto& block_1 = builder.add_block(sequence_1);
-    auto& block_2 = builder.add_block(sequence_2, {{symbolic::symbol("a"), symbolic::integer(0)}});
+    auto& block_2 = builder.add_assignments(sequence_2, {{symbolic::symbol("a"), symbolic::integer(0)}});
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     auto& users = analysis_manager.get<analysis::Users>();
@@ -440,8 +432,8 @@ TEST(UsersTest, Locals_Transient2) {
 
     auto& sequence_1 = builder.add_sequence(root);
     auto& sequence_2 = builder.add_sequence(root);
-    auto& block_1 = builder.add_block(sequence_1, {{symbolic::symbol("a"), symbolic::integer(0)}});
-    auto& block_2 = builder.add_block(sequence_2, {{symbolic::symbol("a"), symbolic::integer(0)}});
+    auto& block_1 = builder.add_assignments(sequence_1, {{symbolic::symbol("a"), symbolic::integer(0)}});
+    auto& block_2 = builder.add_assignments(sequence_2, {{symbolic::symbol("a"), symbolic::integer(0)}});
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     auto& users = analysis_manager.get<analysis::Users>();

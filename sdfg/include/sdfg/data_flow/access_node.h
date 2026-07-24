@@ -108,6 +108,12 @@ public:
     AccessNode(const AccessNode& data_node) = delete;
     AccessNode& operator=(const AccessNode&) = delete;
 
+    ElementType type_id() const override { return ElementType::AccessNode; }
+
+    static bool classof(const Element& element) {
+        return is_a(element.type_id(), ElementType::AccessNode | ElementType::ConstantNode);
+    }
+
     /**
      * @brief Validate the access node
      * @param function Function context for validation
@@ -214,6 +220,10 @@ private:
 public:
     ConstantNode(const ConstantNode& data_node) = delete;
     ConstantNode& operator=(const ConstantNode&) = delete;
+
+    ElementType type_id() const override { return ElementType::ConstantNode; }
+
+    static bool classof(const Element& element) { return element.type_id() == ElementType::ConstantNode; }
 
     /**
      * @brief Get the type of this constant

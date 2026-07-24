@@ -22,21 +22,18 @@ public:
 
     void validate(const Function& function) const override;
 
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+    passes::LibNodeExpander::ExpandOutcome expand(passes::LibNodeExpander::ExpandContext& context, Block& block)
+        override;
 
     bool expand_reduction(
+        passes::LibNodeExpander::AccessNodeExpand& expansion,
         builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
         structured_control_flow::Sequence& body,
-        const std::string& input_name,
-        const std::string& output_name,
         const types::Tensor& input_type,
         const types::Tensor& output_type,
         const data_flow::Subset& input_subset,
         const data_flow::Subset& output_subset
-    ) override {
-        return false;
-    }
+    ) override;
 
     std::string identity(types::PrimitiveType primitive_type) const override { return ""; }
 
