@@ -232,7 +232,7 @@ __global__ void %P%_fftRowsC2R(float* out, const float2* in, int total_rows, int
 }
 
 __global__ void %P%_fftCols(float2* data, int matrices, int rows, int cols, int activeCols,
-                            const int* radices, int nrad, float sign, int doScale, int tile) {
+                            const int* radices, int nrad, float sign, int doScale, int tile, int ldm) {
     int tilesPerMatrix = (activeCols + tile - 1) / tile;
     int matrix_idx = blockIdx.x / tilesPerMatrix;
     if (matrix_idx >= matrices) return;
@@ -240,20 +240,20 @@ __global__ void %P%_fftCols(float2* data, int matrices, int rows, int cols, int 
     int colStart = tileIdx * tile;
     int L = min(tile, activeCols - colStart);
     extern __shared__ float smem[];
-    float* aR = smem; float* aI = aR + rows * tile; float* bR = aI + rows * tile; float* bI = bR + rows * tile;
+    float* aR = smem; float* aI = aR + rows * ldm; float* bR = aI + rows * ldm; float* bI = bR + rows * ldm;
     size_t base = (size_t)matrix_idx * rows * cols + colStart;
     for (int t = threadIdx.x; t < rows * L; t += blockDim.x) {
         int row = t / L, c = t - row * L;
         float2 v = data[base + (size_t)row * cols + c];
-        aR[row * tile + c] = v.x; aI[row * tile + c] = v.y;
+        aR[row * ldm + c] = v.x; aI[row * ldm + c] = v.y;
     }
     __syncthreads();
-    float* rR = %P%_stockhamRun(aR, aI, bR, bI, rows, L, tile, 1, radices, nrad, sign);
+    float* rR = %P%_stockhamRun(aR, aI, bR, bI, rows, L, ldm, 1, radices, nrad, sign);
     float* rI = (rR == aR) ? aI : bI;
     float scale = doScale ? (1.0f / (float)rows) : 1.0f;
     for (int t = threadIdx.x; t < rows * L; t += blockDim.x) {
         int row = t / L, c = t - row * L;
-        data[base + (size_t)row * cols + c] = make_float2(rR[row * tile + c] * scale, rI[row * tile + c] * scale);
+        data[base + (size_t)row * cols + c] = make_float2(rR[row * ldm + c] * scale, rI[row * ldm + c] * scale);
     }
 }
 
@@ -362,7 +362,7 @@ void emit_fft_conv(
     out.globals_stream << "__global__ void " << prefix
                        << "_fftRowsC2R(float*, const float2*, int, int, int, const int*, int, int);" << std::endl;
     out.globals_stream << "__global__ void " << prefix
-                       << "_fftCols(float2*, int, int, int, int, const int*, int, float, int, int);" << std::endl;
+                       << "_fftCols(float2*, int, int, int, int, const int*, int, float, int, int, int);" << std::endl;
     out.globals_stream << "__global__ void " << prefix << "_complexMul(float2*, const float2*, int, int, int, int);"
                        << std::endl;
     out.globals_stream << "__global__ void " << prefix
@@ -468,7 +468,12 @@ void emit_fft_conv(
     s << "int __fc_colTile = 32;" << std::endl;
     s << "while (__fc_colTile > 4 && (size_t)4 * __fc_fftH * __fc_colTile * sizeof(float) > 32768) __fc_colTile >>= 1;"
       << std::endl;
-    s << "size_t __fc_colSmem = (size_t)4 * __fc_fftH * __fc_colTile * sizeof(float);" << std::endl;
+    // Bank-conflict guard: pad the shared-memory leading dimension only when the spectrum
+    // is narrower than one column tile (single partial tile, L < tile), where consecutive
+    // rows share banks. With full tiles (L == tile) the access is already contiguous, so
+    // padding would only cost occupancy -> keep ldm = tile there.
+    s << "int __fc_colLdm = (__fc_halfW < __fc_colTile) ? __fc_colTile + 1 : __fc_colTile;" << std::endl;
+    s << "size_t __fc_colSmem = (size_t)4 * __fc_fftH * __fc_colLdm * sizeof(float);" << std::endl;
     s << "cudaFuncSetAttribute(" << prefix
       << "_fftRowsR2C, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)__fc_rowSmem);" << std::endl;
     s << "cudaFuncSetAttribute(" << prefix
@@ -497,7 +502,7 @@ void emit_fft_conv(
       << "_fftRowsR2C<<<__fc_ker_row_blocks, __fc_threads, __fc_rowSmem>>>(__fc_dKer, __fc_dPadKer, __fc_ker_rows, "
       << "__fc_fftW, __fc_halfW, __fc_dRadW, __fc_nRadW, __fc_rowLines);" << std::endl;
     s << prefix << "_fftCols<<<__fc_ker_half_col_blocks, __fc_threads, __fc_colSmem>>>(__fc_dKer, __fc_C, __fc_fftH, "
-      << "__fc_halfW, __fc_halfW, __fc_dRadH, __fc_nRadH, -1.0f, 0, __fc_colTile);" << std::endl;
+      << "__fc_halfW, __fc_halfW, __fc_dRadH, __fc_nRadH, -1.0f, 0, __fc_colTile, __fc_colLdm);" << std::endl;
 
     // Image FFT (pad -> R2C rows -> half-width cols).
     s << prefix << "_pad<<<__fc_img_pad_blocks, __fc_threads>>>(__fc_dPadImg, " << dX
@@ -508,7 +513,7 @@ void emit_fft_conv(
       << "__fc_fftW, __fc_halfW, __fc_dRadW, __fc_nRadW, __fc_rowLines);" << std::endl;
     s << prefix
       << "_fftCols<<<__fc_img_half_col_blocks, __fc_threads, __fc_colSmem>>>(__fc_dImg, __fc_N * __fc_C, __fc_fftH, "
-      << "__fc_halfW, __fc_halfW, __fc_dRadH, __fc_nRadH, -1.0f, 0, __fc_colTile);" << std::endl;
+      << "__fc_halfW, __fc_halfW, __fc_dRadH, __fc_nRadH, -1.0f, 0, __fc_colTile, __fc_colLdm);" << std::endl;
 
     // Pointwise complex multiply over the half spectrum.
     s << prefix << "_complexMul<<<__fc_mul_half_blocks, __fc_threads>>>(__fc_dImg, __fc_dKer, __fc_N, __fc_C, "
@@ -517,7 +522,7 @@ void emit_fft_conv(
     // Inverse FFT: half-width cols, then C2R rows write the real result buffer.
     s << prefix
       << "_fftCols<<<__fc_img_half_col_blocks, __fc_threads, __fc_colSmem>>>(__fc_dImg, __fc_N * __fc_C, __fc_fftH, "
-      << "__fc_halfW, __fc_halfW, __fc_dRadH, __fc_nRadH, 1.0f, 1, __fc_colTile);" << std::endl;
+      << "__fc_halfW, __fc_halfW, __fc_dRadH, __fc_nRadH, 1.0f, 1, __fc_colTile, __fc_colLdm);" << std::endl;
     s << prefix
       << "_fftRowsC2R<<<__fc_img_row_blocks, __fc_threads, __fc_rowSmem>>>(__fc_dPadImg, __fc_dImg, __fc_img_rows, "
       << "__fc_fftW, __fc_halfW, __fc_dRadW, __fc_nRadW, __fc_rowLines);" << std::endl;
