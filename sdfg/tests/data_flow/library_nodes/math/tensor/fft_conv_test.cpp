@@ -83,7 +83,7 @@ TEST(FFTConvNodeTest, SerializationRoundTripWithBias) {
     auto deserialized = serializer.deserialize(j);
     ASSERT_NE(deserialized, nullptr);
 
-    auto& child = deserialized->root().at(0).first;
+    auto& child = deserialized->root().at(0);
     auto& block = dynamic_cast<structured_control_flow::Block&>(child);
     const math::tensor::FFTConvNode* conv = nullptr;
     for (auto& node : block.dataflow().nodes()) {
@@ -112,7 +112,7 @@ TEST(FFTConvNodeTest, SerializationRoundTripNoBias) {
     auto deserialized = serializer.deserialize(j);
     ASSERT_NE(deserialized, nullptr);
 
-    auto& child = deserialized->root().at(0).first;
+    auto& child = deserialized->root().at(0);
     auto& block = dynamic_cast<structured_control_flow::Block&>(child);
     const math::tensor::FFTConvNode* conv = nullptr;
     for (auto& node : block.dataflow().nodes()) {

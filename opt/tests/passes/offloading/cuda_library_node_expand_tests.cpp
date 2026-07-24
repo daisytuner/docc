@@ -489,11 +489,11 @@ TEST(CudaConvExpanderTest, ExpandsDepthwiseConv2D_FFTTuned) {
     EXPECT_EQ(sdfg.root().size(), 1u);
 
     // The lowering produces exactly one FFTConvNode.
-    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0).first);
+    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0));
     ASSERT_NE(new_sequence, nullptr);
     const math::tensor::FFTConvNode* fftconv = nullptr;
     for (size_t i = 0; i < new_sequence->size(); ++i) {
-        if (auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence->at(i).first)) {
+        if (auto* blk = dyn_cast<structured_control_flow::Block*>(&new_sequence->at(i))) {
             for (auto& n : blk->dataflow().nodes()) {
                 if (auto* f = dynamic_cast<const math::tensor::FFTConvNode*>(&n)) {
                     fftconv = f;
@@ -506,6 +506,8 @@ TEST(CudaConvExpanderTest, ExpandsDepthwiseConv2D_FFTTuned) {
     EXPECT_FALSE(fftconv->with_bias());
 
     unsetenv("DOCC_CONV_FFT_TUNED");
+}
+
 TEST(CudaConcatExpanderTest, expands) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();

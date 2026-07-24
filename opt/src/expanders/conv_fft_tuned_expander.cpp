@@ -95,9 +95,7 @@ bool ConvFFTTunedExpander::expand_conv_fft_tuned(
     const DebugInfo& dbg = node.debug_info();
 
     // New sequence that replaces the convolution block.
-    auto& new_sequence = builder.add_sequence_before(
-        *b.block_parent, *b.block, b.block_parent->at(b.block_index).second.assignments(), b.block->debug_info()
-    );
+    auto& new_sequence = builder.add_sequence_before(*b.block_parent, *b.block, b.block->debug_info());
     auto& blk = builder.add_block(new_sequence, {}, b.block->debug_info());
 
     auto& fftconv = builder.add_library_node<math::tensor::FFTConvNode>(
