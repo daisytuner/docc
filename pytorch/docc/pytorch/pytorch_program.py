@@ -138,11 +138,19 @@ class PyTorchProgram(DoccProgram):
         # Generate cache key
         cache_key: str = self._get_cache_key(self.example_input)
 
-        cached_available: bool = cache_key in self.cache
+        # In-memory cache key: the structural cache key plus the resolved compile
+        # options, so repeated in-process compiles with different
+        # instrumentation/arg-capture/remote-tuning do not alias to the first
+        # built binary (the on-disk hash already accounts for these options).
+        mem_cache_key: str = (
+            f"{cache_key}|{capture_args}|{instrumentation_mode}|{remote_tuning}"
+        )
+
+        cached_available: bool = mem_cache_key in self.cache
 
         if original_output_folder and cached_available:
             if not self.force_rebuild:
-                return self.cache[cache_key]
+                return self.cache[mem_cache_key]
 
         # Determine output folder
         if output_folder is None:
@@ -164,7 +172,7 @@ class PyTorchProgram(DoccProgram):
                     pass
 
             hash_input: bytes = (
-                f"{self.name}|{self.target}|{self.category}|{cache_key}|{model_code}".encode(
+                f"{self.name}|{self.target}|{self.category}|{cache_key}|{model_code}|{capture_args}|{instrumentation_mode}|{remote_tuning}".encode(
                     "utf-8"
                 )
             )
@@ -309,7 +317,7 @@ class PyTorchProgram(DoccProgram):
 
         # Cache
         if original_output_folder is None:
-            self.cache[cache_key] = compiled
+            self.cache[mem_cache_key] = compiled
 
         self._compiled = compiled
 

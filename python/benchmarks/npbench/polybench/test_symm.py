@@ -13,13 +13,13 @@ PARAMETERS = {
 def initialize(M, N, datatype=np.float64):
     alpha = datatype(1.5)
     beta = datatype(1.2)
-    C = np.fromfunction(lambda i, j: ((i + j) % 100) / M, (M, N), dtype=datatype)
-    B = np.fromfunction(lambda i, j: ((N + i - j) % 100) / M, (M, N), dtype=datatype)
+    i = np.arange(M).reshape(-1, 1)
+    j = np.arange(N)
+    C = ((i + j) % 100) / M
+    B = ((N + i - j) % 100) / M
     A = np.empty((M, M), dtype=datatype)
     for i in range(M):
-        A[i, : i + 1] = np.fromfunction(
-            lambda j: ((i + j) % 100) / M, (i + 1,), dtype=datatype
-        )
+        A[i, : i + 1] = ((i + np.arange(i + 1)) % 100) / M
         A[i, i + 1 :] = -999
 
     return alpha, beta, C, A, B
