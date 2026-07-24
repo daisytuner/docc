@@ -1,5 +1,5 @@
 torch==2.10.0+cpu
 torchvision==0.25.0+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch-mlir==20260512.810
+torch-mlir==20260531.828
 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels

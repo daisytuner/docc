@@ -225,7 +225,7 @@ jobs:
           DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
         run: |
           rocm-smi
-          pip install --no-cache-dir --no-deps torch-mlir==20260512.810 -f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
+          pip install -r mlir/requirements.txt
           cd build/
           ninja check-docc-mlir
           python -m pytest -v ../mlir/integration -m "unmarked or rocm"
