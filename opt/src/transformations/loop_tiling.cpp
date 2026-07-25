@@ -75,6 +75,13 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     auto inner_update = symbolic::add(inner_indvar, symbolic::integer(1));
     builder.update_loop(loop_, inner_indvar, inner_condition, inner_init, inner_update);
 
+    // When tiling a Map, the outer tile loop inherits the schedule (created above
+    // via add_map_before), but the inner element loop must become sequential.
+    // Otherwise nested GPU Maps end up with repeated dimensions.
+    if (dyn_cast<structured_control_flow::Map*>(&loop_)) {
+        builder.update_schedule_type(loop_, structured_control_flow::ScheduleType_Sequential::create());
+    }
+
     // Step 3: Move loop into tiling loop
     builder.move_child(*parent, index + 1, outer_loop->root());
 

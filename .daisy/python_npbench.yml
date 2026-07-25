@@ -75,7 +75,7 @@ steps:
     # venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=cuda
     venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
 
-    # Compile and cache instrumented binaries
+    # Compile and cache instrumented binaries for profiling
     DOCC_CI=regions venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=openmp
     DOCC_CI=regions venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=cuda
     DOCC_CI=regions venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
@@ -124,6 +124,20 @@ steps:
     # DOCC_CI=regions venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=cuda
     DOCC_CI=regions venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
 
+    # Compile and cache instrumented binaries for argument capture
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --n_runs=1 --target=sequential
+    DOCC_CI=arg-capture venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --n_runs=1 --target=sequential
+
   run:
     adi:
       energy: true
@@ -139,6 +153,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -165,6 +182,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -191,6 +211,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -217,6 +240,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -243,6 +269,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -269,6 +298,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -295,6 +327,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -321,6 +356,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -347,6 +385,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -373,6 +414,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -399,6 +443,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
@@ -425,6 +472,9 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
         docc-omp:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double }
