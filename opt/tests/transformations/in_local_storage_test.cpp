@@ -2030,26 +2030,26 @@ TEST(InLocalStorageTest, GPU_Cooperative_FlatPointer) {
     builder.add_container("j", loop_var);
     builder.add_container("k", loop_var);
 
-    // GPU Map X: i = 0..N (block_size=32)
+    // GPU Map X: i = 0..32 (block_size=32) — trip count == block size (barrier-safe)
     auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
         symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), N),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(32)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
         sched_x
     );
 
-    // GPU Map Y: j = 0..M (block_size=8)
+    // GPU Map Y: j = 0..8 (block_size=8) — trip count == block size (barrier-safe)
     auto sched_y = cuda::ScheduleType_CUDA::create();
     cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
     gpu::gpu_block_size(sched_y, symbolic::integer(8));
     auto& map_y = builder.add_map(
         map_x.root(),
         symbolic::symbol("j"),
-        symbolic::Lt(symbolic::symbol("j"), M),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::integer(8)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
         sched_y
@@ -2133,17 +2133,101 @@ TEST(InLocalStorageTest, GPU_Cooperative_FlatPointer) {
 }
 
 /**
- * Test: InLocalStorage with NV_Shared and symbolic GPU map bounds
+ * Test: InLocalStorage rejects NV_Global storage.
+ *
+ * Same cooperative setup as GPU_Cooperative_FlatPointer, but requesting
+ * NV_Global storage. A transient NV_Global buffer is not supported: codegen
+ * emits it as a plain local array (per-thread PRIVATE local memory, not
+ * device-global memory), and there is no mechanism to allocate a per-kernel
+ * global-memory scratch buffer. Such a buffer can neither live in global memory
+ * nor provide the cross-thread visibility a cooperative copy needs, so the
+ * transformation must be rejected instead of emitting incorrect GPU code.
+ */
+TEST(InLocalStorageTest, GPU_NVGlobal_Rejected) {
+    builder::StructuredSDFGBuilder builder("ils_gpu_nvglobal", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    // GPU Map X: i = 0..32 (block_size=32) — trip count == block size (barrier-safe)
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        seq,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // GPU Map Y: j = 0..8 (block_size=8) — trip count == block size (barrier-safe)
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
+    gpu::gpu_block_size(sched_y, symbolic::integer(8));
+    auto& map_y = builder.add_map(
+        map_x.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        sched_y
+    );
+
+    // For loop: k = 0..16
+    auto& loop = builder.add_for(
+        map_y.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    // A[i*16 + k] — base depends on i only; j is free → cooperative
+    builder.add_computational_memlet(
+        block,
+        a_in,
+        tasklet,
+        "_in",
+        {symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(16)), symbolic::symbol("k"))},
+        ptr
+    );
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::symbol("j")}, ptr);
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // NV_Global is unsupported for a transient local-storage buffer → rejected.
+    transformations::InLocalStorage ils(loop, a_in, types::StorageType::NV_Global());
+    EXPECT_FALSE(ils.can_be_applied(builder_opt, am));
+}
+
+/**
+ * Test: InLocalStorage with NV_Shared rejects symbolic GPU map bounds.
  *
  * Setup:
  *   Map X (i, 0..N, block_size=32) → Map Y (j, 0..M, block_size=8) → For k = 0..M
  *   A[i*M + k] — linearized flat pointer
  *
- * N and M are symbolic, but GPU schedule says N=32, M=8.
- * Tile for A over For k: bases = [i*M], extents = [M]. M is symbolic.
- * After substitution: M→8, extent becomes 8 (integer). j-dim free → cooperative.
+ * N and M are symbolic runtime parameters. They are NOT provably multiples of
+ * the block sizes, so the CUDA boundary guard `if (indvar < N/M)` may be
+ * thread-divergent and the inserted __syncthreads() would deadlock. The
+ * transformation must be rejected (barrier-safety criterion).
  */
-TEST(InLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
+TEST(InLocalStorageTest, GPU_SymbolicMapBound_Rejected) {
     builder::StructuredSDFGBuilder builder("ils_gpu_symbolic", FunctionType_CPU);
     auto& seq = builder.subject().root();
 
@@ -2210,44 +2294,207 @@ TEST(InLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
     analysis::AnalysisManager am(builder_opt.subject());
 
+    // Option A (barrier-safety): the enclosing GPU maps have symbolic runtime
+    // bounds N and M. Because N and M are not provably multiples of the block
+    // sizes (32 and 8), the boundary guard `if (indvar < N/M)` may be
+    // thread-divergent at runtime, which would deadlock the inserted
+    // __syncthreads(). The transformation must therefore be rejected.
+    transformations::InLocalStorage ils(loop, a_in, types::StorageType::NV_Shared());
+    EXPECT_FALSE(ils.can_be_applied(builder_opt, am));
+}
+
+/**
+ * Test: InLocalStorage with NV_Shared accepts a symbolic GPU map bound that is
+ * provably a multiple of the block size.
+ *
+ * Setup:
+ *   Map X (i, 0..32*P, block_size=32) → Map Y (j, 0..8, block_size=8) → For k = 0..16
+ *   A[i*16 + k] — base depends on i only; j is free → cooperative
+ *
+ * The X-map trip count is `32*P`, which is provably a multiple of the block
+ * size 32 (the quotient `P` is integer-valued). The boundary guard is therefore
+ * never thread-divergent, so the block-wide __syncthreads() is safe and the
+ * transformation is accepted. The buffer extent (16) is a compile-time integer.
+ */
+TEST(InLocalStorageTest, GPU_Cooperative_SymbolicMultipleBound_Accepted) {
+    builder::StructuredSDFGBuilder builder("ils_gpu_multiple", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    auto P = symbolic::symbol("P");
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("P", loop_var, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    // GPU Map X: i = 0..32*P (block_size=32) — trip count provably multiple of 32
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        seq,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::mul(symbolic::integer(32), P)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // GPU Map Y: j = 0..8 (block_size=8) — trip count == block size
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
+    gpu::gpu_block_size(sched_y, symbolic::integer(8));
+    auto& map_y = builder.add_map(
+        map_x.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        sched_y
+    );
+
+    // For loop: k = 0..16
+    auto& loop = builder.add_for(
+        map_y.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    // A[i*16 + k] — base depends on i only; j is free → cooperative
+    builder.add_computational_memlet(
+        block,
+        a_in,
+        tasklet,
+        "_in",
+        {symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(16)), symbolic::symbol("k"))},
+        ptr
+    );
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::symbol("j")}, ptr);
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
     transformations::InLocalStorage ils(loop, a_in, types::StorageType::NV_Shared());
     EXPECT_TRUE(ils.can_be_applied(builder_opt, am));
     ils.apply(builder_opt, am);
 
-
-    // Verify: shared buffer with resolved size (M→8)
+    // Verify: shared buffer created (per-thread X block 32 * varying extent 16 = 512)
     EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
     auto& buf_type = builder_opt.subject().type("__daisy_in_local_storage_A0");
-    EXPECT_EQ(buf_type.type_id(), types::TypeID::Array);
     EXPECT_EQ(buf_type.storage_type(), types::StorageType::NV_Shared());
-
     auto& arr_type = static_cast<const types::Array&>(buf_type);
-    // Per-thread X dim contributes BX=32 slots; varying dim (extent M→8) contributes 8.
-    // Total = 32 * 8 = 256.
-    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(256)));
+    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(512)));
+}
 
-    // Verify structure: [barrier, copy_loop, barrier, main_loop]
-    auto& map_y_body = map_y.root();
-    EXPECT_GE(map_y_body.size(), 4u);
+/**
+ * Test: InLocalStorage with NV_Shared rejects a partial-tile GPU map bound
+ * (the tiled-loop __syncthreads() deadlock scenario).
+ *
+ * Setup:
+ *   Map X (i, 0..100, block_size=32) → Map Y (j, 0..8, block_size=8) → For k = 0..16
+ *   A[i*16 + k] — base depends on i only; j is free → cooperative
+ *
+ * The X-map trip count is 100, which is NOT a multiple of the block size 32
+ * (100 = 3*32 + 4). The generated kernel wraps the map body in a divergent
+ * boundary guard `if (i < 100)`, so the trailing threads in the last block
+ * (i in [96, 100) active, [100, 128) masked) would skip the inserted
+ * __syncthreads() and deadlock the block. The transformation must be rejected.
+ */
+TEST(InLocalStorageTest, GPU_PartialTileBound_Deadlock_Rejected) {
+    builder::StructuredSDFGBuilder builder("ils_gpu_partial", FunctionType_CPU);
+    auto& seq = builder.subject().root();
 
-    auto* barrier1 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(0));
-    EXPECT_NE(barrier1, nullptr);
-    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_y_body.at(1));
-    EXPECT_NE(copy_map, nullptr);
-    auto* barrier2 = dyn_cast<structured_control_flow::Block*>(&map_y_body.at(2));
-    EXPECT_NE(barrier2, nullptr);
-    auto* main_loop = dyn_cast<structured_control_flow::For*>(&map_y_body.at(3));
-    EXPECT_NE(main_loop, nullptr);
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    // GPU Map X: i = 0..100 (block_size=32) — trip count NOT a multiple of 32
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        seq,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // GPU Map Y: j = 0..8 (block_size=8) — trip count == block size
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
+    gpu::gpu_block_size(sched_y, symbolic::integer(8));
+    auto& map_y = builder.add_map(
+        map_x.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        sched_y
+    );
+
+    // For loop: k = 0..16
+    auto& loop = builder.add_for(
+        map_y.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    // A[i*16 + k] — base depends on i only; j is free → cooperative
+    builder.add_computational_memlet(
+        block,
+        a_in,
+        tasklet,
+        "_in",
+        {symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(16)), symbolic::symbol("k"))},
+        ptr
+    );
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::symbol("j")}, ptr);
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    // Barrier-safety: the X-map trip count 100 is not a multiple of the block
+    // size 32, so the boundary guard `if (i < 100)` is thread-divergent and the
+    // inserted __syncthreads() would deadlock. The transformation must be rejected.
+    transformations::InLocalStorage ils(loop, a_in, types::StorageType::NV_Shared());
+    EXPECT_FALSE(ils.can_be_applied(builder_opt, am));
 }
 
 /**
  * Test: InLocalStorage with NV_Shared rejects when symbolic extent can't be resolved
  *
  * Setup:
- *   Map X (i, 0..N, block_size=32) → Map Y (j, 0..M, block_size=8) → For k = 0..K
+ *   Map X (i, 0..32, block_size=32) → Map Y (j, 0..8, block_size=8) → For k = 0..K
  *   A[i*K + k] — K is NOT a GPU dim bound, can't be resolved
  *
- * Extent = K (symbolic, unresolvable) → rejected.
+ * The GPU map bounds are barrier-safe (32 and 8), so rejection is isolated to
+ * the unresolvable extent K (symbolic) → rejected.
  */
 TEST(InLocalStorageTest, GPU_SymbolicExtent_Unresolvable_Rejected) {
     builder::StructuredSDFGBuilder builder("ils_gpu_unresolved", FunctionType_CPU);
@@ -2257,39 +2504,35 @@ TEST(InLocalStorageTest, GPU_SymbolicExtent_Unresolvable_Rejected) {
     types::Scalar elem(types::PrimitiveType::Float);
     types::Pointer ptr(elem);
 
-    auto N = symbolic::symbol("N");
-    auto M = symbolic::symbol("M");
     auto K = symbolic::symbol("K");
 
     builder.add_container("A", ptr, true);
     builder.add_container("C", ptr);
-    builder.add_container("N", loop_var, true);
-    builder.add_container("M", loop_var, true);
     builder.add_container("K", loop_var, true);
     builder.add_container("i", loop_var);
     builder.add_container("j", loop_var);
     builder.add_container("k", loop_var);
 
-    // GPU Map X: i = 0..N (block_size=32)
+    // GPU Map X: i = 0..32 (block_size=32) — barrier-safe
     auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
         symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), N),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(32)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
         sched_x
     );
 
-    // GPU Map Y: j = 0..M (block_size=8)
+    // GPU Map Y: j = 0..8 (block_size=8) — barrier-safe
     auto sched_y = cuda::ScheduleType_CUDA::create();
     cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
     gpu::gpu_block_size(sched_y, symbolic::integer(8));
     auto& map_y = builder.add_map(
         map_x.root(),
         symbolic::symbol("j"),
-        symbolic::Lt(symbolic::symbol("j"), M),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::integer(8)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
         sched_y
@@ -2352,36 +2595,36 @@ TEST(InLocalStorageTest, GPU_Cooperative_AllDimsFree) {
     builder.add_container("j", loop_var);
     builder.add_container("k", loop_var);
 
-    // GPU Map X: i = 0..N (block_size=32)
+    // GPU Map X: i = 0..32 (block_size=32) — trip count == block size (barrier-safe)
     auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
         symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), N),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(32)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
         sched_x
     );
 
-    // GPU Map Y: j = 0..M (block_size=8)
+    // GPU Map Y: j = 0..8 (block_size=8) — trip count == block size (barrier-safe)
     auto sched_y = cuda::ScheduleType_CUDA::create();
     cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
     gpu::gpu_block_size(sched_y, symbolic::integer(8));
     auto& map_y = builder.add_map(
         map_x.root(),
         symbolic::symbol("j"),
-        symbolic::Lt(symbolic::symbol("j"), M),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::integer(8)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
         sched_y
     );
 
-    // For loop: k = 0..N (same bound as X-dim)
+    // For loop: k = 0..32 (same bound as X-dim)
     auto& loop = builder.add_for(
         map_y.root(),
         symbolic::symbol("k"),
-        symbolic::Lt(symbolic::symbol("k"), N),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(32)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
     );

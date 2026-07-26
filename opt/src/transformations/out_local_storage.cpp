@@ -5,6 +5,8 @@
 #include <functional>
 #include <string>
 
+#include <symengine/rational.h>
+
 #include "sdfg/analysis/memory_layout_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -69,6 +71,21 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
         }
     }
 
+    // Criterion: NV_Global (and other non-shared device storage) is unsupported.
+    // The buffer is created as a transient container. In codegen, only NV_Shared
+    // transients receive a memory-space qualifier (__shared__); an NV_Global
+    // transient is emitted as a plain local array, i.e. per-thread PRIVATE local
+    // memory, not device-global memory. There is no mechanism to allocate a
+    // per-kernel global-memory scratch buffer (that would require a host-side
+    // cudaMalloc and pointer hand-off). Such a buffer can therefore neither live
+    // in global memory nor provide the cross-thread visibility a cooperative
+    // copy-in / writeback needs, so we reject it rather than silently emit
+    // incorrect GPU code. Use NV_Shared for GPU cooperative buffering, or
+    // CPU_Stack for per-thread / host-local buffers.
+    if (storage_type_.is_nv_global()) {
+        return false;
+    }
+
     // Determine if container is also read (read-write vs write-only)
     tile_info_.has_read = !body_users.reads(this->container_).empty();
 
@@ -128,33 +145,57 @@ bool OutLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     if (storage_type_.is_nv_shared()) {
         auto ancestors = ControlFlowNode::parent_chain(loop_);
 
-        // Build substitution map: symbolic GPU map bounds → integer block sizes
+        // Deadlock safety: the cooperative path inserts block-wide
+        // __syncthreads() barriers as siblings of the target loop, inside each
+        // enclosing GPU map's body. The CUDA/HIP backend wraps that body in a
+        // boundary guard `if (flat_id < num_iterations)`. If num_iterations is
+        // not a multiple of the block size (e.g. a partial trailing tile when a
+        // tile loop is a GPU dimension but the original loop bound is not a
+        // multiple of the tile size), the guard is thread-divergent: boundary
+        // threads skip the barrier and the kernel deadlocks. We therefore only
+        // allow the transformation when every enclosing GPU map has a trip count
+        // that is provably an integer multiple of its block size. This mirrors
+        // DACE, which only emits block-level __syncthreads() for thread-block
+        // maps whose range exactly matches the block size.
+        //
+        // The trip count may be symbolic: it is still accepted as long as it is
+        // provably a multiple of the block size. Concretely, we exact-divide the
+        // trip count by the (compile-time integer) block size and require the
+        // quotient to be integer-valued, i.e. free of rational coefficients.
+        // This proves `block | count` for forms such as `count = block * k`
+        // (k symbolic) that arise from symbol / condition propagation, while a
+        // genuinely unknown bound `N` yields the rational coefficient `1/block`
+        // and is rejected.
+        auto provably_multiple_of_block = [](const symbolic::Expression& count,
+                                             const symbolic::Expression& block) -> bool {
+            if (!SymEngine::is_a<SymEngine::Integer>(*block) || symbolic::eq(block, symbolic::integer(0))) {
+                return false;
+            }
+            auto quotient = SymEngine::div(symbolic::simplify(count), block);
+            return SymEngine::atoms<const SymEngine::Rational>(*quotient).empty();
+        };
         for (auto* node : ancestors) {
-            if (auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node)) {
-                if (!gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
-                    continue;
-                }
-                auto block_size = gpu::gpu_block_size(ancestor_map->schedule_type());
-                // Extract symbolic bound from condition: Lt(indvar, BOUND)
-                auto condition = ancestor_map->condition();
-                if (SymEngine::is_a<SymEngine::StrictLessThan>(*condition)) {
-                    auto stl = SymEngine::rcp_static_cast<const SymEngine::StrictLessThan>(condition);
-                    auto rhs = stl->get_args()[1];
-                    auto iter_count = symbolic::sub(rhs, ancestor_map->init());
-                    if (!SymEngine::is_a<SymEngine::Integer>(*iter_count)) {
-                        // Symbolic bound — substitute with block size in extents and bases
-                        for (auto& ext : tile_info_.dimensions) {
-                            ext = symbolic::simplify(symbolic::subs(ext, iter_count, block_size));
-                        }
-                        for (auto& base : tile_info_.bases) {
-                            base = symbolic::simplify(symbolic::subs(base, iter_count, block_size));
-                        }
-                    }
-                }
+            auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node);
+            if (!ancestor_map || !gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
+                continue;
+            }
+            auto block_size = gpu::gpu_block_size(ancestor_map->schedule_type());
+            auto condition = ancestor_map->condition();
+            if (!SymEngine::is_a<SymEngine::StrictLessThan>(*condition)) {
+                // Cannot reason about the trip count → conservatively reject.
+                return false;
+            }
+            auto stl = SymEngine::rcp_static_cast<const SymEngine::StrictLessThan>(condition);
+            auto rhs = stl->get_args()[1];
+            auto iter_count = symbolic::sub(rhs, ancestor_map->init());
+            if (!provably_multiple_of_block(iter_count, block_size)) {
+                return false;
             }
         }
 
-        // Criterion: All extents must now be provably integer
+        // Criterion: All extents must be provably integer (a shared buffer needs
+        // a compile-time size). With symbolic GPU map bounds rejected above, any
+        // remaining symbolic extent is genuinely unresolvable.
         for (auto& ext : tile_info_.dimensions) {
             if (!SymEngine::is_a<SymEngine::Integer>(*ext)) {
                 return false;
