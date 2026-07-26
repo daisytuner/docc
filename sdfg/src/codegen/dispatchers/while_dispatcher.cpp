@@ -1,5 +1,7 @@
 #include "sdfg/codegen/dispatchers/while_dispatcher.h"
 
+#include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
+
 namespace sdfg {
 namespace codegen {
 
@@ -113,6 +115,19 @@ void ReturnDispatcher::dispatch_node(
                 main_stream << "cudaFree(" << container << ");" << std::endl;
             }
         }
+    }
+
+    // Emit node teardown (end instrumentation, arg capture, end_node) before the return statement,
+    // otherwise it would become unreachable dead code after the return.
+    this->end_dispatch(main_stream);
+
+    // A return leaves every enclosing region as well, so tear down the instrumentation of all
+    // ancestors before the return. Their normal-position teardown remains for non-returning paths.
+    for (auto* ancestor : structured_control_flow::ControlFlowNode::parent_chain(node_)) {
+        auto ancestor_dispatcher = create_dispatcher(
+            language_extension_, sdfg_, analysis_manager_, *ancestor, instrumentation_plan_, arg_capture_plan_
+        );
+        ancestor_dispatcher->emit_instrumentation_exit(main_stream);
     }
 
     if (node_.is_data()) {

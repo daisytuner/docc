@@ -150,11 +150,15 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::none(StructuredSDFG& s
 }
 
 std::unique_ptr<InstrumentationPlan> InstrumentationPlan::outermost_loops_plan(StructuredSDFG& sdfg) {
+    // Adds SDFG root
+    std::unordered_map<const Element*, InstrumentationEventType> nodes;
+    nodes.insert({&sdfg.root(), InstrumentationEventType::NONE}); // Timer for SDFG root
+
+    // Adds outermost loops
     analysis::AnalysisManager analysis_manager(sdfg);
     auto& loop_tree_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto ols = loop_tree_analysis.outermost_loops();
 
-    std::unordered_map<const Element*, InstrumentationEventType> nodes;
     for (size_t i = 0; i < ols.size(); i++) {
         auto& loop = ols[i];
         if (auto map_node = dynamic_cast<const structured_control_flow::Map*>(loop)) {
@@ -166,8 +170,7 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::outermost_loops_plan(S
         nodes.insert({loop, InstrumentationEventType::CPU}); // Default to CPU if not CUDA
     }
 
-    std::cout << "Created instrumentation plan for " << nodes.size() << " nodes." << std::endl;
-
+    DEBUG_PRINTLN("Created instrumentation plan for " << nodes.size() << " nodes.");
     return std::make_unique<InstrumentationPlan>(sdfg, nodes);
 }
 

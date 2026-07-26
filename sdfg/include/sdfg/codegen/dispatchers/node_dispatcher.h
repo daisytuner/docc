@@ -42,6 +42,10 @@ class NodeDispatcher {
 private:
     structured_control_flow::ControlFlowNode& node_;
 
+    // Teardown state captured during dispatch() so that end_dispatch() can be replayed early.
+    bool begin_node_applied_ = false;
+    bool end_dispatched_ = false;
+
 protected:
     LanguageExtension& language_extension_;
 
@@ -56,6 +60,18 @@ protected:
     virtual bool begin_node(PrettyPrinter& stream);
 
     virtual void end_node(PrettyPrinter& stream, bool has_declaration);
+
+    /**
+     * Emits the closing code of this node (end instrumentation, arg capture teardown, end_node).
+     *
+     * This is called automatically by dispatch() after dispatch_node(). Nodes that emit a
+     * control-flow terminator (e.g. Return) must call this manually *before* emitting the
+     * terminating statement, otherwise the teardown code would be unreachable at runtime.
+     *
+     * The method is idempotent: subsequent calls (including the automatic one from dispatch())
+     * are no-ops once the teardown has been emitted.
+     */
+    void end_dispatch(PrettyPrinter& main_stream);
 
     /**
      * Bad design. We already have fields in this class and have to bind an instance to a single node.
@@ -79,6 +95,18 @@ public:
     virtual void dispatch_node(
         PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
     ) = 0;
+
+    /**
+     * Emits the end-instrumentation and arg-capture teardown for this node *without* the
+     * structural end_node() and without marking the node as finalized.
+     *
+     * This is used to tear down enclosing instrumented regions before a control-flow
+     * terminator (e.g. return) leaves them: the terminating node walks its ancestor chain
+     * and calls this on each enclosing region so their instrumentation exit/finalize calls
+     * are reachable. The regions' normal-position teardown remains in place for control-flow
+     * paths that do not hit the terminator.
+     */
+    void emit_instrumentation_exit(PrettyPrinter& main_stream);
 
     virtual void
     dispatch(PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory);

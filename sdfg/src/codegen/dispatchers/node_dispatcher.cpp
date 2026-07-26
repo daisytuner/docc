@@ -27,32 +27,42 @@ InstrumentationInfo NodeDispatcher::instrumentation_info() const {
 
 void NodeDispatcher::
     dispatch(PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory) {
-    bool applied = begin_node(main_stream);
+    begin_node_applied_ = begin_node(main_stream);
 
     if (this->arg_capture_plan_.should_instrument(node_)) {
         this->arg_capture_plan_.begin_instrumentation(node_, main_stream, language_extension_);
     }
 
-    bool should_instrument = this->instrumentation_plan_.should_instrument(node_);
-    std::optional<InstrumentationInfo> instrumentation_info;
-    if (should_instrument) {
-        instrumentation_info = this->instrumentation_info();
-        this->instrumentation_plan_
-            .begin_instrumentation(node_, main_stream, language_extension_, instrumentation_info.value());
+    if (this->instrumentation_plan_.should_instrument(node_)) {
+        auto info = this->instrumentation_info();
+        this->instrumentation_plan_.begin_instrumentation(node_, main_stream, language_extension_, info);
     }
 
     dispatch_node(main_stream, globals_stream, library_snippet_factory);
 
-    if (should_instrument) {
-        this->instrumentation_plan_
-            .end_instrumentation(node_, main_stream, language_extension_, instrumentation_info.value());
+    end_dispatch(main_stream);
+};
+
+void NodeDispatcher::emit_instrumentation_exit(PrettyPrinter& main_stream) {
+    if (this->instrumentation_plan_.should_instrument(node_)) {
+        auto info = this->instrumentation_info();
+        this->instrumentation_plan_.end_instrumentation(node_, main_stream, language_extension_, info);
     }
 
     if (this->arg_capture_plan_.should_instrument(node_)) {
         this->arg_capture_plan_.end_instrumentation(node_, main_stream, language_extension_);
     }
+};
 
-    end_node(main_stream, applied);
+void NodeDispatcher::end_dispatch(PrettyPrinter& main_stream) {
+    if (end_dispatched_) {
+        return;
+    }
+    end_dispatched_ = true;
+
+    emit_instrumentation_exit(main_stream);
+
+    end_node(main_stream, begin_node_applied_);
 };
 
 } // namespace codegen
