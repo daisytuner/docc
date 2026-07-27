@@ -121,6 +121,7 @@ def compile_and_run_softmax(shape, axes, output_root: Path):
         ((4, 8, 256, 256), [3]),  # 4D segformer block0 (batch=4)
         ((1, 8, 64, 64), [3]),  # 4D segformer block1 (batch=1)
         ((16, 5, 16, 16), [3]),  # 4D segformer block3 (batch=16)
+        ((2, 3, 12, 13), [1]),  # Softmax2d example
     ],
     ids=[
         "2d_64x128_axis1",
@@ -132,8 +133,10 @@ def compile_and_run_softmax(shape, axes, output_root: Path):
         "4d_block0_b4",
         "4d_block1_b1",
         "4d_block3_b16",
+        "softmax2d_example",
     ],
 )
 @pytest.mark.cuda()
+@pytest.mark.skip(reason="Cuda Softmax dispatcher disabled because of wrong results")
 def test_softmax_cuda(shape, axes, tmp_path):
     compile_and_run_softmax(shape, axes, tmp_path)

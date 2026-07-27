@@ -35,9 +35,14 @@ bool CudaExpansion::accept(structured_control_flow::Block& node) {
             auto& matmul_node = static_cast<math::tensor::MatMulNode&>(*library_node);
             sdfg::offloading::CudaBatchedMatMulExpander expander(matmul_node);
             made_changes |= expander.expand(builder_, analysis_manager_);
-        } else if (lib_node_code == math::tensor::LibraryNodeType_Softmax) {
-            library_node->implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
-            made_changes = true;
+            // This was deactivated for merging softmax support for the PyTorch frontend. As it turns out, the softmax
+            // dispatcher for target CUDA does not produces correct results. For some dimensions it works fine, for
+            // others it does not. Needs further investigation. If this code is used again, please also reactivate the
+            // test in `python/tests/cuda/test_softmax_dispatcher.py`.
+            //
+            // } else if (lib_node_code == math::tensor::LibraryNodeType_Softmax) {
+            //     library_node->implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
+            //     made_changes = true;
         } else if (lib_node_code == math::tensor::LibraryNodeType_TensorConcat) {
             auto& concat_node = static_cast<math::tensor::ConcatNode&>(*library_node);
             sdfg::offloading::CudaConcatExpander expander(concat_node);
