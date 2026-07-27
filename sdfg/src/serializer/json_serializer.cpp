@@ -11,6 +11,7 @@
 #include "sdfg/data_flow/library_nodes/invoke_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.h"
 #include "sdfg/data_flow/library_nodes/metadata_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/stdlib.h"
@@ -1558,6 +1559,10 @@ void register_default_serializers() {
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_LeakyReLU.value(), []() {
             return std::make_unique<math::tensor::LeakyReLUNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_LogicalNot.value(), []() {
+            return std::make_unique<math::tensor::LogicalNotNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Mul.value(), []() {
