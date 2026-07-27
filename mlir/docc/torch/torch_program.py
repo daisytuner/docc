@@ -2,6 +2,7 @@ import os
 import getpass
 import hashlib
 import shutil
+import contextlib
 from typing import Any, Optional, List
 import time
 import numpy as np
@@ -68,6 +69,38 @@ def _filter_none_outputs(model) -> List[int]:
     model.recompile()
 
     return none_positions
+
+
+@contextlib.contextmanager
+def _export_backend_flags():
+    """Disable vendor-specific op backends during model tracing/export.
+
+    torch-mlir has limited op coverage and cannot lower vendor-fused ops that
+    torch selects when accelerator backends are enabled (e.g. conv lowered to
+    cuDNN / MIOpen variants on ROCm, or mkldnn-fused ops on CPU). Since the
+    exported graph is compiled to our own generated kernels, these backends add
+    no value here and only introduce ops torch-mlir rejects.
+
+    This context manager must wrap the actual trace (torch.export.export and
+    fx.export_and_import), because these flags are thread-local and only affect
+    backend selection while the tracer runs. Wrapping it here guarantees every
+    trace is protected -- including torch.compile re-traces on guard/shape
+    changes -- without relying on the user wrapping their call site.
+    """
+    import torch
+
+    with contextlib.ExitStack() as stack:
+        # cudnn.flags(enabled=False) also disables MIOpen on ROCm builds, since
+        # torch routes MIOpen through the same cudnn gate.
+        try:
+            stack.enter_context(torch.backends.cudnn.flags(enabled=False))
+        except Exception:
+            pass
+        try:
+            stack.enter_context(torch.backends.mkldnn.flags(enabled=False))
+        except Exception:
+            pass
+        yield
 
 
 class TorchProgram(DoccProgram):
@@ -420,30 +453,37 @@ class TorchProgram(DoccProgram):
         )
 
         self._frozen_buffer_args = []
-        try:
-            prog = torch.export.export(self.model, example_inputs)
-            sig = prog.graph_signature
-            if hasattr(prog, "constants"):
-                for spec in sig.input_specs:
-                    if spec.kind == torch.export.graph_signature.InputKind.BUFFER:
-                        obj = self.model
-                        for part in spec.target.split("."):
-                            obj = getattr(obj, part)
-                        self._frozen_buffer_args.append(obj.detach().cpu().contiguous())
-        except Exception:
-            self._frozen_buffer_args = []
+        # Disable vendor-specific op backends (cuDNN / MIOpen / mkldnn) for the
+        # duration of the trace so torch-mlir does not encounter fused ops it
+        # cannot lower. See _export_backend_flags for details.
+        with _export_backend_flags():
+            try:
+                prog = torch.export.export(self.model, example_inputs)
+                sig = prog.graph_signature
+                if hasattr(prog, "constants"):
+                    for spec in sig.input_specs:
+                        if spec.kind == torch.export.graph_signature.InputKind.BUFFER:
+                            obj = self.model
+                            for part in spec.target.split("."):
+                                obj = getattr(obj, part)
+                            self._frozen_buffer_args.append(
+                                obj.detach().cpu().contiguous()
+                            )
+            except Exception:
+                self._frozen_buffer_args = []
 
-        # Filter None outputs from FX graph (AOTAutograd backward graphs use None
-        # to indicate "no gradient for this input"). torch-mlir cannot lower
-        # torch.constant.none, so we filter them here and restore after execution.
-        self._none_output_positions = _filter_none_outputs(self.model)
+            # Filter None outputs from FX graph (AOTAutograd backward graphs use
+            # None to indicate "no gradient for this input"). torch-mlir cannot
+            # lower torch.constant.none, so we filter them here and restore
+            # after execution.
+            self._none_output_positions = _filter_none_outputs(self.model)
 
-        torch_mlir = fx.export_and_import(
-            self.model,
-            *example_inputs,
-            output_type="linalg_on_tensors",
-            func_name=self.name,
-        )
+            torch_mlir = fx.export_and_import(
+                self.model,
+                *example_inputs,
+                output_type="linalg_on_tensors",
+                func_name=self.name,
+            )
         torch_mlir = str(torch_mlir)
 
         # Dump the MLIR code to a file for inspection
