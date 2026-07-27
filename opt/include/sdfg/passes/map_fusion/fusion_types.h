@@ -82,7 +82,9 @@ struct FusionArg {
 struct FusionLoopCandidate {
     structured_control_flow::StructuredLoop* loop;
     const symbolic::Assumption* indvar_boundaries;
-    const symbolic::Assumptions& assumptions;
+    symbolic::Assumptions assumptions;
+    bool is_map = false;
+    bool is_by_domain_candidate = false;
     std::unordered_map<RegId, FusionArg> args;
     bool incompatible = false;
     bool nested_incompatible = false;
@@ -104,12 +106,15 @@ public:
         structured_control_flow::ControlFlowNode* second_root_replacement = nullptr;
     };
 
-    virtual MatchResult
-    match(structured_control_flow::Map& map, structured_control_flow::Map& second, bool no_uses_between) = 0;
+    virtual MatchResult match(
+        structured_control_flow::StructuredLoop& first,
+        structured_control_flow::StructuredLoop& second,
+        bool no_uses_between
+    ) = 0;
 
     virtual bool check_no_overlap(
-        const structured_control_flow::Map& map,
-        const structured_control_flow::Map& second,
+        const structured_control_flow::StructuredLoop& first,
+        const structured_control_flow::StructuredLoop& second,
         const std::unordered_set<RegId>& skipped_containers
     ) = 0;
 };

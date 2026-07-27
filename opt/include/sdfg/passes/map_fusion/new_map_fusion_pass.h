@@ -22,6 +22,7 @@ class NewMapFusionPass : public sdfg::passes::Pass {
     friend class MapFusionHandler;
     static constexpr bool dump_loop_infos = false;
     static constexpr bool dump_graphs = true;
+    bool allow_init_hoist_;
 
 public:
     struct State {
@@ -39,7 +40,7 @@ public:
         uint32_t total_fused_count() const;
     };
 
-    NewMapFusionPass() = default;
+    NewMapFusionPass(bool allow_init_hoist = true);
 
     std::string name() override { return "MapFusionByDomainPass"; }
 
@@ -57,15 +58,20 @@ class MapFusionHandler : public map_fusion::PatternHandler, map_fusion::MapFusio
     NewMapFusionPass::State& state_;
 
 public:
-    MapFusionHandler(NewMapFusionPass::State& state);
+    MapFusionHandler(NewMapFusionPass::State& state, bool allow_init_hoist);
 
-    map_fusion::PatternHandler::MatchResult match(Map& first, Map& second, bool no_uses_between) override;
-
-    map_fusion::PatternHandler::MatchResult
-    try_complex_fuse_producer_into_consumer(Map& first, Map& second, bool no_uses_between, bool domains_match);
-
-    bool check_no_overlap(const Map& map, const Map& second, const std::unordered_set<map_fusion::RegId>& skipped_containers)
+    map_fusion::PatternHandler::MatchResult match(StructuredLoop& first, StructuredLoop& second, bool no_uses_between)
         override;
+
+    map_fusion::PatternHandler::MatchResult try_complex_fuse_producer_into_consumer(
+        FusionLoopCandidate& first, FusionLoopCandidate& second, bool no_uses_between, bool domains_match
+    );
+
+    bool check_no_overlap(
+        const StructuredLoop& map,
+        const StructuredLoop& second,
+        const std::unordered_set<map_fusion::RegId>& skipped_containers
+    ) override;
 
     struct InOutCheckResult {
         bool no_conflicts;
@@ -78,14 +84,16 @@ protected:
         const map_fusion::FusionLoopCandidate& first_candidate,
         const map_fusion::FusionLoopCandidate& second_candidate,
         symbolic::ExpressionMapping& canonical_indvars,
-        bool local_not_nested
+        bool local_not_nested = true,
+        bool only_no_overlap = false
     );
 
     InOutCheckResult check_ins_outs(
         const std::unordered_map<map_fusion::RegId, map_fusion::FusionArg>& first_args,
         const std::unordered_map<map_fusion::RegId, map_fusion::FusionArg>& second_args,
         symbolic::ExpressionMapping& canonical_indvars,
-        bool local_not_nested
+        bool local_not_nested = true,
+        bool only_no_overlap = false
     );
 
     void update_fused_seq(Sequence& sequence, const symbolic::ExpressionMapping& replacements);
@@ -96,7 +104,7 @@ protected:
         SymEngine::map_basic_basic& canonical_indvars
     );
 
-    void update_child_candidate_states(map_fusion::FusionLoopCandidate* top, const symbolic::ExpressionMapping& replace);
+    void update_moved_candidate_states(map_fusion::FusionLoopCandidate* top, const symbolic::ExpressionMapping& replace);
 
     void update_candidate_state(
         ControlFlowNode* first_top,
@@ -138,7 +146,9 @@ protected:
 
     builder::StructuredSDFGBuilder& builder() override;
 
-    void update_copied_leaf_contents_from_first_to_second(const Plan& plan) override;
+    void update_copied_leaf_contents_from_first_to_second(
+        const Plan& plan, FusionLoopCandidate* first_current, FusionLoopCandidate* second_current
+    ) override;
 };
 
 } // namespace sdfg::passes::map_fusion

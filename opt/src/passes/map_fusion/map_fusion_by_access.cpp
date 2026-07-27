@@ -59,7 +59,10 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusionByAccess
     // Solve for producer_vars in terms of consumer_vars and parameters
     SymEngine::vec_basic equations;
     for (size_t d = 0; d < producer_sub.size(); ++d) {
-        equations.push_back(symbolic::sub(producer_sub.at(d), consumer_sub.at(d)));
+        auto equation = symbolic::sub(producer_sub.at(d), consumer_sub.at(d));
+        if (!symbolic::eq(equation, symbolic::zero())) {
+            equations.push_back(equation);
+        }
     }
 
     // Need exactly as many equations as unknowns for a unique solution.
@@ -273,6 +276,8 @@ std::vector<StructuredLoop*> MapFusionByAccessWorker::collect_structured_sub_tre
     std::vector<StructuredLoop*> loop_stack;
     auto it = ana.get_loop_iterator(&top);
     auto end = ana.get_subtree_end(&top);
+    auto size = std::distance(it, end);
+    loop_stack.reserve(size);
     while (it != end) {
         auto* loop = *it;
         if (auto structured = dyn_cast<StructuredLoop*>(loop)) {
@@ -309,7 +314,11 @@ std::vector<StructuredLoop*> MapFusionByAccessWorker::collect_loop_parents(Seque
 
 std::unique_ptr<MapFusionByAccessWorker::Plan> MapFusionByAccessWorker::
     try_create_fusion_by_access_plan(FusionLoopCandidate& first, FusionLoopCandidate& second, bool domains_match) {
-    auto state_ptr = std::make_unique<Plan>(*dyn_cast<Map*>(first.loop), *second.loop);
+    auto first_map = dyn_cast<Map*>(first.loop);
+    if (!first_map) {
+        return {};
+    }
+    auto state_ptr = std::make_unique<Plan>(*first_map, *second.loop);
     Plan& state = *state_ptr;
 
     auto& ana = get_loop_analysis();
@@ -771,8 +780,7 @@ ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& 
                         // shifted index into a new temporary variable with an assignment. Then, replace the index
                         // variable with the new temporary variable
                         auto new_index_name = builder.find_new_name();
-                        builder
-                            .add_container(new_index_name, builder.subject().type(plan.second.indvar()->get_name()));
+                        builder.add_container(new_index_name, builder.subject().type(plan.second.indvar()->get_name()));
 
                         if (!init_assignment_block) {
                             init_assignment_block = &builder.add_assignments_at(host_seq, 0, {});
@@ -847,7 +855,10 @@ ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& 
         // TODO side effects is not correct, but we also do not check it before fusing, so does not matter for now
         ana.added_local_contents(plan.consumer_loops_.back(), false, true);
 
-        update_copied_leaf_contents_from_first_to_second(plan);
+        // innermost loops had to be leaf
+        auto first_current = get_fuse_candidate(*plan.producer_loops_.back());
+        auto second_current = get_fuse_candidate(*plan.consumer_loops_.back());
+        update_copied_leaf_contents_from_first_to_second(plan, first_current, second_current);
 
         return {
             .pattern_result = {.removed_first = false, .visit_second_body = false, .second_root_replacement = nullptr},
@@ -855,9 +866,12 @@ ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& 
         };
     } else {
         auto& ana = get_loop_analysis();
-        ana.removed_loop(&plan.first);
 
-        update_copied_leaf_contents_from_first_to_second(plan);
+        auto first_current = get_fuse_candidate(*plan.producer_loops_.back());
+        auto second_current = get_fuse_candidate(*plan.consumer_loops_.at(plan.consumer_loops_.size() - 2));
+        update_copied_leaf_contents_from_first_to_second(plan, first_current, second_current);
+
+        ana.removed_loop(&plan.first);
 
         // Case 2: the hoisted init copy fully overwrites the accumulator before the
         // reduction reads it, so the original init producer map is redundant. Unlike
@@ -1005,11 +1019,9 @@ ComplexFusionResult MapFusionByAccessWorker::apply_consumer_into_producer(Plan& 
                                 init_assignment_block = &builder.add_assignments_at(*plan.producer_body_, 0, {});
                             }
                             auto new_index_name = builder.find_new_name();
-                            builder.add_container(
-                                new_index_name, builder.subject().type(plan.first.indvar()->get_name())
-                            );
-                            init_assignment_block->assignments().insert({symbolic::symbol(new_index_name), new_expr}
-                            );
+                            builder
+                                .add_container(new_index_name, builder.subject().type(plan.first.indvar()->get_name()));
+                            init_assignment_block->assignments().insert({symbolic::symbol(new_index_name), new_expr});
                             access_node->data(new_index_name);
                         }
                     }

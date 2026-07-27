@@ -18,7 +18,9 @@ protected:
         ConsumerIntoProducer,
     };
 
-    bool allow_init_hoist_ = false;
+    bool allow_init_hoist_ = true;
+
+    MapFusionByAccessWorker(bool allow_init_hoist = true) : allow_init_hoist_(allow_init_hoist) {}
 
     struct Plan {
         structured_control_flow::Map& first;
@@ -53,7 +55,15 @@ protected:
 
     virtual builder::StructuredSDFGBuilder& builder() = 0;
 
-    virtual void update_copied_leaf_contents_from_first_to_second(const Plan& plan) = 0;
+    /**
+     * Moved non-loop contents from first_current to second_current.
+     * @param plan
+     * @param first_current
+     * @param second_current
+     */
+    virtual void update_copied_leaf_contents_from_first_to_second(
+        const Plan& plan, FusionLoopCandidate* first_current, FusionLoopCandidate* second_current
+    ) = 0;
 
     std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> solve_subsets(
         const data_flow::Subset& producer_subset,
