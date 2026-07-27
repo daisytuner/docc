@@ -82,25 +82,47 @@ def _export_backend_flags():
     no value here and only introduce ops torch-mlir rejects.
 
     This context manager must wrap the actual trace (torch.export.export and
-    fx.export_and_import), because these flags are thread-local and only affect
-    backend selection while the tracer runs. Wrapping it here guarantees every
-    trace is protected -- including torch.compile re-traces on guard/shape
-    changes -- without relying on the user wrapping their call site.
+    fx.export_and_import), since the disabled backend only affects op selection
+    while the tracer runs. Wrapping it here guarantees every trace is protected
+    -- including torch.compile re-traces on guard/shape changes -- without
+    relying on the user wrapping their call site.
+
+    Note: the cuDNN/MIOpen `enabled` flag is process-global (it lives on the
+    global at::Context, not a thread-local), so we save and restore it around
+    the trace. This is not thread-safe against concurrent GPU work on other
+    threads, which is acceptable here because export/trace is a one-shot step
+    that does not overlap with timed execution.
     """
     import torch
 
+    # Disable the cuDNN/MIOpen backend by setting the global flag directly
+    # rather than via torch.backends.cudnn.flags(enabled=False). The flags()
+    # context manager sets *all* cuDNN flags at once, including the benchmark
+    # limit, whose setter (torch._C._cuda_set_cudnn_benchmark_limit) enters an
+    # unsupported HIP path on MIOpen/ROCm and aborts the process. Assigning the
+    # single `enabled` flag avoids that path while still routing batchnorm /
+    # convolution through portable native aten ops that torch-mlir can lower
+    # (on ROCm this disables MIOpen, since torch gates it through cudnn).
+    _prev_cudnn_enabled = None
+    try:
+        _prev_cudnn_enabled = torch.backends.cudnn.enabled
+        torch.backends.cudnn.enabled = False
+    except Exception:
+        _prev_cudnn_enabled = None
+
     with contextlib.ExitStack() as stack:
-        # cudnn.flags(enabled=False) also disables MIOpen on ROCm builds, since
-        # torch routes MIOpen through the same cudnn gate.
-        try:
-            stack.enter_context(torch.backends.cudnn.flags(enabled=False))
-        except Exception:
-            pass
         try:
             stack.enter_context(torch.backends.mkldnn.flags(enabled=False))
         except Exception:
             pass
-        yield
+        try:
+            yield
+        finally:
+            if _prev_cudnn_enabled is not None:
+                try:
+                    torch.backends.cudnn.enabled = _prev_cudnn_enabled
+                except Exception:
+                    pass
 
 
 class TorchProgram(DoccProgram):
