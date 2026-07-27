@@ -51,6 +51,7 @@ steps:
   run:
     resnet18:
       energy: true
+      control: true
       measurements: 3
       env:
         DOCC_REUSE_BINARIES: 1
@@ -75,6 +76,7 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: float, profiling: true }
     segformer:
       energy: true
+      control: true
       measurements: 3
       env:
         DOCC_REUSE_BINARIES: 1

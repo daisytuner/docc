@@ -7,6 +7,7 @@ import time
 import numpy as np
 import pytest
 import docc.python
+from docc.benchmarks.perf import PerfControl
 
 
 _GLOBAL_CAPSYS = None
@@ -176,7 +177,6 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
         parser.add_argument("--numpy", action="store_true")
         parser.add_argument("--target", type=str, default="none")
         parser.add_argument("--n_runs", type=int, default=10)
-        parser.add_argument("--cold_run", action="store_true", default=False)
         parser.add_argument("--remote-tuning", action="store_true", default=False)
         args = parser.parse_args()
 
@@ -200,15 +200,25 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
     # Build kernel arguments in the correct order
     kernel_args = _build_kernel_args(kernel_func, combined)
 
+    # Gates perf-stat counters to the timed region when launched under
+    # `perf stat --control` (no-op otherwise). Shared by the numpy and docc paths.
+    perf = PerfControl.from_env()
+
     if args.numpy:
         # Create a copy of inputs for numpy execution to avoid modification
         inputs_ref = [x.copy() if isinstance(x, np.ndarray) else x for x in kernel_args]
-        for _ in range(args.n_runs):
-            start = time.time()
-            # Execute the original python function (undecorated)
-            kernel_func(*inputs_ref)
-            end = time.time()
-            print(f"Numpy execution time: {end - start:.6f} seconds")
+
+        # Warmup: absorb one-time costs (imports, first-call caches) outside the
+        # measured region.
+        kernel_func(*inputs_ref)
+
+        with perf.measure():
+            for _ in range(args.n_runs):
+                start = time.time()
+                # Execute the original python function (undecorated)
+                kernel_func(*inputs_ref)
+                end = time.time()
+                print(f"Numpy execution time: {end - start:.6f} seconds")
 
     if args.docc:
         # Create a copy of inputs for docc execution
@@ -244,19 +254,18 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
 
         times = []
 
-        if args.cold_run:
-            start = time.time()
-            _run_docc()
-            end = time.time()
-            times.append(end - start)
-            print(f"Docc execution time (init): {end - start:.6f} seconds")
+        # Warmup: the first invocation absorbs one-time cold-start costs (CUDA
+        # context init, kernel module load). Run it untimed and outside the
+        # perf-counted region so measurements reflect the steady-state runtime.
+        _run_docc()
 
-        for _ in range(args.n_runs):
-            start = time.time()
-            _run_docc()
-            end = time.time()
-            times.append(end - start)
-            print(f"Docc execution time (cached): {end - start:.6f} seconds")
+        with perf.measure():
+            for _ in range(args.n_runs):
+                start = time.time()
+                _run_docc()
+                end = time.time()
+                times.append(end - start)
+                print(f"Docc execution time (cached): {end - start:.6f} seconds")
 
         # print(f"Average Docc execution time over {N+1} runs: {np.mean(times):.6f} seconds")
         # print(f"Average Docc execution time (cached) over {N} runs: {np.mean(times[1:]):.6f} seconds")

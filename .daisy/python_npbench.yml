@@ -141,6 +141,8 @@ steps:
   run:
     adi:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -170,6 +172,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     atax:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -199,6 +203,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     gemm:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -228,6 +234,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     gesummv:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -257,6 +265,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     gemver:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -286,6 +296,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     k2mm:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -315,6 +327,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     k3mm:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -344,6 +358,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     mvt:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -373,6 +389,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     symm:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -402,6 +420,8 @@ steps:
         #   tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     syr2k:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -431,6 +451,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     syrk:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:
@@ -460,6 +482,8 @@ steps:
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
     trmm:
       energy: true
+      measurements: 10
+      control: true
       env:
         DOCC_REUSE_BINARIES: 1
       variants:

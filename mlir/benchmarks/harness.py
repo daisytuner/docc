@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import docc.torch
+from docc.benchmarks.perf import PerfControl
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "1"  # Enable TF32 for CUDA and ROCm backends
 
@@ -109,13 +110,24 @@ def run_benchmark(setup_func, name, batch_size=32):
     end = time.time()
     print(f"{name} {backend_label} setup time: {end - start:.6f} seconds")
 
-    for i in range(args.n_runs):
-        start = time.time()
-        with torch.no_grad():
-            out = _invoke(program, x)
-        sync_fn()
-        end = time.time()
-        print(f"{name} {backend_label} execution time: {end - start:.6f} seconds")
+    perf = PerfControl.from_env()
+
+    # Warmup: the first invocation absorbs one-time cold-start costs (TorchDynamo
+    # tracing, docc reuse-binary load / SDFG parse, CUDA context init). Run it
+    # untimed and outside the perf-counted region so measurements reflect the
+    # steady-state runtime.
+    with torch.no_grad():
+        _invoke(program, x)
+    sync_fn()
+
+    with perf.measure():
+        for i in range(args.n_runs):
+            start = time.time()
+            with torch.no_grad():
+                out = _invoke(program, x)
+            sync_fn()
+            end = time.time()
+            print(f"{name} {backend_label} execution time: {end - start:.6f} seconds")
 
     start = time.time()
     if isinstance(out, torch.Tensor):
