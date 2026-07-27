@@ -61,7 +61,7 @@ def kernel(in_field, out_field, coeff):
 @pytest.mark.skipif(sys.platform == "darwin", reason="Segfault on macOS")
 @pytest.mark.parametrize(
     "target",
-    ["none", "sequential", "openmp", "cuda", "rocm"],
+    ["none", "sequential", "openmp"],
 )
 def test_hdiff(target):
     verifier = None

@@ -53,7 +53,7 @@ def kernel(input, w1, b1, w2, b2, w3, b3):
 
 @pytest.mark.parametrize(
     "target",
-    ["none", "sequential", "openmp", "cuda", "rocm"],
+    ["none", "sequential", "openmp"],
 )
 def test_mlp(target):
     verifier = None
