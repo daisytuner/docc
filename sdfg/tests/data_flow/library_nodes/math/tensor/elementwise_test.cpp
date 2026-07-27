@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node.h"
 #include "sdfg_debug_dump.h"
 
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.h"
@@ -251,6 +252,11 @@ REGISTER_UNARY_TEST(ReLUNode, 1)
 REGISTER_UNARY_TEST(ReLUNode, 2)
 REGISTER_UNARY_TEST(ReLUNode, 3)
 REGISTER_UNARY_TEST(ReLUNode, 4)
+
+REGISTER_UNARY_TEST(GELUNode, 1)
+REGISTER_UNARY_TEST(GELUNode, 2)
+REGISTER_UNARY_TEST(GELUNode, 3)
+REGISTER_UNARY_TEST(GELUNode, 4)
 
 REGISTER_UNARY_TEST(SigmoidNode, 1)
 REGISTER_UNARY_TEST(SigmoidNode, 2)

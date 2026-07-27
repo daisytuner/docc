@@ -26,6 +26,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.h"

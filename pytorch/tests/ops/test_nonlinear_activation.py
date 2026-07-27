@@ -18,6 +18,33 @@ def test_relu_simple(target: str) -> None:
     check(ReLUSimpleNet(), torch.randn(2), target=target)
 
 
+# --- GELU ---
+
+
+def test_gelu_simple(target: str) -> None:
+    class GELUSimpleNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.gelu: nn.GELU = nn.GELU()
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.gelu(input)
+
+    check(GELUSimpleNet(), torch.randn(2), target=target)
+
+
+def test_gelu_tanh_approx(target: str) -> None:
+    class GELUSimpleNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.gelu: nn.GELU = nn.GELU(approximate="tanh")
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.gelu(input)
+
+    check(GELUSimpleNet(), torch.randn(2), target=target)
+
+
 # --- Softmax ---
 
 

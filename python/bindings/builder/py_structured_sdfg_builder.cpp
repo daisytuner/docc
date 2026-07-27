@@ -1707,3 +1707,20 @@ void PyStructuredSDFGBuilder::add_relu(
     builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
 }
+
+void PyStructuredSDFGBuilder::add_gelu(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    bool tanh_approx,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& libnode =
+        builder_.add_library_node<sdfg::math::tensor::GELUNode>(block, debug_info, Y_type.shape(), tanh_approx);
+    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+}

@@ -1572,6 +1572,10 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::ReLUNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_GELU.value(), []() {
+            return std::make_unique<math::tensor::GELUNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Sigmoid.value(), []() {
             return std::make_unique<math::tensor::SigmoidNodeSerializer>();
         });
