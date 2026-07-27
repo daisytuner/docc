@@ -356,9 +356,8 @@ void PyStructuredSDFG::simplify() {
         task_fuse_pass.run(builder_opt, analysis_manager);
     }
 
-    // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
-    // normalize() map-fusion run so loop distribution and fusion do not fight)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
+    // Fuse maps
+    auto map_fusion = sdfg::passes::normalization::map_fusion(true);
     map_fusion.run(builder_opt, analysis_manager);
 }
 
@@ -431,26 +430,6 @@ void PyStructuredSDFG::normalize() {
     // Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
     auto map_fusion_hoist = sdfg::passes::normalization::map_fusion(true);
     map_fusion_hoist.run(builder, analysis_manager);
-
-    if (use_new_fusion_in_normalize_) {
-        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
-        map_fusion_by_domain_pass.run(builder, analysis_manager);
-        sdfg::passes::DeadDataElimination dde;
-        sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
-
-        // Cleanup of artifacts of MapFusion
-        dde.run(builder, analysis_manager);
-        dce.run(builder, analysis_manager);
-        sdfg::passes::Pipeline block_fusion("BlockFusion");
-        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
-        block_fusion.run(builder, analysis_manager);
-
-        sdfg::passes::RedundantLoadEliminationPass rle;
-        rle.run(builder, analysis_manager);
-        dde.run(builder, analysis_manager);
-        sdfg::passes::TaskletFusionPass task_fuse_pass;
-        task_fuse_pass.run(builder, analysis_manager);
-    }
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
