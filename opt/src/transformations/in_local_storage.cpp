@@ -7,6 +7,7 @@
 
 #include <symengine/rational.h>
 
+#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/memory_layout_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -182,6 +183,61 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
             auto quotient = SymEngine::div(symbolic::simplify(count), block);
             return SymEngine::atoms<const SymEngine::Rational>(*quotient).empty();
         };
+
+        // A bare symbolic bound (e.g. `N`) is not syntactically a multiple of
+        // the block size, but an assumption established earlier in the program
+        // may pin it to one. We fold such equality facts into the trip count
+        // before the divisibility test: a symbol is replaced by an expression
+        // it is provably equal to when its tight lower/upper bounds coincide,
+        // or when the same expression appears as both a lower and an upper
+        // bound. This lets `N` be accepted when an upstream assumption
+        // established `N == 32*P` or `N == 1024` (symbol / condition
+        // propagation), while a genuinely unconstrained `N` is still rejected.
+        auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+        auto resolve_with_assumptions = [](symbolic::Expression expr,
+                                           const symbolic::Assumptions& assums) -> symbolic::Expression {
+            symbolic::ExpressionMapping subs_map;
+            for (auto& entry : assums) {
+                const auto& sym = entry.first;
+                const auto& assum = entry.second;
+                symbolic::Expression definition = SymEngine::null;
+                auto tlb = assum.tight_lower_bound();
+                auto tub = assum.tight_upper_bound();
+                if (!tlb.is_null() && !tub.is_null() && symbolic::eq(tlb, tub)) {
+                    definition = tlb;
+                } else {
+                    // Equality `sym == g` encoded as a coinciding lower/upper bound.
+                    for (auto& lb : assum.lower_bounds()) {
+                        for (auto& ub : assum.upper_bounds()) {
+                            if (symbolic::eq(lb, ub)) {
+                                definition = lb;
+                                break;
+                            }
+                        }
+                        if (!definition.is_null()) {
+                            break;
+                        }
+                    }
+                }
+                if (definition.is_null() || symbolic::uses(definition, sym)) {
+                    continue;
+                }
+                subs_map[sym] = definition;
+            }
+            if (subs_map.empty()) {
+                return expr;
+            }
+            // Resolve chained definitions to a fixpoint (bounded).
+            for (int i = 0; i < 8; ++i) {
+                auto next = symbolic::subs(expr, subs_map);
+                if (symbolic::eq(next, expr)) {
+                    break;
+                }
+                expr = next;
+            }
+            return expr;
+        };
+
         for (auto* node : ancestors) {
             auto* ancestor_map = dyn_cast<structured_control_flow::Map*>(node);
             if (!ancestor_map || !gpu::is_gpu_schedule(ancestor_map->schedule_type())) {
@@ -196,6 +252,7 @@ bool InLocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
             auto stl = SymEngine::rcp_static_cast<const SymEngine::StrictLessThan>(condition);
             auto rhs = stl->get_args()[1];
             auto iter_count = symbolic::sub(rhs, ancestor_map->init());
+            iter_count = resolve_with_assumptions(iter_count, assumptions_analysis.get(*ancestor_map, true));
             if (!provably_multiple_of_block(iter_count, block_size)) {
                 return false;
             }

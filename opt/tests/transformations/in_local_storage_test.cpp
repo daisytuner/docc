@@ -2399,6 +2399,201 @@ TEST(InLocalStorageTest, GPU_Cooperative_SymbolicMultipleBound_Accepted) {
 }
 
 /**
+ * Test: InLocalStorage with NV_Shared accepts a bare symbolic GPU map bound `N`
+ * when an assumption established earlier in the program proves it is a multiple
+ * of the block size (symbolic case `N == 32*P`).
+ *
+ * Setup:
+ *   Map X (i, 0..N, block_size=32) → Map Y (j, 0..8, block_size=8) → For k = 0..16
+ *   A[i*16 + k] — base depends on i only; j is free → cooperative
+ *   SDFG assumption: N == 32*P (recorded as coinciding lower/upper bound)
+ *
+ * The bound `N` is not syntactically a multiple of 32, but the assumption pins
+ * it to `32*P`. Folding that equality into the trip count yields `32*P`, whose
+ * quotient by 32 is the integer-valued `P`, so the boundary guard is never
+ * thread-divergent and the block-wide __syncthreads() is safe. Accepted.
+ */
+TEST(InLocalStorageTest, GPU_Cooperative_AssumptionSymbolicMultipleBound_Accepted) {
+    builder::StructuredSDFGBuilder builder("ils_gpu_assume_symbolic", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    auto N = symbolic::symbol("N");
+    auto P = symbolic::symbol("P");
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("N", loop_var, true);
+    builder.add_container("P", loop_var, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    // Assumption established earlier in the program: N == 32*P.
+    auto n_multiple = symbolic::mul(symbolic::integer(32), P);
+    builder.subject().assumption(N).add_lower_bound(n_multiple);
+    builder.subject().assumption(N).add_upper_bound(n_multiple);
+
+    // GPU Map X: i = 0..N (block_size=32) — bound is a bare symbol
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        seq,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), N),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // GPU Map Y: j = 0..8 (block_size=8) — trip count == block size
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
+    gpu::gpu_block_size(sched_y, symbolic::integer(8));
+    auto& map_y = builder.add_map(
+        map_x.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        sched_y
+    );
+
+    // For loop: k = 0..16
+    auto& loop = builder.add_for(
+        map_y.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    // A[i*16 + k] — base depends on i only; j is free → cooperative
+    builder.add_computational_memlet(
+        block,
+        a_in,
+        tasklet,
+        "_in",
+        {symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(16)), symbolic::symbol("k"))},
+        ptr
+    );
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::symbol("j")}, ptr);
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    transformations::InLocalStorage ils(loop, a_in, types::StorageType::NV_Shared());
+    EXPECT_TRUE(ils.can_be_applied(builder_opt, am));
+    ils.apply(builder_opt, am);
+
+    // Verify: shared buffer created (per-thread X block 32 * varying extent 16 = 512)
+    EXPECT_TRUE(builder_opt.subject().exists("__daisy_in_local_storage_A0"));
+    auto& buf_type = builder_opt.subject().type("__daisy_in_local_storage_A0");
+    EXPECT_EQ(buf_type.storage_type(), types::StorageType::NV_Shared());
+    auto& arr_type = static_cast<const types::Array&>(buf_type);
+    EXPECT_TRUE(symbolic::eq(arr_type.num_elements(), symbolic::integer(512)));
+}
+
+/**
+ * Test: InLocalStorage with NV_Shared accepts a bare symbolic GPU map bound `N`
+ * when an assumption pins it to a compile-time constant multiple of the block
+ * size (constant case `N == 1024`).
+ *
+ * Setup:
+ *   Map X (i, 0..N, block_size=32) → Map Y (j, 0..8, block_size=8) → For k = 0..16
+ *   A[i*16 + k] — base depends on i only; j is free → cooperative
+ *   SDFG assumption: N == 1024 (recorded as coinciding lower/upper bound)
+ *
+ * 1024 = 32*32 is a multiple of the block size, so the transformation is
+ * accepted once the assumption is folded into the trip count.
+ */
+TEST(InLocalStorageTest, GPU_Cooperative_AssumptionConstantBound_Accepted) {
+    builder::StructuredSDFGBuilder builder("ils_gpu_assume_const", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    auto N = symbolic::symbol("N");
+
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr);
+    builder.add_container("N", loop_var, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    // Assumption established earlier in the program: N == 1024.
+    builder.subject().assumption(N).add_lower_bound(symbolic::integer(1024));
+    builder.subject().assumption(N).add_upper_bound(symbolic::integer(1024));
+
+    // GPU Map X: i = 0..N (block_size=32) — bound is a bare symbol
+    auto sched_x = cuda::ScheduleType_CUDA::create();
+    gpu::gpu_block_size(sched_x, symbolic::integer(32));
+    auto& map_x = builder.add_map(
+        seq,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), N),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        sched_x
+    );
+
+    // GPU Map Y: j = 0..8 (block_size=8) — trip count == block size
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
+    gpu::gpu_block_size(sched_y, symbolic::integer(8));
+    auto& map_y = builder.add_map(
+        map_x.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        sched_y
+    );
+
+    // For loop: k = 0..16
+    auto& loop = builder.add_for(
+        map_y.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    // A[i*16 + k] — base depends on i only; j is free → cooperative
+    builder.add_computational_memlet(
+        block,
+        a_in,
+        tasklet,
+        "_in",
+        {symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(16)), symbolic::symbol("k"))},
+        ptr
+    );
+    builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::symbol("j")}, ptr);
+
+    auto structured_sdfg = builder.move();
+    builder::StructuredSDFGBuilder builder_opt(structured_sdfg);
+    analysis::AnalysisManager am(builder_opt.subject());
+
+    transformations::InLocalStorage ils(loop, a_in, types::StorageType::NV_Shared());
+    EXPECT_TRUE(ils.can_be_applied(builder_opt, am));
+}
+
+/**
  * Test: InLocalStorage with NV_Shared rejects a partial-tile GPU map bound
  * (the tiled-loop __syncthreads() deadlock scenario).
  *
