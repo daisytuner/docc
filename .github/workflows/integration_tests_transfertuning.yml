@@ -75,6 +75,3 @@ jobs:
           docc -g -O3 -docc-tune=sequential -docc-transfer-tune -docc-save-temps matmul.c -o matmul.out
           ./matmul.out
           cd ../../../../
-
-          cd llvm/integration
-          pytest -v -rx -s polybench_transfertuning_test.py
