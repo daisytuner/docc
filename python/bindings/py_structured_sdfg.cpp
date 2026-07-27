@@ -356,8 +356,9 @@ void PyStructuredSDFG::simplify() {
         task_fuse_pass.run(builder_opt, analysis_manager);
     }
 
-    // Fuse maps (no init-into-reduction hoisting in simplify)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(true);
+    // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
+    // normalize() map-fusion run so loop distribution and fusion do not fight)
+    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
     map_fusion.run(builder_opt, analysis_manager);
 }
 
@@ -412,6 +413,43 @@ void PyStructuredSDFG::dump(
     if (dump_dot) {
         auto dot_file = build_path / (suffixedName + ".dot");
         sdfg::visualizer::DotVisualizer::writeToFile(*sdfg_, &dot_file);
+    }
+}
+
+void PyStructuredSDFG::normalize() {
+    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
+    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
+
+    // Fuse maps (no init-into-reduction hoisting yet; this run precedes loop distribution)
+    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
+    map_fusion.run(builder, analysis_manager);
+
+    // Distribute and permute
+    auto pipeline = sdfg::passes::normalization::loop_normalization();
+    pipeline.run(builder, analysis_manager);
+
+    // Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
+    auto map_fusion_hoist = sdfg::passes::normalization::map_fusion(true);
+    map_fusion_hoist.run(builder, analysis_manager);
+
+    if (use_new_fusion_in_normalize_) {
+        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
+        map_fusion_by_domain_pass.run(builder, analysis_manager);
+        sdfg::passes::DeadDataElimination dde;
+        sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
+
+        // Cleanup of artifacts of MapFusion
+        dde.run(builder, analysis_manager);
+        dce.run(builder, analysis_manager);
+        sdfg::passes::Pipeline block_fusion("BlockFusion");
+        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
+        block_fusion.run(builder, analysis_manager);
+
+        sdfg::passes::RedundantLoadEliminationPass rle;
+        rle.run(builder, analysis_manager);
+        dde.run(builder, analysis_manager);
+        sdfg::passes::TaskletFusionPass task_fuse_pass;
+        task_fuse_pass.run(builder, analysis_manager);
     }
 }
 

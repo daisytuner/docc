@@ -250,6 +250,7 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("dump_json") = true,
             py::arg("record_for_instrumentation") = false
         )
+        .def("normalize", &PyStructuredSDFG::normalize, "Normalize the SDFG")
         .def(
             "schedule",
             static_cast<
