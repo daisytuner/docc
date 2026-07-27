@@ -595,6 +595,7 @@ jobs:
             -DCMAKE_C_COMPILER=clang-19 \
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DSDFG_ENABLE_COVERAGE=ON \
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
@@ -610,6 +611,10 @@ jobs:
       - name: Python & MLIR Tests
         env:
           DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+          # Emit one LLVM profile per test process so the C++ dispatchers exercised
+          # through the Python/MLIR extensions (e.g. the CUDA softmax dispatcher) are
+          # counted towards C++ coverage.
+          LLVM_PROFILE_FILE: ${{ github.workspace }}/build/cuda-%p-%m.profraw
         run: |
           nvidia-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
@@ -620,6 +625,33 @@ jobs:
 
           # Segformer correctness test
           pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
+
+      - name: Coverage
+        run: |
+          # Merge the per-process LLVM profiles produced by the instrumented
+          # Python/MLIR extensions during the CUDA pytest runs.
+          llvm-profdata-19 merge -sparse build/cuda-*.profraw -o build/cuda.profdata
+
+          # Export coverage against every instrumented extension module. The C++
+          # dispatchers (e.g. opt/src/targets/cuda/...) are linked into these .so files.
+          OBJECTS=""
+          for so in $(find build/python build/mlir -name '_sdfg*.so'); do
+            OBJECTS="$OBJECTS -object $so"
+          done
+
+          llvm-cov-19 export $OBJECTS -instr-profile=build/cuda.profdata -format=lcov > build/coverage_full.lcov
+          lcov --ignore-errors unused,empty \
+            --extract build/coverage_full.lcov \
+            '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' \
+            --output-file build/coverage.lcov
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          flag-name: cuda
+          parallel: true
+          format: lcov
+          file: build/coverage.lcov
 
       - name: PyTorch Tests
         run: |
@@ -690,6 +722,7 @@ jobs:
             -DCMAKE_C_COMPILER=clang-19 \
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DSDFG_ENABLE_COVERAGE=ON \
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
@@ -705,6 +738,7 @@ jobs:
       - name: Python & MLIR Tests
         env:
           DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+          LLVM_PROFILE_FILE: ${{ github.workspace }}/build/rocm-%p-%m.profraw
         run: |
           rocm-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
@@ -718,6 +752,29 @@ jobs:
           pytest -v mlir/integration -m "rocm"
 
           pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
+
+      - name: Coverage
+        run: |
+          llvm-profdata-19 merge -sparse build/rocm-*.profraw -o build/rocm.profdata
+
+          OBJECTS=""
+          for so in $(find build/python build/mlir -name '_sdfg*.so'); do
+            OBJECTS="$OBJECTS -object $so"
+          done
+
+          llvm-cov-19 export $OBJECTS -instr-profile=build/rocm.profdata -format=lcov > build/coverage_full.lcov
+          lcov --ignore-errors unused,empty \
+            --extract build/coverage_full.lcov \
+            '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' \
+            --output-file build/coverage.lcov
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          flag-name: rocm
+          parallel: true
+          format: lcov
+          file: build/coverage.lcov
 
       - name: PyTorch Tests
         run: |
@@ -783,6 +840,7 @@ jobs:
             -DCMAKE_C_COMPILER=clang-19 \
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DSDFG_ENABLE_COVERAGE=ON \
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
@@ -798,11 +856,35 @@ jobs:
       - name: Python & MLIR Tests
         env:
           DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+          LLVM_PROFILE_FILE: ${{ github.workspace }}/build/tenstorrent-%p-%m.profraw
         run: |
           pytest -v python/tests mlir/integration -m "tenstorrent"
 
+      - name: Coverage
+        run: |
+          llvm-profdata-19 merge -sparse build/tenstorrent-*.profraw -o build/tenstorrent.profdata
+
+          OBJECTS=""
+          for so in $(find build/python build/mlir -name '_sdfg*.so'); do
+            OBJECTS="$OBJECTS -object $so"
+          done
+
+          llvm-cov-19 export $OBJECTS -instr-profile=build/tenstorrent.profdata -format=lcov > build/coverage_full.lcov
+          lcov --ignore-errors unused,empty \
+            --extract build/coverage_full.lcov \
+            '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' \
+            --output-file build/coverage.lcov
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          flag-name: tenstorrent
+          parallel: true
+          format: lcov
+          file: build/coverage.lcov
+
   finish:
-    needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux, pytorch-tests-linux]
+    needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux, pytorch-tests-linux, cuda-tests-linux, rocm-tests-linux, tenstorrent-tests-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Coveralls Finished
