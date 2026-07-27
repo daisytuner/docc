@@ -79,8 +79,6 @@ public:
         bool record_for_instrumentation = false
     );
 
-    void normalize();
-
     void schedule(const std::string& target, const std::string& category, bool remote_tuning = false);
     void schedule(const docc::target::TargetOptions& options);
 

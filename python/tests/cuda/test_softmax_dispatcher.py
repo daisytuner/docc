@@ -76,7 +76,6 @@ def compile_and_run_softmax(shape, axes, output_root: Path):
         "ml::Softmax" in json_after_simplify
     ), "SoftmaxNode was destroyed during simplify()"
 
-    sdfg.normalize()
     sdfg.validate()
 
     sdfg.schedule(opts)

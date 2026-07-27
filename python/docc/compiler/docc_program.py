@@ -185,9 +185,7 @@ class DoccProgram(ABC):
             if self.debug_dump:
                 sdfg.dump(output_folder, "py3.opt", dump_dot=True)
 
-            # Normalization for scheduling
-            if self.target != "none":
-                sdfg.normalize()
+            # TODO: when/ how to get arg_captures that can be used for successive steps
 
             if self.debug_dump or instrumentation_mode or capture_args:
                 sdfg.dump(
