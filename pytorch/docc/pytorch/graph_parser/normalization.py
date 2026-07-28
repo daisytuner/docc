@@ -106,11 +106,11 @@ class LayerNormNoTrainingParser(GraphParserModule):
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        if len(node.args) < 5:
+        if len(node.args) != 5:
             raise GraphParserError(
                 self,
                 node,
-                "Expected at least 5 arguments but got " + str(len(node.args)),
+                "Expected exactly 5 arguments but got " + str(len(node.args)),
             )
         if len(node.kwargs) != 0:
             raise GraphParserError(
