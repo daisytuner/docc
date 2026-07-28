@@ -20,9 +20,7 @@ public:
 
 class NewMapFusionPass : public sdfg::passes::Pass {
     friend class MapFusionHandler;
-    static constexpr bool dump_loop_infos = false;
-    static constexpr bool dump_graphs = true;
-    bool allow_init_hoist_;
+    LoopFusionConfig config_;
 
 public:
     struct State {
@@ -40,7 +38,8 @@ public:
         uint32_t total_fused_count() const;
     };
 
-    NewMapFusionPass(bool allow_init_hoist = true);
+    NewMapFusionPass(const LoopFusionConfig& config);
+    NewMapFusionPass();
 
     std::string name() override { return "MapFusionByDomainPass"; }
 
@@ -56,9 +55,10 @@ protected:
 
 class MapFusionHandler : public map_fusion::PatternHandler, map_fusion::MapFusionByAccessWorker {
     NewMapFusionPass::State& state_;
+    LoopFusionConfig config_;
 
 public:
-    MapFusionHandler(NewMapFusionPass::State& state, bool allow_init_hoist);
+    MapFusionHandler(const LoopFusionConfig& config, NewMapFusionPass::State& state);
 
     map_fusion::PatternHandler::MatchResult match(StructuredLoop& first, StructuredLoop& second, bool no_uses_between)
         override;

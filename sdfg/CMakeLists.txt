@@ -159,6 +159,7 @@ set(SOURCE_FILES
     src/passes/dataflow/trivial_array_elimination.cpp
     src/passes/dataflow/trivial_reference_conversion.cpp
     src/passes/debug_info_propagation.cpp
+    src/passes/debug_dump_pass.cpp
     src/passes/expansion/lib_node_expansion_context.cpp
     src/passes/expansion/library_node_expansion_pass.cpp
     src/passes/memory/allocation_management.cpp

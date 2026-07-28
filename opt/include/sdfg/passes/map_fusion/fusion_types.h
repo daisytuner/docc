@@ -6,11 +6,17 @@
 
 namespace sdfg::passes::map_fusion {
 
+struct LoopFusionConfig {
+    bool allow_init_hoist = true;
+    bool map_fusion_by_domain = true;
+    bool map_fusion_by_access = true;
+};
+
 struct FusionRegCandidate {
     std::string container;
     data_flow::Subset consumer_subset;
     std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> index_mappings;
-    bool rle = false;
+    bool integrated_rle = false;
 };
 
 typedef std::string RegId;

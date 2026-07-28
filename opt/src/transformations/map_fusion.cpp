@@ -386,18 +386,12 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     if (first_nested && second_nested) {
         // Pattern 1: Both perfectly nested — producer into consumer (original path)
         direction_ = FusionDirection::ProducerIntoConsumer;
-        if (cons_into_prod_only_) {
-            return false;
-        }
     } else if (!first_nested && second_nested) {
         // Pattern 2: Producer non-perfectly-nested, consumer perfectly nested
         direction_ = FusionDirection::ConsumerIntoProducer;
     } else {
         // Reverse Pattern 2: Producer perfectly nested, consumer non-perfectly-nested
         direction_ = FusionDirection::ProducerIntoConsumer;
-        if (cons_into_prod_only_) {
-            return false;
-        }
     }
 
     // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
@@ -592,12 +586,6 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
     }
 
-    // Get assumptions for the resolved write/read locations
-    // Include trivial bounds from types to help delinearization with symbolic strides
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    auto& producer_assumptions = assumptions_analysis.get(*producer_block_, true);
-    auto& consumer_assumptions = assumptions_analysis.get(consumer_body_->at(0), true);
-
     // Check if producer actually reads a fusion container in the dataflow.
     // If so, ProducerIntoConsumer is unsafe (original producer loop mutates the array
     // before the inlined copy reads it). Force ConsumerIntoProducer.
@@ -623,6 +611,11 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
                 return false;
             }
         }
+    }
+
+    if (cons_into_prod_only_ && direction_ != FusionDirection::ConsumerIntoProducer) {
+        // THe new mapfusion can handle all the other cases, so don't waste time doing those
+        return false;
     }
 
     // ProducerIntoConsumer only deep-copies producer_block_ into the consumer body.
@@ -681,6 +674,12 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         return false;
     }
 
+    // Get assumptions for the resolved write/read locations
+    // Include trivial bounds from types to help delinearization with symbolic strides
+    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& producer_assumptions = assumptions_analysis.get(*producer_block_, true);
+    auto& consumer_assumptions = assumptions_analysis.get(consumer_body_->at(0), true);
+
     for (auto [container, unique_subsets] : consumer_visitor.unique_subsets_per_container_) {
         auto& producer_subset = *producer_subsets.at(container);
         // For each unique consumer subset, solve index mappings and create a FusionCandidate
@@ -716,10 +715,12 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
                 return false;
             }
 
-            FusionRegCandidate candidate;
-            candidate.container = container;
-            candidate.consumer_subset = consumer_subset;
-            candidate.index_mappings = std::move(mappings);
+            FusionRegCandidate candidate{
+                .container = container,
+                .consumer_subset = consumer_subset,
+                .index_mappings = std::move(mappings),
+                .integrated_rle = true
+            };
 
             fusion_candidates_.push_back(candidate);
         }
@@ -800,6 +801,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             }
             init_hoist_ = true;
             hoist_body_ = &consumer_loops_[first_sequential - 1]->root();
+            for (auto& candidate : fusion_candidates_) {
+                candidate.integrated_rle = false;
+            }
         }
     }
 
@@ -1259,6 +1263,9 @@ bool FusionConsumerUpdateVisitor::visit(sdfg::structured_control_flow::Block& bl
             for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
                 auto& candidate = fusion_candidates_[cand_idx];
                 if (original_container != candidate.container) {
+                    continue;
+                }
+                if (!candidate.integrated_rle) {
                     continue;
                 }
                 if (memlet_subset.size() != candidate.consumer_subset.size()) {

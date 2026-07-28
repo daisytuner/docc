@@ -14,6 +14,18 @@
 
 namespace sdfg::passes::map_fusion {
 
+structured_control_flow::StructuredLoop* MapFusionByAccessWorker::Plan::consumer_target_loop() const {
+    if (this->init_hoist_) {
+        return this->consumer_loops_.at(this->consumer_loops_.size() - 2);
+    } else {
+        return this->consumer_loops_.back();
+    }
+}
+
+structured_control_flow::Sequence& MapFusionByAccessWorker::Plan::consumer_target_sequence() const {
+    return init_hoist_ ? *hoist_body_ : *consumer_body_;
+}
+
 std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusionByAccessWorker::solve_subsets(
     const data_flow::Subset& producer_subset,
     const data_flow::Subset& consumer_subset,
@@ -337,7 +349,7 @@ std::unique_ptr<MapFusionByAccessWorker::Plan> MapFusionByAccessWorker::
         // Pattern 2: Producer non-perfectly-nested, consumer perfectly nested
         state.direction_ = FusionDirection::ConsumerIntoProducer;
         DEBUG_PRINTLN(
-            "Aborting ConsumerIntoProducer still unsupported: #" + std::to_string(first.loop->element_id()) + "<- #" +
+            "Aborting ConsumerIntoProducer still unsupported: #" + std::to_string(first.loop->element_id()) + " <- #" +
             std::to_string(second.loop->element_id())
         );
         return {}; // unsupported for now. to different
@@ -691,7 +703,14 @@ std::unique_ptr<MapFusionByAccessWorker::Plan> MapFusionByAccessWorker::
         }
     }
 
-    state.domains_match = true;
+    state.domains_match = domains_match;
+    if (!state.init_hoist_ && (!domains_match || state.direction_ != FusionDirection::ProducerIntoConsumer)) {
+        // we will be copying a loop, so we can do our integrated RLE to simplify memory accesses
+        for (auto& candidate : state.fusion_candidates_) {
+            //
+            candidate.integrated_rle = true;
+        }
+    }
 
     // Criterion: At least one valid fusion candidate
     if (!state.fusion_candidates_.empty()) {
@@ -715,24 +734,23 @@ ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& 
     auto& builder = this->builder();
     auto& sdfg = builder.subject();
 
-    DEBUG_PRINTLN(
-        "Fusing " << plan.first.element_id() << " - " << plan.second.element_id() << " by "
-                  << static_cast<int>(plan.direction_)
-    );
-
     // Pattern 1 + Reverse Pattern 2: Inline producer blocks into consumer's read body
     auto& first_dataflow = plan.producer_block_->dataflow();
 
     // For each fusion candidate, create a temp and insert a producer block
     std::vector<std::string> candidate_temps;
 
+    int rle_count = 0;
     for (size_t cand_idx = 0; cand_idx < plan.fusion_candidates_.size(); ++cand_idx) {
         auto& candidate = plan.fusion_candidates_[cand_idx];
 
         auto& container_type = sdfg.type(candidate.container);
         types::Scalar tmp_type(container_type.primitive_type());
         std::string temp_name;
-        if (!plan.init_hoist_) { // TODO do we need to, or can we let RLE handle this?
+        if (candidate.integrated_rle) {
+            ++rle_count;
+            // if we are forced to create a copy of the prod loop, then we can do integrated RLE
+            // as it will reduce how many arguments we need to update
             // Case 1: scalarize the streamed element into a private temp.
             temp_name = builder.find_new_name("_fused_tmp");
             builder.add_container(temp_name, tmp_type);
@@ -742,7 +760,7 @@ ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& 
         // Insert the producer block at the beginning of the host sequence:
         //  - Case 1 (stream):     consumer_body_ = innermost sequential (reduction) loop body.
         //  - Case 2 (init-hoist): hoist_body_   = outer parallel-band body, before that loop.
-        auto& host_seq = plan.init_hoist_ ? *plan.hoist_body_ : *plan.consumer_body_;
+        auto& host_seq = plan.consumer_target_sequence();
         auto& first_child = host_seq.at(0);
         auto& new_block = builder.add_block_before(host_seq, first_child);
         structured_control_flow::AssignmentBlock* init_assignment_block = nullptr;
@@ -754,7 +772,7 @@ ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& 
             node_mapping[&node] = &builder.copy_node(new_block, node);
             auto* copied = node_mapping[&node];
             if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(copied)) {
-                if (!plan.init_hoist_ && access_node->data() == candidate.container) {
+                if (access_node->data() == candidate.container && candidate.integrated_rle) {
                     // Case 1: redirect the producer's array write to the private scalar.
                     access_node->data(temp_name);
                 } else if (access_node->data() == plan.first.indvar()->get_name()) {
@@ -820,10 +838,10 @@ ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& 
                 new_subset.push_back(new_dim);
             }
 
-            // Case 1: the producer's array write becomes a scalar write (empty subset).
-            // Case 2: keep the remapped array subset so the init writes the accumulator.
+            // Integrated RLE: the producer's array write becomes a scalar write (empty subset).
+            // Default: keep the remapped array subset so the init writes the accumulator.
             auto* dst_access = dynamic_cast<data_flow::AccessNode*>(&dst_node);
-            if (!plan.init_hoist_ && dst_access != nullptr && dst_access->data() == candidate.container &&
+            if (dst_access != nullptr && dst_access->data() == candidate.container && candidate.integrated_rle &&
                 first_dataflow.in_degree(*dst_access) > 0) {
                 new_subset.clear();
                 base_type = &tmp_type;
@@ -842,47 +860,51 @@ ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& 
         }
     }
 
-    // Case 1 only: rewrite consumer reads of the fused arrays to the scalar temps.
-    // Case 2 leaves the reduction body untouched (it keeps reading/writing the accumulator,
-    // now pre-initialized by the hoisted init block).
-    if (!plan.init_hoist_) {
+    DEBUG_PRINTLN(
+        "Fusing loop stack by-access (#"
+        << plan.first.element_id() << " | #" << plan.producer_loops_.back()->element_id() << " -> #"
+        << plan.second.element_id() << " | #" << plan.consumer_loops_.back()->element_id()
+        << (plan.init_hoist_ ? ", redu-init" : "") << (plan.domains_match ? ", domain-match" : "") << ", "
+        << plan.fusion_candidates_.size() << " fRegs, " << rle_count << " RLEs"
+        << ")"
+    );
+
+    // Integrated RLE: rewrite consumer reads of the fused arrays to the scalar temps.
+    if (rle_count) {
         size_t num_producer_blocks = plan.fusion_candidates_.size();
         transformations::FusionConsumerUpdateVisitor update_visitor(builder, plan.fusion_candidates_, candidate_temps);
         update_visitor.dispatch_partial_sequence(*plan.consumer_body_, num_producer_blocks, plan.consumer_body_->size());
+    }
 
-        auto& ana = get_loop_analysis();
+    auto& ana = get_loop_analysis();
+    auto& first_inner_info = ana.loop_info_local(plan.producer_loops_.back());
 
-        // TODO side effects is not correct, but we also do not check it before fusing, so does not matter for now
-        ana.added_local_contents(plan.consumer_loops_.back(), false, true);
+    ana.added_local_contents(
+        plan.consumer_loops_.back(),
+        first_inner_info.contains_side_effects,
+        first_inner_info.contains_non_perfectly_nested
+    );
 
-        // innermost loops had to be leaf
-        auto first_current = get_fuse_candidate(*plan.producer_loops_.back());
-        auto second_current = get_fuse_candidate(*plan.consumer_loops_.back());
-        update_copied_leaf_contents_from_first_to_second(plan, first_current, second_current);
+    // innermost loops had to be leaf
+    auto first_current = get_fuse_candidate(*plan.producer_loops_.back());
+    auto second_current = get_fuse_candidate(*plan.consumer_target_loop());
 
-        return {
-            .pattern_result = {.removed_first = false, .visit_second_body = false, .second_root_replacement = nullptr},
-            .fused = true
-        };
-    } else {
-        auto& ana = get_loop_analysis();
+    update_copied_leaf_contents_from_first_to_second(plan, first_current, second_current);
 
-        auto first_current = get_fuse_candidate(*plan.producer_loops_.back());
-        auto second_current = get_fuse_candidate(*plan.consumer_loops_.at(plan.consumer_loops_.size() - 2));
-        update_copied_leaf_contents_from_first_to_second(plan, first_current, second_current);
-
+    bool removed_first = false;
+    if ((!rle_count && plan.domains_match) || plan.init_hoist_) {
         ana.removed_loop(&plan.first);
 
-        // Case 2: the hoisted init copy fully overwrites the accumulator before the
-        // reduction reads it, so the original init producer map is redundant. Unlike
-        // Case 1, the accumulator array stays live, so DCE would not reclaim it — remove
-        // the producer explicitly (mirrors how ConsumerIntoProducer removes its loop).
+        // We have moved all the relevant contents of producer loop, including any potential array writes, so
         builder.remove_from_parent(plan.first);
-        return {
-            .pattern_result = {.removed_first = true, .visit_second_body = false, .second_root_replacement = nullptr},
-            .fused = true
-        };
+        removed_first = true;
     }
+
+    return {
+        .pattern_result =
+            {.removed_first = removed_first, .visit_second_body = false, .second_root_replacement = nullptr},
+        .fused = true
+    };
 }
 
 ComplexFusionResult MapFusionByAccessWorker::apply_consumer_into_producer(Plan& plan) {

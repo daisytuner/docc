@@ -14,6 +14,10 @@ namespace sdfg::passes::map_fusion {
 
 static const symbolic::Symbol lower_indvar_placeholder = symbolic::symbol("__lower_it");
 
+static inline constexpr bool DUMP_ASSUMPTIONS = false;
+static inline constexpr bool DUMP_LOOP_INFOS = false;
+static inline constexpr bool DUMP_GRAPHS = true;
+
 static bool vectors_of_expressions_match(
     const std::vector<symbolic::Expression>& a,
     const std::vector<symbolic::Expression>& b,
@@ -220,8 +224,6 @@ FusionLoopCandidate* NewMapFusionPass::State::get_parent(FusionLoopCandidate& cu
 
 uint32_t NewMapFusionPass::State::total_fused_count() const { return fused_by_domain_count + fused_by_access_count; }
 
-NewMapFusionPass::NewMapFusionPass(bool allow_init_hoist) : allow_init_hoist_(allow_init_hoist) {}
-
 std::ostream& operator<<(std::ostream& os, const symbolic::Expression& expr) {
     if (!expr.is_null()) {
         os << expr->__str__();
@@ -258,6 +260,10 @@ std::ostream& operator<<(std::ostream& os, const symbolic::Assumptions& ass) {
     return os;
 }
 
+NewMapFusionPass::NewMapFusionPass(const LoopFusionConfig& config) : config_(config) {}
+
+NewMapFusionPass::NewMapFusionPass() = default;
+
 bool NewMapFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto loop_ana = std::make_unique<analysis::LoopAnalysis>(builder.subject());
     loop_ana->run(analysis_manager);
@@ -291,14 +297,14 @@ bool NewMapFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysi
     indirect_access_finder.dispatch(builder.subject().root());
 
     const std::string* dir = nullptr;
-    if (dump_loop_infos) {
+    if (DUMP_LOOP_INFOS) {
         dir = builder.subject().metadata_if_exists("output_dir");
         if (dir) {
             state.loop_analysis->dump_to_file(std::filesystem::path(*dir) / "loop_infos.pre-fusion.json");
         }
     }
 
-    MapFusionHandler handler(state, allow_init_hoist_);
+    MapFusionHandler handler(config_, state);
 
     NeighboringPatternVisitor v(handler);
     v.dispatch(builder.subject().root());
@@ -320,8 +326,8 @@ const symbolic::Assumption* NewMapFusionPass::
     return nullptr;
 }
 
-MapFusionHandler::MapFusionHandler(NewMapFusionPass::State& state, bool allow_init_hoist)
-    : state_(state), MapFusionByAccessWorker(allow_init_hoist) {}
+MapFusionHandler::MapFusionHandler(const LoopFusionConfig& config, NewMapFusionPass::State& state)
+    : config_(config), state_(state), MapFusionByAccessWorker(config.allow_init_hoist) {}
 
 PatternHandler::MatchResult MapFusionHandler::fuse_contents(
     ControlFlowNode* first_top,
@@ -393,13 +399,13 @@ PatternHandler::MatchResult MapFusionHandler::fuse_contents(
         removed_first = true;
     }
 
-    if constexpr (NewMapFusionPass::dump_graphs) {
+    if constexpr (DUMP_GRAPHS) {
         auto dir = state_.builder.subject().metadata_if_exists("output_dir");
         if (dir) {
             std::filesystem::path pdir = *dir;
             visualizer::DotVisualizer::writeToFile(
                 state_.builder.subject(),
-                pdir / ("map_fusion_by_domain_pass_dump_" + std::to_string(state_.fused_by_domain_count++) + "_" +
+                pdir / ("map_fusion_by_domain_pass_dump_" + std::to_string(state_.fused_by_domain_count) + "_" +
                         std::to_string(second_innermost->loop->element_id()) + ".dot")
             );
         }
@@ -434,7 +440,9 @@ void MapFusionHandler::update_copied_leaf_contents_from_first_to_second(
 
     update_candidate_args_up(first_top, first_current, second_current, [&](auto& name, auto& source_arg, auto& target_args) {
         auto cand_it = cand_map.find(name);
-        if (cand_it == cand_map.end()) {
+        if (cand_it != cand_map.end() && cand_it->second->integrated_rle) {
+            // was RLEd, no longer exists
+        } else {
             auto it = target_args.find(name);
             if (it != target_args.end()) {
                 auto& second_arg = it->second;
@@ -444,8 +452,6 @@ void MapFusionHandler::update_copied_leaf_contents_from_first_to_second(
             } else {
                 auto [it, fresh] = target_args.emplace(name, source_arg); // copy over
             }
-        } else {
-            // was remapped
         }
     });
 }
@@ -478,8 +484,8 @@ PatternHandler::MatchResult MapFusionHandler::match(StructuredLoop& first, Struc
         return {};
     }
 
-    auto first_max_stack_depth = first_info.map_stack_depth - 1;
-    auto second_max_stack_depth = second_info.map_stack_depth - 1;
+    int32_t first_max_stack_depth = first_info.map_stack_depth - 1;
+    int32_t second_max_stack_depth = second_info.map_stack_depth - 1;
     bool more_first = true;
     bool more_second = true;
     bool fusing_option = first_next->is_by_domain_candidate && second_next->is_by_domain_candidate;
@@ -549,11 +555,11 @@ PatternHandler::MatchResult MapFusionHandler::match(StructuredLoop& first, Struc
             );
             return {};
         }
-        if (!nested_check.subset_mismatch) {
+        if (!nested_check.subset_mismatch && config_.map_fusion_by_domain) {
             DEBUG_PRINTLN(
-                "Fusing map stack (" << last_matched_level + 1 << " lvls): #" << first.element_id() << " | #"
-                                     << first_current->loop->element_id() << ", #" << second.element_id() << " | #"
-                                     << second_current->loop->element_id()
+                "Fusing loop stack by-domain (" << last_matched_level + 1 << " lvls): #" << first.element_id() << " | #"
+                                                << first_current->loop->element_id() << " -> #" << second.element_id()
+                                                << " | #" << second_current->loop->element_id()
             );
 
             auto& target_root = second_current->loop->root();
@@ -561,9 +567,13 @@ PatternHandler::MatchResult MapFusionHandler::match(StructuredLoop& first, Struc
         }
     }
 
-    // we did not find an absolute blocker for fusing, but simple fusion by domain also did not work out, so try the
-    // fusion-by-access
-    return try_complex_fuse_producer_into_consumer(*first_top, *second_top, no_uses_between, domains_match);
+    if (config_.map_fusion_by_access) {
+        // we did not find an absolute blocker for fusing, but simple fusion by domain also did not work out, so try the
+        // fusion-by-access
+        return try_complex_fuse_producer_into_consumer(*first_top, *second_top, no_uses_between, domains_match);
+    } else {
+        return {};
+    }
 }
 
 PatternHandler::MatchResult MapFusionHandler::try_complex_fuse_producer_into_consumer(
@@ -736,7 +746,8 @@ MapFusionHandler::InOutCheckResult MapFusionHandler::check_ins_outs(
                     // conflict (between vars unproved, fuse-by-access might find a solution with conflicting subsets)
                     continue;
                 }
-            } else if (prod_meta.arg.is_explicit_input && cons_meta.arg.is_explicit_input) {
+            } else if (prod_meta.arg.is_ptr && cons_meta.arg.is_ptr && prod_meta.arg.is_explicit_input &&
+                       cons_meta.arg.is_explicit_input) {
                 overlap = true;
                 continue;
             }
@@ -870,8 +881,10 @@ void FusionLoopCandidate::replace(const symbolic::ExpressionMapping& mapping) {
     }
     symbolic::replace_indvars_in_assumptions(assumptions, mapping);
 
-    std::cout << "Updated #" << this->loop->element_id() << " to:" << std::endl;
-    std::cout << this->assumptions << std::endl;
+    if constexpr (DUMP_ASSUMPTIONS) {
+        std::cout << "Updated #" << this->loop->element_id() << " to:" << std::endl;
+        std::cout << this->assumptions << std::endl;
+    }
 }
 
 NeighboringPatternVisitor::NeighboringPatternVisitor(PatternHandler& handler) : handler_(handler) {}

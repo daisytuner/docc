@@ -41,6 +41,10 @@ protected:
         // keeps writing the accumulator array, instead of being scalarized and inlined
         // element-by-element inside the reduction loop (Case 1).
         bool init_hoist_ = false;
+        structured_control_flow::StructuredLoop* consumer_target_loop() const;
+
+        structured_control_flow::Sequence& consumer_target_sequence() const;
+
         // The outer parallel-band body that hosts the hoisted init (Case 2 only).
         structured_control_flow::Sequence* hoist_body_ = nullptr;
         // The loops being fused match domains exactly, so we can remove the original loop, if we do

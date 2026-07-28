@@ -33,7 +33,7 @@ public:
 // A VisitorPass-style wrapper that forwards the init-hoist flag to the visitor.
 class MapFusionPass : public Pass {
     bool allow_init_hoist_;
-    bool cons_into_prod_only_ = true;
+    bool cons_into_prod_only_;
 
 public:
     MapFusionPass(bool allow_init_hoist = true, bool cons_into_prod_only = true)

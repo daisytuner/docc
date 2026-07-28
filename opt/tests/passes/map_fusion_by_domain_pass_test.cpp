@@ -146,7 +146,7 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    NewMapFusionPass pass;
+    NewMapFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
     pass.run_pass(builder, analysis_manager);
 
     auto& loops2 = analysis_manager.get<analysis::LoopAnalysis>();
@@ -289,7 +289,7 @@ TEST(MapFusionByDomainTest, FindNonStackedNestedConflicts) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    NewMapFusionPass pass;
+    NewMapFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
     pass.run_pass(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.after");
@@ -362,7 +362,7 @@ TEST(MapFusionByDomainTest, DoNotFuseTransposedProducerConsumer) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    NewMapFusionPass pass;
+    NewMapFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
     pass.run_pass(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.after");
@@ -460,7 +460,7 @@ TEST(MapFusionByDomainTest, DoNotFuseTransposedSharedBand_Segformer) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    NewMapFusionPass pass;
+    NewMapFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
     pass.run_pass(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.after");

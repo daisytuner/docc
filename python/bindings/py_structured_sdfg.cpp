@@ -338,7 +338,7 @@ void PyStructuredSDFG::simplify() {
         dump_debug("py3.1.pre-fusion");
 
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
-        sdfg::passes::map_fusion::NewMapFusionPass map_fusion_by_domain_pass;
+        sdfg::passes::map_fusion::NewMapFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
 
         dump_debug("py3.2.post-fusion");
@@ -359,7 +359,7 @@ void PyStructuredSDFG::simplify() {
 
     // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
     // normalize() map-fusion run so loop distribution and fusion do not fight)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
+    auto map_fusion = sdfg::passes::normalization::map_fusion(false, false);
     map_fusion.run(builder_opt, analysis_manager);
 }
 

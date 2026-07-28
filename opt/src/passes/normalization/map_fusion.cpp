@@ -41,12 +41,12 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                 i++;
                 continue;
             }
-            transformations::MapFusion transformation(*first, *second, true, allow_init_hoist_);
+            transformations::MapFusion transformation(*first, *second, true, allow_init_hoist_, cons_into_prod_only_);
             if (transformation.can_be_applied(builder_, analysis_manager_)) {
-                auto first_name = first->indvar()->get_name();
-                auto second_name = second->indvar()->get_name();
+                auto first_id = first->element_id();
+                auto second_id = second->element_id();
                 transformation.apply(builder_, analysis_manager_);
-                DEBUG_PRINTLN("Applied MapFusion to maps " + first_name + " and " + second_name);
+                DEBUG_PRINTLN("Applied MapFusion to #" + std::to_string(first_id) + " - #" + std::to_string(second_id));
                 applied = true;
             }
         } else if (i + 2 < node.size()) {
@@ -60,11 +60,11 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                     transformations::MapFusion
                         transformation(*first, *second, false, allow_init_hoist_, cons_into_prod_only_);
                     if (transformation.can_be_applied(builder_, analysis_manager_)) {
-                        auto first_name = first->indvar()->get_name();
-                        auto second_name = second->indvar()->get_name();
+                        auto first_id = first->element_id();
+                        auto second_id = second->element_id();
                         transformation.apply(builder_, analysis_manager_);
                         DEBUG_PRINTLN(
-                            "Applied MapFusion to map " + first_name + " and loop " + second_name +
+                            "Applied MapFusion to #" + std::to_string(first_id) + " - #" + std::to_string(second_id) +
                             " with intermediate malloc block"
                         );
                         applied = true;

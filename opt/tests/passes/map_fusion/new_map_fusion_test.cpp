@@ -1841,10 +1841,14 @@ TEST(NewMapFusionTest, Dataflow_StencilConsumer_MultipleIndexMappings) {
     EXPECT_EQ(memlet_left.subset().size(), 1);
     EXPECT_EQ(memlet_right.subset().size(), 1);
 
+    dump_sdfg(builder.subject(), "0.init");
+
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::map_fusion::NewMapFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Stencil consumer with different index patterns should be fusible";
+
+    dump_sdfg(builder.subject(), "1.fused");
 
     // After fusion: both access nodes should point to DIFFERENT temps
     EXPECT_TRUE(t_in_left.data().find("_fused_tmp") != std::string::npos)
@@ -3788,7 +3792,7 @@ TEST(NewMapFusionTest, SameDomain_ScenarioB_ConsumerReadsWritesT) {
 
     // Both maps should still exist (DCE removes the dead producer later)
     auto& new_sdfg = builder.subject();
-    EXPECT_EQ(new_sdfg.root().size(), 2) << "Both maps should remain (DCE removes dead producer later)";
+    EXPECT_EQ(new_sdfg.root().size(), 1) << "Same Domain, should move instead of copy";
 
     // Consumer's write to T should be preserved (not renamed to temp)
     auto* cons_block = dyn_cast<structured_control_flow::Block*>(&map2.root().at(1));
@@ -3811,7 +3815,116 @@ TEST(NewMapFusionTest, SameDomain_ScenarioB_ConsumerReadsWritesT) {
             reads_fused_tmp = true;
         }
     }
-    EXPECT_TRUE(reads_fused_tmp) << "Consumer should read from _fused_tmp (T read replaced)";
+    EXPECT_FALSE(reads_fused_tmp) << "Move is only generally valid, if writes remain the same";
+}
+
+TEST(NewMapFusionTest, PartialDomain_ScenarioB_ConsumerReadsWritesT) {
+    // Scenario B: Producer only writes T, consumer reads+writes T.
+    // Map(i, 0:N): T[i] = A[i] + 1.0
+    // Map(k, 0:N): T[k] = T[k] * B[k]
+    //
+    // Both directions are safe. Default (both perfectly nested) is ProducerIntoConsumer.
+    //
+    // Expected result (ProducerIntoConsumer):
+    //   Map(i, 0:N): T[i] = A[i] + 1.0   (original, DCE removes later)
+    //   Map(k, 0:N):
+    //     _fused_tmp = A[k] + 1.0          (inlined producer)
+    //     T[k] = _fused_tmp * B[k]         (consumer reads temp, writes T)
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Array array_desc(float_desc, {symbolic::symbol("N")});
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("k", sym_desc);
+    builder.add_container("A", array_desc, true);
+    builder.add_container("B", array_desc, true);
+    builder.add_container("T", array_desc);
+
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+
+    // Producer: Map(i, 0:N) { T[i] = A[i] + 1.0 }
+    auto& map1 = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        schedule
+    );
+    auto& block1 = builder.add_block(map1.root());
+    auto& a_read = builder.add_access(block1, "A");
+    auto& one_const = builder.add_constant(block1, "1.0", float_desc);
+    auto& t_write = builder.add_access(block1, "T");
+    auto& add_tasklet = builder.add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block1, a_read, add_tasklet, "_in1", {symbolic::symbol("i")}, array_desc);
+    builder.add_computational_memlet(block1, one_const, add_tasklet, "_in2", {});
+    builder.add_computational_memlet(block1, add_tasklet, "_out", t_write, {symbolic::symbol("i")}, array_desc);
+
+    // Consumer: Map(k, 0:N) { T[k] = T[k] * B[k] }
+    auto& map2 = builder.add_map(
+        root,
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::symbol("N")),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1)),
+        schedule
+    );
+    auto& block2 = builder.add_block(map2.root());
+    auto& t_read_cons = builder.add_access(block2, "T");
+    auto& b_read = builder.add_access(block2, "B");
+    auto& t_write_cons = builder.add_access(block2, "T");
+    auto& mul_tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block2, t_read_cons, mul_tasklet, "_in1", {symbolic::symbol("k")}, array_desc);
+    builder.add_computational_memlet(block2, b_read, mul_tasklet, "_in2", {symbolic::symbol("k")}, array_desc);
+    builder.add_computational_memlet(block2, mul_tasklet, "_out", t_write_cons, {symbolic::symbol("k")}, array_desc);
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::map_fusion::NewMapFusionPass map_fusion_pass;
+    EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
+        << "Scenario B: producer writes T, consumer reads+writes T — should be fusible";
+
+    dump_sdfg(builder.subject(), "1.fused");
+
+    // Producer only writes T (no read AccessNode in the dataflow), so direction stays
+    // ProducerIntoConsumer. The inlined producer copy in the consumer body reads A (not T),
+    // so no double-mutation issue. Consumer's write to T is preserved.
+    // map2 should now have 2 blocks (inlined producer + consumer)
+    EXPECT_EQ(map2.root().size(), 2) << "Consumer map should have 2 blocks (inlined producer + modified consumer)";
+
+    // Both maps should still exist (DCE removes the dead producer later)
+    auto& new_sdfg = builder.subject();
+    EXPECT_EQ(new_sdfg.root().size(), 2) << "Not same Domain, needed to create a copy";
+
+    // Consumer's write to T should be preserved (not renamed to temp)
+    auto* cons_block = dyn_cast<structured_control_flow::Block*>(&map2.root().at(1));
+    ASSERT_NE(cons_block, nullptr);
+    bool writes_t = false;
+    for (auto& node : cons_block->dataflow().nodes()) {
+        auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+        if (access != nullptr && access->data() == "T" && cons_block->dataflow().in_degree(*access) > 0) {
+            writes_t = true;
+        }
+    }
+    EXPECT_TRUE(writes_t) << "Consumer should still write to T (not renamed to temp)";
+
+    // Consumer's read of T should be renamed to _fused_tmp
+    bool reads_fused_tmp = false;
+    for (auto& node : cons_block->dataflow().nodes()) {
+        auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+        if (access != nullptr && access->data().find("_fused_tmp") != std::string::npos &&
+            cons_block->dataflow().out_degree(*access) > 0) {
+            reads_fused_tmp = true;
+        }
+    }
+    EXPECT_TRUE(reads_fused_tmp) << "Move is only generally valid, if writes remain the same";
 }
 
 TEST(NewMapFusionTest, SameDomain_ScenarioC_BothReadWriteT) {
@@ -4036,7 +4149,7 @@ TEST(NewMapFusionTest, InitIntoReduction_Hoisted) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::NewMapFusionPass map_fusion_pass(true);
+    passes::map_fusion::NewMapFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     // Case 2 (init-into-reduction): the zero-init of the accumulator T is loop-invariant
@@ -4074,7 +4187,173 @@ TEST(NewMapFusionTest, InitIntoReduction_Hoisted) {
     EXPECT_EQ(dyn_cast<structured_control_flow::Map*>(preserved), nullptr); // still a sequential For
 }
 
-TEST(NewMapFusionTest, ElementwiseIntoReduction_Fused) {
+TEST(NewMapFusionTest, PartialDomain_ElementwiseIntoReduction_Fused) {
+    // A fully-parallel elementwise producer streamed element-by-element into a reduction
+    // consumer must fuse (e.g. softmax scale -> max). The producer writes a distinct full
+    // tensor S that the reduction reads at the inner loop index; nothing accumulates into S.
+    // Map(i, 0:N)  { Map(j, 0:M) { Map(k, 0:K) { S[i,j,k] = A[i,j,k] * c } } }
+    // Map(i2, 0:N) { Map(j2, 0:M) { For(k2, 0:K) { R[i2,j2] = R[i2,j2] <op> S[i2,j2,k2] } } }
+    //
+    // S is read at [i2,j2,k2] (depends on the inner For indvar k2) and is never written by
+    // the consumer, so inlining the scale into the reduction loop is sound and eliminates S.
+    // (The reduction tasklet op is irrelevant to fusion legality; fp_add stands in for max/sum.)
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Array array_2d(float_desc, symbolic::mul(symbolic::symbol("N"), symbolic::symbol("M")));
+    types::Array array_3d(
+        float_desc, symbolic::mul(symbolic::symbol("N"), symbolic::mul(symbolic::symbol("M"), symbolic::symbol("K")))
+    );
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("K", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+    builder.add_container("i2", sym_desc);
+    builder.add_container("j2", sym_desc);
+    builder.add_container("k2", sym_desc);
+    builder.add_container("A", array_3d, true);
+    builder.add_container("S", array_3d);
+    builder.add_container("R", array_2d);
+
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+
+    auto subset_3d = [&](const std::string& a, const std::string& b, const std::string& c) {
+        return data_flow::Subset{symbolic::add(
+            symbolic::symbol(c),
+            symbolic::
+                add(symbolic::mul(symbolic::symbol("K"), symbolic::symbol(b)),
+                    symbolic::mul(symbolic::symbol("K"), symbolic::mul(symbolic::symbol("M"), symbolic::symbol(a))))
+        )};
+    };
+    auto subset_2d = [&](const std::string& a, const std::string& b) {
+        return data_flow::Subset{
+            symbolic::add(symbolic::symbol(b), symbolic::mul(symbolic::symbol("M"), symbolic::symbol(a)))
+        };
+    };
+
+    // Producer: Map(i) { Map(j) { Map(k) { S[i,j,k] = A[i,j,k] * c } } }
+    auto& map1_outer = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map1_mid = builder.add_map(
+        map1_outer.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map1_inner = builder.add_map(
+        map1_mid.root(),
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::symbol("K")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1)),
+        schedule
+    );
+    auto& scale_block = builder.add_block(map1_inner.root());
+    auto& a_read = builder.add_access(scale_block, "A");
+    auto& scale_const = builder.add_constant(scale_block, "2.0", float_desc);
+    auto& s_write = builder.add_access(scale_block, "S");
+    auto& mul_tasklet = builder.add_tasklet(scale_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(scale_block, a_read, mul_tasklet, "_in1", subset_3d("i", "j", "k"), array_3d);
+    builder.add_computational_memlet(scale_block, scale_const, mul_tasklet, "_in2", {});
+    builder.add_computational_memlet(scale_block, mul_tasklet, "_out", s_write, subset_3d("i", "j", "k"), array_3d);
+
+    // Consumer: Map(i2) { Map(j2) { For(k2) { R[i2,j2] = R[i2,j2] + S[i2,j2,k2] } } }
+    auto& map2_outer = builder.add_map(
+        root,
+        symbolic::symbol("i2"),
+        symbolic::Lt(symbolic::symbol("i2"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i2"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map2_inner = builder.add_map(
+        map2_outer.root(),
+        symbolic::symbol("j2"),
+        symbolic::Lt(symbolic::symbol("j2"), symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j2"), symbolic::integer(1)),
+        schedule
+    );
+    auto& for_k = builder.add_for(
+        map2_inner.root(),
+        symbolic::symbol("k2"),
+        symbolic::Lt(symbolic::symbol("k2"), symbolic::symbol("K")),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("k2"), symbolic::integer(1))
+    );
+    auto& reduce_block = builder.add_block(for_k.root());
+    auto& r_read = builder.add_access(reduce_block, "R");
+    auto& s_read = builder.add_access(reduce_block, "S");
+    auto& r_write = builder.add_access(reduce_block, "R");
+    auto& add_tasklet = builder.add_tasklet(reduce_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(reduce_block, r_read, add_tasklet, "_in1", subset_2d("i2", "j2"), array_2d);
+    builder.add_computational_memlet(reduce_block, s_read, add_tasklet, "_in2", subset_3d("i2", "j2", "k2"), array_3d);
+    builder.add_computational_memlet(reduce_block, add_tasklet, "_out", r_write, subset_2d("i2", "j2"), array_2d);
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::map_fusion::NewMapFusionPass map_fusion_pass;
+    EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.fused");
+
+    // Verify the scale producer was inlined INSIDE the reduction For loop (streamed
+    // per k2 iteration), scalarized through a _fused_tmp temporary, and that the
+    // reduction body no longer references the materialized array S.
+    auto& fused_body = for_k.root();
+    ASSERT_EQ(fused_body.size(), 2u); // inlined scale block, then the original reduce block
+
+    std::unordered_set<std::string> reads_in_for;
+    std::unordered_set<std::string> writes_in_for;
+    for (size_t bi = 0; bi < fused_body.size(); ++bi) {
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&fused_body.at(bi));
+        ASSERT_NE(blk, nullptr);
+        auto& df = blk->dataflow();
+        for (auto& node : df.nodes()) {
+            auto* acc = dynamic_cast<data_flow::AccessNode*>(&node);
+            if (acc == nullptr) {
+                continue;
+            }
+            if (df.in_degree(*acc) > 0) {
+                writes_in_for.insert(acc->data());
+            }
+            if (df.out_degree(*acc) > 0) {
+                reads_in_for.insert(acc->data());
+            }
+        }
+    }
+    // S (the big intermediate) is fully scalarized away inside the fused loop.
+    EXPECT_EQ(reads_in_for.count("S"), 0u);
+    EXPECT_EQ(writes_in_for.count("S"), 0u);
+    // The inlined scale now reads A directly inside the reduction loop.
+    EXPECT_EQ(reads_in_for.count("A"), 1u);
+    // A fresh per-element scalar temp carries the streamed value.
+    bool has_fused_tmp = false;
+    for (const auto& w : writes_in_for) {
+        if (w.rfind("_fused_tmp", 0) == 0) {
+            has_fused_tmp = true;
+        }
+    }
+    EXPECT_TRUE(has_fused_tmp);
+}
+
+TEST(NewMapFusionTest, SameDomain_ElementwiseIntoReduction_Fused) {
     // A fully-parallel elementwise producer streamed element-by-element into a reduction
     // consumer must fuse (e.g. softmax scale -> max). The producer writes a distinct full
     // tensor S that the reduction reads at the inner loop index; nothing accumulates into S.
@@ -4225,19 +4504,13 @@ TEST(NewMapFusionTest, ElementwiseIntoReduction_Fused) {
             }
         }
     }
-    // S (the big intermediate) is fully scalarized away inside the fused loop.
-    EXPECT_EQ(reads_in_for.count("S"), 0u);
-    EXPECT_EQ(writes_in_for.count("S"), 0u);
+    // S should be alive, because we cover the same domain, so can move the loop instead of copy it
+    EXPECT_EQ(reads_in_for.count("S"), 1u);
+    EXPECT_EQ(writes_in_for.count("S"), 1u);
     // The inlined scale now reads A directly inside the reduction loop.
     EXPECT_EQ(reads_in_for.count("A"), 1u);
-    // A fresh per-element scalar temp carries the streamed value.
-    bool has_fused_tmp = false;
-    for (const auto& w : writes_in_for) {
-        if (w.rfind("_fused_tmp", 0) == 0) {
-            has_fused_tmp = true;
-        }
-    }
-    EXPECT_TRUE(has_fused_tmp);
+    EXPECT_EQ(reads_in_for.count("R"), 1u);
+    EXPECT_EQ(writes_in_for.count("R"), 1u);
 }
 
 TEST(NewMapFusionTest, ConsumerHasMoreDimensions) {
@@ -4346,4 +4619,344 @@ TEST(NewMapFusionTest, ConsumerHasMoreDimensions) {
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
+}
+
+TEST(NewMapFusionTest, Chained_FuseByAccess) {
+    // 3 loops to test metadata is updated
+    // Map(i, 0:N) { B[i] = A[i] }
+    // Map(j, 1:N) { C[j] = B[j] }
+    // Map(k, 1:N) { D[k] = C[j] }
+    // 3rd map must have same domain as 2nd, because by-access cannot fuse multi-blocks yet
+    // should be able to fuse all 3 loops
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Array array_1d(float_desc, symbolic::symbol("N"));
+    types::Array array_2d(float_desc, symbolic::mul(symbolic::symbol("N"), symbolic::symbol("M")));
+    types::Array array_3d(
+        float_desc, symbolic::mul(symbolic::symbol("N"), symbolic::mul(symbolic::symbol("M"), symbolic::symbol("K")))
+    );
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+    builder.add_container("i2", sym_desc);
+    builder.add_container("j2", sym_desc);
+    builder.add_container("k2", sym_desc);
+    builder.add_container("i3", sym_desc);
+    builder.add_container("j3", sym_desc);
+    builder.add_container("k3", sym_desc);
+    builder.add_container("A", array_3d, true);
+    builder.add_container("B", array_3d, true);
+    builder.add_container("C", array_3d, true);
+    builder.add_container("D", array_3d, true);
+
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+
+    // Producer: Map(i) { Map(j) { T[i*M+j] = 0 } }
+    auto& map0_outer = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map0_block = builder.add_block(map0_outer.root());
+    auto& map0_a_read = builder.add_access(map0_block, "A");
+    auto& map0_b_write = builder.add_access(map0_block, "B");
+    auto& map0_assign_tasklet = builder.add_tasklet(map0_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(map0_block, map0_a_read, map0_assign_tasklet, "_in", {symbolic::symbol("i")}, array_1d);
+    builder
+        .add_computational_memlet(map0_block, map0_assign_tasklet, "_out", map0_b_write, {symbolic::symbol("i")}, array_1d);
+
+    auto& map1_outer = builder.add_map(
+        root,
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map1_block = builder.add_block(map1_outer.root());
+    auto& map1_a_read = builder.add_access(map1_block, "B");
+    auto& map1_b_write = builder.add_access(map1_block, "C");
+    auto& map1_assign_tasklet = builder.add_tasklet(map1_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(map1_block, map1_a_read, map1_assign_tasklet, "_in", {symbolic::symbol("j")}, array_1d);
+    builder
+        .add_computational_memlet(map1_block, map1_assign_tasklet, "_out", map1_b_write, {symbolic::symbol("j")}, array_1d);
+
+    auto& map2_outer = builder.add_map(
+        root,
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::symbol("N")),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map2_block = builder.add_block(map2_outer.root());
+    auto& map2_c_read = builder.add_access(map2_block, "C");
+    auto& map2_d_write = builder.add_access(map2_block, "D");
+    auto& map2_op_tasklet = builder.add_tasklet(map2_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(map2_block, map2_c_read, map2_op_tasklet, "_in", {symbolic::symbol("k")}, array_1d);
+    builder
+        .add_computational_memlet(map2_block, map2_op_tasklet, "_out", map2_d_write, {symbolic::symbol("k")}, array_1d);
+
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::map_fusion::NewMapFusionPass map_fusion_pass;
+    EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.fused");
+}
+
+TEST(NewMapFusionTest, Chained_FuseByAccess_Conflict) {
+    // 3 loops to test metadata is updated
+    // Map(i, 0:N) { B[i] = A[i] }
+    // Map(j, 1:N) { C[j] = B[j] }
+    // Map(k, 1:N) { D[k] = A[j] }
+    // 3rd map must have same domain as 2nd, because by-access cannot fuse multi-blocks yet
+    // Must refuse to fuse 3rd loop, as it has a data-conflict with the A access imported from first
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Array array_1d(float_desc, symbolic::symbol("N"));
+    types::Array array_2d(float_desc, symbolic::mul(symbolic::symbol("N"), symbolic::symbol("M")));
+    types::Array array_3d(
+        float_desc, symbolic::mul(symbolic::symbol("N"), symbolic::mul(symbolic::symbol("M"), symbolic::symbol("K")))
+    );
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+    builder.add_container("i2", sym_desc);
+    builder.add_container("j2", sym_desc);
+    builder.add_container("k2", sym_desc);
+    builder.add_container("i3", sym_desc);
+    builder.add_container("j3", sym_desc);
+    builder.add_container("k3", sym_desc);
+    builder.add_container("A", array_3d, true);
+    builder.add_container("B", array_3d, true);
+    builder.add_container("C", array_3d, true);
+    builder.add_container("D", array_3d, true);
+
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+
+    // Producer: Map(i) { Map(j) { T[i*M+j] = 0 } }
+    auto& map0_outer = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map0_block = builder.add_block(map0_outer.root());
+    auto& map0_a_read = builder.add_access(map0_block, "A");
+    auto& map0_b_write = builder.add_access(map0_block, "B");
+    auto& map0_assign_tasklet = builder.add_tasklet(map0_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(map0_block, map0_a_read, map0_assign_tasklet, "_in", {symbolic::symbol("i")}, array_1d);
+    builder
+        .add_computational_memlet(map0_block, map0_assign_tasklet, "_out", map0_b_write, {symbolic::symbol("i")}, array_1d);
+
+    auto& map1_outer = builder.add_map(
+        root,
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map1_block = builder.add_block(map1_outer.root());
+    auto& map1_a_read = builder.add_access(map1_block, "B");
+    auto& map1_b_write = builder.add_access(map1_block, "C");
+    auto& map1_assign_tasklet = builder.add_tasklet(map1_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(map1_block, map1_a_read, map1_assign_tasklet, "_in", {symbolic::symbol("j")}, array_1d);
+    builder
+        .add_computational_memlet(map1_block, map1_assign_tasklet, "_out", map1_b_write, {symbolic::symbol("j")}, array_1d);
+
+    auto& map2_outer = builder.add_map(
+        root,
+        symbolic::symbol("k"),
+        symbolic::Lt(symbolic::symbol("k"), symbolic::symbol("N")),
+        symbolic::integer(1),
+        symbolic::add(symbolic::symbol("k"), symbolic::integer(1)),
+        schedule
+    );
+    auto& map2_block = builder.add_block(map2_outer.root());
+    auto& map2_c_read = builder.add_access(map2_block, "C");
+    auto& map2_a_write = builder.add_access(map2_block, "A");
+    auto& map2_op_tasklet = builder.add_tasklet(map2_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(map2_block, map2_c_read, map2_op_tasklet, "_in", {symbolic::symbol("k")}, array_1d);
+    builder
+        .add_computational_memlet(map2_block, map2_op_tasklet, "_out", map2_a_write, {symbolic::symbol("k")}, array_1d);
+
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::map_fusion::NewMapFusionPass map_fusion_pass;
+    EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.fused");
+}
+
+TEST(NewMapFusionTest, SameDomain_2ForLoops_IndependentFuse) {
+    // for loops that don't touch each others vars but have the exact same domain can be fused
+    // For(i, 0:N) { B[i] = A[i] }
+    // For(j, 0:N) { D[j] = C[j] }
+    // The two loops write to distinct arrays (B and D) and read from distinct arrays (A and C),
+    // so there is no data overlap and they can be fused into a single loop.
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Array array_1d(float_desc, symbolic::symbol("N"));
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("A", array_1d, true);
+    builder.add_container("B", array_1d, true);
+    builder.add_container("C", array_1d, true);
+    builder.add_container("D", array_1d, true);
+
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+
+    // Loop 1: For(i) { B[i] = A[i] }
+    auto& map0_outer = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+    auto& map0_block = builder.add_block(map0_outer.root());
+    auto& map0_a_read = builder.add_access(map0_block, "A");
+    auto& map0_b_write = builder.add_access(map0_block, "B");
+    auto& map0_assign_tasklet = builder.add_tasklet(map0_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(map0_block, map0_a_read, map0_assign_tasklet, "_in", {symbolic::symbol("i")}, array_1d);
+    builder
+        .add_computational_memlet(map0_block, map0_assign_tasklet, "_out", map0_b_write, {symbolic::symbol("i")}, array_1d);
+
+    // Loop 2: For(j) { D[j] = C[j] }
+    auto& map1_outer = builder.add_for(
+        root,
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1))
+    );
+    auto& map1_block = builder.add_block(map1_outer.root());
+    auto& map1_c_read = builder.add_access(map1_block, "C");
+    auto& map1_d_write = builder.add_access(map1_block, "D");
+    auto& map1_assign_tasklet = builder.add_tasklet(map1_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(map1_block, map1_c_read, map1_assign_tasklet, "_in", {symbolic::symbol("j")}, array_1d);
+    builder
+        .add_computational_memlet(map1_block, map1_assign_tasklet, "_out", map1_d_write, {symbolic::symbol("j")}, array_1d);
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::map_fusion::NewMapFusionPass map_fusion_pass;
+    EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.fused");
+
+    // The two independent loops must be fused into a single loop.
+    ASSERT_EQ(root.size(), 1u);
+    auto* fused = dyn_cast<structured_control_flow::For*>(&root.at(0));
+    ASSERT_NE(fused, nullptr);
+}
+
+TEST(NewMapFusionTest, SameDomain_2ForLoops_OverlapRejects) {
+    // for loops with the exact same domain but overlapping data must NOT be fused
+    // For(i, 0:N) { A[i] = X[i] }
+    // For(j, 0:N) { D[j] = A[j] }
+    // The first loop writes A[i]; the second reads A[j+1]. Fusing them at the same index
+    // would require A[i+1] to already be produced within the same iteration, which introduces
+    // a loop-carried read-before-write dependency. The loops must be kept separate.
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Array array_1d(float_desc, symbolic::symbol("N"));
+
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("X", array_1d, true);
+    builder.add_container("A", array_1d, true);
+    builder.add_container("D", array_1d, true);
+
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+
+    // Loop 1: For(i) { A[i] = X[i] }
+    auto& for0_outer = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+    auto& map0_block = builder.add_block(for0_outer.root());
+    auto& map0_x_read = builder.add_access(map0_block, "X");
+    auto& map0_a_write = builder.add_access(map0_block, "A");
+    auto& map0_assign_tasklet = builder.add_tasklet(map0_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(map0_block, map0_x_read, map0_assign_tasklet, "_in", {symbolic::symbol("i")}, array_1d);
+    builder
+        .add_computational_memlet(map0_block, map0_assign_tasklet, "_out", map0_a_write, {symbolic::symbol("i")}, array_1d);
+
+    // Loop 2: For(j) { D[j] = A[j] }
+    auto& for1_outer = builder.add_for(
+        root,
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1))
+    );
+    auto& map1_block = builder.add_block(for1_outer.root());
+    auto& map1_a_read = builder.add_access(map1_block, "A");
+    auto& map1_d_write = builder.add_access(map1_block, "D");
+    auto& map1_assign_tasklet = builder.add_tasklet(map1_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(map1_block, map1_a_read, map1_assign_tasklet, "_in", {symbolic::symbol("j")}, array_1d);
+    builder
+        .add_computational_memlet(map1_block, map1_assign_tasklet, "_out", map1_d_write, {symbolic::symbol("j")}, array_1d);
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::map_fusion::NewMapFusionPass map_fusion_pass;
+    EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.not_fused");
+
+    // The two overlapping loops must remain separate.
+    EXPECT_EQ(root.size(), 2u);
 }
