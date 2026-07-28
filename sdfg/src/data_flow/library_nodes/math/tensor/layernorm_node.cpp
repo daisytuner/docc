@@ -4,7 +4,7 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_expansion_utils.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -116,7 +116,6 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
 
     types::Tensor full_tensor(prim, full_shape);
     types::Tensor leading_tensor(prim, leading_shape);
-    types::Tensor trailing_tensor(prim, trailing_shape);
 
     // Reduce axes = the trailing (normalized) dimensions.
     std::vector<int64_t> axes;
@@ -172,9 +171,22 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
     };
 
     std::string x2_name = make_buffer(full_shape, "_ln_x2");
+    std::string sumx_name = make_buffer(leading_shape, "_ln_sumx");
+    std::string sumx2_name = make_buffer(leading_shape, "_ln_sumx2");
     std::string mean_name = make_buffer(leading_shape, "_ln_mean");
-    std::string meanx2_name = make_buffer(leading_shape, "_ln_meanx2");
     std::string rstd_name = make_buffer(leading_shape, "_ln_rstd");
+
+    // count = product of the normalized (trailing) dimension sizes.
+    // Computed symbolically and stored in a scalar so it also works for dynamic shapes.
+    auto count_name = builder.find_new_name("_ln_count");
+    builder.add_container(count_name, types::Scalar(types::PrimitiveType::Int64));
+    {
+        symbolic::Expression count_expr = symbolic::one();
+        for (int i = n_lead; i < n; ++i) {
+            count_expr = symbolic::mul(count_expr, shape.at(i));
+        }
+        builder.add_assignments(seq, {{symbolic::symbol(count_name), count_expr}}, debug_info());
+    }
 
     // x2 = x * x  (elementwise, full shape)
     {
@@ -187,27 +199,31 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
         builder.add_computational_memlet(b, x2_acc, mul, "C", {}, full_tensor, debug_info());
     }
 
-    // mean = Mean(x) over normalized axes
+    // sum_x = Sum(x) over normalized axes.
+    // NOTE: a plain Sum (not Mean) is used deliberately. MeanNode finalizes with an internal
+    // divide-by-count that can get duplicated across kernels during GPU map fusion (dividing
+    // E[x^2] twice), which corrupts the variance. We do the /count division ourselves below,
+    // exactly once.
     {
         auto& b = builder.add_block(seq, debug_info());
         auto& x_in = standalone->add_scalar_input_access(b, X_IDX);
-        auto& mean_acc = builder.add_access(b, mean_name, debug_info());
-        auto& mean_node = builder.add_library_node<MeanNode>(b, debug_info(), full_shape, axes, false);
-        builder.add_computational_memlet(b, x_in, mean_node, "X", {}, full_tensor, debug_info());
-        builder.add_computational_memlet(b, mean_acc, mean_node, "Y", {}, leading_tensor, debug_info());
+        auto& sumx_acc = builder.add_access(b, sumx_name, debug_info());
+        auto& sum_node = builder.add_library_node<SumNode>(b, debug_info(), full_shape, axes, false);
+        builder.add_computational_memlet(b, x_in, sum_node, "X", {}, full_tensor, debug_info());
+        builder.add_computational_memlet(b, sumx_acc, sum_node, "Y", {}, leading_tensor, debug_info());
     }
 
-    // meanx2 = Mean(x^2) over normalized axes
+    // sum_x2 = Sum(x^2) over normalized axes
     {
         auto& b = builder.add_block(seq, debug_info());
         auto& x2_in = builder.add_access(b, x2_name, debug_info());
-        auto& meanx2_acc = builder.add_access(b, meanx2_name, debug_info());
-        auto& mean_node = builder.add_library_node<MeanNode>(b, debug_info(), full_shape, axes, false);
-        builder.add_computational_memlet(b, x2_in, mean_node, "X", {}, full_tensor, debug_info());
-        builder.add_computational_memlet(b, meanx2_acc, mean_node, "Y", {}, leading_tensor, debug_info());
+        auto& sumx2_acc = builder.add_access(b, sumx2_name, debug_info());
+        auto& sum_node = builder.add_library_node<SumNode>(b, debug_info(), full_shape, axes, false);
+        builder.add_computational_memlet(b, x2_in, sum_node, "X", {}, full_tensor, debug_info());
+        builder.add_computational_memlet(b, sumx2_acc, sum_node, "Y", {}, leading_tensor, debug_info());
     }
 
-    // rstd = 1 / sqrt(meanx2 - mean*mean + eps)  (per leading row)
+    // mean = sum_x / count ; rstd = 1 / sqrt(sum_x2/count - mean*mean + eps)  (per leading row)
     {
         auto lead_maps = create_maps(builder, leading_shape, seq);
         structured_control_flow::Sequence& lead_scope = leading_shape.empty() ? seq : lead_maps.back().seq;
@@ -220,21 +236,44 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
         std::string prefix = "_ln_rstd_tmp";
         int t = 0;
 
-        auto& mean_in = builder.add_access(b, mean_name, debug_info());
-        auto& meanx2_in = builder.add_access(b, meanx2_name, debug_info());
+        auto& sumx_in = builder.add_access(b, sumx_name, debug_info());
+        auto& sumx2_in = builder.add_access(b, sumx2_name, debug_info());
         auto& eps_in = standalone->add_scalar_input_access(b, EPS_IDX);
+        auto& count_a = builder.add_access(b, count_name, debug_info());
+        auto& count_b = builder.add_access(b, count_name, debug_info());
+
+        // mean = sum_x / count  (kept as a scalar temp and also written to the mean buffer)
+        auto& mean_op = builder.add_tasklet(b, data_flow::fp_div, "_out", {"s", "c"}, debug_info());
+        builder.add_computational_memlet(b, sumx_in, mean_op, "s", lead_subset, leading_tensor, debug_info());
+        builder.add_computational_memlet(b, count_a, mean_op, "c", {}, element_type, debug_info());
+        auto mean_s_name = create_temp_var(builder, prefix, t++, element_type);
+        auto& mean_s = builder.add_access(b, mean_s_name, debug_info());
+        builder.add_computational_memlet(b, mean_op, "_out", mean_s, {}, element_type, debug_info());
+
+        auto& mean_store_op = builder.add_tasklet(b, data_flow::assign, "_out", {"_in"}, debug_info());
+        builder.add_computational_memlet(b, mean_s, mean_store_op, "_in", {}, element_type, debug_info());
+        auto& mean_acc = builder.add_access(b, mean_name, debug_info());
+        builder.add_computational_memlet(b, mean_store_op, "_out", mean_acc, lead_subset, leading_tensor, debug_info());
 
         // sq = mean * mean
         auto& sq_op = builder.add_tasklet(b, data_flow::fp_mul, "_out", {"a", "b"}, debug_info());
-        builder.add_computational_memlet(b, mean_in, sq_op, "a", lead_subset, leading_tensor, debug_info());
-        builder.add_computational_memlet(b, mean_in, sq_op, "b", lead_subset, leading_tensor, debug_info());
+        builder.add_computational_memlet(b, mean_s, sq_op, "a", {}, element_type, debug_info());
+        builder.add_computational_memlet(b, mean_s, sq_op, "b", {}, element_type, debug_info());
         auto sq_name = create_temp_var(builder, prefix, t++, element_type);
         auto& sq_acc = builder.add_access(b, sq_name, debug_info());
         builder.add_computational_memlet(b, sq_op, "_out", sq_acc, {}, element_type, debug_info());
 
-        // var = meanx2 - sq
+        // ex2 = sum_x2 / count
+        auto& ex2_op = builder.add_tasklet(b, data_flow::fp_div, "_out", {"s", "c"}, debug_info());
+        builder.add_computational_memlet(b, sumx2_in, ex2_op, "s", lead_subset, leading_tensor, debug_info());
+        builder.add_computational_memlet(b, count_b, ex2_op, "c", {}, element_type, debug_info());
+        auto ex2_name = create_temp_var(builder, prefix, t++, element_type);
+        auto& ex2_acc = builder.add_access(b, ex2_name, debug_info());
+        builder.add_computational_memlet(b, ex2_op, "_out", ex2_acc, {}, element_type, debug_info());
+
+        // var = ex2 - sq
         auto& var_op = builder.add_tasklet(b, data_flow::fp_sub, "_out", {"x", "y"}, debug_info());
-        builder.add_computational_memlet(b, meanx2_in, var_op, "x", lead_subset, leading_tensor, debug_info());
+        builder.add_computational_memlet(b, ex2_acc, var_op, "x", {}, element_type, debug_info());
         builder.add_computational_memlet(b, sq_acc, var_op, "y", {}, element_type, debug_info());
         auto var_name = create_temp_var(builder, prefix, t++, element_type);
         auto& var_acc = builder.add_access(b, var_name, debug_info());
@@ -265,80 +304,126 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
     }
 
     // Y = (x - mean) * rstd [* Gamma] [+ Beta]  (per element)
+    // Iterate over a flattened [lead_flat, trail_flat] index space and address every
+    // operand with explicit linear indices built from the actual map indvars. This avoids
+    // a multi-dimensional trailing (suffix) subset under a collapsed map: the index
+    // simplifier mishandles that case (it drops the modulo on the leading dimension),
+    // which would index Gamma/Beta out of bounds for every row past the first.
     {
-        auto full_maps = create_maps(builder, full_shape, seq);
-        structured_control_flow::Sequence& full_scope = full_maps.back().seq;
-        std::vector<symbolic::Expression> full_subset, lead_subset, trail_subset;
-        for (int i = 0; i < n; ++i) {
-            full_subset.push_back(full_maps.at(i).indvar);
-            if (i < n_lead) {
-                lead_subset.push_back(full_maps.at(i).indvar);
-            } else {
-                trail_subset.push_back(full_maps.at(i).indvar);
-            }
+        symbolic::Expression lead_flat = symbolic::one();
+        for (auto& d : leading_shape) {
+            lead_flat = symbolic::mul(lead_flat, d);
         }
+        symbolic::Expression trail_flat = symbolic::one();
+        for (auto& d : trailing_shape) {
+            trail_flat = symbolic::mul(trail_flat, d);
+        }
+        symbolic::Expression total = symbolic::mul(lead_flat, trail_flat);
 
-        auto& b = builder.add_block(full_scope, debug_info());
+        const bool has_leading = !leading_shape.empty();
+
+        std::vector<symbolic::Expression> map_shape;
+        if (has_leading) {
+            map_shape.push_back(lead_flat);
+        }
+        map_shape.push_back(trail_flat);
+
+        auto maps = create_maps(builder, map_shape, seq);
+        structured_control_flow::Sequence& scope = maps.back().seq;
+
+        symbolic::Expression l_idx = symbolic::zero();
+        if (has_leading) {
+            l_idx = maps.at(0).indvar;
+        }
+        symbolic::Expression t_idx = maps.back().indvar;
+        symbolic::Expression lin = symbolic::add(symbolic::mul(l_idx, trail_flat), t_idx);
+
+        types::Tensor total_tensor(prim, {total});
+        types::Tensor lead_flat_tensor(prim, {lead_flat});
+        types::Tensor trail_flat_tensor(prim, {trail_flat});
+
+        std::vector<symbolic::Expression> lin_subset{lin};
+        std::vector<symbolic::Expression> l_subset;
+        if (has_leading) {
+            l_subset.push_back(l_idx);
+        }
+        std::vector<symbolic::Expression> t_subset{t_idx};
+
+        auto& scope_block = builder.add_block(scope, debug_info());
         std::string prefix = "_ln_norm_tmp";
         int t = 0;
 
-        auto& x_in = standalone->add_indirect_read_access(b, X_IDX);
-        auto& mean_in = builder.add_access(b, mean_name, debug_info());
-        auto& rstd_in = builder.add_access(b, rstd_name, debug_info());
+        // Reads mean/rstd either per leading row (contiguous [lead_flat] view of the
+        // buffer written above) or as a scalar when normalizing over all dimensions.
+        auto read_reduced = [&](data_flow::AccessNode& src, data_flow::Tasklet& op, const std::string& conn) {
+            if (has_leading) {
+                builder.add_computational_memlet(scope_block, src, op, conn, l_subset, lead_flat_tensor, debug_info());
+            } else {
+                builder.add_computational_memlet(scope_block, src, op, conn, {}, element_type, debug_info());
+            }
+        };
+
+        auto& x_in = standalone->add_indirect_read_access(scope_block, X_IDX);
+        auto& mean_in = builder.add_access(scope_block, mean_name, debug_info());
+        auto& rstd_in = builder.add_access(scope_block, rstd_name, debug_info());
 
         // c = x - mean
-        auto& sub_op = builder.add_tasklet(b, data_flow::fp_sub, "_out", {"x", "m"}, debug_info());
-        builder.add_computational_memlet(b, x_in, sub_op, "x", full_subset, full_tensor, debug_info());
-        builder.add_computational_memlet(b, mean_in, sub_op, "m", lead_subset, leading_tensor, debug_info());
+        auto& sub_op = builder.add_tasklet(scope_block, data_flow::fp_sub, "_out", {"x", "m"}, debug_info());
+        builder.add_computational_memlet(scope_block, x_in, sub_op, "x", lin_subset, total_tensor, debug_info());
+        read_reduced(mean_in, sub_op, "m");
         auto c_name = create_temp_var(builder, prefix, t++, element_type);
-        auto& c_acc = builder.add_access(b, c_name, debug_info());
-        builder.add_computational_memlet(b, sub_op, "_out", c_acc, {}, element_type, debug_info());
+        auto& c_acc = builder.add_access(scope_block, c_name, debug_info());
+        builder.add_computational_memlet(scope_block, sub_op, "_out", c_acc, {}, element_type, debug_info());
 
         const bool has_scale_or_bias = affine_ || has_bias_;
         data_flow::AccessNode* cur = nullptr;
 
         // n = c * rstd
         {
-            auto& mul_op = builder.add_tasklet(b, data_flow::fp_mul, "_out", {"c", "r"}, debug_info());
-            builder.add_computational_memlet(b, c_acc, mul_op, "c", {}, element_type, debug_info());
-            builder.add_computational_memlet(b, rstd_in, mul_op, "r", lead_subset, leading_tensor, debug_info());
+            auto& mul_op = builder.add_tasklet(scope_block, data_flow::fp_mul, "_out", {"c", "r"}, debug_info());
+            builder.add_computational_memlet(scope_block, c_acc, mul_op, "c", {}, element_type, debug_info());
+            read_reduced(rstd_in, mul_op, "r");
             if (has_scale_or_bias) {
                 auto n_name = create_temp_var(builder, prefix, t++, element_type);
-                auto& n_acc = builder.add_access(b, n_name, debug_info());
-                builder.add_computational_memlet(b, mul_op, "_out", n_acc, {}, element_type, debug_info());
+                auto& n_acc = builder.add_access(scope_block, n_name, debug_info());
+                builder.add_computational_memlet(scope_block, mul_op, "_out", n_acc, {}, element_type, debug_info());
                 cur = &n_acc;
             } else {
-                auto& y_out = standalone->add_indirect_write_access(b, YOUT_IDX);
-                builder.add_computational_memlet(b, mul_op, "_out", y_out, full_subset, full_tensor, debug_info());
+                auto& y_out = standalone->add_indirect_write_access(scope_block, YOUT_IDX);
+                builder
+                    .add_computational_memlet(scope_block, mul_op, "_out", y_out, lin_subset, total_tensor, debug_info());
             }
         }
 
         // * Gamma
         if (affine_) {
             const bool last = !has_bias_;
-            auto& gamma_in = standalone->add_indirect_read_access(b, GAMMA_IDX);
-            auto& g_op = builder.add_tasklet(b, data_flow::fp_mul, "_out", {"n", "g"}, debug_info());
-            builder.add_computational_memlet(b, *cur, g_op, "n", {}, element_type, debug_info());
-            builder.add_computational_memlet(b, gamma_in, g_op, "g", trail_subset, trailing_tensor, debug_info());
+            auto& gamma_in = standalone->add_indirect_read_access(scope_block, GAMMA_IDX);
+            auto& g_op = builder.add_tasklet(scope_block, data_flow::fp_mul, "_out", {"n", "g"}, debug_info());
+            builder.add_computational_memlet(scope_block, *cur, g_op, "n", {}, element_type, debug_info());
+            builder
+                .add_computational_memlet(scope_block, gamma_in, g_op, "g", t_subset, trail_flat_tensor, debug_info());
             if (last) {
-                auto& y_out = standalone->add_indirect_write_access(b, YOUT_IDX);
-                builder.add_computational_memlet(b, g_op, "_out", y_out, full_subset, full_tensor, debug_info());
+                auto& y_out = standalone->add_indirect_write_access(scope_block, YOUT_IDX);
+                builder
+                    .add_computational_memlet(scope_block, g_op, "_out", y_out, lin_subset, total_tensor, debug_info());
             } else {
                 auto g_name = create_temp_var(builder, prefix, t++, element_type);
-                auto& g_acc = builder.add_access(b, g_name, debug_info());
-                builder.add_computational_memlet(b, g_op, "_out", g_acc, {}, element_type, debug_info());
+                auto& g_acc = builder.add_access(scope_block, g_name, debug_info());
+                builder.add_computational_memlet(scope_block, g_op, "_out", g_acc, {}, element_type, debug_info());
                 cur = &g_acc;
             }
         }
 
         // + Beta
         if (has_bias_) {
-            auto& beta_in = standalone->add_indirect_read_access(b, BETA_IDX);
-            auto& add_op = builder.add_tasklet(b, data_flow::fp_add, "_out", {"n", "b"}, debug_info());
-            builder.add_computational_memlet(b, *cur, add_op, "n", {}, element_type, debug_info());
-            builder.add_computational_memlet(b, beta_in, add_op, "b", trail_subset, trailing_tensor, debug_info());
-            auto& y_out = standalone->add_indirect_write_access(b, YOUT_IDX);
-            builder.add_computational_memlet(b, add_op, "_out", y_out, full_subset, full_tensor, debug_info());
+            auto& beta_in = standalone->add_indirect_read_access(scope_block, BETA_IDX);
+            auto& add_op = builder.add_tasklet(scope_block, data_flow::fp_add, "_out", {"n", "b"}, debug_info());
+            builder.add_computational_memlet(scope_block, *cur, add_op, "n", {}, element_type, debug_info());
+            builder
+                .add_computational_memlet(scope_block, beta_in, add_op, "b", t_subset, trail_flat_tensor, debug_info());
+            auto& y_out = standalone->add_indirect_write_access(scope_block, YOUT_IDX);
+            builder.add_computational_memlet(scope_block, add_op, "_out", y_out, lin_subset, total_tensor, debug_info());
         }
     }
 
