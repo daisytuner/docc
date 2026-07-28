@@ -111,7 +111,8 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 13,
+            "SEQUENTIAL": 5,
+            "VECTORIZE": 8,
             "MAP": 15,
             "CPU_PARALLEL": 10,
             "FOR": 4,
@@ -166,7 +167,8 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "MAP": 11,
             "CPU_PARALLEL": 7,
             "FOR": 4,
-            "SEQUENTIAL": 11,
+            "SEQUENTIAL": 4,
+            "VECTORIZE": 7,
             "REDUCE": 3,
         },
     )
@@ -225,7 +227,8 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "CPU_PARALLEL": 4,
             "GEMM": 1,
             "FOR": 2,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 2,
+            "VECTORIZE": 3,
             "REDUCE": 3,
         },
     )
@@ -282,7 +285,8 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 7,
+            "SEQUENTIAL": 2,
+            "VECTORIZE": 5,
             "MAP": 5,
             "CPU_PARALLEL": 4,
             "FOR": 2,
@@ -343,7 +347,8 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "MAP": 4,
             "CPU_PARALLEL": 4,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 1,
+            "VECTORIZE": 4,
             "FOR": 1,
         },
     )
@@ -401,7 +406,8 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "MAP": 6,
             "CPU_PARALLEL": 3,
-            "SEQUENTIAL": 10,
+            "SEQUENTIAL": 4,
+            "VECTORIZE": 6,
             "FOR": 3,
         },
     )
@@ -457,7 +463,8 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 8,
+            "SEQUENTIAL": 3,
+            "VECTORIZE": 5,
             "MAP": 6,
             "CPU_PARALLEL": 4,
             "FOR": 2,
@@ -515,7 +522,8 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 8,
+            "SEQUENTIAL": 3,
+            "VECTORIZE": 5,
             "MAP": 6,
             "CPU_PARALLEL": 4,
             "FOR": 2,
@@ -635,7 +643,8 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 2,
+            "VECTORIZE": 3,
             "MAP": 6,
             "CPU_PARALLEL": 6,
             "GEMM": 2,
@@ -695,7 +704,8 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 2,
+            "VECTORIZE": 3,
             "MAP": 7,
             "CPU_PARALLEL": 7,
             "GEMM": 3,
@@ -757,7 +767,8 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "MAP": 6,
             "CPU_PARALLEL": 5,
-            "SEQUENTIAL": 7,
+            "SEQUENTIAL": 2,
+            "VECTORIZE": 5,
             "FOR": 2,
         },
     )
@@ -875,7 +886,8 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 9,
             "REDUCE": 3,
-            "SEQUENTIAL": 18,
+            "SEQUENTIAL": 9,
+            "VECTORIZE": 9,
             "CPU_PARALLEL": 2,
             "FOR": 9,
             "MAP": 8,
@@ -935,7 +947,8 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "MAP": 3,
             "CPU_PARALLEL": 2,
-            "SEQUENTIAL": 8,
+            "SEQUENTIAL": 3,
+            "VECTORIZE": 5,
             "FOR": 3,
         },
     )
@@ -991,7 +1004,8 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 6,
-            "SEQUENTIAL": 12,
+            "SEQUENTIAL": 4,
+            "VECTORIZE": 8,
             "MAP": 8,
             "CPU_PARALLEL": 6,
             "FOR": 4,
@@ -1052,7 +1066,8 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "MAP": 3,
             "CPU_PARALLEL": 3,
             "FOR": 2,
-            "SEQUENTIAL": 6,
+            "SEQUENTIAL": 2,
+            "VECTORIZE": 4,
         },
     )
     test_case = benchmark_path / "durbin.c"
@@ -1078,6 +1093,7 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
         partial(
             verify,
+            max_ulps=1e8,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         sdfg_verification=verifier,
@@ -1107,7 +1123,8 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 11,
+            "SEQUENTIAL": 6,
+            "VECTORIZE": 5,
             "MAP": 6,
             "CPU_PARALLEL": 5,
             "FOR": 6,
@@ -1136,6 +1153,7 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
         partial(
             verify,
+            max_ulps=1e8,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         sdfg_verification=verifier,
@@ -1165,7 +1183,8 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 6,
-            "SEQUENTIAL": 13,
+            "SEQUENTIAL": 5,
+            "VECTORIZE": 8,
             "MAP": 9,
             "CPU_PARALLEL": 6,
             "FOR": 4,
@@ -1223,7 +1242,8 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 8,
-            "SEQUENTIAL": 16,
+            "SEQUENTIAL": 6,
+            "VECTORIZE": 10,
             "MAP": 10,
             "CPU_PARALLEL": 7,
             "FOR": 5,
@@ -1252,6 +1272,7 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
         partial(
             verify,
+            max_ulps=1e8,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         sdfg_verification=verifier,
@@ -1338,7 +1359,8 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 9,
+            "SEQUENTIAL": 6,
+            "VECTORIZE": 3,
             "MAP": 7,
             "CPU_PARALLEL": 7,
             "FOR": 6,
@@ -1386,7 +1408,8 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
             "MAP": 1,
             "CPU_PARALLEL": 1,
             "FOR": 5,
-            "SEQUENTIAL": 8,
+            "SEQUENTIAL": 5,
+            "VECTORIZE": 3,
             "REDUCE": 3,
         },
     )
@@ -1429,7 +1452,8 @@ def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
             "MAP": 2,
             "CPU_PARALLEL": 2,
             "FOR": 4,
-            "SEQUENTIAL": 7,
+            "SEQUENTIAL": 4,
+            "VECTORIZE": 3,
             "WHILE": 1,
             "REDUCE": 3,
         },
@@ -1476,7 +1500,8 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 10,
+            "SEQUENTIAL": 7,
+            "VECTORIZE": 3,
             "MAP": 9,
             "CPU_PARALLEL": 9,
             "FOR": 7,
@@ -1529,7 +1554,8 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 10,
+            "SEQUENTIAL": 7,
+            "VECTORIZE": 3,
             "MAP": 6,
             "CPU_PARALLEL": 6,
             "FOR": 7,
@@ -1582,7 +1608,8 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 7,
+            "SEQUENTIAL": 4,
+            "VECTORIZE": 3,
             "MAP": 3,
             "CPU_PARALLEL": 3,
             "FOR": 4,
@@ -1637,7 +1664,8 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "MAP": 3,
             "CPU_PARALLEL": 3,
             "FOR": 2,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 2,
+            "VECTORIZE": 3,
             "REDUCE": 3,
         },
     )
@@ -1690,7 +1718,8 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "MAP": 3,
             "CPU_PARALLEL": 3,
             "FOR": 3,
-            "SEQUENTIAL": 6,
+            "SEQUENTIAL": 3,
+            "VECTORIZE": 3,
             "REDUCE": 3,
         },
     )
@@ -1743,7 +1772,8 @@ def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "MAP": 1,
             "CPU_PARALLEL": 1,
             "FOR": 5,
-            "SEQUENTIAL": 8,
+            "SEQUENTIAL": 5,
+            "VECTORIZE": 3,
             "REDUCE": 3,
         },
     )

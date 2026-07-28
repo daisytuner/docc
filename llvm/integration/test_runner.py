@@ -4,13 +4,14 @@ import subprocess
 from typing import Dict
 from datetime import datetime
 from pathlib import Path
-from tempfile import mkdtemp 
+from tempfile import mkdtemp
 import threading
+
 
 class SDFGVerification:
     def __init__(self, verification: dict):
         self._verification = verification
-    
+
     def _parse_opt_report(self, output_str: str) -> Dict[str, int]:
         opt_mode = False
         stats = {}
@@ -37,8 +38,11 @@ class SDFGVerification:
             if key not in stats:
                 assert val == 0, f"Key {key} not found in stats"
             else:
-                assert stats[key] == val, f"Key {key} has value {stats[key]} but expected {val}"
+                assert (
+                    stats[key] == val
+                ), f"Key {key} has value {stats[key]} but expected {val}"
         print("All verifications passed.")
+
 
 class TransformationVerification:
     def __init__(self, transformations: dict):
@@ -46,34 +50,43 @@ class TransformationVerification:
 
     def verify(self, output_dir, stderr: str = None) -> None:
         import json
+
         opt_report_files = list(Path(output_dir).rglob("sdfg_0.opt_report.json"))
         if not opt_report_files:
             raise FileNotFoundError(f"No sdfg_0.opt_report.json found in {output_dir}")
         for opt_report_path in opt_report_files:
             print(f"Using opt_report file at: {opt_report_path}")
             # Load the opt_report JSON file
-            with open(opt_report_path, 'r') as f:
+            with open(opt_report_path, "r") as f:
                 opt_report = json.load(f)
             regions = opt_report.get("regions", [])
             if regions != []:
                 break
 
         # Build a lookup: loopnest_index -> region
-        loopnest_to_region = {region.get("loopnest_index"): region for region in regions}
+        loopnest_to_region = {
+            region.get("loopnest_index"): region for region in regions
+        }
 
         for transformation, params in self._transformations.items():
             # Check for new dict format with 'loop_nests' and 'max_tuned_loops'
-            if isinstance(params, dict) and 'loop_nests' in params and 'tuned_loops' in params:
-                loop_nests = params['loop_nests']
-                tuned_loops = params['tuned_loops']
+            if (
+                isinstance(params, dict)
+                and "loop_nests" in params
+                and "tuned_loops" in params
+            ):
+                loop_nests = params["loop_nests"]
+                tuned_loops = params["tuned_loops"]
                 # Check that transformation is present in all specified loop_nests
                 for idx in loop_nests:
                     region = loopnest_to_region.get(idx)
-                    assert region is not None, f"Region with loopnest_index {idx} not found."
+                    assert (
+                        region is not None
+                    ), f"Region with loopnest_index {idx} not found."
                     transformations = region.get("transformations", {})
-                    assert transformation in transformations, (
-                        f"Transformation {transformation} not found in region with loopnest_index {idx}."
-                    )
+                    assert (
+                        transformation in transformations
+                    ), f"Transformation {transformation} not found in region with loopnest_index {idx}."
                 # Count total number of times transformation was applied
                 applied_count = 0
                 for region in regions:
@@ -81,42 +94,46 @@ class TransformationVerification:
                     if transformation in transformations:
                         # Check if 'applied' is True (if present)
                         t = transformations[transformation]
-                        if isinstance(t, dict) and t.get('applied', True):
+                        if isinstance(t, dict) and t.get("applied", True):
                             applied_count += 1
                         elif t is True:
                             applied_count += 1
-                assert applied_count == tuned_loops, (
-                    f"Transformation {transformation} applied {applied_count} times but expected {tuned_loops} times"
-                )
+                assert (
+                    applied_count == tuned_loops
+                ), f"Transformation {transformation} applied {applied_count} times but expected {tuned_loops} times"
             else:
                 # Fallback to old behavior: params is a set of indices
                 for idx in params:
                     region = loopnest_to_region.get(idx)
-                    assert region is not None, f"Region with loopnest_index {idx} not found."
+                    assert (
+                        region is not None
+                    ), f"Region with loopnest_index {idx} not found."
                     transformations = region.get("transformations", {})
-                    assert transformation in transformations, (
-                        f"Transformation {transformation} not found in region with loopnest_index {idx}."
-                    )
+                    assert (
+                        transformation in transformations
+                    ), f"Transformation {transformation} not found in region with loopnest_index {idx}."
+
     print("All transformation verifications passed.")
+
 
 class TestRunner:
     __test__ = False
 
     def __init__(
-            self,
-            test_suite,
-            test_case,
-            compiler,
-            reference_compiler,
-            flags,
-            mode,
-            additional_source_files,
-            evaluation_function,
-            sdfg_verification : SDFGVerification = None,
-            transformation_verification : TransformationVerification = None,
-            docc_flags: list = [],
-            output_dir = None
-        ) -> None:
+        self,
+        test_suite,
+        test_case,
+        compiler,
+        reference_compiler,
+        flags,
+        mode,
+        additional_source_files,
+        evaluation_function,
+        sdfg_verification: SDFGVerification = None,
+        transformation_verification: TransformationVerification = None,
+        docc_flags: list = [],
+        output_dir=None,
+    ) -> None:
         self._test_suite = test_suite
         self._test_case = test_case
         self._compiler = compiler
@@ -129,15 +146,18 @@ class TestRunner:
         self._transformation_verification = transformation_verification
         self._docc_flags = docc_flags
         if output_dir is None:
-            rootDir = Path(__file__).parent / "pytestOut" / (test_suite+"-"+mode)
+            rootDir = Path(__file__).parent / "pytestOut" / (test_suite + "-" + mode)
         else:
             rootDir = Path(output_dir)
         out_dir = rootDir / test_case.name
         Path.mkdir(out_dir, parents=True, exist_ok=True)
-        self.output_dir_ = Path(mkdtemp(prefix=datetime.now().strftime('%Y-%m-%d_%H-%M-%S_'), dir= out_dir))
+        self.output_dir_ = Path(
+            mkdtemp(prefix=datetime.now().strftime("%Y-%m-%d_%H-%M-%S_"), dir=out_dir)
+        )
 
     def run(self, timeout=600) -> None:
         exception_bucket = []
+
         def target():
             try:
                 reference_file = self._compile(self._test_case, reference=True)
@@ -157,7 +177,7 @@ class TestRunner:
 
         if t.is_alive():
             raise TimeoutError("Timeout reached")
-        
+
         return
 
     def _compile(self, test_case, reference: bool) -> None:
@@ -190,7 +210,12 @@ class TestRunner:
 
         output_file = output_path / "a.out"
         cmd += ["-o", str(output_file.absolute())]
-        print("\nBuild command for", "reference" if reference else "test", "executable:\n", " ".join(cmd))
+        print(
+            "\nBuild command for",
+            "reference" if reference else "test",
+            "executable:\n",
+            " ".join(cmd),
+        )
 
         Path.mkdir(output_path, exist_ok=False)
         my_env = os.environ.copy()
@@ -208,10 +233,10 @@ class TestRunner:
         print(stdout)
         print(stderr)
 
-        if not reference and self._sdfg_verification is not None:
-            self._sdfg_verification.verify(stderr)
-
         if not reference and self._transformation_verification is not None:
             self._transformation_verification.verify(self.output_dir_, stderr)
+
+        if not reference and self._sdfg_verification is not None:
+            self._sdfg_verification.verify(stderr)
 
         return output_file
