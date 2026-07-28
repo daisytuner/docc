@@ -1394,6 +1394,53 @@ void PyStructuredSDFGBuilder::add_batchnorm_with_bias(
     builder_.add_computational_memlet(block, B_out_access, libnode, "B_out", {}, B_out_type, debug_info);
 }
 
+void PyStructuredSDFGBuilder::add_layernorm_with_bias(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Gamma,
+    const sdfg::types::Tensor& Gamma_type,
+    const std::string& Beta,
+    const sdfg::types::Tensor& Beta_type,
+    const std::string& epsilon,
+    const sdfg::types::Scalar& epsilon_type,
+    const std::string& Y_out,
+    const sdfg::types::Tensor& Y_out_type,
+    int64_t num_normalized_dims,
+    const sdfg::DebugInfo& debug_info
+) {
+    const bool affine = !Gamma.empty();
+    const bool has_bias = !Beta.empty();
+
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& epsilon_access =
+        (builder_.subject().exists(epsilon) ? builder_.add_access(block, epsilon, debug_info)
+                                            : builder_.add_constant(block, epsilon, epsilon_type));
+    auto& Y_out_access = builder_.add_access(block, Y_out, debug_info);
+
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::LayerNormNode>(
+        block,
+        debug_info,
+        Y_out_type.layout(),
+        sdfg::math::tensor::QUANTIZATION_MATCH_INPUTS,
+        static_cast<size_t>(num_normalized_dims),
+        affine,
+        has_bias
+    );
+
+    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    if (affine) {
+        auto& Gamma_access = builder_.add_access(block, Gamma, debug_info);
+        builder_.add_computational_memlet(block, Gamma_access, libnode, "Gamma", {}, Gamma_type, debug_info);
+    }
+    if (has_bias) {
+        auto& Beta_access = builder_.add_access(block, Beta, debug_info);
+        builder_.add_computational_memlet(block, Beta_access, libnode, "Beta", {}, Beta_type, debug_info);
+    }
+    builder_.add_computational_memlet(block, epsilon_access, libnode, "epsilon", {}, epsilon_type, debug_info);
+    builder_.add_computational_memlet(block, Y_out_access, libnode, "Y_out", {}, Y_out_type, debug_info);
+}
+
 void PyStructuredSDFGBuilder::add_pooling(
     const std::string& mode_type,
     const std::string& X,

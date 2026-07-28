@@ -599,6 +599,22 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_layernorm_with_bias",
+            &PyStructuredSDFGBuilder::add_layernorm_with_bias,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Gamma"),
+            py::arg("Gamma_type"),
+            py::arg("Beta"),
+            py::arg("Beta_type"),
+            py::arg("epsilon"),
+            py::arg("epsilon_type"),
+            py::arg("Y_out"),
+            py::arg("Y_out_type"),
+            py::arg("num_normalized_dims"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_pooling",
             &PyStructuredSDFGBuilder::add_pooling,
             py::arg("mode_type"),

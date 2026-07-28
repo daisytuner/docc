@@ -83,6 +83,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/cmath/cmath_node.cpp
     src/data_flow/library_nodes/math/math_node.cpp
     src/data_flow/library_nodes/math/tensor/batchnorm_node.cpp
+    src/data_flow/library_nodes/math/tensor/layernorm_node.cpp
     src/data_flow/library_nodes/math/tensor/broadcast_node.cpp
     src/data_flow/library_nodes/math/tensor/concat_node.cpp
     src/data_flow/library_nodes/math/tensor/conv_node.cpp

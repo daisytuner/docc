@@ -19,6 +19,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/batchnorm_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/layernorm_node.h"
 #include "sdfg/element.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
@@ -1615,6 +1616,11 @@ void register_default_serializers() {
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_BatchNorm.value(), [] {
             return std::make_unique<math::tensor::BatchNormNodeSerializer>();
+        });
+
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_LayerNorm.value(), [] {
+            return std::make_unique<math::tensor::LayerNormNodeSerializer>();
         });
 
     // Reduce

@@ -447,6 +447,21 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_layernorm_with_bias(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Gamma,
+        const sdfg::types::Tensor& Gamma_type,
+        const std::string& Beta,
+        const sdfg::types::Tensor& Beta_type,
+        const std::string& epsilon,
+        const sdfg::types::Scalar& epsilon_type,
+        const std::string& Y_out,
+        const sdfg::types::Tensor& Y_out_type,
+        int64_t num_normalized_dims,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_pooling(
         const std::string& mode_type,
         const std::string& X,
