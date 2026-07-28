@@ -106,6 +106,17 @@ def test_fill__simple(target: str) -> None:
     check(Fill_SimpleNet(), torch.ones(2, 3), target=target)
 
 
+# --- sigmoid ---
+
+
+def test_sigmoid_simple(target: str) -> None:
+    class SigmoidSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.sigmoid()
+
+    check(SigmoidSimpleNet(), torch.randn(4), target=target)
+
+
 # --- softmax ---
 
 

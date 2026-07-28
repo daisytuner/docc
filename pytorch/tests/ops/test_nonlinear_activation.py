@@ -73,3 +73,18 @@ def test_softmax2d_simple(target: str) -> None:
             return self.softmax2d(input)
 
     check(Softmax2dSimpleNet(), torch.randn(2, 3, 12, 13), target=target)
+
+
+# --- Sigmoid ---
+
+
+def test_sigmoid_simple(target: str) -> None:
+    class SigmoidSimpleNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sigmoid: nn.Sigmoid = nn.Sigmoid()
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.sigmoid(input)
+
+    check(SigmoidSimpleNet(), torch.randn(4), target=target)
