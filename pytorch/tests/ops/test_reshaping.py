@@ -109,6 +109,89 @@ def test_permute_simple(target: str) -> None:
     check(PermuteSimpleNet(), torch.randn(2, 3, 5), target=target)
 
 
+# --- slice ---
+
+
+def test_slice_simple(target: str) -> None:
+    class SliceSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[1:3]
+
+    check(SliceSimpleNet(), torch.randn(5, 4), target=target)
+
+
+def test_slice_default(target: str) -> None:
+    class SliceDefaultNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:]
+
+    check(SliceDefaultNet(), torch.randn(5, 4), target=target)
+
+
+def test_slice_dim_1(target: str) -> None:
+    class SliceDim1Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, 1:3]
+
+    check(SliceDim1Net(), torch.randn(5, 4), target=target)
+
+
+def test_slice_dim_neg1(target: str) -> None:
+    class SliceDimNeg1Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.slice_copy(input, -1, 1, 3)
+
+    check(SliceDimNeg1Net(), torch.randn(5, 4), target=target)
+
+
+def test_slice_start_only(target: str) -> None:
+    class SliceStartOnlyNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[2:]
+
+    check(SliceStartOnlyNet(), torch.randn(5, 4), target=target)
+
+
+def test_slice_end_only(target: str) -> None:
+    class SliceEndOnlyNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:3]
+
+    check(SliceEndOnlyNet(), torch.randn(5, 4), target=target)
+
+
+def test_slice_neg_start(target: str) -> None:
+    class SliceNegStartNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[-3:]
+
+    check(SliceNegStartNet(), torch.randn(5, 4), target=target)
+
+
+def test_slice_neg_end(target: str) -> None:
+    class SliceNegEndNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:-1]
+
+    check(SliceNegEndNet(), torch.randn(5, 4), target=target)
+
+
+def test_slice_step_2(target: str) -> None:
+    class SliceStep2Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[0:5:2]
+
+    check(SliceStep2Net(), torch.randn(5, 4), target=target)
+
+
+def test_slice_full_range_step(target: str) -> None:
+    class SliceFullRangeStepNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[::2]
+
+    check(SliceFullRangeStepNet(), torch.randn(6, 4), target=target)
+
+
 # --- squeeze ---
 
 
