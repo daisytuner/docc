@@ -349,3 +349,84 @@ def test_layernorm_all_params(target: str) -> None:
         torch.randn(2, 3, 16, dtype=torch.float64),
         target=target,
     )
+
+
+# --- LayerNorm1d ---
+
+
+def test_layernorm1d_simple(target: str) -> None:
+    class LayerNorm1dSimpleNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.layernorm: nn.LayerNorm = nn.LayerNorm(16)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.layernorm(input)
+
+    check(LayerNorm1dSimpleNet().eval(), torch.randn(2, 3, 16), target=target)
+
+
+def test_layernorm1d_eps(target: str) -> None:
+    class LayerNorm1dEpsNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.layernorm: nn.LayerNorm = nn.LayerNorm(16, eps=1e-04)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.layernorm(input)
+
+    check(LayerNorm1dEpsNet().eval(), torch.randn(2, 3, 16), target=target)
+
+
+# --- LayerNorm2d ---
+
+
+def test_layernorm2d_simple(target: str) -> None:
+    class LayerNorm2dSimpleNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.layernorm: nn.LayerNorm = nn.LayerNorm([16, 16])
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.layernorm(input)
+
+    check(LayerNorm2dSimpleNet().eval(), torch.randn(2, 3, 16, 16), target=target)
+
+
+def test_layernorm2d_eps(target: str) -> None:
+    class LayerNorm2dEpsNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.layernorm: nn.LayerNorm = nn.LayerNorm([16, 16], eps=1e-04)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.layernorm(input)
+
+    check(LayerNorm2dEpsNet().eval(), torch.randn(2, 3, 16, 16), target=target)
+
+
+# --- LayerNorm3d ---
+
+
+def test_layernorm3d_simple(target: str) -> None:
+    class LayerNorm3dSimpleNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.layernorm: nn.LayerNorm = nn.LayerNorm([16, 16, 16])
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.layernorm(input)
+
+    check(LayerNorm3dSimpleNet().eval(), torch.randn(2, 3, 16, 16, 16), target=target)
+
+
+def test_layernorm3d_eps(target: str) -> None:
+    class LayerNorm3dEpsNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.layernorm: nn.LayerNorm = nn.LayerNorm([16, 16, 16], eps=1e-04)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.layernorm(input)
+
+    check(LayerNorm3dEpsNet().eval(), torch.randn(2, 3, 16, 16, 16), target=target)
