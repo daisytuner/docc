@@ -542,6 +542,16 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_gelu",
+            &PyStructuredSDFGBuilder::add_gelu,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("tanh_approx") = false,
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_conv",
             &PyStructuredSDFGBuilder::add_conv,
             py::arg("X"),

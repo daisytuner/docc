@@ -18,6 +18,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
@@ -1239,6 +1240,8 @@ void PyStructuredSDFGBuilder::add_elementwise_unary_op(
         node = &builder_.add_library_node<sdfg::math::tensor::TanhNode>(block, debug_info, C_type.shape());
     } else if (op_type == "exp") {
         node = &builder_.add_library_node<sdfg::math::tensor::ExpNode>(block, debug_info, C_type.shape());
+    } else if (op_type == "logical_not") {
+        node = &builder_.add_library_node<sdfg::math::tensor::LogicalNotNode>(block, debug_info, C_type.shape());
     } else {
         throw std::runtime_error("Unsupported elementwise unary op: " + op_type);
     }
@@ -1751,6 +1754,23 @@ void PyStructuredSDFGBuilder::add_relu(
     auto& X_access = builder_.add_access(block, X, debug_info);
     auto& Y_access = builder_.add_access(block, Y, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::ReLUNode>(block, debug_info, Y_type.shape());
+    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_gelu(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    bool tanh_approx,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& libnode =
+        builder_.add_library_node<sdfg::math::tensor::GELUNode>(block, debug_info, Y_type.shape(), tanh_approx);
     builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
 }

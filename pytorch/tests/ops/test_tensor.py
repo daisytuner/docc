@@ -106,6 +106,36 @@ def test_fill__simple(target: str) -> None:
     check(Fill_SimpleNet(), torch.ones(2, 3), target=target)
 
 
+# --- softmax ---
+
+
+def test_softmax_simple(target: str) -> None:
+    class SoftmaxSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.softmax(1)
+
+    check(SoftmaxSimpleNet(), torch.randn(2, 3), target=target)
+
+
+def test_softmax_dtype(target: str) -> None:
+    class SoftmaxDtypeNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.softmax(1, dtype=torch.float64)
+
+    check(SoftmaxDtypeNet(), torch.randn(2, 3), target=target)
+
+
+# --- to ---
+
+
+def test_to_simple(target: str) -> None:
+    class ToSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.to(torch.float64)
+
+    check(ToSimpleNet(), torch.randn(2, 2), target=target)
+
+
 # --- view ---
 
 

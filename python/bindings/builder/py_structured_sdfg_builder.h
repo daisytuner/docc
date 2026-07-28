@@ -394,6 +394,15 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_gelu(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        bool tanh_approx = false,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_conv(
         const std::string& X,
         const sdfg::types::Tensor& X_type,

@@ -17,6 +17,7 @@ test_outputs/
 *.dot
 *.externals.json
 *.resolution.txt
+*.egg-info
 
 
 # Prerequisites
