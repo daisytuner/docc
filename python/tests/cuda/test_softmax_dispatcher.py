@@ -137,7 +137,6 @@ def compile_and_run_softmax(shape, axes, output_root: Path):
     ],
 )
 @pytest.mark.cuda()
-@pytest.mark.skip(reason="Cuda Softmax dispatcher disabled because of wrong results")
 def test_softmax_cuda(shape, axes, tmp_path):
     compile_and_run_softmax(shape, axes, tmp_path)
 
