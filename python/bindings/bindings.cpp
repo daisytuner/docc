@@ -652,6 +652,18 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_index_op",
+            &PyStructuredSDFGBuilder::add_index_op,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("indices"),
+            py::arg("index_types"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("dim_offset"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_reduce_op",
             &PyStructuredSDFGBuilder::add_reduce_op,
             py::arg("op_type"),

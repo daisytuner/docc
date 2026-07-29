@@ -59,6 +59,7 @@ set(TEST_FILES
     data_flow/library_nodes/math/tensor/einsum_test.cpp
     data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node_test.cpp
     data_flow/library_nodes/math/tensor/elementwise_test.cpp
+    data_flow/library_nodes/math/tensor/index_node_test.cpp
     data_flow/library_nodes/math/tensor/matmul_test.cpp
     data_flow/library_nodes/math/tensor/pooling_test.cpp
     data_flow/library_nodes/math/tensor/primitive_type_test.cpp
