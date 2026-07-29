@@ -328,6 +328,7 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+
     void add_copy_op(
         const std::string& X,
         const sdfg::types::Tensor& X_type,
@@ -364,7 +365,7 @@ public:
         double norm_type,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
-  
+
     void add_slice_op(
         const std::string& X,
         const sdfg::types::Tensor& X_type,
