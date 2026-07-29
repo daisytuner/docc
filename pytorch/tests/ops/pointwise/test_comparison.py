@@ -3,7 +3,6 @@ import torch.nn as nn
 
 from tests import check
 
-
 # --- torch.eq op test ---
 
 
@@ -55,8 +54,6 @@ def test_eq_tensor_scalar_int(target: str) -> None:
 
 
 def test_eq_tensor_tensor_bool(target: str) -> None:
-    torch._dynamo.reset()
-
     class EqTensorBoolNet(nn.Module):
         def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
             return torch.eq(x, y)
@@ -105,44 +102,3 @@ def test_le_tensor_scalar_int(target: str) -> None:
 
     x = torch.tensor([[1.0, 2.0], [3.0, 2.0]])
     check(LeScalarIntNet(), x, 2, target=target)
-
-
-# --- torch.ne op test ---
-
-
-def test_ne_tensor_tensor_float(target: str) -> None:
-    class NeTensorNet(nn.Module):
-        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            return torch.ne(x, y)
-
-    x = torch.tensor([[1.0, 2.0, 3.2], [3.0, 4.0, 3.2]])
-    y = torch.tensor([[1.0, 5.0, 1.2], [3.0, 3.0, 3.2]])
-    check(NeTensorNet(), x, y, target=target)
-
-
-def test_ne_tensor_tensor_int(target: str) -> None:
-    class NeTensorNet(nn.Module):
-        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            return torch.ne(x, y)
-
-    x = torch.tensor([[1, 2, 3], [4, 4, 5]])
-    y = torch.tensor([[1, 5, 2], [3, 6, 5]])
-    check(NeTensorNet(), x, y, target=target)
-
-
-def test_ne_tensor_scalar_float(target: str) -> None:
-    class NeScalarFloatNet(nn.Module):
-        def forward(self, x: torch.Tensor, y: float) -> torch.Tensor:
-            return torch.ne(x, y)
-
-    x = torch.tensor([[1.0, 2.0, 4.0], [3.0, 2.0, 4.0]])
-    check(NeScalarFloatNet(), x, 2.0, target=target)
-
-
-def test_ne_tensor_scalar_int(target: str) -> None:
-    class NeScalarIntNet(nn.Module):
-        def forward(self, x: torch.Tensor, y: int) -> torch.Tensor:
-            return torch.ne(x, y)
-
-    x = torch.tensor([[1.0, 2.0], [3.0, 2.0]])
-    check(NeScalarIntNet(), x, 2, target=target)

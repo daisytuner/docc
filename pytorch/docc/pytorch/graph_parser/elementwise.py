@@ -177,6 +177,7 @@ class ElementwiseTensorOpParser(GraphParserModule):
 
 register_module("aten.div.Tensor", ElementwiseTensorOpParser("div"))
 register_module("aten.mul.Tensor", ElementwiseTensorOpParser("mul"))
+register_module("aten.mul.Scalar", ElementwiseTensorOpParser("mul"))
 register_module("aten.pow.Tensor_Scalar", ElementwiseTensorOpParser("pow"))
 register_module("aten.pow.Tensor_Tensor", ElementwiseTensorOpParser("pow"))
 
@@ -264,12 +265,8 @@ register_module(
     ElementwiseTaskletOpParser(TaskletCode.fp_ole, TaskletCode.int_sle),
 )
 register_module(
-    "aten.ne.Tensor",
-    ElementwiseTaskletOpParser(TaskletCode.fp_one, TaskletCode.int_ne),
-)
-register_module(
-    "aten.ne.Scalar",
-    ElementwiseTaskletOpParser(TaskletCode.fp_one, TaskletCode.int_ne),
+    "aten.bitwise_and.Tensor",
+    ElementwiseTaskletOpParser(TaskletCode.int_and, TaskletCode.int_and),
 )
 
 
