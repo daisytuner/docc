@@ -192,6 +192,62 @@ def test_slice_full_range_step(target: str) -> None:
     check(SliceFullRangeStepNet(), torch.randn(6, 4), target=target)
 
 
+def test_slice_3d_dim_0(target: str) -> None:
+    class Slice3dDim0Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[1:3]
+
+    check(Slice3dDim0Net(), torch.randn(4, 3, 5), target=target)
+
+
+def test_slice_3d_dim_1(target: str) -> None:
+    class Slice3dDim1Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, 1:3]
+
+    check(Slice3dDim1Net(), torch.randn(4, 3, 5), target=target)
+
+
+def test_slice_3d_dim_2(target: str) -> None:
+    class Slice3dDim2Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, :, 1:4]
+
+    check(Slice3dDim2Net(), torch.randn(4, 3, 5), target=target)
+
+
+def test_slice_4d_dim_0(target: str) -> None:
+    class Slice4dDim0Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[1:3]
+
+    check(Slice4dDim0Net(), torch.randn(4, 3, 5, 6), target=target)
+
+
+def test_slice_4d_dim_1(target: str) -> None:
+    class Slice4dDim1Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, 1:3]
+
+    check(Slice4dDim1Net(), torch.randn(4, 3, 5, 6), target=target)
+
+
+def test_slice_4d_dim_2(target: str) -> None:
+    class Slice4dDim2Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, :, 1:4]
+
+    check(Slice4dDim2Net(), torch.randn(4, 3, 5, 6), target=target)
+
+
+def test_slice_4d_dim_3(target: str) -> None:
+    class Slice4dDim3Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, :, :, 2:5]
+
+    check(Slice4dDim3Net(), torch.randn(4, 3, 5, 6), target=target)
+
+
 # --- squeeze ---
 
 
