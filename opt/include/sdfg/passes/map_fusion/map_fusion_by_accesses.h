@@ -11,13 +11,14 @@
 namespace sdfg::passes::map_fusion {
 
 class MapFusionByAccessWorker {
-protected:
+public:
     enum class FusionDirection {
         None = 0,
         ProducerIntoConsumer,
         ConsumerIntoProducer,
     };
 
+protected:
     bool allow_init_hoist_ = true;
 
     MapFusionByAccessWorker(bool allow_init_hoist = true) : allow_init_hoist_(allow_init_hoist) {}
@@ -69,7 +70,8 @@ protected:
         const Plan& plan, FusionLoopCandidate* first_current, FusionLoopCandidate* second_current
     ) = 0;
 
-    std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> solve_subsets(
+public:
+    static std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> solve_subsets(
         const data_flow::Subset& producer_subset,
         const data_flow::Subset& consumer_subset,
         const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
@@ -79,6 +81,7 @@ protected:
         bool invert_range_check = false
     );
 
+protected:
     struct FusionRegs {
         std::unordered_set<RegId> fusion_regs;
         std::unordered_set<RegId> second_outputs;

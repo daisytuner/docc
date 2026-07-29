@@ -46,7 +46,14 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                 auto first_id = first->element_id();
                 auto second_id = second->element_id();
                 transformation.apply(builder_, analysis_manager_);
-                DEBUG_PRINTLN("Applied MapFusion to #" + std::to_string(first_id) + " - #" + std::to_string(second_id));
+                DEBUG_PRINTLN(
+                    "Applied MapFusion to #" + std::to_string(first_id) + " " +
+                    (transformation.last_fusion_direction() ==
+                             map_fusion::MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer
+                         ? "->"
+                         : "<-") +
+                    " #" + std::to_string(second_id)
+                );
                 applied = true;
             }
         } else if (i + 2 < node.size()) {
@@ -64,8 +71,12 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                         auto second_id = second->element_id();
                         transformation.apply(builder_, analysis_manager_);
                         DEBUG_PRINTLN(
-                            "Applied MapFusion to #" + std::to_string(first_id) + " - #" + std::to_string(second_id) +
-                            " with intermediate malloc block"
+                            "Applied MapFusion to #" + std::to_string(first_id) + " " +
+                            (transformation.last_fusion_direction() ==
+                                     map_fusion::MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer
+                                 ? "->"
+                                 : "<-") +
+                            " #" + std::to_string(second_id) + " with intermediate malloc block"
                         );
                         applied = true;
 

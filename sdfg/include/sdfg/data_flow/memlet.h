@@ -351,5 +351,8 @@ public:
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     void replace(const symbolic::ExpressionMapping& replacements) override;
 };
+
+Subset remap_subset(const Subset& subset, const symbolic::ExpressionMapping& replacements);
+
 } // namespace data_flow
 } // namespace sdfg

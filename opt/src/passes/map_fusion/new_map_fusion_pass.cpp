@@ -16,7 +16,7 @@ static const symbolic::Symbol lower_indvar_placeholder = symbolic::symbol("__low
 
 static inline constexpr bool DUMP_ASSUMPTIONS = false;
 static inline constexpr bool DUMP_LOOP_INFOS = false;
-static inline constexpr bool DUMP_GRAPHS = true;
+static inline constexpr bool DUMP_GRAPHS = false;
 
 static bool vectors_of_expressions_match(
     const std::vector<symbolic::Expression>& a,
@@ -38,6 +38,8 @@ class LoopIndirectAccessFinder : public analysis::BaseUserVisitor {
         ControlFlowNode* loop;
         analysis::LocalLoopInfo::LoopType type;
         FusionLoopCandidate& fusion_candidate;
+        symbolic::Expression indvar_placeholder; // SymEngine::Function(tight_lower_bound, tight_upper_bound, step,
+                                                 // loop-level)
         std::unordered_set<std::string> indvars;
     };
     std::deque<LoopEntry> loop_stack_;
@@ -84,39 +86,41 @@ public:
     )
         : sdfg_(sdfg), loop_analysis_(loops), fuse_candidates_(fuse_candidates) {}
 
-    bool visit(sdfg::structured_control_flow::For& node) override {
-        auto cand_it = fuse_candidates_.find(node.element_id());
-        bool is_relevant_loop = cand_it != fuse_candidates_.end();
-        if (is_relevant_loop) {
-            loop_stack_.emplace_back(&node, analysis::LocalLoopInfo::LoopType::For, *cand_it->second.get());
-            loop_stack_.back().indvars.emplace(node.indvar()->get_name());
-        }
-        auto res = ActualStructuredSDFGVisitor::visit(node);
-
-        if (is_relevant_loop) {
-            loop_stack_.pop_back();
-        }
-
-        return res;
-    }
-
     bool visit(sdfg::structured_control_flow::While& node) override {
         // far from being supported as fuse candidates, so do the normal stuff
         auto res = ActualStructuredSDFGVisitor::visit(node);
         return res;
     }
 
-    bool visit(sdfg::structured_control_flow::Map& node) override {
+    static symbolic::Expression get_indvar_placeholder(FusionLoopCandidate& candidate, size_t level) {
+        auto* indvar_bounds = candidate.indvar_boundaries;
+        symbolic::Expression stride = symbolic::integer(1);
+        if (symbolic::null_safe_eq(symbolic::sub(indvar_bounds->map(), indvar_bounds->symbol()), stride)) {
+            return SymEngine::function_symbol(
+                "indvar",
+                {indvar_bounds->tight_lower_bound(), indvar_bounds->tight_upper_bound(), stride, symbolic::integer(level)
+                }
+            );
+        } else {
+            return {};
+        }
+    }
+
+    bool handleStructuredLoop(sdfg::structured_control_flow::StructuredLoop& node) override {
         auto cand_it = fuse_candidates_.find(node.element_id());
         bool is_relevant_loop = cand_it != fuse_candidates_.end();
         if (is_relevant_loop) {
-            loop_stack_.emplace_back(&node, analysis::LocalLoopInfo::LoopType::Map, *cand_it->second.get());
+            auto type = is_a(node.type_id(), ElementType::Map) ? analysis::LocalLoopInfo::LoopType::Map
+                                                               : analysis::LocalLoopInfo::LoopType::For;
+            auto& candidate = *cand_it->second.get();
+            loop_stack_.emplace_back(&node, type, candidate, get_indvar_placeholder(candidate, loop_stack_.size() - 1));
             loop_stack_.back().indvars.emplace(node.indvar()->get_name());
         }
-        auto res = ActualStructuredSDFGVisitor::visit(node);
+        auto res = BaseUserVisitor::handleStructuredLoop(node);
         if (is_relevant_loop) {
-            if (loop_stack_.size() > 1) {
-                auto& parent = loop_stack_.at(loop_stack_.size() - 2);
+            auto size = loop_stack_.size();
+            if (size > 1) {
+                auto& parent = loop_stack_.at(size - 2);
                 propagate_indirect_accesses_up(loop_stack_.back(), parent);
             }
             loop_stack_.pop_back();
@@ -145,18 +149,41 @@ public:
         if (arg_it != cand.args.end()) {
             auto& fusion_arg = arg_it->second;
             fusion_arg.local_access.merge_into(const_cast<Block*>(&block), edge.subset(), false, is_write);
-            fusion_arg.nested_access.merge_into(const_cast<Block*>(&block), edge.subset(), false, is_write);
+            std::optional<data_flow::Subset> generalized_subset_holder;
+            const data_flow::Subset* generalized_subset = &edge.subset();
+            if (!current->indvar_placeholder.is_null()) {
+                generalized_subset_holder = data_flow::remap_subset(
+                    *generalized_subset, {{cand.indvar_boundaries->symbol(), current->indvar_placeholder}}
+                );
+                generalized_subset = &generalized_subset_holder.value();
+            }
+
+            fusion_arg.nested_access.merge_into(const_cast<Block*>(&block), *generalized_subset, false, is_write);
         }
     }
 
-    void propagate_indirect_accesses_up(LoopEntry& current, LoopEntry& parent) {
+    static void propagate_indirect_accesses_up(LoopEntry& current, LoopEntry& parent) {
         auto& parent_cand = parent.fusion_candidate;
+        std::optional<symbolic::ExpressionMapping> indvar_mapping;
+        if (current.fusion_candidate.is_by_domain_candidate) {
+            auto& indvar_bounds = current.fusion_candidate.indvar_boundaries;
+            symbolic::Expression stride = symbolic::integer(1);
+            if (symbolic::null_safe_eq(symbolic::sub(indvar_bounds->map(), indvar_bounds->symbol()), stride)) {
+                indvar_mapping = symbolic::ExpressionMapping();
+                indvar_mapping->emplace(
+                    SymEngine::rcp_static_cast<const SymEngine::Basic>(indvar_bounds->symbol()),
+                    current.indvar_placeholder
+                );
+            }
+        }
         for (auto& [container, meta] : current.fusion_candidate.args) {
             auto arg_it = parent_cand.args.find(container);
             if (arg_it != parent_cand.args.end()) {
                 auto& parent_arg = arg_it->second;
-                parent_arg.nested_access.merge_into(meta.nested_access);
-                parent_arg.nested_access.merge_into(meta.local_access);
+                parent_arg.nested_access
+                    .merge_into(meta.nested_access, indvar_mapping.has_value() ? &*indvar_mapping : nullptr);
+                parent_arg.nested_access
+                    .merge_into(meta.local_access, indvar_mapping.has_value() ? &*indvar_mapping : nullptr);
             }
         }
 
@@ -845,14 +872,25 @@ bool FusionArgCommonAccesses::merge_subset(
 ) {
     bool updated = false;
 
-    if (common_subset.has_value() && subset.has_value() &&
-        !vectors_of_expressions_match(common_subset.value(), subset.value(), lower_indvars)) {
+    std::optional<data_flow::Subset> mapped_subset_holder;
+    const data_flow::Subset* mapped_subset = nullptr;
+    if (subset.has_value()) {
+        if (lower_indvars) {
+            mapped_subset_holder = data_flow::remap_subset(subset.value(), *lower_indvars);
+            mapped_subset = &mapped_subset_holder.value();
+        } else {
+            mapped_subset = &subset.value();
+        }
+    }
+
+    if (common_subset.has_value() && mapped_subset &&
+        !symbolic::vectors_of_expressions_match(common_subset.value(), *mapped_subset)) {
         if (!subsets_conflict) {
             subsets_conflict = true;
             updated = true;
         }
-    } else if (!common_subset.has_value() && subset.has_value() && !subsets_conflict) {
-        common_subset = subset.value();
+    } else if (!common_subset.has_value() && mapped_subset && !subsets_conflict) {
+        common_subset = *mapped_subset;
         updated = true;
     }
     if (not_understood && !subsets_conflict) {

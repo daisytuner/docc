@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdfg/passes/map_fusion/fusion_types.h"
+#include "sdfg/passes/map_fusion/map_fusion_by_accesses.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -41,12 +42,7 @@ class MapFusion : public Transformation {
     bool allow_init_hoist_ = true;
     bool cons_into_prod_only_;
 
-    enum class FusionDirection {
-        None = 0,
-        ProducerIntoConsumer,
-        ConsumerIntoProducer,
-    };
-    FusionDirection direction_;
+    passes::map_fusion::MapFusionByAccessWorker::FusionDirection direction_;
     std::vector<passes::map_fusion::FusionRegCandidate> fusion_candidates_;
 
     // Resolved locations populated during can_be_applied()
@@ -64,16 +60,6 @@ class MapFusion : public Transformation {
     bool init_hoist_ = false;
     // The outer parallel-band body that hosts the hoisted init (Case 2 only).
     structured_control_flow::Sequence* hoist_body_ = nullptr;
-
-    static std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> solve_subsets(
-        const data_flow::Subset& producer_subset,
-        const data_flow::Subset& consumer_subset,
-        const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
-        const std::vector<structured_control_flow::StructuredLoop*>& consumer_loops,
-        const symbolic::Assumptions& producer_assumptions,
-        const symbolic::Assumptions& consumer_assumptions,
-        bool invert_range_check = false
-    );
 
     /**
      * @brief Find the unique write location of a container in a loop nest
@@ -122,6 +108,8 @@ public:
         bool allow_init_hoist = true,
         bool cons_into_prod_only = false
     );
+
+    passes::map_fusion::MapFusionByAccessWorker::FusionDirection last_fusion_direction() const;
 
     /**
      * @brief Get the name of this transformation

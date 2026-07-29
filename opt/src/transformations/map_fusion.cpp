@@ -12,6 +12,7 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/control_flow/interstate_edge.h"
 #include "sdfg/data_flow/data_flow_graph.h"
+#include "sdfg/passes/map_fusion/map_fusion_by_accesses.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/symbolic/delinearization.h"
@@ -35,214 +36,9 @@ MapFusion::MapFusion(
 
 std::string MapFusion::name() const { return "MapFusion"; }
 
-std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_subsets(
-    const data_flow::Subset& producer_subset,
-    const data_flow::Subset& consumer_subset,
-    const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
-    const std::vector<structured_control_flow::StructuredLoop*>& consumer_loops,
-    const symbolic::Assumptions& producer_assumptions,
-    const symbolic::Assumptions& consumer_assumptions,
-    bool invert_range_check
-) {
-    // Delinearize subsets to recover multi-dimensional structure from linearized accesses
-    // e.g. T[i*N + j] with assumptions on bounds -> T[i, j]
-    auto producer_sub = producer_subset;
-    if (producer_sub.size() == 1) {
-        auto producer_result = symbolic::delinearize(producer_sub.at(0), producer_assumptions);
-        if (producer_result.success) {
-            producer_sub = producer_result.indices;
-        }
-    }
-    auto consumer_sub = consumer_subset;
-    if (consumer_sub.size() == 1) {
-        auto consumer_result = symbolic::delinearize(consumer_sub.at(0), consumer_assumptions);
-        if (consumer_result.success) {
-            consumer_sub = consumer_result.indices;
-        }
-    }
+using passes::map_fusion::MapFusionByAccessWorker;
 
-    // Subset dimensions must match
-    if (producer_sub.size() != consumer_sub.size()) {
-        return {};
-    }
-    if (producer_sub.empty()) {
-        return {};
-    }
-
-    // Extract producer indvars
-    SymEngine::vec_sym producer_vars;
-    for (auto* loop : producer_loops) {
-        producer_vars.push_back(SymEngine::rcp_static_cast<const SymEngine::Symbol>(loop->indvar()));
-    }
-
-    // Step 1: Solve the linear equation system using SymEngine
-    // System: producer_sub[d] - consumer_sub[d] = 0, for each dimension d
-    // Solve for producer_vars in terms of consumer_vars and parameters
-    SymEngine::vec_basic equations;
-    for (size_t d = 0; d < producer_sub.size(); ++d) {
-        equations.push_back(symbolic::sub(producer_sub.at(d), consumer_sub.at(d)));
-    }
-
-    // Need exactly as many equations as unknowns for a unique solution.
-    // Underdetermined systems (e.g. linearized access with multiple loop vars)
-    // cannot be uniquely solved and would crash linsolve.
-    if (equations.size() != producer_vars.size()) {
-        return {};
-    }
-
-    SymEngine::vec_basic solution;
-    try {
-        solution = SymEngine::linsolve(equations, producer_vars);
-    } catch (...) {
-        return {};
-    }
-    if (solution.size() != producer_vars.size()) {
-        return {};
-    }
-    // Build consumer var set for atom validation
-    symbolic::SymbolSet consumer_var_set;
-    for (auto* loop : consumer_loops) {
-        consumer_var_set.insert(loop->indvar());
-    }
-
-    std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> mappings;
-    for (size_t i = 0; i < producer_vars.size(); ++i) {
-        auto& sol = solution[i];
-
-        // Check for invalid solutions
-        if (SymEngine::is_a<SymEngine::NaN>(*sol) || SymEngine::is_a<SymEngine::Infty>(*sol)) {
-            return {};
-        }
-
-        // Validate that solution atoms are consumer vars or parameters
-        for (const auto& atom : symbolic::atoms(sol)) {
-            if (consumer_var_set.count(atom)) {
-                continue;
-            }
-            bool is_param = false;
-            auto it = consumer_assumptions.find(atom);
-            if (it != consumer_assumptions.end() && it->second.constant()) {
-                is_param = true;
-            }
-            if (!is_param) {
-                it = producer_assumptions.find(atom);
-                if (it != producer_assumptions.end() && it->second.constant()) {
-                    is_param = true;
-                }
-            }
-            if (!is_param) {
-                return {};
-            }
-        }
-
-        mappings.push_back({symbolic::symbol(producer_vars[i]->get_name()), symbolic::expand(sol)});
-    }
-    // Step 2: ISL integrality validation via map composition
-    // Build an unconstrained producer access map (no domain bounds on producer vars).
-    // In map fusion, the producer's computation is inlined into the consumer, so
-    // the producer's original iteration domain is irrelevant. We only need to verify
-    // that the equation system has an INTEGER solution for every consumer point.
-    symbolic::Assumptions unconstrained_producer;
-    for (auto* loop : producer_loops) {
-        symbolic::Assumption a(loop->indvar());
-        a.constant(false);
-        unconstrained_producer[loop->indvar()] = a;
-    }
-    for (const auto& [sym, assump] : producer_assumptions) {
-        if (assump.constant() && unconstrained_producer.find(sym) == unconstrained_producer.end()) {
-            unconstrained_producer[sym] = assump;
-        }
-    }
-
-    std::string producer_map_str = symbolic::expression_to_map_str(producer_sub, unconstrained_producer);
-    // Build consumer access map with full domain constraints
-    std::string consumer_map_str = symbolic::expression_to_map_str(consumer_sub, consumer_assumptions);
-
-    isl_ctx* ctx = isl_ctx_alloc();
-    isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
-
-    isl_map* producer_map = isl_map_read_from_str(ctx, producer_map_str.c_str());
-    isl_map* consumer_map = isl_map_read_from_str(ctx, consumer_map_str.c_str());
-
-    if (!producer_map || !consumer_map) {
-        if (producer_map) isl_map_free(producer_map);
-        if (consumer_map) isl_map_free(consumer_map);
-        isl_ctx_free(ctx);
-        return {};
-    }
-
-    // Align parameters between the two maps
-    isl_space* params_p = isl_space_params(isl_map_get_space(producer_map));
-    isl_space* params_c = isl_space_params(isl_map_get_space(consumer_map));
-    isl_space* unified = isl_space_align_params(isl_space_copy(params_p), isl_space_copy(params_c));
-    isl_space_free(params_p);
-    isl_space_free(params_c);
-
-    producer_map = isl_map_align_params(producer_map, isl_space_copy(unified));
-    consumer_map = isl_map_align_params(consumer_map, isl_space_copy(unified));
-
-    // Save consumer domain before consuming consumer_map in composition
-    isl_set* consumer_domain = isl_map_domain(isl_map_copy(consumer_map));
-
-    // Compute composition: consumer_access ∘ inverse(producer_access)
-    // This checks whether the equation system producer_subset = consumer_subset
-    // has an integer solution for each consumer domain point.
-    isl_map* producer_inverse = isl_map_reverse(producer_map);
-    isl_map* composition = isl_map_apply_range(consumer_map, producer_inverse);
-
-    // Check single-valuedness: each consumer point maps to at most one producer point
-    bool single_valued = isl_map_is_single_valued(composition) == isl_bool_true;
-
-    // Check domain coverage: every consumer point has a valid integer mapping
-    isl_set* comp_domain = isl_map_domain(composition);
-
-    bool domain_covered = isl_set_is_subset(consumer_domain, comp_domain) == isl_bool_true;
-
-    isl_set_free(comp_domain);
-    isl_set_free(consumer_domain);
-
-    // Step 3: Verify producer write range covers consumer read range.
-    // The producer only writes a subset of the array if its loops have restricted bounds.
-    // Fusion is invalid if the consumer reads elements the producer never writes.
-    bool range_covered = false;
-    if (single_valued && domain_covered) {
-        std::string constrained_producer_map_str = symbolic::expression_to_map_str(producer_sub, producer_assumptions);
-        isl_map* constrained_producer = isl_map_read_from_str(ctx, constrained_producer_map_str.c_str());
-        isl_map* consumer_map_copy = isl_map_read_from_str(ctx, consumer_map_str.c_str());
-
-        if (constrained_producer && consumer_map_copy) {
-            constrained_producer = isl_map_align_params(constrained_producer, isl_space_copy(unified));
-            consumer_map_copy = isl_map_align_params(consumer_map_copy, isl_space_copy(unified));
-
-            isl_set* producer_range = isl_map_range(constrained_producer);
-            isl_set* consumer_range = isl_map_range(consumer_map_copy);
-
-            // When arguments are swapped (ConsumerIntoProducer), the "producer"/"consumer"
-            // labels are inverted. Flip the subset check to always verify:
-            // actual_consumer_read_range ⊆ actual_producer_write_range
-            if (invert_range_check) {
-                range_covered = isl_set_is_subset(producer_range, consumer_range) == isl_bool_true;
-            } else {
-                range_covered = isl_set_is_subset(consumer_range, producer_range) == isl_bool_true;
-            }
-
-            isl_set_free(producer_range);
-            isl_set_free(consumer_range);
-        } else {
-            if (constrained_producer) isl_map_free(constrained_producer);
-            if (consumer_map_copy) isl_map_free(consumer_map_copy);
-        }
-    }
-
-    isl_space_free(unified);
-    isl_ctx_free(ctx);
-
-    if (!single_valued || !domain_covered || !range_covered) {
-        return {};
-    }
-
-    return mappings;
-}
+MapFusionByAccessWorker::FusionDirection MapFusion::last_fusion_direction() const { return direction_; }
 
 bool MapFusion::find_write_location(
     structured_control_flow::StructuredLoop& loop,
@@ -385,13 +181,13 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 
     if (first_nested && second_nested) {
         // Pattern 1: Both perfectly nested — producer into consumer (original path)
-        direction_ = FusionDirection::ProducerIntoConsumer;
+        direction_ = MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer;
     } else if (!first_nested && second_nested) {
         // Pattern 2: Producer non-perfectly-nested, consumer perfectly nested
-        direction_ = FusionDirection::ConsumerIntoProducer;
+        direction_ = MapFusionByAccessWorker::FusionDirection::ConsumerIntoProducer;
     } else {
         // Reverse Pattern 2: Producer perfectly nested, consumer non-perfectly-nested
-        direction_ = FusionDirection::ProducerIntoConsumer;
+        direction_ = MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer;
     }
 
     // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
@@ -412,7 +208,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     // These keep init-into-reduction (T=0 followed by For(k){T+=...}) rejected.
     // ConsumerIntoProducer: only the consumer (inlined side) must be all-parallel.
     bool consumer_reduction_branch = false;
-    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+    if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         if (!first_loop_info.is_perfectly_parallel) {
             return false;
         } else if (!second_loop_info.is_perfectly_parallel) {
@@ -591,7 +387,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     // before the inlined copy reads it). Force ConsumerIntoProducer.
     // We check the dataflow directly rather than ArgumentsAnalysis, because the latter
     // conservatively marks written containers as also read.
-    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+    if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         auto& first_dataflow_check = producer_block_->dataflow();
         bool producer_reads_fusion = false;
         for (const auto& container : fusion_containers) {
@@ -605,7 +401,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             if (producer_reads_fusion) break;
         }
         if (producer_reads_fusion) {
-            direction_ = FusionDirection::ConsumerIntoProducer;
+            direction_ = MapFusionByAccessWorker::FusionDirection::ConsumerIntoProducer;
             // Re-check: consumer must be all-parallel for ConsumerIntoProducer
             if (!second_loop_info.is_perfectly_parallel) {
                 return false;
@@ -613,7 +409,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
     }
 
-    if (cons_into_prod_only_ && direction_ != FusionDirection::ConsumerIntoProducer) {
+    if (cons_into_prod_only_ && direction_ != MapFusionByAccessWorker::FusionDirection::ConsumerIntoProducer) {
         // THe new mapfusion can handle all the other cases, so don't waste time doing those
         return false;
     }
@@ -622,7 +418,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     // If the producer body has multiple blocks (e.g. from prior BlockFusion merging
     // a previous fusion's writeback + inlined blocks), the write block may depend on
     // intermediates produced by earlier blocks that would NOT be copied. Reject.
-    if (direction_ == FusionDirection::ProducerIntoConsumer && producer_body_->size() > 1) {
+    if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer && producer_body_->size() > 1) {
         return false;
     }
 
@@ -687,9 +483,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         for (const auto& consumer_subset : unique_subsets) {
             std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> mappings;
 
-            if (direction_ == FusionDirection::ProducerIntoConsumer) {
+            if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
                 // Solve producer indvars in terms of consumer indvars
-                mappings = solve_subsets(
+                mappings = passes::map_fusion::MapFusionByAccessWorker::solve_subsets(
                     producer_subset,
                     consumer_subset,
                     producer_loops_,
@@ -700,7 +496,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             } else {
                 // ConsumerIntoProducer: solve consumer indvars in terms of producer indvars
                 // Arguments are swapped, so invert the range check direction
-                mappings = solve_subsets(
+                mappings = passes::map_fusion::MapFusionByAccessWorker::solve_subsets(
                     consumer_subset,
                     producer_subset,
                     consumer_loops_,
@@ -819,7 +615,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                   << static_cast<int>(direction_)
     );
 
-    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+    if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         // Pattern 1 + Reverse Pattern 2: Inline producer blocks into consumer's read body
         auto& first_dataflow = producer_block_->dataflow();
 

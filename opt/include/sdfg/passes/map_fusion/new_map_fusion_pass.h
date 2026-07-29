@@ -41,7 +41,7 @@ public:
     NewMapFusionPass(const LoopFusionConfig& config);
     NewMapFusionPass();
 
-    std::string name() override { return "MapFusionByDomainPass"; }
+    std::string name() override { return "NewMapFusionPass"; }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
