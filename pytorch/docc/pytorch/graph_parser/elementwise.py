@@ -251,6 +251,14 @@ register_module(
 register_module(
     "aten.eq.Scalar", ElementwiseTaskletOpParser(TaskletCode.fp_oeq, TaskletCode.int_eq)
 )
+register_module(
+    "aten.le.Tensor",
+    ElementwiseTaskletOpParser(TaskletCode.fp_ole, TaskletCode.int_sle),
+)
+register_module(
+    "aten.le.Scalar",
+    ElementwiseTaskletOpParser(TaskletCode.fp_ole, TaskletCode.int_sle),
+)
 
 
 class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
