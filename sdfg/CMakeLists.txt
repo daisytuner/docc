@@ -91,6 +91,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/einsum_node.cpp
     src/data_flow/library_nodes/math/tensor/embedding_node.cpp
     src/data_flow/library_nodes/math/tensor/embedding_renorm_node.cpp
+    src/data_flow/library_nodes/math/tensor/slice_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.cpp

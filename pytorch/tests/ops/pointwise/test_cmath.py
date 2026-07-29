@@ -160,3 +160,49 @@ def test_arctan2_simple(target: str) -> None:
         target=target,
         equal_nan=True
     )
+
+
+def test_sin_simple(target: str) -> None:
+    class PointwiseCMathSinSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.sin(input)
+
+    check(
+        PointwiseCMathSinSimpleNet(), *(torch.randn(4),), target=target, equal_nan=True
+    )
+
+
+def test_cos_simple(target: str) -> None:
+    class PointwiseCMathCosSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.cos(input)
+
+    check(
+        PointwiseCMathCosSimpleNet(), *(torch.randn(4),), target=target, equal_nan=True
+    )
+
+
+def test_pow_tensor_tensor(target: str) -> None:
+    class PointwiseCMathPowTensorNet(nn.Module):
+        def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+            return torch.pow(input, other)
+
+    check(
+        PointwiseCMathPowTensorNet(),
+        *(torch.abs(torch.randn(4)), torch.randn(4)),
+        target=target,
+        equal_nan=True
+    )
+
+
+def test_pow_tensor_scalar(target: str) -> None:
+    class PointwiseCMathPowScalarNet(nn.Module):
+        def forward(self, input: torch.Tensor, other: float) -> torch.Tensor:
+            return torch.pow(input, other)
+
+    check(
+        PointwiseCMathPowScalarNet(),
+        *(torch.abs(torch.randn(4)), 2.5),
+        target=target,
+        equal_nan=True
+    )
