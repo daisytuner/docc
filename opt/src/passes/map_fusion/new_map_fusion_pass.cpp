@@ -597,7 +597,20 @@ PatternHandler::MatchResult MapFusionHandler::match(StructuredLoop& first, Struc
     if (config_.map_fusion_by_access) {
         // we did not find an absolute blocker for fusing, but simple fusion by domain also did not work out, so try the
         // fusion-by-access
-        return try_complex_fuse_producer_into_consumer(*first_top, *second_top, no_uses_between, domains_match);
+        StructuredLoop *first_loop, *second_loop;
+        if (last_matched_level >= 0) {
+            first_loop = first_current->loop;
+            second_loop = second_current->loop;
+        } else {
+            first_loop = &first;
+            second_loop = &second;
+        }
+        bool leaf_loops = state_.loop_analysis->children(first_loop).empty() &&
+                          state_.loop_analysis->children(second_loop).empty();
+
+        return try_complex_fuse_producer_into_consumer(
+            *first_top, *second_top, no_uses_between, domains_match && leaf_loops
+        );
     } else {
         return {};
     }

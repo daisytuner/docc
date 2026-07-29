@@ -473,7 +473,7 @@ std::unique_ptr<MapFusionByAccessWorker::Plan> MapFusionByAccessWorker::
         // All fusion containers must be read at the same sequence for this to work
         structured_control_flow::Sequence* common_seq = nullptr;
         for (const auto& container : fusion_regs) {
-            auto& fusion_arg = first.args.at(container);
+            auto& fusion_arg = second.args.at(container);
             auto& nested_common = fusion_arg.nested_access;
 
             if (nested_common.rd_block.block_conflict) {
@@ -489,8 +489,8 @@ std::unique_ptr<MapFusionByAccessWorker::Plan> MapFusionByAccessWorker::
             }
         }
         if (common_seq) {
-            state.producer_body_ = common_seq;
-            state.producer_loops_ = collect_loop_parents(common_seq, first.loop);
+            state.consumer_body_ = common_seq;
+            state.consumer_loops_ = collect_loop_parents(common_seq, second.loop);
         } else {
             return {};
         }

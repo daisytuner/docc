@@ -2943,7 +2943,7 @@ TEST(NewMapFusionTest, Domain_2D_Apply_StridedIndexSubstitution) {
     }
 }
 
-TEST(NewMapFusionTest, Pattern2_NonPerfectlyNestedProducer) {
+TEST(NewMapFusionTest, PartialDomain_Pattern2_NonPerfectlyNestedProducer) {
     // Pattern 2: Producer is NOT perfectly nested, consumer is perfectly nested.
     // Producer: Map(i, 0:N) {
     //     Block: S[i] = A[i] + 1.0      (sibling at depth 1)
@@ -2951,7 +2951,7 @@ TEST(NewMapFusionTest, Pattern2_NonPerfectlyNestedProducer) {
     //         Block: T[i,j] = S[i] * B[i,j]   (write at depth 2)
     //     }
     // }
-    // Consumer: Map(k, 0:N) { Map(l, 0:M) { C[k,l] = T[k,l] } }
+    // Consumer: Map(k, 1:N) { Map(l, 1:M) { C[k,l] = T[k,l] } }
     //
     // Fusion direction should be ConsumerIntoProducer to avoid replicating the S computation.
 
@@ -3026,7 +3026,7 @@ TEST(NewMapFusionTest, Pattern2_NonPerfectlyNestedProducer) {
         root,
         symbolic::symbol("k"),
         symbolic::Lt(symbolic::symbol("k"), symbolic::symbol("N")),
-        symbolic::integer(0),
+        symbolic::integer(1),
         symbolic::add(symbolic::symbol("k"), symbolic::integer(1)),
         schedule
     );
@@ -3034,7 +3034,7 @@ TEST(NewMapFusionTest, Pattern2_NonPerfectlyNestedProducer) {
         map2_outer.root(),
         symbolic::symbol("l"),
         symbolic::Lt(symbolic::symbol("l"), symbolic::symbol("M")),
-        symbolic::integer(0),
+        symbolic::integer(1),
         symbolic::add(symbolic::symbol("l"), symbolic::integer(1)),
         schedule
     );
@@ -3101,17 +3101,20 @@ TEST(NewMapFusionTest, Pattern2_NonPerfectlyNestedProducer) {
     // remains)";
 }
 
-TEST(NewMapFusionTest, Pattern2_Reverse_NonPerfectlyNestedConsumer) {
+TEST(NewMapFusionTest, PartialDomain_Pattern2_Reverse_NonPerfectlyNestedConsumer) {
     // Reverse Pattern 2: Producer is perfectly nested, consumer is NOT perfectly nested.
     // Producer: Map(i, 0:N) { Map(j, 0:M) { T[i,j] = A[i,j] } }
     // Consumer: Map(k, 0:N) {
     //     Block: W[k] = D[k] + 1.0       (sibling at depth 1)
-    //     Map(l, 0:M) {
+    //     Map(l, 1:M) {
     //         Block: C[k,l] = T[k,l] * W[k]   (read at depth 2)
     //     }
     // }
     //
     // Fusion direction should be ProducerIntoConsumer, inlining at the consumer's read body.
+    // For now, forcing by-access fusion because the shared access has a subset that depends on different domains.
+    // Future by-domain fusion might understand this only reduced which elements are read and be able to fuse the outer
+    // loops
 
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto& sdfg = builder.subject();
@@ -3190,7 +3193,7 @@ TEST(NewMapFusionTest, Pattern2_Reverse_NonPerfectlyNestedConsumer) {
         map2_outer.root(),
         symbolic::symbol("l"),
         symbolic::Lt(symbolic::symbol("l"), symbolic::symbol("M")),
-        symbolic::integer(0),
+        symbolic::integer(1),
         symbolic::add(symbolic::symbol("l"), symbolic::integer(1)),
         schedule
     );
@@ -3211,48 +3214,45 @@ TEST(NewMapFusionTest, Pattern2_Reverse_NonPerfectlyNestedConsumer) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::map_fusion::NewMapFusionPass map_fusion_pass;
-    EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
-        << "Reverse Pattern 2: perfectly-nested producer with non-perfectly-nested consumer not supported yet";
+    EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
+        << "Reverse Pattern 2: perfectly-nested producer with non-perfectly-nested consumer should be fusible";
 
     dump_sdfg(builder.subject(), "1.fused");
 
-    // // After fusion (ProducerIntoConsumer):
-    // // The consumer's inner map body should now have 2 blocks:
-    // //   block 0: _fused_tmp = A[k,l]   (inlined from producer, i->k, j->l)
-    // //   block 1: C[k,l] = _fused_tmp * W[k]   (original consumer block, T replaced)
-    // EXPECT_EQ(map2_inner.root().size(), 2)
-    //     << "Inner consumer map should have 2 children after fusion (inlined producer + original)";
-    //
-    // // The sibling block in the outer consumer map should still be there
-    // EXPECT_EQ(map2_outer.root().size(), 2)
-    //     << "Outer consumer map should still have 2 children (sibling block + inner map)";
-    //
-    // // Verify the inlined producer block reads A using consumer indices (k, l)
-    // auto* inlined_block = dyn_cast<structured_control_flow::Block*>(&map2_inner.root().at(0));
-    // ASSERT_TRUE(inlined_block != nullptr);
-    //
-    // auto& inlined_df = inlined_block->dataflow();
-    // bool found_a_read = false;
-    // for (auto& node : inlined_df.nodes()) {
-    //     auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-    //     if (access != nullptr && access->data() == "A") {
-    //         found_a_read = true;
-    //         for (auto& memlet : inlined_df.out_edges(*access)) {
-    //             if (memlet.type() == data_flow::MemletType::Computational) {
-    //                 ASSERT_EQ(memlet.subset().size(), 2) << "A access should have 2D subset";
-    //                 // i should be replaced by k, j should be replaced by l
-    //                 EXPECT_TRUE(symbolic::eq(memlet.subset()[0], symbolic::symbol("k")))
-    //                     << "First index should be k (was i), got: " << memlet.subset()[0]->__str__();
-    //                 EXPECT_TRUE(symbolic::eq(memlet.subset()[1], symbolic::symbol("l")))
-    //                     << "Second index should be l (was j), got: " << memlet.subset()[1]->__str__();
-    //             }
-    //         }
-    //     }
-    // }
-    // EXPECT_TRUE(found_a_read) << "Should find A read access in inlined producer block";
+    // After fusion (ProducerIntoConsumer):
+    EXPECT_EQ(map2_inner.root().size(), 2)
+        << "Inner consumer map should have 2 children after fusion (inlined producer + original)";
+
+    // The sibling block in the outer consumer map should still be there
+    EXPECT_EQ(map2_outer.root().size(), 2)
+        << "Outer consumer map should still have 2 children (sibling block + inner map)";
+
+    // Verify the inlined producer block reads A using consumer indices (k, l)
+    auto* inlined_block = dyn_cast<structured_control_flow::Block*>(&map2_inner.root().at(0));
+    ASSERT_TRUE(inlined_block != nullptr);
+
+    auto& inlined_df = inlined_block->dataflow();
+    bool found_a_read = false;
+    for (auto& node : inlined_df.nodes()) {
+        auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+        if (access != nullptr && access->data() == "A") {
+            found_a_read = true;
+            for (auto& memlet : inlined_df.out_edges(*access)) {
+                if (memlet.type() == data_flow::MemletType::Computational) {
+                    ASSERT_EQ(memlet.subset().size(), 2) << "A access should have 2D subset";
+                    // i should be replaced by k, j should be replaced by l
+                    EXPECT_TRUE(symbolic::eq(memlet.subset()[0], symbolic::symbol("k")))
+                        << "First index should be k (was i), got: " << memlet.subset()[0]->__str__();
+                    EXPECT_TRUE(symbolic::eq(memlet.subset()[1], symbolic::symbol("l")))
+                        << "Second index should be l (was j), got: " << memlet.subset()[1]->__str__();
+                }
+            }
+        }
+    }
+    EXPECT_TRUE(found_a_read) << "Should find A read access in inlined producer block";
 }
 
-TEST(NewMapFusionTest, BothNonPerfectlyNested_Rejected) {
+TEST(NewMapFusionTest, SameDomain_BothNonPerfectlyNested_Eltwise) {
     // Both producer and consumer are NOT perfectly nested
     // Should be rejected (not supported)
 
@@ -3360,8 +3360,9 @@ TEST(NewMapFusionTest, BothNonPerfectlyNested_Rejected) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::map_fusion::NewMapFusionPass map_fusion_pass;
-    EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
-        << "Both non-perfectly-nested: should be rejected (not supported)";
+    EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager)) << "No subset conflicts, can be fused by domain";
+
+    dump_sdfg(builder.subject(), "1.fused");
 }
 
 TEST(NewMapFusionTest, Pattern2_ConsumerReadsMoreThanProducerWrites) {
