@@ -1637,6 +1637,27 @@ void PyStructuredSDFGBuilder::add_concat_op(
     builder_.add_computational_memlet(block, result_access, libnode, "Y", {}, result_type, debug_info);
 }
 
+void PyStructuredSDFGBuilder::add_slice_op(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    long long dim,
+    long long start,
+    long long end,
+    long long step,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& libnode =
+        builder_
+            .add_library_node<sdfg::math::tensor::SliceNode>(block, debug_info, X_type.shape(), dim, start, end, step);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+}
+
 void PyStructuredSDFGBuilder::add_reduce_op(
     const std::string& op_type,
     const std::string& input,

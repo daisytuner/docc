@@ -8,7 +8,7 @@ project(docc-llvm VERSION ${PROJECT_VERSION} DESCRIPTION "Daisytuner Optimizing 
 
 option(RELEASE_PACKAGE "Use the plain version, instead of a version suffixed with git hash" OFF)
 
-include("${CMAKE_SOURCE_DIR}/cmake/PackageDependencies.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/PackageDependencies.cmake")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,7 +17,7 @@ message(STATUS "Setup for packaging docc-llvm releases")
 # Versioned prefix inside the system prefix: /usr/<prefix>...
 set(PARENT_PROJECT_INSTALL_PREFIX "lib/docc-llvm-${DOCC_LLVM_VERSION}/")
 
-install(FILES "${CMAKE_SOURCE_DIR}/cmake/PackageDependencies.cmake"
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/PackageDependencies.cmake"
         DESTINATION "${PARENT_PROJECT_INSTALL_PREFIX}/cmake"
         COMPONENT docc-dev)
 
