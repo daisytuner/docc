@@ -697,6 +697,8 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("I_type"),
             py::arg("max_norm"),
             py::arg("norm_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
         .def(
             "add_slice_op",
             &PyStructuredSDFGBuilder::add_slice_op,
