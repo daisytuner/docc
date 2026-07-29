@@ -678,6 +678,17 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_embedding_op",
+            &PyStructuredSDFGBuilder::add_embedding_op,
+            py::arg("W"),
+            py::arg("W_type"),
+            py::arg("I"),
+            py::arg("I_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_reduce_op",
             &PyStructuredSDFGBuilder::add_reduce_op,
             py::arg("op_type"),

@@ -345,6 +345,16 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_embedding_op(
+        const std::string& W,
+        const sdfg::types::Tensor& W_type,
+        const std::string& I,
+        const sdfg::types::Tensor& I_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_reduce_op(
         const std::string& op_type,
         const std::string& input,

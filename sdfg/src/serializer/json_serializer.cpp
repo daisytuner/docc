@@ -1527,6 +1527,10 @@ void register_default_serializers() {
         .register_library_node_serializer(math::tensor::LibraryNodeType_TensorConcat.value(), []() {
             return std::make_unique<math::tensor::ConcatNodeSerializer>();
         });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_Embedding.value(), []() {
+            return std::make_unique<math::tensor::EmbeddingNodeSerializer>();
+        });
 
     // Elementwise
     LibraryNodeSerializerRegistry::instance()

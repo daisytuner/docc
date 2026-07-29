@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import pytest
 
 from tests import check
@@ -57,6 +58,195 @@ def test_cat_many(target: str) -> None:
 
     x = torch.randn(2, 3)
     check(CatManyNet(), (x, x, x, x, x, x, x, x, x, x), target=target)
+
+
+# --- embedding ---
+
+
+def test_embedding_functional(target: str) -> None:
+    class EmbeddingFunctionalNet(nn.Module):
+        def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return F.embedding(indices, weight)
+
+    check(
+        EmbeddingFunctionalNet(),
+        *(torch.randn(10, 4), torch.tensor([1, 3, 5, 0])),
+        target=target,
+    )
+
+
+def test_embedding_module(target: str) -> None:
+    class EmbeddingModuleNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(10, 4)
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(EmbeddingModuleNet(), torch.tensor([1, 3, 5, 0]), target=target)
+
+
+def test_embedding_2d_indices(target: str) -> None:
+    class Embedding2dIndicesNet(nn.Module):
+        def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return F.embedding(indices, weight)
+
+    check(
+        Embedding2dIndicesNet(),
+        *(torch.randn(10, 4), torch.tensor([[1, 3], [5, 0], [2, 7]])),
+        target=target,
+    )
+
+
+def test_embedding_padding_idx(target: str) -> None:
+    class EmbeddingPaddingIdxNet(nn.Module):
+        def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return F.embedding(indices, weight, padding_idx=0)
+
+    check(
+        EmbeddingPaddingIdxNet(),
+        *(torch.randn(10, 4), torch.tensor([1, 0, 5, 0])),
+        target=target,
+    )
+
+
+def test_embedding_padding_idx_positive(target: str) -> None:
+    class EmbeddingPaddingIdxPositiveNet(nn.Module):
+        def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return F.embedding(indices, weight, padding_idx=2)
+
+    check(
+        EmbeddingPaddingIdxPositiveNet(),
+        *(torch.randn(10, 4), torch.tensor([1, 2, 5, 0])),
+        target=target,
+    )
+
+
+def test_embedding_padding_idx_negative(target: str) -> None:
+    class EmbeddingPaddingIdxNegativeNet(nn.Module):
+        def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return F.embedding(indices, weight, padding_idx=-1)
+
+    check(
+        EmbeddingPaddingIdxNegativeNet(),
+        *(torch.randn(10, 4), torch.tensor([1, 3, 5, 0])),
+        target=target,
+    )
+
+
+def test_embedding_scale_grad_by_freq(target: str) -> None:
+    class EmbeddingScaleGradByFreqNet(nn.Module):
+        def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return F.embedding(indices, weight, scale_grad_by_freq=True)
+
+    check(
+        EmbeddingScaleGradByFreqNet(),
+        *(torch.randn(10, 4), torch.tensor([1, 3, 5, 0])),
+        target=target,
+    )
+
+
+def test_embedding_sparse(target: str) -> None:
+    class EmbeddingSparseNet(nn.Module):
+        def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return F.embedding(indices, weight, sparse=True)
+
+    check(
+        EmbeddingSparseNet(),
+        *(torch.randn(10, 4), torch.tensor([1, 3, 5, 0])),
+        target=target,
+    )
+
+
+def test_embedding_all_params(target: str) -> None:
+    class EmbeddingAllParamsNet(nn.Module):
+        def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return F.embedding(
+                indices,
+                weight,
+                padding_idx=2,
+                scale_grad_by_freq=True,
+                sparse=True,
+            )
+
+    check(
+        EmbeddingAllParamsNet(),
+        *(torch.randn(10, 4), torch.tensor([1, 2, 5, 0])),
+        target=target,
+    )
+
+
+def test_embedding_module_padding_idx(target: str) -> None:
+    class EmbeddingModulePaddingIdxNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(10, 4, padding_idx=0)
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingModulePaddingIdxNet(),
+        torch.tensor([1, 0, 5, 0]),
+        target=target,
+    )
+
+
+def test_embedding_max_norm(target: str) -> None:
+    class EmbeddingMaxNormNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(10, 4, max_norm=1.0)
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingMaxNormNet(),
+        torch.tensor([1, 3, 5, 0]),
+        target=target,
+    )
+
+
+def test_embedding_max_norm_norm_type(target: str) -> None:
+    class EmbeddingMaxNormNormTypeNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(10, 4, max_norm=1.5, norm_type=1.0)
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingMaxNormNormTypeNet(),
+        torch.tensor([1, 3, 5, 0]),
+        target=target,
+    )
+
+
+def test_embedding_all_params_with_norm(target: str) -> None:
+    class EmbeddingAllParamsWithNormNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(
+                10,
+                4,
+                padding_idx=2,
+                max_norm=1.0,
+                norm_type=2.0,
+                scale_grad_by_freq=True,
+                sparse=True,
+            )
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingAllParamsWithNormNet(),
+        torch.tensor([1, 2, 5, 0]),
+        target=target,
+    )
 
 
 # --- expand_copy ---

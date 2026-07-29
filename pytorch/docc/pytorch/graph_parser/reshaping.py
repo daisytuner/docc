@@ -150,3 +150,62 @@ register_pre_module("aten.squeeze.dims", TensorReshape2dParser())
 register_module("aten.squeeze.dims", TensorReshape2dParser())
 register_pre_module("aten.unsqueeze.default", TensorReshape2dParser())
 register_module("aten.unsqueeze.default", TensorReshape2dParser())
+
+
+class EmbeddingParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        # aten.embedding(weight, indices, padding_idx=-1, scale_grad_by_freq=False, sparse=False)
+        # The padding_idx, scale_grad_by_freq and sparse arguments only affect the
+        # backward pass and are therefore ignored for this forward-only lowering.
+        if len(node.args) < 2:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected at least 2 arguments but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+        weight_container: str = self.get_arg_container(node, container_info, 0)
+        weight_tensor: Tensor = self.get_tensor_type(
+            node, container_info, weight_container
+        )
+        if len(weight_tensor.shape) != 2:
+            raise GraphParserError(
+                self,
+                node,
+                "Embedding weight must be 2-dimensional but got shape: "
+                + str(weight_tensor.shape),
+            )
+        index_container: str = self.get_arg_container(node, container_info, 1)
+        index_tensor: Tensor = self.get_tensor_type(
+            node, container_info, index_container
+        )
+
+        result_container: str = self.get_result_container(node, builder, container_info)
+        result_tensor: Tensor = self.get_tensor_type(
+            node, container_info, result_container
+        )
+        # `embedding` produces a fresh contiguous tensor. Register the result with
+        # C-strides so the allocation, the write and any downstream reads agree.
+        result_tensor = Tensor(result_tensor.element_type, result_tensor.shape)
+        container_info[result_container].update(sdfg_tensor_type=result_tensor)
+        debug_info: DebugInfo = self.get_debug_info(node)
+        builder.add_embedding_op(
+            weight_container,
+            weight_tensor,
+            index_container,
+            index_tensor,
+            result_container,
+            result_tensor,
+            debug_info,
+        )
+
+
+register_module("aten.embedding.default", EmbeddingParser())

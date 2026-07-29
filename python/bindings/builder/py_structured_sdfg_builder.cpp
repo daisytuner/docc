@@ -1637,6 +1637,26 @@ void PyStructuredSDFGBuilder::add_concat_op(
     builder_.add_computational_memlet(block, result_access, libnode, "Y", {}, result_type, debug_info);
 }
 
+void PyStructuredSDFGBuilder::add_embedding_op(
+    const std::string& W,
+    const sdfg::types::Tensor& W_type,
+    const std::string& I,
+    const sdfg::types::Tensor& I_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& W_access = builder_.add_access(block, W, debug_info);
+    auto& I_access = builder_.add_access(block, I, debug_info);
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& libnode =
+        builder_.add_library_node<sdfg::math::tensor::EmbeddingNode>(block, debug_info, W_type.shape(), I_type.shape());
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+    builder_.add_computational_memlet(block, W_access, libnode, "W", {}, W_type, debug_info);
+    builder_.add_computational_memlet(block, I_access, libnode, "I", {}, I_type, debug_info);
+}
+
 void PyStructuredSDFGBuilder::add_reduce_op(
     const std::string& op_type,
     const std::string& input,
