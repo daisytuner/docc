@@ -209,11 +209,11 @@ class ViewParser(GraphParserModule):
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        if len(node.args) != 2:
+        if len(node.args) not in (1, 2):
             raise GraphParserError(
                 self,
                 node,
-                "Expected exactly 2 arguments but got " + str(len(node.args)),
+                "Expected 1 or 2 arguments but got " + str(len(node.args)),
             )
         if len(node.kwargs) != 0:
             raise GraphParserError(
@@ -252,11 +252,11 @@ class ViewParser(GraphParserModule):
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        if len(node.args) != 2:
+        if len(node.args) not in (1, 2):
             raise GraphParserError(
                 self,
                 node,
-                "Expected exactly 2 arguments but got " + str(len(node.args)),
+                "Expected 1 or 2 arguments but got " + str(len(node.args)),
             )
         if len(node.kwargs) != 0:
             raise GraphParserError(
@@ -267,6 +267,10 @@ class ViewParser(GraphParserModule):
 
 register_pre_module("aten.view.default", ViewParser())
 register_module("aten.view.default", ViewParser())
+register_pre_module("aten.alias.default", ViewParser())
+register_module("aten.alias.default", ViewParser())
+register_pre_module("aten.detach.default", ViewParser())
+register_module("aten.detach.default", ViewParser())
 
 
 class ExpandParser(GraphParserModule):

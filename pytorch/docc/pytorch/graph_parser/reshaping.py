@@ -209,3 +209,115 @@ class EmbeddingParser(GraphParserModule):
 
 
 register_module("aten.embedding.default", EmbeddingParser())
+
+
+def _register_alias(
+    module: GraphParserModule,
+    node: torch.fx.Node,
+    container_info: ContainerInfos,
+    ref_container: str,
+) -> None:
+    """Registers ``node.name`` as an alias (reference) of ``ref_container``."""
+    container: str = node.name
+    if container in container_info:
+        info: ContainerInfoBase = container_info[container]
+        if not isinstance(info, ContainerPreInfo):
+            raise GraphParserError(
+                module, node, "Expected ContainerPreInfo but got: " + str(type(info))
+            )
+        container_info[container] = ContainerPreInfo.copy(info, ref=ref_container)
+    else:
+        container_info[container] = ContainerPreInfo(container, ref=ref_container)
+    if ref_container in container_info:
+        info = container_info[ref_container]
+        if not isinstance(info, ContainerPreInfo):
+            raise GraphParserError(
+                module, node, "Expected ContainerPreInfo but got: " + str(type(info))
+            )
+        container_info[ref_container] = ContainerPreInfo.copy(info, refed_by=container)
+    else:
+        container_info[ref_container] = ContainerPreInfo(
+            ref_container, refed_by=container
+        )
+
+
+class EmbeddingRenormParser(GraphParserModule):
+    def pre_parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        # embedding_renorm_ mutates `self` in place and returns it. Alias the
+        # result name to `self` so any downstream reference resolves to the same
+        # (renormalized) container.
+        if len(node.args) != 4:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly 4 arguments but got " + str(len(node.args)),
+            )
+        ref_container: str = self.get_arg_container(
+            node, container_info, 0, resolve=False
+        )
+        _register_alias(self, node, container_info, ref_container)
+
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        # aten.embedding_renorm_(self, indices, max_norm, norm_type) -> self
+        if len(node.args) != 4:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly 4 arguments but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        if len(self_tensor.shape) != 2:
+            raise GraphParserError(
+                self,
+                node,
+                "embedding_renorm_ weight must be 2-dimensional but got shape: "
+                + str(self_tensor.shape),
+            )
+        index_container: str = self.get_arg_container(node, container_info, 1)
+        index_tensor: Tensor = self.get_tensor_type(
+            node, container_info, index_container
+        )
+        max_norm_arg = node.args[2]
+        norm_type_arg = node.args[3]
+        if not isinstance(max_norm_arg, (int, float)):
+            raise GraphParserError(
+                self,
+                node,
+                "max_norm must be a number but got: " + str(type(max_norm_arg)),
+            )
+        if not isinstance(norm_type_arg, (int, float)):
+            raise GraphParserError(
+                self,
+                node,
+                "norm_type must be a number but got: " + str(type(norm_type_arg)),
+            )
+        debug_info: DebugInfo = self.get_debug_info(node)
+        builder.add_embedding_renorm_op(
+            self_container,
+            self_tensor,
+            index_container,
+            index_tensor,
+            float(max_norm_arg),
+            float(norm_type_arg),
+            debug_info,
+        )
+        self.update_container_types(node, builder, container_info, node.name)
+
+
+register_pre_module("aten.embedding_renorm.default", EmbeddingRenormParser())
+register_module("aten.embedding_renorm.default", EmbeddingRenormParser())

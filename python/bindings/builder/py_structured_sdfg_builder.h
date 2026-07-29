@@ -355,6 +355,16 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_embedding_renorm_op(
+        const std::string& W,
+        const sdfg::types::Tensor& W_type,
+        const std::string& I,
+        const sdfg::types::Tensor& I_type,
+        double max_norm,
+        double norm_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_reduce_op(
         const std::string& op_type,
         const std::string& input,

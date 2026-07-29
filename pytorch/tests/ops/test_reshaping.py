@@ -249,6 +249,116 @@ def test_embedding_all_params_with_norm(target: str) -> None:
     )
 
 
+def test_embedding_max_norm_norm_type_3(target: str) -> None:
+    class EmbeddingMaxNormNormType3Net(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(10, 4, max_norm=1.0, norm_type=3.0)
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingMaxNormNormType3Net(),
+        torch.tensor([1, 3, 5, 0]),
+        target=target,
+    )
+
+
+def test_embedding_max_norm_norm_type_inf(target: str) -> None:
+    class EmbeddingMaxNormNormTypeInfNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(10, 4, max_norm=1.0, norm_type=float("inf"))
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingMaxNormNormTypeInfNet(),
+        torch.tensor([1, 3, 5, 0]),
+        target=target,
+    )
+
+
+def test_embedding_max_norm_norm_type_fractional(target: str) -> None:
+    class EmbeddingMaxNormNormTypeFractionalNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(10, 4, max_norm=1.0, norm_type=0.5)
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingMaxNormNormTypeFractionalNet(),
+        torch.tensor([1, 3, 5, 0]),
+        target=target,
+    )
+
+
+def test_embedding_max_norm_no_renorm(target: str) -> None:
+    class EmbeddingMaxNormNoRenormNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            # max_norm is large enough that no row is renormalized.
+            self.embedding = nn.Embedding(10, 4, max_norm=100.0)
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingMaxNormNoRenormNet(),
+        torch.tensor([1, 3, 5, 0]),
+        target=target,
+    )
+
+
+def test_embedding_max_norm_repeated_indices(target: str) -> None:
+    class EmbeddingMaxNormRepeatedIndicesNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(10, 4, max_norm=1.0)
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingMaxNormRepeatedIndicesNet(),
+        torch.tensor([3, 1, 3, 3, 1]),
+        target=target,
+    )
+
+
+def test_embedding_max_norm_2d_indices(target: str) -> None:
+    class EmbeddingMaxNorm2dIndicesNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = nn.Embedding(10, 4, max_norm=1.0)
+
+        def forward(self, indices: torch.Tensor) -> torch.Tensor:
+            return self.embedding(indices)
+
+    check(
+        EmbeddingMaxNorm2dIndicesNet(),
+        torch.tensor([[1, 3], [5, 0], [2, 7]]),
+        target=target,
+    )
+
+
+def test_embedding_functional_max_norm(target: str) -> None:
+    class EmbeddingFunctionalMaxNormNet(nn.Module):
+        def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            # Clone so the in-place renorm does not mutate the shared input.
+            return F.embedding(indices, weight.clone(), max_norm=1.0)
+
+    check(
+        EmbeddingFunctionalMaxNormNet(),
+        *(torch.randn(10, 4), torch.tensor([1, 3, 5, 0])),
+        target=target,
+    )
+
+
 # --- expand_copy ---
 
 

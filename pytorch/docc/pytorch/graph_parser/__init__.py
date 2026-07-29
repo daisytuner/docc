@@ -66,12 +66,21 @@ class GraphParser(GraphParserBase):
         """
         Flattens a nested tuple to a list and converts each PyTorch Argument to an SDFG container.
         Example: ((arg_0, arg_1), arg_2) -> ["arg_0", "arg_1", "arg_2"]
+
+        Only user-visible outputs are returned. Outputs that correspond to parameter or buffer
+        mutations (produced by in-place ops such as ``embedding_renorm_``) are executed for their
+        side effects during parsing but must not be exposed as function outputs, otherwise the
+        runtime would return the mutated tensor instead of (or in addition to) the real result.
         """
         result = []
         if isinstance(args, tuple):
             for elem in list(args):
                 result += self.get_output_containers(node, elem)
         else:
+            if isinstance(args, torch.fx.Node):
+                user_outputs = getattr(self.ep.graph_signature, "user_outputs", None)
+                if user_outputs is not None and args.name not in user_outputs:
+                    return result
             result.append(
                 self.convert_arg_to_container(node, self.container_info, args)
             )
