@@ -68,6 +68,7 @@ jobs:
 
           pip install pytest==7.1.3 --break-system-packages
           pip install pytest-parallel --break-system-packages
+          pip install jsonschema --break-system-packages
 
           cd rtl/tests
           pytest -v -s rtl_tests.py

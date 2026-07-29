@@ -66,3 +66,11 @@ endif()
 
 # Install artifacts for the Python wheel
 install(TARGETS sdfg-py DESTINATION docc/sdfg COMPONENT docc_python)
+
+# Ship the RTL trace JSON schema as package data for docc.benchmarks. The canonical
+# copy lives in rtl/schema (single source of truth, also consumed by the C++ RTL
+# tests); installing it here places it next to docc/benchmarks/rtl.py in the wheel.
+install(FILES ${PROJECT_SOURCE_DIR}/rtl/schema/daisy_trace.schema.json
+    DESTINATION docc/benchmarks
+    COMPONENT docc_python
+)

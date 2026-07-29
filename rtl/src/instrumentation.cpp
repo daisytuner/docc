@@ -247,12 +247,14 @@ private:
             entry << "\"features_file\":\"\",";
         }
         if (md.opt_report_file) {
-            entry << "\"opt_report_file\":\"" << md.opt_report_file << "\",";
+            entry << "\"opt_report_file\":\"" << md.opt_report_file << "\"";
         } else {
-            entry << "\"opt_report_file\":\"\",";
+            entry << "\"opt_report_file\":\"\"";
         }
 
         if (md.sdfg_name && md.sdfg_file) {
+            entry << ",";
+
             // Element metadata
             entry << "\"element_id\":" << md.element_id << ",";
             entry << "\"element_type\":\"" << md.element_type << "\",";
@@ -515,15 +517,17 @@ public:
             size_t region_id = this->sleeping_regions_id_lookup[region_uuid];
             auto& region = this->regions[region_id];
 
-            if (_PAPI_cleanup_eventset(region.papi_eventset) != 0) {
-                std::fprintf(stderr, "[daisy-rtl] Failed to clean up PAPI eventset.\n");
-                exit(EXIT_FAILURE);
+            if (region.papi_eventset != -1) {
+                if (_PAPI_cleanup_eventset(region.papi_eventset) != 0) {
+                    std::fprintf(stderr, "[daisy-rtl] Failed to clean up PAPI eventset.\n");
+                    exit(EXIT_FAILURE);
+                }
+                if (_PAPI_destroy_eventset(&region.papi_eventset) != 0) {
+                    std::fprintf(stderr, "[daisy-rtl] Failed to destroy PAPI eventset.\n");
+                    exit(EXIT_FAILURE);
+                }
+                region.papi_eventset = -1;
             }
-            if (_PAPI_destroy_eventset(&region.papi_eventset) != 0) {
-                std::fprintf(stderr, "[daisy-rtl] Failed to destroy PAPI eventset.\n");
-                exit(EXIT_FAILURE);
-            }
-            region.papi_eventset = -1;
         }
         this->sleeping_regions_id_lookup.clear();
         this->sleeping_regions_by_name.clear();
@@ -585,6 +589,37 @@ public:
         std::fclose(f);
     }
 
+    // Whether any PAPI counters are configured for the given event set. When no
+    // events are requested (e.g. the __DAISY_INSTRUMENTATION_EVENTS* env vars are
+    // unset), we skip PAPI eventset creation/start entirely: starting an empty
+    // eventset fails because PAPI cannot determine the component index.
+    bool has_events(enum __daisy_event_set event_set) const {
+        if (event_set == __DAISY_EVENT_SET_CPU) {
+            return !this->event_names_cpu.empty();
+        } else if (event_set == __DAISY_EVENT_SET_CUDA) {
+            return !this->event_names_cuda.empty();
+        }
+        return false;
+    }
+
+    void start_region_eventset(int eventset) {
+        // No eventset was created (no counters configured) - nothing to start.
+        if (eventset == -1) {
+            return;
+        }
+        int rc = _PAPI_start(eventset);
+        if (rc != 0) {
+            std::fprintf(
+                stderr,
+                "[daisy-rtl] PAPI_start failed (%s). The requested counter set cannot be "
+                "programmed together in one pass; split the counters across separate measurement "
+                "groups.\n",
+                _PAPI_strerror ? _PAPI_strerror(rc) : "unknown error"
+            );
+            exit(EXIT_FAILURE);
+        }
+    }
+
     size_t register_region(const __daisy_metadata* metadata, enum __daisy_event_set event_set) {
         std::lock_guard<std::mutex> lock(mutex);
 
@@ -598,7 +633,7 @@ public:
 
             // start region
             auto& region = this->regions[region_id];
-            _PAPI_start(region.papi_eventset);
+            this->start_region_eventset(region.papi_eventset);
 
             return region_id;
         }
@@ -607,6 +642,39 @@ public:
             size_t region_id = this->region_name_to_id[metadata->region_uuid];
             auto& region = this->regions[region_id];
 
+            if (this->has_events(region.event_set)) {
+                if (_PAPI_create_eventset(&region.papi_eventset) != 0) {
+                    std::fprintf(stderr, "[daisy-rtl] Failed to create PAPI eventset.\n");
+                    exit(EXIT_FAILURE);
+                }
+                if (region.event_set == __DAISY_EVENT_SET_CPU) {
+                    for (const auto& ev : this->event_names_cpu) {
+                        if (_PAPI_add_named_event(region.papi_eventset, ev.c_str()) != 0) {
+                            std::fprintf(stderr, "[daisy-rtl] Could not add event %s.\n", ev.c_str());
+                            exit(EXIT_FAILURE);
+                        }
+                    }
+                } else if (region.event_set == __DAISY_EVENT_SET_CUDA) {
+                    for (const auto& ev : this->event_names_cuda) {
+                        if (_PAPI_add_named_event(region.papi_eventset, ev.c_str()) != 0) {
+                            std::fprintf(stderr, "[daisy-rtl] Could not add event %s.\n", ev.c_str());
+                            exit(EXIT_FAILURE);
+                        }
+                    }
+                }
+            }
+
+            // start region
+            this->start_region_eventset(region.papi_eventset);
+
+            return region_id;
+        }
+
+        DaisyRegion region;
+        std::memcpy(&region.metadata, metadata, sizeof(__daisy_metadata));
+        region.event_set = event_set;
+
+        if (this->has_events(region.event_set)) {
             if (_PAPI_create_eventset(&region.papi_eventset) != 0) {
                 std::fprintf(stderr, "[daisy-rtl] Failed to create PAPI eventset.\n");
                 exit(EXIT_FAILURE);
@@ -626,42 +694,13 @@ public:
                     }
                 }
             }
-
-            // start region
-            _PAPI_start(region.papi_eventset);
-
-            return region_id;
-        }
-
-        DaisyRegion region;
-        std::memcpy(&region.metadata, metadata, sizeof(__daisy_metadata));
-        region.event_set = event_set;
-
-        if (_PAPI_create_eventset(&region.papi_eventset) != 0) {
-            std::fprintf(stderr, "[daisy-rtl] Failed to create PAPI eventset.\n");
-            exit(EXIT_FAILURE);
-        }
-        if (region.event_set == __DAISY_EVENT_SET_CPU) {
-            for (const auto& ev : this->event_names_cpu) {
-                if (_PAPI_add_named_event(region.papi_eventset, ev.c_str()) != 0) {
-                    std::fprintf(stderr, "[daisy-rtl] Could not add event %s.\n", ev.c_str());
-                    exit(EXIT_FAILURE);
-                }
-            }
-        } else if (region.event_set == __DAISY_EVENT_SET_CUDA) {
-            for (const auto& ev : this->event_names_cuda) {
-                if (_PAPI_add_named_event(region.papi_eventset, ev.c_str()) != 0) {
-                    std::fprintf(stderr, "[daisy-rtl] Could not add event %s.\n", ev.c_str());
-                    exit(EXIT_FAILURE);
-                }
-            }
         }
 
         size_t region_id = next_region_id++;
         regions[region_id] = region;
         region_name_to_id[region.metadata.region_uuid] = region_id;
 
-        _PAPI_start(region.papi_eventset);
+        this->start_region_eventset(region.papi_eventset);
         return region_id;
     }
 
@@ -911,15 +950,17 @@ public:
 
             auto& evict_region = this->regions[evict_region_id];
 
-            if (_PAPI_cleanup_eventset(evict_region.papi_eventset) != 0) {
-                std::fprintf(stderr, "[daisy-rtl] EFailed to clean up PAPI eventset.\n");
-                exit(EXIT_FAILURE);
+            if (evict_region.papi_eventset != -1) {
+                if (_PAPI_cleanup_eventset(evict_region.papi_eventset) != 0) {
+                    std::fprintf(stderr, "[daisy-rtl] EFailed to clean up PAPI eventset.\n");
+                    exit(EXIT_FAILURE);
+                }
+                if (_PAPI_destroy_eventset(&evict_region.papi_eventset) != 0) {
+                    std::fprintf(stderr, "[daisy-rtl] Failed to destroy PAPI eventset.\n");
+                    exit(EXIT_FAILURE);
+                }
+                evict_region.papi_eventset = -1;
             }
-            if (_PAPI_destroy_eventset(&evict_region.papi_eventset) != 0) {
-                std::fprintf(stderr, "[daisy-rtl] Failed to destroy PAPI eventset.\n");
-                exit(EXIT_FAILURE);
-            }
-            evict_region.papi_eventset = -1;
         }
     }
 

@@ -19,6 +19,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
@@ -704,6 +705,7 @@ void PyStructuredSDFGBuilder::add_reference_memlet(
     builder_.add_reference_memlet(block, src, dst, indices, *type, debug_info);
 }
 
+
 void PyStructuredSDFGBuilder::add_dereference_memlet(
     Block& block,
     sdfg::data_flow::AccessNode& src,
@@ -1192,6 +1194,74 @@ void PyStructuredSDFGBuilder::add_elementwise_op(
     }
 }
 
+void PyStructuredSDFGBuilder::add_elementwise_tasklet_op(
+    sdfg::data_flow::TaskletCode tasklet_code,
+    const std::vector<std::string>& inputs,
+    const std::vector<const sdfg::types::Tensor*>& input_types,
+    const std::string& output,
+    const sdfg::types::Tensor& output_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    // check if all inputs, outputs are scalar
+    bool is_scalar_op = output_type.is_scalar() && sdfg::symbolic::eq(output_type.offset(), sdfg::symbolic::zero());
+    if (is_scalar_op) {
+        for (size_t i = 0; i < input_types.size(); ++i) {
+            if (!input_types[i]->is_scalar() || !sdfg::symbolic::eq(input_types[i]->offset(), sdfg::symbolic::zero())) {
+                is_scalar_op = false;
+                break;
+            }
+        }
+    }
+
+    std::string out_conn = "_out";
+    std::vector<std::string> in_conns;
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        in_conns.push_back("_in" + std::to_string(i + 1));
+    }
+
+    auto& parent = current_sequence();
+    auto& block = builder_.add_block(parent, {}, debug_info);
+    sdfg::data_flow::CodeNode* node = nullptr;
+    if (is_scalar_op) {
+        node = &builder_.add_tasklet(block, tasklet_code, out_conn, in_conns, debug_info);
+    } else {
+        node = &builder_.add_library_node<sdfg::math::tensor::TaskletTensorNode>(
+            block, debug_info, tasklet_code, out_conn, in_conns, output_type.shape()
+        );
+    }
+
+    // Output memlet
+    auto& out_access = builder_.add_access(block, output, debug_info);
+    if (is_scalar_op) {
+        auto out_memlet_type = output_type.element_type().clone();
+        builder_.add_computational_memlet(block, *node, out_conn, out_access, {}, *out_memlet_type, debug_info);
+    } else {
+        auto out_memlet_type = output_type.clone();
+        builder_.add_computational_memlet(block, out_access, *node, out_conn, {}, *out_memlet_type, debug_info);
+    }
+
+    // Input memlets
+    std::unordered_map<std::string, sdfg::data_flow::AccessNode*> access_nodes;
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        auto in_memlet_type = is_scalar_op ? input_types[i]->element_type().clone() : input_types[i]->clone();
+
+        if (builder_.subject().exists(inputs[i])) {
+            sdfg::data_flow::AccessNode* in_access = nullptr;
+            auto it = access_nodes.find(inputs[i]);
+            if (it != access_nodes.end()) {
+                in_access = it->second;
+            } else {
+                in_access = &builder_.add_access(block, inputs[i], debug_info);
+                access_nodes[inputs[i]] = in_access;
+            }
+            builder_.add_computational_memlet(block, *in_access, *node, in_conns[i], {}, *in_memlet_type, debug_info);
+        } else {
+            auto& const_node = builder_.add_constant(block, inputs[i], input_types[i]->element_type(), debug_info);
+            builder_.add_memlet(block, const_node, "void", *node, in_conns[i], {}, *in_memlet_type, debug_info);
+        }
+    }
+}
+
 void PyStructuredSDFGBuilder::add_elementwise_cmath_op(
     sdfg::math::cmath::CMathFunction func,
     const std::string& A,
@@ -1240,6 +1310,8 @@ void PyStructuredSDFGBuilder::add_elementwise_unary_op(
         node = &builder_.add_library_node<sdfg::math::tensor::TanhNode>(block, debug_info, C_type.shape());
     } else if (op_type == "exp") {
         node = &builder_.add_library_node<sdfg::math::tensor::ExpNode>(block, debug_info, C_type.shape());
+    } else if (op_type == "sigmoid") {
+        node = &builder_.add_library_node<sdfg::math::tensor::SigmoidNode>(block, debug_info, C_type.shape());
     } else if (op_type == "logical_not") {
         node = &builder_.add_library_node<sdfg::math::tensor::LogicalNotNode>(block, debug_info, C_type.shape());
     } else {
@@ -1395,6 +1467,53 @@ void PyStructuredSDFGBuilder::add_batchnorm_with_bias(
     builder_.add_computational_memlet(block, Beta_access, libnode, "Beta", {}, Beta_type, debug_info);
     builder_.add_computational_memlet(block, epsilon_access, libnode, "epsilon", {}, epsilon_type, debug_info);
     builder_.add_computational_memlet(block, B_out_access, libnode, "B_out", {}, B_out_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_layernorm_with_bias(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Gamma,
+    const sdfg::types::Tensor& Gamma_type,
+    const std::string& Beta,
+    const sdfg::types::Tensor& Beta_type,
+    const std::string& epsilon,
+    const sdfg::types::Scalar& epsilon_type,
+    const std::string& Y_out,
+    const sdfg::types::Tensor& Y_out_type,
+    int64_t num_normalized_dims,
+    const sdfg::DebugInfo& debug_info
+) {
+    const bool affine = !Gamma.empty();
+    const bool has_bias = !Beta.empty();
+
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& epsilon_access =
+        (builder_.subject().exists(epsilon) ? builder_.add_access(block, epsilon, debug_info)
+                                            : builder_.add_constant(block, epsilon, epsilon_type));
+    auto& Y_out_access = builder_.add_access(block, Y_out, debug_info);
+
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::LayerNormNode>(
+        block,
+        debug_info,
+        Y_out_type.layout(),
+        sdfg::math::tensor::QUANTIZATION_MATCH_INPUTS,
+        static_cast<size_t>(num_normalized_dims),
+        affine,
+        has_bias
+    );
+
+    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    if (affine) {
+        auto& Gamma_access = builder_.add_access(block, Gamma, debug_info);
+        builder_.add_computational_memlet(block, Gamma_access, libnode, "Gamma", {}, Gamma_type, debug_info);
+    }
+    if (has_bias) {
+        auto& Beta_access = builder_.add_access(block, Beta, debug_info);
+        builder_.add_computational_memlet(block, Beta_access, libnode, "Beta", {}, Beta_type, debug_info);
+    }
+    builder_.add_computational_memlet(block, epsilon_access, libnode, "epsilon", {}, epsilon_type, debug_info);
+    builder_.add_computational_memlet(block, Y_out_access, libnode, "Y_out", {}, Y_out_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_pooling(

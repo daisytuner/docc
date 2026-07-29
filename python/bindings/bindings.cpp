@@ -501,6 +501,16 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_elementwise_tasklet_op",
+            &PyStructuredSDFGBuilder::add_elementwise_tasklet_op,
+            py::arg("tasklet_code"),
+            py::arg("inputs"),
+            py::arg("input_types"),
+            py::arg("output"),
+            py::arg("output_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_elementwise_cmath_op",
             &PyStructuredSDFGBuilder::add_elementwise_cmath_op,
             py::arg("func"),
@@ -606,6 +616,22 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("epsilon_type"),
             py::arg("B_out"),
             py::arg("B_out_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_layernorm_with_bias",
+            &PyStructuredSDFGBuilder::add_layernorm_with_bias,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Gamma"),
+            py::arg("Gamma_type"),
+            py::arg("Beta"),
+            py::arg("Beta_type"),
+            py::arg("epsilon"),
+            py::arg("epsilon_type"),
+            py::arg("Y_out"),
+            py::arg("Y_out_type"),
+            py::arg("num_normalized_dims"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(

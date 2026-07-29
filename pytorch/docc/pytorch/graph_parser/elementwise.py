@@ -14,6 +14,7 @@ from docc.sdfg import (
     Tensor,
     Scalar,
     CMathFunction,
+    TaskletCode,
 )
 
 from docc.pytorch.graph_parser.utils import (
@@ -21,6 +22,8 @@ from docc.pytorch.graph_parser.utils import (
     GraphParserModule,
     ContainerInfos,
     register_module,
+    primitive_type_is_floating_point,
+    primitive_type_is_integer,
 )
 
 
@@ -65,6 +68,7 @@ class UnaryTensorOpParser(GraphParserModule):
 
 register_module("aten.abs.default", UnaryTensorOpParser("abs"))
 register_module("aten.logical_not.default", UnaryTensorOpParser("logical_not"))
+register_module("aten.sigmoid.default", UnaryTensorOpParser("sigmoid"))
 
 
 class UnaryCMathTensorOpParser(GraphParserModule):
@@ -171,6 +175,82 @@ class ElementwiseTensorOpParser(GraphParserModule):
 
 register_module("aten.div.Tensor", ElementwiseTensorOpParser("div"))
 register_module("aten.mul.Tensor", ElementwiseTensorOpParser("mul"))
+
+
+class ElementwiseTaskletOpParser(GraphParserModule):
+    fp_code: TaskletCode
+    int_code: TaskletCode
+
+    def __init__(self, fp_code: TaskletCode, int_code: TaskletCode) -> None:
+        self.fp_code: TaskletCode = fp_code
+        self.int_code: TaskletCode = int_code
+
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        if len(node.args) != 2:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly 2 arguments but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        other: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
+            node, container_info, 1
+        )
+        if isinstance(other, str):
+            other_container: str = other
+            other_tensor: Tensor = self.get_tensor_type(
+                node, container_info, other_container
+            )
+        else:
+            other_container: str = other[0]
+            other_tensor: Tensor = Tensor(
+                self.align_constant_type(node, other, self_tensor.element_type), []
+            )
+        result_container: str = self.get_result_container(node, builder, container_info)
+        result_tensor: Tensor = self.get_tensor_type(
+            node, container_info, result_container
+        )
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        is_float = primitive_type_is_floating_point(
+            self_tensor.element_type.primitive_type
+        )
+        is_integer = primitive_type_is_integer(self_tensor.element_type.primitive_type)
+        if is_float:
+            tasklet_code = self.fp_code
+        elif is_integer:
+            tasklet_code = self.int_code
+        else:
+            raise GraphParserError(
+                self, node, "Unsupported primitive type for elementwise tasklet"
+            )
+
+        builder.add_elementwise_tasklet_op(
+            tasklet_code,
+            [self_container, other_container],
+            [self_tensor, other_tensor],
+            result_container,
+            result_tensor,
+            debug_info,
+        )
+
+
+register_module(
+    "aten.eq.Tensor", ElementwiseTaskletOpParser(TaskletCode.fp_oeq, TaskletCode.int_eq)
+)
+register_module(
+    "aten.eq.Scalar", ElementwiseTaskletOpParser(TaskletCode.fp_oeq, TaskletCode.int_eq)
+)
 
 
 class ElementwiseTensorOpParserWithAlpha(GraphParserModule):

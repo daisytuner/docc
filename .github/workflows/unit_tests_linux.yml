@@ -87,6 +87,7 @@ jobs:
 
           pip install pytest==7.1.3 --break-system-packages
           pip install pytest-parallel --break-system-packages
+          pip install jsonschema --break-system-packages
 
           cd rtl/tests
           pytest -v -s rtl_tests.py
@@ -174,7 +175,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes
+          pip install numpy scipy ml_dtypes jsonschema
 
           # Build cupy-rocm from source for ROCm 6x
           # To be removed when docker image is updated to ROCm 7x
@@ -349,7 +350,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes
+          pip install numpy scipy ml_dtypes jsonschema
 
       - name: Build
         run: |
@@ -581,7 +582,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes cupy-cuda12x transformers
+          pip install numpy scipy ml_dtypes jsonschema cupy-cuda12x transformers
 
           pip install -r mlir/requirements.txt
           pip uninstall -y torch torchvision
@@ -669,7 +670,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes transformers
+          pip install numpy scipy ml_dtypes jsonschema transformers
 
           # Build cupy-rocm from source for ROCm 6x
           # To be removed when docker image is updated to ROCm 7x
@@ -772,7 +773,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes
+          pip install numpy scipy ml_dtypes jsonschema
           pip install -r mlir/requirements.txt
 
       - name: Build
