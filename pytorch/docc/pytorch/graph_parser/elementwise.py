@@ -116,6 +116,8 @@ register_module("aten.asin.default", UnaryCMathTensorOpParser(CMathFunction.asin
 register_module("aten.asinh.default", UnaryCMathTensorOpParser(CMathFunction.asinh))
 register_module("aten.atan.default", UnaryCMathTensorOpParser(CMathFunction.atan))
 register_module("aten.atanh.default", UnaryCMathTensorOpParser(CMathFunction.atanh))
+register_module("aten.cos.default", UnaryCMathTensorOpParser(CMathFunction.cos))
+register_module("aten.sin.default", UnaryCMathTensorOpParser(CMathFunction.sin))
 
 
 class ElementwiseTensorOpParser(GraphParserModule):
@@ -175,6 +177,8 @@ class ElementwiseTensorOpParser(GraphParserModule):
 
 register_module("aten.div.Tensor", ElementwiseTensorOpParser("div"))
 register_module("aten.mul.Tensor", ElementwiseTensorOpParser("mul"))
+register_module("aten.pow.Tensor_Scalar", ElementwiseTensorOpParser("pow"))
+register_module("aten.pow.Tensor_Tensor", ElementwiseTensorOpParser("pow"))
 
 
 class ElementwiseTaskletOpParser(GraphParserModule):
@@ -258,6 +262,14 @@ register_module(
 register_module(
     "aten.le.Scalar",
     ElementwiseTaskletOpParser(TaskletCode.fp_ole, TaskletCode.int_sle),
+)
+register_module(
+    "aten.ne.Tensor",
+    ElementwiseTaskletOpParser(TaskletCode.fp_one, TaskletCode.int_ne),
+)
+register_module(
+    "aten.ne.Scalar",
+    ElementwiseTaskletOpParser(TaskletCode.fp_one, TaskletCode.int_ne),
 )
 
 
