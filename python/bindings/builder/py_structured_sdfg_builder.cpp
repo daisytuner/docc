@@ -1314,6 +1314,8 @@ void PyStructuredSDFGBuilder::add_elementwise_unary_op(
         node = &builder_.add_library_node<sdfg::math::tensor::SigmoidNode>(block, debug_info, C_type.shape());
     } else if (op_type == "logical_not") {
         node = &builder_.add_library_node<sdfg::math::tensor::LogicalNotNode>(block, debug_info, C_type.shape());
+    } else if (op_type == "rsqrt") {
+        node = &builder_.add_library_node<sdfg::math::tensor::RsqrtNode>(block, debug_info, C_type.shape());
     } else {
         throw std::runtime_error("Unsupported elementwise unary op: " + op_type);
     }
