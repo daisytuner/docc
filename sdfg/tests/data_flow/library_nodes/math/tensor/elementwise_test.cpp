@@ -17,6 +17,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/rsqrt_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sigmoid_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sqrt_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.h"
@@ -232,6 +233,11 @@ REGISTER_UNARY_TEST(SqrtNode, 1)
 REGISTER_UNARY_TEST(SqrtNode, 2)
 REGISTER_UNARY_TEST(SqrtNode, 3)
 REGISTER_UNARY_TEST(SqrtNode, 4)
+
+REGISTER_UNARY_TEST(RsqrtNode, 1)
+REGISTER_UNARY_TEST(RsqrtNode, 2)
+REGISTER_UNARY_TEST(RsqrtNode, 3)
+REGISTER_UNARY_TEST(RsqrtNode, 4)
 
 REGISTER_UNARY_TEST(TanhNode, 1)
 REGISTER_UNARY_TEST(TanhNode, 2)
