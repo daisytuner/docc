@@ -12,7 +12,6 @@
 
 #include <nlohmann/json.hpp>
 
-
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/codegen/code_generators/cpp_code_generator.h>

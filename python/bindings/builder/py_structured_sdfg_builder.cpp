@@ -1469,6 +1469,7 @@ void PyStructuredSDFGBuilder::add_batchnorm_with_bias(
     builder_.add_computational_memlet(block, B_out_access, libnode, "B_out", {}, B_out_type, debug_info);
 }
 
+
 void PyStructuredSDFGBuilder::add_layernorm_with_bias(
     const std::string& X,
     const sdfg::types::Tensor& X_type,
@@ -1672,7 +1673,7 @@ void PyStructuredSDFGBuilder::add_embedding_renorm_op(
     auto& libnode = builder_.add_library_node<
         sdfg::math::tensor::EmbeddingRenormNode>(block, debug_info, W_type.shape(), I_type.shape(), max_norm, norm_type);
     builder_.add_computational_memlet(block, W_access, libnode, "W", {}, W_type, debug_info);
-    builder_.add_computational_memlet(block, I_access, libnode, "I", {}, I_type, debug_info);    
+    builder_.add_computational_memlet(block, I_access, libnode, "I", {}, I_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_slice_op(
