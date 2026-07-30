@@ -151,7 +151,6 @@ class ScalarTensorParser(GraphParserModule):
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        # 1. Validate arguments
         if len(node.args) != 1:
             raise GraphParserError(
                 self,
@@ -163,7 +162,6 @@ class ScalarTensorParser(GraphParserModule):
         ):
             raise GraphParserError(self, node, f"Unsupported kwargs: {node.kwargs}")
 
-        # 2. Extract container and type information
         result_container: str = self.get_result_container(node, builder, container_info)
         result_tensor: Tensor = self.get_tensor_type(
             node, container_info, result_container
@@ -183,14 +181,12 @@ class ScalarTensorParser(GraphParserModule):
                 node, fill_value, result_tensor.element_type
             )
 
-        # 3. Handle Pointer buffer outputs vs. intermediate Scalar containers
         container_type = container_info[result_container].sdfg_type()
         if isinstance(container_type, Pointer) and len(result_tensor.shape) == 0:
             target_tensor: Tensor = Tensor(result_tensor.element_type, ["1"])
         else:
             target_tensor: Tensor = result_tensor
 
-        # 4. Emit Fill operation or direct assignment to SDFG builder
         debug_info: DebugInfo = self.get_debug_info(node)
         if isinstance(container_type, Pointer):
             builder.add_fill_op(

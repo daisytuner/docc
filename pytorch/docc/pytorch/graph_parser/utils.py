@@ -1132,7 +1132,6 @@ class GraphParserModule(GraphParserBase, ABC):
                 container, sdfg_types, out_argument=True
             )
             info.update(out_argument=False)
-            print(f"ADDING CONTAINER: {info.name()} {info.sdfg_type()}")
             builder.add_container(container, sdfg_types[0], is_argument=True)
             debug_info: DebugInfo = self.get_debug_info(node)
             sdfg_tensor: Tensor | None = info.sdfg_tensor_type()
@@ -1318,7 +1317,6 @@ class GraphParserModule(GraphParserBase, ABC):
             info: ContainerInfo = self.resolve_container_name_backward(
                 node, container_info, f"{base_name}_{i}", sdfg_types
             )
-            print(f"ADDING CONTAINER: {info.name()} {info.sdfg_type()}")
             builder.add_container(
                 info.name(), sdfg_types[0], is_argument=info.out_argument()
             )
@@ -1344,7 +1342,6 @@ class GraphParserModule(GraphParserBase, ABC):
         container_info[container] = ContainerInfo(
             container, sdfg_type, sdfg_tensor_type
         )
-        print(f"ADDING CONTAINER: {info.name()} {info.sdfg_type()}")
         builder.add_container(container, sdfg_type)
         if not isinstance(sdfg_type, Scalar):
             self.allocate_memory(node, builder, container_info, container)

@@ -59,7 +59,7 @@ def test_scalar_tensor(target: str) -> None:
         def forward(self) -> torch.Tensor:
             return torch.scalar_tensor(3.141592)
 
-    check(ScalarTensorNet(), *(), target=target)
+    check(ScalarTensorNet(), target=target)
 
 
 def test_scalar_tensor_dtype(target: str) -> None:
@@ -67,7 +67,23 @@ def test_scalar_tensor_dtype(target: str) -> None:
         def forward(self) -> torch.Tensor:
             return torch.scalar_tensor(3.141592, dtype=torch.float64)
 
-    check(ScalarTensorDtypeNet(), *(), target=target)
+    check(ScalarTensorDtypeNet(), target=target)
+
+
+def test_scalar_tensor_device(target: str) -> None:
+    class ScalarTensorDeviceNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592, device=torch.device("cpu"))
+
+    check(ScalarTensorDeviceNet(), target=target)
+
+
+def test_scalar_tensor_layout(target: str) -> None:
+    class ScalarTensorLayoutNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592, layout=torch.strided)
+
+    check(ScalarTensorLayoutNet(), target=target)
 
 
 def test_scalar_tensor_add(target: str) -> None:
