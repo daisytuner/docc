@@ -162,7 +162,7 @@ TEST(MapFusionPassTest, PipelineStableAfterFusion) {
     }
 
     analysis::AnalysisManager am(builder.subject());
-    passes::normalization::MapFusionPass pass(true, false);
+    passes::normalization::MapFusionPass pass(true, true);
 
     // First run: MapFusion may modify the SDFG (fuse producer/consumer).
     dump_sdfg(builder.subject(), "0.before-first");

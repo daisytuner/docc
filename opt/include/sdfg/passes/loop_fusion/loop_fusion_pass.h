@@ -81,7 +81,7 @@ public:
     LoopFusionPass(const LoopFusionConfig& config);
     LoopFusionPass();
 
-    std::string name() override { return "NewMapFusionPass"; }
+    std::string name() override { return "LoopFusionPass"; }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 

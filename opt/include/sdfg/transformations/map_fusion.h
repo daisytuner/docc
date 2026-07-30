@@ -100,14 +100,14 @@ public:
      * @param second_loop The second loop (consumer, can be Map or For) to be fused
      * @param require_consecutive Whether the maps must be consecutive in the sequence for fusion to be applied
      * @param allow_init_hoist Whether Case 2 (init-into-reduction hoisting) may be applied
-     * @param cons_into_prod_only Ignore all cases of ProducerIntoConsumer
+     * @param allow_prod_into_cons Allow ProducerIntoConsumer fusions
      */
     MapFusion(
         structured_control_flow::Map& first_map,
         structured_control_flow::StructuredLoop& second_loop,
         bool require_consecutive = true,
         bool allow_init_hoist = true,
-        bool cons_into_prod_only = false
+        bool allow_prod_into_cons = true
     );
 
     passes::loop_fusion::LoopFusionByAccessWorker::FusionDirection last_fusion_direction() const;

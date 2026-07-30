@@ -29,10 +29,10 @@ MapFusion::MapFusion(
     structured_control_flow::StructuredLoop& second_loop,
     bool require_consecutive,
     bool allow_init_hoist,
-    bool cons_into_prod_only
+    bool allow_prod_into_cons
 )
     : first_map_(first_map), second_loop_(second_loop), require_consecutive_(require_consecutive),
-      allow_init_hoist_(allow_init_hoist), allow_prod_into_cons_(cons_into_prod_only) {}
+      allow_init_hoist_(allow_init_hoist), allow_prod_into_cons_(allow_prod_into_cons) {}
 
 std::string MapFusion::name() const { return "MapFusion"; }
 
@@ -409,7 +409,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
     }
 
-    if (allow_prod_into_cons_ && direction_ != LoopFusionByAccessWorker::FusionDirection::ConsumerIntoProducer) {
+    if (!allow_prod_into_cons_ && direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         // THe new mapfusion can handle all the other cases, so don't waste time doing those
         return false;
     }

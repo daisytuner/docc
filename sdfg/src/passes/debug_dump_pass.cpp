@@ -17,22 +17,52 @@ bool DebugDumpPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::
         std::filesystem::path path = *dir;
 
         auto output_dir = path / ("debug_dump_" + name_);
-        std::filesystem::create_directories(output_dir);
 
         auto fname = "graph_" + std::to_string(count);
 
-        if (dump_dot_) {
-            visualizer::DotVisualizer::writeToFile(builder.subject(), output_dir / (fname + ".sdfg.dot"));
-            dumped = true;
-        }
-        if (dump_json_) {
-            serializer::JSONSerializer::writeToFile(builder.subject(), output_dir / (fname + ".sdfg.json"));
-            dumped = true;
-        }
+        dump(builder.subject(), output_dir, fname, dump_json_, dump_dot_);
     }
 
 
     return false; // pipeline will infinitely re-execute if true
+}
+
+bool DebugDumpPass::dump(const StructuredSDFG& sdfg, const std::string& type, bool dump_json, bool dump_dot) {
+    auto* dir = sdfg.metadata_if_exists("output_dir");
+
+    if (dir) {
+        std::filesystem::path build_path(*dir);
+        return dump(sdfg, build_path, type, dump_json, dump_dot);
+    } else {
+        return false;
+    }
+}
+
+bool DebugDumpPass::dump(
+    const StructuredSDFG& sdfg, const std::filesystem::path& dir, const std::string& type, bool dump_json, bool dump_dot
+) {
+    std::filesystem::path build_path(dir);
+    if (!std::filesystem::exists(build_path)) {
+        std::filesystem::create_directories(build_path);
+    }
+
+    // Add metadata to SDFG
+    auto typeSuffix = type.empty() ? "" : ("." + type);
+    auto suffixedName = sdfg.name() + typeSuffix;
+
+    if (dump_json) {
+        std::filesystem::path sdfg_file = build_path / (suffixedName + ".sdfg.json");
+
+        // Dump json
+        serializer::JSONSerializer::writeToFile(sdfg, sdfg_file);
+    }
+
+    if (dump_dot) {
+        auto dot_file = build_path / (suffixedName + ".sdfg.dot");
+        sdfg::visualizer::DotVisualizer::writeToFile(sdfg, &dot_file);
+    }
+
+    return dump_dot || dump_json;
 }
 
 } // namespace sdfg::passes

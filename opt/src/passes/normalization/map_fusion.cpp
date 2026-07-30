@@ -11,10 +11,10 @@ MapFusion::MapFusion(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
     bool allow_init_hoist,
-    bool cons_into_prod_only
+    bool allow_prod_into_cons
 )
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), allow_init_hoist_(allow_init_hoist),
-      cons_into_prod_only_(cons_into_prod_only) {}
+      allow_prod_into_cons_(allow_prod_into_cons) {}
 
 bool MapFusion::accept(structured_control_flow::Sequence& node) {
     bool applied = false;
@@ -41,7 +41,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                 i++;
                 continue;
             }
-            transformations::MapFusion transformation(*first, *second, true, allow_init_hoist_, cons_into_prod_only_);
+            transformations::MapFusion transformation(*first, *second, true, allow_init_hoist_, allow_prod_into_cons_);
             if (transformation.can_be_applied(builder_, analysis_manager_)) {
                 auto first_id = first->element_id();
                 auto second_id = second->element_id();
@@ -65,7 +65,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                         continue;
                     }
                     transformations::MapFusion
-                        transformation(*first, *second, false, allow_init_hoist_, cons_into_prod_only_);
+                        transformation(*first, *second, false, allow_init_hoist_, allow_prod_into_cons_);
                     if (transformation.can_be_applied(builder_, analysis_manager_)) {
                         auto first_id = first->element_id();
                         auto second_id = second->element_id();

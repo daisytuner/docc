@@ -14,15 +14,15 @@ class MapFusion : public visitor::NonStoppingStructuredSDFGVisitor {
     std::unique_ptr<analysis::LoopAnalysis> loop_analysis_;
     // When false, Case 2 (init-into-reduction hoisting) is disabled for this run.
     bool allow_init_hoist_;
-    // Don't fuse cases of ProducerIntoConsumer
-    bool cons_into_prod_only_;
+    // Allow ProducerIntoConsumer fusing
+    bool allow_prod_into_cons_;
 
 public:
     MapFusion(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         bool allow_init_hoist = true,
-        bool cons_into_prod_only = true
+        bool allow_prod_into_cons = true
     );
 
     static std::string name() { return "MapFusion"; };
@@ -33,16 +33,16 @@ public:
 // A VisitorPass-style wrapper that forwards the init-hoist flag to the visitor.
 class MapFusionPass : public Pass {
     bool allow_init_hoist_;
-    bool cons_into_prod_only_;
+    bool allow_prod_into_cons_;
 
 public:
-    MapFusionPass(bool allow_init_hoist = true, bool cons_into_prod_only = true)
-        : allow_init_hoist_(allow_init_hoist), cons_into_prod_only_(cons_into_prod_only) {}
+    MapFusionPass(bool allow_init_hoist = true, bool allow_prod_into_cons = true)
+        : allow_init_hoist_(allow_init_hoist), allow_prod_into_cons_(allow_prod_into_cons) {}
 
     std::string name() override { return MapFusion::name(); }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override {
-        MapFusion visitor(builder, analysis_manager, allow_init_hoist_, cons_into_prod_only_);
+        MapFusion visitor(builder, analysis_manager, allow_init_hoist_, allow_prod_into_cons_);
         return visitor.visit();
     }
 };

@@ -16,6 +16,15 @@ public:
     std::string name() override { return "DebugDumpPass"; }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
+    static bool dump(const StructuredSDFG& sdfg, const std::string& type, bool dump_json = true, bool dump_dot = true);
+    static bool dump(
+        const StructuredSDFG& sdfg,
+        const std::filesystem::path& dir,
+        const std::string& type,
+        bool dump_json = true,
+        bool dump_dot = true
+    );
 };
 
 
