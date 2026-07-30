@@ -359,8 +359,38 @@ void PyStructuredSDFG::simplify() {
 
     // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
     // normalize() map-fusion run so loop distribution and fusion do not fight)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(false, true);
-    map_fusion.run(builder_opt, analysis_manager);
+    //auto map_fusion = sdfg::passes::normalization::map_fusion(false, true);
+    //map_fusion.run(builder_opt, analysis_manager);
+
+    //sdfg::passes::normalization::PerfectLoopDistributionPass loop_distribution_pass;
+    //loop_distribution_pass.run(builder_opt, analysis_manager);
+
+    //if (use_new_fusion_in_simplify_) {
+    //    dump_debug("py3.1.pre-fusion");
+//
+    //    // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
+    //    sdfg::passes::loop_fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
+    //    map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
+//
+    //    dump_debug("py3.2.post-fusion");
+//
+    //    // Cleanup of artifacts of MapFusion
+    //    dde.run(builder_opt, analysis_manager);
+    //    dce.run(builder_opt, analysis_manager);
+    //    sdfg::passes::Pipeline block_fusion("BlockFusion");
+    //    block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
+    //    block_fusion.run(builder_opt, analysis_manager);
+//
+    //    sdfg::passes::RedundantLoadEliminationPass rle;
+    //    rle.run(builder_opt, analysis_manager);
+    //    dde.run(builder_opt, analysis_manager);
+    //    sdfg::passes::TaskletFusionPass task_fuse_pass;
+    //    task_fuse_pass.run(builder_opt, analysis_manager);
+    //}
+//
+    //Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
+    auto map_fusion_hoist = sdfg::passes::normalization::map_fusion(true);
+    map_fusion_hoist.run(builder_opt, analysis_manager);
 }
 
 constexpr bool DEBUG_SDFG_DUMPS = false;

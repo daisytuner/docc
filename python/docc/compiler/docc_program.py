@@ -186,7 +186,7 @@ class DoccProgram(ABC):
                 sdfg.dump(output_folder, "py3.opt", dump_dot=True)
 
             # Normalization for scheduling
-            if self.target != "none":
+            if self.target == "sequential" or self.target == "openmp":
                 sdfg.normalize()
 
             if self.debug_dump or instrumentation_mode or capture_args:
