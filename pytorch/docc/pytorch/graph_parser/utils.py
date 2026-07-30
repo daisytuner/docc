@@ -986,6 +986,13 @@ class GraphParserModule(GraphParserBase, ABC):
                 node,
                 "Expected ContainerInfo but got: " + str(type(info)),
             )
+        # A 0-dimensional tensor is materialized as a stack Scalar buffer (see the memlet rule that
+        # scalar tensors must reference scalar buffers). Such a buffer must not be heap-allocated:
+        # the empty-shape ``total_size()`` evaluates to "1", so relying on it alone would wrongly
+        # emit a malloc/free for a scalar, producing an inconsistent container that later passes
+        # (e.g. symbol promotion) can eliminate while it is still referenced.
+        if isinstance(info.sdfg_type(), Scalar):
+            return
         sdfg_tensor_type: Tensor | None = info.sdfg_tensor_type()
         if sdfg_tensor_type is None:
             raise GraphParserError(
@@ -1125,6 +1132,7 @@ class GraphParserModule(GraphParserBase, ABC):
                 container, sdfg_types, out_argument=True
             )
             info.update(out_argument=False)
+            print(f"ADDING CONTAINER: {info.name()} {info.sdfg_type()}")
             builder.add_container(container, sdfg_types[0], is_argument=True)
             debug_info: DebugInfo = self.get_debug_info(node)
             sdfg_tensor: Tensor | None = info.sdfg_tensor_type()
@@ -1310,6 +1318,7 @@ class GraphParserModule(GraphParserBase, ABC):
             info: ContainerInfo = self.resolve_container_name_backward(
                 node, container_info, f"{base_name}_{i}", sdfg_types
             )
+            print(f"ADDING CONTAINER: {info.name()} {info.sdfg_type()}")
             builder.add_container(
                 info.name(), sdfg_types[0], is_argument=info.out_argument()
             )
@@ -1335,6 +1344,7 @@ class GraphParserModule(GraphParserBase, ABC):
         container_info[container] = ContainerInfo(
             container, sdfg_type, sdfg_tensor_type
         )
+        print(f"ADDING CONTAINER: {info.name()} {info.sdfg_type()}")
         builder.add_container(container, sdfg_type)
         if not isinstance(sdfg_type, Scalar):
             self.allocate_memory(node, builder, container_info, container)

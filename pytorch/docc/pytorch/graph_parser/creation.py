@@ -5,7 +5,7 @@ GraphParser modules for parsing operations to create tensors.
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, Scalar, Tensor, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, Scalar, Pointer, Tensor, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
     GraphParserModule,
@@ -117,15 +117,95 @@ class FullParser(GraphParserModule):
                 node, fill_value, result_tensor.element_type
             )
 
+        container_type = container_info[result_container].sdfg_type()
+        if isinstance(container_type, Pointer) and len(result_tensor.shape) == 0:
+            target_tensor: Tensor = Tensor(result_tensor.element_type, ["1"])
+        else:
+            target_tensor: Tensor = result_tensor
+
         debug_info: DebugInfo = self.get_debug_info(node)
-        builder.add_fill_op(
-            fill_value_container,
-            fill_value_type,
-            result_container,
-            result_tensor,
-            debug_info,
-        )
+        if isinstance(container_type, Pointer):
+            builder.add_fill_op(
+                fill_value_container,
+                fill_value_type,
+                result_container,
+                target_tensor,
+                debug_info,
+            )
+        else:
+            builder.add_assignment(
+                result_container,
+                fill_value_container,
+                debug_info,
+            )
 
 
 register_module("aten.full.default", FullParser())
 register_module("aten.full_like.default", FullParser())
+
+
+class ScalarTensorParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        # 1. Validate arguments
+        if len(node.args) != 1:
+            raise GraphParserError(
+                self,
+                node,
+                f"Expected exactly 1 argument (scalar value), got {len(node.args)}",
+            )
+        if not set(node.kwargs.keys()).issubset(
+            {"dtype", "layout", "device", "pin_memory", "memory_format"}
+        ):
+            raise GraphParserError(self, node, f"Unsupported kwargs: {node.kwargs}")
+
+        # 2. Extract container and type information
+        result_container: str = self.get_result_container(node, builder, container_info)
+        result_tensor: Tensor = self.get_tensor_type(
+            node, container_info, result_container
+        )
+        fill_value: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
+            node, container_info, 0
+        )
+
+        if isinstance(fill_value, str):
+            fill_value_container: str = fill_value
+            fill_value_type: Scalar = self.get_scalar_type(
+                node, container_info, fill_value_container
+            )
+        else:
+            fill_value_container: str = fill_value[0]
+            fill_value_type: Scalar = self.align_constant_type(
+                node, fill_value, result_tensor.element_type
+            )
+
+        # 3. Handle Pointer buffer outputs vs. intermediate Scalar containers
+        container_type = container_info[result_container].sdfg_type()
+        if isinstance(container_type, Pointer) and len(result_tensor.shape) == 0:
+            target_tensor: Tensor = Tensor(result_tensor.element_type, ["1"])
+        else:
+            target_tensor: Tensor = result_tensor
+
+        # 4. Emit Fill operation or direct assignment to SDFG builder
+        debug_info: DebugInfo = self.get_debug_info(node)
+        if isinstance(container_type, Pointer):
+            builder.add_fill_op(
+                fill_value_container,
+                fill_value_type,
+                result_container,
+                target_tensor,
+                debug_info,
+            )
+        else:
+            builder.add_assignment(
+                result_container,
+                fill_value_container,
+                debug_info,
+            )
+
+
+register_module("aten.scalar_tensor.default", ScalarTensorParser())

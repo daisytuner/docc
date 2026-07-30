@@ -49,3 +49,30 @@ def test_full_like_dtype_change(target: str) -> None:
     check(
         FullLikeDtypeChangeNet(), torch.ones((2, 3), dtype=torch.float64), target=target
     )
+
+
+# --- scalar_tensor ---
+
+
+def test_scalar_tensor(target: str) -> None:
+    class ScalarTensorNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592)
+
+    check(ScalarTensorNet(), *(), target=target)
+
+
+def test_scalar_tensor_dtype(target: str) -> None:
+    class ScalarTensorDtypeNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592, dtype=torch.float64)
+
+    check(ScalarTensorDtypeNet(), *(), target=target)
+
+
+def test_scalar_tensor_add(target: str) -> None:
+    class ScalarTensorAddNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input + torch.scalar_tensor(3.141592)
+
+    check(ScalarTensorAddNet(), torch.ones(2, 3), target=target)
