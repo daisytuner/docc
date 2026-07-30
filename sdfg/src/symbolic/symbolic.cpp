@@ -945,6 +945,15 @@ bool substitute(ExpressionSet& set, const symbolic::ExpressionMapping& replaceme
     return changed;
 }
 
+MultiExpression substitute(const MultiExpression& vec, const symbolic::ExpressionMapping& replacements) {
+    MultiExpression remapped;
+    remapped.reserve(vec.size());
+    for (auto& dim : vec) {
+        remapped.emplace_back(symbolic::subs(dim, replacements));
+    }
+    return std::move(remapped);
+}
+
 Expression parse(const std::string& expr_str) {
     auto expr = SymEngine::parse(expr_str);
     expr = symbolic::subs(expr, symbolic::symbol("true"), symbolic::one());

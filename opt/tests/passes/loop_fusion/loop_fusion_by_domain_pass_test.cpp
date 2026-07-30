@@ -1,4 +1,4 @@
-#include "sdfg/passes/map_fusion/new_map_fusion_pass.h"
+#include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
 
 #include <gtest/gtest.h>
 
@@ -47,7 +47,7 @@ public:
     }
 };
 
-TEST(MapFusionByDomainTest, FuseMultipleStacks) {
+TEST(LoopFusionByDomainTest, FuseMultipleStacks) {
     builder::StructuredSDFGBuilder builder("map_fuse_stacks", FunctionType_CPU);
     MultiNestBuilder m(builder);
 
@@ -138,7 +138,7 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
     analysis::AnalysisManager analysis_manager(builder.subject());
     auto& loops = analysis_manager.get<analysis::LoopAnalysis>();
 
-    builder.subject().add_metadata("output_dir", "test_outputs/MapFusionByDomainTest/FuseMultipleStacks");
+    builder.subject().add_metadata("output_dir", "test_outputs/LoopFusionByDomainTest/FuseMultipleStacks");
 
     dump_loop_info(loops, "0.init");
     dump_sdfg(builder.subject(), "0.init");
@@ -146,7 +146,7 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    NewMapFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
+    LoopFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
     pass.run_pass(builder, analysis_manager);
 
     auto& loops2 = analysis_manager.get<analysis::LoopAnalysis>();
@@ -205,7 +205,7 @@ TEST(MapFusionByDomainTest, FuseMultipleStacks) {
     dump_sdfg(builder.subject(), "4.rle-cleanup");
 }
 
-TEST(MapFusionByDomainTest, FindNonStackedNestedConflicts) {
+TEST(LoopFusionByDomainTest, FindNonStackedNestedConflicts) {
     builder::StructuredSDFGBuilder builder("map_fuse_conflicted", FunctionType_CPU);
     MultiNestBuilder m(builder);
 
@@ -289,7 +289,7 @@ TEST(MapFusionByDomainTest, FindNonStackedNestedConflicts) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    NewMapFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
+    LoopFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
     pass.run_pass(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.after");
@@ -301,7 +301,7 @@ TEST(MapFusionByDomainTest, FindNonStackedNestedConflicts) {
 }
 
 
-TEST(MapFusionByDomainTest, DoNotFuseTransposedProducerConsumer) {
+TEST(LoopFusionByDomainTest, DoNotFuseTransposedProducerConsumer) {
     // Reproducer for the segformer layernorm->reshape read-before-write.
     // Producer stack writes the malloc'd intermediate _tmp ROW-major: _tmp[i*N + j].
     // Consumer stack reads it TRANSPOSED: _tmp[j*N + i].
@@ -362,7 +362,7 @@ TEST(MapFusionByDomainTest, DoNotFuseTransposedProducerConsumer) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    NewMapFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
+    LoopFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
     pass.run_pass(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.after");
@@ -373,7 +373,7 @@ TEST(MapFusionByDomainTest, DoNotFuseTransposedProducerConsumer) {
            "on the materialized intermediate _tmp).";
 }
 
-TEST(MapFusionByDomainTest, DoNotFuseTransposedSharedBand_Segformer) {
+TEST(LoopFusionByDomainTest, DoNotFuseTransposedSharedBand_Segformer) {
     // Faithful reproducer of the segformer layernorm->reshape->transpose kernel (rid 764639257).
     // Ground-truth structure from the emitted cutout:
     //
@@ -460,7 +460,7 @@ TEST(MapFusionByDomainTest, DoNotFuseTransposedSharedBand_Segformer) {
     builder.subject().validate();
     analysis_manager.invalidate_all();
 
-    NewMapFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
+    LoopFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
     pass.run_pass(builder, analysis_manager);
 
     dump_sdfg(builder.subject(), "1.after");
@@ -471,7 +471,7 @@ TEST(MapFusionByDomainTest, DoNotFuseTransposedSharedBand_Segformer) {
            "read-before-write on the materialized transient _tmp).";
 }
 
-TEST(MapFusionByDomainTest, DoNotCauseIndvarReuse) {
+TEST(LoopFusionByDomainTest, DoNotCauseIndvarReuse) {
     builder::StructuredSDFGBuilder builder("map_fuse_stacks", FunctionType_CPU);
     MultiNestBuilder m(builder);
 
@@ -515,7 +515,7 @@ TEST(MapFusionByDomainTest, DoNotCauseIndvarReuse) {
 
     dump_sdfg(builder.subject(), "0.init");
 
-    map_fusion::NewMapFusionPass pass;
+    map_fusion::LoopFusionPass pass;
     analysis::AnalysisManager ana(builder.subject());
     pass.run_pass(builder, ana);
 

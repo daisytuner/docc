@@ -484,21 +484,8 @@ void Memlet::replace(const symbolic::Expression old_expression, const symbolic::
 }
 
 void Memlet::replace(const symbolic::ExpressionMapping& replacements) {
-    Subset new_subset;
-    for (auto& dim : this->subset_) {
-        new_subset.push_back(SymEngine::subs(dim, replacements));
-    }
-    this->subset_ = new_subset;
+    this->subset_ = symbolic::substitute(this->subset_, replacements);
     this->base_type_->replace_symbols(replacements);
-}
-
-Subset remap_subset(const Subset& subset, const symbolic::ExpressionMapping& replacements) {
-    Subset remapped;
-    remapped.reserve(subset.size());
-    for (auto& dim : subset) {
-        remapped.emplace_back(symbolic::subs(dim, replacements));
-    }
-    return std::move(remapped);
 }
 
 } // namespace data_flow

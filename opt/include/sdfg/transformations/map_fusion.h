@@ -1,7 +1,7 @@
 #pragma once
 
-#include "sdfg/passes/map_fusion/fusion_types.h"
-#include "sdfg/passes/map_fusion/map_fusion_by_accesses.h"
+#include "sdfg/passes/loop_fusion/fusion_types.h"
+#include "sdfg/passes/loop_fusion/loop_fusion_by_accesses.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -40,9 +40,10 @@ class MapFusion : public Transformation {
     // rejected. This lets the pipeline restrict hoisting to a single, final map-fusion run
     // so that loop distribution and earlier fusion runs do not fight each other.
     bool allow_init_hoist_ = true;
-    bool cons_into_prod_only_;
+    // whether to consider ProducerIntoConsumer fusions. Those can now be handled by the LoopFusionByAccessWorker
+    bool allow_prod_into_cons_;
 
-    passes::map_fusion::MapFusionByAccessWorker::FusionDirection direction_;
+    passes::map_fusion::LoopFusionByAccessWorker::FusionDirection direction_;
     std::vector<passes::map_fusion::FusionRegCandidate> fusion_candidates_;
 
     // Resolved locations populated during can_be_applied()
@@ -109,7 +110,7 @@ public:
         bool cons_into_prod_only = false
     );
 
-    passes::map_fusion::MapFusionByAccessWorker::FusionDirection last_fusion_direction() const;
+    passes::map_fusion::LoopFusionByAccessWorker::FusionDirection last_fusion_direction() const;
 
     /**
      * @brief Get the name of this transformation

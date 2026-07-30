@@ -49,7 +49,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                 DEBUG_PRINTLN(
                     "Applied MapFusion to #" + std::to_string(first_id) + " " +
                     (transformation.last_fusion_direction() ==
-                             map_fusion::MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer
+                             map_fusion::LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer
                          ? "->"
                          : "<-") +
                     " #" + std::to_string(second_id)
@@ -73,7 +73,7 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                         DEBUG_PRINTLN(
                             "Applied MapFusion to #" + std::to_string(first_id) + " " +
                             (transformation.last_fusion_direction() ==
-                                     map_fusion::MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer
+                                     map_fusion::LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer
                                  ? "->"
                                  : "<-") +
                             " #" + std::to_string(second_id) + " with intermediate malloc block"

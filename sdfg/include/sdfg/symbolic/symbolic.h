@@ -710,6 +710,8 @@ Condition subs(const Condition expr, const symbolic::ExpressionMapping& replacem
 
 bool substitute(ExpressionSet& set, const symbolic::ExpressionMapping& replacements);
 
+MultiExpression substitute(const MultiExpression& vec, const symbolic::ExpressionMapping& replacements);
+
 /**
  * @brief Computes the inverse of an expression with respect to a symbol
  * @param expr Expression to invert

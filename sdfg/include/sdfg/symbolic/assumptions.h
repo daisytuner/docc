@@ -295,7 +295,8 @@ public:
  */
 typedef std::unordered_map<Symbol, Assumption, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq> Assumptions;
 
-bool replace_indvars_in_assumptions(Assumptions& assumptions, const symbolic::ExpressionMapping& replacements);
+bool substitute(Assumptions& assumptions, const symbolic::ExpressionMapping& replacements);
+;
 
 } // namespace symbolic
 } // namespace sdfg

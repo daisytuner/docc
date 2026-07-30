@@ -1,5 +1,6 @@
-#include "sdfg/passes/map_fusion/new_map_fusion_pass.h"
+#include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
 
+#include "../../../../sdfg/include/sdfg/symbolic/assumptions.h"
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/base_user_visitor.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
@@ -152,9 +153,8 @@ public:
             std::optional<data_flow::Subset> generalized_subset_holder;
             const data_flow::Subset* generalized_subset = &edge.subset();
             if (!current->indvar_placeholder.is_null()) {
-                generalized_subset_holder = data_flow::remap_subset(
-                    *generalized_subset, {{cand.indvar_boundaries->symbol(), current->indvar_placeholder}}
-                );
+                generalized_subset_holder = symbolic::
+                    substitute(*generalized_subset, {{cand.indvar_boundaries->symbol(), current->indvar_placeholder}});
                 generalized_subset = &generalized_subset_holder.value();
             }
 
@@ -226,7 +226,7 @@ public:
     ) override {}
 };
 
-FusionLoopCandidate* NewMapFusionPass::State::get_next_level_map_stack(FusionLoopCandidate& current) {
+FusionLoopCandidate* LoopFusionPass::State::get_next_level_map_stack(FusionLoopCandidate& current) {
     auto& children = loop_analysis->children(current.loop);
     if (children.empty()) {
         return nullptr;
@@ -236,7 +236,7 @@ FusionLoopCandidate* NewMapFusionPass::State::get_next_level_map_stack(FusionLoo
     return fuse_candidates.at(next->element_id()).get();
 }
 
-FusionLoopCandidate* NewMapFusionPass::State::get_parent(FusionLoopCandidate& current) {
+FusionLoopCandidate* LoopFusionPass::State::get_parent(FusionLoopCandidate& current) {
     auto* parent = loop_analysis->parent_loop(current.loop);
     if (!parent) {
         return nullptr;
@@ -249,7 +249,7 @@ FusionLoopCandidate* NewMapFusionPass::State::get_parent(FusionLoopCandidate& cu
     }
 }
 
-uint32_t NewMapFusionPass::State::total_fused_count() const { return fused_by_domain_count + fused_by_access_count; }
+uint32_t LoopFusionPass::State::total_fused_count() const { return fused_by_domain_count + fused_by_access_count; }
 
 std::ostream& operator<<(std::ostream& os, const symbolic::Expression& expr) {
     if (!expr.is_null()) {
@@ -287,11 +287,11 @@ std::ostream& operator<<(std::ostream& os, const symbolic::Assumptions& ass) {
     return os;
 }
 
-NewMapFusionPass::NewMapFusionPass(const LoopFusionConfig& config) : config_(config) {}
+LoopFusionPass::LoopFusionPass(const LoopFusionConfig& config) : config_(config) {}
 
-NewMapFusionPass::NewMapFusionPass() = default;
+LoopFusionPass::LoopFusionPass() = default;
 
-bool NewMapFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+bool LoopFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto loop_ana = std::make_unique<analysis::LoopAnalysis>(builder.subject());
     loop_ana->run(analysis_manager);
 
@@ -331,7 +331,7 @@ bool NewMapFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysi
         }
     }
 
-    MapFusionHandler handler(config_, state);
+    LoopFusionHandler handler(config_, state);
 
     NeighboringPatternVisitor v(handler);
     v.dispatch(builder.subject().root());
@@ -343,7 +343,7 @@ bool NewMapFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysi
     return state.total_fused_count();
 }
 
-const symbolic::Assumption* NewMapFusionPass::
+const symbolic::Assumption* LoopFusionPass::
     find_indvar_boundaries(const symbolic::Symbol& indvar, const symbolic::Assumptions& assumptions) {
     auto it = assumptions.find(indvar);
     if (it != assumptions.end()) {
@@ -353,10 +353,10 @@ const symbolic::Assumption* NewMapFusionPass::
     return nullptr;
 }
 
-MapFusionHandler::MapFusionHandler(const LoopFusionConfig& config, NewMapFusionPass::State& state)
-    : config_(config), state_(state), MapFusionByAccessWorker(config.allow_init_hoist) {}
+LoopFusionHandler::LoopFusionHandler(const LoopFusionConfig& config, LoopFusionPass::State& state)
+    : config_(config), state_(state), LoopFusionByAccessWorker(config.allow_init_hoist) {}
 
-PatternHandler::MatchResult MapFusionHandler::fuse_contents(
+PatternHandler::MatchResult LoopFusionHandler::fuse_contents(
     ControlFlowNode* first_top,
     FusionLoopCandidate* first_current,
     FusionLoopCandidate* second_innermost,
@@ -444,15 +444,15 @@ PatternHandler::MatchResult MapFusionHandler::fuse_contents(
     return {.removed_first = removed_first, .visit_second_body = keep_visiting_second};
 }
 
-analysis::LoopAnalysis& MapFusionHandler::get_loop_analysis() { return *state_.loop_analysis; }
+analysis::LoopAnalysis& LoopFusionHandler::get_loop_analysis() { return *state_.loop_analysis; }
 
-FusionLoopCandidate* MapFusionHandler::get_fuse_candidate(StructuredLoop& loop) {
+FusionLoopCandidate* LoopFusionHandler::get_fuse_candidate(StructuredLoop& loop) {
     return state_.fuse_candidates.at(loop.element_id()).get();
 }
 
-builder::StructuredSDFGBuilder& MapFusionHandler::builder() { return state_.builder; }
+builder::StructuredSDFGBuilder& LoopFusionHandler::builder() { return state_.builder; }
 
-void MapFusionHandler::update_copied_leaf_contents_from_first_to_second(
+void LoopFusionHandler::update_copied_leaf_contents_from_first_to_second(
     const Plan& plan, FusionLoopCandidate* first_current, FusionLoopCandidate* second_current
 ) {
     auto first_top = &plan.first;
@@ -483,7 +483,7 @@ void MapFusionHandler::update_copied_leaf_contents_from_first_to_second(
     });
 }
 
-PatternHandler::MatchResult MapFusionHandler::match(StructuredLoop& first, StructuredLoop& second, bool no_uses_between) {
+PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, StructuredLoop& second, bool no_uses_between) {
     auto first_it = state_.fuse_candidates.find(first.element_id());
     if (first_it == state_.fuse_candidates.end()) {
         return {};
@@ -616,7 +616,7 @@ PatternHandler::MatchResult MapFusionHandler::match(StructuredLoop& first, Struc
     }
 }
 
-PatternHandler::MatchResult MapFusionHandler::try_complex_fuse_producer_into_consumer(
+PatternHandler::MatchResult LoopFusionHandler::try_complex_fuse_producer_into_consumer(
     FusionLoopCandidate& first, FusionLoopCandidate& second, bool no_uses_between, bool domains_match
 ) {
     auto outcome = try_fuse_by_access(first, second, domains_match);
@@ -628,7 +628,7 @@ PatternHandler::MatchResult MapFusionHandler::try_complex_fuse_producer_into_con
     return outcome.pattern_result;
 }
 
-bool MapFusionHandler::check_no_overlap(
+bool LoopFusionHandler::check_no_overlap(
     const StructuredLoop& map, const StructuredLoop& second, const std::unordered_set<std::string>& skipped_containers
 ) {
     auto& first_cand = *state_.fuse_candidates.at(map.element_id());
@@ -641,7 +641,7 @@ bool MapFusionHandler::check_no_overlap(
     return true;
 }
 
-bool MapFusionHandler::
+bool LoopFusionHandler::
     loop_match(FusionLoopCandidate& first, FusionLoopCandidate& second, SymEngine::map_basic_basic& canonical_indvars) {
     if (first.incompatible || second.incompatible) {
         return false;
@@ -666,7 +666,7 @@ bool MapFusionHandler::
     return true;
 }
 
-void MapFusionHandler::update_moved_candidate_states(FusionLoopCandidate* top, const symbolic::ExpressionMapping& replace) {
+void LoopFusionHandler::update_moved_candidate_states(FusionLoopCandidate* top, const symbolic::ExpressionMapping& replace) {
     auto& info = state_.loop_analysis->loop_info_local(top->loop);
     auto& candidates = state_.fuse_candidates;
 
@@ -689,7 +689,7 @@ data_flow::Subset updated_subset(const data_flow::Subset& subset, const symbolic
     return std::move(updated_subset);
 }
 
-void MapFusionHandler::update_candidate_state(
+void LoopFusionHandler::update_candidate_state(
     ControlFlowNode* first_top,
     FusionLoopCandidate* first_current,
     FusionLoopCandidate* second_current,
@@ -720,7 +720,7 @@ void MapFusionHandler::update_candidate_state(
     );
 }
 
-void MapFusionHandler::update_candidate_args_up(
+void LoopFusionHandler::update_candidate_args_up(
     ControlFlowNode* first_top,
     FusionLoopCandidate* first_current,
     FusionLoopCandidate* second_current,
@@ -742,7 +742,7 @@ void MapFusionHandler::update_candidate_args_up(
     } while (first_current && first_current->loop != terminate_at);
 }
 
-MapFusionHandler::InOutCheckResult MapFusionHandler::check_ins_outs(
+LoopFusionHandler::InOutCheckResult LoopFusionHandler::check_ins_outs(
     const FusionLoopCandidate& first_candidate,
     const FusionLoopCandidate& second_candidate,
     symbolic::ExpressionMapping& canonical_indvars,
@@ -755,7 +755,7 @@ MapFusionHandler::InOutCheckResult MapFusionHandler::check_ins_outs(
     return check_ins_outs(first_args, second_args, canonical_indvars, local_not_nested, only_no_overlap);
 }
 
-MapFusionHandler::InOutCheckResult MapFusionHandler::check_ins_outs(
+LoopFusionHandler::InOutCheckResult LoopFusionHandler::check_ins_outs(
     const std::unordered_map<std::string, FusionArg>& first_args,
     const std::unordered_map<std::string, FusionArg>& second_args,
     symbolic::ExpressionMapping& canonical_indvars,
@@ -801,7 +801,7 @@ MapFusionHandler::InOutCheckResult MapFusionHandler::check_ins_outs(
     return {no_conflicts, overlap, subset_mismatch};
 }
 
-void MapFusionHandler::update_fused_seq(Sequence& sequence, const symbolic::ExpressionMapping& replacements) {
+void LoopFusionHandler::update_fused_seq(Sequence& sequence, const symbolic::ExpressionMapping& replacements) {
     sequence.replace(replacements);
 }
 
@@ -889,7 +889,7 @@ bool FusionArgCommonAccesses::merge_subset(
     const data_flow::Subset* mapped_subset = nullptr;
     if (subset.has_value()) {
         if (lower_indvars) {
-            mapped_subset_holder = data_flow::remap_subset(subset.value(), *lower_indvars);
+            mapped_subset_holder = symbolic::substitute(subset.value(), *lower_indvars);
             mapped_subset = &mapped_subset_holder.value();
         } else {
             mapped_subset = &subset.value();
@@ -930,7 +930,7 @@ void FusionLoopCandidate::replace(const symbolic::ExpressionMapping& mapping) {
             arg.nested_access.common_subset = updated_subset(arg.nested_access.common_subset.value(), mapping);
         }
     }
-    symbolic::replace_indvars_in_assumptions(assumptions, mapping);
+    symbolic::substitute(assumptions, mapping);
 
     if constexpr (DUMP_ASSUMPTIONS) {
         std::cout << "Updated #" << this->loop->element_id() << " to:" << std::endl;

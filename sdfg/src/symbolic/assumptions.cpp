@@ -180,12 +180,17 @@ Assumption::ReplaceResult Assumption::replace(const symbolic::ExpressionMapping&
             auto new_symbol = SymEngine::rcp_static_cast<const SymEngine::Symbol>(replacement);
             symbol_ = new_symbol;
             return ReplaceResult::IdChanged;
+        } else {
+            throw std::runtime_error(
+                "Trying to replace Assumption symbol '" + this->symbol_->get_name() +
+                "' with not a symbol: " + replacement->__str__()
+            );
         }
     }
     return ReplaceResult::IdSame;
 }
 
-bool replace_indvars_in_assumptions(Assumptions& assumptions, const symbolic::ExpressionMapping& replacements) {
+bool substitute(Assumptions& assumptions, const symbolic::ExpressionMapping& replacements) {
     bool remapped_some = false;
 
     std::vector<std::tuple<symbolic::Symbol, symbolic::Symbol>> replacements_vec;

@@ -12,7 +12,7 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/control_flow/interstate_edge.h"
 #include "sdfg/data_flow/data_flow_graph.h"
-#include "sdfg/passes/map_fusion/map_fusion_by_accesses.h"
+#include "sdfg/passes/loop_fusion/loop_fusion_by_accesses.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/symbolic/delinearization.h"
@@ -32,13 +32,13 @@ MapFusion::MapFusion(
     bool cons_into_prod_only
 )
     : first_map_(first_map), second_loop_(second_loop), require_consecutive_(require_consecutive),
-      allow_init_hoist_(allow_init_hoist), cons_into_prod_only_(cons_into_prod_only) {}
+      allow_init_hoist_(allow_init_hoist), allow_prod_into_cons_(cons_into_prod_only) {}
 
 std::string MapFusion::name() const { return "MapFusion"; }
 
-using passes::map_fusion::MapFusionByAccessWorker;
+using passes::map_fusion::LoopFusionByAccessWorker;
 
-MapFusionByAccessWorker::FusionDirection MapFusion::last_fusion_direction() const { return direction_; }
+LoopFusionByAccessWorker::FusionDirection MapFusion::last_fusion_direction() const { return direction_; }
 
 bool MapFusion::find_write_location(
     structured_control_flow::StructuredLoop& loop,
@@ -181,13 +181,13 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 
     if (first_nested && second_nested) {
         // Pattern 1: Both perfectly nested — producer into consumer (original path)
-        direction_ = MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer;
+        direction_ = LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer;
     } else if (!first_nested && second_nested) {
         // Pattern 2: Producer non-perfectly-nested, consumer perfectly nested
-        direction_ = MapFusionByAccessWorker::FusionDirection::ConsumerIntoProducer;
+        direction_ = LoopFusionByAccessWorker::FusionDirection::ConsumerIntoProducer;
     } else {
         // Reverse Pattern 2: Producer perfectly nested, consumer non-perfectly-nested
-        direction_ = MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer;
+        direction_ = LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer;
     }
 
     // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
@@ -208,7 +208,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     // These keep init-into-reduction (T=0 followed by For(k){T+=...}) rejected.
     // ConsumerIntoProducer: only the consumer (inlined side) must be all-parallel.
     bool consumer_reduction_branch = false;
-    if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
+    if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         if (!first_loop_info.is_perfectly_parallel) {
             return false;
         } else if (!second_loop_info.is_perfectly_parallel) {
@@ -387,7 +387,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     // before the inlined copy reads it). Force ConsumerIntoProducer.
     // We check the dataflow directly rather than ArgumentsAnalysis, because the latter
     // conservatively marks written containers as also read.
-    if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
+    if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         auto& first_dataflow_check = producer_block_->dataflow();
         bool producer_reads_fusion = false;
         for (const auto& container : fusion_containers) {
@@ -401,7 +401,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             if (producer_reads_fusion) break;
         }
         if (producer_reads_fusion) {
-            direction_ = MapFusionByAccessWorker::FusionDirection::ConsumerIntoProducer;
+            direction_ = LoopFusionByAccessWorker::FusionDirection::ConsumerIntoProducer;
             // Re-check: consumer must be all-parallel for ConsumerIntoProducer
             if (!second_loop_info.is_perfectly_parallel) {
                 return false;
@@ -409,7 +409,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
     }
 
-    if (cons_into_prod_only_ && direction_ != MapFusionByAccessWorker::FusionDirection::ConsumerIntoProducer) {
+    if (allow_prod_into_cons_ && direction_ != LoopFusionByAccessWorker::FusionDirection::ConsumerIntoProducer) {
         // THe new mapfusion can handle all the other cases, so don't waste time doing those
         return false;
     }
@@ -418,7 +418,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     // If the producer body has multiple blocks (e.g. from prior BlockFusion merging
     // a previous fusion's writeback + inlined blocks), the write block may depend on
     // intermediates produced by earlier blocks that would NOT be copied. Reject.
-    if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer && producer_body_->size() > 1) {
+    if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer && producer_body_->size() > 1) {
         return false;
     }
 
@@ -483,9 +483,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         for (const auto& consumer_subset : unique_subsets) {
             std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> mappings;
 
-            if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
+            if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
                 // Solve producer indvars in terms of consumer indvars
-                mappings = passes::map_fusion::MapFusionByAccessWorker::solve_subsets(
+                mappings = passes::map_fusion::LoopFusionByAccessWorker::solve_subsets(
                     producer_subset,
                     consumer_subset,
                     producer_loops_,
@@ -496,7 +496,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             } else {
                 // ConsumerIntoProducer: solve consumer indvars in terms of producer indvars
                 // Arguments are swapped, so invert the range check direction
-                mappings = passes::map_fusion::MapFusionByAccessWorker::solve_subsets(
+                mappings = passes::map_fusion::LoopFusionByAccessWorker::solve_subsets(
                     consumer_subset,
                     producer_subset,
                     consumer_loops_,
@@ -615,7 +615,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                   << static_cast<int>(direction_)
     );
 
-    if (direction_ == MapFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
+    if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         // Pattern 1 + Reverse Pattern 2: Inline producer blocks into consumer's read body
         auto& first_dataflow = producer_block_->dataflow();
 

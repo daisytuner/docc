@@ -1,4 +1,4 @@
-#include "sdfg/passes/map_fusion/map_fusion_by_accesses.h"
+#include "sdfg/passes/loop_fusion/loop_fusion_by_accesses.h"
 
 #include <isl/ctx.h>
 #include <isl/map.h>
@@ -6,7 +6,7 @@
 #include <isl/set.h>
 #include <isl/space.h>
 
-#include "../../../include/sdfg/passes/map_fusion/new_map_fusion_pass.h"
+#include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
 #include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/utils.h"
 #include "sdfg/transformations/map_fusion.h"
@@ -14,7 +14,7 @@
 
 namespace sdfg::passes::map_fusion {
 
-structured_control_flow::StructuredLoop* MapFusionByAccessWorker::Plan::consumer_target_loop() const {
+structured_control_flow::StructuredLoop* LoopFusionByAccessWorker::Plan::consumer_target_loop() const {
     if (this->init_hoist_) {
         return this->consumer_loops_.at(this->consumer_loops_.size() - 2);
     } else {
@@ -22,11 +22,11 @@ structured_control_flow::StructuredLoop* MapFusionByAccessWorker::Plan::consumer
     }
 }
 
-structured_control_flow::Sequence& MapFusionByAccessWorker::Plan::consumer_target_sequence() const {
+structured_control_flow::Sequence& LoopFusionByAccessWorker::Plan::consumer_target_sequence() const {
     return init_hoist_ ? *hoist_body_ : *consumer_body_;
 }
 
-std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusionByAccessWorker::solve_subsets(
+std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> LoopFusionByAccessWorker::solve_subsets(
     const data_flow::Subset& producer_subset,
     const data_flow::Subset& consumer_subset,
     const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
@@ -238,7 +238,7 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusionByAccess
     return mappings;
 }
 
-MapFusionByAccessWorker::FusionRegs MapFusionByAccessWorker::
+LoopFusionByAccessWorker::FusionRegs LoopFusionByAccessWorker::
     find_fusion_regs(const FusionLoopCandidate& first, const FusionLoopCandidate& second) {
     auto& first_args = first.args;
     auto second_args = second.args;
@@ -283,7 +283,7 @@ MapFusionByAccessWorker::FusionRegs MapFusionByAccessWorker::
     return {.fusion_regs = fusion_containers, .second_outputs = second_outputs, .conflicts = false};
 }
 
-std::vector<StructuredLoop*> MapFusionByAccessWorker::collect_structured_sub_tree(StructuredLoop& top) {
+std::vector<StructuredLoop*> LoopFusionByAccessWorker::collect_structured_sub_tree(StructuredLoop& top) {
     auto& ana = get_loop_analysis();
     std::vector<StructuredLoop*> loop_stack;
     auto it = ana.get_loop_iterator(&top);
@@ -302,7 +302,7 @@ std::vector<StructuredLoop*> MapFusionByAccessWorker::collect_structured_sub_tre
     return loop_stack;
 }
 
-std::vector<StructuredLoop*> MapFusionByAccessWorker::collect_loop_parents(Sequence* sequence, StructuredLoop* loop) {
+std::vector<StructuredLoop*> LoopFusionByAccessWorker::collect_loop_parents(Sequence* sequence, StructuredLoop* loop) {
     auto node = sequence->get_parent();
     std::vector<StructuredLoop*> loop_stack;
     while (node != loop) {
@@ -324,7 +324,7 @@ std::vector<StructuredLoop*> MapFusionByAccessWorker::collect_loop_parents(Seque
     return loop_stack;
 }
 
-std::unique_ptr<MapFusionByAccessWorker::Plan> MapFusionByAccessWorker::
+std::unique_ptr<LoopFusionByAccessWorker::Plan> LoopFusionByAccessWorker::
     try_create_fusion_by_access_plan(FusionLoopCandidate& first, FusionLoopCandidate& second, bool domains_match) {
     auto first_map = dyn_cast<Map*>(first.loop);
     if (!first_map) {
@@ -720,7 +720,7 @@ std::unique_ptr<MapFusionByAccessWorker::Plan> MapFusionByAccessWorker::
     }
 }
 
-ComplexFusionResult MapFusionByAccessWorker::apply_fusion_by_access_plan(std::unique_ptr<Plan> plan_ptr) {
+ComplexFusionResult LoopFusionByAccessWorker::apply_fusion_by_access_plan(std::unique_ptr<Plan> plan_ptr) {
     auto& plan = *plan_ptr;
 
     if (plan.direction_ == FusionDirection::ProducerIntoConsumer) {
@@ -730,7 +730,7 @@ ComplexFusionResult MapFusionByAccessWorker::apply_fusion_by_access_plan(std::un
     }
 }
 
-ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& plan) {
+ComplexFusionResult LoopFusionByAccessWorker::apply_producer_into_consumer(Plan& plan) {
     auto& builder = this->builder();
     auto& sdfg = builder.subject();
 
@@ -907,7 +907,7 @@ ComplexFusionResult MapFusionByAccessWorker::apply_producer_into_consumer(Plan& 
     };
 }
 
-ComplexFusionResult MapFusionByAccessWorker::apply_consumer_into_producer(Plan& plan) {
+ComplexFusionResult LoopFusionByAccessWorker::apply_consumer_into_producer(Plan& plan) {
     auto& builder = this->builder();
     auto& sdfg = builder.subject();
 
@@ -1101,7 +1101,7 @@ ComplexFusionResult MapFusionByAccessWorker::apply_consumer_into_producer(Plan& 
     }
 }
 
-ComplexFusionResult MapFusionByAccessWorker::
+ComplexFusionResult LoopFusionByAccessWorker::
     try_fuse_by_access(FusionLoopCandidate& first, FusionLoopCandidate& second, bool domains_match) {
     auto plan = try_create_fusion_by_access_plan(first, second, domains_match);
     if (plan) {

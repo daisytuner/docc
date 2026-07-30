@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sdfg/analysis/loop_analysis.h"
-#include "sdfg/passes/map_fusion/fusion_types.h"
+#include "sdfg/passes/loop_fusion/fusion_types.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -10,7 +10,7 @@
 
 namespace sdfg::passes::map_fusion {
 
-class MapFusionByAccessWorker {
+class LoopFusionByAccessWorker {
 public:
     enum class FusionDirection {
         None = 0,
@@ -21,7 +21,7 @@ public:
 protected:
     bool allow_init_hoist_ = true;
 
-    MapFusionByAccessWorker(bool allow_init_hoist = true) : allow_init_hoist_(allow_init_hoist) {}
+    LoopFusionByAccessWorker(bool allow_init_hoist = true) : allow_init_hoist_(allow_init_hoist) {}
 
     struct Plan {
         structured_control_flow::Map& first;
@@ -52,7 +52,7 @@ protected:
         bool domains_match = false;
     };
 
-    virtual ~MapFusionByAccessWorker() = default;
+    virtual ~LoopFusionByAccessWorker() = default;
 
     virtual analysis::LoopAnalysis& get_loop_analysis() = 0;
 
