@@ -206,3 +206,12 @@ def test_pow_tensor_scalar(target: str) -> None:
         target=target,
         equal_nan=True
     )
+
+
+def test_rsqrt_simple(target: str) -> None:
+    class RsqrtNet(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.rsqrt(x)
+
+    x = torch.tensor([[1.0, 4.0, 9.0], [16.0, 25.0, 36.0]])
+    check(RsqrtNet(), x, target=target)

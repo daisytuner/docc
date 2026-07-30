@@ -1539,6 +1539,10 @@ void register_default_serializers() {
         .register_library_node_serializer(math::tensor::LibraryNodeType_EmbeddingRenorm.value(), []() {
             return std::make_unique<math::tensor::EmbeddingRenormNodeSerializer>();
         });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_Index.value(), []() {
+            return std::make_unique<math::tensor::IndexNodeSerializer>();
+        });
 
     // Elementwise
     LibraryNodeSerializerRegistry::instance()
@@ -1600,6 +1604,10 @@ void register_default_serializers() {
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Sqrt.value(), []() {
             return std::make_unique<math::tensor::SqrtNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_Rsqrt.value(), []() {
+            return std::make_unique<math::tensor::RsqrtNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Sub.value(), []() {

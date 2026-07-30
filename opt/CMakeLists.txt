@@ -34,6 +34,7 @@ set(SOURCE_FILES
     src/passes/map_fusion_by_domain_pass.cpp
     src/passes/normalization/loop_normal_form.cpp
     src/passes/normalization/map_fusion.cpp
+    src/passes/normalization/normalize.cpp
     src/passes/normalization/perfect_loop_distribution.cpp
     src/passes/normalization/stride_minimization.cpp
     src/passes/offloading/code_motion/block_hoisting.cpp

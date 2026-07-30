@@ -26,6 +26,7 @@
 #include <sdfg/passes/gemm_expansion_pass.h>
 #include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
+#include <sdfg/passes/normalization/normalize.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
 #include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
@@ -93,8 +94,8 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 PyStructuredSDFG::PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg)
-    : docc_context_(ctx), sdfg_(std::move(sdfg)), use_new_fusion_in_simplify_(true),
-      use_new_fusion_in_normalize_(false) {}
+    : docc_context_(ctx), sdfg_(std::move(sdfg)), use_new_fusion_in_simplify_(true), enable_fusion_in_normalize_(true) {
+}
 
 PyStructuredSDFG PyStructuredSDFG::parse(sdfg::plugins::Context& ctx, const std::string& sdfg_text) {
     json j = json::parse(sdfg_text);
@@ -416,42 +417,7 @@ void PyStructuredSDFG::dump(
     }
 }
 
-void PyStructuredSDFG::normalize() {
-    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
-    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
-
-    // Fuse maps (no init-into-reduction hoisting yet; this run precedes loop distribution)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
-    map_fusion.run(builder, analysis_manager);
-
-    // Distribute and permute
-    auto pipeline = sdfg::passes::normalization::loop_normalization();
-    pipeline.run(builder, analysis_manager);
-
-    // Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
-    auto map_fusion_hoist = sdfg::passes::normalization::map_fusion(true);
-    map_fusion_hoist.run(builder, analysis_manager);
-
-    if (use_new_fusion_in_normalize_) {
-        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
-        map_fusion_by_domain_pass.run(builder, analysis_manager);
-        sdfg::passes::DeadDataElimination dde;
-        sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
-
-        // Cleanup of artifacts of MapFusion
-        dde.run(builder, analysis_manager);
-        dce.run(builder, analysis_manager);
-        sdfg::passes::Pipeline block_fusion("BlockFusion");
-        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
-        block_fusion.run(builder, analysis_manager);
-
-        sdfg::passes::RedundantLoadEliminationPass rle;
-        rle.run(builder, analysis_manager);
-        dde.run(builder, analysis_manager);
-        sdfg::passes::TaskletFusionPass task_fuse_pass;
-        task_fuse_pass.run(builder, analysis_manager);
-    }
-}
+void PyStructuredSDFG::normalize() { sdfg::passes::normalization::normalize(*sdfg_, enable_fusion_in_normalize_); }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
     docc::target::TargetOptions topts = {.target = target, .category = category, .remote_tuning = remote_tuning};

@@ -17,7 +17,7 @@ private:
     sdfg::plugins::Context& docc_context_;
     std::unique_ptr<sdfg::StructuredSDFG> sdfg_;
     bool use_new_fusion_in_simplify_;
-    bool use_new_fusion_in_normalize_;
+    bool enable_fusion_in_normalize_;
 
     PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg);
 
