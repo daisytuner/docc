@@ -11,6 +11,10 @@
 #include <sdfg/targets/cuda/plugin.h>
 #include <sdfg/targets/memory/plugin.h>
 #include <sdfg/targets/omp/plugin.h>
+#include <sdfg/targets/vectorize/plugin.h>
+
+#include "docc/target/docc_target.h"
+#include "docc/target/tenstorrent/target.h"
 #ifdef DOCC_BUILD_TARGET_TENSTORRENT
 #include <docc/target/tenstorrent/plugin.h>
 #endif
@@ -32,20 +36,22 @@ docc::PluginRegistry plugin_registry;
 
 static std::once_flag dispatcher_registration_flag;
 
-void register_sdfg_dispatchers() {
+std::shared_ptr<sdfg::plugins::Context> register_sdfg_dispatchers() {
+    static std::shared_ptr<sdfg::plugins::Context> context = sdfg::plugins::Context::global_context_ptr();
+
     std::call_once(dispatcher_registration_flag, []() {
         sdfg::codegen::register_default_dispatchers();
         sdfg::serializer::register_default_serializers();
 
-        sdfg::omp::register_omp_plugin();
-        sdfg::cuda::register_cuda_plugin();
-        sdfg::rocm::register_rocm_plugin();
+        sdfg::omp::register_omp_plugin(*context);
+        sdfg::vectorize::register_vectorize_plugin(*context);
+        sdfg::cuda::register_cuda_plugin(*context);
+        sdfg::rocm::register_rocm_plugin(*context);
+        docc::target::register_builtin_targets(*context); // for cuda, rocm, sequential, openmp targets via DoccTargets
 #ifdef DOCC_BUILD_TARGET_TENSTORRENT
-        sdfg::tenstorrent::register_tenstorrent_plugin();
+        docc::target::tenstorrent::register_plugin(*context);
 #endif
         sdfg::offloading::register_external_data_transfers_plugin();
-
-        sdfg::plugins::Context context = sdfg::plugins::Context::global_context();
 
         if (!DOCC_Plugins.empty()) {
             std::stringstream ss(DOCC_Plugins);
@@ -68,7 +74,7 @@ void register_sdfg_dispatchers() {
                     LLVM_DEBUG_PRINTLN("[docc] Plugin " << plugin << " does not have a register callback");
                     exit(EXIT_FAILURE);
                 }
-                p.register_plugin_callback(context);
+                p.register_plugin_callback(*context);
                 if (!p.sdfg_lookup) {
                     LLVM_DEBUG_PRINTLN("[docc] Plugin " << plugin << " does not have an sdfg lookup function");
                     exit(EXIT_FAILURE);
@@ -78,6 +84,8 @@ void register_sdfg_dispatchers() {
             }
         }
     });
+
+    return context;
 }
 
 } // namespace docc

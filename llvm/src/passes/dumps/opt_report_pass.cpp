@@ -17,6 +17,12 @@ namespace passes {
 
 llvm::PreservedAnalyses OPTReportPass::
     run(llvm::Module& Module, llvm::ModuleAnalysisManager& MAM, analysis::AnalysisManager& AM) {
+    auto report_ = AM.get<docc::passes::PassReportManager>().get_collector_if_exists(Module);
+
+    if (!report_) {
+        return llvm::PreservedAnalyses::all();
+    }
+
     auto& registry = AM.get<analysis::SDFGRegistry>();
     if (!registry.has_module(Module)) {
         return llvm::PreservedAnalyses::all();

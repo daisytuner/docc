@@ -29,6 +29,7 @@ private:
     std::unique_ptr<passes::rpc::RpcOptResponse> opt_resp_;
 
     bool dump_steps_;
+    bool dump_rpc_cutouts_;
 
     std::string get_node_id_str() const;
 
@@ -43,7 +44,8 @@ public:
         const std::string& target,
         const std::string& category,
         sdfg::passes::rpc::RpcContext& rpc_context,
-        bool print_steps = false
+        bool print_steps = false,
+        bool dump_rpc_cutouts = false
     );
 
     virtual std::string name() const override;

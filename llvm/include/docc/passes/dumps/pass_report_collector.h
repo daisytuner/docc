@@ -1,8 +1,13 @@
 #pragma once
 
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
+#include <llvm/IR/Module.h>
+#include "docc/analysis/analysis.h"
 #include "sdfg/optimization_report/optimization_report.h"
 #include "sdfg/optimization_report/pass_report_consumer.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
@@ -39,6 +44,37 @@ public:
     void target_transform_possible(const std::string basicString, bool b) override;
 
     std::unordered_map<int32_t, std::unique_ptr<RegionReport>>* get_scope_reports(sdfg::StructuredSDFG* scope) const;
+};
+
+class PassReportManager : public docc::analysis::Analysis {
+private:
+    std::mutex mutex_;
+    std::unordered_map<std::string, std::unique_ptr<PassReportCollector>> collectors_;
+
+protected:
+    void run(docc::analysis::AnalysisManager& AM) override {}
+
+public:
+    PassReportCollector& get_collector(const llvm::Module& module) {
+        auto module_name = module.getName().str();
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = collectors_.find(module_name);
+        if (it == collectors_.end()) {
+            it = collectors_.emplace(module_name, std::make_unique<PassReportCollector>()).first;
+        }
+        return *it->second;
+    }
+
+    PassReportCollector* get_collector_if_exists(const llvm::Module& module) {
+        auto module_name = module.getName().str();
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = collectors_.find(module_name);
+        if (it == collectors_.end()) {
+            return nullptr;
+        } else {
+            return it->second.get();
+        }
+    }
 };
 
 } // namespace docc::passes

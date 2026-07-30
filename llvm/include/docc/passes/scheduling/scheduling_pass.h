@@ -12,19 +12,19 @@ namespace passes {
 
 class SchedulingPass : public llvm::PassInfoMixin<SchedulingPass> {
 private:
-    const sdfg::passes::scheduler::SchedulerRegistry &scheduler_registry_;
+    std::shared_ptr<sdfg::plugins::Context> context_;
+    target::TargetOptions target_options_;
     const bool dump_visualization_;
     const bool force_synchronous_;
     bool transfer_opt_;
-    sdfg::PassReportConsumer *const report_ = nullptr;
 
 public:
     SchedulingPass(
-        const sdfg::passes::scheduler::SchedulerRegistry &scheduler_registry,
+        std::shared_ptr<sdfg::plugins::Context> context,
+        const target::TargetOptions &target_options,
         bool force_synchronous = false,
         bool dump_visualization = false,
-        bool transfer_opt = true,
-        sdfg::PassReportConsumer *report = nullptr
+        bool transfer_opt = true
     );
 
     static bool available(analysis::AnalysisManager &AM) { return true; }

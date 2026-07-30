@@ -13,7 +13,7 @@ namespace scheduler {
 class SchedulerRegistry {
 private:
     mutable std::mutex mutex_;
-    std::unordered_map<std::string, std::unique_ptr<LoopScheduler>> scheduler_map_;
+    std::unordered_map<std::string, std::shared_ptr<LoopScheduler>> scheduler_map_;
 
 public:
     static SchedulerRegistry& instance() {
@@ -27,20 +27,18 @@ public:
         if (scheduler_map_.find(target) != scheduler_map_.end()) {
             return;
         }
-        scheduler_map_[target] = std::make_unique<T>(std::forward<Args>(args)...);
+        scheduler_map_[target] = std::make_shared<T>(std::forward<Args>(args)...);
     }
-    LoopScheduler* get_loop_scheduler(std::string target) const {
+    std::shared_ptr<LoopScheduler> get_loop_scheduler(std::string target) const {
         auto it = scheduler_map_.find(target);
         if (it != scheduler_map_.end()) {
-            return it->second.get();
+            return it->second;
         }
         return nullptr;
     }
 
     size_t size_loop_schedulers() const { return scheduler_map_.size(); }
 };
-
-std::unique_ptr<LoopScheduler> create_loop_scheduler(const std::string target);
 
 } // namespace scheduler
 } // namespace passes

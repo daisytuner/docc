@@ -83,6 +83,17 @@ public:
         };
     }
 
+    static std::unique_ptr<Context> global_context_ptr() {
+        return std::make_unique<Context>(
+            serializer::LibraryNodeSerializerRegistry::instance(),
+            codegen::NodeDispatcherRegistry::instance(),
+            codegen::MapDispatcherRegistry::instance(),
+            codegen::ReduceDispatcherRegistry::instance(),
+            codegen::LibraryNodeDispatcherRegistry::instance(),
+            passes::scheduler::SchedulerRegistry::instance()
+        );
+    }
+
     bool add_target(docc::target::DoccTarget* target) {
         auto res = available_targets.insert_or_assign(target->short_name, target);
         return res.second;

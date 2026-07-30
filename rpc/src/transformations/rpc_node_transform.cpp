@@ -20,6 +20,7 @@
 #include "sdfg/transformations/replayer.h"
 #include "sdfg/transformations/rpc_node_transform.h"
 #include "sdfg/transformations/transformation.h"
+#include "sdfg/visualizer/dot_visualizer.h"
 
 namespace sdfg {
 namespace transformations {
@@ -30,9 +31,11 @@ RPCNodeTransform::RPCNodeTransform(
     const std::string& target,
     const std::string& category,
     sdfg::passes::rpc::RpcContext& rpc_context,
-    bool dump_steps
+    bool dump_steps,
+    bool dump_rpc_cutouts
 )
-    : node_(node), target_(target), category_(category), rpc_context_(rpc_context), dump_steps_(dump_steps) {}
+    : node_(node), target_(target), category_(category), rpc_context_(rpc_context), dump_steps_(dump_steps),
+      dump_rpc_cutouts_(dump_rpc_cutouts) {}
 
 std::string RPCNodeTransform::name() const { return "RPCNodeTransform"; }
 
@@ -63,6 +66,19 @@ bool RPCNodeTransform::
     // Create cutout SDFG
     std::unique_ptr<sdfg::StructuredSDFG> loop_sdfg = util::cutout(builder.subject(), analysis_manager, this->node_);
 
+    if (dump_rpc_cutouts_) {
+        auto dir = builder.subject().metadata_if_exists("output_dir");
+        if (dir) {
+            std::filesystem::path o = *dir;
+            std::filesystem::path subdir = o / ("rpc_" + std::to_string(node_.element_id()));
+            std::filesystem::create_directories(subdir);
+
+            auto file_name = "rpc_request." + target_ + "." + category_ + ".sdfg";
+            visualizer::DotVisualizer::writeToFile(*loop_sdfg, subdir / (file_name + ".dot"));
+            serializer::JSONSerializer::writeToFile(*loop_sdfg, subdir / (file_name + ".json"));
+        }
+    }
+
     // Loop info is only used for information on the loop structure
     auto opt_resp = query_rpc_server(
         {.sdfg = *loop_sdfg, .category = this->category_, .target = this->target_, .loop_info = loop_info}, rpc_context_
@@ -75,6 +91,19 @@ bool RPCNodeTransform::
 
     bool can_apply = this->opt_resp_ != nullptr &&
                      (this->opt_resp_->sdfg_result.has_value() || this->opt_resp_->local_replay.has_value());
+
+    if (dump_rpc_cutouts_ && this->opt_resp_ && this->opt_resp_->sdfg_result) {
+        auto dir = builder.subject().metadata_if_exists("output_dir");
+        if (dir) {
+            std::filesystem::path o = *dir;
+            std::filesystem::path subdir = o / ("rpc_" + std::to_string(node_.element_id()));
+            auto& response = this->opt_resp_->sdfg_result.value().sdfg;
+
+            auto file_name = "rpc_response." + target_ + "." + category_ + ".sdfg";
+            visualizer::DotVisualizer::writeToFile(*response, subdir / (file_name + ".dot"));
+            serializer::JSONSerializer::writeToFile(*response, subdir / (file_name + ".json"));
+        }
+    }
 
     if (report_) {
         if (!can_apply) {
@@ -275,6 +304,7 @@ void RPCNodeTransform::
 
 
 void RPCNodeTransform::to_json(nlohmann::json& j) const {
+    j["applied_to_element_id"] = node_.element_id();
     j["transformation_type"] = name();
     nlohmann::json params = {{"target", target_}, {"category", category_}, {"speedup", opt_resp_->metadata.speedup}};
     if (opt_resp_->metadata.region_id.has_value()) {

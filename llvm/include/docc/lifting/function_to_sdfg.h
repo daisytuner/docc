@@ -29,6 +29,8 @@ private:
     // Single region
     std::pair<bool, llvm::Value*> can_be_applied(llvm::Region& region);
 
+    void register_output_dir(sdfg::StructuredSDFG& sdfg);
+
     // Entire function
     std::unique_ptr<sdfg::StructuredSDFG> apply();
 

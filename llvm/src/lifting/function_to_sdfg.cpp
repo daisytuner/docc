@@ -346,6 +346,11 @@ std::pair<bool, llvm::Value*> FunctionToSDFG::can_be_applied(llvm::Region& regio
     return {true, nullptr};
 }
 
+void FunctionToSDFG::register_output_dir(sdfg::StructuredSDFG& sdfg) {
+    auto out_dir = analysis::SDFGRegistry::docc_extract_dir(*function_.getParent());
+    sdfg.add_metadata("output_dir", out_dir.string());
+}
+
 std::pair<bool, llvm::Value*> FunctionToSDFG::can_be_applied() {
     auto& TLI = this->FAM_.getResult<llvm::TargetLibraryAnalysis>(this->function_);
 
@@ -567,6 +572,8 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::apply(llvm::Region& region
     LiftingReport::add_successful_lift(::docc::utils::get_debug_info(*external_function));
     auto structured_sdfg = structured_builder.move();
 
+    register_output_dir(*structured_sdfg);
+
     // Simplify SDFG
     auto simplified_sdfg = this->simplify(structured_sdfg);
 
@@ -614,6 +621,8 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::apply() {
 
     LiftingReport::add_successful_lift(::docc::utils::get_debug_info(this->function_));
     auto structured_sdfg = structured_builder.move();
+
+    register_output_dir(*structured_sdfg);
 
     // Simplify SDFG
     auto simplified_sdfg = this->simplify(structured_sdfg);
