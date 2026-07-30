@@ -8,7 +8,7 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/assumptions.h"
 
-namespace sdfg::passes::map_fusion {
+namespace sdfg::passes::loop_fusion {
 
 class LoopFusionByAccessWorker {
 public:
@@ -117,4 +117,4 @@ public:
 };
 
 
-} // namespace sdfg::passes::map_fusion
+} // namespace sdfg::passes::loop_fusion

@@ -338,7 +338,7 @@ void PyStructuredSDFG::simplify() {
         dump_debug("py3.1.pre-fusion");
 
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
-        sdfg::passes::map_fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
+        sdfg::passes::loop_fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
 
         dump_debug("py3.2.post-fusion");

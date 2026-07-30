@@ -86,7 +86,7 @@ TEST(LoopFusionPassTest, ProducerConsumer_1D) {
 
     // Analyze and apply transformation
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -178,7 +178,7 @@ TEST(LoopFusionPassTest, SimpleInputOutputOverlap) {
 
     // Analyze and apply transformation
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     // Verify transformation results
@@ -265,7 +265,7 @@ TEST(LoopFusionPassTest, NonSequentialMaps_withNopsBetween) {
 
     // Analyze - should not be able to apply since maps are not sequential
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 }
 
@@ -346,7 +346,7 @@ TEST(LoopFusionPassTest, NonSequentialMaps_OverwriteBetween) {
 
     // Analyze - should not be able to apply since maps are not sequential
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager));
 }
 
@@ -412,7 +412,7 @@ TEST(LoopFusionPassTest, NoSharedData_ButSharedDomain) {
 
     // Analyze - should not be able to apply since no shared data
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 }
 
@@ -478,7 +478,7 @@ TEST(LoopFusionPassTest, NoSharedData_NoSharedDomain) {
 
     // Analyze - should not be able to apply since no shared data
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager));
 }
 
@@ -548,7 +548,7 @@ TEST(LoopFusionPassTest, TransformedAccessIndices) {
 
     // Analyze and apply transformation
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -647,7 +647,7 @@ TEST(LoopFusionPassTest, Domain_IdenticalDomain) {
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 }
 
@@ -710,7 +710,7 @@ TEST(LoopFusionPassTest, Domain_OverComputation) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -774,7 +774,7 @@ TEST(LoopFusionPassTest, Domain_Recomputation) {
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc_2n);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Should reject: consumer reads beyond producer's write range";
 
@@ -840,7 +840,7 @@ TEST(LoopFusionPassTest, Domain_PartialSubRange_ProducerWritesSlice) {
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Should reject: producer writes indices 1..N-2 but consumer reads 0..N-1";
 }
@@ -902,7 +902,7 @@ TEST(LoopFusionPassTest, Domain_PartialSubRange_ConsumerReadsSlice) {
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Should accept: consumer reads exactly the sub-range producer wrote";
 }
@@ -995,7 +995,7 @@ TEST(LoopFusionPassTest, Domain_Stencil1D) {
 
     // Current implementation only handles single read per container
     // We find the first read and use that - should still be applicable for one of them
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 }
 
@@ -1057,7 +1057,7 @@ TEST(LoopFusionPassTest, Domain_Stencil1D_SharedAccessNode) {
     builder.add_computational_memlet(block2, sub2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     ASSERT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(1));
@@ -1178,7 +1178,7 @@ TEST(LoopFusionPassTest, Domain_SecondMapStrided) {
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     auto* new_map2 = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(1));
@@ -1269,7 +1269,7 @@ TEST(LoopFusionPassTest, Domain_BothMapsStridedModuloMatches) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -1377,7 +1377,7 @@ TEST(LoopFusionPassTest, Domain_BothMapsStridedModuloMismatch) {
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("j")}, array_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     // Index equation: 2*i = 2*j + 1 => i = j + 0.5 (not an integer!)
@@ -1446,7 +1446,7 @@ TEST(LoopFusionPassTest, Domain_PartialProducerConsumerReadsAll) {
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("k")}, array_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Should reject: consumer reads all indices but producer only wrote even ones";
 
@@ -1520,7 +1520,7 @@ TEST(LoopFusionPassTest, PartialDomain_Dataflow_InDegree0_SingleOutEdge) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -1652,7 +1652,7 @@ TEST(LoopFusionPassTest, PartialDomain_Dataflow_InDegree0_MultipleOutEdges) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -1748,7 +1748,7 @@ TEST(LoopFusionPassTest, PartialDomain_Dataflow_MultipleBlocks_MultipleAccessNod
     EXPECT_EQ(memlet_b.subset().size(), 1);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     // After fusion: BOTH access nodes should be updated
@@ -1844,7 +1844,7 @@ TEST(LoopFusionPassTest, Dataflow_StencilConsumer_MultipleIndexMappings) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Stencil consumer with different index patterns should be fusible";
 
@@ -1942,7 +1942,7 @@ TEST(LoopFusionPassTest, SameDomain_UseOfIndvar) {
 
     // Analyze and apply transformation
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.after");
@@ -2047,7 +2047,7 @@ TEST(LoopFusionPassTest, UseOfIndvar_Shifted) {
 
     // Analyze and apply transformation
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.after");
@@ -2179,7 +2179,7 @@ TEST(LoopFusionPassTest, Domain_2D_IdenticalDomain) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 }
 
@@ -2264,7 +2264,7 @@ TEST(LoopFusionPassTest, Domain_2D_OverComputation) {
     );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 }
 
@@ -2357,7 +2357,7 @@ TEST(LoopFusionPassTest, Domain_2D_StridedAccess) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -2433,7 +2433,7 @@ TEST(LoopFusionPassTest, Domain_2D_DimensionMismatch) {
     builder.add_computational_memlet(block2, tasklet2, "_out", b_out, {symbolic::symbol("k")}, array_1d);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Should reject fusion when producer subset is 2D but consumer subset is 1D";
 }
@@ -2532,7 +2532,7 @@ TEST(LoopFusionPassTest, Domain_2D_CrossDimensionDependency) {
     );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Cross-dimension dependencies with a unique linear solution should fuse";
 }
@@ -2626,7 +2626,7 @@ TEST(LoopFusionPassTest, SameDomain_2D_Apply_IndexSubstitutione) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -2764,7 +2764,7 @@ TEST(LoopFusionPassTest, PartialDomain_2D_Apply_IndexSubstitution) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -2912,7 +2912,7 @@ TEST(LoopFusionPassTest, Domain_2D_Apply_StridedIndexSubstitution) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -3052,7 +3052,7 @@ TEST(LoopFusionPassTest, PartialDomain_Pattern2_NonPerfectlyNestedProducer) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Pattern 2: non-perfectly-nested producer with perfectly-nested consumer not supported yet";
 
@@ -3213,7 +3213,7 @@ TEST(LoopFusionPassTest, PartialDomain_Pattern2_Reverse_NonPerfectlyNestedConsum
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Reverse Pattern 2: perfectly-nested producer with non-perfectly-nested consumer should be fusible";
 
@@ -3359,7 +3359,7 @@ TEST(LoopFusionPassTest, SameDomain_BothNonPerfectlyNested_Eltwise) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager)) << "No subset conflicts, can be fused by domain";
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -3459,7 +3459,7 @@ TEST(LoopFusionPassTest, Pattern2_ConsumerReadsMoreThanProducerWrites) {
     );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Consumer reads T[k, 0:M] but producer only writes T[i, 0:M/2] — range not covered";
 }
@@ -3534,7 +3534,7 @@ TEST(LoopFusionPassTest, SameDomain_ScenarioA_ProducerReadsWritesT) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Scenario A: producer reads+writes T, consumer reads T — should be fusible via ConsumerIntoProducer";
 
@@ -3651,7 +3651,7 @@ TEST(LoopFusionPassTest, PartialDomain_ScenarioA_ProducerReadsWritesT) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Scenario A: producer reads+writes T, consumer reads T — should be fusible via ConsumerIntoProducer";
 
@@ -3779,7 +3779,7 @@ TEST(LoopFusionPassTest, SameDomain_ScenarioB_ConsumerReadsWritesT) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Scenario B: producer writes T, consumer reads+writes T — should be fusible";
 
@@ -3888,7 +3888,7 @@ TEST(LoopFusionPassTest, PartialDomain_ScenarioB_ConsumerReadsWritesT) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Scenario B: producer writes T, consumer reads+writes T — should be fusible";
 
@@ -3997,7 +3997,7 @@ TEST(LoopFusionPassTest, SameDomain_ScenarioC_BothReadWriteT) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager))
         << "Scenario C: both read+write T — should be fusible via forced ConsumerIntoProducer";
 
@@ -4150,7 +4150,7 @@ TEST(LoopFusionPassTest, InitIntoReduction_Hoisted) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     // Case 2 (init-into-reduction): the zero-init of the accumulator T is loop-invariant
@@ -4309,7 +4309,7 @@ TEST(LoopFusionPassTest, PartialDomain_ElementwiseIntoReduction_Fused) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -4475,7 +4475,7 @@ TEST(LoopFusionPassTest, SameDomain_ElementwiseIntoReduction_Fused) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -4616,7 +4616,7 @@ TEST(LoopFusionPassTest, ConsumerHasMoreDimensions) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -4714,7 +4714,7 @@ TEST(LoopFusionPassTest, Chained_FuseByAccess) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -4812,7 +4812,7 @@ TEST(LoopFusionPassTest, Chained_FuseByAccess_Conflict) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -4880,7 +4880,7 @@ TEST(LoopFusionPassTest, SameDomain_2ForLoops_IndependentFuse) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.fused");
@@ -4953,7 +4953,7 @@ TEST(LoopFusionPassTest, SameDomain_2ForLoops_OverlapRejects) {
     dump_sdfg(builder.subject(), "0.init");
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::map_fusion::LoopFusionPass map_fusion_pass;
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager));
 
     dump_sdfg(builder.subject(), "1.not_fused");

@@ -12,7 +12,7 @@
 #include "sdfg/transformations/map_fusion.h"
 #include "symengine/solve.h"
 
-namespace sdfg::passes::map_fusion {
+namespace sdfg::passes::loop_fusion {
 
 structured_control_flow::StructuredLoop* LoopFusionByAccessWorker::Plan::consumer_target_loop() const {
     if (this->init_hoist_) {
@@ -1111,4 +1111,4 @@ ComplexFusionResult LoopFusionByAccessWorker::
     }
 }
 
-} // namespace sdfg::passes::map_fusion
+} // namespace sdfg::passes::loop_fusion

@@ -11,7 +11,7 @@
 #include "sdfg/visualizer/dot_visualizer.h"
 #include "symengine/subs.h"
 
-namespace sdfg::passes::map_fusion {
+namespace sdfg::passes::loop_fusion {
 
 static const symbolic::Symbol lower_indvar_placeholder = symbolic::symbol("__lower_it");
 
@@ -460,7 +460,7 @@ void LoopFusionHandler::update_copied_leaf_contents_from_first_to_second(
 
     auto& fusion_regs = plan.fusion_candidates_;
 
-    std::unordered_map<std::string, const map_fusion::FusionRegCandidate*> cand_map;
+    std::unordered_map<std::string, const loop_fusion::FusionRegCandidate*> cand_map;
     for (const auto& cand : fusion_regs) {
         cand_map[cand.container] = &cand;
     }
@@ -1048,4 +1048,4 @@ bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& n
     return true;
 }
 
-} // namespace sdfg::passes::map_fusion
+} // namespace sdfg::passes::loop_fusion

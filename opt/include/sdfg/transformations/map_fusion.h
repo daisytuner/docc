@@ -43,8 +43,8 @@ class MapFusion : public Transformation {
     // whether to consider ProducerIntoConsumer fusions. Those can now be handled by the LoopFusionByAccessWorker
     bool allow_prod_into_cons_;
 
-    passes::map_fusion::LoopFusionByAccessWorker::FusionDirection direction_;
-    std::vector<passes::map_fusion::FusionRegCandidate> fusion_candidates_;
+    passes::loop_fusion::LoopFusionByAccessWorker::FusionDirection direction_;
+    std::vector<passes::loop_fusion::FusionRegCandidate> fusion_candidates_;
 
     // Resolved locations populated during can_be_applied()
     std::vector<structured_control_flow::StructuredLoop*> producer_loops_;
@@ -110,7 +110,7 @@ public:
         bool cons_into_prod_only = false
     );
 
-    passes::map_fusion::LoopFusionByAccessWorker::FusionDirection last_fusion_direction() const;
+    passes::loop_fusion::LoopFusionByAccessWorker::FusionDirection last_fusion_direction() const;
 
     /**
      * @brief Get the name of this transformation
@@ -179,13 +179,13 @@ class FusionConsumerUpdateVisitor : public visitor::ActualStructuredSDFGVisitor 
     friend MapFusion;
 
     builder::StructuredSDFGBuilder& builder_;
-    const std::vector<passes::map_fusion::FusionRegCandidate>& fusion_candidates_;
+    const std::vector<passes::loop_fusion::FusionRegCandidate>& fusion_candidates_;
     const std::vector<std::string>& candidate_temps_;
 
 public:
     FusionConsumerUpdateVisitor(
         builder::StructuredSDFGBuilder& builder,
-        const std::vector<passes::map_fusion::FusionRegCandidate>& fusion_candidates,
+        const std::vector<passes::loop_fusion::FusionRegCandidate>& fusion_candidates,
         const std::vector<std::string>& candidate_temps
     );
 

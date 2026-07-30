@@ -22,7 +22,7 @@
 namespace sdfg {
 namespace transformations {
 
-using passes::map_fusion::FusionRegCandidate;
+using passes::loop_fusion::FusionRegCandidate;
 
 MapFusion::MapFusion(
     structured_control_flow::Map& first_map,
@@ -36,7 +36,7 @@ MapFusion::MapFusion(
 
 std::string MapFusion::name() const { return "MapFusion"; }
 
-using passes::map_fusion::LoopFusionByAccessWorker;
+using passes::loop_fusion::LoopFusionByAccessWorker;
 
 LoopFusionByAccessWorker::FusionDirection MapFusion::last_fusion_direction() const { return direction_; }
 
@@ -485,7 +485,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 
             if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
                 // Solve producer indvars in terms of consumer indvars
-                mappings = passes::map_fusion::LoopFusionByAccessWorker::solve_subsets(
+                mappings = passes::loop_fusion::LoopFusionByAccessWorker::solve_subsets(
                     producer_subset,
                     consumer_subset,
                     producer_loops_,
@@ -496,7 +496,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             } else {
                 // ConsumerIntoProducer: solve consumer indvars in terms of producer indvars
                 // Arguments are swapped, so invert the range check direction
-                mappings = passes::map_fusion::LoopFusionByAccessWorker::solve_subsets(
+                mappings = passes::loop_fusion::LoopFusionByAccessWorker::solve_subsets(
                     consumer_subset,
                     producer_subset,
                     consumer_loops_,
@@ -1014,7 +1014,7 @@ const std::unordered_map<std::string, std::vector<data_flow::Subset>>& FusionCon
 
 FusionConsumerUpdateVisitor::FusionConsumerUpdateVisitor(
     builder::StructuredSDFGBuilder& builder,
-    const std::vector<passes::map_fusion::FusionRegCandidate>& fusion_candidates,
+    const std::vector<passes::loop_fusion::FusionRegCandidate>& fusion_candidates,
     const std::vector<std::string>& candidate_temps
 )
     : builder_(builder), fusion_candidates_(fusion_candidates), candidate_temps_(candidate_temps) {}

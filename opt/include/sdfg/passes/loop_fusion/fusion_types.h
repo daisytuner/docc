@@ -4,7 +4,7 @@
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/symbolic/symbolic.h"
 
-namespace sdfg::passes::map_fusion {
+namespace sdfg::passes::loop_fusion {
 
 struct LoopFusionConfig {
     bool allow_init_hoist = true;
@@ -130,4 +130,4 @@ struct ComplexFusionResult {
     bool fused = false;
 };
 
-} // namespace sdfg::passes::map_fusion
+} // namespace sdfg::passes::loop_fusion

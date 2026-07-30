@@ -16,7 +16,7 @@
 
 using namespace sdfg;
 using namespace sdfg::passes;
-using namespace sdfg::passes::map_fusion;
+using namespace sdfg::passes::loop_fusion;
 
 class MultiNestBuilder {
 public:
@@ -515,7 +515,7 @@ TEST(LoopFusionByDomainTest, DoNotCauseIndvarReuse) {
 
     dump_sdfg(builder.subject(), "0.init");
 
-    map_fusion::LoopFusionPass pass;
+    loop_fusion::LoopFusionPass pass;
     analysis::AnalysisManager ana(builder.subject());
     pass.run_pass(builder, ana);
 
