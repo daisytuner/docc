@@ -419,6 +419,15 @@ public:
         const sdfg::DebugInfo& = sdfg::DebugInfo()
     );
 
+    void add_arange(
+        const std::string& start,
+        const std::string& step,
+        const std::string& out,
+        const sdfg::types::Tensor& out_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+
     void add_einsum(
         const std::vector<std::string>& inputs,
         const std::string& output,

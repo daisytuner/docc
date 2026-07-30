@@ -130,28 +130,81 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
         loop_vars.push_back(sym_var);
     }
 
-    auto& tasklet_block = inner_scope ? *inner_scope : builder.add_sequence(block);
+    auto& tasklet_block = builder.add_block(*inner_scope, {}, this->debug_info());
 
-    auto& out_acc = builder.add_access_node(tasklet_block, result_ptr_edge.data());
-    auto& start_acc = builder.add_access_node(tasklet_block, start_edge.data());
-    auto& step_acc = builder.add_access_node(tasklet_block, step_edge.data());
+    auto& out_acc = standalone->add_indirect_write_access(tasklet_block, RESULT_PTR_IDX);
+    auto& start_acc = standalone->add_indirect_read_access(tasklet_block, START_IDX);
+    auto& step_acc = standalone->add_indirect_read_access(tasklet_block, STEP_IDX);
+    auto& i0_acc = builder.add_access(tasklet_block, loop_vars.at(0)->__str__(), this->debug_info());
 
-    // Only works for 1D arange right now which is standard
-    std::string tasklet_code = "_out = _start + _step * " + loop_vars.at(0)->__str__();
+    bool is_float = false;
+    if (auto* tensor_type = dynamic_cast<const types::Tensor*>(&result_ptr_edge.base_type())) {
+        is_float = types::is_floating_point(tensor_type->primitive_type());
+    } else if (auto* ptr_type = dynamic_cast<const types::Pointer*>(&result_ptr_edge.base_type())) {
+        is_float = types::is_floating_point(ptr_type->primitive_type());
+    }
 
-    auto& tasklet = builder.add_tasklet(
-        tasklet_block, data_flow::TaskletCode::assign, "_out", {"_start", "_step"}, tasklet_code, this->debug_info()
-    );
+    if (is_float) {
+        auto& tasklet = builder.add_tasklet(
+            tasklet_block, data_flow::TaskletCode::fp_fma, "_out", {"_step", "_i", "_start"}, this->debug_info()
+        );
 
-    builder.add_computational_memlet(
-        tasklet_block, start_acc, tasklet, "_start", {}, start_edge.base_type(), this->debug_info()
-    );
-    builder.add_computational_memlet(
-        tasklet_block, step_acc, tasklet, "_step", {}, step_edge.base_type(), this->debug_info()
-    );
-    builder.add_computational_memlet(
-        tasklet_block, tasklet, "_out", out_acc, loop_vars, result_ptr_edge.base_type(), this->debug_info()
-    );
+        builder.add_computational_memlet(
+            tasklet_block, step_acc, tasklet, "_step", {}, step_edge.base_type(), this->debug_info()
+        );
+        builder.add_computational_memlet(
+            tasklet_block, i0_acc, tasklet, "_i", {}, types::Scalar(types::PrimitiveType::Int64), this->debug_info()
+        );
+        builder.add_computational_memlet(
+            tasklet_block, start_acc, tasklet, "_start", {}, start_edge.base_type(), this->debug_info()
+        );
+        builder.add_computational_memlet(
+            tasklet_block, tasklet, "_out", out_acc, loop_vars, result_ptr_edge.base_type(), this->debug_info()
+        );
+    } else {
+        std::string temp_name = builder.find_new_name("_arange_temp");
+        builder.add_container(temp_name, types::Scalar(result_ptr_edge.base_type().primitive_type()));
+        auto& temp_acc = builder.add_access(tasklet_block, temp_name, this->debug_info());
+
+        auto& tasklet_mul =
+            builder
+                .add_tasklet(tasklet_block, data_flow::TaskletCode::int_mul, "_out", {"_step", "_i"}, this->debug_info());
+        builder.add_computational_memlet(
+            tasklet_block, step_acc, tasklet_mul, "_step", {}, step_edge.base_type(), this->debug_info()
+        );
+        builder.add_computational_memlet(
+            tasklet_block, i0_acc, tasklet_mul, "_i", {}, types::Scalar(types::PrimitiveType::Int64), this->debug_info()
+        );
+        builder.add_computational_memlet(
+            tasklet_block,
+            tasklet_mul,
+            "_out",
+            temp_acc,
+            {},
+            types::Scalar(result_ptr_edge.base_type().primitive_type()),
+            this->debug_info()
+        );
+
+        auto& temp_read_acc = builder.add_access(tasklet_block, temp_name, this->debug_info());
+        auto& tasklet_add = builder.add_tasklet(
+            tasklet_block, data_flow::TaskletCode::int_add, "_out", {"_temp", "_start"}, this->debug_info()
+        );
+        builder.add_computational_memlet(
+            tasklet_block,
+            temp_read_acc,
+            tasklet_add,
+            "_temp",
+            {},
+            types::Scalar(result_ptr_edge.base_type().primitive_type()),
+            this->debug_info()
+        );
+        builder.add_computational_memlet(
+            tasklet_block, start_acc, tasklet_add, "_start", {}, start_edge.base_type(), this->debug_info()
+        );
+        builder.add_computational_memlet(
+            tasklet_block, tasklet_add, "_out", out_acc, loop_vars, result_ptr_edge.base_type(), this->debug_info()
+        );
+    }
 
     return standalone->successfully_expanded();
 }
@@ -191,12 +244,12 @@ nlohmann::json ArangeNodeSerializer::serialize(const data_flow::LibraryNode& lib
 data_flow::LibraryNode& ArangeNodeSerializer::deserialize(
     const nlohmann::json& j, builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& parent
 ) {
-    auto debug_info = builder.parse_debug_info(j);
+    sdfg::serializer::JSONSerializer serializer;
+    DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
 
-    serializer::JSONSerializer serializer;
     std::vector<symbolic::Expression> shape;
     for (auto& dim : j["shape"]) {
-        shape.push_back(serializer.parse_expression(dim));
+        shape.push_back(symbolic::parse(dim.get<std::string>()));
     }
 
     return builder.add_library_node<ArangeNode>(parent, debug_info, shape);

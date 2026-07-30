@@ -1832,6 +1832,27 @@ void PyStructuredSDFGBuilder::add_fill_op(
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
 }
 
+void PyStructuredSDFGBuilder::add_arange(
+    const std::string& start,
+    const std::string& step,
+    const std::string& out,
+    const sdfg::types::Tensor& out_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& start_access = builder_.add_access(block, start, debug_info);
+    auto& step_access = builder_.add_access(block, step, debug_info);
+    auto& out_access = builder_.add_access(block, out, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::ArangeNode>(block, debug_info, out_type.shape());
+    builder_.add_computational_memlet(
+        block, start_access, libnode, "start", {}, sdfg::types::Scalar(out_type.primitive_type()), debug_info
+    );
+    builder_.add_computational_memlet(
+        block, step_access, libnode, "step", {}, sdfg::types::Scalar(out_type.primitive_type()), debug_info
+    );
+    builder_.add_computational_memlet(block, out_access, libnode, "Y", {}, out_type, debug_info);
+}
+
 void PyStructuredSDFGBuilder::add_einsum(
     const std::vector<std::string>& inputs,
     const std::string& output,
