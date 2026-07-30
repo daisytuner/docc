@@ -966,7 +966,7 @@ class GraphParserModule(GraphParserBase, ABC):
     ) -> None:
         """
         Adds a memory allocation (malloc) to the SDFG for the given container. The size is obtained
-        from the Tensor type. If the size is 0 (Scalar Tensor), this function is a NOP.
+        from the Tensor type. If the size is 0 (Empty Tensor) or is a Scalar Tensor, this function is a NOP.
         """
         if debug_info is None:
             debug_info_: DebugInfo = self.get_debug_info(node)
@@ -986,13 +986,11 @@ class GraphParserModule(GraphParserBase, ABC):
                 node,
                 "Expected ContainerInfo but got: " + str(type(info)),
             )
-        # A 0-dimensional tensor is materialized as a stack Scalar buffer (see the memlet rule that
-        # scalar tensors must reference scalar buffers). Such a buffer must not be heap-allocated:
-        # the empty-shape ``total_size()`` evaluates to "1", so relying on it alone would wrongly
-        # emit a malloc/free for a scalar, producing an inconsistent container that later passes
-        # (e.g. symbol promotion) can eliminate while it is still referenced.
+
+        # Skip allocation for Scalar Tensors
         if isinstance(info.sdfg_type(), Scalar):
             return
+
         sdfg_tensor_type: Tensor | None = info.sdfg_tensor_type()
         if sdfg_tensor_type is None:
             raise GraphParserError(
@@ -1000,6 +998,8 @@ class GraphParserModule(GraphParserBase, ABC):
                 node,
                 "Could not allocate memory for non-tensor container: " + container,
             )
+
+        # note: total_size() check doesnt filter scalar tensor whose dim=0 but total_element=1 and thus total_size!=0
         size: str = sdfg_tensor_type.total_size()
         if size != "0":
             builder.add_malloc_block(container, size, debug_info_)
