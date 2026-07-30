@@ -678,6 +678,19 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_slice_op",
+            &PyStructuredSDFGBuilder::add_slice_op,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("dim"),
+            py::arg("start"),
+            py::arg("end"),
+            py::arg("step"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_reduce_op",
             &PyStructuredSDFGBuilder::add_reduce_op,
             py::arg("op_type"),
