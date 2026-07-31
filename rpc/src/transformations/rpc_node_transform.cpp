@@ -31,10 +31,11 @@ RPCNodeTransform::RPCNodeTransform(
     const std::string& category,
     sdfg::passes::rpc::RpcContext& rpc_context,
     bool enable_fusion,
+    bool normalize,
     bool dump_steps
 )
     : node_(node), target_(target), category_(category), rpc_context_(rpc_context), dump_steps_(dump_steps),
-      enable_fusion_(enable_fusion) {}
+      enable_fusion_(enable_fusion), normalize_(normalize) {}
 
 std::string RPCNodeTransform::name() const { return "RPCNodeTransform"; }
 
@@ -75,7 +76,8 @@ bool RPCNodeTransform::
         {.sdfg = builder.subject(),
          .category = this->category_,
          .target = this->target_,
-         .enable_fusion = this->enable_fusion_},
+         .enable_fusion = this->enable_fusion_,
+         .normalize = this->normalize_},
         rpc_context_
     );
 
@@ -124,7 +126,8 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
         {"sdfg", sdfg_json},
         {"category", request.category},
         {"target", request.target},
-        {"enable_fusion", request.enable_fusion}
+        {"enable_fusion", request.enable_fusion},
+        {"normalize", request.normalize}
     };
     std::string payload_str = payload.dump();
 

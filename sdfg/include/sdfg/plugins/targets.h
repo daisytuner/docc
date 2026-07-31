@@ -15,6 +15,7 @@ struct TargetOptions {
     std::string target;
     std::string category;
     bool remote_tuning;
+    bool already_normalized = false;
 };
 
 struct DoccTarget {
