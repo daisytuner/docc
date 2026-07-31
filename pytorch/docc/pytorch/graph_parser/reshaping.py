@@ -305,7 +305,18 @@ class EmbeddingParser(GraphParserModule):
         # `embedding` produces a fresh contiguous tensor. Register the result with
         # C-strides so the allocation, the write and any downstream reads agree.
         result_tensor = Tensor(result_tensor.element_type, result_tensor.shape)
-        container_info[result_container].update(sdfg_tensor_type=result_tensor)
+        result_info: ContainerInfoBase = container_info[result_container]
+        if isinstance(result_info, ContainerInfo):
+            result_info.update(sdfg_tensor_type=result_tensor)
+        elif isinstance(result_info, ContainerRefInfo):
+            result_info.ref().update(sdfg_tensor_type=result_tensor)
+        else:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected ContainerInfo for result container but got: "
+                + str(type(result_info)),
+            )
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_embedding_op(
             weight_container,
