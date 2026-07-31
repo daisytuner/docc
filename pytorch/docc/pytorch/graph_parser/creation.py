@@ -118,18 +118,13 @@ class FullParser(GraphParserModule):
             )
 
         container_type = container_info[result_container].sdfg_type()
-        if isinstance(container_type, Pointer) and len(result_tensor.shape) == 0:
-            target_tensor: Tensor = Tensor(result_tensor.element_type, ["1"])
-        else:
-            target_tensor: Tensor = result_tensor
-
         debug_info: DebugInfo = self.get_debug_info(node)
         if isinstance(container_type, Pointer):
             builder.add_fill_op(
                 fill_value_container,
                 fill_value_type,
                 result_container,
-                target_tensor,
+                result_tensor,
                 debug_info,
             )
         else:
@@ -162,6 +157,70 @@ class ScalarTensorParser(GraphParserModule):
         ):
             raise GraphParserError(self, node, f"Unsupported kwargs: {node.kwargs}")
 
+        dtype: torch.dtype | None = None
+        if "dtype" in node.kwargs:
+            dtype_arg: Argument = node.kwargs["dtype"]
+            if not dtype_arg is None:
+                if not isinstance(dtype_arg, torch.dtype):
+                    raise GraphParserError(
+                        self,
+                        node,
+                        "Expected dtype kwarg to be torch.dtype type but got: "
+                        + str(type(dtype_arg)),
+                    )
+                dtype: torch.dtype | None = dtype_arg
+
+        if "layout" in node.kwargs:
+            layout_arg: Argument = node.kwargs["layout"]
+            if not layout_arg is None:
+                if isinstance(layout_arg, torch.layout):
+                    if layout_arg != torch.strided:
+                        raise GraphParserError(
+                            self,
+                            node,
+                            "Only layout torch.strided is supported but got: "
+                            + str(layout_arg),
+                        )
+                else:
+                    raise GraphParserError(
+                        self,
+                        node,
+                        "Expected layout kwarg to be torch.layout type but got: "
+                        + str(type(layout_arg)),
+                    )
+
+        if "device" in node.kwargs:
+            device_arg: Argument = node.kwargs["device"]
+            if not device_arg is None:
+                if isinstance(device_arg, torch.device):
+                    if device_arg.type != "cpu":
+                        raise GraphParserError(
+                            self, node, "Currently only CPU device kwarg is supported"
+                        )
+                else:
+                    raise GraphParserError(
+                        self,
+                        node,
+                        "Expected device kwarg to be torch.device type but got: "
+                        + str(type(device_arg)),
+                    )
+
+        if "pin_memory" in node.kwargs:
+            pin_memory_arg: Argument = node.kwargs["pin_memory"]
+            if not pin_memory_arg is None:
+                if isinstance(pin_memory_arg, bool):
+                    if pin_memory_arg:
+                        raise GraphParserError(
+                            self, node, "Currently pin_memory is unsupported"
+                        )
+                else:
+                    raise GraphParserError(
+                        self,
+                        node,
+                        "Expected pin_memory kwarg to be bool type but got: "
+                        + str(type(pin_memory_arg)),
+                    )
+
         result_container: str = self.get_result_container(node, builder, container_info)
         result_tensor: Tensor = self.get_tensor_type(
             node, container_info, result_container
@@ -182,18 +241,13 @@ class ScalarTensorParser(GraphParserModule):
             )
 
         container_type = container_info[result_container].sdfg_type()
-        if isinstance(container_type, Pointer) and len(result_tensor.shape) == 0:
-            target_tensor: Tensor = Tensor(result_tensor.element_type, ["1"])
-        else:
-            target_tensor: Tensor = result_tensor
-
         debug_info: DebugInfo = self.get_debug_info(node)
         if isinstance(container_type, Pointer):
             builder.add_fill_op(
                 fill_value_container,
                 fill_value_type,
                 result_container,
-                target_tensor,
+                result_tensor,
                 debug_info,
             )
         else:
