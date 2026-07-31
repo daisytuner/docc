@@ -8,6 +8,8 @@ from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
     ContainerInfoBase,
+    ContainerInfo,
+    ContainerRefInfo,
     ContainerPreInfo,
     ContainerInfos,
     GraphParserError,
