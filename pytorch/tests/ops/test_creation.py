@@ -84,3 +84,19 @@ def test_arange_dtype(target: str) -> None:
             return torch.arange(1, 5, 2, dtype=torch.float64)
 
     check(ArangeDtypeNet(), *(), target=target)
+
+
+def test_arange_float(target: str) -> None:
+    class ArangeFloatNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(0.0, 1.5, 0.5)
+
+    check(ArangeFloatNet(), *(), target=target)
+
+
+def test_arange_default_dtype(target: str) -> None:
+    class ArangeDefaultDtypeNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(8, dtype=torch.float32)
+
+    check(ArangeDefaultDtypeNet(), *(), target=target)

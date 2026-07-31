@@ -28,9 +28,20 @@ const std::vector<symbolic::Expression>& ArangeNode::shape() const { return shap
 void ArangeNode::validate(const Function& function) const {
     TensorNode::validate(function);
 
-    // Validate that _start and _step inputs are scalars
     auto& dataflow = this->get_parent();
     auto edges = dataflow.in_edges_by_connector(*this);
+
+    if (edges.size() > RESULT_PTR_IDX && edges[RESULT_PTR_IDX] != nullptr) {
+        auto* result_edge = edges.at(RESULT_PTR_IDX);
+        auto type_id = result_edge->base_type().type_id();
+        if (type_id != types::TypeID::Tensor && type_id != types::TypeID::Pointer) {
+            throw InvalidSDFGException(
+                "ArangeNode: _out input must be of tensor or pointer type. Found type: " +
+                result_edge->base_type().print()
+            );
+        }
+    }
+
     if (edges.size() > START_IDX && edges[START_IDX] != nullptr) {
         auto* start_edge = edges.at(START_IDX);
         if (start_edge->base_type().type_id() != types::TypeID::Scalar) {

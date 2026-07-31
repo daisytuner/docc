@@ -23,9 +23,11 @@ public:
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
-    static auto constexpr RESULT_PTR_IDX = 0;
-    static auto constexpr START_IDX = 1;
-    static auto constexpr STEP_IDX = 2;
+    // In-edge indices: _out is the result buffer pointer (written to), _start and _step are read-only scalar inputs.
+    // All three are modelled as in-edges following the ElementWiseDataflowTensorNode convention.
+    static auto constexpr RESULT_PTR_IDX = 0; // connector: _out
+    static auto constexpr START_IDX = 1; // connector: _start
+    static auto constexpr STEP_IDX = 2; // connector: _step
 
     const std::vector<symbolic::Expression>& shape() const;
 

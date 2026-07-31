@@ -1860,12 +1860,8 @@ void PyStructuredSDFGBuilder::add_arange(
 
     auto& out_access = builder_.add_access(block, out, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::ArangeNode>(block, debug_info, out_type.shape());
-    builder_.add_computational_memlet(
-        block, *start_access, libnode, "_start", {}, sdfg::types::Scalar(out_type.primitive_type()), debug_info
-    );
-    builder_.add_computational_memlet(
-        block, *step_access, libnode, "_step", {}, sdfg::types::Scalar(out_type.primitive_type()), debug_info
-    );
+    builder_.add_computational_memlet(block, *start_access, libnode, "_start", {}, start_type, debug_info);
+    builder_.add_computational_memlet(block, *step_access, libnode, "_step", {}, step_type, debug_info);
     builder_.add_computational_memlet(block, out_access, libnode, "_out", {}, out_type, debug_info);
 }
 

@@ -151,17 +151,36 @@ class ArangeParser(GraphParserModule):
         )
 
         if node.target == torch.ops.aten.arange.default:
+            if len(node.args) != 1:
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected exactly 1 argument but got " + str(len(node.args)),
+                )
             start_val = ("0", Scalar(PrimitiveType.Int64))
             step_val = ("1", Scalar(PrimitiveType.Int64))
         elif node.target == torch.ops.aten.arange.start:
+            if len(node.args) != 2:
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected exactly 2 arguments but got " + str(len(node.args)),
+                )
             start_val = self.get_arg_sdfg_value(node, container_info, 0)
             step_val = ("1", Scalar(PrimitiveType.Int64))
         elif node.target == torch.ops.aten.arange.start_step:
+            if len(node.args) not in (2, 3):
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected 2 or 3 arguments but got " + str(len(node.args)),
+                )
             start_val = self.get_arg_sdfg_value(node, container_info, 0)
-            if len(node.args) > 2:
-                step_val = self.get_arg_sdfg_value(node, container_info, 2)
-            else:
-                step_val = ("1", Scalar(PrimitiveType.Int64))
+            step_val = (
+                self.get_arg_sdfg_value(node, container_info, 2)
+                if len(node.args) == 3
+                else ("1", Scalar(PrimitiveType.Int64))
+            )
         else:
             raise GraphParserError(self, node, f"Unsupported target {node.target}")
 

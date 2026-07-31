@@ -429,7 +429,6 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
-
     void add_einsum(
         const std::vector<std::string>& inputs,
         const std::string& output,
