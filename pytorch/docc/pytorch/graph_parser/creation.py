@@ -153,7 +153,7 @@ class ScalarTensorParser(GraphParserModule):
                 f"Expected exactly 1 argument (scalar value), got {len(node.args)}",
             )
         if not set(node.kwargs.keys()).issubset(
-            {"dtype", "layout", "device", "pin_memory", "memory_format"}
+            {"dtype", "layout", "device", "pin_memory"}
         ):
             raise GraphParserError(self, node, f"Unsupported kwargs: {node.kwargs}")
 
@@ -242,20 +242,11 @@ class ScalarTensorParser(GraphParserModule):
 
         container_type = container_info[result_container].sdfg_type()
         debug_info: DebugInfo = self.get_debug_info(node)
-        if isinstance(container_type, Pointer):
-            builder.add_fill_op(
-                fill_value_container,
-                fill_value_type,
-                result_container,
-                result_tensor,
-                debug_info,
-            )
-        else:
-            builder.add_assignment(
-                result_container,
-                fill_value_container,
-                debug_info,
-            )
+        builder.add_assignment(
+            result_container,
+            fill_value_container,
+            debug_info,
+        )
 
 
 register_module("aten.scalar_tensor.default", ScalarTensorParser())

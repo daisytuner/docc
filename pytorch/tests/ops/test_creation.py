@@ -92,3 +92,11 @@ def test_scalar_tensor_add(target: str) -> None:
             return input + torch.scalar_tensor(3.141592)
 
     check(ScalarTensorAddNet(), torch.ones(2, 3), target=target)
+
+
+def test_scalar_tensor_pin_memory(target: str) -> None:
+    class ScalarTensorPinMemoryNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592, pin_memory=False)
+
+    check(ScalarTensorPinMemoryNet(), target=target)
