@@ -65,7 +65,7 @@ def test_arange_default(target: str) -> None:
 def test_arange_start(target: str) -> None:
     class ArangeStartNet(nn.Module):
         def forward(self) -> torch.Tensor:
-            return torch.arange(1, 5)
+            return torch.arange(4, 10)
 
     check(ArangeStartNet(), *(), target=target)
 

@@ -99,7 +99,7 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
     structured_control_flow::Sequence* inner_scope = nullptr;
 
     for (size_t i = 0; i < shape_.size(); ++i) {
-        std::string var_name = builder.find_new_name("__i" + std::to_string(i));
+        std::string var_name = builder.find_new_name("_i" + std::to_string(i));
         builder.add_container(var_name, types::Scalar(types::PrimitiveType::Int64));
 
         auto sym_var = symbolic::symbol(var_name);
@@ -167,9 +167,9 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
             tasklet_block, tasklet, "_out", out_acc, loop_vars, result_ptr_edge.base_type(), this->debug_info()
         );
     } else {
-        std::string temp_name = builder.find_new_name("_arange_temp");
-        builder.add_container(temp_name, types::Scalar(result_ptr_edge.base_type().primitive_type()));
-        auto& temp_acc = builder.add_access(tasklet_block, temp_name, this->debug_info());
+        std::string tmp_name = builder.find_new_name("_arange_tmp");
+        builder.add_container(tmp_name, types::Scalar(result_ptr_edge.base_type().primitive_type()));
+        auto& tmp_acc = builder.add_access(tasklet_block, tmp_name, this->debug_info());
 
         auto& tasklet_mul =
             builder
@@ -184,21 +184,20 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
             tasklet_block,
             tasklet_mul,
             "_out",
-            temp_acc,
+            tmp_acc,
             {},
             types::Scalar(result_ptr_edge.base_type().primitive_type()),
             this->debug_info()
         );
 
-        auto& temp_read_acc = builder.add_access(tasklet_block, temp_name, this->debug_info());
         auto& tasklet_add = builder.add_tasklet(
-            tasklet_block, data_flow::TaskletCode::int_add, "_out", {"_temp", "_start"}, this->debug_info()
+            tasklet_block, data_flow::TaskletCode::int_add, "_out", {"_tmp", "_start"}, this->debug_info()
         );
         builder.add_computational_memlet(
             tasklet_block,
-            temp_read_acc,
+            tmp_acc,
             tasklet_add,
-            "_temp",
+            "_tmp",
             {},
             types::Scalar(result_ptr_edge.base_type().primitive_type()),
             this->debug_info()
