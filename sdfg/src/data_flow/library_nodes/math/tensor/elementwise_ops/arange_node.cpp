@@ -18,7 +18,9 @@ ArangeNode::ArangeNode(
     const std::vector<symbolic::Expression>& shape,
     const data_flow::ImplementationType& impl_type
 )
-    : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_Arange, {"_out"}, {"_start", "_step"}, impl_type),
+    : TensorNode(
+          element_id, debug_info, vertex, parent, LibraryNodeType_Arange, {}, {"_out", "_start", "_step"}, impl_type
+      ),
       shape_(shape) {}
 
 const std::vector<symbolic::Expression>& ArangeNode::shape() const { return shape_; }
