@@ -106,7 +106,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/arange_node.cpp
+    src/data_flow/library_nodes/math/tensor/arange_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/rsqrt_node.cpp

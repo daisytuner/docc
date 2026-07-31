@@ -1,4 +1,4 @@
-#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/arange_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -156,9 +156,7 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
         is_float = types::is_floating_point(ptr_type->primitive_type());
     }
 
-    auto& i0_acc = builder.add_constant(
-        tasklet_block, loop_vars.at(0)->__str__(), types::Scalar(types::PrimitiveType::Int64), this->debug_info()
-    );
+    auto& i0_acc = builder.add_access(tasklet_block, loop_vars.at(0)->__str__(), this->debug_info());
 
     if (is_float) {
         auto& tasklet = builder.add_tasklet(

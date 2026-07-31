@@ -10,7 +10,7 @@
 #include "sdfg/data_flow/library_nodes/call_node.h"
 #include "sdfg/data_flow/library_nodes/invoke_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/arange_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.h"
