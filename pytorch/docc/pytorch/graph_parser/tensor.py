@@ -203,17 +203,21 @@ register_module("aten.clone.default", CloneParser())
 
 
 class ViewParser(GraphParserModule):
+
+    def __init__(self, num_args: int) -> None:
+        self.num_args = num_args
+
     def pre_parse(
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        if len(node.args) not in (1, 2):
+        if len(node.args) != self.num_args:
             raise GraphParserError(
                 self,
                 node,
-                "Expected 1 or 2 arguments but got " + str(len(node.args)),
+                f"Expected {self.num_args} arguments but got " + str(len(node.args)),
             )
         if len(node.kwargs) != 0:
             raise GraphParserError(
@@ -265,12 +269,12 @@ class ViewParser(GraphParserModule):
         self.update_container_types(node, builder, container_info, node.name)
 
 
-register_pre_module("aten.view.default", ViewParser())
-register_module("aten.view.default", ViewParser())
-register_pre_module("aten.alias.default", ViewParser())
-register_module("aten.alias.default", ViewParser())
-register_pre_module("aten.detach.default", ViewParser())
-register_module("aten.detach.default", ViewParser())
+register_pre_module("aten.view.default", ViewParser(2))
+register_module("aten.view.default", ViewParser(2))
+register_pre_module("aten.alias.default", ViewParser(1))
+register_module("aten.alias.default", ViewParser(1))
+register_pre_module("aten.detach.default", ViewParser(1))
+register_module("aten.detach.default", ViewParser(1))
 
 
 class ExpandParser(GraphParserModule):
