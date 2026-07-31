@@ -128,6 +128,8 @@ public:
         std::vector<codegen::DispatchInput>& inputs,
         std::vector<codegen::DispatchOutput>& outputs
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 GEMMNode& add_gemm_node(

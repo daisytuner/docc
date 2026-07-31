@@ -339,6 +339,7 @@ codegen::InstrumentationInfo TTDataOffloadingNodeDispatcher::instrumentation_inf
             node_.element_id(),
             "d2h_transfer",
             TargetType_Tenstorrent,
+            codegen::InstrumentationEventType::NONE,
             analysis::LoopInfo{},
             {{"pcie_bytes", language_extension_.expression(tt_node.size())}}
         );
@@ -347,6 +348,7 @@ codegen::InstrumentationInfo TTDataOffloadingNodeDispatcher::instrumentation_inf
             node_.element_id(),
             "h2d_transfer",
             TargetType_Tenstorrent,
+            codegen::InstrumentationEventType::NONE,
             analysis::LoopInfo{},
             {{"pcie_bytes", language_extension_.expression(tt_node.size())}}
         );

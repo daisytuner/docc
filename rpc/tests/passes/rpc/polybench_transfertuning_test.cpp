@@ -5,20 +5,18 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/passes/normalization/normalization.h"
 #include "sdfg/passes/pipeline.h"
-#include "sdfg/passes/rpc/rpc_scheduler.h"
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
+#include "sdfg/passes/rpc/daisytuner_rpc_context.h"
+#include "sdfg/passes/rpc/rpc_scheduling_pass.h"
 #include "sdfg/structured_sdfg.h"
 
 #include "fixtures/polybench.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
 
 using namespace sdfg;
 
 // Runs the RPC scheduling pass on a polybench SDFG after normalizing loops
 // (data parallelism + loop normalization), matching the real compiler pipeline.
-// This exercises the full LoopSchedulingPass traversal including the CHILDREN
-// descent path, catching regressions like use-after-free when find()
-// invalidates the analysis cache via cutout().
+// RpcOptimizationPass sends the whole SDFG to the transfer server in one request,
+// exercising the multi-nest handling path.
 static bool run_rpc_scheduling(std::unique_ptr<StructuredSDFG> init_sdfg) {
     builder::StructuredSDFGBuilder builder(init_sdfg);
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -31,9 +29,10 @@ static bool run_rpc_scheduling(std::unique_ptr<StructuredSDFG> init_sdfg) {
 
     analysis_manager.invalidate_all();
 
-    passes::scheduler::LoopSchedulingPass
-        loop_scheduling_pass({passes::scheduler::SchedulerRegistry::instance().get_loop_scheduler("rpc")}, nullptr);
-    return loop_scheduling_pass.run(builder, analysis_manager);
+    auto rpc_context = passes::rpc::DaisytunerRpcContext::from_docc_config();
+    passes::scheduler::RpcOptimizationPass
+        rpc_optimization_pass(rpc_context, docc::target::TargetOptions{"sequential", "server", false});
+    return rpc_optimization_pass.run(builder, analysis_manager);
 }
 
 // Tests with multiple loop nests where the scheduler must descend (CHILDREN)

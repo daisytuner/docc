@@ -98,6 +98,71 @@ def test_fill_simple(target: str) -> None:
     check(FillSimpleNet(), torch.ones(2, 3), target=target)
 
 
+# --- index ---
+
+
+def test_index_1d(target: str) -> None:
+    class Index1dNet(nn.Module):
+        def forward(self, input: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+            return input[idx]
+
+    check(
+        Index1dNet(),
+        *(torch.randn(5, 4), torch.tensor([0, 2, 3])),
+        target=target,
+    )
+
+
+def test_index_repeated(target: str) -> None:
+    class IndexRepeatedNet(nn.Module):
+        def forward(self, input: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+            return input[idx]
+
+    check(
+        IndexRepeatedNet(),
+        *(torch.randn(5, 4), torch.tensor([4, 0, 4, 1, 0])),
+        target=target,
+    )
+
+
+def test_index_dim_1(target: str) -> None:
+    class IndexDim1Net(nn.Module):
+        def forward(self, input: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+            return input[:, idx]
+
+    check(
+        IndexDim1Net(),
+        *(torch.randn(5, 4), torch.tensor([0, 2])),
+        target=target,
+    )
+
+
+def test_index_two_tensors(target: str) -> None:
+    class IndexTwoTensorsNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, rows: torch.Tensor, cols: torch.Tensor
+        ) -> torch.Tensor:
+            return input[rows, cols]
+
+    check(
+        IndexTwoTensorsNet(),
+        *(torch.randn(5, 4), torch.tensor([0, 1, 4]), torch.tensor([2, 3, 1])),
+        target=target,
+    )
+
+
+def test_index_3d(target: str) -> None:
+    class Index3dNet(nn.Module):
+        def forward(self, input: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+            return input[idx]
+
+    check(
+        Index3dNet(),
+        *(torch.randn(4, 3, 5), torch.tensor([0, 2, 3])),
+        target=target,
+    )
+
+
 # --- permute ---
 
 

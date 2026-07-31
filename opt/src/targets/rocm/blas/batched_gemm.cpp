@@ -108,6 +108,17 @@ void BatchedGEMMNodeDispatcher_ROCMBLASWithTransfers::dispatch_code_with_edges(
     out.stream << "}" << std::endl;
 }
 
+codegen::InstrumentationInfo BatchedGEMMNodeDispatcher_ROCMBLASWithTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_ROCM,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
+}
+
 BatchedGEMMNodeDispatcher_ROCMBLASWithoutTransfers::BatchedGEMMNodeDispatcher_ROCMBLASWithoutTransfers(
     codegen::LanguageExtension& language_extension,
     const Function& function,
@@ -225,6 +236,17 @@ void generate_kernel_batched_gemm(
            << language_extension.expression(node.batch_count()) << ");" << std::endl;
     rocmblas_error_checking(stream, language_extension, "err");
     check_rocm_kernel_launch_errors(stream, language_extension);
+}
+
+codegen::InstrumentationInfo BatchedGEMMNodeDispatcher_ROCMBLASWithoutTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_ROCM,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
 }
 
 } // namespace sdfg::rocm::blas

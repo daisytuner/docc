@@ -174,21 +174,30 @@ codegen::InstrumentationInfo ROCMDataOffloadingNodeDispatcher::instrumentation_i
     if (rocm_node.is_d2h()) {
         return codegen::InstrumentationInfo(
             node_.element_id(),
-            "d2h_transfer",
+            std::string(node_.element_type()) + ":::" + node_.code().value(),
             TargetType_ROCM,
+            codegen::InstrumentationEventType::NONE,
             analysis::LoopInfo{},
             {{"pcie_bytes", language_extension_.expression(rocm_node.size())}}
         );
     } else if (rocm_node.is_h2d()) {
         return codegen::InstrumentationInfo(
             node_.element_id(),
-            "h2d_transfer",
+            std::string(node_.element_type()) + ":::" + node_.code().value(),
             TargetType_ROCM,
+            codegen::InstrumentationEventType::NONE,
             analysis::LoopInfo{},
             {{"pcie_bytes", language_extension_.expression(rocm_node.size())}}
         );
     } else {
-        return codegen::LibraryNodeDispatcher::instrumentation_info();
+        return codegen::InstrumentationInfo(
+            node_.element_id(),
+            std::string(node_.element_type()) + ":::" + node_.code().value(),
+            TargetType_ROCM,
+            codegen::InstrumentationEventType::NONE,
+            analysis::LoopInfo{},
+            {}
+        );
     }
 }
 

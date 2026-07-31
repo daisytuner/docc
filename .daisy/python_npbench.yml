@@ -155,6 +155,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -164,12 +165,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     atax:
       energy: true
       measurements: 10
@@ -186,6 +189,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -195,12 +199,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     gemm:
       energy: true
       measurements: 10
@@ -217,6 +223,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -226,12 +233,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     gesummv:
       energy: true
       measurements: 10
@@ -248,6 +257,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -257,12 +267,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     gemver:
       energy: true
       measurements: 10
@@ -279,6 +291,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -288,12 +301,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     k2mm:
       energy: true
       measurements: 10
@@ -310,6 +325,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -319,12 +335,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     k3mm:
       energy: true
       measurements: 10
@@ -341,6 +359,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -350,12 +369,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     mvt:
       energy: true
       measurements: 10
@@ -372,6 +393,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -381,12 +403,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     symm:
       energy: true
       measurements: 10
@@ -403,6 +427,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -412,12 +437,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         # docc-cuda:
         #   command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --n_runs=1 --target=cuda
         #   tags: { framework: docc, device: gpu, model: cuda, precision: double }
         # docc-cuda-prof:
         #   command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --docc --size=M --n_runs=1 --target=cuda
         #   tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+        #   metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     syr2k:
       energy: true
       measurements: 10
@@ -434,6 +461,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -443,12 +471,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     syrk:
       energy: true
       measurements: 10
@@ -465,6 +495,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -474,12 +505,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double }
         docc-cuda-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --docc --size=M --n_runs=1 --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     trmm:
       energy: true
       measurements: 10
@@ -496,6 +529,7 @@ steps:
         docc-sequential-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
           tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-sequential-capture:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=sequential
           tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
@@ -505,9 +539,11 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         # docc-cuda:
         #   command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=cuda
         #   tags: { framework: docc, device: gpu, model: cuda, precision: double }
         # docc-cuda-prof:
         #   command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --docc --size=M --n_runs=1 --target=cuda
         #   tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+        #   metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]

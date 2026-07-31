@@ -520,6 +520,7 @@ PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, Stru
     bool both_map = first_next->is_map && second_next->is_map;
     bool no_overlap_candidate = false;
 
+
     // descend the map stacks down. Last level on which everything matches is the one we can fuse.
     // In case there are any further maps nested inside either one of the candidates, we then need to run verification
     // that there are no subset conflicts in those nested loops that prevent us from fusing the parents
@@ -553,6 +554,7 @@ PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, Stru
                 no_overlap_candidate = true;
             }
         }
+
         if (res.subset_mismatch) { // If subsets mismatch on any level, we cannot guarantee correctness without much
                                    // more checks, so fusion-by-domain is out
             break;
@@ -582,6 +584,7 @@ PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, Stru
                 return {};
             }
         }
+
         // we found a match for fusion-by-domain. In case there are nested loops we still need to verify they don't
         // conflict as well
         auto nested_check = this->check_ins_outs(*first_current, *second_current, indvar_mapping, false, !both_map);

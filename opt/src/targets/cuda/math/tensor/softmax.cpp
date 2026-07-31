@@ -388,6 +388,17 @@ void SoftmaxNodeDispatcher_CUDAWithTransfers::dispatch_code_with_edges(
     out.stream << "}" << std::endl;
 }
 
+codegen::InstrumentationInfo SoftmaxNodeDispatcher_CUDAWithTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_CUDA,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
+}
+
 // WithoutTransfers
 
 SoftmaxNodeDispatcher_CUDAWithoutTransfers::SoftmaxNodeDispatcher_CUDAWithoutTransfers(
@@ -410,6 +421,17 @@ void SoftmaxNodeDispatcher_CUDAWithoutTransfers::dispatch_code_with_edges(
     auto& x_expr = inputs.at(1).expr;
 
     dispatch_softmax_common(out, inputs, this->language_extension_, node, this->data_flow_graph_, x_expr, y_expr);
+}
+
+codegen::InstrumentationInfo SoftmaxNodeDispatcher_CUDAWithoutTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_CUDA,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
 }
 
 } // namespace sdfg::cuda::tensor

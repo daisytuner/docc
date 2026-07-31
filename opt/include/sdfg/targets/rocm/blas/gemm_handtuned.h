@@ -19,6 +19,8 @@ public:
         codegen::PrettyPrinter& globals_stream,
         codegen::CodeSnippetFactory& library_snippet_factory
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 } // namespace sdfg::rocm::blas

@@ -68,12 +68,14 @@ steps:
         docc-omp-prof:
           command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --device docc --target=openmp
           tags: { framework: docc, device: cpu, model: openmp, precision: float, profiling: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --device docc --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: float }
         docc-cuda-prof:
           command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --device docc --target=cuda
           tags: { framework: docc, device: gpu, model: cuda, precision: float, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
     segformer:
       energy: true
       control: true
@@ -94,9 +96,11 @@ steps:
         # docc-omp-prof:
         #   command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device docc --target=openmp --n_runs=1 --variant segformer --batch-size 16
         #   tags: { framework: docc, device: cpu, model: openmp, precision: float, profiling: true }
+        #   metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
         docc-cuda:
           command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device docc --target=cuda --n_runs=1 --variant segformer --batch-size 16
           tags: { framework: docc, device: gpu, model: cuda, precision: float }
         docc-cuda-prof:
           command: venv/bin/python3 mlir/benchmarks/torch/model_zoo/segformer.py --device docc --target=cuda --n_runs=1 --variant segformer --batch-size 16
           tags: { framework: docc, device: gpu, model: cuda, precision: float, profiling: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]

@@ -32,6 +32,7 @@
 #include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
+#include <sdfg/passes/rpc/rpc_scheduling_pass.h>
 #include <sdfg/passes/scheduler/cuda_scheduler.h>
 #include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/passes/scheduler/omp_scheduler.h>
@@ -67,7 +68,6 @@
 #include "sdfg/passes/redundant_load_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
@@ -434,23 +434,6 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
 
     docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, options);
 
-    std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
-
-    if (options.remote_tuning) {
-        std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
-            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-        schedulers.push_back(std::make_shared<sdfg::passes::rpc::RPCScheduler>(context, options.target, options.category)
-        );
-    }
-
-    auto* handler = docc_context_.get_target_handler(options.target);
-    if (handler) {
-        auto target_schedulers = handler->safe_get_target_loop_schedulers(options);
-        if (!target_schedulers.empty()) {
-            schedulers.insert(schedulers.end(), target_schedulers.begin(), target_schedulers.end());
-        }
-    }
-
     // CPU Opt Pipeline
     if (options.target == "sequential" || options.target == "openmp") {
         sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
@@ -459,6 +442,26 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         symbol_propagation_pass.run(builder, analysis_manager);
         dde.run(builder, analysis_manager);
         dce.run(builder, analysis_manager);
+    }
+
+    if (options.remote_tuning) {
+        std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
+            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
+        sdfg::passes::scheduler::RpcOptimizationPass
+            rpc_optimization_pass(context, options, enable_fusion_in_normalize_);
+        rpc_optimization_pass.run(builder, analysis_manager);
+    }
+
+    // Acquire target-specific loop schedulers only after remote tuning, since they are consumed
+    // solely by the LoopSchedulingPass below.
+    std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
+
+    auto* handler = docc_context_.get_target_handler(options.target);
+    if (handler) {
+        auto target_schedulers = handler->safe_get_target_loop_schedulers(options);
+        if (!target_schedulers.empty()) {
+            schedulers.insert(schedulers.end(), target_schedulers.begin(), target_schedulers.end());
+        }
     }
 
     auto mapped = schedulers | std::views::transform([&](auto& n) { return n.get(); });

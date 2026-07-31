@@ -1314,6 +1314,8 @@ void PyStructuredSDFGBuilder::add_elementwise_unary_op(
         node = &builder_.add_library_node<sdfg::math::tensor::SigmoidNode>(block, debug_info, C_type.shape());
     } else if (op_type == "logical_not") {
         node = &builder_.add_library_node<sdfg::math::tensor::LogicalNotNode>(block, debug_info, C_type.shape());
+    } else if (op_type == "rsqrt") {
+        node = &builder_.add_library_node<sdfg::math::tensor::RsqrtNode>(block, debug_info, C_type.shape());
     } else {
         throw std::runtime_error("Unsupported elementwise unary op: " + op_type);
     }
@@ -1705,6 +1707,36 @@ void PyStructuredSDFGBuilder::add_reduce_op(
     builder_.add_computational_memlet(block, in_access, *node, "X", {}, input_type, debug_info);
 
     builder_.add_computational_memlet(block, out_access, *node, "Y", {}, output_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_index_op(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::vector<std::string>& indices,
+    const std::vector<const sdfg::types::Tensor*>& index_types,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    long long dim_offset,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::IndexNode>(
+        block,
+        debug_info,
+        X_type.shape(),
+        index_types.front()->shape(),
+        dim_offset,
+        static_cast<long long>(indices.size())
+    );
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    for (size_t j = 0; j < indices.size(); ++j) {
+        auto& I_access = builder_.add_access(block, indices[j], debug_info);
+        builder_
+            .add_computational_memlet(block, I_access, libnode, "I" + std::to_string(j), {}, *index_types[j], debug_info);
+    }
 }
 
 void PyStructuredSDFGBuilder::add_broadcast_op(

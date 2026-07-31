@@ -368,6 +368,17 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_index_op(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::vector<std::string>& indices,
+        const std::vector<const sdfg::types::Tensor*>& index_types,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        long long dim_offset,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_broadcast_op(
         const std::string& X,
         const sdfg::types::Tensor& X_type,

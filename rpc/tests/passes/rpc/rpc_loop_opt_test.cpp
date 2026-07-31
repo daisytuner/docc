@@ -1,14 +1,11 @@
 #include <gtest/gtest.h>
 #include <memory>
-#include <sdfg/passes/rpc/rpc_scheduler.h>
-
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/passes/rpc/rpc_scheduling_pass.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -126,9 +123,12 @@ TEST_F(RPCLoopOptTest, Matmul_FMA) {
     auto& loop_analysis = analysis_manager.get<sdfg::analysis::LoopAnalysis>();
     auto outer_loops = loop_analysis.outermost_loops();
 
-    passes::scheduler::LoopSchedulingPass
-        loop_scheduling_pass({passes::scheduler::SchedulerRegistry::instance().get_loop_scheduler("rpc")}, nullptr);
-    loop_scheduling_pass.run(*builder_, analysis_manager);
+    passes::rpc::SimpleRpcContextBuilder ctx_builder;
+    auto rpc_context = ctx_builder.initialize_local_default().from_env().from_header_env().build();
+
+    passes::scheduler::RpcOptimizationPass
+        rpc_optimization_pass(rpc_context, docc::target::TargetOptions{"sequential", "server", false});
+    rpc_optimization_pass.run(*builder_, analysis_manager);
 
     sdfg::analysis::AnalysisManager test_analysis_manager(builder_->subject());
     auto& test_loop_analysis = test_analysis_manager.get<sdfg::analysis::LoopAnalysis>();
@@ -173,9 +173,12 @@ TEST_F(RPCLoopOptTest, Double_Matmul) {
 
     EXPECT_EQ(outer_loops.size(), 2);
 
-    passes::scheduler::LoopSchedulingPass
-        loop_scheduling_pass({passes::scheduler::SchedulerRegistry::instance().get_loop_scheduler("rpc")}, nullptr);
-    loop_scheduling_pass.run(*builder_, analysis_manager);
+    passes::rpc::SimpleRpcContextBuilder ctx_builder;
+    auto rpc_context = ctx_builder.initialize_local_default().from_env().from_header_env().build();
+
+    passes::scheduler::RpcOptimizationPass
+        rpc_optimization_pass(rpc_context, docc::target::TargetOptions{"sequential", "server", false});
+    rpc_optimization_pass.run(*builder_, analysis_manager);
 
     sdfg::analysis::AnalysisManager test_analysis_manager(builder_->subject());
 
@@ -209,11 +212,11 @@ TEST_F(RPCLoopOptTest, Double_Matmul) {
 //
 // This test serializes a multi-child response SDFG to disk and points the
 // transfer server at it via SDFG-Result-Path header, then runs
-// LoopSchedulingPass and verifies all children ended up in the target SDFG.
+// RpcOptimizationPass and verifies all children ended up in the target SDFG.
 class RPCLoopOptMoveChildrenTest : public ::testing::Test {
 protected:
     std::unique_ptr<builder::StructuredSDFGBuilder> builder_;
-    std::string target_key_ = "rpc_move_children";
+    std::shared_ptr<passes::rpc::SimpleRpcContext> test_ctx_;
 
     void SetUp() override {
         // Build the input SDFG (same matmul as RPCLoopOptTest)
@@ -358,11 +361,7 @@ protected:
 
         // Build RPC context from env vars (same mechanism as test.cpp main)
         passes::rpc::SimpleRpcContextBuilder ctx_builder;
-        auto test_ctx = ctx_builder.initialize_local_default().from_env().from_header_env().build();
-
-        // Register scheduler under a test-specific key
-        passes::scheduler::SchedulerRegistry::instance()
-            .register_loop_scheduler<passes::rpc::RPCScheduler>(target_key_, test_ctx, "sequential", "server", false);
+        test_ctx_ = ctx_builder.initialize_local_default().from_env().from_header_env().build();
     }
 
     void TearDown() override { unsetenv("RPC_HEADER"); }
@@ -373,9 +372,9 @@ TEST_F(RPCLoopOptMoveChildrenTest, MoveAllChildrenFromRPCResult) {
 
     // Run the scheduling pass through the full pipeline
     analysis::AnalysisManager analysis_manager(builder_->subject());
-    passes::scheduler::LoopSchedulingPass
-        loop_scheduling_pass({passes::scheduler::SchedulerRegistry::instance().get_loop_scheduler(target_key_)}, nullptr);
-    loop_scheduling_pass.run(*builder_, analysis_manager);
+    passes::scheduler::RpcOptimizationPass
+        rpc_optimization_pass(test_ctx_, docc::target::TargetOptions{"sequential", "server", false});
+    rpc_optimization_pass.run(*builder_, analysis_manager);
 
     // After the pass: the single map should be replaced by all 3 children from the response
     EXPECT_EQ(builder_->subject().root().size(), 3)

@@ -277,6 +277,17 @@ void DotNodeDispatcher_BLAS::dispatch_code_with_edges(
     out.stream << ");" << std::endl;
 }
 
+codegen::InstrumentationInfo DotNodeDispatcher_BLAS::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        codegen::TargetType_CPU_PARALLEL,
+        codegen::InstrumentationEventType::CPU,
+        analysis::LoopInfo{},
+        {}
+    };
+}
+
 
 } // namespace blas
 } // namespace math

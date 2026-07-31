@@ -30,9 +30,11 @@ RPCNodeTransform::RPCNodeTransform(
     const std::string& target,
     const std::string& category,
     sdfg::passes::rpc::RpcContext& rpc_context,
+    bool enable_fusion,
     bool dump_steps
 )
-    : node_(node), target_(target), category_(category), rpc_context_(rpc_context), dump_steps_(dump_steps) {}
+    : node_(node), target_(target), category_(category), rpc_context_(rpc_context), dump_steps_(dump_steps),
+      enable_fusion_(enable_fusion) {}
 
 std::string RPCNodeTransform::name() const { return "RPCNodeTransform"; }
 
@@ -40,32 +42,41 @@ std::string RPCNodeTransform::get_node_id_str() const { return std::to_string(th
 
 bool RPCNodeTransform::
     can_be_applied(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager) {
-    // Get loop info
-
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
-    auto loop_info = loop_analysis.loop_info(&this->node_);
-    if (report_) {
-        int loopnest_idx = loop_info.loopnest_index;
-        if (loopnest_idx >= 0) {
-            report_->in_outermost_loop(loopnest_idx);
+    bool applicable = false;
+    auto outermost_loops = loop_analysis.outermost_loops();
+
+    for (auto outermost : outermost_loops) {
+        auto loop_info = loop_analysis.loop_info(outermost);
+
+        if (!loop_info.has_side_effects) {
+            applicable = true;
+            break;
         }
     }
 
-    // Re-check for side effects with fresh loop info
-    if (loop_info.has_side_effects) {
+    if (!applicable) {
         if (report_) {
-            report_->transform_impossible(this->name(), "Loopnest side effects (" + get_node_id_str() + ")");
+            report_->transform_impossible(this->name(), "No applicable loop (" + get_node_id_str() + ")");
         }
+        DEBUG_PRINTLN(
+            "[RPC] Skipping node " << get_node_id_str()
+                                   << ": no applicable loop (all outermost loops have side effects), no request sent"
+        );
         return false;
     }
 
-    // Create cutout SDFG
-    std::unique_ptr<sdfg::StructuredSDFG> loop_sdfg = util::cutout(builder.subject(), analysis_manager, this->node_);
+    DEBUG_PRINTLN(
+        "[RPC] can_be_applied for node " << get_node_id_str() << ": querying " << rpc_context_.get_remote_address()
+    );
 
-    // Loop info is only used for information on the loop structure
     auto opt_resp = query_rpc_server(
-        {.sdfg = *loop_sdfg, .category = this->category_, .target = this->target_, .loop_info = loop_info}, rpc_context_
+        {.sdfg = builder.subject(),
+         .category = this->category_,
+         .target = this->target_,
+         .enable_fusion = this->enable_fusion_},
+        rpc_context_
     );
 
     // In case query was successful, store response
@@ -76,23 +87,13 @@ bool RPCNodeTransform::
     bool can_apply = this->opt_resp_ != nullptr &&
                      (this->opt_resp_->sdfg_result.has_value() || this->opt_resp_->local_replay.has_value());
 
-    if (report_) {
-        if (!can_apply) {
-            std::string error_msg;
-            if (std::holds_alternative<std::string>(opt_resp)) {
-                error_msg = std::get<std::string>(opt_resp);
-            } else if (this->opt_resp_->error.has_value()) {
-                error_msg = this->opt_resp_->error.value();
-            }
-            report_->transform_impossible(
-                this->name(), "No opt. SDFG received (" + get_node_id_str() + ", " + error_msg + ")"
-            );
-        } else {
-            nlohmann::json j;
-            this->to_json(j);
-            report_->transform_applied(this->name(), j);
-        }
+    if (!can_apply) {
+        DEBUG_PRINTLN(
+            "[RPC] Skipping node " << get_node_id_str() << ": server returned no applicable optimization from "
+                                   << rpc_context_.get_remote_address()
+        );
     }
+
     return can_apply;
 }
 
@@ -123,12 +124,28 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
         {"sdfg", sdfg_json},
         {"category", request.category},
         {"target", request.target},
-        {"loop_info", analysis::loop_info_to_json(request.loop_info)}
+        {"enable_fusion", request.enable_fusion}
     };
     std::string payload_str = payload.dump();
 
+    // Log where the request is going and what it carries. Header values (which may contain auth
+    // tokens) are intentionally omitted; only header keys are printed.
+    const std::string remote_address = context.get_remote_address();
+    DEBUG_PRINTLN(
+        "[RPC] Sending optimization request to " << remote_address << " (target=" << request.target << ", category="
+                                                 << request.category << ", payload=" << payload_str.size() << " bytes)"
+    );
+    for (const auto& [key, value] : context_headers) {
+        DEBUG_PRINTLN("[RPC]   header: " << key);
+    }
+
     // Send query
-    HttpResult res = post_json(curl_handle, context.get_remote_address(), payload_str, headers);
+    HttpResult res = post_json(curl_handle, remote_address, payload_str, headers);
+
+    DEBUG_PRINTLN(
+        "[RPC] Received response from " << remote_address << " (http_status=" << res.http_status
+                                        << ", curl_code=" << res.curl_code << ", body=" << res.body.size() << " bytes)"
+    );
 
     auto rpc_response = parse_rpc_response(res);
 
@@ -181,20 +198,61 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
             rpc_response->local_replay = std::move(recipe);
         }
 
-        auto json_metadata = parsed.find("metadata");
-        if (json_metadata != parsed.end()) {
-            auto& meta = rpc_response->metadata;
-            auto json_region_id = json_metadata->find("region_id");
-            if (json_region_id != json_metadata->end()) {
+        auto parse_metadata = [](const nlohmann::json& json_metadata) {
+            passes::rpc::RpcOptimizationMetadata meta;
+            auto json_region_id = json_metadata.find("region_id");
+            if (json_region_id != json_metadata.end() && !json_region_id->is_null()) {
                 meta.region_id = json_region_id->get<std::string>();
             }
-            auto json_speedup = json_metadata->find("speedup");
-            if (json_speedup != json_metadata->end()) {
+            auto json_speedup = json_metadata.find("speedup");
+            if (json_speedup != json_metadata.end() && !json_speedup->is_null()) {
                 meta.speedup = json_speedup->get<double>();
             }
-            auto json_vector_distance = json_metadata->find("vector_distance");
-            if (json_vector_distance != json_metadata->end()) {
+            auto json_vector_distance = json_metadata.find("vector_distance");
+            if (json_vector_distance != json_metadata.end() && !json_vector_distance->is_null()) {
                 meta.vector_distance = json_vector_distance->get<double>();
+            }
+            return meta;
+        };
+
+        auto parse_local_replay = [](const nlohmann::json& json_replay) {
+            passes::rpc::RpcLocalReplayRecipe recipe;
+            recipe.sequence = json_replay.at("sequence");
+            return recipe;
+        };
+
+        // The multi-cutout endpoint returns a "results" array, each entry carrying its own
+        // element_id, local replay recipe, and metadata.
+        auto json_results = parsed.find("results");
+        if (json_results != parsed.end() && json_results->is_array()) {
+            for (const auto& json_result : *json_results) {
+                passes::rpc::RpcRegionResult region_result;
+
+                auto json_element_id = json_result.find("element_id");
+                if (json_element_id != json_result.end() && !json_element_id->is_null()) {
+                    region_result.element_id = json_element_id->get<int64_t>();
+                }
+
+                auto json_result_replay = json_result.find("local_replay");
+                if (json_result_replay != json_result.end() && !json_result_replay->is_null()) {
+                    region_result.local_replay = parse_local_replay(*json_result_replay);
+                }
+
+                auto json_metadata = json_result.find("metadata");
+                if (json_metadata != json_result.end()) {
+                    region_result.metadata = parse_metadata(*json_metadata);
+                }
+
+                rpc_response->results.push_back(std::move(region_result));
+            }
+        } else {
+            // Single-region responses expose metadata (and replay) at the top level.
+            auto json_metadata = parsed.find("metadata");
+            if (json_metadata != parsed.end()) {
+                passes::rpc::RpcRegionResult region_result;
+                region_result.metadata = parse_metadata(*json_metadata);
+                region_result.local_replay = rpc_response->local_replay;
+                rpc_response->results.push_back(std::move(region_result));
             }
         }
     } catch (const std::exception& e) {
@@ -203,7 +261,6 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
     }
     return std::move(rpc_response);
 }
-
 
 void RPCNodeTransform::
     apply(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager) {
@@ -216,19 +273,26 @@ void RPCNodeTransform::
     int element_id = this->node_.element_id();
 
     if (opt.sdfg_result.has_value()) {
-        auto parent_scope = static_cast<structured_control_flow::Sequence*>(this->node_.get_parent());
-        size_t index = parent_scope->index(this->node_);
-
-        // this consumes the SDFG result
-
         auto& sdfg_response = opt.sdfg_result->sdfg;
 
-        // TODO: add transitions from after loop to tmp_scope
+        // this consumes the SDFG result
+        if (this->node_.get_parent() == nullptr) {
+            // Whole-SDFG case: node_ is the root sequence. Replace its body in place with the
+            // optimized SDFG's body.
+            auto& root = static_cast<structured_control_flow::Sequence&>(this->node_);
+            builder.remove_children(root);
+            builder.move_children(sdfg_response->root(), root);
+        } else {
+            // Nested-loop case: splice the optimized children into the parent in place of the loop.
 
-        auto num_children = opt.sdfg_result->sdfg->root().size();
-        builder.move_children(opt.sdfg_result->sdfg->root(), *parent_scope, index); // move all optimized children into
-                                                                                    // place
-        builder.remove_child(*parent_scope, index + num_children); // remove old loop
+            auto parent_scope = static_cast<structured_control_flow::Sequence*>(this->node_.get_parent());
+            size_t index = parent_scope->index(this->node_);
+
+            auto num_children = sdfg_response->root().size();
+            builder.move_children(sdfg_response->root(), *parent_scope, index); // move all optimized children into
+                                                                                // place
+            builder.remove_child(*parent_scope, index + num_children); // remove old loop
+        }
 
         if (opt.sdfg_result->sdfg->element_counter() > builder.subject().element_counter()) {
             builder.set_element_counter(opt.sdfg_result->sdfg->element_counter());
@@ -260,51 +324,47 @@ void RPCNodeTransform::
 
     if (opt.local_replay.has_value()) {
         auto recipe = opt.local_replay.value();
-        std::cout << "Applied RPC optimization sequence with speedup " << opt.metadata.speedup
-                  << " and vector distance " << opt.metadata.vector_distance << " to loopnest " << element_id << ":\n";
-
-        if (dump_steps_) {
-            print_transformation_sequence(recipe.sequence);
+        for (const auto& region_result : opt.results) {
+            DEBUG_PRINTLN(
+                "[RPC] Applied RPC optimization sequence with speedup "
+                << region_result.metadata.speedup << " and vector distance " << region_result.metadata.vector_distance
+                << " to loopnest " << element_id
+            );
         }
-
     } else {
-        std::cout << "RPC: Applied plain SDFG with speedup " << opt.metadata.speedup << " and vector distance "
-                  << opt.metadata.vector_distance << "\n";
+        for (const auto& region_result : opt.results) {
+            DEBUG_PRINTLN(
+                "[RPC] Applied plain SDFG with speedup " << region_result.metadata.speedup << " and vector distance "
+                                                         << region_result.metadata.vector_distance
+            );
+        }
     }
 }
-
 
 void RPCNodeTransform::to_json(nlohmann::json& j) const {
     j["transformation_type"] = name();
-    nlohmann::json params = {{"target", target_}, {"category", category_}, {"speedup", opt_resp_->metadata.speedup}};
-    if (opt_resp_->metadata.region_id.has_value()) {
-        params["region_id"] = opt_resp_->metadata.region_id.value();
+    nlohmann::json params = {{"target", target_}, {"category", category_}};
+    nlohmann::json results_array = nlohmann::json::array();
+    for (const auto& region_result : opt_resp_->results) {
+        nlohmann::json entry;
+        if (region_result.element_id.has_value()) {
+            entry["element_id"] = region_result.element_id.value();
+        }
+        nlohmann::json metadata = {
+            {"speedup", region_result.metadata.speedup}, {"vector_distance", region_result.metadata.vector_distance}
+        };
+        if (region_result.metadata.region_id.has_value()) {
+            metadata["region_id"] = region_result.metadata.region_id.value();
+        }
+        entry["metadata"] = metadata;
+        if (region_result.local_replay.has_value()) {
+            entry["local_replay"] = {{"sequence", region_result.local_replay->sequence}};
+        }
+        results_array.push_back(entry);
     }
-    params["vector_distance"] = opt_resp_->metadata.vector_distance;
+    params["results"] = results_array;
     j["parameters"] = params;
 }
-
-void RPCNodeTransform::print_transformation_sequence(const nlohmann::json& sequence) const {
-    if (sequence.empty()) {
-        std::cerr << "Nothing to tune, code already optimized" << std::endl;
-    } else {
-        for (auto& desc : sequence) {
-            bool fail = false;
-            auto transformation_type = desc.find("transformation_type");
-            std::cout << "\t" << transformation_type->get<std::string>();
-            auto transformation_parameter = desc.find("parameters");
-            if (transformation_parameter != desc.end()) {
-                std::cout << " (";
-                for (auto& [key, value] : transformation_parameter->items()) {
-                    std::cout << key << "=" << value << ", ";
-                }
-                std::cout << ")";
-            }
-            std::cout << "\n";
-        }
-    }
-}
-
 
 } // namespace transformations
 } // namespace sdfg

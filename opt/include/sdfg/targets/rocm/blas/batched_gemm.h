@@ -30,6 +30,8 @@ public:
         std::vector<codegen::DispatchInput>& inputs,
         std::vector<codegen::DispatchOutput>& outputs
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 class BatchedGEMMNodeDispatcher_ROCMBLASWithoutTransfers : public codegen::LibraryNodeDispatcher {
@@ -46,6 +48,8 @@ public:
         std::vector<codegen::DispatchInput>& inputs,
         std::vector<codegen::DispatchOutput>& outputs
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 } // namespace sdfg::rocm::blas

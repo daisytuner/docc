@@ -48,7 +48,6 @@
 #include <sdfg/passes/statistics.h>
 
 #include "docc/target/docc_target.h"
-#include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
 #ifdef DOCC_HAS_TARGET_ET
@@ -675,6 +674,19 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("result"),
             py::arg("result_type"),
             py::arg("dim"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_index_op",
+            &PyStructuredSDFGBuilder::add_index_op,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("indices"),
+            py::arg("index_types"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("dim_offset"),
+            "add_slice_op",
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(

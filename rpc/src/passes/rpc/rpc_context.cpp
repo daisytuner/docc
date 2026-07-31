@@ -23,7 +23,7 @@ std::shared_ptr<SimpleRpcContext> SimpleRpcContextBuilder::build(bool print) con
 
 SimpleRpcContextBuilder& SimpleRpcContextBuilder::initialize_local_default() {
     this->server = "http://localhost:8080/docc";
-    this->endpoint = "transfertune";
+    this->endpoint = "transfertune_sdfg";
 
     return *this;
 }

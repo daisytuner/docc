@@ -13,10 +13,6 @@
 namespace sdfg {
 namespace codegen {
 
-void InstrumentationPlan::update(const Element& element, InstrumentationEventType event_type) {
-    this->nodes_[&element] = event_type;
-}
-
 bool InstrumentationPlan::should_instrument(const Element& node) const { return this->nodes_.count(&node); }
 
 void InstrumentationPlan::begin_instrumentation(
@@ -102,7 +98,7 @@ void InstrumentationPlan::begin_instrumentation(
     stream << metadata_var << ".region_uuid = \"" << region_uuid << "\";" << std::endl;
 
     // Initialize region
-    switch (this->nodes_.at(&node)) {
+    switch (info.event_type()) {
         case InstrumentationEventType::CPU: {
             stream << "long long " << region_id_var << " = __daisy_instrumentation_init(&" << metadata_var
                    << ", __DAISY_EVENT_SET_CPU);" << std::endl;
@@ -130,10 +126,12 @@ void InstrumentationPlan::end_instrumentation(
     std::string region_id_var = sdfg_.name() + "_" + std::to_string(node.element_id()) + "_id";
 
     // Exit region
-    if (this->nodes_.at(&node) == InstrumentationEventType::CPU) {
-        stream << "__daisy_instrumentation_exit(" << region_id_var << ");" << std::endl;
-    } else {
-        stream << "__daisy_instrumentation_exit(" << region_id_var << ");" << std::endl;
+    switch (info.event_type()) {
+        case InstrumentationEventType::CPU:
+        case InstrumentationEventType::CUDA:
+        case InstrumentationEventType::NONE:
+            stream << "__daisy_instrumentation_exit(" << region_id_var << ");" << std::endl;
+            break;
     }
 
     for (auto entry : info.metrics()) {
@@ -146,7 +144,7 @@ void InstrumentationPlan::end_instrumentation(
 }
 
 std::unique_ptr<InstrumentationPlan> InstrumentationPlan::none(StructuredSDFG& sdfg) {
-    return std::make_unique<InstrumentationPlan>(sdfg, std::unordered_map<const Element*, InstrumentationEventType>{});
+    return std::make_unique<InstrumentationPlan>(sdfg, std::unordered_set<const Element*>{});
 }
 
 std::unique_ptr<InstrumentationPlan> InstrumentationPlan::outermost_loops_plan(StructuredSDFG& sdfg) {
@@ -154,20 +152,12 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::outermost_loops_plan(S
     auto& loop_tree_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto ols = loop_tree_analysis.outermost_loops();
 
-    std::unordered_map<const Element*, InstrumentationEventType> nodes;
+    std::unordered_set<const Element*> nodes;
     for (size_t i = 0; i < ols.size(); i++) {
-        auto& loop = ols[i];
-        if (auto map_node = dynamic_cast<const structured_control_flow::Map*>(loop)) {
-            if (map_node->schedule_type().value() == "CUDA") {
-                nodes.insert({loop, InstrumentationEventType::CUDA});
-                continue;
-            }
-        }
-        nodes.insert({loop, InstrumentationEventType::CPU}); // Default to CPU if not CUDA
+        nodes.insert(ols[i]);
     }
 
-    std::cout << "Created instrumentation plan for " << nodes.size() << " nodes." << std::endl;
-
+    DEBUG_PRINTLN("Created instrumentation plan for " << nodes.size() << " nodes.");
     return std::make_unique<InstrumentationPlan>(sdfg, nodes);
 }
 

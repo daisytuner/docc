@@ -62,10 +62,9 @@ class TransformationVerification:
         loopnest_to_region = {region.get("loopnest_index"): region for region in regions}
 
         for transformation, params in self._transformations.items():
-            # Check for new dict format with 'loop_nests' and 'max_tuned_loops'
-            if isinstance(params, dict) and 'loop_nests' in params and 'tuned_loops' in params:
+            # Check for new dict format with 'loop_nests' and optional 'tuned_loops'
+            if isinstance(params, dict) and 'loop_nests' in params:
                 loop_nests = params['loop_nests']
-                tuned_loops = params['tuned_loops']
                 # Check that transformation is present in all specified loop_nests
                 for idx in loop_nests:
                     region = loopnest_to_region.get(idx)
@@ -74,20 +73,23 @@ class TransformationVerification:
                     assert transformation in transformations, (
                         f"Transformation {transformation} not found in region with loopnest_index {idx}."
                     )
-                # Count total number of times transformation was applied
-                applied_count = 0
-                for region in regions:
-                    transformations = region.get("transformations", {})
-                    if transformation in transformations:
-                        # Check if 'applied' is True (if present)
-                        t = transformations[transformation]
-                        if isinstance(t, dict) and t.get('applied', True):
-                            applied_count += 1
-                        elif t is True:
-                            applied_count += 1
-                assert applied_count == tuned_loops, (
-                    f"Transformation {transformation} applied {applied_count} times but expected {tuned_loops} times"
-                )
+                # Only verify the applied loop count when a 'tuned_loops' count is given.
+                if 'tuned_loops' in params:
+                    tuned_loops = params['tuned_loops']
+                    # Count total number of times transformation was applied
+                    applied_count = 0
+                    for region in regions:
+                        transformations = region.get("transformations", {})
+                        if transformation in transformations:
+                            # Check if 'applied' is True (if present)
+                            t = transformations[transformation]
+                            if isinstance(t, dict) and t.get('applied', True):
+                                applied_count += 1
+                            elif t is True:
+                                applied_count += 1
+                    assert applied_count == tuned_loops, (
+                        f"Transformation {transformation} applied {applied_count} times but expected {tuned_loops} times"
+                    )
             else:
                 # Fallback to old behavior: params is a set of indices
                 for idx in params:

@@ -17,6 +17,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/rsqrt_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sigmoid_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sqrt_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.h"
@@ -232,6 +233,11 @@ REGISTER_UNARY_TEST(SqrtNode, 1)
 REGISTER_UNARY_TEST(SqrtNode, 2)
 REGISTER_UNARY_TEST(SqrtNode, 3)
 REGISTER_UNARY_TEST(SqrtNode, 4)
+
+REGISTER_UNARY_TEST(RsqrtNode, 1)
+REGISTER_UNARY_TEST(RsqrtNode, 2)
+REGISTER_UNARY_TEST(RsqrtNode, 3)
+REGISTER_UNARY_TEST(RsqrtNode, 4)
 
 REGISTER_UNARY_TEST(TanhNode, 1)
 REGISTER_UNARY_TEST(TanhNode, 2)
@@ -548,3 +554,48 @@ REGISTER_LOGICAL_NOT_TEST(Double, 1)
 REGISTER_LOGICAL_NOT_TEST(Double, 2)
 REGISTER_LOGICAL_NOT_TEST(Double, 3)
 REGISTER_LOGICAL_NOT_TEST(Double, 4)
+
+TEST(RsqrtNodeTest, SerializeDeserialize_RoundTrip) {
+    builder::StructuredSDFGBuilder builder("sdfg_rsqrt_serialize", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("a", desc_ptr);
+    builder.add_container("b", desc_ptr);
+
+    auto& block = builder.add_block(sdfg.root());
+    auto& a_node = builder.add_access(block, "a");
+    auto& b_node = builder.add_access(block, "b");
+
+    std::vector<symbolic::Expression> shape = {symbolic::integer(2), symbolic::integer(3)};
+    types::Tensor tensor_type(types::PrimitiveType::Float, shape);
+
+    auto& node = builder.add_library_node<math::tensor::RsqrtNode>(block, DebugInfo(), shape);
+    builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type);
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type);
+
+    ASSERT_NO_THROW(sdfg.validate());
+
+    serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    ASSERT_NO_THROW(j = serializer.serialize(sdfg));
+
+    std::unique_ptr<StructuredSDFG> new_sdfg;
+    ASSERT_NO_THROW(new_sdfg = serializer.deserialize(j));
+    ASSERT_NE(new_sdfg, nullptr);
+
+    const math::tensor::RsqrtNode* found = nullptr;
+    auto& new_root = new_sdfg->root();
+    ASSERT_EQ(new_root.size(), 1);
+    auto* deserialized_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(0));
+    ASSERT_NE(deserialized_block, nullptr);
+    for (auto& n : deserialized_block->dataflow().nodes()) {
+        if (auto* rsqrt_node = dynamic_cast<const math::tensor::RsqrtNode*>(&n)) {
+            found = rsqrt_node;
+            break;
+        }
+    }
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->code(), math::tensor::LibraryNodeType_Rsqrt.value());
+}
