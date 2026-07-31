@@ -135,7 +135,6 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
     auto& out_acc = standalone->add_indirect_write_access(tasklet_block, RESULT_PTR_IDX);
     auto& start_acc = standalone->add_indirect_read_access(tasklet_block, START_IDX);
     auto& step_acc = standalone->add_indirect_read_access(tasklet_block, STEP_IDX);
-    auto& i0_acc = builder.add_access(tasklet_block, loop_vars.at(0)->__str__(), this->debug_info());
 
     bool is_float = false;
     if (auto* tensor_type = dynamic_cast<const types::Tensor*>(&result_ptr_edge.base_type())) {
@@ -143,6 +142,10 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
     } else if (auto* ptr_type = dynamic_cast<const types::Pointer*>(&result_ptr_edge.base_type())) {
         is_float = types::is_floating_point(ptr_type->primitive_type());
     }
+
+    auto& i0_acc = builder.add_constant(
+        tasklet_block, loop_vars.at(0)->__str__(), types::Scalar(types::PrimitiveType::Int64), this->debug_info()
+    );
 
     if (is_float) {
         auto& tasklet = builder.add_tasklet(

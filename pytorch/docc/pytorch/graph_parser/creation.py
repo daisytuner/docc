@@ -5,7 +5,7 @@ GraphParser modules for parsing operations to create tensors.
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, Scalar, Tensor, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, Scalar, Tensor, DebugInfo, PrimitiveType
 
 from docc.pytorch.graph_parser.utils import (
     GraphParserModule,
@@ -151,17 +151,17 @@ class ArangeParser(GraphParserModule):
         )
 
         if node.target == torch.ops.aten.arange.default:
-            start_val = 0
-            step_val = 1
+            start_val = ("0", Scalar(PrimitiveType.Int64))
+            step_val = ("1", Scalar(PrimitiveType.Int64))
         elif node.target == torch.ops.aten.arange.start:
             start_val = self.get_arg_sdfg_value(node, container_info, 0)
-            step_val = 1
+            step_val = ("1", Scalar(PrimitiveType.Int64))
         elif node.target == torch.ops.aten.arange.start_step:
             start_val = self.get_arg_sdfg_value(node, container_info, 0)
             if len(node.args) > 2:
                 step_val = self.get_arg_sdfg_value(node, container_info, 2)
             else:
-                step_val = 1
+                step_val = ("1", Scalar(PrimitiveType.Int64))
         else:
             raise GraphParserError(self, node, f"Unsupported target {node.target}")
 
