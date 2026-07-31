@@ -129,3 +129,68 @@ class FullParser(GraphParserModule):
 
 register_module("aten.full.default", FullParser())
 register_module("aten.full_like.default", FullParser())
+
+
+class ArangeParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        if not set(node.kwargs.keys()).issubset(
+            {"dtype", "layout", "device", "pin_memory", "memory_format"}
+        ):
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        result_container: str = self.get_result_container(node, builder, container_info)
+        result_tensor: Tensor = self.get_tensor_type(
+            node, container_info, result_container
+        )
+
+        if node.target == torch.ops.aten.arange.default:
+            start_val = 0
+            step_val = 1
+        elif node.target == torch.ops.aten.arange.start:
+            start_val = self.get_arg_sdfg_value(node, container_info, 0)
+            step_val = 1
+        elif node.target == torch.ops.aten.arange.start_step:
+            start_val = self.get_arg_sdfg_value(node, container_info, 0)
+            if len(node.args) > 2:
+                step_val = self.get_arg_sdfg_value(node, container_info, 2)
+            else:
+                step_val = 1
+        else:
+            raise GraphParserError(self, node, f"Unsupported target {node.target}")
+
+        start_container = start_val if isinstance(start_val, str) else start_val[0]
+        start_type = (
+            self.get_scalar_type(node, container_info, start_container)
+            if isinstance(start_val, str)
+            else self.align_constant_type(node, start_val, result_tensor.element_type)
+        )
+
+        step_container = step_val if isinstance(step_val, str) else step_val[0]
+        step_type = (
+            self.get_scalar_type(node, container_info, step_container)
+            if isinstance(step_val, str)
+            else self.align_constant_type(node, step_val, result_tensor.element_type)
+        )
+
+        debug_info: DebugInfo = self.get_debug_info(node)
+        builder.add_arange(
+            start_container,
+            start_type,
+            step_container,
+            step_type,
+            result_container,
+            result_tensor,
+            debug_info,
+        )
+
+
+register_module("aten.arange.default", ArangeParser())
+register_module("aten.arange.start", ArangeParser())
+register_module("aten.arange.start_step", ArangeParser())

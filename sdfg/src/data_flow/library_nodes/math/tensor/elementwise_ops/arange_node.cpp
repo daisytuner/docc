@@ -29,7 +29,7 @@ void ArangeNode::validate(const Function& function) const {
     // Validate that _start and _step inputs are scalars
     auto& dataflow = this->get_parent();
     auto edges = dataflow.in_edges_by_connector(*this);
-    if (edges.count(START_IDX)) {
+    if (edges.size() > START_IDX && edges[START_IDX] != nullptr) {
         auto* start_edge = edges.at(START_IDX);
         if (start_edge->base_type().type_id() != types::TypeID::Scalar) {
             throw InvalidSDFGException(
@@ -37,7 +37,7 @@ void ArangeNode::validate(const Function& function) const {
             );
         }
     }
-    if (edges.count(STEP_IDX)) {
+    if (edges.size() > STEP_IDX && edges[STEP_IDX] != nullptr) {
         auto* step_edge = edges.at(STEP_IDX);
         if (step_edge->base_type().type_id() != types::TypeID::Scalar) {
             throw InvalidSDFGException(
@@ -48,24 +48,24 @@ void ArangeNode::validate(const Function& function) const {
 }
 
 symbolic::SymbolSet ArangeNode::symbols() const {
-    symbolic::SymbolSet syms = TensorNode::symbols();
+    symbolic::SymbolSet syms;
     for (const auto& dim : shape_) {
-        symbolic::add_symbols(syms, dim);
+        for (auto& atom : symbolic::atoms(dim)) {
+            syms.insert(atom);
+        }
     }
     return syms;
 }
 
 void ArangeNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
-    TensorNode::replace(old_expression, new_expression);
     for (auto& dim : shape_) {
-        dim = symbolic::replace(dim, old_expression, new_expression);
+        dim = symbolic::subs(dim, old_expression, new_expression);
     }
 }
 
 void ArangeNode::replace(const symbolic::ExpressionMapping& replacements) {
-    TensorNode::replace(replacements);
     for (auto& dim : shape_) {
-        dim = symbolic::replace(dim, replacements);
+        dim = symbolic::subs(dim, replacements);
     }
 }
 

@@ -421,7 +421,9 @@ public:
 
     void add_arange(
         const std::string& start,
+        const sdfg::types::Scalar& start_type,
         const std::string& step,
+        const sdfg::types::Scalar& step_type,
         const std::string& out,
         const sdfg::types::Tensor& out_type,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
