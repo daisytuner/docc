@@ -763,6 +763,8 @@ PYBIND11_MODULE(_sdfg, m) {
             &PyStructuredSDFGBuilder::add_arange,
             py::arg("start"),
             py::arg("start_type"),
+            py::arg("end"),
+            py::arg("end_type"),
             py::arg("step"),
             py::arg("step_type"),
             py::arg("out"),

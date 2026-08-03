@@ -19,7 +19,14 @@ ArangeNode::ArangeNode(
     const data_flow::ImplementationType& impl_type
 )
     : TensorNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_Arange, {}, {"_out", "_start", "_step"}, impl_type
+          element_id,
+          debug_info,
+          vertex,
+          parent,
+          LibraryNodeType_Arange,
+          {},
+          {"_out", "_start", "_end", "_step"},
+          impl_type
       ),
       shape_(shape) {}
 
@@ -47,6 +54,14 @@ void ArangeNode::validate(const Function& function) const {
         if (start_edge->base_type().type_id() != types::TypeID::Scalar) {
             throw InvalidSDFGException(
                 "ArangeNode: _start input must be of scalar type. Found type: " + start_edge->base_type().print()
+            );
+        }
+    }
+    if (edges.size() > END_IDX && edges[END_IDX] != nullptr) {
+        auto* end_edge = edges.at(END_IDX);
+        if (end_edge->base_type().type_id() != types::TypeID::Scalar) {
+            throw InvalidSDFGException(
+                "ArangeNode: _end input must be of scalar type. Found type: " + end_edge->base_type().print()
             );
         }
     }
@@ -88,7 +103,7 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
     auto& dataflow = this->get_parent();
 
-    if (dataflow.in_degree(*this) != 3 || dataflow.out_degree(*this) != 0) {
+    if (dataflow.in_degree(*this) != 4 || dataflow.out_degree(*this) != 0) {
         return context.unable();
     }
 
@@ -98,8 +113,10 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
     auto& step_edge = *edges.at(STEP_IDX);
 
     using Use = passes::LibNodeExpander::InputUse;
+    // _end is Skip: it is captured symbolically in shape_ and not needed in the expansion body
     auto standalone =
-        context.replacement_requires_access_nodes({Use::IndirectWrite, Use::IndirectRead, Use::IndirectRead});
+        context.replacement_requires_access_nodes({Use::IndirectWrite, Use::IndirectRead, Use::Skip, Use::IndirectRead}
+        );
 
     if (!standalone) {
         return context.unable();
@@ -266,7 +283,7 @@ std::unique_ptr<data_flow::DataFlowNode> ArangeNode::
 data_flow::PointerAccessType ArangeNode::pointer_access_type(int input_idx) const {
     if (input_idx == RESULT_PTR_IDX) {
         return data_flow::PointerAccessMeta::create_full_write_only(symbolic::__nullptr__(), true);
-    } else if (input_idx == START_IDX || input_idx == STEP_IDX) {
+    } else if (input_idx == START_IDX || input_idx == END_IDX || input_idx == STEP_IDX) {
         return data_flow::PointerAccessMeta::create_read_only(symbolic::__nullptr__(), true);
     } else {
         return TensorNode::pointer_access_type(input_idx);

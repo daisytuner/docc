@@ -19,6 +19,8 @@ TEST(ArangeNodeTest, Expansion) {
 
     types::Scalar start_type(types::PrimitiveType::Int64);
     types::Pointer start_ptr(start_type);
+    types::Scalar end_type(types::PrimitiveType::Int64);
+    types::Pointer end_ptr(end_type);
     types::Scalar step_type(types::PrimitiveType::Int64);
     types::Pointer step_ptr(step_type);
 
@@ -28,17 +30,20 @@ TEST(ArangeNodeTest, Expansion) {
     types::Pointer out_ptr(start_type);
 
     builder.add_container("start", start_ptr, true);
+    builder.add_container("end", end_ptr, true);
     builder.add_container("step", step_ptr, true);
     builder.add_container("out", out_ptr, true);
 
     auto& block = builder.add_block(root);
     auto& start_acc = builder.add_access(block, "start");
+    auto& end_acc = builder.add_access(block, "end");
     auto& step_acc = builder.add_access(block, "step");
     auto& out_acc = builder.add_access(block, "out");
 
     auto& libnode = builder.add_library_node<math::tensor::ArangeNode>(block, DebugInfo(), shape);
 
     builder.add_computational_memlet(block, start_acc, libnode, "_start", {}, start_type);
+    builder.add_computational_memlet(block, end_acc, libnode, "_end", {}, end_type);
     builder.add_computational_memlet(block, step_acc, libnode, "_step", {}, step_type);
     builder.add_computational_memlet(block, out_acc, libnode, "_out", {}, out_type);
 
@@ -57,6 +62,8 @@ TEST(ArangeNodeTest, SerializeDeserialize_RoundTrip) {
 
     types::Scalar start_type(types::PrimitiveType::Int64);
     types::Pointer start_ptr(start_type);
+    types::Scalar end_type(types::PrimitiveType::Int64);
+    types::Pointer end_ptr(end_type);
     types::Scalar step_type(types::PrimitiveType::Int64);
     types::Pointer step_ptr(step_type);
     std::vector<symbolic::Expression> shape = {symbolic::integer(10)};
@@ -65,16 +72,19 @@ TEST(ArangeNodeTest, SerializeDeserialize_RoundTrip) {
     types::Pointer out_ptr(start_type);
 
     builder.add_container("start", start_ptr, true);
+    builder.add_container("end", end_ptr, true);
     builder.add_container("step", step_ptr, true);
     builder.add_container("out", out_ptr, true);
 
     auto& block = builder.add_block(root);
     auto& start_acc = builder.add_access(block, "start");
+    auto& end_acc = builder.add_access(block, "end");
     auto& step_acc = builder.add_access(block, "step");
     auto& out_acc = builder.add_access(block, "out");
 
     auto& libnode = builder.add_library_node<math::tensor::ArangeNode>(block, DebugInfo(), shape);
     builder.add_computational_memlet(block, start_acc, libnode, "_start", {}, start_type);
+    builder.add_computational_memlet(block, end_acc, libnode, "_end", {}, end_type);
     builder.add_computational_memlet(block, step_acc, libnode, "_step", {}, step_type);
     builder.add_computational_memlet(block, out_acc, libnode, "_out", {}, out_type);
 

@@ -422,6 +422,8 @@ public:
     void add_arange(
         const std::string& start,
         const sdfg::types::Scalar& start_type,
+        const std::string& end,
+        const sdfg::types::Scalar& end_type,
         const std::string& step,
         const sdfg::types::Scalar& step_type,
         const std::string& out,

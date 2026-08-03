@@ -81,7 +81,7 @@ def test_arange_start_step(target: str) -> None:
 def test_arange_dtype(target: str) -> None:
     class ArangeDtypeNet(nn.Module):
         def forward(self) -> torch.Tensor:
-            return torch.arange(1, 5, 2, dtype=torch.float64)
+            return torch.arange(1, 6, 2, dtype=torch.float64)
 
     check(ArangeDtypeNet(), *(), target=target)
 
@@ -100,3 +100,11 @@ def test_arange_default_dtype(target: str) -> None:
             return torch.arange(8, dtype=torch.float32)
 
     check(ArangeDefaultDtypeNet(), *(), target=target)
+
+
+def test_arange_symbolic(target: str) -> None:
+    class ArangeSymbolicNet(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.arange(3, x.shape[0], 2)
+
+    check(ArangeSymbolicNet(), torch.ones(5), target=target)

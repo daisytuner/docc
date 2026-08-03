@@ -139,10 +139,71 @@ class ArangeParser(GraphParserModule):
         container_info: ContainerInfos,
     ) -> None:
         if not set(node.kwargs.keys()).issubset(
-            {"dtype", "layout", "device", "pin_memory", "memory_format"}
+            {"dtype", "layout", "device", "pin_memory"}
         ):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        if "layout" in node.kwargs:
+            layout_arg: Argument = node.kwargs["layout"]
+            if not layout_arg is None:
+                if isinstance(layout_arg, torch.layout):
+                    if layout_arg != torch.strided:
+                        raise GraphParserError(
+                            self,
+                            node,
+                            "Only layout torch.strided is supported but got: "
+                            + str(layout_arg),
+                        )
+                else:
+                    raise GraphParserError(
+                        self,
+                        node,
+                        "Expected layout kwarg to be torch.layout type but got: "
+                        + str(type(layout_arg)),
+                    )
+
+        if "device" in node.kwargs:
+            device_arg: Argument = node.kwargs["device"]
+            if not device_arg is None:
+                if isinstance(device_arg, torch.device):
+                    if device_arg.type != "cpu":
+                        raise GraphParserError(
+                            self, node, "Currently only CPU device kwarg is supported"
+                        )
+                else:
+                    raise GraphParserError(
+                        self,
+                        node,
+                        "Expected device kwarg to be torch.device type but got: "
+                        + str(type(device_arg)),
+                    )
+
+        if "pin_memory" in node.kwargs:
+            pin_memory_arg: Argument = node.kwargs["pin_memory"]
+            if not pin_memory_arg is None:
+                if isinstance(pin_memory_arg, bool):
+                    if pin_memory_arg:
+                        raise GraphParserError(
+                            self, node, "Currently pin_memory is unsupported"
+                        )
+                else:
+                    raise GraphParserError(
+                        self,
+                        node,
+                        "Expected pin_memory kwarg to be bool type but got: "
+                        + str(type(pin_memory_arg)),
+                    )
+
+        if node.target != torch.ops.aten.arange.start_step:
+            raise GraphParserError(self, node, f"Unsupported target {node.target}")
+
+        if len(node.args) != 3:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly 3 arguments but got " + str(len(node.args)),
             )
 
         result_container: str = self.get_result_container(node, builder, container_info)
@@ -150,45 +211,22 @@ class ArangeParser(GraphParserModule):
             node, container_info, result_container
         )
 
-        if node.target == torch.ops.aten.arange.default:
-            if len(node.args) != 1:
-                raise GraphParserError(
-                    self,
-                    node,
-                    "Expected exactly 1 argument but got " + str(len(node.args)),
-                )
-            start_val = ("0", Scalar(PrimitiveType.Int64))
-            step_val = ("1", Scalar(PrimitiveType.Int64))
-        elif node.target == torch.ops.aten.arange.start:
-            if len(node.args) != 2:
-                raise GraphParserError(
-                    self,
-                    node,
-                    "Expected exactly 2 arguments but got " + str(len(node.args)),
-                )
-            start_val = self.get_arg_sdfg_value(node, container_info, 0)
-            step_val = ("1", Scalar(PrimitiveType.Int64))
-        elif node.target == torch.ops.aten.arange.start_step:
-            if len(node.args) not in (2, 3):
-                raise GraphParserError(
-                    self,
-                    node,
-                    "Expected 2 or 3 arguments but got " + str(len(node.args)),
-                )
-            start_val = self.get_arg_sdfg_value(node, container_info, 0)
-            step_val = (
-                self.get_arg_sdfg_value(node, container_info, 2)
-                if len(node.args) == 3
-                else ("1", Scalar(PrimitiveType.Int64))
-            )
-        else:
-            raise GraphParserError(self, node, f"Unsupported target {node.target}")
+        start_val = self.get_arg_sdfg_value(node, container_info, 0)
+        end_val = self.get_arg_sdfg_value(node, container_info, 1)
+        step_val = self.get_arg_sdfg_value(node, container_info, 2)
 
         start_container = start_val if isinstance(start_val, str) else start_val[0]
         start_type = (
             self.get_scalar_type(node, container_info, start_container)
             if isinstance(start_val, str)
             else self.align_constant_type(node, start_val, result_tensor.element_type)
+        )
+
+        end_container = end_val if isinstance(end_val, str) else end_val[0]
+        end_type = (
+            self.get_scalar_type(node, container_info, end_container)
+            if isinstance(end_val, str)
+            else self.align_constant_type(node, end_val, result_tensor.element_type)
         )
 
         step_container = step_val if isinstance(step_val, str) else step_val[0]
@@ -202,6 +240,8 @@ class ArangeParser(GraphParserModule):
         builder.add_arange(
             start_container,
             start_type,
+            end_container,
+            end_type,
             step_container,
             step_type,
             result_container,
@@ -210,6 +250,4 @@ class ArangeParser(GraphParserModule):
         )
 
 
-register_module("aten.arange.default", ArangeParser())
-register_module("aten.arange.start", ArangeParser())
 register_module("aten.arange.start_step", ArangeParser())
