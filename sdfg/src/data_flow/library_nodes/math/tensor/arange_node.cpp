@@ -159,6 +159,33 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
     auto& i0_acc = builder.add_access(tasklet_block, loop_vars.at(0)->__str__(), this->debug_info());
 
     if (is_float) {
+        std::string cast_tmp_name = builder.find_new_name("_i_cast");
+        builder.add_container(cast_tmp_name, types::Scalar(result_ptr_edge.base_type().primitive_type()));
+        auto& cast_tmp_acc = builder.add_access(tasklet_block, cast_tmp_name, this->debug_info());
+
+        auto& cast_tasklet =
+            builder.add_tasklet(tasklet_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
+
+        builder.add_computational_memlet(
+            tasklet_block,
+            i0_acc,
+            cast_tasklet,
+            "_in",
+            {},
+            types::Scalar(types::PrimitiveType::Int64),
+            this->debug_info()
+        );
+
+        builder.add_computational_memlet(
+            tasklet_block,
+            cast_tasklet,
+            "_out",
+            cast_tmp_acc,
+            {},
+            types::Scalar(result_ptr_edge.base_type().primitive_type()),
+            this->debug_info()
+        );
+
         auto& tasklet = builder.add_tasklet(
             tasklet_block, data_flow::TaskletCode::fp_fma, "_out", {"_step", "_i", "_start"}, this->debug_info()
         );
@@ -167,11 +194,18 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
             tasklet_block, step_acc, tasklet, "_step", {}, step_edge.base_type(), this->debug_info()
         );
         builder.add_computational_memlet(
-            tasklet_block, i0_acc, tasklet, "_i", {}, types::Scalar(types::PrimitiveType::Int64), this->debug_info()
+            tasklet_block,
+            cast_tmp_acc,
+            tasklet,
+            "_i",
+            {},
+            types::Scalar(result_ptr_edge.base_type().primitive_type()),
+            this->debug_info()
         );
         builder.add_computational_memlet(
             tasklet_block, start_acc, tasklet, "_start", {}, start_edge.base_type(), this->debug_info()
         );
+
         builder.add_computational_memlet(
             tasklet_block, tasklet, "_out", out_acc, loop_vars, result_ptr_edge.base_type(), this->debug_info()
         );
