@@ -2,6 +2,8 @@
 
 #include "docc/analysis/sdfg_registry.h"
 #include "docc/cmd_args.h"
+#include "sdfg/passes/rpc/daisytuner_rpc_context.h"
+#include "sdfg/passes/rpc/rpc_scheduling_pass.h"
 #include "sdfg/passes/scheduler/loop_scheduling_pass.h"
 
 namespace docc {
@@ -30,9 +32,6 @@ llvm::PreservedAnalyses SchedulingPass::
     auto offload_unknown_sizes = docc::DOCC_OFFLOAD_UNKNOWN_SIZES.getValue();
 
     std::vector<sdfg::passes::scheduler::LoopScheduler*> schedulers;
-    if (target != "tenstorrent" && remote_tuning) {
-        schedulers.push_back(scheduler_registry_.get_loop_scheduler("rpc"));
-    }
     if (target != "sequential") {
         schedulers.push_back(scheduler_registry_.get_loop_scheduler(target));
     }
@@ -41,6 +40,15 @@ llvm::PreservedAnalyses SchedulingPass::
         sdfg::builder::StructuredSDFGBuilder builder(sdfg);
         sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
         if (report_) report_->in_scope(&builder.subject());
+
+        if (target != "tenstorrent" && remote_tuning) {
+            auto category = docc::DOCC_TRANSFERTUNE_CATEGORY.getValue();
+            std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
+                sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
+            docc::target::TargetOptions rpc_options{.target = target, .category = category, .remote_tuning = true};
+            sdfg::passes::scheduler::RpcOptimizationPass rpc_optimization_pass(context, rpc_options, false);
+            rpc_optimization_pass.run_pass(builder, analysis_manager);
+        }
 
         sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, report_, offload_unknown_sizes);
         loop_scheduling_pass.run(builder, analysis_manager);

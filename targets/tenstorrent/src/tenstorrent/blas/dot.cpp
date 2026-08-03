@@ -467,6 +467,7 @@ codegen::InstrumentationInfo DotNodeDispatcher_Tenstorrent::instrumentation_info
         node_.element_id(),
         std::string(node_.element_type()) + ":::" + node_.code().value(),
         TargetType_Tenstorrent,
+        codegen::InstrumentationEventType::NONE,
         analysis::LoopInfo{},
         metrics
     };

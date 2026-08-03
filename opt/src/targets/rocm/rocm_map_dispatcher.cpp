@@ -379,7 +379,14 @@ codegen::InstrumentationInfo ROCMMapDispatcher::instrumentation_info() const {
         metrics.insert({"flop", flop_str});
     }
 
-    return codegen::InstrumentationInfo(node_.element_id(), node_.element_type(), TargetType_ROCM, loop_info, metrics);
+    return codegen::InstrumentationInfo(
+        node_.element_id(),
+        node_.element_type(),
+        TargetType_ROCM,
+        codegen::InstrumentationEventType::CUDA,
+        loop_info,
+        metrics
+    );
 };
 
 } // namespace rocm

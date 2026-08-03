@@ -10,6 +10,7 @@ from torch.fx.node import Argument, Target
 
 from typing import Any
 from abc import ABC, abstractmethod
+import math
 
 from docc.sdfg import (
     Type,
@@ -19,6 +20,10 @@ from docc.sdfg import (
     Tensor,
     DebugInfo,
     StructuredSDFGBuilder,
+    Block,
+    AccessNode,
+    Tasklet,
+    TaskletCode,
 )
 
 
@@ -630,7 +635,15 @@ class GraphParserBase:
         constant's value (str) and its Scalar type. If it fails, an exception is thrown.
         """
         if isinstance(arg, (int, float, bool, torch.dtype)):
-            return str(arg), self.determine_sdfg_scalar_type(node, arg)
+            constant_type: Scalar = self.determine_sdfg_scalar_type(node, arg)
+            if isinstance(arg, float):
+                if math.isnan(arg):
+                    return "NAN", constant_type
+                elif arg == math.inf:
+                    return "INFINITY", constant_type
+                elif arg == -math.inf:
+                    return "-INFINITY", constant_type
+            return str(arg), constant_type
         raise GraphParserError(
             self, node, f"Cannot convert argument to constant: {type(arg)}"
         )
@@ -684,11 +697,52 @@ class GraphParserBase:
             f"Cannot convert argument to symbolic multi expression: {type(arg)}",
         )
 
+    def parse_torch_2_13_0_stack_trace(self, stack_trace: str) -> DebugInfo:
+        """
+        Parses a PyTorch (version 2.13.0+) stack trace to SDFG debug information. If the parsing
+        fails, an empty debug information is returned.
+        """
+        if len(stack_trace.strip()) == 0:
+            return DebugInfo()
+        lines: list[str] = stack_trace.split("\n")
+        if len(lines) == 0:
+            return DebugInfo()
+        if len(lines[-1]) == 0:
+            lines.pop()
+        if len(lines) == 0:
+            return DebugInfo()
+        last_line_chars = set(list(lines[-1].strip()))
+        if len(last_line_chars) == 1 and "^" in last_line_chars:
+            lines.pop()
+        if len(lines) < 2:
+            return DebugInfo()
+        line: str = lines[-2].strip()
+        parts: list[str] = line.split(", ")
+        if len(parts) != 3:
+            return DebugInfo()
+        filename: str = ""
+        function: str = ""
+        start_line: int = 0
+        if parts[0].startswith('File "') and parts[0].endswith('"'):
+            filename = parts[0][6:-1]
+        if parts[1].startswith("line ") and parts[1][5:].isnumeric():
+            start_line = int(parts[1][5:])
+        if parts[2].startswith("in "):
+            function = parts[2][3:]
+        end_col: int = len(lines[-1].strip())
+        return DebugInfo(filename, function, start_line, 0, start_line, end_col)
+
     def parse_torch_stack_trace(self, stack_trace: str) -> DebugInfo:
         """
         Parses a PyTorch stack trace to SDFG debug information. If the parsing fails, an empty
         debug information is returned.
         """
+        from torch.torch_version import TorchVersion
+
+        # PyTorch 2.13.0+ uses a slightly different format
+        if torch.__version__ >= TorchVersion("2.13.0"):
+            return self.parse_torch_2_13_0_stack_trace(stack_trace)
+
         if len(stack_trace.strip()) == 0:
             return DebugInfo()
         lines: list[str] = stack_trace.split("\n")
@@ -713,6 +767,47 @@ class GraphParserBase:
             function = parts[2][3:]
         end_col: int = len(lines[-1].strip())
         return DebugInfo(filename, function, start_line, 0, start_line, end_col)
+
+    def get_debug_info(self, node: torch.fx.Node) -> DebugInfo:
+        """
+        Converts the PyTorch stack trace attached to the node to SDFG debug information if available
+        """
+        return self.parse_torch_stack_trace(
+            "" if not "stack_trace" in node.meta else node.meta["stack_trace"]
+        )
+
+    def copy_scalar_tensor(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+        src_container: str,
+        dst_container: str,
+    ) -> None:
+        debug_info: DebugInfo = self.get_debug_info(node)
+        block: Block = builder.add_block(debug_info)
+        src_access: AccessNode = builder.add_access(block, src_container, debug_info)
+        dst_access: AccessNode = builder.add_access(block, dst_container, debug_info)
+        tasklet: Tasklet = builder.add_tasklet(
+            block, TaskletCode.assign, ["_in"], ["_out"], debug_info
+        )
+        builder.add_memlet(
+            block,
+            src_access,
+            "void",
+            tasklet,
+            "_in",
+            debug_info=debug_info,
+        )
+        builder.add_memlet(
+            block,
+            tasklet,
+            "_out",
+            dst_access,
+            "void",
+            subset="0",
+            debug_info=debug_info,
+        )
 
 
 class GraphParserModule(GraphParserBase, ABC):
@@ -747,14 +842,6 @@ class GraphParserModule(GraphParserBase, ABC):
         purpose is to translate the provided operation into an equivalent SDFG operation.
         """
         pass
-
-    def get_debug_info(self, node: torch.fx.Node) -> DebugInfo:
-        """
-        Converts the PyTorch stack trace attached to the node to SDFG debug information if available
-        """
-        return self.parse_torch_stack_trace(
-            "" if not "stack_trace" in node.meta else node.meta["stack_trace"]
-        )
 
     def get_arg_container(
         self,
@@ -1047,6 +1134,12 @@ class GraphParserModule(GraphParserBase, ABC):
                     node,
                     "Cannot copy non-tensor type for container: " + info.name(),
                 )
+            if sdfg_types[1] is None:
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Cannot copy into non-tensor type for container: " + container,
+                )
             if sdfg_tensor.total_elements() != sdfg_types[1].total_elements():
                 builder.add_broadcast_op(
                     info.name(),
@@ -1160,11 +1253,28 @@ class GraphParserModule(GraphParserBase, ABC):
             node, container_info, node.name, sdfg_types
         )
         if info.out_argument() and isinstance(sdfg_types[0], Scalar):
-            info.update(sdfg_type=Pointer(sdfg_types[0]))
+            out_container: str = info.name() + "_out"
+            out_type: Pointer = Pointer(sdfg_types[0])
+            if sdfg_types[1] is None:
+                out_tensor: Tensor | None = None
+            else:
+                if len(sdfg_types[1].shape) != 0:
+                    raise GraphParserError(
+                        self,
+                        node,
+                        "Expected empty shape for scalar tensor bug got: "
+                        + str(sdfg_types[1].shape),
+                    )
+                out_tensor: Tensor | None = Tensor(sdfg_types[0], ["1"])
+            container_info[out_container] = ContainerInfo(
+                out_container, out_type, out_tensor, out_argument=True
+            )
+            builder.add_container(out_container, out_type, is_argument=True)
+            info.update(out_argument=False)
         builder.add_container(
             info.name(), info.sdfg_type(), is_argument=info.out_argument()
         )
-        if not info.out_argument():
+        if not info.out_argument() and not isinstance(sdfg_types[0], Scalar):
             self.allocate_memory(node, builder, container_info, info.name())
         return info.name()
 
@@ -1203,7 +1313,7 @@ class GraphParserModule(GraphParserBase, ABC):
             builder.add_container(
                 info.name(), sdfg_types[0], is_argument=info.out_argument()
             )
-            if not info.out_argument():
+            if not info.out_argument() and not isinstance(sdfg_types[0], Scalar):
                 self.allocate_memory(node, builder, container_info, info.name())
             containers.append(info.name())
         return tuple(containers)
@@ -1277,6 +1387,50 @@ class GraphParserModule(GraphParserBase, ABC):
             node,
             f"Cannot align constant type: {constant[1].primitive_type} -> {dst_type.primitive_type}",
         )
+
+    def align_elementwise_tensors(
+        self, node: torch.fx.Node, tensor1: Tensor, tensor2: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        dims1: int = len(tensor1.shape)
+        dims2: int = len(tensor2.shape)
+        if dims1 == dims2 or dims1 == 0 or dims2 == 0:
+            return tensor1, tensor2
+
+        if dims1 < dims2:
+            if tensor2.shape[-dims1:] != tensor1.shape:
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Cannot align elementwise tensors: "
+                    + tensor1.print()
+                    + " and "
+                    + tensor2.print(),
+                )
+            new_strides: list[str] = [
+                "0" for _ in range(dims2 - dims1)
+            ] + tensor1.strides
+            return (
+                Tensor(
+                    tensor1.element_type, tensor2.shape, new_strides, tensor1.offset
+                ),
+                tensor2,
+            )
+        else:  # dims2 > dims1
+            if tensor1.shape[-dims2:] != tensor2.shape:
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Cannot align elementwise tensors: "
+                    + tensor1.print()
+                    + " and "
+                    + tensor2.print(),
+                )
+            new_strides: list[str] = [
+                "0" for _ in range(dims1 - dims2)
+            ] + tensor2.strides
+            return tensor1, Tensor(
+                tensor2.element_type, tensor1.shape, new_strides, tensor2.offset
+            )
 
 
 GRAPH_PARSER_PRE_MODULES: dict[str, GraphParserModule] = {}

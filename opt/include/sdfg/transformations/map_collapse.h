@@ -48,8 +48,14 @@ class MapCollapse : public Transformation {
     ///
     /// The collapse is therefore rejected only for hazards replication cannot
     /// resolve: a container written by a collapsible map and accessed by any other
-    /// body element (its writes vary across the inner index), or a write-write
-    /// conflict between two different body elements on the same container.
+    /// body element (its writes vary across the inner index), a write-write
+    /// conflict between two different body elements on the same container, or a
+    /// skipped element that performs a read-modify-write (e.g. a reduction
+    /// accumulator) on a container that escapes the loop. A read-modify-write on a
+    /// local (a container whose lifetime is confined to the loop, as reported by
+    /// ArgumentsAnalysis) is privatized per thread and does not violate parallel
+    /// access, so it - like a plain store, even to a function argument - remains
+    /// allowed.
     bool check_imperfect(analysis::AnalysisManager& analysis_manager);
 
     /// @brief Whether a direct-child map can participate in the flattened

@@ -109,10 +109,6 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 
     transformation_verification = TransformationVerification(
         {
-            # "RPCNodeTransform": {
-            #     "loop_nests": {},
-            #     "tuned_loops": 9,
-            # }
         }
     )
 
@@ -166,7 +162,7 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "covariance.c"
@@ -224,7 +220,7 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 4}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "gemm.c"
@@ -277,10 +273,6 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 
     transformation_verification = TransformationVerification(
         {
-            # "RPCNodeTransform": {
-            #     "loop_nests": {},
-            #     "tuned_loops": 2,
-            # }
         }
     )
 
@@ -340,7 +332,7 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 3}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "gesummv.c"
@@ -398,7 +390,7 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 3}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "symm.c"
@@ -457,10 +449,6 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 
     transformation_verification = TransformationVerification(
         {
-            # "RPCNodeTransform": {
-            #     "loop_nests": {},
-            #     "tuned_loops": 4,
-            # }
         }
     )
 
@@ -519,7 +507,7 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 4}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "syrk.c"
@@ -633,7 +621,7 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "2mm.c"
@@ -686,7 +674,7 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 7}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "3mm.c"
@@ -738,7 +726,7 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 5}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "atax.c"
@@ -796,7 +784,7 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 3}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "bicg.c"
@@ -910,7 +898,7 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 2}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "mvt.c"
@@ -968,7 +956,7 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 7}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "cholesky.c"
@@ -1138,7 +1126,7 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 6}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "lu.c"
@@ -1196,7 +1184,7 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 2}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "trisolv.c"
@@ -1249,7 +1237,7 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {}, "tuned_loops": 3}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
 
     test_case = benchmark_path / "deriche.c"
@@ -1294,7 +1282,7 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
         Path(__file__).parent / "tests" / "polybench" / "medley" / "floyd-warshall"
     )
 
-    transformation_verification = TransformationVerification({"RPCNodeTransform": {1}})
+    transformation_verification = TransformationVerification({"RPCNodeTransform": {}})
 
     test_case = benchmark_path / "floyd-warshall.c"
     runner = TestRunner(
@@ -1636,7 +1624,7 @@ def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     )
 
     transformation_verification = TransformationVerification(
-        {"RPCNodeTransform": {"loop_nests": {1}, "tuned_loops": 2}}
+        {"RPCNodeTransform": {"loop_nests": {}}}
     )
     test_case = benchmark_path / "seidel-2d.c"
     runner = TestRunner(

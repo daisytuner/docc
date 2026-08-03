@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import copy
 from math import isnan
+from typing import Any
 
 import docc.pytorch
 
@@ -59,6 +60,7 @@ def compare(
 def check(
     model,
     *inputs,
+    kwargs: dict[str, Any] = {},
     rtol: float = 1e-4,
     atol: float = 1e-5,
     equal_nan: bool = False,
@@ -77,6 +79,6 @@ def check(
         },
     )
     with torch.no_grad():
-        ref = model_ref(*inputs)
-        res = program(*inputs)
+        ref = model_ref(*inputs, **kwargs)
+        res = program(*inputs, **kwargs)
     compare(res, ref, rtol=rtol, atol=atol, equal_nan=equal_nan)

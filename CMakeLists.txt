@@ -71,7 +71,6 @@ if(NOT DEFINED PARENT_PROJECT_INSTALL_PREFIX)
 endif()
 
 add_subdirectory(sdfg)
-add_subdirectory(examples/applications)
 add_subdirectory(opt)
 add_subdirectory(rpc)
 add_subdirectory(rtl)

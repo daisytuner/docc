@@ -12,6 +12,8 @@
 namespace sdfg {
 namespace codegen {
 
+enum InstrumentationEventType { CPU = 0, CUDA = 1, NONE = 2 };
+
 typedef StringEnum TargetType;
 inline TargetType TargetType_SEQUENTIAL{structured_control_flow::ScheduleType_Sequential::value()};
 // Legacy name for OMP parallelism
@@ -23,8 +25,8 @@ private:
     size_t element_id_;
     std::string element_desc_;
     TargetType target_type_;
+    InstrumentationEventType event_type_;
     analysis::LoopInfo loop_info_;
-
     std::unordered_map<std::string, std::string> metrics_;
 
 public:
@@ -32,6 +34,7 @@ public:
         size_t element_id,
         std::string_view element_desc,
         const TargetType& target_type,
+        InstrumentationEventType event_type,
         const analysis::LoopInfo& loop_info = {},
         const std::unordered_map<std::string, std::string>& metrics = {}
     );
@@ -41,6 +44,8 @@ public:
     const std::string& element_desc() const;
 
     const TargetType& target_type() const;
+
+    InstrumentationEventType event_type() const;
 
     const analysis::LoopInfo& loop_info() const;
 

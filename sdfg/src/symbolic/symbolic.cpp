@@ -923,6 +923,37 @@ Condition subs(const Condition expr, const symbolic::ExpressionMapping& replacem
     return SymEngine::rcp_dynamic_cast<const SymEngine::Boolean>(SymEngine::subs(expr, replacements));
 }
 
+bool substitute(ExpressionSet& set, const symbolic::ExpressionMapping& replacements) {
+    bool changed = false;
+
+    std::vector<std::tuple<ExpressionSet::const_iterator, Expression>> replacements_vec;
+
+    for (auto it = set.begin(); it != set.end(); ++it) {
+        auto new_expr = SymEngine::subs(*it, replacements);
+        if (new_expr.get() != it->get()) {
+            replacements_vec.emplace_back(it, new_expr);
+            changed = true;
+        }
+    }
+
+    for (auto& [old_it, new_entry] : replacements_vec) {
+        auto extracted = set.extract(old_it);
+        extracted.value() = new_entry;
+        set.insert(std::move(extracted));
+    }
+
+    return changed;
+}
+
+MultiExpression substitute(const MultiExpression& vec, const symbolic::ExpressionMapping& replacements) {
+    MultiExpression remapped;
+    remapped.reserve(vec.size());
+    for (auto& dim : vec) {
+        remapped.emplace_back(symbolic::subs(dim, replacements));
+    }
+    return std::move(remapped);
+}
+
 Expression parse(const std::string& expr_str) {
     auto expr = SymEngine::parse(expr_str);
     expr = symbolic::subs(expr, symbolic::symbol("true"), symbolic::one());

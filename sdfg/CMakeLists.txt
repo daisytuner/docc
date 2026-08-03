@@ -83,9 +83,9 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/cmath/cmath_node.cpp
     src/data_flow/library_nodes/math/math_node.cpp
     src/data_flow/library_nodes/math/tensor/batchnorm_node.cpp
-    src/data_flow/library_nodes/math/tensor/layernorm_node.cpp
     src/data_flow/library_nodes/math/tensor/broadcast_node.cpp
     src/data_flow/library_nodes/math/tensor/concat_node.cpp
+    src/data_flow/library_nodes/math/tensor/conditional_copy_node.cpp
     src/data_flow/library_nodes/math/tensor/conv_node.cpp
     src/data_flow/library_nodes/math/tensor/copy_node.cpp
     src/data_flow/library_nodes/math/tensor/einsum_node.cpp
@@ -112,12 +112,14 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.cpp
+    src/data_flow/library_nodes/math/tensor/elementwise_ops/rsqrt_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/sigmoid_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/sqrt_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/rsqrt_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.cpp
+    src/data_flow/library_nodes/math/tensor/index_node.cpp
+    src/data_flow/library_nodes/math/tensor/layernorm_node.cpp
     src/data_flow/library_nodes/math/tensor/matmul_node.cpp
     src/data_flow/library_nodes/math/tensor/pooling_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_node.cpp
@@ -127,6 +129,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/std_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.cpp
+    src/data_flow/library_nodes/math/tensor/slice_node.cpp
     src/data_flow/library_nodes/math/tensor/spatial_tensor_node.cpp
     src/data_flow/library_nodes/math/tensor/tensor_expansion_utils.cpp
     src/data_flow/library_nodes/math/tensor/tensor_layout.cpp
@@ -163,6 +166,7 @@ set(SOURCE_FILES
     src/passes/dataflow/trivial_array_elimination.cpp
     src/passes/dataflow/trivial_reference_conversion.cpp
     src/passes/debug_info_propagation.cpp
+    src/passes/debug_dump_pass.cpp
     src/passes/expansion/lib_node_expansion_context.cpp
     src/passes/expansion/library_node_expansion_pass.cpp
     src/passes/memory/allocation_management.cpp

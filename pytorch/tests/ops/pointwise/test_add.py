@@ -3,8 +3,10 @@ import torch.nn as nn
 
 from tests import check
 
+# --- add ---
 
-def test_simple(target: str) -> None:
+
+def test_add_simple(target: str) -> None:
     class PointwiseAddSimpleNet(nn.Module):
         def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
             return torch.add(input, other)
@@ -12,7 +14,7 @@ def test_simple(target: str) -> None:
     check(PointwiseAddSimpleNet(), *(torch.randn(4), torch.randn(4)), target=target)
 
 
-def test_constant_float_alpha(target: str) -> None:
+def test_add_constant_float_alpha(target: str) -> None:
     class PointwiseAddConstantFloatAlphaNet(nn.Module):
         def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
             return torch.add(input, other, alpha=10.0)
@@ -24,7 +26,7 @@ def test_constant_float_alpha(target: str) -> None:
     )
 
 
-def test_constant_int_alpha(target: str) -> None:
+def test_add_constant_int_alpha(target: str) -> None:
     class PointwiseAddConstantIntAlphaNet(nn.Module):
         def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
             return torch.add(input, other, alpha=10)
@@ -36,7 +38,7 @@ def test_constant_int_alpha(target: str) -> None:
     )
 
 
-def test_float_alpha(target: str) -> None:
+def test_add_float_alpha(target: str) -> None:
     class PointwiseAddFloatAlphaNet(nn.Module):
         def forward(
             self, input: torch.Tensor, other: torch.Tensor, alpha: float
@@ -50,7 +52,7 @@ def test_float_alpha(target: str) -> None:
     )
 
 
-def test_int_alpha(target: str) -> None:
+def test_add_int_alpha(target: str) -> None:
     class PointwiseAddIntAlphaNet(nn.Module):
         def forward(
             self, input: torch.Tensor, other: torch.Tensor, alpha: int
@@ -62,7 +64,7 @@ def test_int_alpha(target: str) -> None:
     )
 
 
-def test_scalar(target: str) -> None:
+def test_add_scalar(target: str) -> None:
     class PointwiseAddSimpleNet(nn.Module):
         def forward(self, input: torch.Tensor, other: float) -> torch.Tensor:
             return torch.add(input, other)
@@ -70,7 +72,7 @@ def test_scalar(target: str) -> None:
     check(PointwiseAddSimpleNet(), *(torch.randn(4), 0.2), target=target)
 
 
-def test_scalar_float_alpha(target: str) -> None:
+def test_add_scalar_float_alpha(target: str) -> None:
     class PointwiseAddSimpleNet(nn.Module):
         def forward(
             self, input: torch.Tensor, other: float, alpha: float
@@ -80,7 +82,7 @@ def test_scalar_float_alpha(target: str) -> None:
     check(PointwiseAddSimpleNet(), *(torch.randn(4), 0.2, 10.0), target=target)
 
 
-def test_scalar_int_alpha(target: str) -> None:
+def test_add_scalar_int_alpha(target: str) -> None:
     class PointwiseAddSimpleNet(nn.Module):
         def forward(
             self, input: torch.Tensor, other: float, alpha: int
@@ -88,6 +90,21 @@ def test_scalar_int_alpha(target: str) -> None:
             return torch.add(input, other, alpha=alpha)
 
     check(PointwiseAddSimpleNet(), *(torch.randn(4), 0.2, 10), target=target)
+
+
+def test_add_broadcast(target: str) -> None:
+    class PointwiseAddBroadcastNet(nn.Module):
+        def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+            return torch.add(input, other)
+
+    check(
+        PointwiseAddBroadcastNet(),
+        *(torch.randn(8, 16, 32), torch.randn(32)),
+        target=target
+    )
+
+
+# --- addcdiv ---
 
 
 def test_addcdiv_simple(target: str) -> None:
@@ -138,6 +155,9 @@ def test_addcdiv_int_value(target: str) -> None:
         *(torch.randn(1, 3), torch.randn(1, 3), torch.randn(1, 3), 2),
         target=target
     )
+
+
+# --- addcmul ---
 
 
 def test_addcmul_simple(target: str) -> None:

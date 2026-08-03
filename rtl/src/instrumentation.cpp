@@ -226,6 +226,8 @@ private:
         // docc metadata
         entry << "\"docc\":";
         entry << "{";
+        entry << "\"transfer_tuning_session_id\":\""
+              << (md.transfer_tuning_session_id ? md.transfer_tuning_session_id : "") << "\",";
         if (md.sdfg_name) {
             entry << "\"sdfg_name\":\"" << md.sdfg_name << "\",";
         } else {
@@ -357,6 +359,8 @@ private:
         // docc metadata
         entry << "\"docc\":";
         entry << "{";
+        entry << "\"transfer_tuning_session_id\":\""
+              << (md.transfer_tuning_session_id ? md.transfer_tuning_session_id : "") << "\",";
         if (md.sdfg_name) {
             entry << "\"sdfg_name\":\"" << md.sdfg_name << "\",";
         } else {

@@ -1601,6 +1601,38 @@ void PyStructuredSDFGBuilder::add_copy_op(
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
 }
 
+void PyStructuredSDFGBuilder::add_conditional_copy_op(
+    const std::string& Mask,
+    const sdfg::types::Tensor& Mask_type,
+    const std::string& X1,
+    const sdfg::types::Tensor& X1_type,
+    const std::string& X2,
+    const sdfg::types::Tensor& X2_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const sdfg::DebugInfo debug_info
+) {
+    if (X1 == X2) {
+        throw sdfg::InvalidSDFGException("Cannot add ConditionalTensorCopyNode with the same data for X1 and X2");
+    }
+    auto& block = builder_.add_block(current_sequence(), debug_info);
+    auto& Mask_access = builder_.add_access(block, Mask, debug_info);
+    auto& X1_access =
+        (builder_.subject().exists(X1) ? builder_.add_access(block, X1, debug_info)
+                                       : builder_.add_constant(block, X1, X1_type.element_type(), debug_info));
+    auto& X2_access =
+        (builder_.subject().exists(X2) ? builder_.add_access(block, X2, debug_info)
+                                       : builder_.add_constant(block, X2, X2_type.element_type(), debug_info));
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::ConditionalTensorCopyNode>(
+        block, debug_info, Mask_type.layout(), X1_type.layout(), X2_type.layout(), Y_type.layout()
+    );
+    builder_.add_computational_memlet(block, Mask_access, libnode, "Mask", {}, Mask_type, debug_info);
+    builder_.add_computational_memlet(block, X1_access, libnode, "X1", {}, X1_type, debug_info);
+    builder_.add_computational_memlet(block, X2_access, libnode, "X2", {}, X2_type, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+}
+
 void PyStructuredSDFGBuilder::add_concat_op(
     const std::vector<std::string>& tensors,
     const std::vector<const sdfg::types::Tensor*>& tensor_types,

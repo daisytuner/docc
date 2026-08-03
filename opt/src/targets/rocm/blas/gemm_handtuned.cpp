@@ -252,4 +252,16 @@ void GEMMNodeDispatcher_ROCMHandTuned::dispatch_code(
     stream << "}" << std::endl;
 }
 
+codegen::InstrumentationInfo GEMMNodeDispatcher_ROCMHandTuned::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_ROCM,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
+}
+
+
 } // namespace sdfg::rocm::blas

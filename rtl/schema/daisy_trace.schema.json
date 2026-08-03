@@ -218,6 +218,11 @@
                 "opt_report_file": {
                     "type": "string"
                 },
+                "transfer_tuning_session_id": {
+                    "type": "string",
+                    "description":
+                        "Optional transfer-tuning session id stamped onto the SDFG when it was remote-tuned (empty string otherwise). Together with element_id it links a runtime region back to its recorded transfer-tuning cutout."
+                },
                 "element_id": {
                     "type": "integer"
                 },

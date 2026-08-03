@@ -337,6 +337,18 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_conditional_copy_op(
+        const std::string& Mask,
+        const sdfg::types::Tensor& Mask_type,
+        const std::string& X1,
+        const sdfg::types::Tensor& X1_type,
+        const std::string& X2,
+        const sdfg::types::Tensor& X2_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo debug_info = sdfg::DebugInfo()
+    );
+
     void add_concat_op(
         const std::vector<std::string>& tensors,
         const std::vector<const sdfg::types::Tensor*>& tensor_types,

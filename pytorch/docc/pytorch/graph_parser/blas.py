@@ -5,7 +5,7 @@ GraphParser modules for parsing BLAS and LAPACK operations.
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo, Scalar
+from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo, Scalar, Type
 
 from docc.pytorch.graph_parser.utils import (
     ContainerInfo,
@@ -16,7 +16,81 @@ from docc.pytorch.graph_parser.utils import (
 )
 
 
-class MMParser(GraphParserModule):
+class MatmulParserBase(GraphParserModule):
+    def _last_dims_non_transposed(self, tensor: Tensor) -> bool:
+        return tensor.is_contiguous()
+
+    def _last_dims_transposed(self, tensor: Tensor) -> bool:
+        if len(tensor.shape) < 2:
+            return False
+        test_shape: list[str] = tensor.shape
+        test_shape[-1] = tensor.shape[-2]
+        test_shape[-2] = tensor.shape[-1]
+        test_strides: list[str] = tensor.strides
+        test_strides[-1] = tensor.strides[-2]
+        test_strides[-2] = tensor.strides[-1]
+        test_tensor: Tensor = Tensor(tensor.element_type, test_shape)
+        return test_tensor.strides == test_strides
+
+    def _copy_container_if_needed(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+        mat_container: str,
+        mat_tensor: Tensor,
+        debug_info: DebugInfo,
+    ) -> tuple[str, Tensor]:
+        if self._last_dims_non_transposed(mat_tensor) or self._last_dims_transposed(
+            mat_tensor
+        ):
+            return mat_container, mat_tensor  # Not needed
+
+        mat_type: Type = container_info[mat_container].sdfg_type()
+        intermediate_tensor: Tensor = Tensor(mat_tensor.element_type, mat_tensor.shape)
+        intermediate_container: str = self.create_intermediate_container(
+            node, builder, container_info, mat_type, intermediate_tensor
+        )
+        builder.add_copy_op(
+            mat_container,
+            mat_tensor,
+            intermediate_container,
+            intermediate_tensor,
+            debug_info,
+        )
+        return intermediate_container, intermediate_tensor
+
+    def add_matmul_op(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+        A_container: str,
+        A_tensor: Tensor,
+        B_container: str,
+        B_tensor: Tensor,
+        Y_container: str,
+        Y_tensor: Tensor,
+        debug_info: DebugInfo,
+    ) -> None:
+        A_container, A_tensor = self._copy_container_if_needed(
+            node, builder, container_info, A_container, A_tensor, debug_info
+        )
+        B_container, B_tensor = self._copy_container_if_needed(
+            node, builder, container_info, B_container, B_tensor, debug_info
+        )
+        builder.add_matmul_op(
+            A_container,
+            A_tensor,
+            B_container,
+            B_tensor,
+            Y_container,
+            Y_tensor,
+            debug_info,
+        )
+
+
+class MMParser(MatmulParserBase):
     """Formula is: result = self @ mat2"""
 
     def parse(
@@ -44,7 +118,10 @@ class MMParser(GraphParserModule):
             node, container_info, result_container
         )
         debug_info: DebugInfo = self.get_debug_info(node)
-        builder.add_matmul_op(
+        self.add_matmul_op(
+            node,
+            builder,
+            container_info,
             self_container,
             self_tensor,
             mat2_container,
@@ -59,7 +136,7 @@ register_module("aten.mm.default", MMParser())
 register_module("aten.bmm.default", MMParser())
 
 
-class AddMMParser(GraphParserModule):
+class AddMMParser(MatmulParserBase):
     """Formula is: result = beta * self + alpha * (mat1 @ mat2)"""
 
     def parse(
@@ -109,7 +186,10 @@ class AddMMParser(GraphParserModule):
             node, container_info, matmul_container
         )
         debug_info: DebugInfo = self.get_debug_info(node)
-        builder.add_matmul_op(
+        self.add_matmul_op(
+            node,
+            builder,
+            container_info,
             mat1_container,
             mat1_tensor,
             mat2_container,

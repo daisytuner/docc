@@ -1014,7 +1014,14 @@ codegen::InstrumentationInfo TenstorrentMapDispatcher::instrumentation_info() co
         metrics.insert({"tt_num_cores_available", "tt_num_cores_available_"});
     }
 
-    return codegen::InstrumentationInfo(map_.element_id(), map_.element_type(), TargetType_Tenstorrent, loop_info, metrics);
+    return codegen::InstrumentationInfo(
+        map_.element_id(),
+        map_.element_type(),
+        TargetType_Tenstorrent,
+        codegen::InstrumentationEventType::NONE,
+        loop_info,
+        metrics
+    );
 }
 
 bool TenstorrentMapDispatcher::begin_node(codegen::PrettyPrinter& stream) {

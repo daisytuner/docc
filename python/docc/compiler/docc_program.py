@@ -189,13 +189,11 @@ class DoccProgram(ABC):
             if self.target != "none":
                 sdfg.normalize()
 
-            if self.debug_dump or instrumentation_mode or capture_args:
+            if self.debug_dump:
                 sdfg.dump(
                     output_folder,
                     "py4.norm",
-                    dump_dot=self.debug_dump,
-                    dump_json=True,
-                    record_for_instrumentation=True,
+                    dump_dot=True,
                 )
 
             # Schedule if target is specified
@@ -208,8 +206,14 @@ class DoccProgram(ABC):
             else:
                 sdfg.schedule(target_options)
 
-            if self.debug_dump:
-                sdfg.dump(output_folder, "py5.post_sched", dump_dot=True)
+            if self.debug_dump or instrumentation_mode or capture_args:
+                sdfg.dump(
+                    output_folder,
+                    "py5.post_sched",
+                    dump_dot=True,
+                    dump_json=True,
+                    record_for_instrumentation=True,
+                )
 
         # Promote pointer arguments to device residency when the whole program keeps
         # data on device. Communicated explicitly via the pass return value (bool),

@@ -280,6 +280,10 @@ public:
      * @endcode
      */
     static Assumption create(const Symbol symbol, const types::IType& type);
+
+    enum class ReplaceResult { IdSame = 0, IdChanged };
+
+    ReplaceResult replace(const symbolic::ExpressionMapping& replacements);
 };
 
 /**
@@ -290,6 +294,9 @@ public:
  * Each symbol maps to its Assumption containing bounds, constness, and evolution.
  */
 typedef std::unordered_map<Symbol, Assumption, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq> Assumptions;
+
+bool substitute(Assumptions& assumptions, const symbolic::ExpressionMapping& replacements);
+;
 
 } // namespace symbolic
 } // namespace sdfg

@@ -100,7 +100,7 @@ class DataFlowGraph;
  * - {i}: Single element at index i
  * - {i, j}: 2D array element at [i][j]
  */
-typedef std::vector<symbolic::Expression> Subset;
+typedef symbolic::MultiExpression Subset;
 
 /**
  * @enum MemletType
@@ -351,5 +351,6 @@ public:
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     void replace(const symbolic::ExpressionMapping& replacements) override;
 };
+
 } // namespace data_flow
 } // namespace sdfg

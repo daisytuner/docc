@@ -85,6 +85,8 @@ class PyTorchProgram(DoccProgram):
         # pass tensors straight through. CompiledSDFG runs CUDA tensors zero-copy
         # and copies CPU tensors to the device (with a one-time warning).
         if compiled_sdfg.device_resident:
+            if self._compiled is None:
+                raise ValueError("Compiled SDFG is None, cannot execute.")
             result = self._compiled(*args)
             if is_torch_input:
                 result: Any = self._convert_outputs(result, args)
@@ -102,6 +104,8 @@ class PyTorchProgram(DoccProgram):
 
         # Host execution: convert CPU tensors to numpy, run, convert back.
         numpy_args: Any = self._convert_inputs(args)
+        if self._compiled is None:
+            raise ValueError("Compiled SDFG is None, cannot execute.")
         result = self._compiled(*numpy_args)
         if is_torch_input:
             result = self._convert_outputs(result, args)
@@ -180,12 +184,14 @@ class PyTorchProgram(DoccProgram):
 
             docc_tmp: str | None = os.environ.get("DOCC_TMP")
             if docc_tmp:
-                output_folder: str | None = f"{docc_tmp}/{self.name}-{stable_id}"
+                output_folder_path: str = f"{docc_tmp}/{self.name}-{stable_id}"
             else:
                 user: str = os.getenv("USER", "")
                 if not user:
                     user: str = getpass.getuser()
-                output_folder: str | None = f"/tmp/{user}/DOCC/{self.name}-{stable_id}"
+                output_folder_path: str = f"/tmp/{user}/DOCC/{self.name}-{stable_id}"
+        else:
+            output_folder_path: str = output_folder
 
         # Reuse already built binaries
         docc_reuse_binaries: str | None = os.environ.get("DOCC_REUSE_BINARIES")
@@ -198,17 +204,17 @@ class PyTorchProgram(DoccProgram):
         if (docc_reuse_binaries or docc_reuse_sources) and not self.debug_dump:
             self.debug_dump: bool = True  # Required for source reuse
 
-        if not os.path.exists(output_folder) and docc_reuse_sources:
+        if not os.path.exists(output_folder_path) and docc_reuse_sources:
             docc_reuse_sources: str | None = None
 
-        if not os.path.exists(output_folder) and docc_reuse_binaries:
+        if not os.path.exists(output_folder_path) and docc_reuse_binaries:
             docc_reuse_binaries: str | None = None
         elif (
-            os.path.exists(output_folder)
+            os.path.exists(output_folder_path)
             and not docc_reuse_binaries
             and not docc_reuse_sources
         ):
-            shutil.rmtree(output_folder)
+            shutil.rmtree(output_folder_path)
 
         # Populate input info from example input
         self._input_info = []
@@ -229,12 +235,12 @@ class PyTorchProgram(DoccProgram):
                 self._input_info.append({})
 
         if docc_reuse_binaries:
-            lib_path = f"{output_folder}/lib__docc_{self.name}.so"
+            lib_path = f"{output_folder_path}/lib__docc_{self.name}.so"
             if not os.path.exists(lib_path):
                 raise ValueError(
                     f"Tried reusing binary '{lib_path}' but does not exist"
                 )
-            sdfg_path = f"{output_folder}/__docc_{self.name}.py4.norm.json"
+            sdfg_path = f"{output_folder_path}/__docc_{self.name}.py4.norm.json"
             if not os.path.exists(sdfg_path):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
             sdfg = StructuredSDFG.from_file(sdfg_path)
@@ -250,12 +256,12 @@ class PyTorchProgram(DoccProgram):
             self._device_backend = backend or None
         elif docc_reuse_sources:
 
-            sdfg_path = f"{output_folder}/__docc_{self.name}.py5.post_sched.json"
+            sdfg_path = f"{output_folder_path}/__docc_{self.name}.py5.post_sched.json"
             if not os.path.exists(sdfg_path):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
             sdfg = StructuredSDFG.from_file(sdfg_path)
 
-            main_file = f"{output_folder}/__docc_{self.name}.cpp"
+            main_file = f"{output_folder_path}/__docc_{self.name}.cpp"
             if not os.path.exists(main_file):
                 raise ValueError(
                     f"Tried reusing sources '{main_file}' but does not exist"
@@ -263,7 +269,7 @@ class PyTorchProgram(DoccProgram):
 
             lib_path = self.sdfg_pipe(
                 sdfg,
-                output_folder,
+                output_folder_path,
                 instrumentation_mode,
                 capture_args,
                 remote_tuning,
@@ -272,22 +278,34 @@ class PyTorchProgram(DoccProgram):
         else:
             # Build SDFG if not already done
             if self._sdfg is None:
-                self._sdfg = self.to_sdfg(output_folder)
+                self._sdfg = self.to_sdfg(output_folder_path)
 
             sdfg = self._sdfg
 
             lib_path = self.sdfg_pipe(
-                sdfg, output_folder, instrumentation_mode, capture_args, remote_tuning
+                sdfg,
+                output_folder_path,
+                instrumentation_mode,
+                capture_args,
+                remote_tuning,
             )
 
         # Build shape sources from input info
         shape_sources = []
         for i, info in enumerate(self._input_info):
             if "shape" in info:
-                for dim_idx in range(len(info["shape"])):
+                shape: tuple[int, ...] | torch.dtype = info["shape"]
+                if not isinstance(shape, tuple):
+                    raise TypeError(
+                        "Expected tuple type for shape information but got: "
+                        + str(type(shape))
+                    )
+                for dim_idx in range(len(shape)):
                     shape_sources.append((i, dim_idx))
 
         # Extract output_args metadata for multi-output support
+        if sdfg is None:
+            raise ValueError("SDFG is None, cannot extract output_args metadata")
         output_args_str = sdfg.metadata("output_args")
         output_args = output_args_str.split(",") if output_args_str else []
 

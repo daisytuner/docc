@@ -1528,6 +1528,10 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::TensorCopyNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_ConditionalTensorCopy.value(), []() {
+            return std::make_unique<math::tensor::ConditionalTensorCopyNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_TensorConcat.value(), []() {
             return std::make_unique<math::tensor::ConcatNodeSerializer>();
         });

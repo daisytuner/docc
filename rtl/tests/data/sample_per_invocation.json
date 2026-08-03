@@ -30,6 +30,7 @@
                     "arg_capture_path": "",
                     "features_file": "",
                     "opt_report_file": "",
+                    "transfer_tuning_session_id": "",
                     "element_id": 10,
                     "element_type": "for",
                     "loopnest_index": 0,

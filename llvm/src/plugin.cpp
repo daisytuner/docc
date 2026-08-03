@@ -30,7 +30,6 @@
 #include <llvm/Transforms/Utils/Mem2Reg.h>
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/optimization_report/optimization_report.h>
-#include <sdfg/passes/rpc/rpc_scheduler.h>
 #include <sdfg/plugins/plugins.h>
 #include <sdfg/targets/cuda/plugin.h>
 
@@ -49,7 +48,6 @@
 #include "docc/passes/dumps/pass_report_collector.h"
 #include "docc/passes/function_to_sdfg_pass.h"
 #include "docc/passes/inlining/argument_expansion_pass.h"
-#include "docc/passes/scheduling/docc_backend_context.h"
 #include "docc/passes/scheduling/einsum_pass.h"
 #include "docc/passes/scheduling/normalization_pass.h"
 #include "docc/passes/scheduling/scheduling_pass.h"
@@ -79,19 +77,7 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
             [](llvm::PassBuilder &PB) {
                 docc::register_sdfg_dispatchers();
 
-                auto target = docc::DOCC_TUNE.getValue();
-                auto category = docc::DOCC_TRANSFERTUNE_CATEGORY.getValue();
-
-                auto remote_tuning = docc::DOCC_TRANSFERTUNE.getValue();
-
                 auto &sched_registry = sdfg::passes::scheduler::SchedulerRegistry::instance();
-
-                if (remote_tuning) {
-                    std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
-                        sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-                    sdfg::passes::rpc::register_rpc_loop_opt(context, target, category);
-                    // TODO don't use global state here
-                }
 
                 // Compile-Time Pass Registration
                 PB.registerPipelineStartEPCallback([&sched_registry](

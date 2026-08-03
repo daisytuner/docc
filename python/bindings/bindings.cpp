@@ -48,7 +48,6 @@
 #include <sdfg/passes/statistics.h>
 
 #include "docc/target/docc_target.h"
-#include "sdfg/passes/rpc/rpc_scheduler.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
 #ifdef DOCC_HAS_TARGET_ET
@@ -663,6 +662,19 @@ PYBIND11_MODULE(_sdfg, m) {
             &PyStructuredSDFGBuilder::add_copy_op,
             py::arg("X"),
             py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_conditional_copy_op",
+            &PyStructuredSDFGBuilder::add_conditional_copy_op,
+            py::arg("Mask"),
+            py::arg("Mask_type"),
+            py::arg("X1"),
+            py::arg("X1_type"),
+            py::arg("X2"),
+            py::arg("X2_type"),
             py::arg("Y"),
             py::arg("Y_type"),
             py::arg("debug_info") = sdfg::DebugInfo()

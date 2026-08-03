@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "sdfg/analysis/arguments_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/if_else.h"
@@ -186,6 +187,15 @@ bool MapCollapse::check_imperfect(analysis::AnalysisManager& analysis_manager) {
     //     container: ordering across threads is no longer guaranteed.
     auto& users = analysis_manager.get<analysis::Users>();
 
+    // Containers whose entire lifetime is confined to the outer map are locals: they
+    // are not function arguments/externals and are not used outside this region, so
+    // codegen privatizes them per thread when the collapsed map is parallelized. A
+    // loop induction variable is the canonical example, which is why the indvar's
+    // loop-control accesses need no special handling here - they are simply locals.
+    auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
+    const auto& locals = arguments_analysis.locals(analysis_manager, loop_);
+    auto is_local = [&locals](const std::string& container) { return locals.count(container) != 0; };
+
     std::vector<std::unordered_set<std::string>> writes(n);
     std::vector<std::unordered_set<std::string>> reads(n);
     for (size_t idx = 0; idx < n; ++idx) {
@@ -203,6 +213,38 @@ bool MapCollapse::check_imperfect(analysis::AnalysisManager& analysis_manager) {
         }
         for (auto* u : view.reads()) {
             reads[idx].insert(u->container());
+        }
+    }
+
+    // Replication safety gate (read-modify-write model).
+    //
+    // A skipped element is replicated on every inner thread of an outer iteration.
+    // Being a sibling of the inner maps it cannot reference the inner index, so it
+    // is a pure function of the outer index and every inner thread executes it
+    // identically. A skipped element that only *stores* to a container is therefore
+    // idempotent under replication: every thread writes the same value, leaving the
+    // same result as a single execution. This holds regardless of whether the
+    // target is a loop-local transient or a function argument, and regardless of
+    // whether the value is read again later in the nest - so a plain store from a
+    // skipped element (e.g. an argument that is not read in the nest) is safe and
+    // must be allowed.
+    //
+    // The one update replication cannot reproduce is a *read-modify-write* on a
+    // *shared* container: if a skipped element reads a container it also writes (e.g. a
+    // reduction accumulator), every replicated inner thread re-runs the update on the
+    // same buffer, racing and folding the contribution in multiple times. This only
+    // matters for containers that escape the loop (function arguments/externals or
+    // transients live outside the region): a local is privatized per thread, so its
+    // read-modify-write happens on a private copy and does not violate parallel access
+    // or interleaving. Reject only a read-modify-write on a non-local container.
+    for (size_t idx = 0; idx < n; ++idx) {
+        if (is_collapsible[idx]) {
+            continue;
+        }
+        for (const auto& container : writes[idx]) {
+            if (reads[idx].count(container) != 0 && !is_local(container)) {
+                return false;
+            }
         }
     }
 

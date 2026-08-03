@@ -115,7 +115,7 @@ def test_layernorm_tuple_shape(target: str) -> None:
     class LayerNormTupleShapeNet(nn.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.layernorm: nn.LayerNorm = nn.LayerNorm((3, 16))
+            self.layernorm: nn.LayerNorm = nn.LayerNorm((3, 16))  # type: ignore
 
         def forward(self, input: torch.Tensor) -> torch.Tensor:
             return self.layernorm(input)

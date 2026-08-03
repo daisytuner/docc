@@ -502,6 +502,17 @@ void GEMMNodeDispatcher_BLAS::dispatch_code_with_edges(
     out.stream << ");" << std::endl;
 }
 
+codegen::InstrumentationInfo GEMMNodeDispatcher_BLAS::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        codegen::TargetType_CPU_PARALLEL,
+        codegen::InstrumentationEventType::CPU,
+        analysis::LoopInfo{},
+        {}
+    };
+}
+
 GEMMNode& add_gemm_node(
     builder::StructuredSDFGBuilder& builder,
     Block& block,

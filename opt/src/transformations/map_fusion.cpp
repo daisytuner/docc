@@ -12,6 +12,7 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/control_flow/interstate_edge.h"
 #include "sdfg/data_flow/data_flow_graph.h"
+#include "sdfg/passes/loop_fusion/loop_fusion_by_accesses.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/symbolic/delinearization.h"
@@ -21,498 +22,23 @@
 namespace sdfg {
 namespace transformations {
 
-class FusionConsumerSubsetVisitor : public visitor::ActualStructuredSDFGVisitor {
-    friend MapFusion;
-
-    std::unordered_map<std::string, const data_flow::Subset*>& target_containers_;
-    std::unordered_map<std::string, std::vector<data_flow::Subset>> unique_subsets_per_container_;
-
-protected:
-    bool abort() { return true; }
-
-public:
-    FusionConsumerSubsetVisitor(std::unordered_map<std::string, const data_flow::Subset*>& target_containers)
-        : target_containers_(target_containers) {}
-
-    bool visit(sdfg::structured_control_flow::Block& block) override {
-        auto& dataflow = block.dataflow();
-        for (auto& node : dataflow.nodes()) {
-            auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-            if (access == nullptr) {
-                continue;
-            }
-            auto& container = access->data();
-
-            auto target_it = target_containers_.find(container);
-            if (target_it == target_containers_.end()) {
-                continue;
-            }
-            auto& producer_subset = *target_it->second;
-            auto& unique_subsets = unique_subsets_per_container_[container]; // Ensures entry exists
-
-            // Skip write-only access nodes (consumer also writes the fusion container)
-            if (dataflow.in_degree(*access) > 0 && dataflow.out_degree(*access) == 0) {
-                continue;
-            }
-            if (dataflow.in_degree(*access) != 0 || dataflow.out_degree(*access) == 0) {
-                return abort();
-            }
-
-            // Check all read memlets from this access
-            for (auto& memlet : dataflow.out_edges(*access)) {
-                if (memlet.type() != data_flow::MemletType::Computational) {
-                    return abort();
-                }
-
-                auto& consumer_subset = memlet.subset();
-                if (consumer_subset.size() != producer_subset.size()) {
-                    return abort();
-                }
-
-                // Check if this subset is already in unique_subsets
-                bool found = false;
-                for (const auto& existing : unique_subsets) {
-                    if (existing.size() != consumer_subset.size()) continue;
-                    bool match = true;
-                    for (size_t d = 0; d < existing.size(); ++d) {
-                        if (!symbolic::eq(existing[d], consumer_subset[d])) {
-                            match = false;
-                            break;
-                        }
-                    }
-                    if (match) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    unique_subsets.push_back(consumer_subset);
-                }
-            }
-        }
-        return false;
-    }
-
-    bool visit(sdfg::structured_control_flow::Sequence& node) override {
-        for (int i = 0; i < node.size(); ++i) {
-            if (dispatch(node.at(i))) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    bool visit(IfElse& node) override {
-        for (int i = 0; i < node.size(); ++i) {
-            if (visit(node.at(i).first)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-};
-
-class FusionConsumerUpdateVisitor : public visitor::ActualStructuredSDFGVisitor {
-    friend MapFusion;
-
-    builder::StructuredSDFGBuilder& builder_;
-    const std::vector<MapFusion::FusionCandidate>& fusion_candidates_;
-    const std::vector<std::string>& candidate_temps_;
-
-public:
-    FusionConsumerUpdateVisitor(
-        builder::StructuredSDFGBuilder& builder,
-        const std::vector<MapFusion::FusionCandidate>& fusion_candidates,
-        const std::vector<std::string>& candidate_temps
-    )
-        : builder_(builder), fusion_candidates_(fusion_candidates), candidate_temps_(candidate_temps) {}
-
-    bool dispatch_partial_sequence(Sequence& node, size_t first, size_t end) {
-        for (int i = first; i < end; ++i) {
-            if (dispatch(node.at(i))) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    bool visit(sdfg::structured_control_flow::Block& block) override {
-        auto& dataflow = block.dataflow();
-
-        // Snapshot access nodes before mutation: adding new access nodes below
-        // would rehash dataflow.nodes_ and invalidate the range iterator.
-        std::vector<data_flow::AccessNode*> access_nodes;
-        for (auto& node : dataflow.nodes()) {
-            auto* an = dynamic_cast<data_flow::AccessNode*>(&node);
-            if (an != nullptr && dataflow.out_degree(*an) > 0) {
-                access_nodes.push_back(an);
-            }
-        }
-
-        for (auto* access : access_nodes) {
-            std::string original_container = access->data();
-
-            // Match each out-edge against a fusion candidate.
-            struct Match {
-                data_flow::Memlet* memlet;
-                size_t cand_idx;
-            };
-            std::vector<Match> matches;
-            for (auto& memlet : dataflow.out_edges(*access)) {
-                if (memlet.type() != data_flow::MemletType::Computational) {
-                    continue;
-                }
-                const auto& memlet_subset = memlet.subset();
-                for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
-                    auto& candidate = fusion_candidates_[cand_idx];
-                    if (original_container != candidate.container) {
-                        continue;
-                    }
-                    if (memlet_subset.size() != candidate.consumer_subset.size()) {
-                        continue;
-                    }
-                    bool subset_matches = true;
-                    for (size_t d = 0; d < memlet_subset.size(); ++d) {
-                        if (!symbolic::eq(memlet_subset[d], candidate.consumer_subset[d])) {
-                            subset_matches = false;
-                            break;
-                        }
-                    }
-                    if (subset_matches) {
-                        matches.push_back({&memlet, cand_idx});
-                        break;
-                    }
-                }
-            }
-            if (matches.empty()) {
-                continue;
-            }
-
-            // Group matches by candidate index.
-            std::unordered_set<size_t> distinct_cands;
-            for (auto& m : matches) {
-                distinct_cands.insert(m.cand_idx);
-            }
-
-            if (distinct_cands.size() == 1) {
-                // Fast path: all matched out-edges resolve to the same candidate.
-                // Mutate the shared access node in place — this preserves the
-                // existing semantics for the single-read-per-container case.
-                size_t cand_idx = *distinct_cands.begin();
-                const auto& temp_name = candidate_temps_[cand_idx];
-                auto& temp_type = builder_.subject().type(temp_name);
-
-                access->data(temp_name);
-
-                for (auto& m : matches) {
-                    m.memlet->set_subset({});
-                    m.memlet->set_base_type(temp_type);
-                }
-
-                for (auto& in_edge : dataflow.in_edges(*access)) {
-                    in_edge.set_subset({});
-                    in_edge.set_base_type(temp_type);
-                }
-            } else {
-                // Stencil-like case: a single access node feeds reads at
-                // multiple distinct subsets (e.g. T[j-1] and T[j+1] sharing
-                // one AccessNode). Each must be rewired to its own
-                // candidate-specific temp scalar — otherwise mutating
-                // `access->data()` once per candidate makes all reads
-                // collapse onto the last temp, e.g. T[j+1]-T[j] becomes
-                // tmp-tmp == 0.
-                //
-                // Fix: for each distinct candidate, create one fresh
-                // AccessNode for its temp scalar and redirect the matched
-                // edges from the shared access node to the fresh nodes.
-                struct PendingRedirect {
-                    data_flow::DataFlowNode* dst;
-                    std::string src_conn;
-                    std::string dst_conn;
-                    DebugInfo debug_info;
-                    size_t cand_idx;
-                    const data_flow::Memlet* memlet_to_remove;
-                };
-                std::vector<PendingRedirect> pending;
-                pending.reserve(matches.size());
-                for (auto& m : matches) {
-                    pending.push_back(
-                        {&m.memlet->dst(),
-                         m.memlet->src_conn(),
-                         m.memlet->dst_conn(),
-                         m.memlet->debug_info(),
-                         m.cand_idx,
-                         m.memlet}
-                    );
-                }
-
-                std::unordered_map<size_t, data_flow::AccessNode*> per_cand_node;
-                for (auto& p : pending) {
-                    auto it = per_cand_node.find(p.cand_idx);
-                    if (it == per_cand_node.end()) {
-                        auto& fresh = builder_.add_access(block, candidate_temps_[p.cand_idx]);
-                        it = per_cand_node.emplace(p.cand_idx, &fresh).first;
-                    }
-                    auto& temp_type = builder_.subject().type(candidate_temps_[p.cand_idx]);
-                    builder_.remove_memlet(block, *p.memlet_to_remove);
-                    builder_.add_memlet(block, *it->second, p.src_conn, *p.dst, p.dst_conn, {}, temp_type, p.debug_info);
-                }
-
-                // If the original shared access node now has no edges at all
-                // it is dangling and should be removed. Keep it if it still
-                // has out-edges (unmatched reads of the original container)
-                // or in-edges (writes to the original container).
-                if (dataflow.out_degree(*access) == 0 && dataflow.in_degree(*access) == 0) {
-                    builder_.remove_node(block, *access);
-                }
-            }
-        }
-        return false;
-    }
-
-    bool visit(sdfg::structured_control_flow::Sequence& node) override {
-        for (int i = 0; i < node.size(); ++i) {
-            if (dispatch(node.at(i))) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    bool visit(IfElse& node) override {
-        for (int i = 0; i < node.size(); ++i) {
-            if (visit(node.at(i).first)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-};
+using passes::loop_fusion::FusionRegCandidate;
 
 MapFusion::MapFusion(
     structured_control_flow::Map& first_map,
     structured_control_flow::StructuredLoop& second_loop,
     bool require_consecutive,
-    bool allow_init_hoist
+    bool allow_init_hoist,
+    bool allow_prod_into_cons
 )
     : first_map_(first_map), second_loop_(second_loop), require_consecutive_(require_consecutive),
-      allow_init_hoist_(allow_init_hoist) {}
+      allow_init_hoist_(allow_init_hoist), allow_prod_into_cons_(allow_prod_into_cons) {}
 
 std::string MapFusion::name() const { return "MapFusion"; }
 
-std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> MapFusion::solve_subsets(
-    const data_flow::Subset& producer_subset,
-    const data_flow::Subset& consumer_subset,
-    const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
-    const std::vector<structured_control_flow::StructuredLoop*>& consumer_loops,
-    const symbolic::Assumptions& producer_assumptions,
-    const symbolic::Assumptions& consumer_assumptions,
-    bool invert_range_check
-) {
-    // Delinearize subsets to recover multi-dimensional structure from linearized accesses
-    // e.g. T[i*N + j] with assumptions on bounds -> T[i, j]
-    auto producer_sub = producer_subset;
-    if (producer_sub.size() == 1) {
-        auto producer_result = symbolic::delinearize(producer_sub.at(0), producer_assumptions);
-        if (producer_result.success) {
-            producer_sub = producer_result.indices;
-        }
-    }
-    auto consumer_sub = consumer_subset;
-    if (consumer_sub.size() == 1) {
-        auto consumer_result = symbolic::delinearize(consumer_sub.at(0), consumer_assumptions);
-        if (consumer_result.success) {
-            consumer_sub = consumer_result.indices;
-        }
-    }
+using passes::loop_fusion::LoopFusionByAccessWorker;
 
-    // Subset dimensions must match
-    if (producer_sub.size() != consumer_sub.size()) {
-        return {};
-    }
-    if (producer_sub.empty()) {
-        return {};
-    }
-
-    // Extract producer indvars
-    SymEngine::vec_sym producer_vars;
-    for (auto* loop : producer_loops) {
-        producer_vars.push_back(SymEngine::rcp_static_cast<const SymEngine::Symbol>(loop->indvar()));
-    }
-
-    // Step 1: Solve the linear equation system using SymEngine
-    // System: producer_sub[d] - consumer_sub[d] = 0, for each dimension d
-    // Solve for producer_vars in terms of consumer_vars and parameters
-    SymEngine::vec_basic equations;
-    for (size_t d = 0; d < producer_sub.size(); ++d) {
-        equations.push_back(symbolic::sub(producer_sub.at(d), consumer_sub.at(d)));
-    }
-
-    // Need exactly as many equations as unknowns for a unique solution.
-    // Underdetermined systems (e.g. linearized access with multiple loop vars)
-    // cannot be uniquely solved and would crash linsolve.
-    if (equations.size() != producer_vars.size()) {
-        return {};
-    }
-
-    SymEngine::vec_basic solution;
-    try {
-        solution = SymEngine::linsolve(equations, producer_vars);
-    } catch (...) {
-        return {};
-    }
-    if (solution.size() != producer_vars.size()) {
-        return {};
-    }
-    // Build consumer var set for atom validation
-    symbolic::SymbolSet consumer_var_set;
-    for (auto* loop : consumer_loops) {
-        consumer_var_set.insert(loop->indvar());
-    }
-
-    std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> mappings;
-    for (size_t i = 0; i < producer_vars.size(); ++i) {
-        auto& sol = solution[i];
-
-        // Check for invalid solutions
-        if (SymEngine::is_a<SymEngine::NaN>(*sol) || SymEngine::is_a<SymEngine::Infty>(*sol)) {
-            return {};
-        }
-
-        // Validate that solution atoms are consumer vars or parameters
-        for (const auto& atom : symbolic::atoms(sol)) {
-            if (consumer_var_set.count(atom)) {
-                continue;
-            }
-            bool is_param = false;
-            auto it = consumer_assumptions.find(atom);
-            if (it != consumer_assumptions.end() && it->second.constant()) {
-                is_param = true;
-            }
-            if (!is_param) {
-                it = producer_assumptions.find(atom);
-                if (it != producer_assumptions.end() && it->second.constant()) {
-                    is_param = true;
-                }
-            }
-            if (!is_param) {
-                return {};
-            }
-        }
-
-        mappings.push_back({symbolic::symbol(producer_vars[i]->get_name()), symbolic::expand(sol)});
-    }
-    // Step 2: ISL integrality validation via map composition
-    // Build an unconstrained producer access map (no domain bounds on producer vars).
-    // In map fusion, the producer's computation is inlined into the consumer, so
-    // the producer's original iteration domain is irrelevant. We only need to verify
-    // that the equation system has an INTEGER solution for every consumer point.
-    symbolic::Assumptions unconstrained_producer;
-    for (auto* loop : producer_loops) {
-        symbolic::Assumption a(loop->indvar());
-        a.constant(false);
-        unconstrained_producer[loop->indvar()] = a;
-    }
-    for (const auto& [sym, assump] : producer_assumptions) {
-        if (assump.constant() && unconstrained_producer.find(sym) == unconstrained_producer.end()) {
-            unconstrained_producer[sym] = assump;
-        }
-    }
-
-    std::string producer_map_str = symbolic::expression_to_map_str(producer_sub, unconstrained_producer);
-    // Build consumer access map with full domain constraints
-    std::string consumer_map_str = symbolic::expression_to_map_str(consumer_sub, consumer_assumptions);
-
-    isl_ctx* ctx = isl_ctx_alloc();
-    isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
-
-    isl_map* producer_map = isl_map_read_from_str(ctx, producer_map_str.c_str());
-    isl_map* consumer_map = isl_map_read_from_str(ctx, consumer_map_str.c_str());
-
-    if (!producer_map || !consumer_map) {
-        if (producer_map) isl_map_free(producer_map);
-        if (consumer_map) isl_map_free(consumer_map);
-        isl_ctx_free(ctx);
-        return {};
-    }
-
-    // Align parameters between the two maps
-    isl_space* params_p = isl_space_params(isl_map_get_space(producer_map));
-    isl_space* params_c = isl_space_params(isl_map_get_space(consumer_map));
-    isl_space* unified = isl_space_align_params(isl_space_copy(params_p), isl_space_copy(params_c));
-    isl_space_free(params_p);
-    isl_space_free(params_c);
-
-    producer_map = isl_map_align_params(producer_map, isl_space_copy(unified));
-    consumer_map = isl_map_align_params(consumer_map, isl_space_copy(unified));
-
-    // Save consumer domain before consuming consumer_map in composition
-    isl_set* consumer_domain = isl_map_domain(isl_map_copy(consumer_map));
-
-    // Compute composition: consumer_access ∘ inverse(producer_access)
-    // This checks whether the equation system producer_subset = consumer_subset
-    // has an integer solution for each consumer domain point.
-    isl_map* producer_inverse = isl_map_reverse(producer_map);
-    isl_map* composition = isl_map_apply_range(consumer_map, producer_inverse);
-
-    // Check single-valuedness: each consumer point maps to at most one producer point
-    bool single_valued = isl_map_is_single_valued(composition) == isl_bool_true;
-
-    // Check domain coverage: every consumer point has a valid integer mapping
-    isl_set* comp_domain = isl_map_domain(composition);
-
-    bool domain_covered = isl_set_is_subset(consumer_domain, comp_domain) == isl_bool_true;
-
-    isl_set_free(comp_domain);
-    isl_set_free(consumer_domain);
-
-    // Step 3: Verify producer write range covers consumer read range.
-    // The producer only writes a subset of the array if its loops have restricted bounds.
-    // Fusion is invalid if the consumer reads elements the producer never writes.
-    bool range_covered = false;
-    if (single_valued && domain_covered) {
-        std::string constrained_producer_map_str = symbolic::expression_to_map_str(producer_sub, producer_assumptions);
-        isl_map* constrained_producer = isl_map_read_from_str(ctx, constrained_producer_map_str.c_str());
-        isl_map* consumer_map_copy = isl_map_read_from_str(ctx, consumer_map_str.c_str());
-
-        if (constrained_producer && consumer_map_copy) {
-            constrained_producer = isl_map_align_params(constrained_producer, isl_space_copy(unified));
-            consumer_map_copy = isl_map_align_params(consumer_map_copy, isl_space_copy(unified));
-
-            isl_set* producer_range = isl_map_range(constrained_producer);
-            isl_set* consumer_range = isl_map_range(consumer_map_copy);
-
-            // When arguments are swapped (ConsumerIntoProducer), the "producer"/"consumer"
-            // labels are inverted. Flip the subset check to always verify:
-            // actual_consumer_read_range ⊆ actual_producer_write_range
-            if (invert_range_check) {
-                range_covered = isl_set_is_subset(producer_range, consumer_range) == isl_bool_true;
-            } else {
-                range_covered = isl_set_is_subset(consumer_range, producer_range) == isl_bool_true;
-            }
-
-            isl_set_free(producer_range);
-            isl_set_free(consumer_range);
-        } else {
-            if (constrained_producer) isl_map_free(constrained_producer);
-            if (consumer_map_copy) isl_map_free(consumer_map_copy);
-        }
-    }
-
-    isl_space_free(unified);
-    isl_ctx_free(ctx);
-
-    if (!single_valued || !domain_covered || !range_covered) {
-        return {};
-    }
-
-    return mappings;
-}
+LoopFusionByAccessWorker::FusionDirection MapFusion::last_fusion_direction() const { return direction_; }
 
 bool MapFusion::find_write_location(
     structured_control_flow::StructuredLoop& loop,
@@ -645,8 +171,6 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     auto first_loop_info = loop_analysis.loop_info(&first_map_);
     auto second_loop_info = loop_analysis.loop_info(&second_loop_);
 
-    auto limit_depth = 0;
-
     bool first_nested = first_loop_info.is_perfectly_nested;
     bool second_nested = second_loop_info.is_perfectly_nested;
 
@@ -657,13 +181,13 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 
     if (first_nested && second_nested) {
         // Pattern 1: Both perfectly nested — producer into consumer (original path)
-        direction_ = FusionDirection::ProducerIntoConsumer;
+        direction_ = LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer;
     } else if (!first_nested && second_nested) {
         // Pattern 2: Producer non-perfectly-nested, consumer perfectly nested
-        direction_ = FusionDirection::ConsumerIntoProducer;
+        direction_ = LoopFusionByAccessWorker::FusionDirection::ConsumerIntoProducer;
     } else {
         // Reverse Pattern 2: Producer perfectly nested, consumer non-perfectly-nested
-        direction_ = FusionDirection::ProducerIntoConsumer;
+        direction_ = LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer;
     }
 
     // The side being inlined must be all-parallel (all Maps) so iterations can be reordered.
@@ -684,7 +208,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
     // These keep init-into-reduction (T=0 followed by For(k){T+=...}) rejected.
     // ConsumerIntoProducer: only the consumer (inlined side) must be all-parallel.
     bool consumer_reduction_branch = false;
-    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+    if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         if (!first_loop_info.is_perfectly_parallel) {
             return false;
         } else if (!second_loop_info.is_perfectly_parallel) {
@@ -709,11 +233,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         producer_loops_.push_back(&first_map_);
         producer_body_ = &first_map_.root();
         structured_control_flow::ControlFlowNode* node = &first_map_.root().at(0);
-        int level = 1;
         while (auto* nested = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
-            if (limit_depth && ++level > limit_depth) {
-                break;
-            }
             producer_loops_.push_back(nested);
             producer_body_ = &nested->root();
             if (nested->root().size() == 0) return false;
@@ -749,11 +269,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         consumer_loops_.push_back(&second_loop_);
         consumer_body_ = &second_loop_.root();
         structured_control_flow::ControlFlowNode* node = &second_loop_.root().at(0);
-        int level = 1;
         while (auto* nested = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
-            if (limit_depth && ++level > limit_depth) {
-                break;
-            }
             consumer_loops_.push_back(nested);
             consumer_body_ = &nested->root();
             if (nested->root().size() == 0) return false;
@@ -866,18 +382,12 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
     }
 
-    // Get assumptions for the resolved write/read locations
-    // Include trivial bounds from types to help delinearization with symbolic strides
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    auto& producer_assumptions = assumptions_analysis.get(*producer_block_, true);
-    auto& consumer_assumptions = assumptions_analysis.get(consumer_body_->at(0), true);
-
     // Check if producer actually reads a fusion container in the dataflow.
     // If so, ProducerIntoConsumer is unsafe (original producer loop mutates the array
     // before the inlined copy reads it). Force ConsumerIntoProducer.
     // We check the dataflow directly rather than ArgumentsAnalysis, because the latter
     // conservatively marks written containers as also read.
-    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+    if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         auto& first_dataflow_check = producer_block_->dataflow();
         bool producer_reads_fusion = false;
         for (const auto& container : fusion_containers) {
@@ -891,7 +401,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             if (producer_reads_fusion) break;
         }
         if (producer_reads_fusion) {
-            direction_ = FusionDirection::ConsumerIntoProducer;
+            direction_ = LoopFusionByAccessWorker::FusionDirection::ConsumerIntoProducer;
             // Re-check: consumer must be all-parallel for ConsumerIntoProducer
             if (!second_loop_info.is_perfectly_parallel) {
                 return false;
@@ -899,11 +409,16 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         }
     }
 
+    if (!allow_prod_into_cons_ && direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
+        // THe new mapfusion can handle all the other cases, so don't waste time doing those
+        return false;
+    }
+
     // ProducerIntoConsumer only deep-copies producer_block_ into the consumer body.
     // If the producer body has multiple blocks (e.g. from prior BlockFusion merging
     // a previous fusion's writeback + inlined blocks), the write block may depend on
     // intermediates produced by earlier blocks that would NOT be copied. Reject.
-    if (direction_ == FusionDirection::ProducerIntoConsumer && producer_body_->size() > 1) {
+    if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer && producer_body_->size() > 1) {
         return false;
     }
 
@@ -955,6 +470,12 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         return false;
     }
 
+    // Get assumptions for the resolved write/read locations
+    // Include trivial bounds from types to help delinearization with symbolic strides
+    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    auto& producer_assumptions = assumptions_analysis.get(*producer_block_, true);
+    auto& consumer_assumptions = assumptions_analysis.get(consumer_body_->at(0), true);
+
     for (auto [container, unique_subsets] : consumer_visitor.unique_subsets_per_container_) {
         auto& producer_subset = *producer_subsets.at(container);
         // For each unique consumer subset, solve index mappings and create a FusionCandidate
@@ -962,9 +483,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         for (const auto& consumer_subset : unique_subsets) {
             std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> mappings;
 
-            if (direction_ == FusionDirection::ProducerIntoConsumer) {
+            if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
                 // Solve producer indvars in terms of consumer indvars
-                mappings = solve_subsets(
+                mappings = passes::loop_fusion::LoopFusionByAccessWorker::solve_subsets(
                     producer_subset,
                     consumer_subset,
                     producer_loops_,
@@ -975,7 +496,7 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             } else {
                 // ConsumerIntoProducer: solve consumer indvars in terms of producer indvars
                 // Arguments are swapped, so invert the range check direction
-                mappings = solve_subsets(
+                mappings = passes::loop_fusion::LoopFusionByAccessWorker::solve_subsets(
                     consumer_subset,
                     producer_subset,
                     consumer_loops_,
@@ -990,10 +511,12 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
                 return false;
             }
 
-            FusionCandidate candidate;
-            candidate.container = container;
-            candidate.consumer_subset = consumer_subset;
-            candidate.index_mappings = std::move(mappings);
+            FusionRegCandidate candidate{
+                .container = container,
+                .consumer_subset = consumer_subset,
+                .index_mappings = std::move(mappings),
+                .integrated_rle = true
+            };
 
             fusion_candidates_.push_back(candidate);
         }
@@ -1074,6 +597,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
             }
             init_hoist_ = true;
             hoist_body_ = &consumer_loops_[first_sequential - 1]->root();
+            for (auto& candidate : fusion_candidates_) {
+                candidate.integrated_rle = false;
+            }
         }
     }
 
@@ -1084,7 +610,12 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
 void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
 
-    if (direction_ == FusionDirection::ProducerIntoConsumer) {
+    DEBUG_PRINTLN(
+        "Fusing " << this->first_map_.element_id() << " - " << this->second_loop_.element_id() << " by "
+                  << static_cast<int>(direction_)
+    );
+
+    if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         // Pattern 1 + Reverse Pattern 2: Inline producer blocks into consumer's read body
         auto& first_dataflow = producer_block_->dataflow();
 
@@ -1465,6 +996,270 @@ MapFusion MapFusion::from_json(builder::StructuredSDFGBuilder& builder, const nl
 
     return MapFusion(*first_map, *second_loop);
 }
+
+bool ::sdfg::transformations::FusionConsumerSubsetVisitor::visit(IfElse& node) {
+    for (int i = 0; i < node.size(); ++i) {
+        if (visit(node.at(i).first)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+const std::unordered_map<std::string, std::vector<data_flow::Subset>>& FusionConsumerSubsetVisitor::
+    unique_subsets_per_container() {
+    return unique_subsets_per_container_;
+}
+
+FusionConsumerUpdateVisitor::FusionConsumerUpdateVisitor(
+    builder::StructuredSDFGBuilder& builder,
+    const std::vector<passes::loop_fusion::FusionRegCandidate>& fusion_candidates,
+    const std::vector<std::string>& candidate_temps
+)
+    : builder_(builder), fusion_candidates_(fusion_candidates), candidate_temps_(candidate_temps) {}
+
+bool FusionConsumerUpdateVisitor::dispatch_partial_sequence(Sequence& node, size_t first, size_t end) {
+    for (int i = first; i < end; ++i) {
+        if (dispatch(node.at(i))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool FusionConsumerUpdateVisitor::visit(sdfg::structured_control_flow::Block& block) {
+    auto& dataflow = block.dataflow();
+
+    // Snapshot access nodes before mutation: adding new access nodes below
+    // would rehash dataflow.nodes_ and invalidate the range iterator.
+    std::vector<data_flow::AccessNode*> access_nodes;
+    for (auto& node : dataflow.nodes()) {
+        auto* an = dynamic_cast<data_flow::AccessNode*>(&node);
+        if (an != nullptr && dataflow.out_degree(*an) > 0) {
+            access_nodes.push_back(an);
+        }
+    }
+
+    for (auto* access : access_nodes) {
+        std::string original_container = access->data();
+
+        // Match each out-edge against a fusion candidate.
+        struct Match {
+            data_flow::Memlet* memlet;
+            size_t cand_idx;
+        };
+        std::vector<Match> matches;
+        for (auto& memlet : dataflow.out_edges(*access)) {
+            if (memlet.type() != data_flow::MemletType::Computational) {
+                continue;
+            }
+            const auto& memlet_subset = memlet.subset();
+            for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
+                auto& candidate = fusion_candidates_[cand_idx];
+                if (original_container != candidate.container) {
+                    continue;
+                }
+                if (!candidate.integrated_rle) {
+                    continue;
+                }
+                if (memlet_subset.size() != candidate.consumer_subset.size()) {
+                    continue;
+                }
+                bool subset_matches = true;
+                for (size_t d = 0; d < memlet_subset.size(); ++d) {
+                    if (!symbolic::eq(memlet_subset[d], candidate.consumer_subset[d])) {
+                        subset_matches = false;
+                        break;
+                    }
+                }
+                if (subset_matches) {
+                    matches.push_back({&memlet, cand_idx});
+                    break;
+                }
+            }
+        }
+        if (matches.empty()) {
+            continue;
+        }
+
+        // Group matches by candidate index.
+        std::unordered_set<size_t> distinct_cands;
+        for (auto& m : matches) {
+            distinct_cands.insert(m.cand_idx);
+        }
+
+        if (distinct_cands.size() == 1) {
+            // Fast path: all matched out-edges resolve to the same candidate.
+            // Mutate the shared access node in place — this preserves the
+            // existing semantics for the single-read-per-container case.
+            size_t cand_idx = *distinct_cands.begin();
+            const auto& temp_name = candidate_temps_[cand_idx];
+            auto& temp_type = builder_.subject().type(temp_name);
+
+            access->data(temp_name);
+
+            for (auto& m : matches) {
+                m.memlet->set_subset({});
+                m.memlet->set_base_type(temp_type);
+            }
+
+            for (auto& in_edge : dataflow.in_edges(*access)) {
+                in_edge.set_subset({});
+                in_edge.set_base_type(temp_type);
+            }
+        } else {
+            // Stencil-like case: a single access node feeds reads at
+            // multiple distinct subsets (e.g. T[j-1] and T[j+1] sharing
+            // one AccessNode). Each must be rewired to its own
+            // candidate-specific temp scalar — otherwise mutating
+            // `access->data()` once per candidate makes all reads
+            // collapse onto the last temp, e.g. T[j+1]-T[j] becomes
+            // tmp-tmp == 0.
+            //
+            // Fix: for each distinct candidate, create one fresh
+            // AccessNode for its temp scalar and redirect the matched
+            // edges from the shared access node to the fresh nodes.
+            struct PendingRedirect {
+                data_flow::DataFlowNode* dst;
+                std::string src_conn;
+                std::string dst_conn;
+                DebugInfo debug_info;
+                size_t cand_idx;
+                const data_flow::Memlet* memlet_to_remove;
+            };
+            std::vector<PendingRedirect> pending;
+            pending.reserve(matches.size());
+            for (auto& m : matches) {
+                pending.push_back(
+                    {&m.memlet->dst(),
+                     m.memlet->src_conn(),
+                     m.memlet->dst_conn(),
+                     m.memlet->debug_info(),
+                     m.cand_idx,
+                     m.memlet}
+                );
+            }
+
+            std::unordered_map<size_t, data_flow::AccessNode*> per_cand_node;
+            for (auto& p : pending) {
+                auto it = per_cand_node.find(p.cand_idx);
+                if (it == per_cand_node.end()) {
+                    auto& fresh = builder_.add_access(block, candidate_temps_[p.cand_idx]);
+                    it = per_cand_node.emplace(p.cand_idx, &fresh).first;
+                }
+                auto& temp_type = builder_.subject().type(candidate_temps_[p.cand_idx]);
+                builder_.remove_memlet(block, *p.memlet_to_remove);
+                builder_.add_memlet(block, *it->second, p.src_conn, *p.dst, p.dst_conn, {}, temp_type, p.debug_info);
+            }
+
+            // If the original shared access node now has no edges at all
+            // it is dangling and should be removed. Keep it if it still
+            // has out-edges (unmatched reads of the original container)
+            // or in-edges (writes to the original container).
+            if (dataflow.out_degree(*access) == 0 && dataflow.in_degree(*access) == 0) {
+                builder_.remove_node(block, *access);
+            }
+        }
+    }
+    return false;
+}
+
+bool FusionConsumerUpdateVisitor::visit(sdfg::structured_control_flow::Sequence& node) {
+    for (int i = 0; i < node.size(); ++i) {
+        if (dispatch(node.at(i))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool FusionConsumerUpdateVisitor::visit(IfElse& node) {
+    for (int i = 0; i < node.size(); ++i) {
+        if (visit(node.at(i).first)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ::sdfg::transformations::FusionConsumerSubsetVisitor::visit(sdfg::structured_control_flow::Sequence& node) {
+    for (int i = 0; i < node.size(); ++i) {
+        if (dispatch(node.at(i))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ::sdfg::transformations::FusionConsumerSubsetVisitor::visit(sdfg::structured_control_flow::Block& block) {
+    auto& dataflow = block.dataflow();
+    for (auto& node : dataflow.nodes()) {
+        auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+        if (access == nullptr) {
+            continue;
+        }
+        auto& container = access->data();
+
+        auto target_it = target_containers_.find(container);
+        if (target_it == target_containers_.end()) {
+            continue;
+        }
+        auto& producer_subset = *target_it->second;
+        auto& unique_subsets = unique_subsets_per_container_[container]; // Ensures entry exists
+
+        // Skip write-only access nodes (consumer also writes the fusion container)
+        if (dataflow.in_degree(*access) > 0 && dataflow.out_degree(*access) == 0) {
+            continue;
+        }
+        if (dataflow.in_degree(*access) != 0 || dataflow.out_degree(*access) == 0) {
+            return abort();
+        }
+
+        // Check all read memlets from this access
+        for (auto& memlet : dataflow.out_edges(*access)) {
+            if (memlet.type() != data_flow::MemletType::Computational) {
+                return abort();
+            }
+
+            auto& consumer_subset = memlet.subset();
+            if (consumer_subset.size() != producer_subset.size()) {
+                return abort();
+            }
+
+            // Check if this subset is already in unique_subsets
+            bool found = false;
+            for (const auto& existing : unique_subsets) {
+                if (existing.size() != consumer_subset.size()) continue;
+                bool match = true;
+                for (size_t d = 0; d < existing.size(); ++d) {
+                    if (!symbolic::eq(existing[d], consumer_subset[d])) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                unique_subsets.push_back(consumer_subset);
+            }
+        }
+    }
+    return false;
+}
+
+::sdfg::transformations::FusionConsumerSubsetVisitor::FusionConsumerSubsetVisitor(std::unordered_map<
+                                                                                  std::string,
+                                                                                  const data_flow::Subset*>&
+                                                                                      target_containers)
+    : target_containers_(target_containers) {}
 
 } // namespace transformations
 } // namespace sdfg

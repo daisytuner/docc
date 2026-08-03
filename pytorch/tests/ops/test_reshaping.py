@@ -665,3 +665,78 @@ def test_unsqueeze_1(target: str) -> None:
             return torch.unsqueeze(input, 1)
 
     check(Unsqueeze1Net(), torch.tensor([1, 2, 3, 4]), target=target)
+
+
+# --- where ---
+
+
+def test_where_simple(target: str) -> None:
+    class WhereSimpleNet(nn.Module):
+        def forward(
+            self, condition: torch.Tensor, input: torch.Tensor, other: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.where(condition, input, other)
+
+    check(
+        WhereSimpleNet(),
+        *(
+            torch.tensor([True, False]),
+            torch.tensor([1.0, 2.0]),
+            torch.tensor([3.0, 4.0]),
+        ),
+        target=target,
+    )
+
+
+def test_where_constants(target: str) -> None:
+    class WhereConstantsNet(nn.Module):
+        def forward(
+            self, condition: torch.Tensor, input: torch.Tensor, other: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.where(condition, input, other)
+
+    check(
+        WhereConstantsNet(),
+        *(
+            torch.tensor([[True, False], [False, True]]),
+            torch.tensor(1.0),
+            torch.tensor(0.0),
+        ),
+        target=target,
+    )
+
+
+def test_where_condition_broadcast(target: str) -> None:
+    class WhereConditionBroadcastNet(nn.Module):
+        def forward(
+            self, condition: torch.Tensor, input: torch.Tensor, other: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.where(condition, input, other)
+
+    check(
+        WhereConditionBroadcastNet(),
+        *(
+            torch.tensor([[True, False]]),
+            torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+            torch.tensor([[5.0, 6.0], [7.0, 8.0]]),
+        ),
+        target=target,
+    )
+
+
+def test_where_input_broadcast(target: str) -> None:
+    class WhereConditionBroadcastNet(nn.Module):
+        def forward(
+            self, condition: torch.Tensor, input: torch.Tensor, other: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.where(condition, input, other)
+
+    check(
+        WhereConditionBroadcastNet(),
+        *(
+            torch.tensor([[True, False], [False, True]]),
+            torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+            torch.tensor([[5.0, 6.0]]),
+        ),
+        target=target,
+    )

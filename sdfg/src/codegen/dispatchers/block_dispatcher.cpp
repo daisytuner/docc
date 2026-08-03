@@ -551,7 +551,10 @@ void LibraryNodeDispatcher::dispatch_code_with_edges(
 
 InstrumentationInfo LibraryNodeDispatcher::instrumentation_info() const {
     return InstrumentationInfo(
-        node_.element_id(), std::string(node_.element_type()) + ":::" + node_.code().value(), TargetType_SEQUENTIAL
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_SEQUENTIAL,
+        InstrumentationEventType::NONE
     );
 };
 

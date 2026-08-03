@@ -390,6 +390,7 @@ codegen::InstrumentationInfo PrintfMapDispatcher::instrumentation_info() const {
         node_.element_id(),
         node_.element_type(),
         TargetType_Printf,
+        codegen::InstrumentationEventType::NONE,
         analysis::LoopInfo{},
         {}
     );

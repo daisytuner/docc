@@ -511,10 +511,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r pytorch/requirements.txt
+          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          pip install numpy scipy ml_dtypes jsonschema transformers
 
-      - name: Check Formatting
+      - name: Check Formatting & Typing
         run: |
           black --check pytorch/
+          pyright -p pytorch/
 
       - name: Build frontends
         run: |
@@ -627,6 +630,8 @@ jobs:
           python -m venv .venv-pytorch
           .venv-pytorch/bin/python -m pip install --upgrade pip
           .venv-pytorch/bin/pip install -r pytorch/requirements-cuda.txt
+          .venv-pytorch/bin/pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          .venv-pytorch/bin/pip install numpy scipy ml_dtypes jsonschema cupy-cuda12x transformers
           export PYTHONPATH=$PWD/python:$PWD/pytorch
 
           .venv-pytorch/bin/pytest -v pytorch/tests --target=cuda
@@ -725,6 +730,9 @@ jobs:
           python -m venv .venv-pytorch
           .venv-pytorch/bin/python -m pip install --upgrade pip
           .venv-pytorch/bin/pip install -r pytorch/requirements-rocm.txt
+          .venv-pytorch/bin/pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          .venv-pytorch/bin/pip install numpy scipy ml_dtypes jsonschema transformers
+
           export PYTHONPATH=$PWD/python:$PWD/pytorch
 
           # Build cupy-rocm from source for ROCm 6x

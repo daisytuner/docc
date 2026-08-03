@@ -160,6 +160,7 @@ codegen::InstrumentationInfo PrintfDataOffloadingNodeDispatcher::instrumentation
             node_.element_id(),
             "d2h_transfer",
             TargetType_Printf,
+            codegen::InstrumentationEventType::NONE,
             analysis::LoopInfo{},
             {{"bytes", language_extension_.expression(printf_node.size())}}
         );
@@ -168,6 +169,7 @@ codegen::InstrumentationInfo PrintfDataOffloadingNodeDispatcher::instrumentation
             node_.element_id(),
             "h2d_transfer",
             TargetType_Printf,
+            codegen::InstrumentationEventType::NONE,
             analysis::LoopInfo{},
             {{"bytes", language_extension_.expression(printf_node.size())}}
         );

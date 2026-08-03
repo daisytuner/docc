@@ -70,6 +70,8 @@ bool MaxNode::expand_reduction(
 
 std::string MaxNode::identity(types::PrimitiveType primitive_type) const {
     switch (primitive_type) {
+        case types::PrimitiveType::Bool:
+            return "false";
         case types::PrimitiveType::Int8:
             return "INT8_MIN";
         case types::PrimitiveType::Int16:

@@ -21,6 +21,15 @@ HttpResult post_json(CURL* curl, const std::string& url, const std::string& payl
 
     if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
+    // Whole-SDFG scheduling can take minutes server-side. Keep the idle connection alive so NAT or
+    // proxies don't drop it mid-wait, and cap the total wait just above the server's request budget
+    // so a black-holed connection can't hang the client indefinitely.
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 60L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 60L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 60L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3900L);
+
     result.curl_code = curl_easy_perform(curl);
     result.body = response_data;
 

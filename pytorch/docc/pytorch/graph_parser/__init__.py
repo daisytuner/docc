@@ -178,6 +178,18 @@ class GraphParser(GraphParserBase):
         their shape information.
         """
         output_containers: list[str] = self.get_output_containers(node, node.args)
+        for i in range(len(output_containers)):
+            container: str = output_containers[i]
+            output_container: str = container + "_out"
+            if output_container in self.container_info:
+                self.copy_scalar_tensor(
+                    node,
+                    self.builder,
+                    self.container_info,
+                    container,
+                    output_container,
+                )
+                output_containers[i] = output_container
         self.builder.add_metadata("output_args", ",".join(output_containers))
         for output_container in output_containers:
             if not self.container_info[output_container].out_argument():

@@ -72,6 +72,162 @@ register_module("aten.sigmoid.default", UnaryTensorOpParser("sigmoid"))
 register_module("aten.rsqrt.default", UnaryTensorOpParser("rsqrt"))
 
 
+class UnaryTaskletOpParser(GraphParserModule):
+    """
+    Parses a unary elementwise operation by directly emitting an elementwise tasklet, without
+    lowering to a tensor library node.
+    """
+
+    tasklet_code: TaskletCode
+
+    def __init__(self, tasklet_code: TaskletCode) -> None:
+        self.tasklet_code: TaskletCode = tasklet_code
+
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        if len(node.args) != 1:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly one argument but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        result_container: str = self.get_result_container(node, builder, container_info)
+        result_tensor: Tensor = self.get_tensor_type(
+            node, container_info, result_container
+        )
+        debug_info: DebugInfo = self.get_debug_info(node)
+        builder.add_elementwise_tasklet_op(
+            self.tasklet_code,
+            [self_container],
+            [self_tensor],
+            result_container,
+            result_tensor,
+            debug_info,
+        )
+
+
+class UnaryTaskletConstantOpParser(GraphParserModule):
+    """
+    Parses a unary elementwise operation by emitting an elementwise tasklet that combines the input
+    with a constant operand (e.g., negation as a multiplication with -1). The constant can be placed
+    as either the first or second operand, which is relevant for non-commutative tasklet codes like
+    sub or div.
+    """
+
+    tasklet_code: TaskletCode
+    constant: str
+    constant_first: bool
+
+    def __init__(
+        self, tasklet_code: TaskletCode, constant: str, constant_first: bool = False
+    ) -> None:
+        self.tasklet_code: TaskletCode = tasklet_code
+        self.constant: str = constant
+        self.constant_first: bool = constant_first
+
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        if len(node.args) != 1:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly one argument but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        result_container: str = self.get_result_container(node, builder, container_info)
+        result_tensor: Tensor = self.get_tensor_type(
+            node, container_info, result_container
+        )
+        debug_info: DebugInfo = self.get_debug_info(node)
+        constant_tensor: Tensor = Tensor(self_tensor.element_type, [])
+        if self.constant_first:
+            inputs: list[str] = [self.constant, self_container]
+            input_tensors: list[Tensor] = [constant_tensor, self_tensor]
+        else:
+            inputs: list[str] = [self_container, self.constant]
+            input_tensors: list[Tensor] = [self_tensor, constant_tensor]
+        builder.add_elementwise_tasklet_op(
+            self.tasklet_code,
+            inputs,
+            input_tensors,
+            result_container,
+            result_tensor,
+            debug_info,
+        )
+
+
+class UnaryTaskletFloatIntOpParser(GraphParserModule):
+    """
+    Parses a unary elementwise operation by dispatching to a floating-point parser or an integer
+    parser depending on the element type of the input.
+    """
+
+    fp_parser: GraphParserModule
+    int_parser: GraphParserModule
+
+    def __init__(
+        self, fp_parser: GraphParserModule, int_parser: GraphParserModule
+    ) -> None:
+        self.fp_parser: GraphParserModule = fp_parser
+        self.int_parser: GraphParserModule = int_parser
+
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        if len(node.args) != 1:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly one argument but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        primitive_type = self_tensor.element_type.primitive_type
+        if primitive_type_is_floating_point(primitive_type):
+            self.fp_parser.parse(node, builder, container_info)
+        elif primitive_type_is_integer(primitive_type):
+            self.int_parser.parse(node, builder, container_info)
+        else:
+            raise GraphParserError(
+                self, node, "Unsupported primitive type for unary elementwise tasklet"
+            )
+
+
+register_module(
+    "aten.neg.default",
+    UnaryTaskletFloatIntOpParser(
+        UnaryTaskletOpParser(TaskletCode.fp_neg),
+        UnaryTaskletConstantOpParser(TaskletCode.int_mul, "-1"),
+    ),
+)
+
+
 class UnaryCMathTensorOpParser(GraphParserModule):
     func: CMathFunction
 
@@ -159,6 +315,12 @@ class ElementwiseTensorOpParser(GraphParserModule):
                 self.align_constant_type(node, other, self_tensor.element_type),
                 [],
             )
+
+        if len(self_tensor.shape) != len(other_tensor.shape):
+            self_tensor, other_tensor = self.align_elementwise_tensors(
+                node, self_tensor, other_tensor
+            )
+
         result_container: str = self.get_result_container(node, builder, container_info)
         result_tensor: Tensor = self.get_tensor_type(
             node, container_info, result_container
@@ -375,6 +537,12 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported number of kwargs: " + str(len(node.kwargs))
             )
+
+        if len(self_tensor.shape) != len(intermediate_tensor.shape):
+            self_tensor, intermediate_tensor = self.align_elementwise_tensors(
+                node, self_tensor, intermediate_tensor
+            )
+
         result_container: str = self.get_result_container(node, builder, container_info)
         result_tensor: Tensor = self.get_tensor_type(
             node, container_info, result_container

@@ -317,13 +317,20 @@ bool Memlet::is_src_direct_read() const {
     return false;
 }
 
+static bool is_type_with_indirect_accesses(types::TypeID id) {
+    return (
+        id == types::TypeID::Pointer || id == types::TypeID::Array || id == types::TypeID::Structure ||
+        id == types::TypeID::Tensor
+    );
+}
+
 bool Memlet::is_src_pointed_to_read() const {
     if (src_conn_ == "void" || src_conn_ == "deref") {
         auto t = type();
         if (t == Dereference_Src) {
             return true;
         }
-        if (t == Computational && base_type_->type_id() == types::TypeID::Pointer && !subset_.empty()) {
+        if (t == Computational && is_type_with_indirect_accesses(base_type_->type_id()) && !subset_.empty()) {
             return true; // implicitly reads src, because we are crazy
         }
     }
@@ -349,11 +356,11 @@ bool Memlet::is_src_pointed_to_address_leak(const types::IType& src_type) const 
     if (src_conn_ == "void" || src_conn_ == "deref") {
         auto t = type();
         if (src_type.type_id() == types::TypeID::Pointer) { // even if we use it as integer
-            if (t == Computational && base_type_ && base_type_->type_id() != types::TypeID::Pointer) { // reinterpret as
-                                                                                                       // not pointer,
-                                                                                                       // but the
-                                                                                                       // pointer is
-                                                                                                       // still read
+            if (t == Computational && base_type_ && base_type_->type_id() == types::TypeID::Scalar) { // reinterpret as
+                                                                                                      // not pointer,
+                                                                                                      // but the
+                                                                                                      // pointer is
+                                                                                                      // still read
                 return true;
             }
             if (t == Dereference_Dst) {
@@ -418,7 +425,7 @@ bool Memlet::is_dst_pointed_to_write() const {
             return true;
         }
         if (t == Computational) { // we already checked that dst is access node. So subset & type must be for that
-            if (!subset_.empty() && base_type_ && base_type_->type_id() == types::TypeID::Pointer) {
+            if (!subset_.empty() && base_type_ && is_type_with_indirect_accesses(base_type_->type_id())) {
                 return true; // we use dst only as base address for the actual write
             }
         }
@@ -477,11 +484,7 @@ void Memlet::replace(const symbolic::Expression old_expression, const symbolic::
 }
 
 void Memlet::replace(const symbolic::ExpressionMapping& replacements) {
-    Subset new_subset;
-    for (auto& dim : this->subset_) {
-        new_subset.push_back(SymEngine::subs(dim, replacements));
-    }
-    this->subset_ = new_subset;
+    this->subset_ = symbolic::substitute(this->subset_, replacements);
     this->base_type_->replace_symbols(replacements);
 }
 

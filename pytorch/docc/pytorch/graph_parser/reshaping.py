@@ -3,6 +3,7 @@ GraphParser modules for parsing indexing, slicing, joining, and mutating operati
 """
 
 import torch.fx
+from torch.fx.node import Argument
 
 from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
 
@@ -104,7 +105,7 @@ class SliceParser(GraphParserModule):
         self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
         rank: int = len(self_tensor.shape)
 
-        dim: int = node.args[1] if len(node.args) > 1 else 0
+        dim: Argument = node.args[1] if len(node.args) > 1 else 0
         if not isinstance(dim, int):
             raise GraphParserError(
                 self, node, "Expected dim arg to be int type but got: " + str(type(dim))
@@ -128,7 +129,7 @@ class SliceParser(GraphParserModule):
 
         start: object = node.args[2] if len(node.args) > 2 else None
         end: object = node.args[3] if len(node.args) > 3 else None
-        step: int = node.args[4] if len(node.args) > 4 else 1
+        step: Argument = node.args[4] if len(node.args) > 4 else 1
 
         if not isinstance(step, int):
             raise GraphParserError(
@@ -174,7 +175,18 @@ class SliceParser(GraphParserModule):
         # contiguous copy, so we register the result with C-strides to keep the
         # allocation, the write and any downstream reads consistent.
         result_tensor = Tensor(result_tensor.element_type, result_tensor.shape)
-        container_info[result_container].update(sdfg_tensor_type=result_tensor)
+        result_info: ContainerInfoBase = container_info[result_container]
+        if isinstance(result_info, ContainerInfo):
+            result_info.update(sdfg_tensor_type=result_tensor)
+        elif isinstance(result_info, ContainerRefInfo):
+            result_info.ref().update(sdfg_tensor_type=result_tensor)
+        else:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected ContainerInfo for result container but got: "
+                + str(type(result_info)),
+            )
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_slice_op(
             self_container,
@@ -446,6 +458,59 @@ register_pre_module("aten.embedding_renorm.default", EmbeddingRenormParser())
 register_module("aten.embedding_renorm.default", EmbeddingRenormParser())
 
 
+class WhereParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        if len(node.args) != 3:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly 3 arguments but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        condition_container: str = self.get_arg_container(node, container_info, 0)
+        condition_tensor: Tensor = self.get_tensor_type(
+            node, container_info, condition_container
+        )
+
+        self_container: str = self.get_arg_container(node, container_info, 1)
+        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+
+        other_container: str = self.get_arg_container(node, container_info, 2)
+        other_tensor: Tensor = self.get_tensor_type(
+            node, container_info, other_container
+        )
+
+        result_container: str = self.get_result_container(node, builder, container_info)
+        result_tensor: Tensor = self.get_tensor_type(
+            node, container_info, result_container
+        )
+
+        debug_info: DebugInfo = self.get_debug_info(node)
+        builder.add_conditional_copy_op(
+            condition_container,
+            condition_tensor,
+            self_container,
+            self_tensor,
+            other_container,
+            other_tensor,
+            result_container,
+            result_tensor,
+            debug_info,
+        )
+
+
+register_module("aten.where.self", WhereParser())
+
+
 class IndexParser(GraphParserModule):
     def parse(
         self,
@@ -538,7 +603,18 @@ class IndexParser(GraphParserModule):
         # `index.Tensor` produces a fresh contiguous tensor. Register the result
         # with C-strides so the allocation, the write and any downstream reads agree.
         result_tensor = Tensor(result_tensor.element_type, result_tensor.shape)
-        container_info[result_container].update(sdfg_tensor_type=result_tensor)
+        result_info: ContainerInfoBase = container_info[result_container]
+        if isinstance(result_info, ContainerInfo):
+            result_info.update(sdfg_tensor_type=result_tensor)
+        elif isinstance(result_info, ContainerRefInfo):
+            result_info.ref().update(sdfg_tensor_type=result_tensor)
+        else:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected ContainerInfo for result container but got: "
+                + str(type(result_info)),
+            )
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_index_op(
             self_container,

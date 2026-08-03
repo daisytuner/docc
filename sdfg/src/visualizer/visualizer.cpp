@@ -49,6 +49,14 @@ constexpr const char* code_to_string(data_flow::TaskletCode c) {
             return "fma";
         case data_flow::TaskletCode::fp_one:
             return "of!=";
+        case data_flow::TaskletCode::int_smax:
+            return "smax";
+        case data_flow::TaskletCode::int_umax:
+            return "umax";
+        case data_flow::TaskletCode::int_smin:
+            return "smin";
+        case data_flow::TaskletCode::int_umin:
+            return "umin";
         default:
             return "?";
     };

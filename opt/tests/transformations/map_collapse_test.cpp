@@ -1939,7 +1939,9 @@ build_imperfect_producer_then_map(builder::StructuredSDFGBuilder& builder) {
     types::Pointer opaque_desc;
     types::Scalar sym_desc(types::PrimitiveType::UInt64);
 
-    builder.add_container("X", opaque_desc, true);
+    // X is a transient (loop-local) scratch buffer: the skipped producer may write
+    // it under the replication model. Y and Z are arguments.
+    builder.add_container("X", opaque_desc);
     builder.add_container("Y", opaque_desc, true);
     builder.add_container("Z", opaque_desc, true);
     builder.add_container("N", sym_desc, true);
@@ -2183,6 +2185,476 @@ TEST(MapCollapseTest, CannotApply_Imperfect_WriteWriteConflict) {
 }
 
 // ---------------------------------------------------------------------------
+// Imperfect — replication safety (loop-local write model)
+// ---------------------------------------------------------------------------
+
+TEST(MapCollapseTest, CannotApply_Imperfect_SkippedReductionRecomputed) {
+    // Softmax-style hazard. A skipped sequential reduction accumulates sum[i] (a
+    // read-modify-write into a shared transient buffer), and the collapsible inner
+    // map divides by sum[i]. The buffer escapes the loop (it is consumed by a node
+    // after the collapsed region, so ArgumentsAnalysis classifies it as an argument and codegen cannot privatize
+    // it. Flattening then replicates the reduction on every inner thread, re-running
+    // the accumulation on the shared buffer and folding the reduction in multiple
+    // times -> wrong results. Must be rejected. It would only be safe if sum's
+    // lifetime were confined to the loop (a privatizable local).
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(float_desc);
+    types::Pointer opaque_desc;
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("A", opaque_desc, true); // argument (input)
+    builder.add_container("out", opaque_desc, true); // argument (result)
+    builder.add_container("sum", opaque_desc); // transient accumulator (escapes the loop -> shared)
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Skipped sequential reduction: for k in [0, M): sum[i] = sum[i] + A[i*M + k]
+    auto& loop_k =
+        builder
+            .add_for(outer.root(), k, symbolic::Lt(k, M), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
+    {
+        auto idx = symbolic::add(symbolic::mul(i, M), k);
+        auto& block = builder.add_block(loop_k.root());
+        auto& sum_in = builder.add_access(block, "sum");
+        auto& a_in = builder.add_access(block, "A");
+        auto& sum_out = builder.add_access(block, "sum");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, sum_in, tk, "_in1", {i}, ptr_desc);
+        builder.add_computational_memlet(block, a_in, tk, "_in2", {idx}, ptr_desc);
+        builder.add_computational_memlet(block, tk, "_out", sum_out, {i}, ptr_desc);
+    }
+
+    // Collapsible inner map j in [0, M): out[i*M + j] = A[i*M + j] / sum[i]
+    auto& map_j = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    {
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        auto& block = builder.add_block(map_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& sum_in = builder.add_access(block, "sum");
+        auto& out_node = builder.add_access(block, "out");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::fp_div, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, a_in, tk, "_in1", {idx}, ptr_desc);
+        builder.add_computational_memlet(block, sum_in, tk, "_in2", {i}, ptr_desc);
+        builder.add_computational_memlet(block, tk, "_out", out_node, {idx}, ptr_desc);
+    }
+
+    // Consumer after the collapsed region: reads sum, so its lifetime is not
+    // confined to the outer map. ArgumentsAnalysis therefore reports sum as an
+    // (escaping) argument rather than a privatizable local, which is what makes the
+    // replicated reduction a genuine cross-thread race.
+    {
+        auto& block = builder.add_block(root);
+        auto& sum_in = builder.add_access(block, "sum");
+        auto& out_node = builder.add_access(block, "out");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, sum_in, tk, "_in", {symbolic::integer(0)}, ptr_desc);
+        builder.add_computational_memlet(block, tk, "_out", out_node, {symbolic::integer(0)}, ptr_desc);
+    }
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    EXPECT_FALSE(t.can_be_applied(builder, am));
+}
+
+TEST(MapCollapseTest, CanBeApplied_Imperfect_SkippedReductionOnLocalPrivatized) {
+    // Same softmax-style shape as CannotApply_Imperfect_SkippedReductionRecomputed,
+    // but the accumulator sum is a transient whose entire lifetime is confined to
+    // the outer map (it is never used outside the region). ArgumentsAnalysis reports
+    // it as a local, so codegen privatizes it per thread: every replicated inner
+    // thread re-runs the full k-reduction into its own private sum and the division
+    // reads that same private (fully accumulated) value. The read-modify-write is on
+    // a privatized copy and does not violate parallel access, so the collapse must
+    // be allowed - this is exactly the relaxation over escaping accumulators.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(float_desc);
+    types::Pointer opaque_desc;
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("A", opaque_desc, true); // argument (input)
+    builder.add_container("out", opaque_desc, true); // argument (result)
+    builder.add_container("sum", opaque_desc); // transient accumulator (lifetime confined to the loop)
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Skipped sequential reduction: for k in [0, M): sum[i] = sum[i] + A[i*M + k]
+    auto& loop_k =
+        builder
+            .add_for(outer.root(), k, symbolic::Lt(k, M), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
+    {
+        auto idx = symbolic::add(symbolic::mul(i, M), k);
+        auto& block = builder.add_block(loop_k.root());
+        auto& sum_in = builder.add_access(block, "sum");
+        auto& a_in = builder.add_access(block, "A");
+        auto& sum_out = builder.add_access(block, "sum");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, sum_in, tk, "_in1", {i}, ptr_desc);
+        builder.add_computational_memlet(block, a_in, tk, "_in2", {idx}, ptr_desc);
+        builder.add_computational_memlet(block, tk, "_out", sum_out, {i}, ptr_desc);
+    }
+
+    // Collapsible inner map j in [0, M): out[i*M + j] = A[i*M + j] / sum[i]. sum is
+    // read here but never used outside the outer map, so it stays a local.
+    auto& map_j = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    {
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        auto& block = builder.add_block(map_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& sum_in = builder.add_access(block, "sum");
+        auto& out_node = builder.add_access(block, "out");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::fp_div, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, a_in, tk, "_in1", {idx}, ptr_desc);
+        builder.add_computational_memlet(block, sum_in, tk, "_in2", {i}, ptr_desc);
+        builder.add_computational_memlet(block, tk, "_out", out_node, {idx}, ptr_desc);
+    }
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    EXPECT_TRUE(t.can_be_applied(builder, am));
+}
+
+TEST(MapCollapseTest, CanBeApplied_Imperfect_SkippedWriteToArgument) {
+    // A skipped block writes a function argument G[i] with a plain store (no RMW).
+    // The store does not depend on the inner index, so every replicated inner
+    // thread writes the same value to G[i]: the write is idempotent under
+    // replication and produces the same result as a single execution. A plain
+    // store - even to an argument that is not read in the nest - is therefore safe
+    // to replicate, so the collapse must be allowed.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(float_desc);
+    types::Pointer opaque_desc;
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("G", opaque_desc, true); // argument written by skipped block
+    builder.add_container("Y", opaque_desc, true); // argument (input)
+    builder.add_container("Z", opaque_desc, true); // argument written by collapsible map
+    builder.add_container("W", opaque_desc, true); // argument (input)
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Skipped block A: G[i] = Y[i]  (writes an argument)
+    auto& block_a = builder.add_block(outer.root());
+    {
+        auto& y_in = builder.add_access(block_a, "Y");
+        auto& g_out = builder.add_access(block_a, "G");
+        auto& tk = builder.add_tasklet(block_a, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block_a, y_in, tk, "_in", {i}, ptr_desc);
+        builder.add_computational_memlet(block_a, tk, "_out", g_out, {i}, ptr_desc);
+    }
+
+    // Collapsible inner map j in [0, M): Z[i*M + j] = W[i*M + j]
+    auto& map_j = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    {
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        auto& block = builder.add_block(map_j.root());
+        auto& w_in = builder.add_access(block, "W");
+        auto& z_out = builder.add_access(block, "Z");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, w_in, tk, "_in", {idx}, ptr_desc);
+        builder.add_computational_memlet(block, tk, "_out", z_out, {idx}, ptr_desc);
+    }
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    EXPECT_TRUE(t.can_be_applied(builder, am));
+}
+
+TEST(MapCollapseTest, CanBeApplied_Imperfect_SkippedWriteToTransientScratch) {
+    // A skipped block writes a transient scratch buffer T[i] with a plain store
+    // (not a RMW). This is loop-local storage that is safe to replicate, so the
+    // collapse remains allowed - the new gate must not over-reject.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(float_desc);
+    types::Pointer opaque_desc;
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("T", opaque_desc); // transient scratch (loop-local)
+    builder.add_container("Y", opaque_desc, true); // argument (input)
+    builder.add_container("Z", opaque_desc, true); // argument written by collapsible map
+    builder.add_container("W", opaque_desc, true); // argument (input)
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Skipped block A: T[i] = Y[i]  (writes a transient, plain store)
+    auto& block_a = builder.add_block(outer.root());
+    {
+        auto& y_in = builder.add_access(block_a, "Y");
+        auto& t_out = builder.add_access(block_a, "T");
+        auto& tk = builder.add_tasklet(block_a, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block_a, y_in, tk, "_in", {i}, ptr_desc);
+        builder.add_computational_memlet(block_a, tk, "_out", t_out, {i}, ptr_desc);
+    }
+
+    // Collapsible inner map j in [0, M): Z[i*M + j] = W[i*M + j]
+    auto& map_j = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    {
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        auto& block = builder.add_block(map_j.root());
+        auto& w_in = builder.add_access(block, "W");
+        auto& z_out = builder.add_access(block, "Z");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, w_in, tk, "_in", {idx}, ptr_desc);
+        builder.add_computational_memlet(block, tk, "_out", z_out, {idx}, ptr_desc);
+    }
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    EXPECT_TRUE(t.can_be_applied(builder, am));
+}
+
+TEST(MapCollapseTest, CanBeApplied_Imperfect_CollapsibleMapWritesArgument) {
+    // The collapsible (fused) inner map writes a function argument Z[i*M + j] with
+    // an inner-varying store that is not read anywhere in the loop nest. This is
+    // the fused map's normal output and is exactly the parallel work the collapse
+    // exposes, so it must be allowed - the safety gates only concern collapsible
+    // outputs that another body element consumes.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(float_desc);
+    types::Pointer opaque_desc;
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("Z", opaque_desc, true); // argument written by collapsible map
+    builder.add_container("V", opaque_desc, true); // argument written by the skipped block
+    builder.add_container("W", opaque_desc, true); // argument (input)
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Skipped block A: a plain store into a distinct output argument, V[i] = W[i].
+    // It writes a different container than the collapsible map, so there is no
+    // write-write conflict with the fused output.
+    auto& block_a = builder.add_block(outer.root());
+    {
+        auto& w_in = builder.add_access(block_a, "W");
+        auto& v_out = builder.add_access(block_a, "V");
+        auto& tk = builder.add_tasklet(block_a, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block_a, w_in, tk, "_in", {i}, ptr_desc);
+        builder.add_computational_memlet(block_a, tk, "_out", v_out, {i}, ptr_desc);
+    }
+
+    // Collapsible inner map j in [0, M): Z[i*M + j] = W[i*M + j]
+    auto& map_j = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    {
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        auto& block = builder.add_block(map_j.root());
+        auto& w_in = builder.add_access(block, "W");
+        auto& z_out = builder.add_access(block, "Z");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, w_in, tk, "_in", {idx}, ptr_desc);
+        builder.add_computational_memlet(block, tk, "_out", z_out, {idx}, ptr_desc);
+    }
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    EXPECT_TRUE(t.can_be_applied(builder, am));
+}
+
+TEST(MapCollapseTest, CannotApply_Imperfect_SkippedArgumentReadModifyWrite) {
+    // A skipped block accumulates into a function argument G[i] = G[i] + Y[i]: it
+    // reads the container it writes, so it is a read-modify-write rather than a
+    // plain store. Replicating it across inner threads folds the update in multiple
+    // times (racing on the shared buffer), which replication cannot reproduce, so
+    // it must be rejected - the hazard is the RMW, not the argument being written.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(float_desc);
+    types::Pointer opaque_desc;
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("G", opaque_desc, true); // argument read-modified-written by skipped block
+    builder.add_container("Y", opaque_desc, true); // argument (input)
+    builder.add_container("Z", opaque_desc, true); // argument written by collapsible map
+    builder.add_container("W", opaque_desc, true); // argument (input)
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, N),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Skipped block A: G[i] = G[i] + Y[i]  (read-modify-write of an argument)
+    auto& block_a = builder.add_block(outer.root());
+    {
+        auto& g_in = builder.add_access(block_a, "G");
+        auto& y_in = builder.add_access(block_a, "Y");
+        auto& g_out = builder.add_access(block_a, "G");
+        auto& tk = builder.add_tasklet(block_a, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block_a, g_in, tk, "_in1", {i}, ptr_desc);
+        builder.add_computational_memlet(block_a, y_in, tk, "_in2", {i}, ptr_desc);
+        builder.add_computational_memlet(block_a, tk, "_out", g_out, {i}, ptr_desc);
+    }
+
+    // Collapsible inner map j in [0, M): Z[i*M + j] = W[i*M + j]
+    auto& map_j = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, M),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    {
+        auto idx = symbolic::add(symbolic::mul(i, M), j);
+        auto& block = builder.add_block(map_j.root());
+        auto& w_in = builder.add_access(block, "W");
+        auto& z_out = builder.add_access(block, "Z");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, w_in, tk, "_in", {idx}, ptr_desc);
+        builder.add_computational_memlet(block, tk, "_out", z_out, {idx}, ptr_desc);
+    }
+
+    analysis::AnalysisManager am(builder.subject());
+    transformations::MapCollapse t(outer, 2);
+    EXPECT_FALSE(t.can_be_applied(builder, am));
+}
+
+// ---------------------------------------------------------------------------
 // Inlining of recovered induction variables (no SymbolPropagation required)
 // ---------------------------------------------------------------------------
 
@@ -2367,6 +2839,7 @@ TEST(MapCollapseTest, Apply_Imperfect_InlinesRecoveredIndvars) {
 
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
+    builder.add_container("C", opaque_desc, true);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i", sym_desc);
@@ -2386,13 +2859,16 @@ TEST(MapCollapseTest, Apply_Imperfect_InlinesRecoveredIndvars) {
         structured_control_flow::ScheduleType_Sequential::create()
     );
 
-    // Skipped block: B[i] = B[i]  (replicated on every inner thread; references i only).
+    // Skipped block: B[i] = C[i]  (a plain store replicated on every inner thread;
+    // references i only). It reads a different container than it writes, so it is a
+    // pure store rather than a read-modify-write and remains valid under the
+    // replication safety gate.
     auto& skipped = builder.add_block(outer.root());
     {
-        auto& b_in = builder.add_access(skipped, "B");
+        auto& c_in = builder.add_access(skipped, "C");
         auto& b_out = builder.add_access(skipped, "B");
         auto& tk = builder.add_tasklet(skipped, data_flow::TaskletCode::assign, "_out", {"_in"});
-        builder.add_computational_memlet(skipped, b_in, tk, "_in", {i}, ptr_desc);
+        builder.add_computational_memlet(skipped, c_in, tk, "_in", {i}, ptr_desc);
         builder.add_computational_memlet(skipped, tk, "_out", b_out, {i}, ptr_desc);
     }
 

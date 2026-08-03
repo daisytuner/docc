@@ -8,9 +8,13 @@ namespace passes {
 namespace normalization {
 
 MapFusion::MapFusion(
-    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, bool allow_init_hoist
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    bool allow_init_hoist,
+    bool allow_prod_into_cons
 )
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), allow_init_hoist_(allow_init_hoist) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), allow_init_hoist_(allow_init_hoist),
+      allow_prod_into_cons_(allow_prod_into_cons) {}
 
 bool MapFusion::accept(structured_control_flow::Sequence& node) {
     bool applied = false;
@@ -37,12 +41,19 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                 i++;
                 continue;
             }
-            transformations::MapFusion transformation(*first, *second, true, allow_init_hoist_);
+            transformations::MapFusion transformation(*first, *second, true, allow_init_hoist_, allow_prod_into_cons_);
             if (transformation.can_be_applied(builder_, analysis_manager_)) {
-                auto first_name = first->indvar()->get_name();
-                auto second_name = second->indvar()->get_name();
+                auto first_id = first->element_id();
+                auto second_id = second->element_id();
                 transformation.apply(builder_, analysis_manager_);
-                DEBUG_PRINTLN("Applied MapFusion to maps " + first_name + " and " + second_name);
+                DEBUG_PRINTLN(
+                    "Applied MapFusion to #" + std::to_string(first_id) + " " +
+                    (transformation.last_fusion_direction() ==
+                             loop_fusion::LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer
+                         ? "->"
+                         : "<-") +
+                    " #" + std::to_string(second_id)
+                );
                 applied = true;
             }
         } else if (i + 2 < node.size()) {
@@ -53,14 +64,19 @@ bool MapFusion::accept(structured_control_flow::Sequence& node) {
                         i++;
                         continue;
                     }
-                    transformations::MapFusion transformation(*first, *second, false, allow_init_hoist_);
+                    transformations::MapFusion
+                        transformation(*first, *second, false, allow_init_hoist_, allow_prod_into_cons_);
                     if (transformation.can_be_applied(builder_, analysis_manager_)) {
-                        auto first_name = first->indvar()->get_name();
-                        auto second_name = second->indvar()->get_name();
+                        auto first_id = first->element_id();
+                        auto second_id = second->element_id();
                         transformation.apply(builder_, analysis_manager_);
                         DEBUG_PRINTLN(
-                            "Applied MapFusion to map " + first_name + " and loop " + second_name +
-                            " with intermediate malloc block"
+                            "Applied MapFusion to #" + std::to_string(first_id) + " " +
+                            (transformation.last_fusion_direction() ==
+                                     loop_fusion::LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer
+                                 ? "->"
+                                 : "<-") +
+                            " #" + std::to_string(second_id) + " with intermediate malloc block"
                         );
                         applied = true;
 

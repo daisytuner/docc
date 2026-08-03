@@ -3,6 +3,7 @@
 #include <sdfg/analysis/loop_analysis.h>
 #include "sdfg/exceptions.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/rocm/rocm.h"
 
 namespace sdfg {
@@ -57,6 +58,15 @@ bool ROCMParallelizeNestedMap::
     // emits `<map.indvar> = init + thread_flat_id * stride`, so the body sees
     // the natural strided value; `num_iterations()` accounts for both when
     // computing the grid geometry.
+
+    // Condition: Parallelizing this map must not replicate a sibling accumulation.
+    // Folding a new grid dimension re-runs every unguarded sibling on each thread of
+    // the new dimension; a sibling read-modify-write on a shared (non-privatizable)
+    // container would then race. Such a reduction must either be parallelized itself
+    // or block nested parallelism of its siblings.
+    if (gpu::nested_parallelization_replicates_accumulation(loop_, analysis_manager)) {
+        return false;
+    }
 
     // Condition: Resulting ROCm grid dimension must not exceed hardware limits.
     // Y and Z grid dimensions are limited to 65535.

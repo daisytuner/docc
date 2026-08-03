@@ -19,6 +19,8 @@ public:
         std::vector<codegen::DispatchInput>& inputs,
         std::vector<codegen::DispatchOutput>& outputs
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 class SoftmaxNodeDispatcher_CUDAWithoutTransfers : public codegen::LibraryNodeDispatcher {
@@ -35,6 +37,8 @@ public:
         std::vector<codegen::DispatchInput>& inputs,
         std::vector<codegen::DispatchOutput>& outputs
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 } // namespace sdfg::cuda::tensor
