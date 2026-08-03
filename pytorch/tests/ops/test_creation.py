@@ -102,9 +102,68 @@ def test_arange_default_dtype(target: str) -> None:
     check(ArangeDefaultDtypeNet(), *(), target=target)
 
 
+def test_arange_default_pin_memory(target: str) -> None:
+    class ArangeDefaultPinMemoryNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(8, pin_memory=False)
+
+    check(ArangeDefaultPinMemoryNet(), *(), target=target)
+
+
 def test_arange_symbolic(target: str) -> None:
     class ArangeSymbolicNet(nn.Module):
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             return torch.arange(3, x.shape[0], 2)
 
     check(ArangeSymbolicNet(), torch.ones(5), target=target)
+
+
+# --- scalar_tensor ---
+
+
+def test_scalar_tensor(target: str) -> None:
+    class ScalarTensorNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592)
+
+    check(ScalarTensorNet(), target=target)
+
+
+def test_scalar_tensor_dtype(target: str) -> None:
+    class ScalarTensorDtypeNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592, dtype=torch.float64)
+
+    check(ScalarTensorDtypeNet(), target=target)
+
+
+def test_scalar_tensor_device(target: str) -> None:
+    class ScalarTensorDeviceNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592, device=torch.device("cpu"))
+
+    check(ScalarTensorDeviceNet(), target=target)
+
+
+def test_scalar_tensor_layout(target: str) -> None:
+    class ScalarTensorLayoutNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592, layout=torch.strided)
+
+    check(ScalarTensorLayoutNet(), target=target)
+
+
+def test_scalar_tensor_add(target: str) -> None:
+    class ScalarTensorAddNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input + torch.scalar_tensor(3.141592)
+
+    check(ScalarTensorAddNet(), torch.ones(2, 3), target=target)
+
+
+def test_scalar_tensor_pin_memory(target: str) -> None:
+    class ScalarTensorPinMemoryNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592, pin_memory=False)
+
+    check(ScalarTensorPinMemoryNet(), target=target)

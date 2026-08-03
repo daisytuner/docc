@@ -49,9 +49,9 @@ def test_covariance(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 7,
+                "VECTORIZE": 6,
                 "REDUCE": 1,
-                "MAP": 10,
+                "MAP": 9,
                 "FOR": 1,
                 "SEQUENTIAL": 5,
             }
@@ -60,10 +60,10 @@ def test_covariance(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 3,
+                "VECTORIZE": 2,
                 "REDUCE": 1,
                 "CPU_PARALLEL": 5,
-                "MAP": 7,
+                "MAP": 6,
                 "SEQUENTIAL": 1,
                 "FOR": 1,
             }

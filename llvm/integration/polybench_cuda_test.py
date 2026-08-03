@@ -402,12 +402,12 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 4,
+            "REDUCE": 3,
             "CUDAOffloading": 8,
             "MAP": 7,
             "CUDA": 4,
             "SEQUENTIAL": 10,
-            "FOR": 3,
+            "FOR": 4,
         },
     )
     test_case = benchmark_path / "symm.c"

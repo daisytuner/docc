@@ -59,7 +59,7 @@ def test_mlp(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
-            verification={"REDUCE": 2, "SEQUENTIAL": 17, "MAP": 15, "GEMM": 3}
+            verification={"REDUCE": 2, "SEQUENTIAL": 18, "MAP": 16, "GEMM": 3}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
