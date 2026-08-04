@@ -67,7 +67,7 @@ class ConcatParser(GraphParserModule):
         else:
             dim: int = 0
         if dim < 0:
-            dim: int = dim + num_args
+            dim: int = dim + len(tensor_tensors[0].shape)
         result_container = self.get_result_container(node, builder, container_info)
         result_tensor = self.get_tensor_type(node, container_info, result_container)
         debug_info: DebugInfo = self.get_debug_info(node)

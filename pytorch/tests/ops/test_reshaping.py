@@ -47,7 +47,7 @@ def test_cat_dim_neg1(target: str) -> None:
         def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
             return torch.cat((input1, input2), -1)
 
-    check(CatDimNeg1Net(), *(torch.randn(2, 3), torch.randn(2, 3)), target=target)
+    check(CatDimNeg1Net(), *(torch.randn(3, 3, 2), torch.randn(3, 3, 2)), target=target)
 
 
 def test_cat_many(target: str) -> None:
