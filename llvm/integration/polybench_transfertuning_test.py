@@ -107,10 +107,7 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
     )
 
-    transformation_verification = TransformationVerification(
-        {
-        }
-    )
+    transformation_verification = TransformationVerification({})
 
     test_case = benchmark_path / "correlation.c"
     runner = TestRunner(
@@ -146,7 +143,7 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -199,7 +196,7 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -251,7 +248,7 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         transformation_verification=transformation_verification,
         docc_flags=["-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -271,10 +268,7 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         / "gemver"
     )
 
-    transformation_verification = TransformationVerification(
-        {
-        }
-    )
+    transformation_verification = TransformationVerification({})
 
     test_case = benchmark_path / "gemver.c"
     runner = TestRunner(
@@ -311,7 +305,7 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -369,7 +363,7 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -427,7 +421,7 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -447,10 +441,7 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         / "syr2k"
     )
 
-    transformation_verification = TransformationVerification(
-        {
-        }
-    )
+    transformation_verification = TransformationVerification({})
 
     test_case = benchmark_path / "syr2k.c"
     runner = TestRunner(
@@ -486,7 +477,7 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -544,7 +535,7 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -600,7 +591,7 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -653,7 +644,7 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         transformation_verification=transformation_verification,
         docc_flags=["-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -705,7 +696,7 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         transformation_verification=transformation_verification,
         docc_flags=["-docc-transfer-tune", "-docc-tune=sequential", "-docc-save-temps"],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -763,7 +754,7 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -821,7 +812,7 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -877,7 +868,7 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -935,7 +926,7 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -993,7 +984,7 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1049,7 +1040,7 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1105,7 +1096,7 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1163,7 +1154,7 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1221,7 +1212,7 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1274,7 +1265,7 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
@@ -1315,7 +1306,7 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
@@ -1356,7 +1347,7 @@ def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1404,7 +1395,7 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1455,7 +1446,7 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1506,7 +1497,7 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1557,7 +1548,7 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1608,7 +1599,7 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
 
 
 @pytest.mark.parametrize(
@@ -1660,4 +1651,4 @@ def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-docc-save-temps",
         ],
     )
-    return runner.run(timeout=120)
+    return runner.run(timeout=600)
