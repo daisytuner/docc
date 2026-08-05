@@ -85,7 +85,23 @@ class UpsampleBilinear2DParser(GraphParserModule):
             )
 
         if len(node.args) == 4 and node.args[3] is not None:
-            scale_factors = [float(s) for s in node.args[3]]
+            if not isinstance(node.args[3], (list)):
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected list of scale factors but got: "
+                    + str(type(node.args[3])),
+                )
+            scale_factors = []
+            for scale_factor in node.args[3]:
+                if not isinstance(scale_factor, (float, int)):
+                    raise GraphParserError(
+                        self,
+                        node,
+                        "Expected float scale factor but got: "
+                        + str(type(scale_factor)),
+                    )
+                scale_factors.append(float(scale_factor))
             if len(scale_factors) != 2:
                 raise GraphParserError(
                     self,
