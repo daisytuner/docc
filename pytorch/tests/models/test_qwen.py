@@ -66,6 +66,41 @@ def test_qwen_mlp(target: str, batch_size: int) -> None:
     check(model, x, target=target)
 
 
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_qwen_qkv(target: str, batch_size: int) -> None:
+    torch._dynamo.reset()
+    _, _, _, Qwen2Attention, _, Qwen2RotaryEmbedding = get_qwen2_classes()
+
+    class QwenAttentionWrapper(nn.Module):
+        def __init__(self, config):
+            super().__init__()
+            # Qwen2Attention requires layer_idx for RoPE cache handling in recent versions
+            self.attn = Qwen2Attention(config, layer_idx=0)
+            self.rotary_emb = Qwen2RotaryEmbedding(config=config)
+
+        def forward(
+            self, hidden_states: torch.Tensor, position_ids: torch.Tensor
+        ) -> torch.Tensor:
+            position_embeddings = self.rotary_emb(hidden_states, position_ids)
+            return self.attn(
+                hidden_states=hidden_states,
+                position_embeddings=position_embeddings,
+                attention_mask=None,
+            )[0]
+
+    config = get_dummy_config()
+    model = QwenAttentionWrapper(config)
+    model.eval()
+
+    seq_length = 16
+    x = torch.randn(batch_size, seq_length, config.hidden_size)
+    position_ids = (
+        torch.arange(seq_length, dtype=torch.long).unsqueeze(0).expand(batch_size, -1)
+    )
+
+    check(model, x, position_ids, target=target)
+
+
 @pytest.mark.skip(
     reason="docc fails to broadcast [1, 1, seq, dim] to [1, 4, seq, dim] in RoPE (aten.mul.Tensor)"
 )

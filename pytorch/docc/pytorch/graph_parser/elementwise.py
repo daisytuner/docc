@@ -321,6 +321,66 @@ class ElementwiseTensorOpParser(GraphParserModule):
                 node, self_tensor, other_tensor
             )
 
+        # check if two tensors have same shapes for elementwise operation. if not, broadcast the shapes.
+        debug_info: DebugInfo = self.get_debug_info(node)
+        if self_tensor.shape != other_tensor.shape and len(self_tensor.shape) == len(
+            other_tensor.shape
+        ):
+            common_shape = []
+            for s1, s2 in zip(self_tensor.shape, other_tensor.shape):
+                if s1 == "1":
+                    common_shape.append(s2)
+                elif s2 == "1":
+                    common_shape.append(s1)
+                else:
+                    common_shape.append(s1)
+
+            if self_tensor.shape != common_shape:
+                broadcast_self_tensor = Tensor(self_tensor.element_type, common_shape)
+                broadcast_self_container = self.create_intermediate_container(
+                    node,
+                    builder,
+                    container_info,
+                    container_info[self_container].sdfg_type(),
+                    broadcast_self_tensor,
+                )
+                builder.add_broadcast_op(
+                    self_container,
+                    self_tensor,
+                    broadcast_self_container,
+                    broadcast_self_tensor,
+                    self_tensor.shape,
+                    common_shape,
+                    debug_info,
+                )
+                self_container = broadcast_self_container
+                self_tensor = broadcast_self_tensor
+
+            if other_tensor.shape != common_shape:
+                broadcast_other_tensor = Tensor(other_tensor.element_type, common_shape)
+                broadcast_other_container = self.create_intermediate_container(
+                    node,
+                    builder,
+                    container_info,
+                    (
+                        container_info[other_container].sdfg_type()
+                        if other_container in container_info
+                        else container_info[self_container].sdfg_type()
+                    ),
+                    broadcast_other_tensor,
+                )
+                builder.add_broadcast_op(
+                    other_container,
+                    other_tensor,
+                    broadcast_other_container,
+                    broadcast_other_tensor,
+                    other_tensor.shape,
+                    common_shape,
+                    debug_info,
+                )
+                other_container = broadcast_other_container
+                other_tensor = broadcast_other_tensor
+
         result_container: str = self.get_result_container(node, builder, container_info)
         result_tensor: Tensor = self.get_tensor_type(
             node, container_info, result_container
