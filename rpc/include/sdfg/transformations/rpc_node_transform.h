@@ -32,6 +32,8 @@ private:
 
     bool enable_fusion_;
 
+    bool normalize_;
+
     std::optional<std::string> session_id_;
 
     std::string get_node_id_str() const;
@@ -48,6 +50,7 @@ public:
         const std::string& category,
         sdfg::passes::rpc::RpcContext& rpc_context,
         bool enable_fusion = true,
+        bool normalize = true,
         bool print_steps = false
     );
 

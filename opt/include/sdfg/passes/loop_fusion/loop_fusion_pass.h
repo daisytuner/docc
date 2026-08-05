@@ -76,6 +76,8 @@ public:
         loop_fusion::FusionLoopCandidate* get_parent(loop_fusion::FusionLoopCandidate& current);
 
         uint32_t total_fused_count() const;
+
+        uint32_t run;
     };
 
     LoopFusionPass(const LoopFusionConfig& config);

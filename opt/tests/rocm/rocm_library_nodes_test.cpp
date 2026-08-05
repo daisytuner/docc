@@ -183,8 +183,8 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers_DoublePrecisionNoThrow) {
         symbolic::integer(dim_j)
     ));
 
-    auto& alpha_node = builder.add_constant(block, "1.0", desc);
-    auto& beta_node = builder.add_constant(block, "0.0", desc);
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
 
     builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
     builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
@@ -260,8 +260,8 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers_SinglePrecisionUsesHandTuned) {
     builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
     builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
     builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_constant(block, "2.0", desc);
     builder.add_constant(block, "1.0", desc);
-    builder.add_constant(block, "0.0", desc);
 
     codegen::LibraryNodeDispatcherRegistry local_registry;
     plugins::Context ctx{

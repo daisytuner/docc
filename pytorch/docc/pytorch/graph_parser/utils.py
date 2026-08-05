@@ -986,6 +986,7 @@ class GraphParserModule(GraphParserBase, ABC):
                 node,
                 "Expected ContainerInfo but got: " + str(type(info)),
             )
+
         sdfg_tensor_type: Tensor | None = info.sdfg_tensor_type()
         if sdfg_tensor_type is None:
             raise GraphParserError(

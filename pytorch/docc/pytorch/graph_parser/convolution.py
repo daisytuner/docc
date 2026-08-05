@@ -4,7 +4,7 @@ GraphParser modules for parsing convolution layers.
 
 import torch.fx
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo, Type
 
 from docc.pytorch.graph_parser.utils import (
     GraphParserModule,
@@ -60,14 +60,31 @@ class ConvolutionParser(GraphParserModule):
         result_container = self.get_result_container(node, builder, container_info)
         result_tensor = self.get_tensor_type(node, container_info, result_container)
         debug_info: DebugInfo = self.get_debug_info(node)
+        # DOCC's convolution expansion always writes a contiguous (NCHW) output.
+        # When torch.compile selects a non-contiguous memory format for the
+        # convolution (e.g. channels_last), the fx metadata expresses the result
+        # -- and every downstream view/permute derived from it -- relative to that
+        # layout. Emit the convolution into a contiguous buffer and copy it into
+        # the requested (strided) layout so the physical data matches what the
+        # consumers assume; otherwise the layout mismatch silently transposes the
+        # data (observed as a wrong LayerNorm result in SegFormer).
+        conv_container: str = result_container
+        conv_tensor: Tensor = result_tensor
+        relayout: bool = not result_tensor.is_contiguous()
+        if relayout:
+            result_type: Type = container_info[result_container].sdfg_type()
+            conv_tensor = Tensor(result_tensor.element_type, result_tensor.shape)
+            conv_container = self.create_intermediate_container(
+                node, builder, container_info, result_type, conv_tensor
+            )
         if node.args[2] is None:
             builder.add_conv(
                 input_container,
                 input_tensor,
                 weight_container,
                 weight_tensor,
-                result_container,
-                result_tensor,
+                conv_container,
+                conv_tensor,
                 input_tensor.shape,
                 weight_tensor.shape[2:],
                 stride,
@@ -87,8 +104,8 @@ class ConvolutionParser(GraphParserModule):
                 input_tensor,
                 weight_container,
                 weight_tensor,
-                result_container,
-                result_tensor,
+                conv_container,
+                conv_tensor,
                 bias_container,
                 bias_tensor,
                 input_tensor.shape,
@@ -98,6 +115,14 @@ class ConvolutionParser(GraphParserModule):
                 dilation,
                 weight_tensor.shape[0],
                 groups,
+                debug_info,
+            )
+        if relayout:
+            builder.add_copy_op(
+                conv_container,
+                conv_tensor,
+                result_container,
+                result_tensor,
                 debug_info,
             )
 

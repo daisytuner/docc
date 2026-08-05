@@ -262,6 +262,23 @@ public:
     bool is_dst_read() const;
 
     /**
+     * @brief Check if the source is a constant scalar with the given value
+     * @param value Value to check against
+     * @return True if the source is a constant scalar with the specified value, false otherwise
+     */
+    bool is_src_constant(double value) const;
+
+    /**
+     * @brief Check if the source is a constant scalar with the given integer value
+     *
+     * Parses the constant exactly as a signed 64-bit integer, avoiding the precision
+     * loss of the floating-point overload for large integers.
+     * @param value Value to check against
+     * @return True if the source is a constant scalar with the specified value, false otherwise
+     */
+    bool is_src_constant(int64_t value) const;
+
+    /**
      * @brief Get the source node (const)
      * @return Const reference to source node
      */

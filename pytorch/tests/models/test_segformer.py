@@ -5,7 +5,6 @@ import pytest
 from tests import check
 
 
-@pytest.mark.skip(reason="Mismatching output shapes")
 def test_segformer_b0_finetuned_cityscapes_1024_1024_simple(target: str) -> None:
     model = transformers.SegformerForSemanticSegmentation.from_pretrained(
         "nvidia/segformer-b0-finetuned-cityscapes-1024-1024"
@@ -19,4 +18,5 @@ def test_segformer_b0_finetuned_cityscapes_1024_1024_simple(target: str) -> None
             "return_dict": False,
         },
         target=target,
+        atol=2e-5,
     )

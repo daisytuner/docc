@@ -13,6 +13,12 @@ BlockFusion::BlockFusion(
 )
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), ignore_libnodes_(ignore_libnodes) {}
 
+struct ComponentState {
+    std::unordered_set<const data_flow::AccessNode*> members;
+    std::unordered_set<const data_flow::AccessNode*> exposed_access_nodes; // upwards / downwards depending on which
+                                                                           // block
+};
+
 bool BlockFusion::can_be_applied(data_flow::DataFlowGraph& first_graph, data_flow::DataFlowGraph& second_graph) {
     // Criterion: No side-effect nodes
     std::unordered_set<std::string> first_write_symbols;
@@ -94,35 +100,46 @@ bool BlockFusion::can_be_applied(data_flow::DataFlowGraph& first_graph, data_flo
 
     // Determine sets of weakly connected components for first graph
     auto [first_num_components, first_components] = first_graph.weakly_connected_components();
-    std::vector<std::unordered_set<const data_flow::AccessNode*>> first_weakly_connected(first_num_components);
+    std::vector<ComponentState> first_weakly_connected(first_num_components);
     for (auto comp : first_components) {
         // Only handle access nodes of the first graph
         if (dynamic_cast<const data_flow::ConstantNode*>(comp.first)) {
             continue;
         } else if (auto* access_node = dynamic_cast<const data_flow::AccessNode*>(comp.first)) {
-            first_weakly_connected[comp.second].insert(access_node);
+            auto& state = first_weakly_connected[comp.second];
+            state.members.insert(access_node);
+            if (first_graph.out_degree(*access_node) == 0) {
+                state.exposed_access_nodes.insert(access_node);
+            }
         }
     }
 
     // Determine sets of weakly connected components for second graph
     auto [second_num_components, second_components] = second_graph.weakly_connected_components();
-    std::vector<std::unordered_set<const data_flow::AccessNode*>> second_weakly_connected(second_num_components);
+    std::vector<ComponentState> second_weakly_connected(second_num_components);
     for (auto comp : second_components) {
         // Only handle access nodes of the second graph
         if (dynamic_cast<const data_flow::ConstantNode*>(comp.first)) {
             continue;
         } else if (auto* access_node = dynamic_cast<const data_flow::AccessNode*>(comp.first)) {
-            second_weakly_connected[comp.second].insert(access_node);
+            auto& state = second_weakly_connected[comp.second];
+            state.members.insert(access_node);
+            if (second_graph.in_degree(*access_node) == 0) {
+                // Some form of write
+                state.exposed_access_nodes.insert(access_node);
+            }
         }
     }
 
     // For each combination of weakly connected components:
     for (size_t first = 0; first < first_num_components; first++) {
+        auto& first_state = first_weakly_connected[first];
         for (size_t second = 0; second < second_num_components; second++) {
+            auto& second_state = second_weakly_connected[second];
             // Match all access nodes with the same container
             std::vector<std::pair<const data_flow::AccessNode*, const data_flow::AccessNode*>> matches;
-            for (auto* first_access_node : first_weakly_connected[first]) {
-                for (auto* second_access_node : second_weakly_connected[second]) {
+            for (auto* first_access_node : first_state.members) {
+                for (auto* second_access_node : second_state.members) {
                     if (first_access_node->data() == second_access_node->data()) {
                         matches.push_back({first_access_node, second_access_node});
                     }
@@ -132,17 +149,26 @@ bool BlockFusion::can_be_applied(data_flow::DataFlowGraph& first_graph, data_flo
             if (matches.empty()) {
                 continue;
             }
-            // There must be at least one sink in the first graph and one source in the second graph that match
-            bool connection = false;
+            size_t connections = 0, excused_connections = 0;
+
             for (auto [first_access_node, second_access_node] : matches) {
-                if (first_graph.out_degree(*first_access_node) == 0 &&
-                    second_graph.in_degree(*second_access_node) == 0) {
-                    connection = true;
-                    break;
+                auto first_is_leaf_read = first_graph.in_degree(*first_access_node) == 0;
+                auto first_is_leaf_write = first_graph.out_degree(*first_access_node) == 0;
+                auto second_is_leaf_read = second_graph.in_degree(*second_access_node) == 0;
+                if (first_is_leaf_write && second_is_leaf_read) {
+                    ++connections;
+                } else if (first_is_leaf_read && second_is_leaf_read) {
+                    ++excused_connections;
                 }
             }
-            if (!connection) {
-                return false;
+            if (first_state.exposed_access_nodes.size() == 1) {
+                if (connections == 0 && excused_connections == 0) {
+                    return false;
+                }
+            } else {
+                if ((connections + excused_connections) != matches.size()) {
+                    return false;
+                }
             }
         }
     }

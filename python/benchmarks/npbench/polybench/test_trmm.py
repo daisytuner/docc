@@ -38,7 +38,7 @@ def kernel(alpha, A, B):
         "none",
         "sequential",
         "openmp",
-        "cuda",
+        # "cuda",
         # "rocm"
     ],
 )

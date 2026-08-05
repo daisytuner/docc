@@ -31,10 +31,11 @@ RPCNodeTransform::RPCNodeTransform(
     const std::string& category,
     sdfg::passes::rpc::RpcContext& rpc_context,
     bool enable_fusion,
+    bool normalize,
     bool dump_steps
 )
     : node_(node), target_(target), category_(category), rpc_context_(rpc_context), dump_steps_(dump_steps),
-      enable_fusion_(enable_fusion) {}
+      enable_fusion_(enable_fusion), normalize_(normalize) {}
 
 std::string RPCNodeTransform::name() const { return "RPCNodeTransform"; }
 
@@ -72,9 +73,9 @@ bool RPCNodeTransform::
     );
 
     // Open a session once per SDFG.
-    if (!this->session_id_.has_value()) {
-        this->session_id_ = rpc_context_.start_session();
-    }
+    // if (!this->session_id_.has_value()) {
+    //     this->session_id_ = rpc_context_.start_session();
+    // }
     if (this->session_id_.has_value()) {
         builder.subject().add_metadata("transfer_tuning_session_id", this->session_id_.value());
     }
@@ -84,6 +85,7 @@ bool RPCNodeTransform::
          .category = this->category_,
          .target = this->target_,
          .enable_fusion = this->enable_fusion_,
+	 .normalize = this->normalize_,
          .session_id = this->session_id_},
         rpc_context_
     );
@@ -133,7 +135,8 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
         {"sdfg", sdfg_json},
         {"category", request.category},
         {"target", request.target},
-        {"enable_fusion", request.enable_fusion}
+        {"enable_fusion", request.enable_fusion},
+        {"normalize", request.normalize}
     };
     if (request.session_id.has_value()) {
         payload["session_id"] = request.session_id.value();

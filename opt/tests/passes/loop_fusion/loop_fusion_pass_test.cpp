@@ -482,6 +482,181 @@ TEST(LoopFusionPassTest, NoSharedData_NoSharedDomain) {
     EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager));
 }
 
+TEST(LoopFusionPassTest, NoSharedData_MultiLevel_SharedDomain_Fuses) {
+    // Two perfectly-nested 3-level map-nests with NO shared data.
+    // Nest A: Map(a_i,0:4){ Map(a_j,0:5){ Map(a_k,0:6){ B[..] = A[..] + 1.0 } } }
+    // Nest C: Map(c_i,0:4){ Map(c_j,0:5){ Map(c_k,0:6){ D[..] = C[..] * 2.0 } } }
+    //
+    // There is no overlapping memory between the two nests, but since the iteration domains match exactly on every
+    // level, still a good candidate for fusing
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Array array_desc(float_desc, {symbolic::integer(120)});
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("A", array_desc, true);
+    builder.add_container("B", array_desc, true);
+    builder.add_container("C", array_desc, true);
+    builder.add_container("D", array_desc, true);
+
+    // Build a perfectly-nested 3-level map-nest with integer-immediate limits.
+    auto build_nest = [&](const std::vector<std::string>& ivs,
+                          const std::vector<int>& limits,
+                          const std::string& in_arr,
+                          const std::string& out_arr,
+                          data_flow::TaskletCode code,
+                          const std::string& constant) -> structured_control_flow::Map& {
+        auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+        structured_control_flow::Sequence* parent = &root;
+        structured_control_flow::Map* outer = nullptr;
+        for (size_t lvl = 0; lvl < ivs.size(); ++lvl) {
+            builder.add_container(ivs[lvl], sym_desc);
+            auto sym = symbolic::symbol(ivs[lvl]);
+            auto& map = builder.add_map(
+                *parent,
+                sym,
+                symbolic::Lt(sym, symbolic::integer(limits[lvl])),
+                symbolic::integer(0),
+                symbolic::add(sym, symbolic::integer(1)),
+                schedule
+            );
+            if (lvl == 0) {
+                outer = &map;
+            }
+            parent = &map.root();
+        }
+        // Flat index: i*(L1*L2) + j*L2 + k
+        auto flat = symbolic::
+            add(symbolic::
+                    add(symbolic::mul(symbolic::symbol(ivs[0]), symbolic::integer(limits[1] * limits[2])),
+                        symbolic::mul(symbolic::symbol(ivs[1]), symbolic::integer(limits[2]))),
+                symbolic::symbol(ivs[2]));
+        auto& block = builder.add_block(*parent);
+        auto& in_acc = builder.add_access(block, in_arr);
+        auto& c_node = builder.add_constant(block, constant, float_desc);
+        auto& out_acc = builder.add_access(block, out_arr);
+        auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, in_acc, tasklet, "_in1", {flat}, array_desc);
+        builder.add_computational_memlet(block, c_node, tasklet, "_in2", {});
+        builder.add_computational_memlet(block, tasklet, "_out", out_acc, {flat}, array_desc);
+        return *outer;
+    };
+
+    build_nest({"a_i", "a_j", "a_k"}, {4, 5, 6}, "A", "B", data_flow::TaskletCode::fp_add, "1.0");
+    build_nest({"c_i", "c_j", "c_k"}, {4, 5, 6}, "C", "D", data_flow::TaskletCode::fp_mul, "2.0");
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
+    EXPECT_TRUE(map_fusion_pass.run_pass(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.fused");
+
+    // Both nests share the exact same domain on every level, so they collapse into a
+    // single 3-level nest whose innermost body holds both original blocks.
+    ASSERT_EQ(root.size(), 1u);
+    auto* outer_map = dyn_cast<structured_control_flow::Map*>(&root.at(0));
+    ASSERT_TRUE(outer_map != nullptr);
+    ASSERT_EQ(outer_map->root().size(), 1u);
+
+    auto* middle_map = dyn_cast<structured_control_flow::Map*>(&outer_map->root().at(0));
+    ASSERT_TRUE(middle_map != nullptr);
+    ASSERT_EQ(middle_map->root().size(), 1u);
+
+    auto* inner_map = dyn_cast<structured_control_flow::Map*>(&middle_map->root().at(0));
+    ASSERT_TRUE(inner_map != nullptr);
+    // The innermost body now contains both original computation blocks.
+    EXPECT_EQ(inner_map->root().size(), 2u);
+}
+
+TEST(LoopFusionPassTest, NoSharedData_MultiLevel_InnerDomainMismatch_Rejected) {
+    // Two perfectly-nested 3-level map-nests with NO shared data, but the innermost
+    // level's iteration domain differs (0:6 vs 0:3).
+    // Nest A: Map(a_i,0:4){ Map(a_j,0:5){ Map(a_k,0:6){ B[..] = A[..] + 1.0 } } }
+    // Nest C: Map(c_i,0:4){ Map(c_j,0:5){ Map(c_k,0:3){ D[..] = C[..] * 2.0 } } }
+    //
+    // Because there is no overlapping memory, fusion of outer loops only is not likely to be profitable.
+    // They should remain completely unfused
+
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Array array_desc(float_desc, {symbolic::integer(120)});
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+
+    builder.add_container("A", array_desc, true);
+    builder.add_container("B", array_desc, true);
+    builder.add_container("C", array_desc, true);
+    builder.add_container("D", array_desc, true);
+
+    // Build a perfectly-nested 3-level map-nest with integer-immediate limits.
+    auto build_nest = [&](const std::vector<std::string>& ivs,
+                          const std::vector<int>& limits,
+                          const std::string& in_arr,
+                          const std::string& out_arr,
+                          data_flow::TaskletCode code,
+                          const std::string& constant) -> structured_control_flow::Map& {
+        auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+        structured_control_flow::Sequence* parent = &root;
+        structured_control_flow::Map* outer = nullptr;
+        for (size_t lvl = 0; lvl < ivs.size(); ++lvl) {
+            builder.add_container(ivs[lvl], sym_desc);
+            auto sym = symbolic::symbol(ivs[lvl]);
+            auto& map = builder.add_map(
+                *parent,
+                sym,
+                symbolic::Lt(sym, symbolic::integer(limits[lvl])),
+                symbolic::integer(0),
+                symbolic::add(sym, symbolic::integer(1)),
+                schedule
+            );
+            if (lvl == 0) {
+                outer = &map;
+            }
+            parent = &map.root();
+        }
+        // Flat index: i*(L1*L2) + j*L2 + k
+        auto flat = symbolic::
+            add(symbolic::
+                    add(symbolic::mul(symbolic::symbol(ivs[0]), symbolic::integer(limits[1] * limits[2])),
+                        symbolic::mul(symbolic::symbol(ivs[1]), symbolic::integer(limits[2]))),
+                symbolic::symbol(ivs[2]));
+        auto& block = builder.add_block(*parent);
+        auto& in_acc = builder.add_access(block, in_arr);
+        auto& c_node = builder.add_constant(block, constant, float_desc);
+        auto& out_acc = builder.add_access(block, out_arr);
+        auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, in_acc, tasklet, "_in1", {flat}, array_desc);
+        builder.add_computational_memlet(block, c_node, tasklet, "_in2", {});
+        builder.add_computational_memlet(block, tasklet, "_out", out_acc, {flat}, array_desc);
+        return *outer;
+    };
+
+    build_nest({"a_i", "a_j", "a_k"}, {4, 5, 6}, "A", "B", data_flow::TaskletCode::fp_add, "1.0");
+    // Inner-level domain differs (0:3 instead of 0:6).
+    build_nest({"c_i", "c_j", "c_k"}, {4, 5, 3}, "C", "D", data_flow::TaskletCode::fp_mul, "2.0");
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::loop_fusion::LoopFusionPass map_fusion_pass;
+    EXPECT_FALSE(map_fusion_pass.run_pass(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.not_fused");
+
+    // Not all levels match and there is no shared data, so the two nests stay separate.
+    EXPECT_EQ(root.size(), 2u);
+}
+
 TEST(LoopFusionPassTest, TransformedAccessIndices) {
     // Test that access indices are correctly transformed when maps have different induction variables
     // Map 1: T[i] = A[i]

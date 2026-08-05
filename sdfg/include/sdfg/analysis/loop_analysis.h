@@ -26,6 +26,7 @@ class AssumptionsAnalysis;
 
 /// is_perfectly_nested: is the entire loop hierarchy with loop at the top perfectly nested on every level
 /// is_perfectly_parallel: is the entire loop hierarchy with loop at the top perfectly parallel on every level
+/// num_loops [maps, fors, whiles]: number of X contained within, including the loop itself
 
 /// loop_level: nesting level of loop: 0 == outermost loop
 

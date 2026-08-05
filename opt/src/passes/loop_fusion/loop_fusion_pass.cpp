@@ -165,17 +165,29 @@ public:
     static void propagate_indirect_accesses_up(LoopEntry& current, LoopEntry& parent) {
         auto& parent_cand = parent.fusion_candidate;
         std::optional<symbolic::ExpressionMapping> indvar_mapping;
-        if (current.fusion_candidate.is_by_domain_candidate) {
-            auto& indvar_bounds = current.fusion_candidate.indvar_boundaries;
-            symbolic::Expression stride = symbolic::integer(1);
-            if (symbolic::null_safe_eq(symbolic::sub(indvar_bounds->map(), indvar_bounds->symbol()), stride)) {
-                indvar_mapping = symbolic::ExpressionMapping();
-                indvar_mapping->emplace(
-                    SymEngine::rcp_static_cast<const SymEngine::Basic>(indvar_bounds->symbol()),
-                    current.indvar_placeholder
-                );
+        auto add_placeholder_mapping = [&](LoopEntry& entry) {
+            if (!entry.fusion_candidate.is_by_domain_candidate) {
+                return;
             }
-        }
+            auto& indvar_bounds = entry.fusion_candidate.indvar_boundaries;
+            symbolic::Expression stride = symbolic::integer(1);
+            if (entry.indvar_placeholder.is_null() ||
+                !symbolic::null_safe_eq(symbolic::sub(indvar_bounds->map(), indvar_bounds->symbol()), stride)) {
+                return;
+            }
+            if (!indvar_mapping.has_value()) {
+                indvar_mapping = symbolic::ExpressionMapping();
+            }
+            indvar_mapping->emplace(
+                SymEngine::rcp_static_cast<const SymEngine::Basic>(indvar_bounds->symbol()), entry.indvar_placeholder
+            );
+        };
+        // Generalize the child's indvar (as before) AND the parent's own indvar. Child accesses that
+        // reference the parent's index (e.g. a reduction writing acc[parent_i] inside an inner loop)
+        // must use the same placeholder as the parent's direct accesses, otherwise a single container
+        // ends up with both a placeholder and a raw-symbol subset and is falsely flagged as conflicting.
+        add_placeholder_mapping(current);
+        add_placeholder_mapping(parent);
         for (auto& [container, meta] : current.fusion_candidate.args) {
             auto arg_it = parent_cand.args.find(container);
             if (arg_it != parent_cand.args.end()) {
@@ -295,7 +307,12 @@ bool LoopFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis:
     auto loop_ana = std::make_unique<analysis::LoopAnalysis>(builder.subject());
     loop_ana->run(analysis_manager);
 
+    static uint32_t run = 0;
+    DEBUG_PRINTLN("LoopFusion pass #" << run);
+
     State state(builder, analysis_manager, std::move(loop_ana));
+    state.run = run;
+    run++;
 
     auto& assumption_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
@@ -432,7 +449,8 @@ PatternHandler::MatchResult LoopFusionHandler::fuse_contents(
             std::filesystem::path pdir = *dir;
             visualizer::DotVisualizer::writeToFile(
                 state_.builder.subject(),
-                pdir / ("map_fusion_by_domain_pass_dump_" + std::to_string(state_.fused_by_domain_count) + "_" +
+                pdir / ("map_fusion_by_domain_pass_" + std::to_string(state_.run) + "_dump_" +
+                        std::to_string(state_.fused_by_domain_count) + "_" +
                         std::to_string(second_innermost->loop->element_id()) + ".dot")
             );
         }
@@ -518,6 +536,7 @@ PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, Stru
     bool fusing_option = first_next->is_by_domain_candidate && second_next->is_by_domain_candidate;
     bool domains_match = true;
     bool both_map = first_next->is_map && second_next->is_map;
+    bool no_overlap_candidate = false;
 
     // descend the map stacks down. Last level on which everything matches is the one we can fuse.
     // In case there are any further maps nested inside either one of the candidates, we then need to run verification
@@ -543,10 +562,14 @@ PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, Stru
             // will occur on data-dependencies (from consumer to producer) or on subset mismatches
             fusing_option = false;
         }
-        if (first_max_stack_depth != second_max_stack_depth && !res.overlap) { // heuristic: do not fuse if there is no
-                                                                               // memory shared between uneven
-                                                                               // candidates
-            return {};
+        if (!res.overlap) {
+            // No shared memory between the 2 loops. This only makes sense if the iteration domain matches perfectly
+            if (first_max_stack_depth != second_max_stack_depth) {
+                // loop stacks are uneven
+                return {};
+            } else {
+                no_overlap_candidate = true;
+            }
         }
         if (res.subset_mismatch) { // If subsets mismatch on any level, we cannot guarantee correctness without much
                                    // more checks, so fusion-by-domain is out
@@ -569,6 +592,14 @@ PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, Stru
     } while (more_first && more_second);
 
     if (last_matched_level >= 0) {
+        if (no_overlap_candidate) {
+            if (!state_.loop_analysis->children(first_current->loop).empty() ||
+                !state_.loop_analysis->children(second_current->loop).empty()) {
+                // we only would want to fuse no-overlap cases, if ALL dimensions match.
+                // this means there can be no loops nested inside the level we are fusing
+                return {};
+            }
+        }
         // we found a match for fusion-by-domain. In case there are nested loops we still need to verify they don't
         // conflict as well
         auto nested_check = this->check_ins_outs(*first_current, *second_current, indvar_mapping, false, !both_map);
@@ -622,6 +653,19 @@ PatternHandler::MatchResult LoopFusionHandler::try_complex_fuse_producer_into_co
     auto outcome = try_fuse_by_access(first, second, domains_match);
 
     if (outcome.fused) {
+        if constexpr (DUMP_GRAPHS) {
+            auto dir = state_.builder.subject().metadata_if_exists("output_dir");
+            if (dir) {
+                std::filesystem::path pdir = *dir;
+                visualizer::DotVisualizer::writeToFile(
+                    state_.builder.subject(),
+                    pdir / ("map_fusion_by_domain_pass_" + std::to_string(state_.run) + "_dump_" +
+                            std::to_string(state_.fused_by_domain_count) + "_" +
+                            std::to_string(second.loop->element_id()) + ".dot")
+                );
+            }
+        }
+
         state_.fused_by_access_count++;
     }
 

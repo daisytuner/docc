@@ -2,6 +2,7 @@ import torch
 import torch.fx
 import torch._dynamo
 import torch.export
+import torch.utils._pytree
 import numpy as np
 import ml_dtypes
 import os
@@ -68,6 +69,14 @@ class PyTorchProgram(DoccProgram):
         self._output_info: list[tuple[torch.Size, torch.dtype]] = (
             []
         )  # [(shape, dtype), ...] for each output
+        # PyTree spec describing the original PyTorch output structure. Loaded
+        # from SDFG metadata after compilation and used to reassemble the flat
+        # outputs into the exact structure eager PyTorch would return.
+        self._out_spec: torch.utils._pytree.TreeSpec | None = None
+        # Permutation mapping the compiled artifact's output order (SDFG function
+        # signature order) to the PyTorch graph output order (== pytree leaf
+        # order). Computed at compile time; None when no reordering is needed.
+        self._output_perm: list[int] | None = None
         self.force_rebuild: bool = force_rebuild
 
     def __call__(self, *args: Any) -> Any:
@@ -320,7 +329,39 @@ class PyTorchProgram(DoccProgram):
                 ]
                 output_shapes[arg_name] = dims
 
+        # Load the PyTorch output pytree spec (if present) so results can be
+        # reassembled into the exact structure eager PyTorch would return.
+        # Reading from SDFG metadata (rather than the live ExportedProgram) means
+        # reused binaries reconstruct outputs correctly as well.
+        out_spec_str = sdfg.metadata("output_pytree_spec")
+        if out_spec_str:
+            self._out_spec = torch.utils._pytree.treespec_loads(out_spec_str)
+        else:
+            self._out_spec = None
+
+        # CompiledSDFG (with sort_output_args=False) returns outputs in SDFG
+        # function-signature order, i.e. the order the output containers appear
+        # in sdfg.arguments. The PyTorch graph output order (and thus the pytree
+        # leaf order) is the order given by output_args. Precompute a permutation
+        # that reorders the artifact's flat outputs back into output_args order
+        # so results line up with the pytree spec and match eager PyTorch.
+        self._output_perm = None
+        if len(output_args) > 1 and hasattr(sdfg, "arguments"):
+            output_args_set = set(output_args)
+            signature_order = [n for n in sdfg.arguments if n in output_args_set]
+            # Only reorder when the sets match 1:1 (no duplicate outputs) and the
+            # order actually differs; otherwise the flat order is already correct.
+            if (
+                len(signature_order) == len(output_args)
+                and set(signature_order) == output_args_set
+                and signature_order != output_args
+            ):
+                self._output_perm = [
+                    signature_order.index(name) for name in output_args
+                ]
+
         # Create CompiledSDFG with output_args for multi-output support
+
         compiled = CompiledSDFG(
             lib_path,
             sdfg,
@@ -447,6 +488,20 @@ class PyTorchProgram(DoccProgram):
             converted: list[torch.Tensor] = [convert_single(r) for r in result]
         else:
             converted: list[torch.Tensor] = [convert_single(result)]
+
+        # Reorder the artifact's flat outputs (SDFG signature order) into the
+        # PyTorch graph output order (== pytree leaf order) before reassembly.
+        if self._output_perm is not None and len(converted) == len(self._output_perm):
+            converted = [converted[p] for p in self._output_perm]
+
+        # Reassemble the flat outputs into the original PyTorch structure (nested
+        # tuples, dicts, dataclasses, single tensor, None leaves, ...) using the
+        # pytree spec captured at compile time. The compiled artifact preserves
+        # the flat leaf order (sort_output_args=False), so it lines up with the
+        # spec's leaves. Fall back to the flat single/tuple behavior when no spec
+        # is available (e.g. legacy artifacts) or the leaf count does not match.
+        if self._out_spec is not None and len(converted) == self._out_spec.num_leaves:
+            return torch.utils._pytree.tree_unflatten(converted, self._out_spec)
 
         # Return single value if only one output, otherwise tuple
         if len(converted) == 1:

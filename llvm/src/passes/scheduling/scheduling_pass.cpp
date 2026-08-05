@@ -45,7 +45,10 @@ llvm::PreservedAnalyses SchedulingPass::
             auto category = docc::DOCC_TRANSFERTUNE_CATEGORY.getValue();
             std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
                 sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-            docc::target::TargetOptions rpc_options{.target = target, .category = category, .remote_tuning = true};
+            // Normalization happens in NormalizationPass before SchedulingPass
+            docc::target::TargetOptions rpc_options{
+                .target = target, .category = category, .remote_tuning = true, .already_normalized = true
+            };
             sdfg::passes::scheduler::RpcOptimizationPass rpc_optimization_pass(context, rpc_options, false);
             rpc_optimization_pass.run_pass(builder, analysis_manager);
         }

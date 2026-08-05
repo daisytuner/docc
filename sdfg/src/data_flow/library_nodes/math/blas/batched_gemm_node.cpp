@@ -341,55 +341,83 @@ passes::LibNodeExpander::ExpandOutcome BatchedGEMMNode::
     builder.add_computational_memlet(code_block, core_fma, "_out", sum_out, {}, iedge_c->debug_info());
 
     // Flush: C[batch*stride_c + ldc*i + j] = alpha * sum + beta * C[...]
+    // Detect statically-known special scalar values that simplify the epilogue:
+    // alpha == 1 => skip scaling the accumulator; beta == 0 => skip reading/scaling C.
+    bool alpha_is_one = alpha_edge->is_src_constant(1.0);
+    bool beta_is_zero = beta_edge->is_src_constant(0.0);
+
     auto& flush_block = builder.add_block_after(output_loop->root(), *last_map, block.debug_info());
     auto& sum_final = builder.add_access(flush_block, sum_var, block.debug_info());
-    auto& input_node_c_new = standalone->add_indirect_read_access(flush_block, C_INPUT_IDX);
     symbolic::Expression c_idx =
         symbolic::add(c_batch_offset, symbolic::add(symbolic::mul(ldc(), new_subset[0]), new_subset[1]));
 
-    // alpha * sum
-    auto& scale_sum_tasklet =
-        builder.add_tasklet(flush_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"}, block.debug_info());
-    builder.add_computational_memlet(flush_block, sum_final, scale_sum_tasklet, "_in1", {}, block.debug_info());
-    auto& alpha_node = standalone->add_scalar_input_access(flush_block, ALPHA_INPUT_IDX);
-    builder.add_computational_memlet(flush_block, alpha_node, scale_sum_tasklet, "_in2", {}, block.debug_info());
+    // Node holding alpha * sum (or just sum when alpha == 1)
+    data_flow::AccessNode* scaled_sum_node = &sum_final;
+    if (!alpha_is_one) {
+        auto& scale_sum_tasklet =
+            builder
+                .add_tasklet(flush_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"}, block.debug_info());
+        builder.add_computational_memlet(flush_block, sum_final, scale_sum_tasklet, "_in1", {}, block.debug_info());
+        auto& alpha_node = standalone->add_scalar_input_access(flush_block, ALPHA_INPUT_IDX);
+        builder.add_computational_memlet(flush_block, alpha_node, scale_sum_tasklet, "_in2", {}, block.debug_info());
 
-    std::string scaled_sum_temp = builder.find_new_name("scaled_sum_temp");
-    builder.add_container(scaled_sum_temp, scalar_type);
-    auto& scaled_sum_final = builder.add_access(flush_block, scaled_sum_temp, block.debug_info());
-    builder.add_computational_memlet(
-        flush_block, scale_sum_tasklet, "_out", scaled_sum_final, {}, scalar_type, block.debug_info()
-    );
+        std::string scaled_sum_temp = builder.find_new_name("scaled_sum_temp");
+        builder.add_container(scaled_sum_temp, scalar_type);
+        auto& scaled_sum_final = builder.add_access(flush_block, scaled_sum_temp, block.debug_info());
+        builder.add_computational_memlet(
+            flush_block, scale_sum_tasklet, "_out", scaled_sum_final, {}, scalar_type, block.debug_info()
+        );
+        scaled_sum_node = &scaled_sum_final;
+    }
 
-    // beta * C[...]
-    auto& scale_input_tasklet =
-        builder.add_tasklet(flush_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"}, block.debug_info());
-    builder.add_computational_memlet(
-        flush_block, input_node_c_new, scale_input_tasklet, "_in1", {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
-    );
-    auto& beta_node = standalone->add_scalar_input_access(flush_block, BETA_INPUT_IDX);
-    builder.add_computational_memlet(flush_block, beta_node, scale_input_tasklet, "_in2", {}, block.debug_info());
-
-    std::string scaled_input_temp = builder.find_new_name("scaled_input_temp");
-    builder.add_container(scaled_input_temp, scalar_type);
-    auto& scaled_input_c = builder.add_access(flush_block, scaled_input_temp, block.debug_info());
-    builder.add_computational_memlet(
-        flush_block, scale_input_tasklet, "_out", scaled_input_c, {}, scalar_type, block.debug_info()
-    );
-
-    // alpha*sum + beta*C
-    auto& flush_add_tasklet =
-        builder.add_tasklet(flush_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, block.debug_info());
     auto& output_node_new = standalone->add_indirect_write_access(flush_block, C_INPUT_IDX);
-    builder.add_computational_memlet(
-        flush_block, scaled_sum_final, flush_add_tasklet, "_in1", {}, scalar_type, block.debug_info()
-    );
-    builder.add_computational_memlet(
-        flush_block, scaled_input_c, flush_add_tasklet, "_in2", {}, scalar_type, block.debug_info()
-    );
-    builder.add_computational_memlet(
-        flush_block, flush_add_tasklet, "_out", output_node_new, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
-    );
+
+    if (beta_is_zero) {
+        // C = alpha * sum
+        auto& store_tasklet = builder.add_tasklet(flush_block, data_flow::assign, "_out", {"_in"}, block.debug_info());
+        builder.add_computational_memlet(flush_block, *scaled_sum_node, store_tasklet, "_in", {}, block.debug_info());
+        builder.add_computational_memlet(
+            flush_block, store_tasklet, "_out", output_node_new, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
+        );
+    } else {
+        // C = alpha * sum + beta * C
+        auto& input_node_c_new = standalone->add_indirect_read_access(flush_block, C_INPUT_IDX);
+
+        auto& scale_input_tasklet =
+            builder
+                .add_tasklet(flush_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"}, block.debug_info());
+        builder.add_computational_memlet(
+            flush_block,
+            input_node_c_new,
+            scale_input_tasklet,
+            "_in1",
+            {c_idx},
+            iedge_c->base_type(),
+            iedge_c->debug_info()
+        );
+        auto& beta_node = standalone->add_scalar_input_access(flush_block, BETA_INPUT_IDX);
+        builder.add_computational_memlet(flush_block, beta_node, scale_input_tasklet, "_in2", {}, block.debug_info());
+
+        std::string scaled_input_temp = builder.find_new_name("scaled_input_temp");
+        builder.add_container(scaled_input_temp, scalar_type);
+        auto& scaled_input_c = builder.add_access(flush_block, scaled_input_temp, block.debug_info());
+        builder.add_computational_memlet(
+            flush_block, scale_input_tasklet, "_out", scaled_input_c, {}, scalar_type, block.debug_info()
+        );
+
+        auto& flush_add_tasklet =
+            builder
+                .add_tasklet(flush_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, block.debug_info());
+        builder.add_computational_memlet(
+            flush_block, *scaled_sum_node, flush_add_tasklet, "_in1", {}, scalar_type, block.debug_info()
+        );
+        builder.add_computational_memlet(
+            flush_block, scaled_input_c, flush_add_tasklet, "_in2", {}, scalar_type, block.debug_info()
+        );
+        builder.add_computational_memlet(
+            flush_block, flush_add_tasklet, "_out", output_node_new, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
+        );
+    }
 
     return standalone->successfully_expanded();
 }

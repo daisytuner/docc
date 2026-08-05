@@ -433,6 +433,44 @@ bool Memlet::is_dst_pointed_to_write() const {
     return false;
 }
 
+bool Memlet::is_src_constant(double value) const {
+    if (src_conn_ == "void") {
+        auto t = type();
+        if (t == Computational) {
+            auto* const_node = dynamic_cast<const ConstantNode*>(&this->src_);
+            if (const_node != nullptr) {
+                try {
+                    return std::stod(const_node->data()) == value;
+                } catch (const std::exception&) {
+                    return false;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool Memlet::is_src_constant(int64_t value) const {
+    if (src_conn_ == "void") {
+        auto t = type();
+        if (t == Computational) {
+            auto* const_node = dynamic_cast<const ConstantNode*>(&this->src_);
+            if (const_node != nullptr) {
+                try {
+                    size_t pos = 0;
+                    const auto& data = const_node->data();
+                    int64_t parsed = std::stoll(data, &pos);
+                    // Reject partial parses (e.g. floats like "1.0") to keep integer matching exact.
+                    return pos == data.size() && parsed == value;
+                } catch (const std::exception&) {
+                    return false;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 const DataFlowNode& Memlet::src() const { return this->src_; };
 
 DataFlowNode& Memlet::src() { return this->src_; };

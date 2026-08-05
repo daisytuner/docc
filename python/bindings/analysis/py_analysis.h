@@ -178,9 +178,28 @@ inline void register_analysis(py::module& m) {
         .def("users", &PyAnalysisManager::users, py::return_value_policy::reference_internal, "Get the Users analysis")
         .def("__repr__", [](const PyAnalysisManager&) { return "<AnalysisManager>"; });
 
-    py::class_<PyArgumentsAnalysis>(m, "ArgumentsAnalysis").def("__repr__", [](const PyArgumentsAnalysis&) {
-        return "<ArgumentsAnalysis>";
-    });
+    py::class_<PyArgumentsAnalysis>(m, "ArgumentsAnalysis")
+        .def(
+            "argument_sizes",
+            &PyArgumentsAnalysis::argument_sizes,
+            py::arg("node"),
+            py::arg("allow_dynamic_sizes") = false,
+            "Total size in bytes of every argument at the given region (dict name -> int)"
+        )
+        .def(
+            "argument_element_sizes",
+            &PyArgumentsAnalysis::argument_element_sizes,
+            py::arg("node"),
+            py::arg("allow_dynamic_sizes") = false,
+            "Element size in bytes of every argument at the given region (dict name -> int)"
+        )
+        .def(
+            "arguments",
+            &PyArgumentsAnalysis::arguments,
+            py::arg("node"),
+            "Read/write classification of every argument at the given region"
+        )
+        .def("__repr__", [](const PyArgumentsAnalysis&) { return "<ArgumentsAnalysis>"; });
 
     py::class_<PyAssumptionsAnalysis>(m, "AssumptionsAnalysis").def("__repr__", [](const PyAssumptionsAnalysis&) {
         return "<AssumptionsAnalysis>";
