@@ -35,7 +35,7 @@ private:
 
     std::unordered_map<std::type_index, std::unique_ptr<Analysis>> cache_;
 
-    static constexpr std::string STATS_SCOPE = "AnalysisMgr";
+    static constexpr const char* STATS_SCOPE = "AnalysisMgr";
 
 public:
     AnalysisManager(StructuredSDFG& sdfg);
