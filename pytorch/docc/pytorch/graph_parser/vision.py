@@ -102,6 +102,15 @@ class UpsampleBilinear2DParser(GraphParserModule):
                 node,
                 "Expected 4D output [N, C, H, W] but got: " + str(result_tensor.shape),
             )
+        # interpolate preserves its input's memory format, so the fx metadata can
+        # express the result in a channels_last layout. Graph output arguments are
+        # boundary tensors that are always contiguous (NCHW); the channels_last
+        # metadata does not apply to them. Writing the strided layout into the
+        # output boundary silently transposes the data, so force a contiguous
+        # write when the result is a graph output.
+        is_output: bool = container_info[result_container].out_argument()
+        if is_output and not result_tensor.is_contiguous():
+            result_tensor = Tensor(result_tensor.element_type, result_tensor.shape)
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_upsample_bilinear2d(
             input_container,
