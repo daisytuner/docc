@@ -39,6 +39,9 @@ protected:
     virtual void visualizeStructuredSDFG(const StructuredSDFG& sdfg) = 0;
     virtual void visualizeNode(const StructuredSDFG& sdfg, const structured_control_flow::ControlFlowNode& node);
     virtual void visualizeBlock(const StructuredSDFG& sdfg, const structured_control_flow::Block& block) = 0;
+    virtual void visualizeAssignmentBlock(
+        const StructuredSDFG& sdfg, const structured_control_flow::AssignmentBlock& assignment_block
+    ) = 0;
     virtual void visualizeSequence(const StructuredSDFG& sdfg, const structured_control_flow::Sequence& sequence) = 0;
     virtual void visualizeIfElse(const StructuredSDFG& sdfg, const structured_control_flow::IfElse& if_else) = 0;
     virtual void visualizeWhile(const StructuredSDFG& sdfg, const structured_control_flow::While& while_loop) = 0;

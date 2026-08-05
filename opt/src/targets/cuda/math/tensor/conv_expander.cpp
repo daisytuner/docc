@@ -40,9 +40,7 @@ bool CudaConvExpander::expand_conv_naive(
     math::blas::BLAS_Precision precision = node.get_blas_precision(base_type);
 
     // Create new sequence for expansion
-    auto& new_sequence = builder.add_sequence_before(
-        *b.block_parent, *b.block, b.block_parent->at(b.block_index).second.assignments(), b.block->debug_info()
-    );
+    auto& new_sequence = builder.add_sequence_before(*b.block_parent, *b.block, b.block->debug_info());
 
     // Dimensions, i.e., 1D, 2D, 3D, ...
     size_t dims = node.kernel_shape().size();
@@ -63,7 +61,6 @@ bool CudaConvExpander::expand_conv_naive(
         symbolic::zero(),
         symbolic::add(n, symbolic::one()),
         ScheduleType_Sequential::create(),
-        {},
         b.block->debug_info()
     );
     current_seq = &loop_n.root();
@@ -79,7 +76,6 @@ bool CudaConvExpander::expand_conv_naive(
         symbolic::zero(),
         symbolic::add(l, symbolic::one()),
         ScheduleType_Sequential::create(),
-        {},
         b.block->debug_info()
     );
     current_seq = &loop_l.root();
@@ -99,7 +95,6 @@ bool CudaConvExpander::expand_conv_naive(
             symbolic::zero(),
             symbolic::add(o, symbolic::one()),
             ScheduleType_Sequential::create(),
-            {},
             b.block->debug_info()
         );
         current_seq = &loop_o.root();
@@ -132,7 +127,6 @@ bool CudaConvExpander::expand_conv_naive(
         symbolic::Lt(c, channels_per_group),
         symbolic::zero(),
         symbolic::add(c, symbolic::one()),
-        {},
         b.block->debug_info()
     );
     current_seq = &loop_c.root();
@@ -151,7 +145,6 @@ bool CudaConvExpander::expand_conv_naive(
             symbolic::Lt(k, node.kernel_shape()[i]),
             symbolic::zero(),
             symbolic::add(k, symbolic::one()),
-            {},
             b.block->debug_info()
         );
         current_seq = &loop_k.root();
@@ -190,7 +183,7 @@ bool CudaConvExpander::expand_conv_naive(
                 And(comp_condition,
                     symbolic::And(symbolic::Lt(is[i], node.shape()[i + 2]), symbolic::Ge(is[i], symbolic::zero())));
         }
-        auto& branch = builder.add_if_else(*current_seq, {}, b.block->debug_info());
+        auto& branch = builder.add_if_else(*current_seq, b.block->debug_info());
         current_seq = &builder.add_case(branch, comp_condition, b.block->debug_info());
     }
 
@@ -288,9 +281,7 @@ bool CudaConvExpander::expand_conv_im2row(
     math::blas::BLAS_Precision precision = node.get_blas_precision(base_type);
 
     // Create new sequence for expansion
-    auto& new_sequence = builder.add_sequence_before(
-        *b.block_parent, *b.block, b.block_parent->at(b.block_index).second.assignments(), b.block->debug_info()
-    );
+    auto& new_sequence = builder.add_sequence_before(*b.block_parent, *b.block, b.block->debug_info());
 
     // Dimensions, i.e., 1D, 2D, 3D, ...
     size_t dims = node.kernel_shape().size();
@@ -346,7 +337,6 @@ bool CudaConvExpander::expand_conv_im2row(
         symbolic::zero(),
         symbolic::add(n, symbolic::one()),
         ScheduleType_Sequential::create(),
-        {},
         b.block->debug_info()
     );
     structured_control_flow::Sequence* current_seq = &loop_n.root();
@@ -366,7 +356,6 @@ bool CudaConvExpander::expand_conv_im2row(
             symbolic::zero(),
             symbolic::add(o, symbolic::one()),
             ScheduleType_Sequential::create(),
-            {},
             b.block->debug_info()
         );
         current_seq = &loop_o.root();
@@ -383,7 +372,6 @@ bool CudaConvExpander::expand_conv_im2row(
         symbolic::zero(),
         symbolic::add(c, symbolic::one()),
         ScheduleType_Sequential::create(),
-        {},
         b.block->debug_info()
     );
     current_seq = &loop_c.root();
@@ -403,7 +391,6 @@ bool CudaConvExpander::expand_conv_im2row(
             symbolic::zero(),
             symbolic::add(k, symbolic::one()),
             ScheduleType_Sequential::create(),
-            {},
             b.block->debug_info()
         );
         current_seq = &loop_k.root();
@@ -426,7 +413,7 @@ bool CudaConvExpander::expand_conv_im2row(
             Or(zero_condition,
                symbolic::Or(symbolic::Ge(i_expr, node.shape()[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
     }
-    auto& branch = builder.add_if_else(*current_seq, {}, b.block->debug_info());
+    auto& branch = builder.add_if_else(*current_seq, b.block->debug_info());
     auto& copy_case = builder.add_case(branch, copy_condition, b.block->debug_info());
     auto& zero_case = builder.add_case(branch, zero_condition, b.block->debug_info());
 
@@ -530,7 +517,6 @@ bool CudaConvExpander::expand_conv_im2row(
         symbolic::zero(),
         symbolic::add(n, symbolic::one()),
         ScheduleType_Sequential::create(),
-        {},
         b.block->debug_info()
     );
     current_seq = &loop_n_2.root();
@@ -546,7 +532,6 @@ bool CudaConvExpander::expand_conv_im2row(
         symbolic::zero(),
         symbolic::add(l, symbolic::one()),
         ScheduleType_Sequential::create(),
-        {},
         b.block->debug_info()
     );
     current_seq = &loop_l.root();
@@ -563,7 +548,6 @@ bool CudaConvExpander::expand_conv_im2row(
             symbolic::zero(),
             symbolic::add(o, symbolic::one()),
             ScheduleType_Sequential::create(),
-            {},
             b.block->debug_info()
         );
         current_seq = &loop_o.root();

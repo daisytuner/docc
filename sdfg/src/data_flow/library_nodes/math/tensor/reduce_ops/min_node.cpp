@@ -70,6 +70,8 @@ bool MinNode::expand_reduction(
 
 std::string MinNode::identity(types::PrimitiveType primitive_type) const {
     switch (primitive_type) {
+        case types::PrimitiveType::Bool:
+            return "true";
         case types::PrimitiveType::Int8:
             return "INT8_MAX";
         case types::PrimitiveType::Int16:
@@ -89,6 +91,10 @@ std::string MinNode::identity(types::PrimitiveType primitive_type) const {
         default:
             return "INFINITY";
     }
+}
+
+std::optional<structured_control_flow::ReductionOperation> MinNode::reduction_operation() const {
+    return std::make_optional(structured_control_flow::ReductionOperation::Min);
 }
 
 std::unique_ptr<data_flow::DataFlowNode> MinNode::

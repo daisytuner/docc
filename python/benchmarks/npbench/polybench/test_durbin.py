@@ -11,7 +11,7 @@ PARAMETERS = {
 
 
 def initialize(N, datatype=np.float64):
-    r = np.fromfunction(lambda i: N + 1 - i, (N,), dtype=datatype)
+    r = N + 1 - np.arange(N, dtype=datatype)
     return r
 
 

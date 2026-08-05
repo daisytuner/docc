@@ -53,6 +53,25 @@ public:
     ) override;
 };
 
+class AssignmentDispatcher : public NodeDispatcher {
+private:
+    const structured_control_flow::AssignmentBlock& node_;
+
+public:
+    AssignmentDispatcher(
+        LanguageExtension& language_extension,
+        StructuredSDFG& sdfg,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::AssignmentBlock& node,
+        InstrumentationPlan& instrumentation_plan,
+        ArgCapturePlan& arg_capture_plan
+    );
+
+    void dispatch_node(
+        PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
+    ) override;
+};
+
 class DataFlowDispatcher {
 private:
     LanguageExtension& language_extension_;

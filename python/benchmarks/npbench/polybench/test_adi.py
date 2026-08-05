@@ -11,7 +11,9 @@ PARAMETERS = {
 
 
 def initialize(TSTEPS, N, datatype=np.float64):
-    u = np.fromfunction(lambda i, j: (i + N - j) / N, (N, N), dtype=datatype)
+    i = np.arange(N, dtype=datatype).reshape(-1, 1)
+    j = np.arange(N, dtype=datatype)
+    u = (i + N - j) / N
 
     return TSTEPS, N, u
 
@@ -89,14 +91,14 @@ def test_adi(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 20, "MAP": 21, "SEQUENTIAL": 6, "FOR": 5}
+            verification={"VECTORIZE": 19, "MAP": 20, "SEQUENTIAL": 6, "FOR": 5}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "CPU_PARALLEL": 1,
-                "VECTORIZE": 19,
-                "MAP": 20,
+                "VECTORIZE": 18,
+                "MAP": 19,
                 "SEQUENTIAL": 5,
                 "FOR": 5,
             }

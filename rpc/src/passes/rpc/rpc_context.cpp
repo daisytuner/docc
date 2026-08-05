@@ -1,11 +1,51 @@
+#include <curl/curl.h>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <ranges>
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
+#include "sdfg/util/utils_curl.h"
 
 namespace sdfg::passes::rpc {
+
+std::optional<std::string> SimpleRpcContext::start_session() {
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        std::cerr << "[RPC] start_session: could not initialize CURL" << std::endl;
+        return std::nullopt;
+    }
+
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    for (const auto& [key, value] : headers_) {
+        std::string header = key + ": " + value;
+        headers = curl_slist_append(headers, header.c_str());
+    }
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    const std::string url = server_ + "/" + session_endpoint_;
+    HttpResult res = post_json(curl, url, "{}", headers);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (!res.error_message.empty()) {
+        std::cerr << "[RPC] start_session failed: " << res.error_message << std::endl;
+        return std::nullopt;
+    }
+
+    try {
+        nlohmann::json parsed = nlohmann::json::parse(res.body);
+        auto it = parsed.find("session_id");
+        if (it != parsed.end() && it->is_string()) {
+            return it->get<std::string>();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[RPC] start_session: failed to parse response: " << e.what() << std::endl;
+    }
+    return std::nullopt;
+}
 
 std::shared_ptr<SimpleRpcContext> SimpleRpcContextBuilder::build(bool print) const {
     if (server.empty()) {
@@ -23,7 +63,7 @@ std::shared_ptr<SimpleRpcContext> SimpleRpcContextBuilder::build(bool print) con
 
 SimpleRpcContextBuilder& SimpleRpcContextBuilder::initialize_local_default() {
     this->server = "http://localhost:8080/docc";
-    this->endpoint = "transfertune";
+    this->endpoint = "transfertune_sdfg";
 
     return *this;
 }

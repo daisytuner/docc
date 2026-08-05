@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -12,6 +13,9 @@ public:
     virtual std::string get_remote_address() const = 0;
     virtual std::unordered_map<std::string, std::string> get_auth_headers() const = 0;
 
+    // Open a tuning session and return its server-assigned id.
+    virtual std::optional<std::string> start_session() { return std::nullopt; }
+
     virtual ~RpcContext() = default;
 };
 
@@ -19,6 +23,7 @@ class SimpleRpcContext : public RpcContext {
 private:
     std::string server_;
     std::string endpoint_;
+    std::string session_endpoint_ = "transfertune_session";
     std::unordered_map<std::string, std::string> headers_;
 
 protected:
@@ -31,6 +36,9 @@ public:
     std::string get_remote_address() const override { return server_ + "/" + endpoint_; }
 
     std::unordered_map<std::string, std::string> get_auth_headers() const override { return headers_; }
+
+    // Default backend convention: POST to `<server>/transfertune_session` and read back `session_id`.
+    std::optional<std::string> start_session() override;
 };
 
 struct SimpleRpcContextBuilder {

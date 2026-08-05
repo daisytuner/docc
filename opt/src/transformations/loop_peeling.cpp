@@ -204,7 +204,7 @@ static std::vector<structured_control_flow::StructuredLoop*> collect_peelable_ne
     while (true) {
         auto& body = current->root();
         if (body.size() != 1) break;
-        auto& child = body.at(0).first;
+        auto& child = body.at(0);
         auto* inner_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child);
         if (!inner_loop) break;
         if (!loop_is_peelable(*inner_loop)) break;
@@ -244,7 +244,7 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
     auto parent = static_cast<structured_control_flow::Sequence*>(loop_.get_parent());
 
     // Create IfElse before the outermost loop
-    auto& if_else = builder.add_if_else_before(*parent, loop_, {}, loop_.debug_info());
+    auto& if_else = builder.add_if_else_before(*parent, loop_, loop_.debug_info());
 
     // === Then branch: all loops normalized to start at 0 with constant trip counts ===
     auto& then_branch = builder.add_case(if_else, combined_peeling_condition);
@@ -296,7 +296,6 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 zero_init,
                 loop->update(),
                 map->schedule_type(),
-                {},
                 loop->debug_info()
             );
         } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(loop)) {
@@ -308,13 +307,11 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 loop->update(),
                 reduce->reductions(),
                 loop->schedule_type(),
-                {},
                 loop->debug_info()
             );
         } else {
             new_loop =
-                &builder
-                     .add_for(*current_parent, indvar, zero_condition, zero_init, loop->update(), {}, loop->debug_info());
+                &builder.add_for(*current_parent, indvar, zero_condition, zero_init, loop->update(), loop->debug_info());
         }
 
         // Record substitution: in the body, original indvar usage = new_indvar + effective_init
@@ -354,7 +351,6 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 loop->init(),
                 loop->update(),
                 map->schedule_type(),
-                {},
                 loop->debug_info()
             );
         } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(loop)) {
@@ -366,12 +362,11 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
                 loop->update(),
                 reduce->reductions(),
                 loop->schedule_type(),
-                {},
                 loop->debug_info()
             );
         } else {
             new_loop = &builder.add_for(
-                *current_parent, loop->indvar(), loop->condition(), loop->init(), loop->update(), {}, loop->debug_info()
+                *current_parent, loop->indvar(), loop->condition(), loop->init(), loop->update(), loop->debug_info()
             );
         }
         current_parent = &new_loop->root();

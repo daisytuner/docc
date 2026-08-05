@@ -502,8 +502,8 @@ bool DeadDataElimination::run_pass(builder::StructuredSDFGBuilder& builder, anal
                 if (no_reads) {
                     bool could_eliminate_write = false;
                     auto write = set.first;
-                    if (auto transition = dyn_cast<structured_control_flow::Transition*>(write->element())) {
-                        transition->assignments().erase(symbolic::symbol(name));
+                    if (auto assign_block = dyn_cast<structured_control_flow::AssignmentBlock*>(write->element())) {
+                        assign_block->assignments().erase(symbolic::symbol(name));
                         applied = true;
                         could_eliminate_write = true;
                     } else if (auto access_node = dynamic_cast<data_flow::AccessNode*>(write->element())) {

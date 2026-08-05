@@ -14,6 +14,8 @@ class BroadcastNode : public TensorNode {
 private:
     std::vector<symbolic::Expression> input_shape_;
     std::vector<symbolic::Expression> output_shape_;
+    // true: leading-alignment (linalg.broadcast); false: trailing-alignment (NumPy/PyTorch).
+    bool padded_;
 
 public:
     BroadcastNode(
@@ -22,7 +24,8 @@ public:
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
         const std::vector<symbolic::Expression>& input_shape,
-        const std::vector<symbolic::Expression>& output_shape
+        const std::vector<symbolic::Expression>& output_shape,
+        bool padded = true
     );
 
     static auto constexpr RESULT_PTR_IDX = 0;
@@ -32,6 +35,7 @@ public:
 
     const std::vector<symbolic::Expression>& input_shape() const { return input_shape_; }
     const std::vector<symbolic::Expression>& output_shape() const { return output_shape_; }
+    bool padded() const { return padded_; }
 
     symbolic::SymbolSet symbols() const override;
 
@@ -69,6 +73,8 @@ public:
             j["output_shape"].push_back(serializer.expression(dim));
         }
 
+        j["padded"] = reduce_node.padded();
+
         return j;
     }
 
@@ -94,11 +100,13 @@ public:
             output_shape.push_back(symbolic::parse(dim.get<std::string>()));
         }
 
+        bool padded = j.value("padded", true);
+
         // Extract debug info using JSONSerializer
         sdfg::serializer::JSONSerializer serializer;
         DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
 
-        return builder.add_library_node<BroadcastNode>(parent, debug_info, input_shape, output_shape);
+        return builder.add_library_node<BroadcastNode>(parent, debug_info, input_shape, output_shape, padded);
     }
 };
 

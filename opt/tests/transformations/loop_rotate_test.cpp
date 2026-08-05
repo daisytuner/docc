@@ -9,7 +9,9 @@
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/transformations/loop_rotate.h"
+
 #include "sdfg/types/array.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -62,7 +64,7 @@ TEST(LoopRotateTest, BasicRotation) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Verify initial state: stride = -1, init = 10
@@ -98,14 +100,14 @@ TEST(LoopRotateTest, BasicRotation) {
     ASSERT_EQ(loop->root().size(), 2); // new empty block + original block
 
     // The first block should have the assignment in its transition
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
-    ASSERT_EQ(transition.assignments().size(), 1);
+    auto assgn = dyn_cast<AssignmentBlock*>(&loop->root().at(0));
+    ASSERT_TRUE(assgn);
+    ASSERT_EQ(assgn->assignments().size(), 1);
 
     // Assignment should be: __i_orig__ = 10 + 1 - i = 11 - i
     auto rotated_var = symbolic::symbol(rotate.rotated_container_name());
-    ASSERT_TRUE(transition.assignments().count(rotated_var) > 0);
-    auto assigned_value = transition.assignments().at(rotated_var);
+    ASSERT_TRUE(assgn->assignments().count(rotated_var) > 0);
+    auto assigned_value = assgn->assignments().at(rotated_var);
     auto expected = symbolic::sub(symbolic::integer(11), symbolic::symbol("i"));
     EXPECT_TRUE(symbolic::eq(assigned_value, expected));
 }
@@ -140,17 +142,21 @@ TEST(LoopRotateTest, SymbolicBounds) {
     builder.add_computational_memlet(block, const_node, tasklet, "_in1", {});
     builder.add_computational_memlet(block, tasklet, "_out", a_node, {symbolic::symbol("i")});
 
+    dump_sdfg(builder.subject(), "0.init");
+
     auto sdfg = builder.move();
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopRotate
     transformations::LoopRotate rotate(*loop);
     ASSERT_TRUE(rotate.can_be_applied(builder2, am));
     rotate.apply(builder2, am);
+
+    dump_sdfg(builder2.subject(), "1.rotated");
 
     // Verify positive stride
     auto new_stride = loop->stride();
@@ -168,9 +174,9 @@ TEST(LoopRotateTest, SymbolicBounds) {
 
     // Assignment should be: __i_orig__ = N + 1 - i
     auto rotated_var = symbolic::symbol(rotate.rotated_container_name());
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
-    auto assigned_value = transition.assignments().at(rotated_var);
+    auto assgns = dyn_cast<AssignmentBlock*>(&loop->root().at(0));
+    ASSERT_TRUE(assgns);
+    auto assigned_value = assgns->assignments().at(rotated_var);
     auto expected = symbolic::sub(symbolic::add(symbolic::symbol("N"), symbolic::integer(1)), symbolic::symbol("i"));
     EXPECT_TRUE(symbolic::eq(assigned_value, expected));
 }
@@ -208,7 +214,7 @@ TEST(LoopRotateTest, NonZeroLowerBound) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopRotate
@@ -228,9 +234,9 @@ TEST(LoopRotateTest, NonZeroLowerBound) {
     //         ...
     //         i' = 10 -> orig = 15 - 10 = 5 ✓
     auto rotated_var = symbolic::symbol(rotate.rotated_container_name());
-    auto first_child = loop->root().at(0);
-    auto& transition = first_child.second;
-    auto assigned_value = transition.assignments().at(rotated_var);
+    auto assgns = dyn_cast<AssignmentBlock*>(&loop->root().at(0));
+    ASSERT_TRUE(assgns);
+    auto assigned_value = assgns->assignments().at(rotated_var);
     auto expected = symbolic::sub(symbolic::integer(15), symbolic::symbol("i"));
     EXPECT_TRUE(symbolic::eq(assigned_value, expected));
 }
@@ -259,7 +265,7 @@ TEST(LoopRotateTest, CannotApplyPositiveStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // LoopRotate should not be applicable
@@ -291,7 +297,7 @@ TEST(LoopRotateTest, CannotApplyNonUnitNegativeStride) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // LoopRotate should not be applicable (stride != -1)
@@ -333,7 +339,7 @@ TEST(LoopRotateTest, MapLoop) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::Map*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopRotate
@@ -383,7 +389,7 @@ TEST(LoopRotateTest, WithSymbolPropagation) {
     builder::StructuredSDFGBuilder builder2(sdfg);
     analysis::AnalysisManager am(builder2.subject());
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopRotate
@@ -446,7 +452,7 @@ TEST(LoopRotateTest, JsonRoundTrip) {
     auto sdfg = builder.move();
     builder::StructuredSDFGBuilder builder2(sdfg);
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&builder2.subject().root().at(0));
     ASSERT_NE(loop, nullptr);
 
     // Create transformation and serialize to JSON
@@ -504,7 +510,7 @@ TEST(LoopRotateTest, IndvarFinalValueAfterLoop) {
     auto& sdfg_root = builder2.subject().root();
     ASSERT_EQ(sdfg_root.size(), 1); // Just the loop
 
-    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::For*>(&sdfg_root.at(0));
     ASSERT_NE(loop, nullptr);
 
     // Apply LoopRotate
@@ -516,19 +522,16 @@ TEST(LoopRotateTest, IndvarFinalValueAfterLoop) {
     ASSERT_EQ(sdfg_root.size(), 2);
 
     // Verify the second element is a block (reconstruction)
-    auto* post_loop_block = dyn_cast<structured_control_flow::Block*>(&sdfg_root.at(1).first);
+    auto* post_loop_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&sdfg_root.at(1));
     ASSERT_NE(post_loop_block, nullptr);
-
     // Check the reconstruction block's transition contains the reconstruction assignment
-    // (add_block_after puts assignments in the new block's transition)
-    auto& post_loop_transition = sdfg_root.at(1).second;
-    ASSERT_EQ(post_loop_transition.assignments().size(), 1);
+    ASSERT_EQ(post_loop_block->assignments().size(), 1);
 
     // Assignment should be: i = 10 + 1 - i = 11 - i
     // (old_init=10, new_init=0+1=1, so reconstruction is 10+1-i)
     auto indvar = symbolic::symbol("i");
-    ASSERT_TRUE(post_loop_transition.assignments().count(indvar) > 0);
-    auto reconstruction = post_loop_transition.assignments().at(indvar);
+    ASSERT_TRUE(post_loop_block->assignments().count(indvar) > 0);
+    auto reconstruction = post_loop_block->assignments().at(indvar);
     auto expected = symbolic::sub(symbolic::integer(11), indvar);
     EXPECT_TRUE(symbolic::eq(reconstruction, expected));
 }

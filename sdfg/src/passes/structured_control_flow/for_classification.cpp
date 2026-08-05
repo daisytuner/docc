@@ -45,9 +45,11 @@ ForClassificationPass::Classification ForClassificationPass::classify(
                     }
                 }
             }
+        } else if (auto assgn = dyn_cast<const structured_control_flow::AssignmentBlock*>(current)) {
+            // nothing to check
         } else if (auto seq = dynamic_cast<const structured_control_flow::Sequence*>(current)) {
             for (size_t i = 0; i < seq->size(); i++) {
-                auto& child = seq->at(i).first;
+                auto& child = seq->at(i);
                 queue.push_back(&child);
             }
         } else if (auto ifelse = dynamic_cast<const structured_control_flow::IfElse*>(current)) {
@@ -112,7 +114,7 @@ ForClassificationPass::Classification ForClassificationPass::classify(
                 if (writes.size() == 1 && reads.empty()) {
                     auto write = writes.front();
                     if (auto write_transition =
-                            dynamic_cast<const structured_control_flow::Transition*>(write->element())) {
+                            dynamic_cast<const structured_control_flow::AssignmentBlock*>(write->element())) {
                         auto lhs = symbolic::symbol(container);
                         auto rhs = write_transition->assignments().at(lhs);
                         if (SymEngine::is_a<SymEngine::Integer>(*rhs)) {

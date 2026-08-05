@@ -337,7 +337,7 @@ void collect_body_blocks(
         out.push_back(block);
     } else if (auto* seq = dynamic_cast<const structured_control_flow::Sequence*>(&node)) {
         for (size_t i = 0; i < seq->size(); i++) {
-            collect_body_blocks(seq->at(i).first, out);
+            collect_body_blocks(seq->at(i), out);
         }
     } else if (auto* ifelse = dynamic_cast<const structured_control_flow::IfElse*>(&node)) {
         for (size_t i = 0; i < ifelse->size(); i++) {

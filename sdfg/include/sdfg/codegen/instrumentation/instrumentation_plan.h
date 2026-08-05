@@ -16,15 +16,13 @@
 namespace sdfg {
 namespace codegen {
 
-enum InstrumentationEventType { CPU = 0, CUDA = 1, NONE = 2 };
-
 class InstrumentationPlan {
 protected:
     StructuredSDFG& sdfg_;
-    std::unordered_map<const Element*, InstrumentationEventType> nodes_;
+    std::unordered_set<const Element*> nodes_;
 
 public:
-    InstrumentationPlan(StructuredSDFG& sdfg, const std::unordered_map<const Element*, InstrumentationEventType>& nodes)
+    InstrumentationPlan(StructuredSDFG& sdfg, const std::unordered_set<const Element*>& nodes)
         : sdfg_(sdfg), nodes_(nodes) {}
 
     InstrumentationPlan(const InstrumentationPlan& other) = delete;
@@ -32,8 +30,6 @@ public:
 
     InstrumentationPlan& operator=(const InstrumentationPlan& other) = delete;
     InstrumentationPlan& operator=(InstrumentationPlan&& other) = delete;
-
-    void update(const Element& element, InstrumentationEventType event_type);
 
     bool is_empty() const { return nodes_.empty(); }
 
@@ -52,6 +48,8 @@ public:
         LanguageExtension& language_extension,
         const InstrumentationInfo& info
     ) const;
+
+    void insert(const Element* node) { nodes_.insert(node); }
 
     static std::unique_ptr<InstrumentationPlan> none(StructuredSDFG& sdfg);
 

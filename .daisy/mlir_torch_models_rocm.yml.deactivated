@@ -3,7 +3,7 @@ on: # Deactivated because torch mlir breaks here
     branches:
       - main
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize]
 
 parameters:
   container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64

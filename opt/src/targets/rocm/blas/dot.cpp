@@ -77,6 +77,17 @@ void DotNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
     rocm_error_checking(stream, this->language_extension_, "err_hip");
 }
 
+codegen::InstrumentationInfo DotNodeDispatcher_ROCMBLASWithTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_ROCM,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
+}
+
 DotNodeDispatcher_ROCMBLASWithoutTransfers::DotNodeDispatcher_ROCMBLASWithoutTransfers(
     codegen::LanguageExtension& language_extension,
     const Function& function,
@@ -116,6 +127,17 @@ void DotNodeDispatcher_ROCMBLASWithoutTransfers::dispatch_code(
 
     rocmblas_error_checking(stream, this->language_extension_, "err");
     check_rocm_kernel_launch_errors(stream, this->language_extension_);
+}
+
+codegen::InstrumentationInfo DotNodeDispatcher_ROCMBLASWithoutTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_ROCM,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
 }
 
 } // namespace sdfg::rocm::blas

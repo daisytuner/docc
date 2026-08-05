@@ -372,12 +372,12 @@ TEST(TensorPrimitiveTypeTest, AddNodeInt32GeneratesIntAddTasklet) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an int_add tasklet
@@ -418,12 +418,12 @@ TEST(TensorPrimitiveTypeTest, AddNodeFloatGeneratesFpAddTasklet) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an fp_add tasklet
@@ -464,12 +464,12 @@ TEST(TensorPrimitiveTypeTest, DivNodeInt32GeneratesIntSdivTasklet) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an int_sdiv tasklet
@@ -510,12 +510,12 @@ TEST(TensorPrimitiveTypeTest, DivNodeUInt32GeneratesIntUdivTasklet) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an int_udiv tasklet
@@ -555,12 +555,12 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeInt32GeneratesIntSmaxTasklet) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an int_smax tasklet
@@ -600,12 +600,12 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeFloatGeneratesFmaxfIntrinsic) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's a fmaxf CMathNode
@@ -647,12 +647,12 @@ TEST(TensorPrimitiveTypeTest, MaximumNodeDoubleGeneratesFmaxIntrinsic) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's a fmax CMathNode
@@ -692,12 +692,12 @@ TEST(TensorPrimitiveTypeTest, ExpNodeFloatGeneratesExpfIntrinsic) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an expf CMathNode
@@ -742,12 +742,12 @@ TEST(TensorPrimitiveTypeTest, CastNodeInt32ToFloat) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an assign tasklet for casting
@@ -799,12 +799,12 @@ TEST(TensorPrimitiveTypeTest, CastNodeFloatToInt32) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an assign tasklet for casting
@@ -856,12 +856,12 @@ TEST(TensorPrimitiveTypeTest, CastNodeFloatToDouble) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Navigate to innermost block and verify types
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an assign tasklet for casting
@@ -913,12 +913,12 @@ TEST(TensorPrimitiveTypeTest, CastNodeUInt32ToInt64) {
     EXPECT_TRUE(outcome.block_removed);
 
     // Verify the expanded structure
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
     structured_control_flow::Sequence* current_scope = &new_sequence;
-    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+    auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
     ASSERT_NE(map_loop, nullptr);
     current_scope = &map_loop->root();
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that there's an assign tasklet for casting

@@ -127,8 +127,8 @@ private:
     // Get block at index, return nullptr if not valid
     structured_control_flow::Block* get_block(structured_control_flow::Sequence& seq, int idx) {
         if (idx >= static_cast<int>(seq.size())) return nullptr;
-        auto* blk = dyn_cast<structured_control_flow::Block*>(&seq.at(idx).first);
-        if (blk == nullptr || !seq.at(idx).second.empty()) return nullptr;
+        auto* blk = dyn_cast<structured_control_flow::Block*>(&seq.at(idx));
+        if (blk == nullptr) return nullptr;
         return blk;
     }
 

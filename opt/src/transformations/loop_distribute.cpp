@@ -13,7 +13,7 @@ LoopDistribute::
     : loop_(loop), child_(child) {};
 
 LoopDistribute::LoopDistribute(structured_control_flow::StructuredLoop& loop)
-    : LoopDistribute(loop, loop.root().at(0).first) {};
+    : LoopDistribute(loop, loop.root().at(0)) {};
 
 std::string LoopDistribute::name() const { return "LoopDistribute"; };
 
@@ -45,21 +45,13 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     // Criterion: child_ must be in loop body; record its index.
     size_t child_idx = body.size();
     for (size_t i = 0; i < body.size(); i++) {
-        if (&body.at(i).first == &this->child_) {
+        if (&body.at(i) == &this->child_) {
             child_idx = i;
             break;
         }
     }
     if (child_idx == body.size()) {
         return false;
-    }
-
-    // Criterion: Transitions must not have assignments.
-    for (size_t i = 0; i < body.size(); i++) {
-        auto& transition = body.at(i).second;
-        if (!transition.assignments().empty()) {
-            return false;
-        }
     }
 
     // Criterion: subset-aware loop-carried dependence check.
@@ -97,7 +89,7 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     // there into its destination group: 0 = prefix, 1 = center, 2 = suffix.
     auto piece_of = [&](analysis::User* u) -> size_t {
         for (size_t i = 0; i < body.size(); i++) {
-            if (user_in_subtree(u, body.at(i).first)) {
+            if (user_in_subtree(u, body.at(i))) {
                 return i;
             }
         }
@@ -220,7 +212,7 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     // Locate child_'s current index (guaranteed present by can_be_applied).
     size_t child_idx = body.size();
     for (size_t i = 0; i < body.size(); i++) {
-        if (&body.at(i).first == &this->child_) {
+        if (&body.at(i) == &this->child_) {
             child_idx = i;
             break;
         }
@@ -230,7 +222,7 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     // not shift body indices we still need.
     if (child_idx + 1 < body.size()) {
         auto& suffix_loop = builder.add_map_after(
-            *parent, this->loop_, indvar, condition, init, update, schedule_type, {}, this->loop_.debug_info()
+            *parent, this->loop_, indvar, condition, init, update, schedule_type, this->loop_.debug_info()
         );
         // Move all children after child_ into the suffix loop, preserving
         // their relative order. Each move shifts subsequent indices down by 1.
@@ -246,7 +238,7 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     // Create prefix loop (added before `loop_`).
     if (child_idx > 0) {
         auto& prefix_loop = builder.add_map_before(
-            *parent, this->loop_, indvar, condition, init, update, schedule_type, {}, this->loop_.debug_info()
+            *parent, this->loop_, indvar, condition, init, update, schedule_type, this->loop_.debug_info()
         );
         // Move all children before child_ into the prefix loop. Always move
         // child at index 0 since each move shifts subsequent indices down.

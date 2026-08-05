@@ -77,6 +77,17 @@ void DotNodeDispatcher_CUBLASWithTransfers::dispatch_code(
     cuda_error_checking(stream, this->language_extension_, "err_cuda");
 }
 
+codegen::InstrumentationInfo DotNodeDispatcher_CUBLASWithTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_CUDA,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
+}
+
 DotNodeDispatcher_CUBLASWithoutTransfers::DotNodeDispatcher_CUBLASWithoutTransfers(
     codegen::LanguageExtension& language_extension,
     const Function& function,
@@ -116,6 +127,17 @@ void DotNodeDispatcher_CUBLASWithoutTransfers::dispatch_code(
 
     cublas_error_checking(stream, this->language_extension_, "err");
     check_cuda_kernel_launch_errors(stream, this->language_extension_, false);
+}
+
+codegen::InstrumentationInfo DotNodeDispatcher_CUBLASWithoutTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_CUDA,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
 }
 
 } // namespace sdfg::cuda::blas

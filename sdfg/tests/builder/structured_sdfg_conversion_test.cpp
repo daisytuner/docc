@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
+
 #include "sdfg/builder/sdfg_builder.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -67,9 +69,8 @@ TEST(StructuredSDFGConversionTest, Empty) {
     auto& root = structured_sdfg->root();
     EXPECT_EQ(root.size(), 1);
 
-    auto ret = root.at(0);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&ret.first));
-    EXPECT_EQ(ret.second.size(), 0);
+    auto& ret = root.at(0);
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&ret));
 }
 
 TEST(StructuredSDFGConversionTest, SimpleSequence) {
@@ -88,7 +89,59 @@ TEST(StructuredSDFGConversionTest, SimpleSequence) {
     auto& root = struct_sdfg->root();
 
     EXPECT_EQ(root.size(), 1);
-    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&root.at(0).first), nullptr);
+    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&root.at(0)), nullptr);
+}
+
+TEST(StructuredSDFGConversionTest, SimpleDataflow) {
+    // A -> B -> C
+    builder::SDFGBuilder builder("test_seq", FunctionType_CPU);
+    builder.add_container("input_a", types::Scalar(types::PrimitiveType::Int32), true);
+    builder.add_container("input_b", types::Scalar(types::PrimitiveType::Int32), true);
+    builder.add_container("output", types::Scalar(types::PrimitiveType::Int32));
+    auto& state_a = builder.add_state(true);
+    auto& state_b = builder.add_state();
+    auto& input_a = builder.add_access(state_b, "input_a");
+    auto& input_b = builder.add_access(state_b, "input_b");
+    auto& output = builder.add_access(state_b, "output");
+    auto& tasklet = builder.add_tasklet(state_b, data_flow::int_add, "_out", {"_a", "_b"}, {});
+    builder.add_computational_memlet(state_b, input_a, tasklet, "_a", {}, types::Scalar(types::PrimitiveType::Int32));
+    builder.add_computational_memlet(state_b, input_b, tasklet, "_b", {}, types::Scalar(types::PrimitiveType::Int32));
+    builder.add_computational_memlet(state_b, tasklet, "_out", output, {}, types::Scalar(types::PrimitiveType::Int32));
+    auto& state_c = builder.add_return_state("");
+
+    builder.add_edge(state_a, state_b);
+    builder.add_edge(state_b, state_c);
+
+    builder::StructuredSDFGBuilder struct_builder(builder.subject());
+    auto struct_sdfg = struct_builder.move();
+
+    auto& root = struct_sdfg->root();
+
+    EXPECT_EQ(root.size(), 2);
+    auto block = dyn_cast<Block*>(&root.at(0));
+    ASSERT_TRUE(block);
+    bool found_input_a = false;
+    bool found_input_b = false;
+    bool found_output = false;
+    for (auto& data_flow_node : block->dataflow().nodes()) {
+        auto access = dyn_cast<data_flow::AccessNode*>(&data_flow_node);
+        if (access) {
+            if (access->data() == "input_a") {
+                found_input_a = true;
+            }
+            if (access->data() == "input_b") {
+                found_input_b = true;
+            }
+            if (access->data() == "output") {
+                found_output = true;
+            }
+        }
+    }
+    EXPECT_TRUE(found_output);
+    EXPECT_TRUE(found_input_a);
+    EXPECT_TRUE(found_input_b);
+
+    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&root.at(1)), nullptr);
 }
 
 TEST(StructuredSDFGConversionTest, While) {
@@ -111,19 +164,20 @@ TEST(StructuredSDFGConversionTest, While) {
     builder::StructuredSDFGBuilder structured_builder(*sdfg);
     auto structured_sdfg = structured_builder.move();
 
+    dump_sdfg(*structured_sdfg, "converted");
+
     // Loop
     auto& root = structured_sdfg->root();
     EXPECT_EQ(root.size(), 3);
 
-    auto child1 = root.at(0);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Block*>(&child1.first));
-    EXPECT_EQ(child1.second.size(), 1);
-    EXPECT_TRUE(symbolic::eq(child1.second.assignments().at(iter_sym), init_expr));
+    auto child1 = dyn_cast<AssignmentBlock*>(&root.at(0));
+    ASSERT_TRUE(child1);
+    EXPECT_EQ(child1->size(), 1);
+    EXPECT_TRUE(symbolic::eq(child1->assignments().at(iter_sym), init_expr));
 
-    auto child2 = root.at(1);
-    auto* if_else_init = dynamic_cast<const structured_control_flow::IfElse*>(&child2.first);
+    auto& child2 = root.at(1);
+    auto* if_else_init = dynamic_cast<const structured_control_flow::IfElse*>(&child2);
     ASSERT_TRUE(if_else_init);
-    EXPECT_EQ(child2.second.size(), 0);
 
     // Find the case with the loop (cond)
     const structured_control_flow::While* while_loop = nullptr;
@@ -133,7 +187,7 @@ TEST(StructuredSDFGConversionTest, While) {
         if (symbolic::eq(branch.second, cond_expr)) {
             // This should contain the loop
             ASSERT_EQ(branch.first.size(), 1);
-            while_loop = dynamic_cast<const structured_control_flow::While*>(&branch.first.at(0).first);
+            while_loop = dynamic_cast<const structured_control_flow::While*>(&branch.first.at(0));
         } else {
             // This is the early exit path (!cond)
             EXPECT_TRUE(symbolic::eq(branch.second, cond_expr->logical_not()));
@@ -146,15 +200,16 @@ TEST(StructuredSDFGConversionTest, While) {
     // Body -> Update (assignments) -> Update (branch)
     // Header and Body states are empty.
     // Edge Body->Update has assignments.
-    // So we expect Block(assignments) -> IfElse(branch)
+    // So we expect Block -> Assignments -> IfElse(branch)
     EXPECT_EQ(loop_body.size(), 2);
 
-    auto update_block = loop_body.at(0);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Block*>(&update_block.first));
-    EXPECT_TRUE(symbolic::eq(update_block.second.assignments().at(iter_sym), update_expr));
+    auto& update_block = loop_body.at(0);
+    auto assignment_block = dyn_cast<AssignmentBlock*>(&update_block);
+    ASSERT_TRUE(assignment_block);
+    EXPECT_TRUE(symbolic::eq(assignment_block->assignments().at(iter_sym), update_expr));
 
-    auto update_branch_node = loop_body.at(1);
-    auto* update_branch = dynamic_cast<const structured_control_flow::IfElse*>(&update_branch_node.first);
+    auto& update_branch_node = loop_body.at(1);
+    auto* update_branch = dynamic_cast<const structured_control_flow::IfElse*>(&update_branch_node);
     ASSERT_TRUE(update_branch);
 
     {
@@ -162,34 +217,33 @@ TEST(StructuredSDFGConversionTest, While) {
         if (symbolic::eq(if_case.second, cond_expr)) {
             // Continue case
             EXPECT_EQ(if_case.first.size(), 1);
-            auto cont = if_case.first.at(0);
-            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Continue*>(&cont.first));
+            auto& cont = if_case.first.at(0);
+            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Continue*>(&cont));
         } else {
             // Break case
             EXPECT_TRUE(symbolic::eq(if_case.second, cond_expr->logical_not()));
             EXPECT_EQ(if_case.first.size(), 1);
-            auto brk = if_case.first.at(0);
-            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Break*>(&brk.first));
+            auto& brk = if_case.first.at(0);
+            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Break*>(&brk));
         }
 
         auto else_case = update_branch->at(1);
         if (symbolic::eq(else_case.second, cond_expr)) {
             // Continue case
             EXPECT_EQ(else_case.first.size(), 1);
-            auto cont = else_case.first.at(0);
-            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Continue*>(&cont.first));
+            auto& cont = else_case.first.at(0);
+            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Continue*>(&cont));
         } else {
             // Break case
             EXPECT_TRUE(symbolic::eq(else_case.second, cond_expr->logical_not()));
             EXPECT_EQ(else_case.first.size(), 1);
-            auto brk = else_case.first.at(0);
-            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Break*>(&brk.first));
+            auto& brk = else_case.first.at(0);
+            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Break*>(&brk));
         }
     }
 
-    auto child3 = root.at(2);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&child3.first));
-    EXPECT_EQ(child3.second.size(), 0);
+    auto& child3 = root.at(2);
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&child3));
 }
 
 TEST(StructuredSDFGConversionTest, SimpleLoop) {
@@ -220,27 +274,27 @@ TEST(StructuredSDFGConversionTest, SimpleLoop) {
 
     ASSERT_EQ(root.size(), 2);
 
-    auto* loop = dyn_cast<structured_control_flow::While*>(&root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::While*>(&root.at(0));
     ASSERT_NE(loop, nullptr);
 
     auto& loop_body = loop->root();
 
     EXPECT_GE(loop_body.size(), 1);
-    auto if_else = dyn_cast<structured_control_flow::IfElse*>(&loop_body.at(0).first);
+    auto if_else = dyn_cast<structured_control_flow::IfElse*>(&loop_body.at(0));
     ASSERT_NE(if_else, nullptr);
     EXPECT_EQ(if_else->size(), 2); // 2 cases
 
     auto case1 = if_else->at(0);
     EXPECT_TRUE(symbolic::eq(case1.second, SymEngine::Ne(symbolic::symbol("loop_cond"), symbolic::integer(0))));
-    auto continue_node = dyn_cast<structured_control_flow::Continue*>(&case1.first.at(0).first);
+    auto continue_node = dyn_cast<structured_control_flow::Continue*>(&case1.first.at(0));
     EXPECT_NE(continue_node, nullptr);
 
     auto case2 = if_else->at(1);
     EXPECT_TRUE(symbolic::eq(case2.second, SymEngine::Eq(symbolic::symbol("loop_cond"), symbolic::integer(0))));
-    auto break_node = dyn_cast<structured_control_flow::Break*>(&case2.first.at(0).first);
+    auto break_node = dyn_cast<structured_control_flow::Break*>(&case2.first.at(0));
     EXPECT_NE(break_node, nullptr);
 
-    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&root.at(1).first), nullptr); // D
+    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&root.at(1)), nullptr); // D
 }
 
 TEST(StructuredSDFGConversionTest, LoopWithBreak) {
@@ -277,13 +331,13 @@ TEST(StructuredSDFGConversionTest, LoopWithBreak) {
     // Expected: Block(A) -> While -> Return(E)
 
     ASSERT_EQ(root.size(), 2);
-    auto* loop = dyn_cast<structured_control_flow::While*>(&root.at(0).first);
+    auto* loop = dyn_cast<structured_control_flow::While*>(&root.at(0));
     ASSERT_NE(loop, nullptr);
 
     auto& loop_body = loop->root();
 
     ASSERT_GE(loop_body.size(), 1);
-    auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&loop_body.at(0).first);
+    auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&loop_body.at(0));
     ASSERT_NE(if_else, nullptr);
 }
 
@@ -314,14 +368,14 @@ TEST(StructuredSDFGConversionTest, UnstructuredReturn) {
     // Case 2 (A->Ret): Return(Ret)
 
     ASSERT_EQ(root.size(), 1);
-    auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&root.at(0).first);
+    auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&root.at(0));
     ASSERT_NE(if_else, nullptr);
     EXPECT_EQ(if_else->size(), 2); // 2 cases
 
     auto branch1 = if_else->at(0);
     EXPECT_TRUE(symbolic::eq(branch1.second, SymEngine::Ne(symbolic::symbol("cond"), symbolic::integer(0))));
     EXPECT_EQ(branch1.first.size(), 1);
-    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&branch1.first.at(0).first), nullptr); // C
+    EXPECT_NE(dyn_cast<structured_control_flow::Return*>(&branch1.first.at(0)), nullptr); // C
 }
 
 TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
@@ -381,12 +435,14 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
     builder::StructuredSDFGBuilder struct_builder(builder.subject());
     auto struct_sdfg = struct_builder.move();
 
+    dump_sdfg(*struct_sdfg, "converted");
+
     auto& root = struct_sdfg->root();
 
     ASSERT_EQ(root.size(), 3);
-    EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&root.at(0).first), nullptr);
+    EXPECT_NE(dyn_cast<structured_control_flow::AssignmentBlock*>(&root.at(0)), nullptr);
 
-    auto* loop = dyn_cast<structured_control_flow::While*>(&root.at(1).first);
+    auto* loop = dyn_cast<structured_control_flow::While*>(&root.at(1));
     ASSERT_NE(loop, nullptr);
 
     auto& loop_body = loop->root();
@@ -399,7 +455,7 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
     //        False branch: Continue (with updates)
 
     ASSERT_GE(loop_body.size(), 1);
-    auto* header_check = dyn_cast<structured_control_flow::IfElse*>(&loop_body.at(0).first);
+    auto* header_check = dyn_cast<structured_control_flow::IfElse*>(&loop_body.at(0));
     ASSERT_NE(header_check, nullptr);
     ASSERT_EQ(header_check->size(), 2);
 
@@ -412,13 +468,13 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
         } else {
             // The other branch should be break (exit loop)
             EXPECT_EQ(case_pair.first.size(), 1);
-            EXPECT_NE(dynamic_cast<const structured_control_flow::Break*>(&case_pair.first.at(0).first), nullptr);
+            EXPECT_NE(dynamic_cast<const structured_control_flow::Break*>(&case_pair.first.at(0)), nullptr);
         }
     }
     ASSERT_NE(body_seq, nullptr);
 
     ASSERT_GE(body_seq->size(), 1);
-    auto* break_check = dynamic_cast<const structured_control_flow::IfElse*>(&body_seq->at(0).first);
+    auto* break_check = dynamic_cast<const structured_control_flow::IfElse*>(&body_seq->at(0));
     ASSERT_NE(break_check, nullptr);
     ASSERT_EQ(break_check->size(), 2);
 
@@ -430,12 +486,12 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
         if (symbolic::eq(case_pair.second, break_cond)) {
             found_break = true;
             ASSERT_EQ(case_pair.first.size(), 1);
-            EXPECT_NE(dynamic_cast<const structured_control_flow::Break*>(&case_pair.first.at(0).first), nullptr);
+            EXPECT_NE(dynamic_cast<const structured_control_flow::Break*>(&case_pair.first.at(0)), nullptr);
         } else if (symbolic::eq(case_pair.second, symbolic::Not(break_cond))) {
             found_continue_logic = true;
             ASSERT_GE(case_pair.first.size(), 1);
 
-            auto* c1_check = dynamic_cast<const structured_control_flow::IfElse*>(&case_pair.first.at(0).first);
+            auto* c1_check = dynamic_cast<const structured_control_flow::IfElse*>(&case_pair.first.at(0));
             ASSERT_NE(c1_check, nullptr);
             ASSERT_EQ(c1_check->size(), 2);
 
@@ -449,15 +505,14 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
                     ASSERT_GE(c1_case.first.size(), 1);
                     EXPECT_NE(
                         dynamic_cast<const structured_control_flow::Continue*>(&c1_case.first
-                                                                                    .at(c1_case.first.size() - 1)
-                                                                                    .first),
+                                                                                    .at(c1_case.first.size() - 1)),
                         nullptr
                     );
                 } else if (symbolic::eq(c1_case.second, symbolic::Not(c1))) {
                     found_not_c1 = true;
                     ASSERT_GE(c1_case.first.size(), 1);
 
-                    auto* c2_check = dynamic_cast<const structured_control_flow::IfElse*>(&c1_case.first.at(0).first);
+                    auto* c2_check = dynamic_cast<const structured_control_flow::IfElse*>(&c1_case.first.at(0));
                     ASSERT_NE(c2_check, nullptr);
                     ASSERT_EQ(c2_check->size(), 2);
 
@@ -472,8 +527,7 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
                             EXPECT_NE(
                                 dynamic_cast<const structured_control_flow::Continue*>(&c2_case.first
                                                                                             .at(c2_case.first.size() - 1
-                                                                                            )
-                                                                                            .first),
+                                                                                            )),
                                 nullptr
                             );
                         } else if (symbolic::eq(c2_case.second, symbolic::Not(c2))) {
@@ -482,8 +536,7 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
                             EXPECT_NE(
                                 dynamic_cast<const structured_control_flow::Continue*>(&c2_case.first
                                                                                             .at(c2_case.first.size() - 1
-                                                                                            )
-                                                                                            .first),
+                                                                                            )),
                                 nullptr
                             );
                         }
@@ -541,35 +594,31 @@ TEST(StructuredSDFGConversionTest, Diamond) {
     auto& root = structured_sdfg->root();
     EXPECT_EQ(root.size(), 2);
 
-    auto if_else = root.at(0);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::IfElse*>(&if_else.first));
-    EXPECT_EQ(if_else.second.size(), 0);
+    auto& if_else = root.at(0);
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::IfElse*>(&if_else));
 
     {
-        auto if_case = dynamic_cast<const structured_control_flow::IfElse&>(if_else.first).at(0);
+        auto if_case = dynamic_cast<const structured_control_flow::IfElse&>(if_else).at(0);
         EXPECT_TRUE(symbolic::eq(if_case.second, symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10))));
         EXPECT_EQ(if_case.first.size(), 1);
 
-        auto if_case_first_block = if_case.first.at(0);
-        EXPECT_TRUE(dynamic_cast<const structured_control_flow::Block*>(&if_case_first_block.first));
-        EXPECT_EQ(if_case_first_block.second.size(), 1);
-        EXPECT_TRUE(symbolic::eq(if_case_first_block.second.assignments().at(symbolic::symbol("i")), symbolic::integer(0))
-        );
+        auto if_case_first_block = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&if_case.first.at(0));
+        ASSERT_TRUE(if_case_first_block);
+        EXPECT_EQ(if_case_first_block->size(), 1);
+        EXPECT_TRUE(symbolic::eq(if_case_first_block->assignments().at(symbolic::symbol("i")), symbolic::integer(0)));
 
-        auto else_case = dynamic_cast<const structured_control_flow::IfElse&>(if_else.first).at(1);
+        auto else_case = dynamic_cast<const structured_control_flow::IfElse&>(if_else).at(1);
         EXPECT_TRUE(symbolic::eq(else_case.second, symbolic::Ge(symbolic::symbol("i"), symbolic::integer(10))));
         EXPECT_EQ(else_case.first.size(), 1);
 
-        auto else_case_first_block = else_case.first.at(0);
-        EXPECT_TRUE(dynamic_cast<const structured_control_flow::Block*>(&else_case_first_block.first));
-        EXPECT_EQ(else_case_first_block.second.size(), 1);
-        EXPECT_TRUE(symbolic::
-                        eq(else_case_first_block.second.assignments().at(symbolic::symbol("i")), symbolic::integer(1)));
+        auto else_case_first_block = dyn_cast<AssignmentBlock*>(&else_case.first.at(0));
+        ASSERT_TRUE(else_case_first_block);
+        EXPECT_EQ(else_case_first_block->size(), 1);
+        EXPECT_TRUE(symbolic::eq(else_case_first_block->assignments().at(symbolic::symbol("i")), symbolic::integer(1)));
     }
 
-    auto ret_block = root.at(1);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&ret_block.first));
-    EXPECT_EQ(ret_block.second.size(), 0);
+    auto& ret_block = root.at(1);
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&ret_block));
 }
 
 TEST(StructuredSDFGConversionTest, DoubleDiamond) {
@@ -625,7 +674,7 @@ TEST(StructuredSDFGConversionTest, DoubleDiamond) {
     auto& root = structured_sdfg->root();
     // Expect IfElse, then Return
     ASSERT_EQ(root.size(), 2);
-    auto* if_else = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(0).first);
+    auto* if_else = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(0));
     ASSERT_TRUE(if_else);
     ASSERT_EQ(if_else->size(), 2);
 
@@ -639,17 +688,17 @@ TEST(StructuredSDFGConversionTest, DoubleDiamond) {
     // Let's check size.
     // If H is empty, we expect size 1 (IfElse c2).
     ASSERT_GE(branch1.first.size(), 1);
-    auto* if_else_c2 = dynamic_cast<const structured_control_flow::IfElse*>(&branch1.first.at(0).first);
+    auto* if_else_c2 = dynamic_cast<const structured_control_flow::IfElse*>(&branch1.first.at(0));
     ASSERT_TRUE(if_else_c2);
 
     // Branch 2 (!c1)
     auto branch2 = if_else->at(1);
     EXPECT_TRUE(symbolic::eq(branch2.second, symbolic::Not(c1)));
     ASSERT_GE(branch2.first.size(), 1);
-    auto* if_else_c3 = dynamic_cast<const structured_control_flow::IfElse*>(&branch2.first.at(0).first);
+    auto* if_else_c3 = dynamic_cast<const structured_control_flow::IfElse*>(&branch2.first.at(0));
     ASSERT_TRUE(if_else_c3);
 
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&root.at(1).first));
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&root.at(1)));
 }
 
 TEST(StructuredSDFGConversionTest, SequenceOfIfs) {
@@ -694,16 +743,16 @@ TEST(StructuredSDFGConversionTest, SequenceOfIfs) {
     ASSERT_EQ(root.size(), 3);
 
     // IfElse 1 (c1)
-    auto* if_else1 = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(0).first);
+    auto* if_else1 = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(0));
     ASSERT_TRUE(if_else1);
     ASSERT_EQ(if_else1->size(), 2);
 
     // IfElse 2 (c2)
-    auto* if_else2 = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(1).first);
+    auto* if_else2 = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(1));
     ASSERT_TRUE(if_else2);
     ASSERT_EQ(if_else2->size(), 2);
 
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&root.at(2).first));
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&root.at(2)));
 }
 
 TEST(StructuredSDFGConversionTest, LoopWithMultipleContinues) {
@@ -754,14 +803,14 @@ TEST(StructuredSDFGConversionTest, LoopWithMultipleContinues) {
     }
     */
 
-    auto* loop = dynamic_cast<const structured_control_flow::While*>(&root.at(1).first);
+    auto* loop = dynamic_cast<const structured_control_flow::While*>(&root.at(1));
     if (!loop) {
         // Check if it's wrapped in IfElse (sometimes happens if loop guard is lifted?)
         // Or maybe root.at(0) is the loop if entry block was skipped?
         // But size >= 2.
         // Let's try to find the loop.
         for (size_t k = 0; k < root.size(); ++k) {
-            if (auto* l = dynamic_cast<const structured_control_flow::While*>(&root.at(k).first)) {
+            if (auto* l = dynamic_cast<const structured_control_flow::While*>(&root.at(k))) {
                 loop = l;
                 break;
             }
@@ -772,7 +821,7 @@ TEST(StructuredSDFGConversionTest, LoopWithMultipleContinues) {
     auto& loop_body = loop->root();
     // IfElse (i%2==0)
     ASSERT_GE(loop_body.size(), 1);
-    auto* if_else = dynamic_cast<const structured_control_flow::IfElse*>(&loop_body.at(0).first);
+    auto* if_else = dynamic_cast<const structured_control_flow::IfElse*>(&loop_body.at(0));
     ASSERT_TRUE(if_else);
 
     // Branch True: Continue
@@ -786,10 +835,10 @@ TEST(StructuredSDFGConversionTest, LoopWithMultipleContinues) {
     for (size_t k = 0; k < if_else->size(); ++k) {
         const auto& seq = if_else->at(k).first;
 
-        if (seq.size() >= 1 && (dynamic_cast<const structured_control_flow::Continue*>(&seq.at(seq.size() - 1).first) ||
-                                dynamic_cast<const structured_control_flow::Break*>(&seq.at(seq.size() - 1).first))) {
+        if (seq.size() >= 1 && (dynamic_cast<const structured_control_flow::Continue*>(&seq.at(seq.size() - 1)) ||
+                                dynamic_cast<const structured_control_flow::Break*>(&seq.at(seq.size() - 1)))) {
             branch_true_seq = &seq;
-        } else if (seq.size() == 1 && dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0).first)) {
+        } else if (seq.size() == 1 && dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0))) {
             branch_false_seq = &seq;
         }
     }
@@ -798,7 +847,7 @@ TEST(StructuredSDFGConversionTest, LoopWithMultipleContinues) {
     ASSERT_TRUE(branch_false_seq) << "Could not find False branch (Nested IfElse)";
 
     // Verify False branch (Nested IfElse)
-    auto* nested_if_struct = dynamic_cast<const structured_control_flow::IfElse*>(&branch_false_seq->at(0).first);
+    auto* nested_if_struct = dynamic_cast<const structured_control_flow::IfElse*>(&branch_false_seq->at(0));
     ASSERT_TRUE(nested_if_struct);
 
     // Nested branches
@@ -808,7 +857,7 @@ TEST(StructuredSDFGConversionTest, LoopWithMultipleContinues) {
         const auto& seq = nested_if_struct->at(k).first;
         ASSERT_GE(seq.size(), 1);
 
-        const auto& last_node = seq.at(seq.size() - 1).first;
+        const auto& last_node = seq.at(seq.size() - 1);
 
         bool is_valid_leaf = dynamic_cast<const structured_control_flow::Continue*>(&last_node) ||
                              dynamic_cast<const structured_control_flow::Break*>(&last_node) ||
@@ -856,13 +905,15 @@ TEST(StructuredSDFGConversionTest, NestedLoopsWithInnerBreak) {
     builder::StructuredSDFGBuilder structured_builder(*sdfg);
     auto structured_sdfg = structured_builder.move();
 
+    dump_sdfg(*structured_sdfg, "converted");
+
     auto& root = structured_sdfg->root();
     ASSERT_GE(root.size(), 2);
 
-    auto* outer_loop = dynamic_cast<const structured_control_flow::While*>(&root.at(1).first);
+    auto* outer_loop = dynamic_cast<const structured_control_flow::While*>(&root.at(1));
     if (!outer_loop) {
         for (size_t k = 0; k < root.size(); ++k) {
-            if (auto* l = dynamic_cast<const structured_control_flow::While*>(&root.at(k).first)) {
+            if (auto* l = dynamic_cast<const structured_control_flow::While*>(&root.at(k))) {
                 outer_loop = l;
                 break;
             }
@@ -877,23 +928,23 @@ TEST(StructuredSDFGConversionTest, NestedLoopsWithInnerBreak) {
     const structured_control_flow::While* inner_loop = nullptr;
 
     if (outer_loop_body.size() >= 1) {
-        if (auto* if_else = dynamic_cast<const structured_control_flow::IfElse*>(&outer_loop_body.at(0).first)) {
+        if (auto* if_else = dynamic_cast<const structured_control_flow::IfElse*>(&outer_loop_body.at(0))) {
             // Look inside branches for the While loop
             for (size_t k = 0; k < if_else->size(); ++k) {
                 const auto& seq = if_else->at(k).first;
                 if (seq.size() >= 1) {
-                    if (auto* l = dynamic_cast<const structured_control_flow::While*>(&seq.at(0).first)) {
+                    if (auto* l = dynamic_cast<const structured_control_flow::While*>(&seq.at(0))) {
                         inner_loop = l;
                         // Also check for Continue after loop if expected
                         // In the output: While + Block + Continue
                         if (seq.size() >= 3) {
-                            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Continue*>(&seq.at(2).first));
+                            EXPECT_TRUE(dynamic_cast<const structured_control_flow::Continue*>(&seq.at(2)));
                         }
                         break;
                     }
                 }
             }
-        } else if (auto* l = dynamic_cast<const structured_control_flow::While*>(&outer_loop_body.at(0).first)) {
+        } else if (auto* l = dynamic_cast<const structured_control_flow::While*>(&outer_loop_body.at(0))) {
             inner_loop = l;
         }
     }
@@ -967,16 +1018,16 @@ TEST(StructuredSDFGConversionTest, ShortCircuitEmulation) {
     auto& root = structured_sdfg->root();
     // Expect IfElse (A), then Return
     ASSERT_EQ(root.size(), 2);
-    auto* if_else_a = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(0).first);
+    auto* if_else_a = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(0));
     ASSERT_TRUE(if_else_a);
     ASSERT_EQ(if_else_a->size(), 2);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&root.at(1).first));
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Return*>(&root.at(1)));
 
     // Check Branch A (check_b)
     // Should contain IfElse (B)
     auto branch_a = if_else_a->at(0);
     ASSERT_EQ(branch_a.first.size(), 1);
-    auto* if_else_b = dynamic_cast<const structured_control_flow::IfElse*>(&branch_a.first.at(0).first);
+    auto* if_else_b = dynamic_cast<const structured_control_flow::IfElse*>(&branch_a.first.at(0));
     ASSERT_TRUE(if_else_b);
 
     // Check Branch !A (else_block)
@@ -1042,6 +1093,8 @@ TEST(StructuredSDFGConversionTest, ComplexLoopControlFlow) {
     builder::StructuredSDFGBuilder structured_builder(*sdfg);
     auto structured_sdfg = structured_builder.move();
 
+    dump_sdfg(*structured_sdfg, "converted");
+
     // Verification
     auto& root = structured_sdfg->root();
 
@@ -1054,20 +1107,20 @@ TEST(StructuredSDFGConversionTest, ComplexLoopControlFlow) {
     ASSERT_GE(root.size(), 2);
 
     // Check for init block
-    auto child1 = root.at(0);
-    EXPECT_TRUE(dynamic_cast<const structured_control_flow::Block*>(&child1.first));
+    auto& child1 = root.at(0);
+    EXPECT_TRUE(dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1));
 
     // Check for loop structure
     // It might be wrapped in IfElse as seen in other tests
     const structured_control_flow::While* while_loop = nullptr;
 
-    if (auto* loop = dynamic_cast<const structured_control_flow::While*>(&root.at(1).first)) {
+    if (auto* loop = dynamic_cast<const structured_control_flow::While*>(&root.at(1))) {
         while_loop = loop;
-    } else if (auto* if_else = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(1).first)) {
+    } else if (auto* if_else = dynamic_cast<const structured_control_flow::IfElse*>(&root.at(1))) {
         for (size_t k = 0; k < if_else->size(); ++k) {
             auto branch = if_else->at(k);
             if (branch.first.size() > 0) {
-                if (auto* loop = dynamic_cast<const structured_control_flow::While*>(&branch.first.at(0).first)) {
+                if (auto* loop = dynamic_cast<const structured_control_flow::While*>(&branch.first.at(0))) {
                     while_loop = loop;
                     break;
                 }
@@ -1081,15 +1134,15 @@ TEST(StructuredSDFGConversionTest, ComplexLoopControlFlow) {
     auto& body = while_loop->root();
     ASSERT_GE(body.size(), 1);
 
-    auto* cond_if_else = dynamic_cast<const structured_control_flow::IfElse*>(&body.at(0).first);
+    auto* cond_if_else = dynamic_cast<const structured_control_flow::IfElse*>(&body.at(0));
     ASSERT_TRUE(cond_if_else) << "Loop body should start with Condition IfElse";
 
     const structured_control_flow::IfElse* body_if_else = nullptr;
 
     for (size_t k = 0; k < cond_if_else->size(); ++k) {
         auto& seq = cond_if_else->at(k).first;
-        if (seq.size() > 0 && dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0).first)) {
-            body_if_else = dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0).first);
+        if (seq.size() > 0 && dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0))) {
+            body_if_else = dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0));
             break;
         }
     }
@@ -1105,15 +1158,15 @@ TEST(StructuredSDFGConversionTest, ComplexLoopControlFlow) {
 
         // Check for Continue (might be preceded by Block)
         for (size_t m = 0; m < seq.size(); ++m) {
-            if (dynamic_cast<const structured_control_flow::Continue*>(&seq.at(m).first)) {
+            if (dynamic_cast<const structured_control_flow::Continue*>(&seq.at(m))) {
                 found_continue = true;
             }
         }
 
         // Check for Nested If
-        if (seq.size() > 0 && dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0).first)) {
+        if (seq.size() > 0 && dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0))) {
             found_nested_if = true;
-            auto* nested = dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0).first);
+            auto* nested = dynamic_cast<const structured_control_flow::IfElse*>(&seq.at(0));
 
             bool found_break = false;
             bool found_return = false;
@@ -1121,9 +1174,9 @@ TEST(StructuredSDFGConversionTest, ComplexLoopControlFlow) {
             for (size_t j = 0; j < nested->size(); ++j) {
                 auto& nested_seq = nested->at(j).first;
                 for (size_t m = 0; m < nested_seq.size(); ++m) {
-                    if (dynamic_cast<const structured_control_flow::Break*>(&nested_seq.at(m).first)) {
+                    if (dynamic_cast<const structured_control_flow::Break*>(&nested_seq.at(m))) {
                         found_break = true;
-                    } else if (dynamic_cast<const structured_control_flow::Return*>(&nested_seq.at(m).first)) {
+                    } else if (dynamic_cast<const structured_control_flow::Return*>(&nested_seq.at(m))) {
                         found_return = true;
                     }
                 }

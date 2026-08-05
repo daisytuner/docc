@@ -15,6 +15,7 @@
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/data_flow_node.h"
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/element.h"
@@ -59,8 +60,10 @@ TaskletTensorNode::TaskletTensorNode(
       tasklet_code_(tasklet_code) {}
 
 void TaskletTensorNode::validate(const Function& function) const {
-    ElementWiseDataflowTensorNode::validate(function);
     auto& graph = this->get_parent();
+    this->validate_target_tensor(graph);
+    this->validate_all_input_tensors(graph);
+    this->validate_non_tensor_inputs(graph);
 
     // Validate: inputs match arity
     auto actual_inputs = this->inputs_.size() - 1;
@@ -72,16 +75,19 @@ void TaskletTensorNode::validate(const Function& function) const {
         );
     }
 
-    // Validate: inputs match type of operation
-    for (auto& iedge : graph.in_edges(*this)) {
-        auto input_type = iedge.result_type(function);
-        if (is_integer(this->tasklet_code()) && !types::is_integer(input_type->primitive_type())) {
+    // Validate: inputs match type of operation (check A and B operands, skipping C)
+    for (int i = 1; i < tensor_input_count(); ++i) {
+        auto* iedge = graph.in_edge_for_connector(*this, inputs_.at(i));
+        if (!iedge) continue;
+        auto input_type = iedge->result_type(function);
+        if (data_flow::is_integer(this->tasklet_code()) && !types::is_integer(input_type->primitive_type())) {
             throw InvalidSDFGException(
                 "TaskletTensorNode #" + std::to_string(element_id_) +
                 ": (Code: " + std::to_string(this->tasklet_code()) + "): Integer operation with non-integer input type"
             );
         }
-        if (is_floating_point(this->tasklet_code()) && !types::is_floating_point(input_type->primitive_type())) {
+        if (data_flow::is_floating_point(this->tasklet_code()) &&
+            !types::is_floating_point(input_type->primitive_type())) {
             throw InvalidSDFGException(
                 "TaskletTensorNode #" + std::to_string(element_id_) + ": (Code: " +
                 std::to_string(this->tasklet_code()) + "): Floating point operation with integer input type"

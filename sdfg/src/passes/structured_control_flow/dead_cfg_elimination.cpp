@@ -9,15 +9,17 @@ namespace sdfg {
 namespace passes {
 
 bool DeadCFGElimination::is_dead(const structured_control_flow::ControlFlowNode& node) {
-    if (auto block_stmt = dynamic_cast<const structured_control_flow::Block*>(&node)) {
+    if (auto block_stmt = dyn_cast<const structured_control_flow::Block*>(&node)) {
         return (block_stmt->dataflow().nodes().size() == 0);
-    } else if (auto sequence_stmt = dynamic_cast<const structured_control_flow::Sequence*>(&node)) {
+    } else if (auto* assign_stmt = dyn_cast<AssignmentBlock*>(&node)) {
+        return (assign_stmt->empty());
+    } else if (auto sequence_stmt = dyn_cast<const structured_control_flow::Sequence*>(&node)) {
         return (sequence_stmt->size() == 0);
-    } else if (auto if_else_stmt = dynamic_cast<const structured_control_flow::IfElse*>(&node)) {
+    } else if (auto if_else_stmt = dyn_cast<const structured_control_flow::IfElse*>(&node)) {
         return (if_else_stmt->size() == 0);
-    } else if (auto while_stmt = dynamic_cast<const structured_control_flow::While*>(&node)) {
+    } else if (auto while_stmt = dyn_cast<const structured_control_flow::While*>(&node)) {
         return is_dead(while_stmt->root());
-    } else if (auto sloop = dynamic_cast<const structured_control_flow::StructuredLoop*>(&node)) {
+    } else if (auto sloop = dyn_cast<const structured_control_flow::StructuredLoop*>(&node)) {
         if (sloop->root().size() != 0) {
             return false;
         }
@@ -68,29 +70,25 @@ bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analy
         auto curr = queue.front();
         queue.pop_front();
 
-        if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(curr)) {
+        if (auto* assign_block = dyn_cast<structured_control_flow::AssignmentBlock*>(curr)) {
+            symbolic::SymbolSet dead_lhs;
+            for (auto& entry : assign_block->assignments()) {
+                if (symbolic::eq(entry.first, entry.second)) {
+                    dead_lhs.insert(entry.first);
+                }
+            }
+            for (auto& lhs : dead_lhs) {
+                assign_block->assignments().erase(lhs);
+                applied = true;
+            }
+        } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(curr)) {
             // Simplify
             size_t i = 0;
             while (i < sequence_stmt->size()) {
-                auto child = sequence_stmt->at(i);
-                symbolic::SymbolSet dead_lhs;
-                for (auto& entry : child.second.assignments()) {
-                    if (symbolic::eq(entry.first, entry.second)) {
-                        dead_lhs.insert(entry.first);
-                    }
-                }
-                for (auto& lhs : dead_lhs) {
-                    child.second.assignments().erase(lhs);
-                    applied = true;
-                }
+                auto& child = sequence_stmt->at(i);
 
                 // Return node found, everything after is dead
-                if (auto return_node = dyn_cast<structured_control_flow::Return*>(&child.first)) {
-                    if (child.second.assignments().size() > 0) {
-                        // Clear assignments
-                        child.second.assignments().clear();
-                        applied = true;
-                    }
+                if (auto return_node = dyn_cast<structured_control_flow::Return*>(&child)) {
                     for (size_t j = i + 1; j < sequence_stmt->size();) {
                         builder.remove_child(*sequence_stmt, i + 1);
                         applied = true;
@@ -98,21 +96,15 @@ bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analy
                     break;
                 }
 
-                // Non-empty transitions are not safe to remove
-                if (!child.second.empty()) {
-                    i++;
-                    continue;
-                }
-
                 // Dead
-                if (is_dead(child.first)) {
+                if (is_dead(child)) {
                     builder.remove_child(*sequence_stmt, i);
                     applied = true;
                     continue;
                 }
 
                 // Trivial branch
-                if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&child.first)) {
+                if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&child)) {
                     auto branch = if_else_stmt->at(0);
                     if (symbolic::is_true(branch.second)) {
                         builder.move_children(branch.first, *sequence_stmt, i + 1);
@@ -123,7 +115,7 @@ bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analy
                 }
 
                 // Trivial structured loop (bound - init == 1 and stride == 1)
-                if (auto sloop = dyn_cast<structured_control_flow::Map*>(&child.first)) {
+                if (auto sloop = dyn_cast<structured_control_flow::Map*>(&child)) {
                     if (is_trivial(sloop)) {
                         auto indvar = sloop->indvar();
                         auto init = sloop->init();
@@ -144,7 +136,7 @@ bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analy
 
             // Add to queue
             for (size_t j = 0; j < sequence_stmt->size(); j++) {
-                queue.push_back(&sequence_stmt->at(j).first);
+                queue.push_back(&sequence_stmt->at(j));
             }
         } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(curr)) {
             // False branches are safe to remove

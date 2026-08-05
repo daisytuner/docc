@@ -1,7 +1,13 @@
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 
+#include <string>
+#include <unordered_set>
+
+#include "sdfg/analysis/arguments_analysis.h"
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
+#include "sdfg/analysis/users.h"
+#include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/rocm/rocm.h"
 
@@ -158,6 +164,108 @@ get_gpu_maps(structured_control_flow::Map& node, analysis::AnalysisManager& anal
     }
     return maps;
 }
+
+bool nested_parallelization_replicates_accumulation(
+    structured_control_flow::Map& loop, analysis::AnalysisManager& analysis_manager
+) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+
+    // The outermost enclosing GPU map is the kernel scope. Everything below it is
+    // folded into a single flattened launch, so adding a dimension for `loop`
+    // replicates its siblings (and the siblings of any ancestor up to this map)
+    // across the new dimension's threads.
+    auto is_parallelized = [](structured_control_flow::Map* map) {
+        return map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value();
+    };
+
+    structured_control_flow::Map* outermost = nullptr;
+    for (auto* ancestor = loop_analysis.parent_loop(&loop); ancestor != nullptr;
+         ancestor = loop_analysis.parent_loop(ancestor)) {
+        if (auto* map = dyn_cast<structured_control_flow::Map*>(ancestor)) {
+            if (is_parallelized(map)) {
+                outermost = map;
+            }
+        }
+    }
+    if (outermost == nullptr) {
+        // No enclosing GPU map: nothing is folded, hence nothing is replicated.
+        return false;
+    }
+
+    auto& users = analysis_manager.get<analysis::Users>();
+    auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
+    // Containers whose entire lifetime is confined to the kernel are privatized per
+    // thread (registers/stack, per-thread allocation), so a read-modify-write on one
+    // races nothing. Only an accumulation on a container that escapes the kernel
+    // (function argument/external or a transient living outside) is a hazard. Loop
+    // induction variables are locals by definition, so this subsumes loop-control
+    // bookkeeping without any special-casing.
+    const auto& locals = arguments_analysis.locals(analysis_manager, *outermost);
+    auto is_local = [&locals](const std::string& container) { return locals.count(container) != 0; };
+
+    // A subtree performs an unsafe accumulation if it reads and writes the same
+    // non-local container (e.g. `acc[i] += x`). A plain store is idempotent under
+    // replication and therefore allowed.
+    auto accumulates_on_shared = [&](structured_control_flow::ControlFlowNode& node) {
+        analysis::UsersView view(users, node);
+        std::unordered_set<std::string> writes;
+        std::unordered_set<std::string> reads;
+        for (auto* u : view.writes()) {
+            writes.insert(u->container());
+        }
+        for (auto* u : view.moves()) {
+            writes.insert(u->container());
+        }
+        // Views alias memory; treat conservatively as both a read and a write.
+        for (auto* u : view.views()) {
+            writes.insert(u->container());
+            reads.insert(u->container());
+        }
+        for (auto* u : view.reads()) {
+            reads.insert(u->container());
+        }
+        for (const auto& container : writes) {
+            if (reads.count(container) != 0 && !is_local(container)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // Walk from `loop` up to (but excluding) the outermost GPU map, inspecting the
+    // siblings at each level. Siblings above the kernel are not replicated and are
+    // therefore not considered.
+    structured_control_flow::ControlFlowNode* node = &loop;
+    while (node != outermost) {
+        auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(node->get_parent());
+        if (sequence == nullptr) {
+            break;
+        }
+        for (size_t i = 0; i < sequence->size(); ++i) {
+            auto& sibling = sequence->at(i);
+            if (&sibling == node) {
+                continue;
+            }
+            // A sibling that is itself a GPU map is already parallelized: codegen maps
+            // it onto its own threads, so its accumulation is not replicated.
+            if (auto* sibling_map = dyn_cast<structured_control_flow::Map*>(&sibling)) {
+                if (is_parallelized(sibling_map)) {
+                    continue;
+                }
+            }
+            if (accumulates_on_shared(sibling)) {
+                return true;
+            }
+        }
+        node = sequence->get_parent();
+        if (node == nullptr) {
+            break;
+        }
+    }
+
+    return false;
+}
+
 
 // Explicit template instantiations for CUDA
 template symbolic::Expression find_nested_gpu_blocksize<cuda::ScheduleType_CUDA>(

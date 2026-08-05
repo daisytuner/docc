@@ -60,10 +60,7 @@ bool LoopSkewing::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
     if (outer_loop_.root().size() != 1) {
         return false;
     }
-    if (outer_loop_.root().at(0).second.assignments().size() > 0) {
-        return false;
-    }
-    if (&outer_loop_.root().at(0).first != &inner_loop_) {
+    if (&outer_loop_.root().at(0) != &inner_loop_) {
         return false;
     }
 

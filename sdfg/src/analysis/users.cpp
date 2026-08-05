@@ -196,6 +196,45 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         boost::add_edge(subgraph.second, t, this->graph_);
 
         return {s, t};
+    } else if (auto assignment_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&node)) {
+        auto s = boost::add_vertex(this->graph_);
+        this->users_.insert({s, std::make_unique<User>(s, "", assignment_block, Use::NOP)});
+        this->entries_.insert({assignment_block, this->users_.at(s).get()});
+
+        std::unordered_set<std::string> used;
+        graph::Vertex current = s;
+        for (auto& entry : assignment_block->assignments()) {
+            for (auto atom : symbolic::atoms(entry.second)) {
+                if (symbolic::is_pointer(atom)) {
+                    continue;
+                }
+                if (used.find(atom->get_name()) != used.end()) {
+                    continue;
+                }
+                used.insert(atom->get_name());
+
+                auto v = boost::add_vertex(this->graph_);
+                this->add_user(std::make_unique<User>(v, atom->get_name(), assignment_block, Use::READ));
+
+                boost::add_edge(current, v, this->graph_);
+                current = v;
+            }
+        }
+
+        for (auto& entry : assignment_block->assignments()) {
+            auto v = boost::add_vertex(this->graph_);
+            this->add_user(std::make_unique<User>(v, entry.first->get_name(), assignment_block, Use::WRITE));
+
+            boost::add_edge(current, v, this->graph_);
+            current = v;
+        }
+
+        auto t = boost::add_vertex(this->graph_);
+        this->users_.insert({t, std::make_unique<User>(t, "", assignment_block, Use::NOP)});
+        boost::add_edge(current, t, this->graph_);
+        this->exits_.insert({assignment_block, this->users_.at(t).get()});
+
+        return {s, t};
     } else if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         auto s = boost::add_vertex(this->graph_);
         this->users_.insert({s, std::make_unique<User>(s, "", sequence_stmt, Use::NOP)});
@@ -203,42 +242,15 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
 
         graph::Vertex current = s;
         for (size_t i = 0; i < sequence_stmt->size(); i++) {
-            auto child = sequence_stmt->at(i);
+            auto& child = sequence_stmt->at(i);
 
-            auto subgraph = this->traverse(child.first);
+            auto subgraph = this->traverse(child);
             boost::add_edge(current, subgraph.first, this->graph_);
             // Return node
             if (subgraph.second == boost::graph_traits<graph::Graph>::null_vertex()) {
                 break;
             }
             current = subgraph.second;
-
-            std::unordered_set<std::string> used;
-            for (auto& entry : child.second.assignments()) {
-                for (auto atom : symbolic::atoms(entry.second)) {
-                    if (symbolic::is_pointer(atom)) {
-                        continue;
-                    }
-                    if (used.find(atom->get_name()) != used.end()) {
-                        continue;
-                    }
-                    used.insert(atom->get_name());
-
-                    auto v = boost::add_vertex(this->graph_);
-                    this->add_user(std::make_unique<User>(v, atom->get_name(), &child.second, Use::READ));
-
-                    boost::add_edge(current, v, this->graph_);
-                    current = v;
-                }
-            }
-
-            for (auto& entry : child.second.assignments()) {
-                auto v = boost::add_vertex(this->graph_);
-                this->add_user(std::make_unique<User>(v, entry.first->get_name(), &child.second, Use::WRITE));
-
-                boost::add_edge(current, v, this->graph_);
-                current = v;
-            }
         }
 
         if (current == boost::graph_traits<graph::Graph>::null_vertex()) {
@@ -631,8 +643,8 @@ structured_control_flow::ControlFlowNode* Users::scope(User* user) {
         return static_cast<structured_control_flow::Block*>(data_node->get_parent().get_parent());
     } else if (auto memlet = dynamic_cast<data_flow::Memlet*>(user->element())) {
         return static_cast<structured_control_flow::Block*>(memlet->get_parent().get_parent());
-    } else if (auto transition = dyn_cast<structured_control_flow::Transition*>(user->element())) {
-        return &transition->parent();
+    } else if (auto transition = dyn_cast<structured_control_flow::AssignmentBlock*>(user->element())) {
+        return transition->get_parent();
     } else {
         auto user_element = dyn_cast<structured_control_flow::ControlFlowNode*>(user->element());
         assert(user_element != nullptr && "Users::scope: User element is not a ControlFlowNode");

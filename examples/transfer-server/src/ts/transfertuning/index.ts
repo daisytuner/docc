@@ -5,7 +5,7 @@ import path from 'path';
 
 const router = new Hono()
 
-router.post('/transfertune', async (c) => {
+router.post('/transfertune_sdfg', async (c) => {
     // Optional testing mode: if paths are provided via headers, load JSONs from disk.
     const filePath = path.resolve(__dirname, '../../../res/matmul');
     const hint = c.req.header('RPC-Hint') ?? filePath

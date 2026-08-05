@@ -67,6 +67,8 @@ public:
 
     static bool classof(const Element& element) { return element.type_id() == ElementType::Map; }
 
+    bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
+
     void validate(const Function& function) const override;
 };
 

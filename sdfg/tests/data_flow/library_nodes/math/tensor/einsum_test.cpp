@@ -49,10 +49,6 @@ TEST(EinsumNodeTest, SimpleGEMM) {
     auto m = symbolic::symbol("m");
     auto n = symbolic::symbol("n");
 
-    symbolic::Symbol dim_i = symbolic::symbol("_einsum_node_7_i");
-    symbolic::Symbol dim_j = symbolic::symbol("_einsum_node_7_j");
-    symbolic::Symbol dim_k = symbolic::symbol("_einsum_node_7_k");
-
     // Add block with EinsumNode for GEMM
     auto& block = builder.add_block(root);
     auto& A = builder.add_access(block, "A");
@@ -72,7 +68,13 @@ TEST(EinsumNodeTest, SimpleGEMM) {
     builder.add_computational_memlet(block, C1, libnode, "__einsum_out", {}, desc_m);
     builder.add_computational_memlet(block, libnode, "__einsum_out", C2, {}, desc_m);
 
+    auto einsum_id = libnode.element_id();
+
     dump_sdfg(sdfg, "0.before");
+
+    symbolic::Symbol dim_i = symbolic::symbol("_einsum_node_" + std::to_string(einsum_id) + "_i");
+    symbolic::Symbol dim_j = symbolic::symbol("_einsum_node_" + std::to_string(einsum_id) + "_j");
+    symbolic::Symbol dim_k = symbolic::symbol("_einsum_node_" + std::to_string(einsum_id) + "_k");
 
     // Check
     auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(&libnode);
@@ -120,9 +122,9 @@ TEST(EinsumNodeTest, SimpleGEMM) {
 
     EXPECT_EQ(
         einsum_node->toStr(),
-        "__einsum_out[_einsum_node_7_i][_einsum_node_7_j] = _in1[_einsum_node_7_i][_einsum_node_7_k] * "
-        "_in2[_einsum_node_7_k][_einsum_node_7_j] + __einsum_out[_einsum_node_7_i][_einsum_node_7_j] for "
-        "_einsum_node_7_i = 0 : l for _einsum_node_7_j = 0 : m for _einsum_node_7_k = 0 : n"
+        "__einsum_out[_einsum_node_6_i][_einsum_node_6_j] = _in1[_einsum_node_6_i][_einsum_node_6_k] * "
+        "_in2[_einsum_node_6_k][_einsum_node_6_j] + __einsum_out[_einsum_node_6_i][_einsum_node_6_j] for "
+        "_einsum_node_6_i = 0 : l for _einsum_node_6_j = 0 : m for _einsum_node_6_k = 0 : n"
     );
 
     EXPECT_TRUE(symbolic::eq(einsum_node->flop(), SymEngine::mul({l, m, n, symbolic::integer(2)})));
@@ -194,7 +196,7 @@ TEST(EinsumNodeTest, ExpandGEMM) {
     EXPECT_EQ(root.size(), 1);
     ASSERT_GE(root.size(), 1);
 
-    auto* loop1 = dyn_cast<structured_control_flow::Map*>(&root.at(0).first);
+    auto* loop1 = dyn_cast<structured_control_flow::Map*>(&root.at(0));
     ASSERT_TRUE(loop1);
     // Indvars are renamed during expansion for uniqueness, so get them from the loops
     auto i_renamed = loop1->indvar();
@@ -204,7 +206,7 @@ TEST(EinsumNodeTest, ExpandGEMM) {
     EXPECT_EQ(loop1->root().size(), 1);
     ASSERT_GE(loop1->root().size(), 1);
 
-    auto* loop2 = dyn_cast<structured_control_flow::Map*>(&loop1->root().at(0).first);
+    auto* loop2 = dyn_cast<structured_control_flow::Map*>(&loop1->root().at(0));
     ASSERT_TRUE(loop2);
     auto j_renamed = loop2->indvar();
     EXPECT_TRUE(symbolic::eq(loop2->init(), zero));
@@ -213,7 +215,7 @@ TEST(EinsumNodeTest, ExpandGEMM) {
     EXPECT_EQ(loop2->root().size(), 1);
     ASSERT_GE(loop2->root().size(), 1);
 
-    auto* loop3 = dyn_cast<structured_control_flow::For*>(&loop2->root().at(0).first);
+    auto* loop3 = dyn_cast<structured_control_flow::For*>(&loop2->root().at(0));
     ASSERT_TRUE(loop3);
     auto k_renamed = loop3->indvar();
     EXPECT_TRUE(symbolic::eq(loop3->init(), zero));
@@ -222,7 +224,7 @@ TEST(EinsumNodeTest, ExpandGEMM) {
     EXPECT_EQ(loop3->root().size(), 1);
     ASSERT_GE(loop3->root().size(), 1);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&loop3->root().at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&loop3->root().at(0));
     ASSERT_TRUE(new_block);
     auto& dfg = new_block->dataflow();
     EXPECT_EQ(dfg.tasklets().size(), 1);
@@ -294,9 +296,6 @@ TEST(EinsumNodeTest, SimpleMeans) {
     auto m = symbolic::symbol("m");
     auto n = symbolic::symbol("n");
 
-    symbolic::Symbol dim_i = symbolic::symbol("_einsum_node_16_i");
-    symbolic::Symbol dim_j = symbolic::symbol("_einsum_node_16_j");
-
     // Add for loop with initialization
     auto& for_init = builder.add_for(root, i, symbolic::Lt(i, m), zero, symbolic::add(i, one));
     auto& block_init = builder.add_block(for_init.root());
@@ -337,6 +336,11 @@ TEST(EinsumNodeTest, SimpleMeans) {
     builder.add_computational_memlet(block_div, m_tmp, tasklet_div2, "_in2", {});
     builder.add_computational_memlet(block_div, tasklet_div2, "_out", y_div2, {i});
 
+    auto einsum_id = libnode.element_id();
+
+    symbolic::Symbol dim_i = symbolic::symbol("_einsum_node_" + std::to_string(einsum_id) + "_i");
+    symbolic::Symbol dim_j = symbolic::symbol("_einsum_node_" + std::to_string(einsum_id) + "_j");
+
     // Check
     auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(&libnode);
     ASSERT_TRUE(einsum_node);
@@ -373,8 +377,8 @@ TEST(EinsumNodeTest, SimpleMeans) {
 
     EXPECT_EQ(
         einsum_node->toStr(),
-        "__einsum_out[_einsum_node_16_i] = _in[_einsum_node_16_i][_einsum_node_16_j] + __einsum_out[_einsum_node_16_i] "
-        "for _einsum_node_16_i = 0 : m for _einsum_node_16_j = 0 : n"
+        "__einsum_out[_einsum_node_13_i] = _in[_einsum_node_13_i][_einsum_node_13_j] + __einsum_out[_einsum_node_13_i] "
+        "for _einsum_node_13_i = 0 : m for _einsum_node_13_j = 0 : n"
     );
 
     EXPECT_TRUE(symbolic::eq(einsum_node->flop(), symbolic::mul(m, n)));
@@ -463,11 +467,11 @@ TEST(EinsumNodeTest, ExpandMeans) {
     EXPECT_EQ(root.size(), 3);
     ASSERT_GE(root.size(), 3);
 
-    auto* for_init_opt = dyn_cast<structured_control_flow::For*>(&root.at(0).first);
+    auto* for_init_opt = dyn_cast<structured_control_flow::For*>(&root.at(0));
     ASSERT_TRUE(for_init_opt);
     EXPECT_EQ(for_init_opt, &for_init);
 
-    auto* loop1 = dyn_cast<structured_control_flow::Map*>(&root.at(1).first);
+    auto* loop1 = dyn_cast<structured_control_flow::Map*>(&root.at(1));
     ASSERT_TRUE(loop1);
     // Indvars are renamed during expansion for uniqueness
     auto i_renamed = loop1->indvar();
@@ -477,7 +481,7 @@ TEST(EinsumNodeTest, ExpandMeans) {
     EXPECT_EQ(loop1->root().size(), 1);
     ASSERT_GE(loop1->root().size(), 1);
 
-    auto* loop2 = dyn_cast<structured_control_flow::For*>(&loop1->root().at(0).first);
+    auto* loop2 = dyn_cast<structured_control_flow::For*>(&loop1->root().at(0));
     ASSERT_TRUE(loop2);
     auto j_renamed = loop2->indvar();
     EXPECT_TRUE(symbolic::eq(loop2->init(), zero));
@@ -486,7 +490,7 @@ TEST(EinsumNodeTest, ExpandMeans) {
     EXPECT_EQ(loop2->root().size(), 1);
     ASSERT_GE(loop2->root().size(), 1);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&loop2->root().at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&loop2->root().at(0));
     ASSERT_TRUE(new_block);
     auto& dfg = new_block->dataflow();
     EXPECT_EQ(dfg.tasklets().size(), 1);
@@ -523,7 +527,7 @@ TEST(EinsumNodeTest, ExpandMeans) {
         }
     }
 
-    auto* for_div_opt = dyn_cast<structured_control_flow::For*>(&root.at(2).first);
+    auto* for_div_opt = dyn_cast<structured_control_flow::For*>(&root.at(2));
     ASSERT_TRUE(for_div_opt);
     EXPECT_EQ(for_div_opt, &for_div);
 }
@@ -548,8 +552,6 @@ TEST(EinsumNodeTest, SimpleMean) {
     auto zero = symbolic::zero();
     auto i = symbolic::symbol("i");
     auto m = symbolic::symbol("m");
-
-    auto dim_i = symbolic::symbol("_einsum_node_13_i");
 
     // Add block with ...
     auto& block = builder.add_block(root);
@@ -586,6 +588,9 @@ TEST(EinsumNodeTest, SimpleMean) {
     builder.add_computational_memlet(block, m_tmp, tasklet_div2, "_in2", {});
     builder.add_computational_memlet(block, tasklet_div2, "_out", y3, {});
 
+    auto einsum_id = libnode.element_id();
+    auto dim_i = symbolic::symbol("_einsum_node_" + std::to_string(einsum_id) + "_i");
+
     // Check
     auto* einsum_node = dynamic_cast<math::tensor::EinsumNode*>(&libnode);
     ASSERT_TRUE(einsum_node);
@@ -611,7 +616,7 @@ TEST(EinsumNodeTest, SimpleMean) {
     EXPECT_EQ(symbols.size(), 1);
     EXPECT_TRUE(symbols.contains(m));
 
-    EXPECT_EQ(einsum_node->toStr(), "__einsum_out = _in[_einsum_node_13_i] + __einsum_out for _einsum_node_13_i = 0 : m");
+    EXPECT_EQ(einsum_node->toStr(), "__einsum_out = _in[_einsum_node_12_i] + __einsum_out for _einsum_node_12_i = 0 : m");
 
     EXPECT_TRUE(symbolic::eq(einsum_node->flop(), m));
 
@@ -688,7 +693,7 @@ TEST(EinsumNodeTest, ExpandMean) {
     EXPECT_EQ(root.size(), 3);
     ASSERT_GE(root.size(), 3);
 
-    auto* block_before = dyn_cast<structured_control_flow::Block*>(&root.at(0).first);
+    auto* block_before = dyn_cast<structured_control_flow::Block*>(&root.at(0));
     ASSERT_TRUE(block_before);
     auto& dfg_before = block_before->dataflow();
     EXPECT_EQ(dfg_before.tasklets().size(), 1);
@@ -713,7 +718,7 @@ TEST(EinsumNodeTest, ExpandMean) {
         EXPECT_EQ(access_node->data(), "0.0");
     }
 
-    auto* for1 = dyn_cast<structured_control_flow::For*>(&root.at(1).first);
+    auto* for1 = dyn_cast<structured_control_flow::For*>(&root.at(1));
     ASSERT_TRUE(for1);
     // Indvars are renamed during expansion for uniqueness
     auto i_renamed = for1->indvar();
@@ -723,7 +728,7 @@ TEST(EinsumNodeTest, ExpandMean) {
     EXPECT_EQ(for1->root().size(), 1);
     ASSERT_GE(for1->root().size(), 1);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&for1->root().at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&for1->root().at(0));
     ASSERT_TRUE(new_block);
     auto& new_dfg = new_block->dataflow();
     EXPECT_EQ(new_dfg.tasklets().size(), 1);
@@ -756,7 +761,7 @@ TEST(EinsumNodeTest, ExpandMean) {
         }
     }
 
-    auto* block_after = dyn_cast<structured_control_flow::Block*>(&root.at(2).first);
+    auto* block_after = dyn_cast<structured_control_flow::Block*>(&root.at(2));
     ASSERT_TRUE(block_after);
     auto& dfg_after = block_after->dataflow();
     EXPECT_EQ(dfg_after.tasklets().size(), 2);
@@ -875,6 +880,10 @@ TEST(EinsumSerializerTest, Serialize) {
     builder.add_computational_memlet(block, C1, libnode, "__einsum_out", {}, desc_m);
     builder.add_computational_memlet(block, libnode, "__einsum_out", C2, {}, desc_m);
 
+    auto einsum_id = libnode.element_id();
+
+    dump_sdfg(builder.subject(), "0.init");
+
     math::tensor::EinsumSerializer serializer;
     auto libnode_j = serializer.serialize(libnode);
 
@@ -908,7 +917,7 @@ TEST(EinsumSerializerTest, Serialize) {
     EXPECT_TRUE(libnode_j["dims"][0].is_object());
     EXPECT_TRUE(libnode_j["dims"][0].contains("indvar"));
     EXPECT_TRUE(libnode_j["dims"][0]["indvar"].is_string());
-    EXPECT_EQ(libnode_j["dims"][0]["indvar"].get<std::string>(), "_einsum_node_7_i");
+    EXPECT_EQ(libnode_j["dims"][0]["indvar"].get<std::string>(), "_einsum_node_" + std::to_string(einsum_id) + "_i");
     EXPECT_TRUE(libnode_j["dims"][0].contains("init"));
     EXPECT_TRUE(libnode_j["dims"][0]["init"].is_string());
     EXPECT_EQ(libnode_j["dims"][0]["init"].get<std::string>(), "0");
@@ -919,7 +928,7 @@ TEST(EinsumSerializerTest, Serialize) {
     EXPECT_TRUE(libnode_j["dims"][1].is_object());
     EXPECT_TRUE(libnode_j["dims"][1].contains("indvar"));
     EXPECT_TRUE(libnode_j["dims"][1]["indvar"].is_string());
-    EXPECT_EQ(libnode_j["dims"][1]["indvar"].get<std::string>(), "_einsum_node_7_j");
+    EXPECT_EQ(libnode_j["dims"][1]["indvar"].get<std::string>(), "_einsum_node_" + std::to_string(einsum_id) + "_j");
     EXPECT_TRUE(libnode_j["dims"][1].contains("init"));
     EXPECT_TRUE(libnode_j["dims"][1]["init"].is_string());
     EXPECT_EQ(libnode_j["dims"][1]["init"].get<std::string>(), "0");
@@ -930,7 +939,7 @@ TEST(EinsumSerializerTest, Serialize) {
     EXPECT_TRUE(libnode_j["dims"][2].is_object());
     EXPECT_TRUE(libnode_j["dims"][2].contains("indvar"));
     EXPECT_TRUE(libnode_j["dims"][2]["indvar"].is_string());
-    EXPECT_EQ(libnode_j["dims"][2]["indvar"].get<std::string>(), "_einsum_node_7_k");
+    EXPECT_EQ(libnode_j["dims"][2]["indvar"].get<std::string>(), "_einsum_node_" + std::to_string(einsum_id) + "_k");
     EXPECT_TRUE(libnode_j["dims"][2].contains("init"));
     EXPECT_TRUE(libnode_j["dims"][2]["init"].is_string());
     EXPECT_EQ(libnode_j["dims"][2]["init"].get<std::string>(), "0");
@@ -942,7 +951,9 @@ TEST(EinsumSerializerTest, Serialize) {
     EXPECT_TRUE(libnode_j["out_indices"].is_array());
     EXPECT_EQ(
         libnode_j["out_indices"].get<std::vector<std::string>>(),
-        std::vector<std::string>({"_einsum_node_7_i", "_einsum_node_7_j"})
+        std::vector<std::string>(
+            {"_einsum_node_" + std::to_string(einsum_id) + "_i", "_einsum_node_" + std::to_string(einsum_id) + "_j"}
+        )
     );
 
     EXPECT_TRUE(libnode_j.contains("in_indices"));
@@ -950,9 +961,15 @@ TEST(EinsumSerializerTest, Serialize) {
     EXPECT_EQ(
         libnode_j["in_indices"].get<std::vector<std::vector<std::string>>>(),
         std::vector<std::vector<std::string>>(
-            {std::vector<std::string>({"_einsum_node_7_i", "_einsum_node_7_k"}),
-             std::vector<std::string>({"_einsum_node_7_k", "_einsum_node_7_j"}),
-             std::vector<std::string>({"_einsum_node_7_i", "_einsum_node_7_j"})}
+            {std::vector<std::string>(
+                 {"_einsum_node_" + std::to_string(einsum_id) + "_i", "_einsum_node_" + std::to_string(einsum_id) + "_k"}
+             ),
+             std::vector<std::string>(
+                 {"_einsum_node_" + std::to_string(einsum_id) + "_k", "_einsum_node_" + std::to_string(einsum_id) + "_j"}
+             ),
+             std::vector<std::string>(
+                 {"_einsum_node_" + std::to_string(einsum_id) + "_i", "_einsum_node_" + std::to_string(einsum_id) + "_j"}
+             )}
         )
     );
 }

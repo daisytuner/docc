@@ -98,7 +98,9 @@ InstrumentationInfo SequentialReduceDispatcher::instrumentation_info() const {
         metrics.insert({"flop", flop_str});
     }
 
-    return InstrumentationInfo(node_.element_id(), node_.element_type(), TargetType_SEQUENTIAL, loop_info, metrics);
+    return InstrumentationInfo(
+        node_.element_id(), node_.element_type(), TargetType_SEQUENTIAL, InstrumentationEventType::CPU, loop_info, metrics
+    );
 };
 
 } // namespace codegen

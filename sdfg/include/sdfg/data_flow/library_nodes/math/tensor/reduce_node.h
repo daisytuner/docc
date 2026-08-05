@@ -49,6 +49,7 @@
 
 #pragma once
 
+#include <optional>
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
@@ -192,6 +193,18 @@ public:
      * @return Identity value as string expression
      */
     virtual std::string identity(types::PrimitiveType primitive_type) const = 0;
+
+    /**
+     * @brief Get the ReductionOperation for this reduction
+     *
+     * The reduction operation for generating reduce nodes in the expand.
+     * By default it is not set.
+     *
+     * @return ReductionOperation for reduce nodes in expand.
+     */
+    virtual std::optional<structured_control_flow::ReductionOperation> reduction_operation() const {
+        return std::nullopt;
+    }
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 

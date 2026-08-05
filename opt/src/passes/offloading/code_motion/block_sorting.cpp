@@ -38,21 +38,15 @@ bool BlockSortingPass::bubble_up(
     long long index
 ) {
     // Skip assignments
-    auto current_child = sequence.at(index);
-    if (!current_child.second.empty()) {
-        return false;
-    }
-    auto next_child = sequence.at(index + 1);
-    if (!next_child.second.empty()) {
-        return false;
-    }
+    auto& current_child = sequence.at(index);
+    auto& next_child = sequence.at(index + 1);
 
     // Childs must be blocks
-    auto* current_block = dyn_cast<structured_control_flow::Block*>(&current_child.first);
+    auto* current_block = dyn_cast<structured_control_flow::Block*>(&current_child);
     if (!current_block) {
         return false;
     }
-    auto* next_block = dyn_cast<structured_control_flow::Block*>(&next_child.first);
+    auto* next_block = dyn_cast<structured_control_flow::Block*>(&next_child);
     if (!next_block) {
         return false;
     }
@@ -116,21 +110,15 @@ bool BlockSortingPass::bubble_down(
     long long index
 ) {
     // Skip assignments
-    auto current_child = sequence.at(index);
-    if (!current_child.second.empty()) {
-        return false;
-    }
-    auto next_child = sequence.at(index - 1);
-    if (!next_child.second.empty()) {
-        return false;
-    }
+    auto& current_child = sequence.at(index);
+    auto& next_child = sequence.at(index - 1);
 
     // Childs must be blocks
-    auto* current_block = dyn_cast<structured_control_flow::Block*>(&current_child.first);
+    auto* current_block = dyn_cast<structured_control_flow::Block*>(&current_child);
     if (!current_block) {
         return false;
     }
-    auto* next_block = dyn_cast<structured_control_flow::Block*>(&next_child.first);
+    auto* next_block = dyn_cast<structured_control_flow::Block*>(&next_child);
     if (!next_block) {
         return false;
     }
@@ -200,7 +188,7 @@ bool BlockSortingPass::sort(
     // Bubble up
     size_t i;
     for (i = 0; i < sequence.size(); i++) {
-        auto* node = &sequence.at(i).first;
+        auto* node = &sequence.at(i);
         if (dyn_cast<structured_control_flow::Return*>(node) || dyn_cast<structured_control_flow::Break*>(node) ||
             dyn_cast<structured_control_flow::Continue*>(node)) {
             // Sorting after return, break, and continue is useless

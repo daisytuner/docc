@@ -6,7 +6,7 @@ PARAMETERS = {"S": {"N": 40}, "M": {"N": 90}, "L": {"N": 200}, "paper": {"N": 50
 
 
 def initialize(N, datatype=np.int64):  # originally np.int32
-    seq = np.fromfunction(lambda i: (i + 1) % 4, (N,), dtype=datatype)
+    seq = (np.arange(N, dtype=datatype) + 1) % 4
 
     return N, seq
 

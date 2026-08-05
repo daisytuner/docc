@@ -32,6 +32,10 @@ std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured
         auto v = boost::add_vertex(graph_);
         nodes_[v] = &current;
         return {v, v};
+    } else if (auto assign_node = dyn_cast<structured_control_flow::AssignmentBlock*>(&current)) {
+        auto v = boost::add_vertex(graph_);
+        nodes_[v] = &current;
+        return {v, v};
     } else if (auto return_node = dyn_cast<structured_control_flow::Return*>(&current)) {
         auto v = boost::add_vertex(graph_);
         nodes_[v] = &current;
@@ -129,7 +133,7 @@ std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured
         graph::Vertex seq_end = boost::graph_traits<graph::Graph>::null_vertex();
 
         for (size_t i = 0; i < sequence_node->size(); i++) {
-            auto& child = sequence_node->at(i).first;
+            auto& child = sequence_node->at(i);
             auto [child_start, child_end] = this->traverse(child);
             if (child_start != boost::graph_traits<graph::Graph>::null_vertex()) {
                 if (seq_start == boost::graph_traits<graph::Graph>::null_vertex()) {

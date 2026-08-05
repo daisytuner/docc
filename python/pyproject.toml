@@ -36,6 +36,7 @@ dependencies = [
   "sympy>=1.14.0",
   "numpy>=1.19.0",
   "ml_dtypes>=0.5.4",
+  "jsonschema>=4.18",
 ]
 
 [project.urls]

@@ -94,6 +94,35 @@ template<typename ScheduleT>
 std::vector<structured_control_flow::Map*>
 get_gpu_maps(structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension);
 
+/**
+ * @brief Whether parallelizing @p loop to a new GPU grid dimension would replicate a
+ *        sibling accumulation that races on a shared container.
+ *
+ * Adding a grid dimension for @p loop folds the whole enclosing GPU kernel into a
+ * single flattened launch: only @p loop 's own subtree is guarded by the new
+ * dimension's thread id, so every sibling of @p loop (and of its ancestors up to the
+ * outermost GPU map) is re-executed by every thread of the new dimension. A sibling
+ * that merely stores is idempotent under this replication, but a read-modify-write -
+ * an accumulation/reduction such as `acc[i] += x` - folds its update in once per
+ * replicated thread and races on the shared buffer.
+ *
+ * The accumulation is a hazard only when its target escapes the kernel (a function
+ * argument/external or a transient that lives outside, per ArgumentsAnalysis); a
+ * container confined to the kernel is privatized per thread and races nothing. A
+ * sibling that is itself a GPU map is exempt: it is already parallelized, so codegen
+ * maps it onto its own threads instead of replicating it.
+ *
+ * This helper is schedule-agnostic (a map is "parallelized" iff its schedule is not
+ * Sequential), so it serves both the CUDA and ROCm nested-map transformations.
+ *
+ * @param loop The sequential map that a nested-parallelization transform wants to promote.
+ * @param analysis_manager Analysis manager (LoopAnalysis, Users, ArgumentsAnalysis).
+ * @return true if a replicated sibling would perform an unsafe accumulation.
+ */
+bool nested_parallelization_replicates_accumulation(
+    structured_control_flow::Map& loop, analysis::AnalysisManager& analysis_manager
+);
+
 // Extern template declarations to prevent implicit instantiation
 extern template symbolic::Expression find_nested_gpu_blocksize<
     cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);

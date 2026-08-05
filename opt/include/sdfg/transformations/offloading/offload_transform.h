@@ -5,6 +5,7 @@
 #include "sdfg/analysis/arguments_analysis.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/transformations/transformation.h"
+#include "sdfg/visitor/immutable_structured_sdfg_visitor.h"
 
 namespace sdfg {
 namespace transformations {
@@ -115,6 +116,19 @@ protected:
         symbolic::Expression page_size
     ) = 0;
 };
+
+class SideEffectFinder : public visitor::ImmutableStructuredSDFGVisitor {
+private:
+    structured_control_flow::Map& map_;
+
+public:
+    SideEffectFinder(StructuredSDFG& sdfg, analysis::AnalysisManager& analysis_manager, structured_control_flow::Map& map);
+
+    bool visit() override;
+
+    bool accept(structured_control_flow::Block& node) override;
+};
+
 
 } // namespace transformations
 } // namespace sdfg

@@ -1,0 +1,58 @@
+{
+    "traceEvents": [
+        {
+            "ph": "X",
+            "cat": "region,daisy",
+            "name": "main [L18-31]",
+            "pid": 9535,
+            "tid": 9535,
+            "ts": 11657,
+            "dur": 613913,
+            "args": {
+                "function": "main",
+                "module": "instrumentation_test.c",
+                "source_ranges": [
+                    {
+                        "file": "/home/lukas/repos/docc/tests/instrumentation_test.c",
+                        "from": {
+                            "line": 18,
+                            "col": 4
+                        },
+                        "to": {
+                            "line": 31,
+                            "col": 5
+                        }
+                    }
+                ],
+                "docc": {
+                    "sdfg_name": "__daisy_instrumentation_test_0",
+                    "sdfg_file": "/tmp/DOCC/0000-0000/123456789/sdfg_0.json",
+                    "arg_capture_path": "",
+                    "features_file": "",
+                    "opt_report_file": "",
+                    "transfer_tuning_session_id": "",
+                    "element_id": 10,
+                    "element_type": "for",
+                    "loopnest_index": 0,
+                    "loop_info": {
+                        "loopnest_index": 0,
+                        "num_loops": 1,
+                        "num_maps": 0,
+                        "num_fors": 1,
+                        "num_whiles": 0,
+                        "max_depth": 1,
+                        "is_perfectly_nested": true,
+                        "is_perfectly_parallel": false,
+                        "is_elementwise": false,
+                        "has_side_effects": false
+                    }
+                },
+                "target_type": "sequential",
+                "metrics": {
+                    "perf::BRANCHES": 123456,
+                    "perf::CYCLES": 2834021434
+                }
+            }
+        }
+    ]
+}

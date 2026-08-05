@@ -171,11 +171,11 @@ symbolic::Expression solve_closed_form(
 struct Candidate {
     std::string name;
     analysis::User* update_use = nullptr;
-    structured_control_flow::Transition* update_transition = nullptr;
+    structured_control_flow::AssignmentBlock* update_transition = nullptr;
     symbolic::Expression update_expr;
 
     analysis::User* init_use = nullptr;
-    structured_control_flow::Transition* init_transition = nullptr;
+    structured_control_flow::AssignmentBlock* init_transition = nullptr;
     symbolic::Expression init_expr;
 };
 
@@ -186,7 +186,7 @@ bool collect_candidate_cheap(
     analysis::Users& users,
     analysis::UsersView& body_users,
     structured_control_flow::StructuredLoop& loop,
-    structured_control_flow::Transition& exit_transition,
+    structured_control_flow::AssignmentBlock* exit_transition,
     const std::string& name,
     Candidate& out
 ) {
@@ -198,7 +198,7 @@ bool collect_candidate_cheap(
     auto sym = symbolic::symbol(name);
 
     // Don't fight a user-set exit assignment.
-    if (exit_transition.assignments().find(sym) != exit_transition.assignments().end()) {
+    if (exit_transition && exit_transition->assignments().find(sym) != exit_transition->assignments().end()) {
         return false;
     }
 
@@ -210,9 +210,9 @@ bool collect_candidate_cheap(
     // executed each iteration, never inside a conditional branch).
     auto* update_use = body_writes.front();
     auto* element = update_use->element();
-    auto* update_transition = dyn_cast<structured_control_flow::Transition*>(element);
+    auto* update_transition = dyn_cast<structured_control_flow::AssignmentBlock*>(element);
     if (update_transition == nullptr) return false;
-    if (&update_transition->parent() != &loop.root()) return false;
+    if (update_transition->get_parent() != &loop.root()) return false;
 
     auto upd_it = update_transition->assignments().find(sym);
     if (upd_it == update_transition->assignments().end()) return false;
@@ -232,7 +232,7 @@ bool collect_candidate_cheap(
     }
     if (init_use == nullptr) return false;
 
-    auto* init_transition = dyn_cast<structured_control_flow::Transition*>(init_use->element());
+    auto* init_transition = dyn_cast<structured_control_flow::AssignmentBlock*>(init_use->element());
     if (init_transition == nullptr) return false;
 
     auto init_it = init_transition->assignments().find(sym);
@@ -272,16 +272,23 @@ bool passes_expensive_checks(
 //    sym_update applied to closed_form(last_iter) yields the right value).
 void apply_rewrite(
     builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& parent,
     structured_control_flow::StructuredLoop& loop,
-    structured_control_flow::Transition& exit_transition,
+    structured_control_flow::AssignmentBlock** after_exit_assigns,
     const Candidate& cand,
     const symbolic::Expression& closed_form
 ) {
     auto sym = symbolic::symbol(cand.name);
-    auto& old_first_block = loop.root().at(0).first;
-    builder.add_block_before(loop.root(), old_first_block, {{sym, closed_form}}, old_first_block.debug_info());
+    auto& old_first_block = loop.root().at(0);
+    builder.add_assignments_before(loop.root(), old_first_block, {{sym, closed_form}}, old_first_block.debug_info());
     cand.update_transition->assignments().erase(sym);
-    exit_transition.assignments().insert({sym, cand.update_expr});
+
+    if (*after_exit_assigns == nullptr) {
+        auto& exit_assigns = builder.add_assignments_after(parent, loop, {{sym, cand.update_expr}}, loop.debug_info());
+        *after_exit_assigns = &exit_assigns;
+    } else {
+        (*after_exit_assigns)->assignments().insert({sym, cand.update_expr});
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -302,7 +309,7 @@ struct LoopEntry {
 void collect_loops_postorder(structured_control_flow::ControlFlowNode& node, std::vector<LoopEntry>& out) {
     if (auto seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         for (size_t i = 0; i < seq->size(); ++i) {
-            auto& child = seq->at(i).first;
+            auto& child = seq->at(i);
             collect_loops_postorder(child, out);
             if (auto sloop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
                 out.push_back({sloop, seq});
@@ -330,8 +337,9 @@ void collect_loops_postorder(structured_control_flow::ControlFlowNode& node, std
 bool SymbolEvolution::eliminate_symbols(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::Sequence& parent,
     structured_control_flow::StructuredLoop& loop,
-    structured_control_flow::Transition& exit_transition
+    structured_control_flow::AssignmentBlock* after_loop_assigns
 ) {
     if (loop.root().size() == 0) return false;
     if (!is_canonical(loop)) return false;
@@ -355,7 +363,7 @@ bool SymbolEvolution::eliminate_symbols(
 
     for (const auto& name : moving) {
         Candidate cand;
-        if (!collect_candidate_cheap(builder, users, body_users, loop, exit_transition, name, cand)) {
+        if (!collect_candidate_cheap(builder, users, body_users, loop, after_loop_assigns, name, cand)) {
             continue;
         }
 
@@ -369,7 +377,7 @@ bool SymbolEvolution::eliminate_symbols(
         // Only now pay for dominance + use-after-update.
         if (!passes_expensive_checks(body_users, dominance, cand)) continue;
 
-        apply_rewrite(builder, loop, exit_transition, cand, closed);
+        apply_rewrite(builder, parent, loop, &after_loop_assigns, cand, closed);
         return true;
     }
 
@@ -395,9 +403,8 @@ bool SymbolEvolution::run_pass(builder::StructuredSDFGBuilder& builder, analysis
             // only when we don't touch the parent ourselves).
             auto idx = entry.parent_seq->index(*entry.loop);
             if (idx < 0) break;
-            auto& exit_transition = entry.parent_seq->at(static_cast<size_t>(idx)).second;
 
-            bool applied = eliminate_symbols(builder, analysis_manager, *entry.loop, exit_transition);
+            bool applied = eliminate_symbols(builder, analysis_manager, *entry.parent_seq, *entry.loop, nullptr);
             if (!applied) break;
 
             any_applied = true;

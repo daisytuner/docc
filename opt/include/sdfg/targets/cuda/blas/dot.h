@@ -20,6 +20,8 @@ public:
         codegen::PrettyPrinter& globals_stream,
         codegen::CodeSnippetFactory& library_snippet_factory
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 class DotNodeDispatcher_CUBLASWithoutTransfers : public codegen::LibraryNodeDispatcher {
@@ -36,6 +38,8 @@ public:
         codegen::PrettyPrinter& globals_stream,
         codegen::CodeSnippetFactory& library_snippet_factory
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 } // namespace sdfg::cuda::blas

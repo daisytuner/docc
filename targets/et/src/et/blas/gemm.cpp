@@ -242,8 +242,7 @@ std::vector<const data_flow::AccessNode*> static find_gemm_access_nodes(
         ++in_edges_it;
     }
 
-    auto& out_edge = *dfg.out_edges(node).begin();
-    access_nodes[5] = dynamic_cast<const data_flow::AccessNode*>(&out_edge.dst());
+    access_nodes[5] = access_nodes.at(2);
 
     return access_nodes;
 }

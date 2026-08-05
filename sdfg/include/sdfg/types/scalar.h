@@ -90,6 +90,17 @@ public:
 
     /// @brief Returns a string representation of this scalar type
     virtual std::string print() const override;
+
+    /**
+     * @brief Replace symbolic expressions on this type
+     * @param old_expression Expression to replace
+     * @param new_expression Replacement expression
+     *
+     * Nothing to do.
+     */
+    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
+        override {}
+    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override {}
 };
 } // namespace types
 } // namespace sdfg

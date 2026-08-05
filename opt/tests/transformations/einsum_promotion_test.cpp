@@ -90,7 +90,7 @@ TEST(EinsumPromotionTest, Simple) {
     EXPECT_EQ(root.size(), 1);
     ASSERT_GE(root.size(), 1);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&root.at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&root.at(0));
     ASSERT_TRUE(new_block);
     auto& dfg = new_block->dataflow();
     EXPECT_EQ(dfg.data_nodes().size(), 3);
@@ -172,7 +172,7 @@ TEST(EinsumPromotionTest, Multiple) {
     EXPECT_EQ(for_node_i.root().size(), 1);
     ASSERT_GE(for_node_i.root().size(), 1);
 
-    auto* intermediate_block = dyn_cast<structured_control_flow::Block*>(&for_node_i.root().at(0).first);
+    auto* intermediate_block = dyn_cast<structured_control_flow::Block*>(&for_node_i.root().at(0));
     ASSERT_TRUE(intermediate_block);
     auto& intermediate_dfg = intermediate_block->dataflow();
     EXPECT_EQ(intermediate_dfg.data_nodes().size(), 3);
@@ -192,7 +192,7 @@ TEST(EinsumPromotionTest, Multiple) {
     EXPECT_EQ(root.size(), 1);
     ASSERT_GE(root.size(), 1);
 
-    auto* new_block = dyn_cast<structured_control_flow::Block*>(&root.at(0).first);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&root.at(0));
     ASSERT_TRUE(new_block);
     auto& dfg = new_block->dataflow();
     EXPECT_EQ(dfg.data_nodes().size(), 3);

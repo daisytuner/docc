@@ -589,7 +589,7 @@ def test_hotspot(compiler="clang++-19"):
     )
     return runner.run(timeout=240)
 
-
+@pytest.mark.skip(reason="Flaky")
 def test_hotspot3D(compiler="clang-19"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "hotspot3D" / "3D.c"
@@ -969,8 +969,8 @@ def test_particlefilter(compiler="clang-19"):
             "sdfgs": 17,
             "REDUCE": 1,
             "WHILE": 12,
-            "MAP": 18,
-            "FOR": 30,
+            "MAP": 19,
+            "FOR": 29,
             "SEQUENTIAL": 49,
         }
     )

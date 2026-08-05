@@ -98,6 +98,17 @@ void GEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code(
     remove_guard_clause(stream);
 }
 
+codegen::InstrumentationInfo GEMMNodeDispatcher_CUBLASWithTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_CUDA,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
+}
+
 GEMMNodeDispatcher_CUBLASWithoutTransfers::GEMMNodeDispatcher_CUBLASWithoutTransfers(
     codegen::LanguageExtension& language_extension,
     const Function& function,
@@ -178,6 +189,17 @@ void generate_kernel_gemm(
            << "&__beta, " << prefix << "C, " << language_extension.expression(ldc) << ");" << std::endl;
     cublas_error_checking(stream, language_extension, "err");
     check_cuda_kernel_launch_errors(stream, language_extension, false);
+}
+
+codegen::InstrumentationInfo GEMMNodeDispatcher_CUBLASWithoutTransfers::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        TargetType_CUDA,
+        codegen::InstrumentationEventType::CUDA,
+        analysis::LoopInfo{},
+        {}
+    };
 }
 
 } // namespace sdfg::cuda::blas

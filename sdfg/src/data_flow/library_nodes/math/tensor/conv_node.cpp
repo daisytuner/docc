@@ -285,7 +285,6 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
         symbolic::zero(),
         symbolic::add(n, symbolic::one()),
         ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
 
@@ -300,7 +299,6 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
         symbolic::zero(),
         symbolic::add(g, symbolic::one()),
         ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
 
@@ -333,7 +331,6 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
         symbolic::zero(),
         symbolic::add(c, symbolic::one()),
         ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
     current_seq = &loop_c.root();
@@ -353,7 +350,6 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
             symbolic::zero(),
             symbolic::add(k, symbolic::one()),
             ScheduleType_Sequential::create(),
-            {},
             block.debug_info()
         );
         current_seq = &loop_k.root();
@@ -374,7 +370,6 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
             symbolic::zero(),
             symbolic::add(o, symbolic::one()),
             ScheduleType_Sequential::create(),
-            {},
             block.debug_info()
         );
         current_seq = &loop_o.root();
@@ -397,7 +392,7 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
             Or(zero_condition,
                symbolic::Or(symbolic::Ge(i_expr, this->shape_[i + 2]), symbolic::Lt(i_expr, symbolic::zero())));
     }
-    auto& branch = builder.add_if_else(*current_seq, {}, block.debug_info());
+    auto& branch = builder.add_if_else(*current_seq, block.debug_info());
     auto& copy_case = builder.add_case(branch, copy_condition, block.debug_info());
     auto& zero_case = builder.add_case(branch, zero_condition, block.debug_info());
 
@@ -532,7 +527,6 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
             symbolic::zero(),
             symbolic::add(l, symbolic::one()),
             ScheduleType_Sequential::create(),
-            {},
             block.debug_info()
         );
         current_seq = &loop_l.root();
@@ -549,7 +543,6 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
                 symbolic::zero(),
                 symbolic::add(o, symbolic::one()),
                 ScheduleType_Sequential::create(),
-                {},
                 block.debug_info()
             );
             current_seq = &loop_o.root();

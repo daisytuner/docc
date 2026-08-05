@@ -73,6 +73,11 @@ std::optional<types::PrimitiveType> ElementWiseDataflowTensorNode::uniform_quant
 
 void ElementWiseDataflowTensorNode::validate_target_tensor(const data_flow::DataFlowGraph& graph) const {
     auto* target_ptr_edge = graph.in_edge_for_connector(*this, inputs_.at(0));
+    if (!target_ptr_edge) {
+        throw InvalidSDFGException(
+            "On libNode #" + std::to_string(element_id()) + ": input " + inputs_.at(0) + " is not connected"
+        );
+    }
     auto& tensor_output = static_cast<const types::Tensor&>(target_ptr_edge->base_type());
 
     validate_shape_matches(shape_, tensor_output.layout(), "output tensor");
@@ -183,7 +188,6 @@ std::pair<structured_control_flow::Sequence*, std::vector<symbolic::Expression>>
             init,
             update,
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             scope_deb_info
         );
         last_scope = &last_map->root();

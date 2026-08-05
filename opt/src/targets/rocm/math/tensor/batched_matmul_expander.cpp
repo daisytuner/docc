@@ -89,7 +89,6 @@ bool RocmBatchedMatMulExpander::
 
     auto& parent = static_cast<structured_control_flow::Sequence&>(*block.get_parent());
     int index = parent.index(block);
-    auto& transition = parent.at(index).second;
 
     // Get input edges
     auto iedges = dataflow.in_edges_by_connector(node_);
@@ -139,8 +138,8 @@ bool RocmBatchedMatMulExpander::
     auto scalar_type = types::Scalar(prim_type.value());
 
     // Add new graph
-    auto& new_sequence = builder.add_sequence_before(parent, block, transition.assignments(), block.debug_info());
-    auto& gemm_block = builder.add_block(new_sequence, {}, block.debug_info());
+    auto& new_sequence = builder.add_sequence_before(parent, block, block.debug_info());
+    auto& gemm_block = builder.add_block(new_sequence, block.debug_info());
 
     // Add batched GEMM library node
     auto& batched_gemm = builder.add_library_node<math::blas::BatchedGEMMNode>(

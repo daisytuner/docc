@@ -37,7 +37,9 @@ private:
 
     virtual void visualizeStructuredSDFG(const StructuredSDFG& sdfg) override;
     virtual void visualizeBlock(const StructuredSDFG& sdfg, const structured_control_flow::Block& block) override;
-
+    virtual void visualizeAssignmentBlock(
+        const StructuredSDFG& sdfg, const structured_control_flow::AssignmentBlock& assignment_block
+    ) override;
     virtual void visualizeSequence(const StructuredSDFG& sdfg, const structured_control_flow::Sequence& sequence)
         override;
     virtual void visualizeIfElse(const StructuredSDFG& sdfg, const structured_control_flow::IfElse& if_else) override;

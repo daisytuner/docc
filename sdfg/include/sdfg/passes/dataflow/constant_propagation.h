@@ -6,14 +6,12 @@ namespace sdfg {
 namespace passes {
 
 /**
- * @brief A pass that eliminates duplicate defines with the same constant value.
+ * @brief Forward-propagates floating-point constant scalars into their uses.
  *
- * For example, in the following code, the second definition of `a` inside the loop is redundant and will be removed.
- * a = 5
- * while (cond) {
- *     a = 5  # this define is redundant and will be removed
- *     ...
- * }
+ * A scalar container that is defined by a single constant assignment
+ * (`ConstantNode -> assign -> scalar`) is treated as holding that constant. Every downstream
+ * computational read of the scalar is rewritten to read the constant directly, which in turn
+ * enables library-node simplifications (e.g. GEMM alpha == 1 / beta == 0) and later folding.
  */
 class ConstantPropagation : public Pass {
 public:

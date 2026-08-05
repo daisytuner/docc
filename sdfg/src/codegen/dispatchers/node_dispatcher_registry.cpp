@@ -37,8 +37,10 @@ std::unique_ptr<NodeDispatcher> create_dispatcher(
 };
 
 void register_default_dispatchers() {
+    auto& registry = NodeDispatcherRegistry::instance();
+
     /* Control flow dispatchers */
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
         typeid(structured_control_flow::Block),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -56,7 +58,25 @@ void register_default_dispatchers() {
             );
         }
     );
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
+        typeid(structured_control_flow::AssignmentBlock),
+        [](LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::ControlFlowNode& node,
+           InstrumentationPlan& instrumentation,
+           ArgCapturePlan& arg_capture) {
+            return std::make_unique<AssignmentDispatcher>(
+                language_extension,
+                sdfg,
+                analysis_manager,
+                static_cast<structured_control_flow::AssignmentBlock&>(node),
+                instrumentation,
+                arg_capture
+            );
+        }
+    );
+    registry.register_dispatcher(
         typeid(structured_control_flow::Sequence),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -74,7 +94,7 @@ void register_default_dispatchers() {
             );
         }
     );
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
         typeid(structured_control_flow::IfElse),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -92,7 +112,7 @@ void register_default_dispatchers() {
             );
         }
     );
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
         typeid(structured_control_flow::While),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -110,7 +130,7 @@ void register_default_dispatchers() {
             );
         }
     );
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
         typeid(structured_control_flow::For),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -128,7 +148,7 @@ void register_default_dispatchers() {
             );
         }
     );
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
         typeid(structured_control_flow::Map),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -146,7 +166,7 @@ void register_default_dispatchers() {
             );
         }
     );
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
         typeid(structured_control_flow::Reduce),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -164,7 +184,7 @@ void register_default_dispatchers() {
             );
         }
     );
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
         typeid(structured_control_flow::Return),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -182,7 +202,7 @@ void register_default_dispatchers() {
             );
         }
     );
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
         typeid(structured_control_flow::Break),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -200,7 +220,7 @@ void register_default_dispatchers() {
             );
         }
     );
-    NodeDispatcherRegistry::instance().register_dispatcher(
+    registry.register_dispatcher(
         typeid(structured_control_flow::Continue),
         [](LanguageExtension& language_extension,
            StructuredSDFG& sdfg,

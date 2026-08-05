@@ -11,9 +11,11 @@ PARAMETERS = {
 
 
 def initialize(M, N, datatype=np.float64):
-    A = np.fromfunction(lambda i, j: (i * (j + 1) % N) / N, (N, M), dtype=datatype)
-    p = np.fromfunction(lambda i: (i % M) / M, (M,), dtype=datatype)
-    r = np.fromfunction(lambda i: (i % N) / N, (N,), dtype=datatype)
+    i = np.arange(N).reshape(-1, 1)
+    j = np.arange(M)
+    A = (i * (j + 1) % N) / N
+    p = (np.arange(M) % M) / M
+    r = (np.arange(N) % N) / N
 
     return A, p, r
 
@@ -51,21 +53,11 @@ def test_bicg(target):
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "CUDA": 4,
-                "REDUCE": 2,
-                "MAP": 4,
-                "CUDAOffloading": 4,
-            },
+            verification={"CUDA": 2, "GEMM": 2, "MAP": 2, "CUDAOffloading": 4},
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={
-                "ROCM": 4,
-                "REDUCE": 2,
-                "MAP": 4,
-                "ROCMOffloading": 4,
-            },
+            verification={"ROCM": 2, "GEMM": 2, "MAP": 2, "ROCMOffloading": 4},
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 

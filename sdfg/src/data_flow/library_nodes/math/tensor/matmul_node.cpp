@@ -282,7 +282,7 @@ passes::LibNodeExpander::ExpandOutcome MatMulNode::expand(passes::LibNodeExpande
             trans_a = blas::BLAS_Transpose::Trans;
         } else {
             trans_a = blas::BLAS_Transpose::No;
-            throw InvalidSDFGException("A must be in c-order");
+            throw InvalidSDFGException("A must be in c-order but got: " + layout_a_.toStr());
         }
         if (layout_b_.has_linear_accesses_no_padding()) {
             trans_b = blas::BLAS_Transpose::No;
@@ -290,7 +290,7 @@ passes::LibNodeExpander::ExpandOutcome MatMulNode::expand(passes::LibNodeExpande
             trans_b = blas::BLAS_Transpose::Trans;
         } else {
             trans_b = blas::BLAS_Transpose::No;
-            throw InvalidSDFGException("B must be in c-order");
+            throw InvalidSDFGException("B must be in c-order but got: " + layout_b_.toStr());
         }
 
         // Create maps for batch dimensions and M, N dimensions
@@ -334,7 +334,6 @@ passes::LibNodeExpander::ExpandOutcome MatMulNode::expand(passes::LibNodeExpande
                 init,
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 block.debug_info()
             );
             last_scope = &last_map->root();

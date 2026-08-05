@@ -310,7 +310,7 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
         auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
 
         if (iterator_type_attr.getValue() == utils::IteratorType::reduction) {
-            auto& for_loop = builder.add_for(*current_seq, indvar, condition, init, update, {}, deb_info);
+            auto& for_loop = builder.add_for(*current_seq, indvar, condition, init, update, deb_info);
             current_seq = &for_loop.root();
         } else {
             auto& map = builder.add_map(
@@ -320,7 +320,6 @@ LogicalResult translateLinalgGenericOp(SDFGTranslator& translator, linalg::Gener
                 init,
                 update,
                 ::sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-                {},
                 deb_info
             );
             current_seq = &map.root();

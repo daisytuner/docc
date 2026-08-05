@@ -56,7 +56,7 @@ passes::LibNodeExpander::ExpandOutcome MeanNode::expand_inner(
         symbolic::Expression dim = shape_[ax];
         count_expr = symbolic::mul(count_expr, dim);
     }
-    auto& count_block = builder.add_block(seq, {{symbolic::symbol(count_container), count_expr}}, this->debug_info());
+    builder.add_assignments(seq, {{symbolic::symbol(count_container), count_expr}}, this->debug_info());
 
     // Create DivNode
     auto& div_block = builder.add_block(seq, {}, this->debug_info());

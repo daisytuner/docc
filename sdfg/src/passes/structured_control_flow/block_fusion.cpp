@@ -13,12 +13,13 @@ BlockFusion::BlockFusion(
 )
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), ignore_libnodes_(ignore_libnodes) {}
 
-bool BlockFusion::can_be_applied(
-    data_flow::DataFlowGraph& first_graph,
-    control_flow::Assignments& first_assignments,
-    data_flow::DataFlowGraph& second_graph,
-    control_flow::Assignments& second_assignments
-) {
+struct ComponentState {
+    std::unordered_set<const data_flow::AccessNode*> members;
+    std::unordered_set<const data_flow::AccessNode*> exposed_access_nodes; // upwards / downwards depending on which
+                                                                           // block
+};
+
+bool BlockFusion::can_be_applied(data_flow::DataFlowGraph& first_graph, data_flow::DataFlowGraph& second_graph) {
     // Criterion: No side-effect nodes
     std::unordered_set<std::string> first_write_symbols;
     for (auto& node : first_graph.nodes()) {
@@ -85,11 +86,6 @@ bool BlockFusion::can_be_applied(
         }
     }
 
-    // Criterion: Transition must be empty
-    if (!first_assignments.empty()) {
-        return false;
-    }
-
     // Criterion: Keep references and dereference in separate blocks
     for (auto& edge : first_graph.edges()) {
         if (edge.type() != data_flow::MemletType::Computational) {
@@ -104,35 +100,46 @@ bool BlockFusion::can_be_applied(
 
     // Determine sets of weakly connected components for first graph
     auto [first_num_components, first_components] = first_graph.weakly_connected_components();
-    std::vector<std::unordered_set<const data_flow::AccessNode*>> first_weakly_connected(first_num_components);
+    std::vector<ComponentState> first_weakly_connected(first_num_components);
     for (auto comp : first_components) {
         // Only handle access nodes of the first graph
         if (dynamic_cast<const data_flow::ConstantNode*>(comp.first)) {
             continue;
         } else if (auto* access_node = dynamic_cast<const data_flow::AccessNode*>(comp.first)) {
-            first_weakly_connected[comp.second].insert(access_node);
+            auto& state = first_weakly_connected[comp.second];
+            state.members.insert(access_node);
+            if (first_graph.out_degree(*access_node) == 0) {
+                state.exposed_access_nodes.insert(access_node);
+            }
         }
     }
 
     // Determine sets of weakly connected components for second graph
     auto [second_num_components, second_components] = second_graph.weakly_connected_components();
-    std::vector<std::unordered_set<const data_flow::AccessNode*>> second_weakly_connected(second_num_components);
+    std::vector<ComponentState> second_weakly_connected(second_num_components);
     for (auto comp : second_components) {
         // Only handle access nodes of the second graph
         if (dynamic_cast<const data_flow::ConstantNode*>(comp.first)) {
             continue;
         } else if (auto* access_node = dynamic_cast<const data_flow::AccessNode*>(comp.first)) {
-            second_weakly_connected[comp.second].insert(access_node);
+            auto& state = second_weakly_connected[comp.second];
+            state.members.insert(access_node);
+            if (second_graph.in_degree(*access_node) == 0) {
+                // Some form of write
+                state.exposed_access_nodes.insert(access_node);
+            }
         }
     }
 
     // For each combination of weakly connected components:
     for (size_t first = 0; first < first_num_components; first++) {
+        auto& first_state = first_weakly_connected[first];
         for (size_t second = 0; second < second_num_components; second++) {
+            auto& second_state = second_weakly_connected[second];
             // Match all access nodes with the same container
             std::vector<std::pair<const data_flow::AccessNode*, const data_flow::AccessNode*>> matches;
-            for (auto* first_access_node : first_weakly_connected[first]) {
-                for (auto* second_access_node : second_weakly_connected[second]) {
+            for (auto* first_access_node : first_state.members) {
+                for (auto* second_access_node : second_state.members) {
                     if (first_access_node->data() == second_access_node->data()) {
                         matches.push_back({first_access_node, second_access_node});
                     }
@@ -142,17 +149,26 @@ bool BlockFusion::can_be_applied(
             if (matches.empty()) {
                 continue;
             }
-            // There must be at least one sink in the first graph and one source in the second graph that match
-            bool connection = false;
+            size_t connections = 0, excused_connections = 0;
+
             for (auto [first_access_node, second_access_node] : matches) {
-                if (first_graph.out_degree(*first_access_node) == 0 &&
-                    second_graph.in_degree(*second_access_node) == 0) {
-                    connection = true;
-                    break;
+                auto first_is_leaf_read = first_graph.in_degree(*first_access_node) == 0;
+                auto first_is_leaf_write = first_graph.out_degree(*first_access_node) == 0;
+                auto second_is_leaf_read = second_graph.in_degree(*second_access_node) == 0;
+                if (first_is_leaf_write && second_is_leaf_read) {
+                    ++connections;
+                } else if (first_is_leaf_read && second_is_leaf_read) {
+                    ++excused_connections;
                 }
             }
-            if (!connection) {
-                return false;
+            if (first_state.exposed_access_nodes.size() == 1) {
+                if (connections == 0 && excused_connections == 0) {
+                    return false;
+                }
+            } else {
+                if ((connections + excused_connections) != matches.size()) {
+                    return false;
+                }
             }
         }
     }
@@ -160,19 +176,9 @@ bool BlockFusion::can_be_applied(
     return true;
 };
 
-void BlockFusion::apply(
-    structured_control_flow::Block& first_block,
-    control_flow::Assignments& first_assignments,
-    structured_control_flow::Block& second_block,
-    control_flow::Assignments& second_assignments
-) {
+void BlockFusion::apply(structured_control_flow::Block& first_block, structured_control_flow::Block& second_block) {
     data_flow::DataFlowGraph& first_graph = first_block.dataflow();
     data_flow::DataFlowGraph& second_graph = second_block.dataflow();
-
-    // Update symbols
-    for (auto& entry : second_assignments) {
-        first_assignments[entry.first] = entry.second;
-    }
 
     // Collect nodes to connect to
     auto pdoms = first_graph.post_dominators();
@@ -236,27 +242,22 @@ bool BlockFusion::accept(structured_control_flow::Sequence& node) {
     // Traverse node to find pairs of blocks
     size_t i = 0;
     while (i < (node.size() - 1)) {
-        auto current_entry = node.at(i);
-        if (dyn_cast<structured_control_flow::Block*>(&current_entry.first) == nullptr) {
+        auto& current_entry = node.at(i);
+        if (dyn_cast<structured_control_flow::Block*>(&current_entry) == nullptr) {
             i++;
             continue;
         }
-        auto current_block = static_cast<structured_control_flow::Block*>(&current_entry.first);
+        auto current_block = static_cast<structured_control_flow::Block*>(&current_entry);
 
-        auto next_entry = node.at(i + 1);
-        if (dyn_cast<structured_control_flow::Block*>(&next_entry.first) == nullptr) {
+        auto& next_entry = node.at(i + 1);
+        if (dyn_cast<structured_control_flow::Block*>(&next_entry) == nullptr) {
             i++;
             continue;
         }
-        auto next_block = static_cast<structured_control_flow::Block*>(&next_entry.first);
+        auto next_block = static_cast<structured_control_flow::Block*>(&next_entry);
 
-        if (this->can_be_applied(
-                current_block->dataflow(),
-                current_entry.second.assignments(),
-                next_block->dataflow(),
-                next_entry.second.assignments()
-            )) {
-            this->apply(*current_block, current_entry.second.assignments(), *next_block, next_entry.second.assignments());
+        if (this->can_be_applied(current_block->dataflow(), next_block->dataflow())) {
+            this->apply(*current_block, *next_block);
             builder_.remove_child(node, i + 1);
             applied = true;
 

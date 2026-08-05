@@ -63,6 +63,7 @@ public:
     virtual void handle_structured_loop_after_body(StructuredLoop& loop);
 
     bool visit(sdfg::structured_control_flow::Block& node) override;
+    bool visit(sdfg::structured_control_flow::AssignmentBlock& node) override;
     bool visit(sdfg::structured_control_flow::Sequence& node) override;
     bool visit(sdfg::structured_control_flow::IfElse& node) override;
 

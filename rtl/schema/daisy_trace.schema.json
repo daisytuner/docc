@@ -1,0 +1,414 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://docc.dev/schemas/daisy_trace.schema.json",
+    "title": "Daisy RTL Trace",
+    "description":
+        "Chrome Trace Format subset emitted by the daisy RTL instrumentation library (rtl/src/instrumentation.cpp), extended with docc-specific metadata. Only complete ('X') events are emitted. Two mutually-exclusive event shapes exist, selected by __DAISY_INSTRUMENTATION_MODE: per-invocation ('region,daisy') and aggregated ('aggregated_region,daisy').",
+    "type": "object",
+    "required": [
+        "traceEvents"
+    ],
+    "properties": {
+        "traceEvents": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/event"
+            }
+        }
+    },
+    "$defs": {
+        "event": {
+            "type": "object",
+            "required": [
+                "ph",
+                "cat",
+                "name",
+                "pid",
+                "tid",
+                "args"
+            ],
+            "properties": {
+                "ph": {
+                    "const": "X"
+                },
+                "cat": {
+                    "enum": [
+                        "region,daisy",
+                        "aggregated_region,daisy"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pid": {
+                    "type": "integer"
+                },
+                "tid": {
+                    "type": "integer"
+                },
+                "ts": {
+                    "type": "number",
+                    "description":
+                        "Timestamp in microseconds. Omitted for per-invocation events that lack a recorded start."
+                },
+                "dur": {
+                    "type": "number",
+                    "description":
+                        "Duration in microseconds. Omitted for per-invocation events that lack a recorded duration."
+                }
+            },
+            "oneOf": [
+                {
+                    "properties": {
+                        "cat": {
+                            "const": "region,daisy"
+                        },
+                        "args": {
+                            "$ref": "#/$defs/argsPerInvocation"
+                        }
+                    },
+                    "required": [
+                        "args"
+                    ]
+                },
+                {
+                    "properties": {
+                        "cat": {
+                            "const": "aggregated_region,daisy"
+                        },
+                        "ts": {
+                            "type": "number"
+                        },
+                        "dur": {
+                            "type": "number"
+                        },
+                        "args": {
+                            "$ref": "#/$defs/argsAggregated"
+                        }
+                    },
+                    "required": [
+                        "ts",
+                        "dur",
+                        "args"
+                    ]
+                }
+            ]
+        },
+
+        "argsCommon": {
+            "type": "object",
+            "required": [
+                "function",
+                "module",
+                "source_ranges",
+                "docc",
+                "target_type",
+                "metrics"
+            ],
+            "properties": {
+                "function": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "source_ranges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/sourceRange"
+                    }
+                },
+                "docc": {
+                    "$ref": "#/$defs/docc"
+                },
+                "target_type": {
+                    "type": "string",
+                    "description":
+                        "Target backend (e.g. 'sequential'). Emitted as an empty string when unset."
+                }
+            }
+        },
+
+        "argsPerInvocation": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/argsCommon"
+                }
+            ],
+            "properties": {
+                "metrics": {
+                    "$ref": "#/$defs/metricsPerInvocation"
+                }
+            }
+        },
+
+        "argsAggregated": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/argsCommon"
+                }
+            ],
+            "properties": {
+                "metrics": {
+                    "$ref": "#/$defs/metricsAggregated"
+                }
+            }
+        },
+
+        "sourceRange": {
+            "type": "object",
+            "required": [
+                "file",
+                "from",
+                "to"
+            ],
+            "properties": {
+                "file": {
+                    "type": "string"
+                },
+                "from": {
+                    "$ref": "#/$defs/sourcePos"
+                },
+                "to": {
+                    "$ref": "#/$defs/sourcePos"
+                }
+            }
+        },
+
+        "sourcePos": {
+            "type": "object",
+            "required": [
+                "line",
+                "col"
+            ],
+            "properties": {
+                "line": {
+                    "type": "integer"
+                },
+                "col": {
+                    "type": "integer"
+                }
+            }
+        },
+
+        "docc": {
+            "type": "object",
+            "description":
+                "docc-specific region metadata. The SDFG-scope string fields are always present (possibly empty). The element/loop fields are emitted as a group when the region carries SDFG element metadata (guarded in C++ by sdfg_name and sdfg_file pointers being non-null; an empty string in the JSON does not necessarily mean the group is absent).",
+            "required": [
+                "sdfg_name",
+                "sdfg_file",
+                "arg_capture_path",
+                "features_file",
+                "opt_report_file"
+            ],
+            "properties": {
+                "sdfg_name": {
+                    "type": "string"
+                },
+                "sdfg_file": {
+                    "type": "string"
+                },
+                "arg_capture_path": {
+                    "type": "string"
+                },
+                "features_file": {
+                    "type": "string"
+                },
+                "opt_report_file": {
+                    "type": "string"
+                },
+                "transfer_tuning_session_id": {
+                    "type": "string",
+                    "description":
+                        "Optional transfer-tuning session id stamped onto the SDFG when it was remote-tuned (empty string otherwise). Together with element_id it links a runtime region back to its recorded transfer-tuning cutout."
+                },
+                "element_id": {
+                    "type": "integer"
+                },
+                "element_type": {
+                    "type": "string"
+                },
+                "loopnest_index": {
+                    "type": "integer"
+                },
+                "loop_info": {
+                    "$ref": "#/$defs/loopInfo"
+                }
+            },
+            "dependentRequired": {
+                "element_id": [
+                    "element_type",
+                    "loopnest_index",
+                    "loop_info"
+                ],
+                "element_type": [
+                    "element_id",
+                    "loopnest_index",
+                    "loop_info"
+                ],
+                "loop_info": [
+                    "element_id",
+                    "element_type",
+                    "loopnest_index"
+                ]
+            }
+        },
+
+        "loopInfo": {
+            "type": "object",
+            "required": [
+                "loopnest_index",
+                "num_loops",
+                "num_maps",
+                "num_fors",
+                "num_whiles",
+                "max_depth",
+                "is_perfectly_nested",
+                "is_perfectly_parallel",
+                "is_elementwise",
+                "has_side_effects"
+            ],
+            "properties": {
+                "loopnest_index": {
+                    "type": "integer"
+                },
+                "num_loops": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "num_maps": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "num_fors": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "num_whiles": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "is_perfectly_nested": {
+                    "type": "boolean"
+                },
+                "is_perfectly_parallel": {
+                    "type": "boolean"
+                },
+                "is_elementwise": {
+                    "type": "boolean"
+                },
+                "has_side_effects": {
+                    "type": "boolean"
+                }
+            }
+        },
+
+        "metricsPerInvocation": {
+            "type": "object",
+            "description":
+                "Flat map of PAPI event name to the raw counter delta for a single invocation.",
+            "additionalProperties": {
+                "type": "integer"
+            }
+        },
+
+        "metricsAggregated": {
+            "type": "object",
+            "description":
+                "Aggregated statistics. Keys are PAPI event names, 'static:::'-prefixed user counters, and the reserved 'runtime' key.",
+            "required": [
+                "runtime"
+            ],
+            "properties": {
+                "runtime": {
+                    "$ref": "#/$defs/statsNumeric"
+                }
+            },
+            "patternProperties": {
+                "^static:::": {
+                    "$ref": "#/$defs/statsNullable"
+                }
+            },
+            "additionalProperties": {
+                "$ref": "#/$defs/statsNumeric"
+            }
+        },
+
+        "statsNumeric": {
+            "type": "object",
+            "required": [
+                "mean",
+                "variance",
+                "count",
+                "min",
+                "max"
+            ],
+            "properties": {
+                "mean": {
+                    "type": "number"
+                },
+                "variance": {
+                    "type": "number"
+                },
+                "count": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "min": {
+                    "type": "number"
+                },
+                "max": {
+                    "type": "number"
+                }
+            }
+        },
+
+        "statsNullable": {
+            "type": "object",
+            "description":
+                "Statistics for provided ('static:::') metrics. Non-finite values are serialized as null (see JsSafeDouble).",
+            "required": [
+                "mean",
+                "variance",
+                "count",
+                "min",
+                "max"
+            ],
+            "properties": {
+                "mean": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "variance": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "count": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "min": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "max": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                }
+            }
+        }
+    }
+}

@@ -2,6 +2,7 @@
 
 #include "sdfg/function.h"
 #include "sdfg/types/type.h"
+#include "sdfg/visitor/structured_sdfg_visitor.h"
 
 namespace sdfg {
 namespace structured_control_flow {
@@ -26,6 +27,8 @@ const types::IType& Return::type() const { return *type_; }
 bool Return::is_data() const { return type_ == nullptr; }
 
 bool Return::is_constant() const { return type_ != nullptr; }
+
+bool Return::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
 
 void Return::validate(const Function& function) const {
     if (is_data()) {

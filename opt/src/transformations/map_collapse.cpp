@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "sdfg/analysis/arguments_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/if_else.h"
@@ -52,13 +53,8 @@ bool MapCollapse::check_perfect_nest() {
             return false;
         }
 
-        auto* next = dyn_cast<structured_control_flow::Map*>(&body.at(0).first);
+        auto* next = dyn_cast<structured_control_flow::Map*>(&body.at(0));
         if (!next) {
-            return false;
-        }
-
-        // Criterion: The Sequence holding each map must have empty transitions
-        if (!body.at(0).second.empty()) {
             return false;
         }
 
@@ -154,14 +150,7 @@ bool MapCollapse::check_imperfect(analysis::AnalysisManager& analysis_manager) {
     std::vector<bool> is_collapsible(n, false);
     size_t num_collapsible = 0;
     for (size_t idx = 0; idx < n; ++idx) {
-        // Criterion (v1): transitions between body elements must be empty. Any
-        // inter-element assignments would need to be re-guarded, which is not
-        // handled yet.
-        if (!body.at(idx).second.empty()) {
-            return false;
-        }
-
-        auto* map = dyn_cast<structured_control_flow::Map*>(&body.at(idx).first);
+        auto* map = dyn_cast<structured_control_flow::Map*>(&body.at(idx));
         if (map != nullptr && this->is_collapsible_inner_map(*map, outer_indvar)) {
             is_collapsible[idx] = true;
             ++num_collapsible;
@@ -198,10 +187,19 @@ bool MapCollapse::check_imperfect(analysis::AnalysisManager& analysis_manager) {
     //     container: ordering across threads is no longer guaranteed.
     auto& users = analysis_manager.get<analysis::Users>();
 
+    // Containers whose entire lifetime is confined to the outer map are locals: they
+    // are not function arguments/externals and are not used outside this region, so
+    // codegen privatizes them per thread when the collapsed map is parallelized. A
+    // loop induction variable is the canonical example, which is why the indvar's
+    // loop-control accesses need no special handling here - they are simply locals.
+    auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
+    const auto& locals = arguments_analysis.locals(analysis_manager, loop_);
+    auto is_local = [&locals](const std::string& container) { return locals.count(container) != 0; };
+
     std::vector<std::unordered_set<std::string>> writes(n);
     std::vector<std::unordered_set<std::string>> reads(n);
     for (size_t idx = 0; idx < n; ++idx) {
-        analysis::UsersView view(users, body.at(idx).first);
+        analysis::UsersView view(users, body.at(idx));
         for (auto* u : view.writes()) {
             writes[idx].insert(u->container());
         }
@@ -215,6 +213,38 @@ bool MapCollapse::check_imperfect(analysis::AnalysisManager& analysis_manager) {
         }
         for (auto* u : view.reads()) {
             reads[idx].insert(u->container());
+        }
+    }
+
+    // Replication safety gate (read-modify-write model).
+    //
+    // A skipped element is replicated on every inner thread of an outer iteration.
+    // Being a sibling of the inner maps it cannot reference the inner index, so it
+    // is a pure function of the outer index and every inner thread executes it
+    // identically. A skipped element that only *stores* to a container is therefore
+    // idempotent under replication: every thread writes the same value, leaving the
+    // same result as a single execution. This holds regardless of whether the
+    // target is a loop-local transient or a function argument, and regardless of
+    // whether the value is read again later in the nest - so a plain store from a
+    // skipped element (e.g. an argument that is not read in the nest) is safe and
+    // must be allowed.
+    //
+    // The one update replication cannot reproduce is a *read-modify-write* on a
+    // *shared* container: if a skipped element reads a container it also writes (e.g. a
+    // reduction accumulator), every replicated inner thread re-runs the update on the
+    // same buffer, racing and folding the contribution in multiple times. This only
+    // matters for containers that escape the loop (function arguments/externals or
+    // transients live outside the region): a local is privatized per thread, so its
+    // read-modify-write happens on a private copy and does not violate parallel access
+    // or interleaving. Reject only a read-modify-write on a non-local container.
+    for (size_t idx = 0; idx < n; ++idx) {
+        if (is_collapsible[idx]) {
+            continue;
+        }
+        for (const auto& container : writes[idx]) {
+            if (reads[idx].count(container) != 0 && !is_local(container)) {
+                return false;
+            }
         }
     }
 
@@ -258,7 +288,7 @@ void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysi
     maps.push_back(&loop_);
     auto* current = &loop_;
     for (size_t i = 1; i < count_; ++i) {
-        auto* next = dyn_cast<structured_control_flow::Map*>(&current->root().at(0).first);
+        auto* next = dyn_cast<structured_control_flow::Map*>(&current->root().at(0));
         maps.push_back(next);
         current = next;
     }
@@ -283,8 +313,6 @@ void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysi
 
     // Step 4: Find the parent sequence of the outermost map
     auto parent = static_cast<structured_control_flow::Sequence*>(loop_.get_parent());
-    size_t index = parent->index(loop_);
-    auto& transition = parent->at(index).second;
 
     // Step 5: Create the new collapsed map before the original
     auto& collapsed_map = builder.add_map_before(
@@ -295,28 +323,26 @@ void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysi
         symbolic::integer(0),
         symbolic::add(civ, symbolic::integer(1)),
         loop_.schedule_type(),
-        transition.assignments(),
         loop_.debug_info()
     );
 
     // Step 6: Add an empty block for indvar recovery before the original contents
-    builder.add_block(collapsed_map.root());
+    auto& recovery_assignments = builder.add_assignments(collapsed_map.root(), {});
 
     // Step 7: Move the body of the innermost map into the collapsed map
     auto* innermost = maps.back();
     builder.move_children(innermost->root(), collapsed_map.root());
 
-    // Step 8: Add indvar recovery assignments to the transition of the empty
-    // block so that all induction variables are defined before the original
+    // Step 8: Add indvar recovery assignments so that all induction variables are defined before the original
     // loop contents.
     //
     // For maps [0..n-1] with bounds [B0, B1, ..., B_{n-1}]:
     //   indvar_0     = civ / (B1 * B2 * ... * B_{n-1})
     //   indvar_k     = (civ / (B_{k+1} * ... * B_{n-1})) % B_k
     //   indvar_{n-1} = civ % B_{n-1}
-    auto& first_transition = collapsed_map.root().at(0).second;
     size_t n = indvars.size();
 
+    symbolic::ExpressionMapping recovery_map;
     for (size_t k = 0; k < n; ++k) {
         // Compute suffix product = B_{k+1} * ... * B_{n-1}
         symbolic::Expression suffix = symbolic::integer(1);
@@ -339,12 +365,21 @@ void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysi
             value = symbolic::mod(symbolic::div(civ, suffix), bounds[k]);
         }
 
-        first_transition.assignments()[indvars[k]] = value;
+        recovery_assignments.assignments()[indvars[k]] = value;
+        recovery_map[indvars[k]] = value;
     }
+
+    // Step 8b: Inline the recovered induction variables directly into the collapsed body.
+    // This substitutes each original indvar with its closed-form expression in memlet subsets,
+    // tasklet code and nested control flow, so downstream analyses/codegen see the relation to
+    // the collapsed induction variable without requiring a separate SymbolPropagation pass.
+    // The recovery assignments above are kept as a fallback: uses that cannot take a complex
+    // expression (e.g. an induction variable used as an access-node container name) are left
+    // untouched by replace() and still resolved through the transition.
+    collapsed_map.root().replace(recovery_map);
 
     // Step 9: Remove the original nest
     // The index shifted by 1 because we inserted a map before
-    transition.assignments().clear();
     builder.remove_child(*parent, parent->index(loop_));
 
     applied_ = true;
@@ -368,7 +403,7 @@ void MapCollapse::apply_imperfect(builder::StructuredSDFGBuilder& builder, analy
     std::vector<BodyItem> items;
     std::vector<symbolic::Expression> collapsible_bounds;
     for (size_t idx = 0; idx < body.size(); ++idx) {
-        auto& child = body.at(idx).first;
+        auto& child = body.at(idx);
         auto* map = dyn_cast<structured_control_flow::Map*>(&child);
         if (map != nullptr && this->is_collapsible_inner_map(*map, outer_indvar)) {
             auto bound = map->canonical_bound();
@@ -399,8 +434,6 @@ void MapCollapse::apply_imperfect(builder::StructuredSDFGBuilder& builder, analy
 
     // Step 4: Find the parent sequence of the outer map.
     auto parent = static_cast<structured_control_flow::Sequence*>(outer.get_parent());
-    size_t index = parent->index(outer);
-    auto& transition = parent->at(index).second;
 
     // Step 5: Create the collapsed map before the original outer map.
     auto& collapsed_map = builder.add_map_before(
@@ -411,17 +444,21 @@ void MapCollapse::apply_imperfect(builder::StructuredSDFGBuilder& builder, analy
         symbolic::integer(0),
         symbolic::add(civ, symbolic::integer(1)),
         outer.schedule_type(),
-        transition.assignments(),
         outer.debug_info()
     );
 
     // Step 6: Recovery block defining the outer index and the virtual inner index:
     //   outer_indvar = civ / inner_extent
     //   inner_index  = civ % inner_extent
-    builder.add_block(collapsed_map.root());
-    auto& recovery_transition = collapsed_map.root().at(0).second;
-    recovery_transition.assignments()[outer_indvar] = symbolic::div(civ, inner_extent);
-    recovery_transition.assignments()[inner_index] = symbolic::mod(civ, inner_extent);
+    auto& recovery_assignments = builder.add_assignments(collapsed_map.root(), {});
+    recovery_assignments.assignments()[outer_indvar] = symbolic::div(civ, inner_extent);
+    recovery_assignments.assignments()[inner_index] = symbolic::mod(civ, inner_extent);
+
+    // Induction variables to inline into the collapsed body (see Step 8b). The outer
+    // induction variable maps directly to its closed-form; each collapsible inner induction
+    // variable maps to the virtual inner index (civ % inner_extent).
+    symbolic::ExpressionMapping recovery_map;
+    recovery_map[outer_indvar] = symbolic::div(civ, inner_extent);
 
     // Step 7: Move the outer body into the collapsed map (after the recovery block),
     // preserving order.
@@ -438,22 +475,29 @@ void MapCollapse::apply_imperfect(builder::StructuredSDFGBuilder& builder, analy
         if (item.map != nullptr) {
             auto inner_iv = item.map->indvar();
 
-            auto& if_else = builder.add_if_else_before(collapsed_map.root(), *child, {}, outer.debug_info());
+            auto& if_else = builder.add_if_else_before(collapsed_map.root(), *child, outer.debug_info());
             auto& branch = builder.add_case(if_else, symbolic::Lt(inner_index, item.bound), outer.debug_info());
 
             // Recover the inner induction variable from the virtual index.
-            builder.add_block(branch);
-            branch.at(0).second.assignments()[inner_iv] = inner_index;
+            builder.add_assignments(branch, {{inner_iv, inner_index}});
 
             // Move the map body into the guarded branch and drop the empty map shell.
             builder.move_children(item.map->root(), branch);
             builder.remove_child(collapsed_map.root(), collapsed_map.root().index(*child));
+
+            recovery_map[inner_iv] = symbolic::mod(civ, inner_extent);
         }
         // Skipped elements are left in place (replicated on every inner thread).
     }
 
+    // Step 8b: Inline the recovered induction variables directly into the collapsed body so
+    // downstream analyses/codegen see the relation to the collapsed induction variable without
+    // requiring a separate SymbolPropagation pass. The recovery assignments (outer recovery
+    // block and per-branch inner recovery) are kept as a fallback for uses that cannot take a
+    // complex expression (e.g. an induction variable used as an access-node container name).
+    collapsed_map.root().replace(recovery_map);
+
     // Step 9: Remove the original outer map.
-    transition.assignments().clear();
     builder.remove_child(*parent, parent->index(outer));
 
     applied_ = true;

@@ -42,7 +42,7 @@ void CUDAStdlibDataTransferExtraction::create_allocate(
     const symbolic::Expression& size,
     const types::Pointer& type
 ) {
-    auto& alloc_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    auto& alloc_block = builder.add_block_before(sequence, block, block.debug_info());
     offloading::add_offloading_node<CUDADataOffloadingNode>(
         builder,
         alloc_block,
@@ -65,7 +65,7 @@ void CUDAStdlibDataTransferExtraction::create_deallocate(
     const std::string& device_container,
     const types::Pointer& type
 ) {
-    auto& dealloc_block = builder.add_block_after(sequence, block, {}, block.debug_info());
+    auto& dealloc_block = builder.add_block_after(sequence, block, block.debug_info());
     offloading::add_offloading_node<CUDADataOffloadingNode>(
         builder,
         dealloc_block,
@@ -90,7 +90,7 @@ void CUDAStdlibDataTransferExtraction::create_copy_from_device_with_deallocation
     const symbolic::Expression& size,
     const types::Pointer& type
 ) {
-    auto& copy_block = builder.add_block_after(sequence, block, {}, block.debug_info());
+    auto& copy_block = builder.add_block_after(sequence, block, block.debug_info());
     offloading::add_offloading_node<CUDADataOffloadingNode>(
         builder,
         copy_block,
@@ -115,7 +115,7 @@ void CUDAStdlibDataTransferExtraction::create_copy_to_device_with_allocation(
     const symbolic::Expression& size,
     const types::Pointer& type
 ) {
-    auto& copy_block = builder.add_block_before(sequence, block, {}, block.debug_info());
+    auto& copy_block = builder.add_block_before(sequence, block, block.debug_info());
     offloading::add_offloading_node<CUDADataOffloadingNode>(
         builder,
         copy_block,

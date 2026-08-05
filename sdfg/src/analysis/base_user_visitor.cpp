@@ -53,6 +53,18 @@ bool BaseUserVisitor::visit(sdfg::structured_control_flow::Block& node) {
     return true;
 }
 
+bool BaseUserVisitor::visit(sdfg::structured_control_flow::AssignmentBlock& node) {
+    for (auto& entry : node.assignments()) {
+        for (auto& atom : symbolic::atoms(entry.second)) {
+            if (!symbolic::is_nullptr(atom)) {
+                use_as_symbol_read(atom->get_name(), &node, &node, SymbolReadLocation::Assignment, -1, entry.first);
+            }
+        }
+    }
+
+    return true;
+}
+
 bool BaseUserVisitor::visit(sdfg::structured_control_flow::Return& node) {
     if (node.is_data()) {
         auto& container = node.data();
@@ -66,19 +78,9 @@ bool BaseUserVisitor::visit(sdfg::structured_control_flow::Return& node) {
 
 bool BaseUserVisitor::visit(sdfg::structured_control_flow::Sequence& node) {
     for (int i = 0; i < node.size(); ++i) {
-        auto [child, transition] = node.at(i);
+        auto& child = node.at(i);
 
-        dispatch(child);
-
-        for (auto& entry : transition.assignments()) {
-            for (auto& atom : symbolic::atoms(entry.second)) {
-                if (!symbolic::is_nullptr(atom)) {
-                    use_as_symbol_read(
-                        atom->get_name(), &node, &transition, SymbolReadLocation::Assignment, i, entry.first
-                    );
-                }
-            }
-        }
+        child.accept(*this);
     }
     return true;
 }
@@ -91,7 +93,7 @@ bool BaseUserVisitor::visit(sdfg::structured_control_flow::IfElse& node) {
                 use_as_symbol_read(atom->get_name(), &node, &node, SymbolReadLocation::IfHeader, i, condition);
             }
         }
-        dispatch(seq);
+        seq.accept(*this);
     }
     return true;
 }

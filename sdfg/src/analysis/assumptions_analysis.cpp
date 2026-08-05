@@ -275,7 +275,7 @@ void AssumptionsAnalysis::traverse(
 
     if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&current)) {
         for (size_t i = 0; i < sequence_stmt->size(); i++) {
-            this->traverse(sequence_stmt->at(i).first, outer_assumptions, outer_assumptions_with_trivial);
+            this->traverse(sequence_stmt->at(i), outer_assumptions, outer_assumptions_with_trivial);
         }
     } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&current)) {
         if (!with_branch_conditions_) {

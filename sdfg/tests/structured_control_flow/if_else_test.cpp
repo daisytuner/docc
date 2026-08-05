@@ -259,8 +259,8 @@ TEST(IfElseTest, ConditionsAndSequences) {
     auto& else_seq = builder.add_case(if_else, symbolic::Le(symbolic::symbol("x"), symbolic::integer(0)));
 
     // Add blocks to sequences to verify they're properly connected
-    builder.add_block(if_seq, control_flow::Assignments{});
-    builder.add_block(else_seq, control_flow::Assignments{});
+    builder.add_block(if_seq);
+    builder.add_block(else_seq);
 
     // Verify sequences have content
     auto [seq1, cond1] = if_else.at(0);

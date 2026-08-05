@@ -12,7 +12,9 @@ PARAMETERS = {
 
 def initialize(M, N, datatype=np.float64):
     float_n = datatype(N)
-    data = np.fromfunction(lambda i, j: (i * j) / M, (N, M), dtype=datatype)
+    i = np.arange(N, dtype=datatype).reshape(-1, 1)
+    j = np.arange(M, dtype=datatype)
+    data = (i * j) / M
 
     return M, float_n, data
 
@@ -47,9 +49,9 @@ def test_covariance(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 7,
+                "VECTORIZE": 5,
                 "REDUCE": 1,
-                "MAP": 10,
+                "MAP": 8,
                 "FOR": 1,
                 "SEQUENTIAL": 5,
             }
@@ -60,10 +62,9 @@ def test_covariance(target):
                 "GEMM": 1,
                 "VECTORIZE": 3,
                 "REDUCE": 1,
-                "CPU_PARALLEL": 5,
-                "MAP": 7,
+                "CPU_PARALLEL": 4,
+                "MAP": 6,
                 "SEQUENTIAL": 1,
-                "FOR": 1,
             }
         )
     elif target == "cuda":

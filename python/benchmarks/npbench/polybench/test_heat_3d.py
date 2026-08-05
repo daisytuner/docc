@@ -11,9 +11,10 @@ PARAMETERS = {
 
 
 def initialize(TSTEPS, N, datatype=np.float64):
-    A = np.fromfunction(
-        lambda i, j, k: (i + j + (N - k)) * 10 / N, (N, N, N), dtype=datatype
-    )
+    i = np.arange(N, dtype=datatype).reshape(-1, 1, 1)
+    j = np.arange(N, dtype=datatype).reshape(-1, 1)
+    k = np.arange(N, dtype=datatype)
+    A = (i + j + (N - k)) * 10 / N
     B = np.copy(A)
 
     return TSTEPS, A, B

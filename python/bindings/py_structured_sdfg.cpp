@@ -23,14 +23,15 @@
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dot_expansion_pass.h>
 #include <sdfg/passes/einsum.h>
-#include <sdfg/passes/gemm_expansion_pass.h>
 #include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
+#include <sdfg/passes/normalization/normalize.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
 #include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
+#include <sdfg/passes/rpc/rpc_scheduling_pass.h>
 #include <sdfg/passes/scheduler/cuda_scheduler.h>
 #include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/passes/scheduler/omp_scheduler.h>
@@ -57,7 +58,7 @@
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/dataflow/tasklet_fusion.h"
-#include "sdfg/passes/map_fusion_by_domain_pass.h"
+#include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
@@ -66,9 +67,10 @@
 #include "sdfg/passes/redundant_load_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/rpc/rpc_scheduler.h"
+#include "sdfg/passes/scheduler/vectorize_scheduler.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
+#include "sdfg/targets/omp/schedule.h"
 #include "sdfg/util/offloading_instrumentation_plan.h"
 #include "targets/target_mapping.h"
 
@@ -91,8 +93,8 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 PyStructuredSDFG::PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg)
-    : docc_context_(ctx), sdfg_(std::move(sdfg)), use_new_fusion_in_simplify_(true),
-      use_new_fusion_in_normalize_(false) {}
+    : docc_context_(ctx), sdfg_(std::move(sdfg)), use_new_fusion_in_simplify_(true), enable_fusion_in_normalize_(true) {
+}
 
 PyStructuredSDFG PyStructuredSDFG::parse(sdfg::plugins::Context& ctx, const std::string& sdfg_text) {
     json j = json::parse(sdfg_text);
@@ -210,11 +212,6 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     // Workaround until built-in targets are supported by the above mechanism
     sdfg::passes::DotExpansionPass dot_expansion_pass;
     dot_expansion_pass.run(builder_opt, analysis_manager);
-    if (options.target == "cuda" || options.target == "rocm") {
-        // Expand GEMV / DOT nodes represented as GEMM
-        sdfg::passes::GemmExpansionPass gemm_expansion_pass;
-        gemm_expansion_pass.run(builder_opt, analysis_manager);
-    }
 }
 
 
@@ -227,6 +224,7 @@ void PyStructuredSDFG::simplify() {
     sdfg::passes::Pipeline symbolic_simplification = sdfg::passes::Pipeline::symbolic_simplification();
     sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
     sdfg::passes::Pipeline memlet_combine = sdfg::passes::Pipeline::memlet_combine();
+    sdfg::passes::Pipeline ce = sdfg::passes::Pipeline::constant_elimination();
     sdfg::passes::DeadDataElimination dde;
     sdfg::passes::SymbolPropagation symbol_propagation_pass;
 
@@ -238,11 +236,13 @@ void PyStructuredSDFG::simplify() {
     dataflow_simplification.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
+    ce.run(builder_opt, analysis_manager);
 
     // Minimize SDFG by fusing symbolic expressions
     symbolic_simplification.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
+    ce.run(builder_opt, analysis_manager);
 
     /***** Structured Loops *****/
 
@@ -256,6 +256,7 @@ void PyStructuredSDFG::simplify() {
         } while (applies);
         dde.run(builder_opt, analysis_manager);
         dce.run(builder_opt, analysis_manager);
+        ce.run(builder_opt, analysis_manager);
         symbolic_simplification.run(builder_opt, analysis_manager);
     }
 
@@ -284,6 +285,7 @@ void PyStructuredSDFG::simplify() {
     symbol_propagation_pass.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
+    ce.run(builder_opt, analysis_manager);
 
     // Eliminate symbols correlated to loop iterators
     // sdfg::passes::SymbolEvolution symbol_evolution_pass;
@@ -317,6 +319,7 @@ void PyStructuredSDFG::simplify() {
     symbol_propagation_pass.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
+    ce.run(builder_opt, analysis_manager);
 
     // Convert for loops into maps and reductions
     sdfg::passes::ForClassificationPass map_conversion_pass;
@@ -329,13 +332,14 @@ void PyStructuredSDFG::simplify() {
     // Dead code elimination
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
+    ce.run(builder_opt, analysis_manager);
     dataflow_simplification.run(builder_opt, analysis_manager);
 
     if (use_new_fusion_in_simplify_) {
         dump_debug("py3.1.pre-fusion");
 
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
-        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
+        sdfg::passes::loop_fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
 
         dump_debug("py3.2.post-fusion");
@@ -343,6 +347,7 @@ void PyStructuredSDFG::simplify() {
         // Cleanup of artifacts of MapFusion
         dde.run(builder_opt, analysis_manager);
         dce.run(builder_opt, analysis_manager);
+        ce.run(builder_opt, analysis_manager);
         sdfg::passes::Pipeline block_fusion("BlockFusion");
         block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
         block_fusion.run(builder_opt, analysis_manager);
@@ -350,13 +355,14 @@ void PyStructuredSDFG::simplify() {
         sdfg::passes::RedundantLoadEliminationPass rle;
         rle.run(builder_opt, analysis_manager);
         dde.run(builder_opt, analysis_manager);
+        ce.run(builder_opt, analysis_manager);
         sdfg::passes::TaskletFusionPass task_fuse_pass;
         task_fuse_pass.run(builder_opt, analysis_manager);
     }
 
     // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
     // normalize() map-fusion run so loop distribution and fusion do not fight)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
+    auto map_fusion = sdfg::passes::normalization::map_fusion(false, false);
     map_fusion.run(builder_opt, analysis_manager);
 }
 
@@ -414,42 +420,7 @@ void PyStructuredSDFG::dump(
     }
 }
 
-void PyStructuredSDFG::normalize() {
-    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
-    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
-
-    // Fuse maps (no init-into-reduction hoisting yet; this run precedes loop distribution)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(false);
-    map_fusion.run(builder, analysis_manager);
-
-    // Distribute and permute
-    auto pipeline = sdfg::passes::normalization::loop_normalization();
-    pipeline.run(builder, analysis_manager);
-
-    // Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
-    auto map_fusion_hoist = sdfg::passes::normalization::map_fusion(true);
-    map_fusion_hoist.run(builder, analysis_manager);
-
-    if (use_new_fusion_in_normalize_) {
-        sdfg::passes::MapFusionByDomainPass map_fusion_by_domain_pass;
-        map_fusion_by_domain_pass.run(builder, analysis_manager);
-        sdfg::passes::DeadDataElimination dde;
-        sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
-
-        // Cleanup of artifacts of MapFusion
-        dde.run(builder, analysis_manager);
-        dce.run(builder, analysis_manager);
-        sdfg::passes::Pipeline block_fusion("BlockFusion");
-        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
-        block_fusion.run(builder, analysis_manager);
-
-        sdfg::passes::RedundantLoadEliminationPass rle;
-        rle.run(builder, analysis_manager);
-        dde.run(builder, analysis_manager);
-        sdfg::passes::TaskletFusionPass task_fuse_pass;
-        task_fuse_pass.run(builder, analysis_manager);
-    }
-}
+void PyStructuredSDFG::normalize() { sdfg::passes::normalization::normalize(*sdfg_, enable_fusion_in_normalize_); }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
     docc::target::TargetOptions topts = {.target = target, .category = category, .remote_tuning = remote_tuning};
@@ -466,15 +437,6 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
 
     docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, options);
 
-    std::vector<std::string> schedulers;
-
-    if (options.remote_tuning) {
-        std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
-            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-        sdfg::passes::rpc::register_rpc_loop_opt(context, options.target, options.category);
-        schedulers.push_back("rpc");
-    }
-
     // CPU Opt Pipeline
     if (options.target == "sequential" || options.target == "openmp") {
         sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
@@ -483,17 +445,32 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         symbol_propagation_pass.run(builder, analysis_manager);
         dde.run(builder, analysis_manager);
         dce.run(builder, analysis_manager);
+    }
 
-        if (options.target == "openmp") {
-            schedulers.push_back(options.target);
+    if (options.remote_tuning) {
+        std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
+            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
+        sdfg::passes::scheduler::RpcOptimizationPass
+            rpc_optimization_pass(context, options, enable_fusion_in_normalize_);
+        rpc_optimization_pass.run(builder, analysis_manager);
+    }
+
+    // Acquire target-specific loop schedulers only after remote tuning, since they are consumed
+    // solely by the LoopSchedulingPass below.
+    std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
+
+    auto* handler = docc_context_.get_target_handler(options.target);
+    if (handler) {
+        auto target_schedulers = handler->safe_get_target_loop_schedulers(options);
+        if (!target_schedulers.empty()) {
+            schedulers.insert(schedulers.end(), target_schedulers.begin(), target_schedulers.end());
         }
-        schedulers.push_back("vectorize");
     }
-    // GPU Opt Pipeline
-    else if (options.target == "cuda" || options.target == "rocm") {
-        schedulers.push_back(options.target);
-    }
-    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, nullptr);
+
+    auto mapped = schedulers | std::views::transform([&](auto& n) { return n.get(); });
+    std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
+
+    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
     bool loop_scheduling_changes = loop_scheduling_pass.run(builder, analysis_manager);
     if (loop_scheduling_changes) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;

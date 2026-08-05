@@ -1,4 +1,5 @@
 import inspect
+import json
 import shutil
 import textwrap
 import ast
@@ -180,6 +181,14 @@ class PythonProgram(DoccProgram):
             )
         )
 
+        # When binary reuse is requested, the build run must persist the
+        # normalized SDFG (py4.norm.json) so a later run can reload it without
+        # re-parsing/recompiling. Force the dump if instrumentation/capture
+        # would not already produce it.
+        docc_reuse_binaries = os.environ.get("DOCC_REUSE_BINARIES")
+        if docc_reuse_binaries and not self.debug_dump:
+            self.debug_dump = True
+
         # 1. Analyze arguments and shapes
         arg_types = []
         shape_values = []  # List of unique shape values found
@@ -223,9 +232,17 @@ class PythonProgram(DoccProgram):
         type_sig = ", ".join(self._type_to_str(t) for t in arg_types)
         signature = f"{type_sig}|{mapping_sig}"
 
+        # In-memory cache key: the structural signature plus the resolved compile
+        # options, so repeated in-process compiles with different
+        # instrumentation/arg-capture/remote-tuning do not alias to the first
+        # built binary (the on-disk hash already accounts for these options).
+        mem_cache_key = (
+            f"{signature}|{capture_args}|{instrumentation_mode}|{remote_tuning}"
+        )
+
         if output_folder is None:
             source_path = inspect.getsourcefile(self.func)
-            hash_input = f"{source_path}|{self.name}|{self.target}|{self.category}|{self.capture_args}|{self.instrumentation_mode}|{signature}".encode(
+            hash_input = f"{source_path}|{self.name}|{self.target}|{self.category}|{capture_args}|{instrumentation_mode}|{remote_tuning}|{signature}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
@@ -242,10 +259,27 @@ class PythonProgram(DoccProgram):
                     user = getpass.getuser()
                 output_folder = f"/tmp/{user}/DOCC/{self.name}-{stable_id}"
 
-        if original_output_folder is None and signature in self.cache:
-            return self.cache[signature]
+        if original_output_folder is None and mem_cache_key in self.cache:
+            return self.cache[mem_cache_key]
 
-        # 3. Build SDFG
+        # 3. Reuse a previously built binary if requested and available.
+        # Structure arguments need per-member layout info that is only produced
+        # while parsing the kernel, so reuse is limited to plain array/scalar
+        # kernels; anything else falls through to a full rebuild.
+        has_struct_args = any(
+            isinstance(t, Pointer)
+            and t.has_pointee_type()
+            and isinstance(t.pointee_type, Structure)
+            for t in arg_types
+        )
+        if docc_reuse_binaries and not has_struct_args:
+            reused = self._try_reuse_binary(output_folder, shape_sources)
+            if reused is not None:
+                if original_output_folder is None:
+                    self.cache[mem_cache_key] = reused
+                return reused
+
+        # 4. Build SDFG
         if os.path.exists(output_folder):
             # Multiple python processes running the same code?
             shutil.rmtree(output_folder)
@@ -257,7 +291,12 @@ class PythonProgram(DoccProgram):
             sdfg, output_folder, instrumentation_mode, capture_args, remote_tuning
         )
 
-        # 4. Create CompiledSDFG
+        # Persist the return-value layout so a later DOCC_REUSE_BINARIES run can
+        # rebuild the CompiledSDFG without re-parsing the kernel.
+        if output_folder:
+            self._persist_return_layout(output_folder, sdfg, out_shapes, out_strides)
+
+        # 5. Create CompiledSDFG
         compiled = CompiledSDFG(
             lib_path,
             sdfg,
@@ -273,9 +312,104 @@ class PythonProgram(DoccProgram):
 
         # Cache if using default output folder
         if original_output_folder is None:
-            self.cache[signature] = compiled
+            self.cache[mem_cache_key] = compiled
 
         return compiled
+
+    def _persist_return_layout(
+        self, output_folder: str, sdfg: StructuredSDFG, out_shapes, out_strides
+    ) -> None:
+        """Stamp the return-value layout into the persisted SDFG metadata.
+
+        The return shapes/strides are discovered while parsing the kernel and
+        are not otherwise recoverable from the SDFG structure. Persisting them
+        (into the same ``py4.norm.json`` the reuse path loads) lets a later
+        ``DOCC_REUSE_BINARIES`` run reconstruct the CompiledSDFG without
+        re-parsing/recompiling.
+        """
+        json_path = os.path.join(output_folder, f"{sdfg.name}.py4.norm.json")
+        if not os.path.exists(json_path):
+            return
+        try:
+            with open(json_path) as f:
+                data = json.load(f)
+            metadata = data.setdefault("metadata", {})
+            metadata["output_shapes"] = json.dumps(out_shapes)
+            metadata["output_strides"] = json.dumps(out_strides)
+            with open(json_path, "w") as f:
+                json.dump(data, f)
+        except (OSError, ValueError):
+            pass
+
+    def _try_reuse_binary(
+        self, output_folder: Optional[str], shape_sources
+    ) -> Optional[CompiledSDFG]:
+        """Reload a cached ``.so`` + normalized SDFG instead of recompiling.
+
+        Mirrors the strictness of the pytorch/mlir binary-reuse path: when the
+        cache directory does not exist yet this returns ``None`` so the caller
+        performs a first build (no error); but when the directory *does* exist
+        and a required artifact is missing, it raises ``ValueError`` so a broken
+        or stale cache surfaces loudly instead of silently recompiling. The
+        calling convention (device residency) and return-value layout are
+        restored from the persisted SDFG metadata so arguments are marshalled
+        exactly as they were at build time.
+        """
+        if not output_folder:
+            return None
+
+        # Cache directory absent -> first build. Let the caller build it; this
+        # is the one case the mlir/pytorch frontends also treat as non-fatal.
+        if not os.path.exists(output_folder):
+            return None
+
+        sdfg_name = f"{self.name}_sdfg"
+        lib_path = os.path.join(output_folder, f"lib{sdfg_name}.so")
+        json_path = os.path.join(output_folder, f"{sdfg_name}.py4.norm.json")
+        if not os.path.exists(lib_path):
+            raise ValueError(f"Tried reusing binary '{lib_path}' but does not exist")
+        if not os.path.exists(json_path):
+            raise ValueError(f"Tried loading SDFG '{json_path}' but does not exist")
+
+        sdfg = StructuredSDFG.from_file(json_path)
+
+        # Return arguments are recoverable directly from the SDFG signature.
+        out_args = [name for name in sdfg.arguments if name.startswith("_docc_ret_")]
+
+        # Return-value layout was persisted into the SDFG metadata at build time.
+        out_shapes = {}
+        out_strides = {}
+        shapes_meta = sdfg.metadata("output_shapes")
+        strides_meta = sdfg.metadata("output_strides")
+        if shapes_meta:
+            try:
+                out_shapes = json.loads(shapes_meta)
+            except ValueError:
+                out_shapes = {}
+        if strides_meta:
+            try:
+                out_strides = json.loads(strides_meta)
+            except ValueError:
+                out_strides = {}
+
+        # Restore the device-residency calling convention chosen at compile time;
+        # otherwise a device-resident binary would be fed host pointers.
+        self._device_resident = sdfg.metadata("device_resident") == "1"
+        backend = sdfg.metadata("device_backend")
+        self._device_backend = backend or None
+
+        return CompiledSDFG(
+            lib_path,
+            sdfg,
+            shape_sources,
+            {},
+            out_args,
+            out_shapes,
+            out_strides,
+            device_resident=self._device_resident,
+            device_backend=self._device_backend,
+            target=self.target,
+        )
 
     def to_sdfg(self, *args: Any) -> StructuredSDFG:
         arg_types = [self._infer_type(arg) for arg in args]

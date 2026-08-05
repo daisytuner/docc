@@ -101,7 +101,7 @@ void TestCMathNode(math::cmath::CMathFunction function, std::vector<size_t> shap
 
     EXPECT_EQ(root.size(), 1);
     ASSERT_GE(root.size(), 1);
-    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&root.at(0).first);
+    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&root.at(0));
     ASSERT_TRUE(new_sequence);
 
     data_flow::Subset loop_indvars;
@@ -109,7 +109,7 @@ void TestCMathNode(math::cmath::CMathFunction function, std::vector<size_t> shap
     for (size_t i = 0; i < shape_dims.size(); ++i) {
         EXPECT_EQ(current_scope->size(), 1);
         ASSERT_GE(current_scope->size(), 1);
-        auto* map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto* map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_TRUE(map_loop);
         auto indvar = map_loop->indvar();
         EXPECT_TRUE(symbolic::null_safe_eq(map_loop->init(), symbolic::zero()));
@@ -121,7 +121,7 @@ void TestCMathNode(math::cmath::CMathFunction function, std::vector<size_t> shap
 
     EXPECT_EQ(current_scope->size(), 1);
     ASSERT_GE(current_scope->size(), 1);
-    auto* code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto* code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_TRUE(code_block);
 
     auto& dfg = code_block->dataflow();

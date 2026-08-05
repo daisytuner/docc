@@ -1,0 +1,91 @@
+{
+    "traceEvents": [
+        {
+            "ph": "X",
+            "cat": "aggregated_region,daisy",
+            "name": "main [L18-31]",
+            "pid": 9535,
+            "tid": 9535,
+            "ts": 11657,
+            "dur": 6139130,
+            "args": {
+                "function": "main",
+                "module": "instrumentation_test.c",
+                "source_ranges": [
+                    {
+                        "file": "/home/lukas/repos/docc/tests/instrumentation_test.c",
+                        "from": {
+                            "line": 18,
+                            "col": 4
+                        },
+                        "to": {
+                            "line": 31,
+                            "col": 5
+                        }
+                    }
+                ],
+                "docc": {
+                    "sdfg_name": "__daisy_instrumentation_test_0",
+                    "sdfg_file": "/tmp/DOCC/0000-0000/123456789/sdfg_0.json",
+                    "arg_capture_path": "",
+                    "features_file": "",
+                    "opt_report_file": "",
+                    "transfer_tuning_session_id": "",
+                    "element_id": 10,
+                    "element_type": "for",
+                    "loopnest_index": 0,
+                    "loop_info": {
+                        "loopnest_index": 0,
+                        "num_loops": 1,
+                        "num_maps": 0,
+                        "num_fors": 1,
+                        "num_whiles": 0,
+                        "max_depth": 1,
+                        "is_perfectly_nested": true,
+                        "is_perfectly_parallel": false,
+                        "is_elementwise": false,
+                        "has_side_effects": false
+                    }
+                },
+                "target_type": "sequential",
+                "metrics": {
+                    "perf::BRANCHES": {
+                        "mean": 12345.6,
+                        "variance": 10.5,
+                        "count": 10,
+                        "min": 12000,
+                        "max": 13000
+                    },
+                    "perf::CYCLES": {
+                        "mean": 2834021434.0,
+                        "variance": 500.0,
+                        "count": 10,
+                        "min": 2834000000,
+                        "max": 2834100000
+                    },
+                    "static:::flop": {
+                        "mean": 0,
+                        "variance": 0,
+                        "count": 22,
+                        "min": 0,
+                        "max": 0
+                    },
+                    "static:::ratio": {
+                        "mean": null,
+                        "variance": null,
+                        "count": 1,
+                        "min": null,
+                        "max": null
+                    },
+                    "runtime": {
+                        "mean": 613.913,
+                        "variance": 2.5,
+                        "count": 10,
+                        "min": 600.0,
+                        "max": 620.0
+                    }
+                }
+            }
+        }
+    ]
+}

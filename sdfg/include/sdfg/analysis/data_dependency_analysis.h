@@ -114,6 +114,14 @@ public:
         std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
     );
 
+    void visit_assignment_block(
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::AssignmentBlock& assignments,
+        std::unordered_set<User*>& undefined,
+        std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
+        std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
+    );
+
     void visit_for(
         analysis::AnalysisManager& analysis_manager,
         structured_control_flow::StructuredLoop& for_loop,

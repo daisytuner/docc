@@ -1,6 +1,7 @@
 #include "sdfg/symbolic/delinearization.h"
 
 #include <algorithm>
+#include <optional>
 
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/extreme_values.h"
@@ -165,6 +166,253 @@ bool decompose_by_stride(
     return true;
 }
 
+// Principled affine delinearization.
+//
+// Instead of greedily peeling terms and validating with form-sensitive
+// heuristics, this reconstructs the multi-dimensional structure
+// deterministically and then *verifies* the result:
+//
+//   1. Decompose into (stride, index) groups by *parameter monomial* (via the
+//      shared `decompose_by_stride`), plus a scalar offset. Grouping at the
+//      term level keeps an induction variable that appears at several strides
+//      correctly split -- e.g. `i*N + i + j2` -> {N: i, 1: i + j2}.
+//   2. Sign-normalize: pull the numeric coefficient (including sign) out of
+//      each stride so strides are positive parameter monomials and the sign
+//      lives in the index. This makes reverse/descending sweeps (`(-1, j)` ->
+//      `(1, -j)`) first-class, and rejects non-affine (indvar*indvar) indices.
+//   3. Divisibility chain: sort strides so each divides the previous
+//      (row-major requires `s_{m-1} | ... | s_0`); the consecutive ratios are
+//      the recovered dimension sizes. Incomparable strides -> decline.
+//   4. Offset carry: distribute the scalar offset across the strides via
+//      mixed-radix polynomial division (outer to inner). Residual must vanish.
+//   5. Verify (don't trust): re-linearize and require symbolic equality to the
+//      input, plus each index provably >= 0. Upper bounds are left optimistic
+//      -- within the loop body the assumptions are exactly the loop ranges, so
+//      the access is in-bounds by construction (the classic "optimistic
+//      delinearization" premise).
+//
+// Returns std::nullopt to *decline* (non-affine indices, non-positive stride,
+// non-chain strides, ...), in which case the caller falls back to the
+// heuristic peeler. It never returns an unverified decomposition.
+std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
+    const sdfg::symbolic::Expression& dim,
+    sdfg::symbolic::AssumptionsBounds& bounds,
+    const sdfg::symbolic::SymbolSet& indvars_set,
+    const sdfg::symbolic::SymbolSet& params_set
+) {
+    namespace sym = sdfg::symbolic;
+    const sym::Assumptions& assums = bounds.assums();
+
+    auto is_zero = [](const sym::Expression& e) { return sym::eq(sym::simplify(sym::expand(e)), sym::zero()); };
+    // Sign / non-negativity proofs must keep the parameters (`N`, `_s0`, ...)
+    // symbolic so coupled bounds cancel (e.g. `upper(j) = N - 3` makes
+    // `N - 2 - j >= 1`). The `AssumptionsBounds` BoundAnalysis is built with
+    // empty parameters, which loses that cancellation, so route these through
+    // the assumptions-based overload with the real parameter set.
+    auto stride_ge_one = [&](const sym::Expression& e) {
+        return sym::is_ge(e, sym::one(), params_set, assums, /*tight=*/false);
+    };
+    auto index_nonneg = [&](const sym::Expression& e) {
+        return sym::is_nonneg(e, params_set, assums, /*tight=*/false);
+    };
+    auto index_negative = [&](const sym::Expression& e) {
+        return sym::is_negative(e, params_set, assums, /*tight=*/false);
+    };
+
+    // 1. Decompose into (stride, index) groups plus a scalar offset. This
+    //    groups by *parameter monomial* at the term level (reusing the peeler's
+    //    decomposition), which correctly keeps an induction variable that
+    //    appears at multiple strides -- e.g. `i*N + i + j2` splits as
+    //    {N: i, 1: i + j2} rather than collapsing `coeff(i) = N + 1` into a
+    //    single bogus stride.
+    std::vector<std::pair<sym::Expression, sym::Expression>> raw_groups;
+    sym::Expression offset;
+    if (!decompose_by_stride(dim, params_set, raw_groups, offset)) {
+        return std::nullopt;
+    }
+
+    // 2. Normalize each group so the stride is *positive*: flip only the sign
+    //    out of the stride into the index (the stride magnitude -- a constant
+    //    like `20` or a parametric monomial like `4*_s0` -- is a legitimate
+    //    row-major stride and must be preserved). This turns a reverse
+    //    contribution `(-1, j)` into `(1, -j)` and `(-4*_s0, i)` into
+    //    `(4*_s0, -i)`, making descending/reverse sweeps first-class, and
+    //    rejects non-affine (indvar*indvar) indices.
+    auto normalize_sign = [](const sym::Expression& s) -> std::pair<sym::Expression, sym::Expression> {
+        bool neg = false;
+        if (SymEngine::is_a<SymEngine::Mul>(*s)) {
+            neg = SymEngine::rcp_static_cast<const SymEngine::Mul>(s)->get_coef()->is_negative();
+        } else if (SymEngine::is_a_Number(*s)) {
+            neg = SymEngine::rcp_static_cast<const SymEngine::Number>(s)->is_negative();
+        }
+        if (neg) {
+            // Return {sign, |stride|}.
+            return {sym::integer(-1), sym::mul(sym::integer(-1), s)};
+        }
+        return {sym::one(), s};
+    };
+    auto is_affine_index = [&](const sym::Expression& idx) -> bool {
+        sym::SymbolVec iv(indvars_set.begin(), indvars_set.end());
+        auto p = sym::polynomial(idx, iv);
+        if (p.is_null()) return false;
+        return !sym::affine_coefficients(p).empty();
+    };
+
+    struct DimGroup {
+        sym::Expression stride;
+        sym::Expression index; // affine combination of induction variables
+    };
+    std::vector<DimGroup> groups;
+    for (auto& [raw_stride, raw_index] : raw_groups) {
+        auto [sign, stride] = normalize_sign(raw_stride);
+        sym::Expression index = sym::simplify(sym::expand(sym::mul(sign, raw_index)));
+        if (sym::eq(index, sym::zero())) continue;
+        if (!is_affine_index(index)) {
+            return std::nullopt; // product of induction variables -> not row-major affine
+        }
+        bool merged = false;
+        for (auto& g : groups) {
+            if (sym::eq(g.stride, stride)) {
+                g.index = sym::simplify(sym::expand(sym::add(g.index, index)));
+                merged = true;
+                break;
+            }
+        }
+        if (!merged) groups.push_back({stride, index});
+    }
+    if (groups.empty()) {
+        return std::nullopt;
+    }
+
+    // 3. Every stride must be a provably-positive parameter monomial (>= 1).
+    for (auto& g : groups) {
+        if (!stride_ge_one(g.stride)) {
+            return std::nullopt;
+        }
+    }
+
+    // 3b. Ensure a contiguous (stride-1) innermost dimension exists. Accesses
+    //     whose innermost index is a compile-time constant -- e.g. a fixed
+    //     column `A[_s0*(1+i)]` (col 0) or `A[_s0*(1+i) + N - 1]` (col N-1),
+    //     the ADI Dirichlet boundary writes -- produce only strided groups and
+    //     no stride-1 group. Inject a synthetic contiguous dimension with a
+    //     constant index; the offset carry (step 6) populates it with the
+    //     residual column offset, recovering `[row, const-col]` in a row-major
+    //     layout. Sound: verified by the re-linearization in step 7.
+    //
+    //     Only do this when a group stride is *parametric* (e.g. `_s0`): a
+    //     parametric stride is a real array leading dimension, so the access is
+    //     a column of a multi-dim array. A purely constant stride (e.g. `2*j`)
+    //     is a strided 1D access into a 1D array and must stay 1D -- injecting
+    //     there would wrongly report it as 2D and break dimension-matching
+    //     consumers (e.g. MapFusion).
+    bool has_unit_stride = false;
+    bool has_parametric_stride = false;
+    for (auto& g : groups) {
+        if (sym::eq(g.stride, sym::one())) has_unit_stride = true;
+        if (!SymEngine::is_a<SymEngine::Integer>(*g.stride)) has_parametric_stride = true;
+    }
+    if (!has_unit_stride && has_parametric_stride) {
+        groups.push_back({sym::one(), sym::zero()});
+    }
+
+    // 4. Sort into a divisibility chain (outermost/largest stride first).
+    //    `a` is outer than `b` iff `b.stride` divides `a.stride`.
+    auto divides = [&](const sym::Expression& a, const sym::Expression& b) -> bool {
+        // Does `a` divide `b`? i.e. `b mod a == 0`.
+        auto [q, r] = sym::polynomial_div(b, a);
+        return is_zero(r);
+    };
+    std::stable_sort(groups.begin(), groups.end(), [&](const DimGroup& A, const DimGroup& B) {
+        if (sym::eq(A.stride, B.stride)) return false;
+        if (divides(B.stride, A.stride)) return true; // A is a multiple of B -> A outer
+        if (divides(A.stride, B.stride)) return false; // B is a multiple of A -> B outer
+        return false; // incomparable -> caught below
+    });
+
+    // 5. Validate the chain and that the innermost stride is 1.
+    const size_t m = groups.size();
+    for (size_t t = 0; t + 1 < m; ++t) {
+        auto [q, r] = sym::polynomial_div(groups[t].stride, groups[t + 1].stride);
+        if (!is_zero(r)) {
+            return std::nullopt; // incomparable / not a clean row-major chain
+        }
+    }
+    if (!sym::eq(groups[m - 1].stride, sym::one())) {
+        return std::nullopt; // innermost dimension is not contiguous
+    }
+
+    // 6. Distribute the scalar offset across the strides (outer to inner) via
+    //    mixed-radix polynomial division.
+    sym::Expression carry = offset;
+    for (size_t t = 0; t < m; ++t) {
+        auto [q, r] = sym::polynomial_div(carry, groups[t].stride);
+        groups[t].index = sym::simplify(sym::expand(sym::add(groups[t].index, q)));
+        carry = r;
+    }
+    if (!is_zero(carry)) {
+        return std::nullopt; // constant did not decompose onto the strides
+    }
+
+    // 6b. Borrow: the truncated polynomial division above can leave an inner
+    //     index provably negative -- e.g. a negative column offset
+    //     `_s1*(1+i) - 1` distributes to `[i+1, -1]`. The borrow
+    //     `index[t] += d_t; index[t-1] -= 1` (with `d_t = stride[t-1]/stride[t]`
+    //     the size of dimension t) is value-preserving because
+    //     `d_t*stride[t] == stride[t-1]`, so it rewrites into the canonical
+    //     row-major form `[.., row-1, col + d_t]` -> `[i, _s1 - 1]` for the
+    //     deriche boundary accesses. Iterate inner-to-outer; a small cap guards
+    //     against non-terminating symbolic cases.
+    for (size_t t = m; t-- > 1;) {
+        auto [d, r] = sym::polynomial_div(groups[t - 1].stride, groups[t].stride);
+        if (!is_zero(r)) continue; // not a clean ratio (shouldn't happen after step 5)
+        int guard = 0;
+        while (index_negative(groups[t].index) && guard++ < 64) {
+            groups[t].index = sym::simplify(sym::expand(sym::add(groups[t].index, d)));
+            groups[t - 1].index = sym::simplify(sym::expand(sym::sub(groups[t - 1].index, sym::one())));
+        }
+    }
+
+    // 7. Structural verification: re-linearize and require equality.
+    sym::Expression recon = sym::zero();
+    for (size_t t = 0; t < m; ++t) {
+        recon = sym::add(recon, sym::mul(groups[t].stride, groups[t].index));
+    }
+    if (!is_zero(sym::sub(dim, recon))) {
+        return std::nullopt; // proposal is not algebraically identical -> never trust
+    }
+
+    // 8. Index sanity: every recovered index must be provably non-negative
+    //    (guarantees non-negative offsets downstream). Upper bounds are left
+    //    optimistic per the loop-body-containment premise.
+    //
+    //    Skipped for a single-dimension (m == 1) result: there the index is
+    //    just the raw linear offset into an unbounded 1D region -- there is no
+    //    row-major sub-structure whose bounds a negative index could violate.
+    //    This admits reverse/triangular 1D accesses like `k - i0` (durbin).
+    if (m > 1) {
+        for (size_t t = 0; t < m; ++t) {
+            if (!index_nonneg(groups[t].index)) {
+                return std::nullopt;
+            }
+        }
+    }
+
+    // Assemble the result: indices per dimension (outer to inner) and the
+    // recovered dimension sizes (consecutive stride ratios). The leading
+    // dimension is left unbounded by the caller.
+    sym::DelinearizeResult result;
+    for (size_t t = 0; t < m; ++t) {
+        result.indices.push_back(groups[t].index);
+    }
+    for (size_t t = 0; t + 1 < m; ++t) {
+        auto [q, r] = sym::polynomial_div(groups[t].stride, groups[t + 1].stride);
+        result.dimensions.push_back(sym::simplify(q));
+    }
+    result.success = true;
+    return result;
+}
+
 } // namespace
 
 DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds) {
@@ -194,6 +442,14 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
     // Trivial: no indvar -> single-dim with the expression as its (constant) index.
     if (indvars_set.empty()) {
         return {MultiExpression{dim}, MultiExpression{}, true};
+    }
+
+    // Principled affine path: normal-form + divisibility-chain + verify. This
+    // is form-independent and handles signed / reverse indices. It declines
+    // (returns nullopt) for non-affine or ambiguous cases, in which case we
+    // fall back to the heuristic peeler below.
+    if (auto affine = delinearize_affine(dim, bounds, indvars_set, params_set)) {
+        return *affine;
     }
 
     // Step 1: Decompose into stride-monomial groups.

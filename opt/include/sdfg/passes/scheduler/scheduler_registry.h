@@ -7,6 +7,9 @@ namespace sdfg {
 namespace passes {
 namespace scheduler {
 
+/**
+ * @deprecated Global state and superfluous, do not use
+ */
 class SchedulerRegistry {
 private:
     mutable std::mutex mutex_;

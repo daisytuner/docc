@@ -48,10 +48,10 @@ void add_offloading_instrumentations(codegen::InstrumentationPlan& plan, sdfg::S
         if (dynamic_cast<const offloading::ExternalDataOffloadingNode*>(lib_node) != nullptr) {
             continue;
         }
-        plan.update(*lib_node, codegen::InstrumentationEventType::NONE);
+        plan.insert(lib_node);
     }
     for (auto* lib_node : lib_node_finder.get_blas_nodes()) {
-        plan.update(*lib_node, codegen::InstrumentationEventType::NONE);
+        plan.insert(lib_node);
     }
 }
 

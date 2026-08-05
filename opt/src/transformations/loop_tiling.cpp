@@ -24,7 +24,6 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
     auto parent = static_cast<structured_control_flow::Sequence*>(loop_.get_parent());
     size_t index = parent->index(loop_);
-    auto& transition = parent->at(index).second;
 
     auto indvar = loop_.indvar();
 
@@ -45,7 +44,6 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
             loop_.init(),
             outer_update,
             map->schedule_type(),
-            transition.assignments(),
             loop_.debug_info()
         );
     } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(&loop_)) {
@@ -58,19 +56,11 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
             outer_update,
             reduce->reductions(),
             reduce->schedule_type(),
-            transition.assignments(),
             loop_.debug_info()
         );
     } else {
         outer_loop = &builder.add_for_before(
-            *parent,
-            loop_,
-            outer_indvar,
-            outer_condition,
-            loop_.init(),
-            outer_update,
-            transition.assignments(),
-            loop_.debug_info()
+            *parent, loop_, outer_indvar, outer_condition, loop_.init(), outer_update, loop_.debug_info()
         );
     }
 
@@ -85,8 +75,14 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     auto inner_update = symbolic::add(inner_indvar, symbolic::integer(1));
     builder.update_loop(loop_, inner_indvar, inner_condition, inner_init, inner_update);
 
+    // When tiling a Map, the outer tile loop inherits the schedule (created above
+    // via add_map_before), but the inner element loop must become sequential.
+    // Otherwise nested GPU Maps end up with repeated dimensions.
+    if (dyn_cast<structured_control_flow::Map*>(&loop_)) {
+        builder.update_schedule_type(loop_, structured_control_flow::ScheduleType_Sequential::create());
+    }
+
     // Step 3: Move loop into tiling loop
-    transition.assignments().clear();
     builder.move_child(*parent, index + 1, outer_loop->root());
 
     analysis_manager.invalidate_all();

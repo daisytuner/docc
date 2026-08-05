@@ -122,6 +122,14 @@ Expression abs(const Expression expr) {
 };
 
 Expression mod(const Expression lhs, const Expression rhs) {
+    if (eq(rhs, integer(1))) {
+        return integer(0);
+    }
+
+    if (eq(lhs, rhs)) {
+        return integer(0);
+    }
+
     auto mod = SymEngine::function_symbol("imod", {lhs, rhs});
     return mod;
 };
@@ -913,6 +921,37 @@ Condition subs(const Condition expr, const Expression old_expr, const Expression
 
 Condition subs(const Condition expr, const symbolic::ExpressionMapping& replacements) {
     return SymEngine::rcp_dynamic_cast<const SymEngine::Boolean>(SymEngine::subs(expr, replacements));
+}
+
+bool substitute(ExpressionSet& set, const symbolic::ExpressionMapping& replacements) {
+    bool changed = false;
+
+    std::vector<std::tuple<ExpressionSet::const_iterator, Expression>> replacements_vec;
+
+    for (auto it = set.begin(); it != set.end(); ++it) {
+        auto new_expr = SymEngine::subs(*it, replacements);
+        if (new_expr.get() != it->get()) {
+            replacements_vec.emplace_back(it, new_expr);
+            changed = true;
+        }
+    }
+
+    for (auto& [old_it, new_entry] : replacements_vec) {
+        auto extracted = set.extract(old_it);
+        extracted.value() = new_entry;
+        set.insert(std::move(extracted));
+    }
+
+    return changed;
+}
+
+MultiExpression substitute(const MultiExpression& vec, const symbolic::ExpressionMapping& replacements) {
+    MultiExpression remapped;
+    remapped.reserve(vec.size());
+    for (auto& dim : vec) {
+        remapped.emplace_back(symbolic::subs(dim, replacements));
+    }
+    return std::move(remapped);
 }
 
 Expression parse(const std::string& expr_str) {

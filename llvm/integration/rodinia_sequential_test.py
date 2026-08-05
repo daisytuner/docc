@@ -995,8 +995,8 @@ def test_particlefilter(compiler="clang-19"):
             "sdfgs": 17,
             "REDUCE": 1,
             "WHILE": 12,
-            "MAP": 21,
-            "FOR": 30,
+            "MAP": 22,
+            "FOR": 29,
             "SEQUENTIAL": 52,
         }
     )

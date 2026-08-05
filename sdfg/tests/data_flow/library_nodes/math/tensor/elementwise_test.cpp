@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node.h"
 #include "sdfg_debug_dump.h"
 
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.h"
@@ -12,9 +13,11 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/rsqrt_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sigmoid_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sqrt_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.h"
@@ -63,17 +66,17 @@ void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
 
     dump_sdfg(builder.subject(), "1.expanded");
 
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Navigate to the innermost map
     structured_control_flow::Sequence* current_scope = &new_sequence;
     for (size_t i = 0; i < shape_dims.size(); ++i) {
-        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
         current_scope = &map_loop->root();
     }
 
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that the block is not empty (contains either tasklets or library nodes)
@@ -155,17 +158,17 @@ void TestBinary(std::vector<size_t> shape_dims) {
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Navigate to the innermost map
     structured_control_flow::Sequence* current_scope = &new_sequence;
     for (size_t i = 0; i < shape_dims.size(); ++i) {
-        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
         current_scope = &map_loop->root();
     }
 
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     bool has_content = !code_block->dataflow().tasklets().empty() || !code_block->dataflow().library_nodes().empty();
@@ -231,6 +234,11 @@ REGISTER_UNARY_TEST(SqrtNode, 2)
 REGISTER_UNARY_TEST(SqrtNode, 3)
 REGISTER_UNARY_TEST(SqrtNode, 4)
 
+REGISTER_UNARY_TEST(RsqrtNode, 1)
+REGISTER_UNARY_TEST(RsqrtNode, 2)
+REGISTER_UNARY_TEST(RsqrtNode, 3)
+REGISTER_UNARY_TEST(RsqrtNode, 4)
+
 REGISTER_UNARY_TEST(TanhNode, 1)
 REGISTER_UNARY_TEST(TanhNode, 2)
 REGISTER_UNARY_TEST(TanhNode, 3)
@@ -251,6 +259,11 @@ REGISTER_UNARY_TEST(ReLUNode, 1)
 REGISTER_UNARY_TEST(ReLUNode, 2)
 REGISTER_UNARY_TEST(ReLUNode, 3)
 REGISTER_UNARY_TEST(ReLUNode, 4)
+
+REGISTER_UNARY_TEST(GELUNode, 1)
+REGISTER_UNARY_TEST(GELUNode, 2)
+REGISTER_UNARY_TEST(GELUNode, 3)
+REGISTER_UNARY_TEST(GELUNode, 4)
 
 REGISTER_UNARY_TEST(SigmoidNode, 1)
 REGISTER_UNARY_TEST(SigmoidNode, 2)
@@ -338,17 +351,17 @@ void TestCast(std::vector<size_t> shape_dims) {
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
-    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Navigate to the innermost map
     structured_control_flow::Sequence* current_scope = &new_sequence;
     for (size_t i = 0; i < shape_dims.size(); ++i) {
-        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0).first);
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
         current_scope = &map_loop->root();
     }
 
-    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0).first);
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
     ASSERT_NE(code_block, nullptr);
 
     // Check that the block is not empty (contains either tasklets or library nodes)
@@ -424,3 +437,165 @@ REGISTER_CAST_TEST(Int64, Int32, 1)
 REGISTER_CAST_TEST(Int64, Int32, 2)
 REGISTER_CAST_TEST(Int64, Int32, 3)
 REGISTER_CAST_TEST(Int64, Int32, 4)
+
+// LogicalNot tests - input of arbitrary type, Bool output
+template<types::PrimitiveType SourceType>
+void TestLogicalNot(std::vector<size_t> shape_dims) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar source_desc(SourceType);
+    types::Scalar bool_desc(types::PrimitiveType::Bool);
+    types::Pointer source_ptr(source_desc);
+    types::Pointer bool_ptr(bool_desc);
+
+    builder.add_container("a", source_ptr);
+    builder.add_container("b", bool_ptr);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& a_node = builder.add_access(block, "a");
+    auto& b_node = builder.add_access(block, "b");
+
+    std::vector<symbolic::Expression> shape;
+    for (auto d : shape_dims) {
+        shape.push_back(symbolic::integer(d));
+    }
+    types::Tensor tensor_type_source(SourceType, shape);
+    types::Tensor tensor_type_bool(types::PrimitiveType::Bool, shape);
+
+    auto& node = static_cast<math::tensor::LogicalNotNode&>(builder.add_library_node<
+                                                            math::tensor::LogicalNotNode>(block, DebugInfo(), shape));
+
+    builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type_source, block.debug_info());
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type_bool, block.debug_info());
+
+    sdfg.validate();
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, node);
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_TRUE(outcome.block_removed);
+
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
+
+    // Navigate to the innermost map
+    structured_control_flow::Sequence* current_scope = &new_sequence;
+    for (size_t i = 0; i < shape_dims.size(); ++i) {
+        auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
+        ASSERT_NE(map_loop, nullptr);
+        current_scope = &map_loop->root();
+    }
+
+    auto code_block = dyn_cast<structured_control_flow::Block*>(&current_scope->at(0));
+    ASSERT_NE(code_block, nullptr);
+
+    // Check that the block is not empty (contains either tasklets or library nodes)
+    bool has_content = !code_block->dataflow().tasklets().empty() || !code_block->dataflow().library_nodes().empty();
+    EXPECT_TRUE(has_content) << "Inner block is empty for LogicalNotNode";
+
+    data_flow::DataFlowNode* inner_node = nullptr;
+    if (!code_block->dataflow().library_nodes().empty()) {
+        inner_node = *code_block->dataflow().library_nodes().begin();
+    } else if (!code_block->dataflow().tasklets().empty()) {
+        inner_node = *code_block->dataflow().tasklets().begin();
+    }
+    ASSERT_NE(inner_node, nullptr);
+
+    auto& dataflow = inner_node->get_parent();
+
+    // Check input edges
+    for (auto& edge : dataflow.in_edges(*inner_node)) {
+        if (dynamic_cast<data_flow::ConstantNode*>(&edge.src()) != nullptr) {
+            continue; // Skip constant nodes
+        }
+        if (auto* src_access = dynamic_cast<data_flow::AccessNode*>(&edge.src())) {
+            if (src_access->data() == "a") {
+                EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                    << "Input subset size is not " << shape_dims.size() << " for LogicalNotNode";
+                EXPECT_EQ(edge.result_type(sdfg)->primitive_type(), SourceType);
+            }
+        }
+    }
+
+    // Check output edges
+    for (auto& edge : dataflow.out_edges(*inner_node)) {
+        if (auto* dst_access = dynamic_cast<data_flow::AccessNode*>(&edge.dst())) {
+            if (dst_access->data() == "b") {
+                EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                    << "Output subset size is not " << shape_dims.size() << " for LogicalNotNode";
+                EXPECT_EQ(edge.result_type(sdfg)->primitive_type(), types::PrimitiveType::Bool);
+            }
+        }
+    }
+}
+
+#define REGISTER_LOGICAL_NOT_TEST(SourceType, Dim)                  \
+    TEST(ElementWiseTest, LogicalNotNode_##SourceType##_##Dim##D) { \
+        std::vector<size_t> dims;                                   \
+        for (int i = 0; i < Dim; ++i) dims.push_back(32);           \
+        TestLogicalNot<types::PrimitiveType::SourceType>(dims);     \
+    }
+
+REGISTER_LOGICAL_NOT_TEST(Bool, 1)
+REGISTER_LOGICAL_NOT_TEST(Bool, 2)
+REGISTER_LOGICAL_NOT_TEST(Bool, 3)
+REGISTER_LOGICAL_NOT_TEST(Bool, 4)
+
+REGISTER_LOGICAL_NOT_TEST(Int32, 1)
+REGISTER_LOGICAL_NOT_TEST(Int32, 2)
+REGISTER_LOGICAL_NOT_TEST(Int32, 3)
+REGISTER_LOGICAL_NOT_TEST(Int32, 4)
+
+REGISTER_LOGICAL_NOT_TEST(Float, 1)
+REGISTER_LOGICAL_NOT_TEST(Float, 2)
+REGISTER_LOGICAL_NOT_TEST(Float, 3)
+REGISTER_LOGICAL_NOT_TEST(Float, 4)
+
+REGISTER_LOGICAL_NOT_TEST(Double, 1)
+REGISTER_LOGICAL_NOT_TEST(Double, 2)
+REGISTER_LOGICAL_NOT_TEST(Double, 3)
+REGISTER_LOGICAL_NOT_TEST(Double, 4)
+
+TEST(RsqrtNodeTest, SerializeDeserialize_RoundTrip) {
+    builder::StructuredSDFGBuilder builder("sdfg_rsqrt_serialize", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("a", desc_ptr);
+    builder.add_container("b", desc_ptr);
+
+    auto& block = builder.add_block(sdfg.root());
+    auto& a_node = builder.add_access(block, "a");
+    auto& b_node = builder.add_access(block, "b");
+
+    std::vector<symbolic::Expression> shape = {symbolic::integer(2), symbolic::integer(3)};
+    types::Tensor tensor_type(types::PrimitiveType::Float, shape);
+
+    auto& node = builder.add_library_node<math::tensor::RsqrtNode>(block, DebugInfo(), shape);
+    builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type);
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type);
+
+    ASSERT_NO_THROW(sdfg.validate());
+
+    serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    ASSERT_NO_THROW(j = serializer.serialize(sdfg));
+
+    std::unique_ptr<StructuredSDFG> new_sdfg;
+    ASSERT_NO_THROW(new_sdfg = serializer.deserialize(j));
+    ASSERT_NE(new_sdfg, nullptr);
+
+    const math::tensor::RsqrtNode* found = nullptr;
+    auto& new_root = new_sdfg->root();
+    ASSERT_EQ(new_root.size(), 1);
+    auto* deserialized_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(0));
+    ASSERT_NE(deserialized_block, nullptr);
+    for (auto& n : deserialized_block->dataflow().nodes()) {
+        if (auto* rsqrt_node = dynamic_cast<const math::tensor::RsqrtNode*>(&n)) {
+            found = rsqrt_node;
+            break;
+        }
+    }
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->code(), math::tensor::LibraryNodeType_Rsqrt.value());
+}

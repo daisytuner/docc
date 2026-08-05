@@ -51,6 +51,10 @@ typedef struct __daisy_metadata {
 
     // Example: sdfg_name + element_id
     const char* region_uuid;
+
+    // Optional transfer-tuning session id (empty when the SDFG was not remote-tuned). Together with
+    // element_id it identifies which recorded cutout produced this region.
+    const char* transfer_tuning_session_id;
 } __daisy_metadata_t;
 
 // Registers a region and returns a region ID

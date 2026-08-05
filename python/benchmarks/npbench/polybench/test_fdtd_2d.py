@@ -12,10 +12,12 @@ PARAMETERS = {
 
 
 def initialize(TMAX, NX, NY, datatype=np.float64):
-    ex = np.fromfunction(lambda i, j: (i * (j + 1)) / NX, (NX, NY), dtype=datatype)
-    ey = np.fromfunction(lambda i, j: (i * (j + 2)) / NY, (NX, NY), dtype=datatype)
-    hz = np.fromfunction(lambda i, j: (i * (j + 3)) / NX, (NX, NY), dtype=datatype)
-    _fict_ = np.fromfunction(lambda i: i, (TMAX,), dtype=datatype)
+    i = np.arange(NX, dtype=datatype).reshape(-1, 1)
+    j = np.arange(NY, dtype=datatype)
+    ex = (i * (j + 1)) / NX
+    ey = (i * (j + 2)) / NY
+    hz = (i * (j + 3)) / NX
+    _fict_ = np.arange(TMAX, dtype=datatype)
 
     return TMAX, ex, ey, hz, _fict_
 

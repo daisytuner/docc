@@ -21,6 +21,7 @@ namespace py = pybind11;
  * This function registers the Python bindings for the control flow hierarchy:
  * - ControlFlowNode: Abstract base class
  * - Block: Basic block containing a DataFlowGraph
+ * - AssignmentBlock: Unordered set of symbol-assignments, executed simultaneously
  * - Sequence: Sequential container of control flow nodes
  * - Transition: Element connecting nodes in a Sequence
  * - IfElse: Conditional branching

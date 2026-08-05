@@ -1,6 +1,6 @@
 #include "docc/passes/scheduling/normalization_pass.h"
 
-#include <sdfg/passes/normalization/normalization.h>
+#include <sdfg/passes/normalization/normalize.h>
 
 namespace docc {
 namespace passes {
@@ -13,11 +13,7 @@ llvm::PreservedAnalyses NormalizationPass::
     }
 
     registry.for_each_sdfg_modifiable(Module, [&](sdfg::StructuredSDFG &sdfg) {
-        sdfg::builder::StructuredSDFGBuilder builder(sdfg);
-        sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
-
-        sdfg::passes::Pipeline lp_pipeline = sdfg::passes::normalization::loop_normalization();
-        lp_pipeline.run(builder, analysis_manager);
+        sdfg::passes::normalization::normalize(sdfg, false);
     });
 
     return llvm::PreservedAnalyses::all();

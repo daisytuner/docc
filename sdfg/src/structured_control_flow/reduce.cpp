@@ -4,6 +4,7 @@
 
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/visitor/structured_sdfg_visitor.h"
 
 namespace sdfg {
 namespace structured_control_flow {
@@ -48,6 +49,8 @@ Reduce::Reduce(
 )
     : StructuredLoop(element_id, debug_info, parent, indvar, init, update, condition, schedule_type),
       reductions_(std::move(reductions)) {};
+
+bool Reduce::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
 
 void Reduce::validate(const Function& function) const { StructuredLoop::validate(function); };
 

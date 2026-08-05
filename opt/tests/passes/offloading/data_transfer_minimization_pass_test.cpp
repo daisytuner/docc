@@ -166,7 +166,7 @@ TEST(DataTransferMinimizationPassTest, MultiMapWithLatterUseTest) {
     int h2d_count = 0;
     int d2h_count = 0;
     for (int i = 0; i < root.size(); i++) {
-        auto& cf_node = root.at(i).first;
+        auto& cf_node = root.at(i);
         if (auto* block = dyn_cast<structured_control_flow::Block*>(&cf_node)) {
             for (auto& node : block->dataflow().nodes()) {
                 if (auto* cuda_offload = dynamic_cast<cuda::CUDADataOffloadingNode*>(&node)) {

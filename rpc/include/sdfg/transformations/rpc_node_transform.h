@@ -30,6 +30,12 @@ private:
 
     bool dump_steps_;
 
+    bool enable_fusion_;
+
+    bool normalize_;
+
+    std::optional<std::string> session_id_;
+
     std::string get_node_id_str() const;
 
     std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string>
@@ -43,6 +49,8 @@ public:
         const std::string& target,
         const std::string& category,
         sdfg::passes::rpc::RpcContext& rpc_context,
+        bool enable_fusion = true,
+        bool normalize = true,
         bool print_steps = false
     );
 

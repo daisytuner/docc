@@ -5,12 +5,12 @@ on:
     branches:
       - main
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize]
   schedule:
     - cron: "0 5 * * *"
 
 jobs:
-  tests:
+  integration-test-transfertuning:
     runs-on:
       group: dahlia
       labels: openmp
@@ -76,5 +76,5 @@ jobs:
           ./matmul.out
           cd ../../../../
 
-          cd llvm/integration
-          pytest -v -rx -s polybench_transfertuning_test.py
+          cd llvm/integration/
+          pytest -v -rx polybench_transfertuning_test.py

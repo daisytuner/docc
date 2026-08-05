@@ -219,10 +219,7 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     if (outer_loop_.root().size() > 1) {
         return false;
     }
-    if (outer_loop_.root().at(0).second.assignments().size() > 0) {
-        return false;
-    }
-    if (&outer_loop_.root().at(0).first != &inner_loop_) {
+    if (&outer_loop_.root().at(0) != &inner_loop_) {
         return false;
     }
 
@@ -412,7 +409,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     auto& inner_scope = outer_loop_.root();
 
     int index = outer_scope.index(this->outer_loop_);
-    auto& outer_transition = outer_scope.at(index).second;
 
     // Add new outer and inner loops
     structured_control_flow::StructuredLoop* new_outer_loop = nullptr;
@@ -479,7 +475,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 this->inner_loop_.update(),
                 inner_reduce->reductions(),
                 this->inner_loop_.schedule_type(),
-                outer_transition.assignments(),
                 this->inner_loop_.debug_info()
             );
         } else {
@@ -490,7 +485,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 new_outer_cond,
                 new_outer_init,
                 this->inner_loop_.update(),
-                outer_transition.assignments(),
                 this->inner_loop_.debug_info()
             );
         }
@@ -505,7 +499,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 this->outer_loop_.update(),
                 outer_reduce->reductions(),
                 this->outer_loop_.schedule_type(),
-                {},
                 this->outer_loop_.debug_info()
             );
         } else {
@@ -516,7 +509,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 new_inner_cond,
                 new_inner_init,
                 this->outer_loop_.update(),
-                {},
                 this->outer_loop_.debug_info()
             );
         }
@@ -531,7 +523,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 inner_map->init(),
                 inner_map->update(),
                 inner_map->schedule_type(),
-                outer_transition.assignments(),
                 this->inner_loop_.debug_info()
             );
         } else if (inner_reduce) {
@@ -544,7 +535,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 this->inner_loop_.update(),
                 inner_reduce->reductions(),
                 this->inner_loop_.schedule_type(),
-                outer_transition.assignments(),
                 this->inner_loop_.debug_info()
             );
         } else {
@@ -555,7 +545,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 this->inner_loop_.condition(),
                 this->inner_loop_.init(),
                 this->inner_loop_.update(),
-                outer_transition.assignments(),
                 this->inner_loop_.debug_info()
             );
         }
@@ -569,7 +558,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 outer_map->init(),
                 outer_map->update(),
                 outer_map->schedule_type(),
-                {},
                 this->outer_loop_.debug_info()
             );
         } else if (outer_reduce) {
@@ -582,7 +570,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 this->outer_loop_.update(),
                 outer_reduce->reductions(),
                 this->outer_loop_.schedule_type(),
-                {},
                 this->outer_loop_.debug_info()
             );
         } else {
@@ -593,7 +580,6 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 this->outer_loop_.condition(),
                 this->outer_loop_.init(),
                 this->outer_loop_.update(),
-                {},
                 this->outer_loop_.debug_info()
             );
         }

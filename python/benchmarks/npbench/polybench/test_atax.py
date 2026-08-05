@@ -12,8 +12,10 @@ PARAMETERS = {
 
 def initialize(M, N, datatype=np.float64):
     fn = datatype(N)
-    x = np.fromfunction(lambda i: 1 + (i / fn), (N,), dtype=datatype)
-    A = np.fromfunction(lambda i, j: ((i + j) % N) / (5 * M), (M, N), dtype=datatype)
+    x = 1 + (np.arange(N, dtype=datatype) / fn)
+    i = np.arange(M).reshape(-1, 1)
+    j = np.arange(N)
+    A = ((i + j) % N) / (5 * M)
 
     return A, x
 
@@ -52,21 +54,11 @@ def test_atax(target):
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={
-                "CUDA": 2,
-                "MAP": 2,
-                "REDUCE": 2,
-                "CUDAOffloading": 4,
-            },
+            verification={"CUDA": 1, "GEMM": 2, "MAP": 1, "CUDAOffloading": 4},
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={
-                "ROCM": 2,
-                "MAP": 2,
-                "REDUCE": 2,
-                "ROCMOffloading": 4,
-            },
+            verification={"ROCM": 1, "GEMM": 2, "MAP": 1, "ROCMOffloading": 4},
         )
     run_pytest(initialize, kernel, PARAMETERS, target=target, verifier=verifier)
 

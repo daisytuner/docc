@@ -7,6 +7,7 @@
 #include "sdfg/builder/sdfg_builder.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -18,7 +19,7 @@ TEST(BlockFusionTest, Computational_Chain) {
     builder.add_container("A", desc_array);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "A");
     auto& node2_1 = builder.add_access(block1, "A");
@@ -30,7 +31,7 @@ TEST(BlockFusionTest, Computational_Chain) {
     builder.add_computational_memlet(block1, two_node_1, tasklet_1, "_in3", {});
     builder.add_computational_memlet(block1, tasklet_1, "_out", node2_1, {symbolic::integer(0)});
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node1_2 = builder.add_access(block2, "A");
     auto& node2_2 = builder.add_access(block2, "A");
@@ -43,6 +44,7 @@ TEST(BlockFusionTest, Computational_Chain) {
     builder.add_computational_memlet(block2, tasklet_2, "_out", node2_2, {symbolic::integer(0)});
 
     auto sdfg = builder.move();
+    dump_sdfg(*sdfg, "0.init");
 
     EXPECT_EQ(sdfg->name(), "sdfg_1");
     EXPECT_EQ(sdfg->root().size(), 2);
@@ -54,9 +56,10 @@ TEST(BlockFusionTest, Computational_Chain) {
     fusion_pass.run(builder_opt, analysis_manager);
 
     sdfg = builder_opt.move();
+    dump_sdfg(*sdfg, "1.fused");
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto first_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0).first);
+    auto first_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0));
     EXPECT_EQ(first_block->dataflow().nodes().size(), 7);
 }
 
@@ -69,7 +72,7 @@ TEST(BlockFusionTest, SymbolUsedInSubset_Dataflow) {
     builder.add_container("i", desc_element);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "i");
     auto& zero_node = builder.add_constant(block1, "0", desc_element);
@@ -77,7 +80,7 @@ TEST(BlockFusionTest, SymbolUsedInSubset_Dataflow) {
     builder.add_computational_memlet(block1, zero_node, tasklet_1, "_in", {});
     builder.add_computational_memlet(block1, tasklet_1, "_out", node1_1, {});
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node2_1 = builder.add_access(block2, "A");
     auto& one_node = builder.add_constant(block2, "1", desc_element);
@@ -106,9 +109,9 @@ TEST(BlockFusionTest, SymbolUsedWithSubset_Transition) {
     builder.add_container("i", desc_element);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, {{symbolic::symbol("i"), symbolic::integer(0)}});
+    auto& block1 = builder.add_assignments(root, {{symbolic::symbol("i"), symbolic::integer(0)}});
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node2_1 = builder.add_access(block2, "A");
     auto& one_node = builder.add_constant(block2, "1", desc_element);
@@ -137,7 +140,7 @@ TEST(BlockFusionTest, Computational_IndependentSubgraphs) {
     builder.add_container("B", desc_array);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "A");
     auto& node2_1 = builder.add_access(block1, "A");
@@ -149,7 +152,7 @@ TEST(BlockFusionTest, Computational_IndependentSubgraphs) {
     builder.add_computational_memlet(block1, two_node_1, tasklet_1, "_in3", {});
     builder.add_computational_memlet(block1, tasklet_1, "_out", node2_1, {symbolic::integer(0)});
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node1_2 = builder.add_access(block2, "B");
     auto& node2_2 = builder.add_access(block2, "B");
@@ -175,10 +178,254 @@ TEST(BlockFusionTest, Computational_IndependentSubgraphs) {
     sdfg = builder_opt.move();
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0).first)->dataflow();
+    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0))->dataflow();
     EXPECT_EQ(dataflow.nodes().size(), 10);
     EXPECT_EQ(dataflow.edges().size(), 8);
     EXPECT_EQ(dataflow.weakly_connected_components().first, 2);
+}
+
+TEST(BlockFusionTest, Computational_IndependentSubgraphs_Each) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar desc_element(types::PrimitiveType::Double);
+    types::Array desc_array(desc_element, symbolic::integer(10));
+    builder.add_container("A", desc_array);
+    builder.add_container("B", desc_array);
+    builder.add_container("C", desc_array);
+    builder.add_container("D", desc_array);
+
+    auto& root = builder.subject().root();
+    auto& block1 = builder.add_block(root);
+
+    auto& node1_1 = builder.add_access(block1, "A");
+    auto& node2_1 = builder.add_access(block1, "A");
+    auto& one_node_1 = builder.add_constant(block1, "1", desc_element);
+    auto& two_node_1 = builder.add_constant(block1, "2", desc_element);
+    auto& tasklet_1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+    builder.add_computational_memlet(block1, one_node_1, tasklet_1, "_in1", {});
+    builder.add_computational_memlet(block1, node1_1, tasklet_1, "_in2", {symbolic::integer(0)});
+    builder.add_computational_memlet(block1, two_node_1, tasklet_1, "_in3", {});
+    builder.add_computational_memlet(block1, tasklet_1, "_out", node2_1, {symbolic::integer(0)});
+    {
+        auto& node1_1 = builder.add_access(block1, "B");
+        auto& node2_1 = builder.add_access(block1, "B");
+        auto& one_node_1 = builder.add_constant(block1, "1", desc_element);
+        auto& two_node_1 = builder.add_constant(block1, "2", desc_element);
+        auto& tasklet_1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+        builder.add_computational_memlet(block1, one_node_1, tasklet_1, "_in1", {});
+        builder.add_computational_memlet(block1, node1_1, tasklet_1, "_in2", {symbolic::integer(0)});
+        builder.add_computational_memlet(block1, two_node_1, tasklet_1, "_in3", {});
+        builder.add_computational_memlet(block1, tasklet_1, "_out", node2_1, {symbolic::integer(0)});
+    }
+
+    auto& block2 = builder.add_block(root);
+
+    auto& node1_2 = builder.add_access(block2, "C");
+    auto& node2_2 = builder.add_access(block2, "C");
+    auto& one_node_2 = builder.add_constant(block2, "3", desc_element);
+    auto& two_node_2 = builder.add_constant(block2, "4", desc_element);
+    auto& tasklet_2 = builder.add_tasklet(block2, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+    builder.add_computational_memlet(block2, one_node_2, tasklet_2, "_in1", {});
+    builder.add_computational_memlet(block2, two_node_2, tasklet_2, "_in3", {});
+    builder.add_computational_memlet(block2, node1_2, tasklet_2, "_in2", {symbolic::integer(0)});
+    builder.add_computational_memlet(block2, tasklet_2, "_out", node2_2, {symbolic::integer(0)});
+
+    {
+        auto& node1_2 = builder.add_access(block2, "D");
+        auto& node2_2 = builder.add_access(block2, "D");
+        auto& one_node_2 = builder.add_constant(block2, "3", desc_element);
+        auto& two_node_2 = builder.add_constant(block2, "4", desc_element);
+        auto& tasklet_2 = builder.add_tasklet(block2, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+        builder.add_computational_memlet(block2, one_node_2, tasklet_2, "_in1", {});
+        builder.add_computational_memlet(block2, two_node_2, tasklet_2, "_in3", {});
+        builder.add_computational_memlet(block2, node1_2, tasklet_2, "_in2", {symbolic::integer(0)});
+        builder.add_computational_memlet(block2, tasklet_2, "_out", node2_2, {symbolic::integer(0)});
+    }
+
+    auto sdfg = builder.move();
+    dump_sdfg(*sdfg, "0.init");
+
+    EXPECT_EQ(sdfg->name(), "sdfg_1");
+    EXPECT_EQ(sdfg->root().size(), 2);
+
+    // Fusion
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    passes::BlockFusionPass fusion_pass;
+    fusion_pass.run(builder_opt, analysis_manager);
+
+    sdfg = builder_opt.move();
+    dump_sdfg(*sdfg, "1.fused");
+    EXPECT_EQ(sdfg->root().size(), 1);
+
+    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0))->dataflow();
+    EXPECT_EQ(dataflow.nodes().size(), 20);
+    EXPECT_EQ(dataflow.edges().size(), 16);
+    EXPECT_EQ(dataflow.weakly_connected_components().first, 4);
+}
+
+TEST(BlockFusionTest, Computational_ReusedInput) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar desc_element(types::PrimitiveType::Double);
+    types::Array desc_array(desc_element, symbolic::integer(10));
+    builder.add_container("A", desc_array);
+    builder.add_container("B", desc_array);
+    builder.add_container("C", desc_array);
+
+    auto& root = builder.subject().root();
+    auto& block1 = builder.add_block(root);
+
+    auto& node1_1 = builder.add_access(block1, "A");
+    auto& node2_1 = builder.add_access(block1, "B");
+    auto& one_node_1 = builder.add_constant(block1, "1", desc_element);
+    auto& two_node_1 = builder.add_constant(block1, "2", desc_element);
+    auto& tasklet_1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+    builder.add_computational_memlet(block1, one_node_1, tasklet_1, "_in1", {});
+    builder.add_computational_memlet(block1, node1_1, tasklet_1, "_in2", {symbolic::integer(0)});
+    builder.add_computational_memlet(block1, two_node_1, tasklet_1, "_in3", {});
+    builder.add_computational_memlet(block1, tasklet_1, "_out", node2_1, {symbolic::integer(0)});
+
+    auto& block2 = builder.add_block(root);
+
+    auto& node1_2 = builder.add_access(block2, "A");
+    auto& node2_2 = builder.add_access(block2, "C");
+    auto& one_node_2 = builder.add_constant(block2, "3", desc_element);
+    auto& two_node_2 = builder.add_constant(block2, "4", desc_element);
+    auto& tasklet_2 = builder.add_tasklet(block2, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+    builder.add_computational_memlet(block2, one_node_2, tasklet_2, "_in1", {});
+    builder.add_computational_memlet(block2, two_node_2, tasklet_2, "_in3", {});
+    builder.add_computational_memlet(block2, node1_2, tasklet_2, "_in2", {symbolic::integer(0)});
+    builder.add_computational_memlet(block2, tasklet_2, "_out", node2_2, {symbolic::integer(0)});
+
+    auto sdfg = builder.move();
+    dump_sdfg(*sdfg, "0.init");
+
+    EXPECT_EQ(sdfg->name(), "sdfg_1");
+    EXPECT_EQ(sdfg->root().size(), 2);
+
+    // Fusion
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    passes::BlockFusionPass fusion_pass;
+    fusion_pass.run(builder_opt, analysis_manager);
+
+    sdfg = builder_opt.move();
+    dump_sdfg(*sdfg, "1.fused");
+    EXPECT_EQ(sdfg->root().size(), 1);
+
+    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0))->dataflow();
+    EXPECT_EQ(dataflow.nodes().size(), 9);
+    EXPECT_EQ(dataflow.edges().size(), 8);
+    EXPECT_EQ(dataflow.weakly_connected_components().first, 1);
+}
+
+TEST(BlockFusionTest, ComputationalChain_MultipleLeaves) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar desc_element(types::PrimitiveType::Double);
+    types::Array desc_array(desc_element, symbolic::integer(10));
+    builder.add_container("A", desc_array);
+    builder.add_container("B", desc_array);
+    builder.add_container("C", desc_array);
+    builder.add_container("D", desc_array);
+
+    auto& root = builder.subject().root();
+    auto& block1 = builder.add_block(root);
+
+    auto& node1_1 = builder.add_access(block1, "A");
+    auto& node2_1 = builder.add_access(block1, "B");
+    auto& node3_1 = builder.add_access(block1, "C");
+    auto& one_node_1 = builder.add_constant(block1, "1", desc_element);
+    auto& tasklet_1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block1, one_node_1, tasklet_1, "_in1", {});
+    builder.add_computational_memlet(block1, node1_1, tasklet_1, "_in2", {symbolic::integer(0)});
+    builder.add_computational_memlet(block1, tasklet_1, "_out", node2_1, {symbolic::integer(0)});
+
+    auto& tasklet_2 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block1, node1_1, tasklet_2, "_in", {symbolic::integer(0)});
+    builder.add_computational_memlet(block1, tasklet_2, "_out", node3_1, {symbolic::integer(0)});
+
+    auto& block2 = builder.add_block(root);
+
+    auto& node1_2 = builder.add_access(block2, "C");
+    auto& node2_2 = builder.add_access(block2, "D");
+    auto& tasklet_3 = builder.add_tasklet(block2, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block2, node1_2, tasklet_3, "_in", {symbolic::integer(0)});
+    builder.add_computational_memlet(block2, tasklet_3, "_out", node2_2, {symbolic::integer(0)});
+
+    auto sdfg = builder.move();
+
+    dump_sdfg(*sdfg, "0.init");
+
+    EXPECT_EQ(sdfg->name(), "sdfg_1");
+    EXPECT_EQ(sdfg->root().size(), 2);
+
+    // Fusion
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    passes::BlockFusionPass fusion_pass;
+    fusion_pass.run(builder_opt, analysis_manager);
+
+    sdfg = builder_opt.move();
+    dump_sdfg(*sdfg, "1.fused");
+    EXPECT_EQ(sdfg->root().size(), 1);
+
+    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0))->dataflow();
+    EXPECT_EQ(dataflow.nodes().size(), 8);
+    EXPECT_EQ(dataflow.edges().size(), 7);
+    EXPECT_EQ(dataflow.weakly_connected_components().first, 1);
+}
+
+TEST(BlockFusionTest, ComputationalChain_Conflicting_Leaves) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar desc_element(types::PrimitiveType::Double);
+    types::Array desc_array(desc_element, symbolic::integer(10));
+    builder.add_container("A", desc_array);
+    builder.add_container("B", desc_array);
+    builder.add_container("C", desc_array);
+
+    auto& root = builder.subject().root();
+    auto& block1 = builder.add_block(root);
+
+    auto& node1_1 = builder.add_access(block1, "A");
+    auto& node2_1 = builder.add_access(block1, "B");
+    auto& node3_1 = builder.add_access(block1, "C");
+    auto& one_node_1 = builder.add_constant(block1, "1", desc_element);
+    auto& tasklet_1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block1, one_node_1, tasklet_1, "_in1", {});
+    builder.add_computational_memlet(block1, node1_1, tasklet_1, "_in2", {symbolic::integer(0)});
+    builder.add_computational_memlet(block1, tasklet_1, "_out", node2_1, {symbolic::integer(0)});
+
+    auto& tasklet_2 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block1, node1_1, tasklet_2, "_in", {symbolic::integer(0)});
+    builder.add_computational_memlet(block1, tasklet_2, "_out", node3_1, {symbolic::integer(0)});
+
+    auto& block2 = builder.add_block(root);
+
+    auto& node1_2 = builder.add_access(block2, "B");
+    auto& node2_2 = builder.add_access(block2, "C");
+    auto& tasklet_3 = builder.add_tasklet(block2, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block2, node1_2, tasklet_3, "_in", {symbolic::integer(0)});
+    builder.add_computational_memlet(block2, tasklet_3, "_out", node2_2, {symbolic::integer(0)});
+
+    auto sdfg = builder.move();
+
+    dump_sdfg(*sdfg, "0.init");
+
+    EXPECT_EQ(sdfg->name(), "sdfg_1");
+    EXPECT_EQ(sdfg->root().size(), 2);
+
+    // Fusion
+    builder::StructuredSDFGBuilder builder_opt(sdfg);
+    analysis::AnalysisManager analysis_manager(builder_opt.subject());
+    passes::BlockFusionPass fusion_pass;
+    fusion_pass.run(builder_opt, analysis_manager);
+
+    sdfg = builder_opt.move();
+    dump_sdfg(*sdfg, "1.fused");
+    EXPECT_EQ(sdfg->root().size(), 2);
 }
 
 TEST(BlockFusionTest, Computational_LibraryNode_WithoutSideEffects) {
@@ -229,7 +476,7 @@ TEST(BlockFusionTest, Computational_LibraryNode_WithoutSideEffects) {
     sdfg = builder_opt.move();
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0).first)->dataflow();
+    auto& dataflow = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0))->dataflow();
     EXPECT_EQ(dataflow.nodes().size(), 5);
     EXPECT_EQ(dataflow.edges().size(), 4);
     EXPECT_EQ(dataflow.weakly_connected_components().first, 1);
@@ -244,13 +491,13 @@ TEST(BlockFusionTest, Reference) {
     builder.add_container("B", desc_pointer);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "A");
     auto& node2_1 = builder.add_access(block1, "B");
     builder.add_reference_memlet(block1, node1_1, node2_1, {symbolic::integer(0)}, desc_pointer);
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     auto& node1_2 = builder.add_access(block2, "B");
     auto& node2_2 = builder.add_access(block2, "B");
@@ -285,7 +532,7 @@ TEST(BlockFusionTest, Dereference) {
     builder.add_container("B", opaque_ptr);
 
     auto& root = builder.subject().root();
-    auto& block1 = builder.add_block(root, control_flow::Assignments{});
+    auto& block1 = builder.add_block(root);
 
     auto& node1_1 = builder.add_access(block1, "A");
     auto& node2_1 = builder.add_access(block1, "B");
@@ -293,7 +540,7 @@ TEST(BlockFusionTest, Dereference) {
     types::Pointer desc_ptr_2(static_cast<const types::IType&>(opaque_ptr));
     builder.add_dereference_memlet(block1, node1_1, node2_1, true, desc_ptr_2);
 
-    auto& block2 = builder.add_block(root, control_flow::Assignments{});
+    auto& block2 = builder.add_block(root);
 
     types::Scalar desc_element(types::PrimitiveType::Double);
     types::Pointer desc_ptr(desc_element);

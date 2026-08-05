@@ -1,0 +1,39 @@
+# CODEOWNERS
+#
+# This file defines code ownership for the repository.
+# Each line maps a path to one or more owners (GitHub usernames or teams).
+# e.g. "/python/  @your-username @your-team".
+#
+# Docs: https://docs.github.com/articles/about-code-owners
+
+# Teams
+#
+# NOTE: GitHub teams are created and managed in the GitHub org settings
+# (Organization > Teams). The entries below document team membership for
+# reference; add members in GitHub and assign paths to the teams as needed.
+#
+# Compiler team (@daisytuner/compiler)
+#   Members: @Atrisan @ramonwirsch @Moehre2 @lukastruemper
+#
+# Tuning Interface team (@daisytuner/tuning-interface)
+#   Members: @NoraHagmeyer @ramonwirsch @lukastruemper @Atrisan
+
+# Default owner for everything (unassigned)
+# *
+
+# Top-level directories (unassigned)
+/arg-capture-io/ @NoraHagmeyer @daisytuner/tuning-interface
+/c-compile/ @ramonwirsch @daisytuner/compiler
+/cmake/ @ramonwirsch @daisytuner/compiler
+/examples/ @Atrisan @daisytuner/compiler
+/llvm/ @Moehre2 @daisytuner/compiler
+/mlir/ @Moehre2 @daisytuner/compiler
+/opt/ @Atrisan @daisytuner/compiler
+/python/ @Moehre2 @daisytuner/compiler
+/pytorch/ @Moehre2 @daisytuner/compiler
+/rpc/ @NoraHagmeyer @daisytuner/tuning-interface
+/rtl/ @Atrisan @daisytuner/compiler
+/sdfg/ @ramonwirsch @daisytuner/compiler
+/targets/ @Atrisan @daisytuner/compiler
+/tutorial/ @Atrisan @daisytuner/compiler
+/.github/ @Atrisan @daisytuner/compiler

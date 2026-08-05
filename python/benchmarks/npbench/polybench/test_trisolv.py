@@ -11,9 +11,11 @@ PARAMETERS = {
 
 
 def initialize(N, datatype=np.float64):
-    L = np.fromfunction(lambda i, j: (i + N - j + 1) * 2 / N, (N, N), dtype=datatype)
+    i = np.arange(N, dtype=datatype).reshape(-1, 1)
+    j = np.arange(N, dtype=datatype)
+    L = (i + N - j + 1) * 2 / N
     x = np.full((N,), -999, dtype=datatype)
-    b = np.fromfunction(lambda i: i, (N,), dtype=datatype)
+    b = np.arange(N, dtype=datatype)
 
     return L, x, b
 

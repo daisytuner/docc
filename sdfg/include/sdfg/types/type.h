@@ -627,6 +627,16 @@ public:
         os << type.print();
         return os;
     };
+
+    /**
+     * @brief Replace symbolic expressions on this type
+     * @param old_expression Expression to replace
+     * @param new_expression Replacement expression
+     *
+     * Replaces occurrences of symbolic expressions on the type.
+     */
+    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) = 0;
+    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) = 0;
 };
 
 } // namespace types

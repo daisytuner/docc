@@ -1,0 +1,106 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+parameters:
+  container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+  timeout: 120
+  partitions:
+    - chamomile
+
+steps:
+  build: |
+    python3.11 -m venv venv
+    . venv/bin/activate
+
+    python -m pip install --upgrade pip
+    pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+    pip install numpy scipy cupy-cuda12x transformers ml_dtypes
+
+    pip install --no-build-isolation -e python/
+    pip install --no-build-isolation -e pytorch/
+
+    pip install -r pytorch/requirements.txt
+    pip uninstall -y torch torchvision
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+    # Warm start
+    export DOCC_DEBUG=dump
+
+    # Compile and cache binaries
+    venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
+    venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cuda
+    venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
+    venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=cuda --remote-tuning
+
+    # venv/bin/python3 pytorch/benchmarks/models/segformer.py --n_runs=1 --device cpu --variant segformer --batch-size 16
+    venv/bin/python3 pytorch/benchmarks/models/segformer.py --n_runs=1 --device cuda --variant segformer --batch-size 16
+    # venv/bin/python3 pytorch/benchmarks/models/segformer.py --n_runs=1 --device docc --target=openmp --variant segformer --batch-size 16 --remote-tuning
+    venv/bin/python3 pytorch/benchmarks/models/segformer.py --n_runs=1 --device docc --target=cuda --variant segformer --batch-size 16 --remote-tuning
+
+    # Compile and cache instrumented binaries
+    DOCC_CI=regions venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
+    DOCC_CI=regions venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=cuda --remote-tuning
+
+    # DOCC_CI=regions venv/bin/python3 pytorch/benchmarks/models/segformer.py --n_runs=1 --device docc --target=openmp --variant segformer --batch-size 16 --remote-tuning
+    DOCC_CI=regions venv/bin/python3 pytorch/benchmarks/models/segformer.py --n_runs=1 --device docc --target=cuda --variant segformer --batch-size 16 --remote-tuning
+
+  run:
+    resnet18:
+      energy: true
+      control: true
+      measurements: 3
+      env:
+        DOCC_REUSE_BINARIES: 1
+      variants:
+        torch:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
+          tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
+        torch-cuda:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cuda
+          tags: { framework: torch, device: gpu, model: cuda, precision: float, baseline: true }
+        docc-omp:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
+          tags: { framework: docc, device: cpu, model: openmp, precision: float, remote-tuning: true }
+        docc-omp-prof:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
+          tags: { framework: docc, device: cpu, model: openmp, precision: float, profiling: true, remote-tuning: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
+        docc-cuda:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=cuda --remote-tuning
+          tags: { framework: docc, device: gpu, model: cuda, precision: float, remote-tuning: true }
+        docc-cuda-prof:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=cuda --remote-tuning
+          tags: { framework: docc, device: gpu, model: cuda, precision: float, profiling: true, remote-tuning: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
+    segformer:
+      energy: true
+      control: true
+      measurements: 3
+      env:
+        DOCC_REUSE_BINARIES: 1
+        NVIDIA_TF32_OVERRIDE: 1
+      variants:
+        # torch:
+        #   command: venv/bin/python3 pytorch/benchmarks/models/segformer.py --device cpu --n_runs=1 --variant segformer --batch-size 16
+        #   tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
+        torch-cuda:
+          command: venv/bin/python3 pytorch/benchmarks/models/segformer.py --device cuda --n_runs=1 --variant segformer --batch-size 16
+          tags: { framework: torch, device: gpu, model: cuda, precision: float, baseline: true }
+        # docc-omp:
+        #   command: venv/bin/python3 pytorch/benchmarks/models/segformer.py --device docc --target=openmp --n_runs=1 --variant segformer --batch-size 16 --remote-tuning
+        #   tags: { framework: docc, device: cpu, model: openmp, precision: float, remote-tuning: true }
+        # docc-omp-prof:
+        #   command: venv/bin/python3 pytorch/benchmarks/models/segformer.py --device docc --target=openmp --n_runs=1 --variant segformer --batch-size 16 --remote-tuning
+        #   tags: { framework: docc, device: cpu, model: openmp, precision: float, profiling: true, remote-tuning: true }
+        #   metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
+        docc-cuda:
+          command: venv/bin/python3 pytorch/benchmarks/models/segformer.py --device docc --target=cuda --n_runs=1 --variant segformer --batch-size 16 --remote-tuning
+          tags: { framework: docc, device: gpu, model: cuda, precision: float, remote-tuning: true }
+        docc-cuda-prof:
+          command: venv/bin/python3 pytorch/benchmarks/models/segformer.py --device docc --target=cuda --n_runs=1 --variant segformer --batch-size 16 --remote-tuning
+          tags: { framework: docc, device: gpu, model: cuda, precision: float, profiling: true, remote-tuning: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]

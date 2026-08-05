@@ -1,5 +1,6 @@
 #include "sdfg/types/tensor.h"
 
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 
 namespace sdfg {
@@ -74,7 +75,13 @@ const symbolic::Expression& Tensor::offset() const { return this->layout_.offset
 
 symbolic::Expression Tensor::total_elements() const { return layout_.total_elements(); };
 
+symbolic::Expression Tensor::total_size() const {
+    return symbolic::mul(layout_.total_elements(), symbolic::size_of_type(*element_type_));
+}
+
 bool Tensor::is_scalar() const { return layout_.is_scalar(); }
+
+bool Tensor::is_contiguous() const { return layout_.has_linear_accesses_no_padding(); }
 
 TypeID Tensor::type_id() const { return TypeID::Tensor; };
 
@@ -135,6 +142,16 @@ std::unique_ptr<Tensor> Tensor::reshape(const symbolic::MultiExpression& new_sha
     return std::make_unique<Tensor>(
         this->storage_type(), this->alignment(), this->initializer(), *this->element_type_, *layout_.reshape(new_shape)
     );
+}
+
+void Tensor::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    this->element_type_->replace_symbols(old_expression, new_expression);
+    this->layout_.replace_symbols(old_expression, new_expression);
+}
+
+void Tensor::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    this->element_type_->replace_symbols(replacements);
+    this->layout_.replace_symbols(replacements);
 }
 
 } // namespace types

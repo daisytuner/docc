@@ -228,13 +228,13 @@ TEST(PoolingNodeTest, MaxPool2D_Expand_ProducesNestedMaps) {
     // After expansion the original block is removed; a new sequence was inserted
     // The root should contain the new sequence
     EXPECT_GE(sdfg.root().size(), 1u);
-    auto& outer = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& outer = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     // Outer sequence should contain a nested map structure (N → C → od0 → od1)
     EXPECT_GE(outer.size(), 1u);
     bool found_map = false;
     for (size_t i = 0; i < outer.size(); ++i) {
-        if (dyn_cast<structured_control_flow::Map*>(&outer.at(i).first)) {
+        if (dyn_cast<structured_control_flow::Map*>(&outer.at(i))) {
             found_map = true;
             break;
         }
@@ -436,11 +436,11 @@ TEST(PoolingNodeTest, MaxPool2D_BatchDim_Expand_ContainsOuterMap) {
 
     // After expansion:  root → new_sequence → map(n) → ...
     EXPECT_GE(sdfg.root().size(), 1u);
-    auto& outer = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0).first);
+    auto& outer = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
 
     bool found_map = false;
     for (size_t i = 0; i < outer.size(); ++i) {
-        if (dyn_cast<structured_control_flow::Map*>(&outer.at(i).first)) {
+        if (dyn_cast<structured_control_flow::Map*>(&outer.at(i))) {
             found_map = true;
             break;
         }

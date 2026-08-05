@@ -9,9 +9,7 @@ PARAMETERS = {"S": {"N": 60}, "M": {"N": 220}, "L": {"N": 700}, "paper": {"N": 2
 def initialize(N, datatype=np.float64):
     A = np.empty((N, N), dtype=datatype)
     for i in range(N):
-        A[i, : i + 1] = np.fromfunction(
-            lambda j: (-j % N) / N + 1, (i + 1,), dtype=datatype
-        )
+        A[i, : i + 1] = (-np.arange(i + 1, dtype=datatype) % N) / N + 1
         A[i, i + 1 :] = 0.0
         A[i, i] = 1.0
     A[:] = A @ np.transpose(A)

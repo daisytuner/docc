@@ -110,8 +110,7 @@ passes::LibNodeExpander::ExpandOutcome DotNode::
     auto loop_condition = symbolic::Lt(loop_indvar, this->n_);
     auto loop_update = symbolic::add(loop_indvar, symbolic::integer(1));
 
-    auto& loop =
-        builder.add_for(new_sequence, loop_indvar, loop_condition, loop_init, loop_update, {}, block.debug_info());
+    auto& loop = builder.add_for(new_sequence, loop_indvar, loop_condition, loop_init, loop_update, block.debug_info());
     auto& body = loop.root();
 
     auto& new_block = builder.add_block(body);
@@ -276,6 +275,17 @@ void DotNodeDispatcher_BLAS::dispatch_code_with_edges(
     out.stream << this->language_extension_.expression(dot_node.incy());
     out.stream.changeIndent(-4);
     out.stream << ");" << std::endl;
+}
+
+codegen::InstrumentationInfo DotNodeDispatcher_BLAS::instrumentation_info() const {
+    return {
+        node_.element_id(),
+        std::string(node_.element_type()) + ":::" + node_.code().value(),
+        codegen::TargetType_CPU_PARALLEL,
+        codegen::InstrumentationEventType::CPU,
+        analysis::LoopInfo{},
+        {}
+    };
 }
 
 

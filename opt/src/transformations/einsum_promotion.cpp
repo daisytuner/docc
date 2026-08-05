@@ -218,7 +218,7 @@ void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     assert(loop_parent);
 
     // Add a new block after the loop
-    auto& new_block = builder.add_block_after(*loop_parent, *loop, {}, block->debug_info());
+    auto& new_block = builder.add_block_after(*loop_parent, *loop, block->debug_info());
 
     // Copy the access to the einsum node from the old block to the new one
     std::unordered_map<std::string, data_flow::AccessNode&> out_access, in_access;

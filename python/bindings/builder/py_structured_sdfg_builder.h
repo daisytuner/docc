@@ -42,6 +42,18 @@ public:
 
     PyStructuredSDFG move();
 
+    /***** Metadata *****/
+
+    void add_metadata(const std::string& key, const std::string& value);
+
+    void remove_metadata(const std::string& key);
+
+    bool has_metadata(const std::string& key) const;
+
+    const std::string& get_metadata(const std::string& key) const;
+
+    const std::unordered_map<std::string, std::string>& metadata() const;
+
     /***** Containers *****/
 
     void add_container(const std::string& name, const sdfg::types::IType& type, bool is_argument);
@@ -105,9 +117,11 @@ public:
 
     void end_map();
 
-    void add_transition(
+    void add_assignments(
         const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
+
+    void add_empty_assignments(const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
 
     void add_assignment(
         const std::string& target, const std::string& value, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
@@ -182,6 +196,10 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_malloc_block(
+        const std::string& container, const std::string& size, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     sdfg::data_flow::LibraryNode& add_memset(
         sdfg::structured_control_flow::Block& block,
         const std::string& value,
@@ -195,8 +213,17 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_memcpy_block(
+        const std::string& src_container,
+        const std::string& dst_container,
+        const std::string& count,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     sdfg::data_flow::LibraryNode&
     add_free(sdfg::structured_control_flow::Block& block, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
+
+    void add_free_block(const std::string& container, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
 
     /**
      * @brief Check if a size expression only depends on function arguments (hoistable to function entry)
@@ -255,8 +282,37 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_elementwise_tasklet_op(
+        sdfg::data_flow::TaskletCode tasklet_code,
+        const std::vector<std::string>& inputs,
+        const std::vector<const sdfg::types::Tensor*>& input_types,
+        const std::string& output,
+        const sdfg::types::Tensor& output_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_elementwise_cmath_op(
+        sdfg::math::cmath::CMathFunction func,
+        const std::string& A,
+        const sdfg::types::Tensor& A_type,
+        const std::string& B,
+        const sdfg::types::Tensor& B_type,
+        const std::string& C,
+        const sdfg::types::Tensor& C_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_elementwise_unary_op(
         const std::string& op_type,
+        const std::string& A,
+        const sdfg::types::Tensor& A_type,
+        const std::string& C,
+        const sdfg::types::Tensor& C_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_elementwise_unary_cmath_op(
+        sdfg::math::cmath::CMathFunction func,
         const std::string& A,
         const sdfg::types::Tensor& A_type,
         const std::string& C,
@@ -272,6 +328,47 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_copy_op(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_conditional_copy_op(
+        const std::string& Mask,
+        const sdfg::types::Tensor& Mask_type,
+        const std::string& X1,
+        const sdfg::types::Tensor& X1_type,
+        const std::string& X2,
+        const sdfg::types::Tensor& X2_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo debug_info = sdfg::DebugInfo()
+    );
+
+    void add_concat_op(
+        const std::vector<std::string>& tensors,
+        const std::vector<const sdfg::types::Tensor*>& tensor_types,
+        const std::string& result,
+        const sdfg::types::Tensor& result_type,
+        long long dim,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_slice_op(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        long long dim,
+        long long start,
+        long long end,
+        long long step,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_reduce_op(
         const std::string& op_type,
         const std::string& input,
@@ -280,6 +377,57 @@ public:
         const sdfg::types::Tensor& output_type,
         const std::vector<int64_t>& axes,
         bool keepdims,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_index_op(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::vector<std::string>& indices,
+        const std::vector<const sdfg::types::Tensor*>& index_types,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        long long dim_offset,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_broadcast_op(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::vector<std::string>& input_shape,
+        const std::vector<std::string>& output_shape,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_matmul_op(
+        const std::string& A,
+        const sdfg::types::Tensor& A_type,
+        const std::string& B,
+        const sdfg::types::Tensor& B_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_fill_op(
+        const std::string& X,
+        const sdfg::types::Scalar& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo& = sdfg::DebugInfo()
+    );
+
+    void add_arange(
+        const std::string& start,
+        const sdfg::types::Scalar& start_type,
+        const std::string& end,
+        const sdfg::types::Scalar& end_type,
+        const std::string& step,
+        const sdfg::types::Scalar& step_type,
+        const std::string& out,
+        const sdfg::types::Tensor& out_type,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
@@ -294,10 +442,30 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_relu(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_gelu(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        bool tanh_approx = false,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_conv(
         const std::string& X,
+        const sdfg::types::Tensor& X_type,
         const std::string& W,
+        const sdfg::types::Tensor& W_type,
         const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
         const std::vector<std::string>& shape,
         const std::vector<std::string>& kernel_shape,
         const std::vector<std::string>& strides,
@@ -305,6 +473,71 @@ public:
         const std::vector<std::string>& dilations,
         const std::string& output_channels,
         const std::string& group,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+    void add_conv_with_bias(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& W,
+        const sdfg::types::Tensor& W_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::string& B,
+        const sdfg::types::Tensor& B_type,
+        const std::vector<std::string>& shape,
+        const std::vector<std::string>& kernel_shape,
+        const std::vector<std::string>& strides,
+        const std::vector<std::string>& pads,
+        const std::vector<std::string>& dilations,
+        const std::string& output_channels,
+        const std::string& group,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_batchnorm_with_bias(
+        const std::string& Batch,
+        const sdfg::types::Tensor& Batch_type,
+        const std::string& Var,
+        const sdfg::types::Tensor& Var_type,
+        const std::string& E,
+        const sdfg::types::Tensor& E_type,
+        const std::string& Gamma,
+        const sdfg::types::Tensor& Gamma_type,
+        const std::string& Beta,
+        const sdfg::types::Tensor& Beta_type,
+        const std::string& epsilon,
+        const sdfg::types::Scalar& epsilon_type,
+        const std::string& B_out,
+        const sdfg::types::Tensor& B_out_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_layernorm_with_bias(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Gamma,
+        const sdfg::types::Tensor& Gamma_type,
+        const std::string& Beta,
+        const sdfg::types::Tensor& Beta_type,
+        const std::string& epsilon,
+        const sdfg::types::Scalar& epsilon_type,
+        const std::string& Y_out,
+        const sdfg::types::Tensor& Y_out_type,
+        int64_t num_normalized_dims,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_pooling(
+        const std::string& mode_type,
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::vector<std::string>& shape,
+        const std::vector<std::string>& kernel_shape,
+        const std::vector<std::string>& strides,
+        const std::vector<std::string>& pads,
+        const std::vector<std::string>& dilations,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 };

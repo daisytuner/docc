@@ -25,6 +25,8 @@ public:
         codegen::PrettyPrinter& globals_stream,
         codegen::CodeSnippetFactory& library_snippet_factory
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 class GEMMNodeDispatcher_ROCMBLASWithoutTransfers : public codegen::LibraryNodeDispatcher {
@@ -41,6 +43,8 @@ public:
         codegen::PrettyPrinter& globals_stream,
         codegen::CodeSnippetFactory& library_snippet_factory
     ) override;
+
+    codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
 

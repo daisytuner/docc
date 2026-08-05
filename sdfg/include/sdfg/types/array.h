@@ -99,6 +99,17 @@ public:
 
     /// @brief Returns a string representation of this array type
     virtual std::string print() const override;
+
+    /**
+     * @brief Replace symbolic expressions on this type
+     * @param old_expression Expression to replace
+     * @param new_expression Replacement expression
+     *
+     * Replaces occurrences of symbolic expressions on the type.
+     */
+    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
+        override;
+    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override;
 };
 
 } // namespace types

@@ -52,6 +52,8 @@ public:
 
     static bool classof(const Element& element) { return element.type_id() == ElementType::While; }
 
+    bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
+
     void validate(const Function& function) const override;
 
     /**
@@ -97,6 +99,8 @@ public:
 
     static bool classof(const Element& element) { return element.type_id() == ElementType::Break; }
 
+    bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
+
     void validate(const Function& function) const override;
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
@@ -125,6 +129,8 @@ public:
     ElementType type_id() const override { return ElementType::Continue; }
 
     static bool classof(const Element& element) { return element.type_id() == ElementType::Continue; }
+
+    bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 
     void validate(const Function& function) const override;
 

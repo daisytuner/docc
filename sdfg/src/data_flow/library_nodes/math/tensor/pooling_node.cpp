@@ -167,7 +167,6 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
         symbolic::zero(),
         symbolic::add(n_var, symbolic::one()),
         structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
     current_scope = &map_n.root();
@@ -184,7 +183,6 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
         symbolic::zero(),
         symbolic::add(c_var, symbolic::one()),
         structured_control_flow::ScheduleType_Sequential::create(),
-        {},
         block.debug_info()
     );
     current_scope = &map_c.root();
@@ -202,7 +200,6 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
             symbolic::zero(),
             symbolic::add(od_var, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
-            {},
             block.debug_info()
         );
         current_scope = &map_od.root();
@@ -251,23 +248,27 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
     builder.add_computational_memlet(init_block, zero_const, init_tasklet, "_in", {}, scalar_type, block.debug_info());
     builder.add_computational_memlet(init_block, init_tasklet, "_out", accum_init, {}, scalar_type, block.debug_info());
 
-    // For loops over kernel spatial dimensions
+    // Reduce over kernel spatial dimensions
     auto* loop_scope = current_scope;
     std::vector<symbolic::Expression> kernel_vars;
+    structured_control_flow::ReductionOperation reduce_op =
+        (mode_ == PoolingMode::Max ? structured_control_flow::ReductionOperation::Max
+                                   : structured_control_flow::ReductionOperation::Add);
     for (size_t i = 0; i < spatial_dims; ++i) {
         std::string k_str = builder.find_new_name("k" + std::to_string(i));
         builder.add_container(k_str, types::Scalar(types::PrimitiveType::UInt64));
         auto k_var = symbolic::symbol(k_str);
-        auto& for_k = builder.add_for(
+        auto& reduce_k = builder.add_reduce(
             *loop_scope,
             k_var,
             symbolic::Lt(k_var, kernel_shape_[i]),
             symbolic::zero(),
             symbolic::add(k_var, symbolic::one()),
-            {},
+            {{.operation = reduce_op, .container = accum_var}},
+            structured_control_flow::ScheduleType_Sequential::create(),
             block.debug_info()
         );
-        loop_scope = &for_k.root();
+        loop_scope = &reduce_k.root();
         kernel_vars.push_back(k_var);
     }
 
@@ -297,7 +298,7 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
                         And(symbolic::Lt(input_spatial_indices[i], input_spatial_dims[i]),
                             symbolic::Ge(input_spatial_indices[i], symbolic::zero())));
         }
-        auto& branch = builder.add_if_else(*loop_scope, {}, block.debug_info());
+        auto& branch = builder.add_if_else(*loop_scope, block.debug_info());
         auto& comp_case = builder.add_case(branch, comp_condition, block.debug_info());
         loop_scope = &comp_case;
     }

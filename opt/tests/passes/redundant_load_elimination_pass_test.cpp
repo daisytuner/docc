@@ -20,7 +20,7 @@ TEST(RedundantLoadEliminationPassTest, RedundantLoad_ReroutesReadAndKeepsWrite) 
     builder.add_container("B", desc_pointer);
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, control_flow::Assignments{});
+    auto& block = builder.add_block(root);
 
     // tasklet computing A[0] = 1.0 + 2.0
     auto& one_node = builder.add_constant(block, "1", desc_element);
@@ -60,7 +60,7 @@ TEST(RedundantLoadEliminationPassTest, RedundantLoad_ReroutesReadAndKeepsWrite) 
     }
     EXPECT_TRUE(found_bypass);
 
-    auto* result_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0).first);
+    auto* result_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0));
     ASSERT_NE(result_block, nullptr);
     auto& dataflow = result_block->dataflow();
 
@@ -95,7 +95,7 @@ TEST(RedundantLoadEliminationPassTest, ConsecutiveWriteSameIndex_RemovesFirstWri
     builder.add_container("s", desc_element);
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, control_flow::Assignments{});
+    auto& block = builder.add_block(root);
 
     // First write: A[0] = 1.0
     auto& const0 = builder.add_constant(block, "1", desc_element);
@@ -129,7 +129,7 @@ TEST(RedundantLoadEliminationPassTest, ConsecutiveWriteSameIndex_RemovesFirstWri
     dump_sdfg(*sdfg, "1.rle");
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto* result_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0).first);
+    auto* result_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0));
     ASSERT_NE(result_block, nullptr);
     auto& dataflow = result_block->dataflow();
 
@@ -175,7 +175,7 @@ TEST(RedundantLoadEliminationPassTest, DoesNotCrashOn_MultiInputAccessNode) {
     builder.add_container("B", desc_pointer);
 
     auto& root = builder.subject().root();
-    auto& block = builder.add_block(root, control_flow::Assignments{});
+    auto& block = builder.add_block(root);
 
     auto& acc_a = builder.add_access(block, "A");
 
@@ -211,7 +211,7 @@ TEST(RedundantLoadEliminationPassTest, DoesNotCrashOn_MultiInputAccessNode) {
     dump_sdfg(*sdfg, "1.rle");
     EXPECT_EQ(sdfg->root().size(), 1);
 
-    auto* result_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0).first);
+    auto* result_block = dynamic_cast<const structured_control_flow::Block*>(&sdfg->root().at(0));
     ASSERT_NE(result_block, nullptr);
     auto& dataflow = result_block->dataflow();
 
