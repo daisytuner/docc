@@ -494,6 +494,14 @@ public:
     void remove_node(structured_control_flow::Block& block, const data_flow::DataFlowNode& node);
 
     /**
+     * Replaces the source of a computational read memlet with a new ConstantNode carrying `data`/`type`.
+     * @return the newly created memlet from the constant to the original destination
+     */
+    data_flow::Memlet& replace_memlet_src_with_constant(
+        structured_control_flow::Block& block, data_flow::Memlet& edge, const std::string& data, const types::IType& type
+    );
+
+    /**
      * Removes a code node and all its input and output edges. Will remove unused access nodes at the ends of those
      * edges. Caller must ensure that targets of output edges remain valid with their input edges removed.
      */

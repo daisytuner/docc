@@ -108,8 +108,8 @@ def test_adi(target):
             verification={
                 "CUDA": 2,
                 "CUDAOffloading": 4,
-                "MAP": 20,
-                "SEQUENTIAL": 23,
+                "MAP": 21,
+                "SEQUENTIAL": 24,
                 "FOR": 5,
             }
         )
@@ -118,7 +118,7 @@ def test_adi(target):
             verification={
                 "ROCM": 2,
                 "ROCMOffloading": 4,
-                "MAP": 20,
+                "MAP": 21,
                 "SEQUENTIAL": 24,
                 "FOR": 5,
             }

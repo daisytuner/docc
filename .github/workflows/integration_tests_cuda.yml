@@ -5,12 +5,12 @@ on:
     branches:
       - main
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize]
   schedule:
     - cron: "0 5 * * *"
 
 jobs:
-  tests:
+  integration-test-cuda:
     runs-on:
       group: dahlia
       labels: RTX5060

@@ -165,17 +165,29 @@ public:
     static void propagate_indirect_accesses_up(LoopEntry& current, LoopEntry& parent) {
         auto& parent_cand = parent.fusion_candidate;
         std::optional<symbolic::ExpressionMapping> indvar_mapping;
-        if (current.fusion_candidate.is_by_domain_candidate) {
-            auto& indvar_bounds = current.fusion_candidate.indvar_boundaries;
-            symbolic::Expression stride = symbolic::integer(1);
-            if (symbolic::null_safe_eq(symbolic::sub(indvar_bounds->map(), indvar_bounds->symbol()), stride)) {
-                indvar_mapping = symbolic::ExpressionMapping();
-                indvar_mapping->emplace(
-                    SymEngine::rcp_static_cast<const SymEngine::Basic>(indvar_bounds->symbol()),
-                    current.indvar_placeholder
-                );
+        auto add_placeholder_mapping = [&](LoopEntry& entry) {
+            if (!entry.fusion_candidate.is_by_domain_candidate) {
+                return;
             }
-        }
+            auto& indvar_bounds = entry.fusion_candidate.indvar_boundaries;
+            symbolic::Expression stride = symbolic::integer(1);
+            if (entry.indvar_placeholder.is_null() ||
+                !symbolic::null_safe_eq(symbolic::sub(indvar_bounds->map(), indvar_bounds->symbol()), stride)) {
+                return;
+            }
+            if (!indvar_mapping.has_value()) {
+                indvar_mapping = symbolic::ExpressionMapping();
+            }
+            indvar_mapping->emplace(
+                SymEngine::rcp_static_cast<const SymEngine::Basic>(indvar_bounds->symbol()), entry.indvar_placeholder
+            );
+        };
+        // Generalize the child's indvar (as before) AND the parent's own indvar. Child accesses that
+        // reference the parent's index (e.g. a reduction writing acc[parent_i] inside an inner loop)
+        // must use the same placeholder as the parent's direct accesses, otherwise a single container
+        // ends up with both a placeholder and a raw-symbol subset and is falsely flagged as conflicting.
+        add_placeholder_mapping(current);
+        add_placeholder_mapping(parent);
         for (auto& [container, meta] : current.fusion_candidate.args) {
             auto arg_it = parent_cand.args.find(container);
             if (arg_it != parent_cand.args.end()) {

@@ -4,7 +4,7 @@ GraphParser modules for parsing normalization layers.
 
 import torch.fx
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, Scalar, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, Tensor, Scalar, Type, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
     GraphParserModule,
@@ -158,6 +158,28 @@ class LayerNormNoTrainingParser(GraphParserModule):
             node, container_info, result_container
         )
         debug_info: DebugInfo = self.get_debug_info(node)
+        # The LayerNorm expansion addresses the input by flattening the leading and
+        # normalized dimensions into linear (C-contiguous) indices. A non-contiguous
+        # input view (e.g. produced by permute/transpose) would have its strides
+        # silently dropped, reading the wrong memory. Materialize a contiguous copy
+        # first so the layout information is preserved.
+        if not input_tensor.is_contiguous():
+            input_type: Type = container_info[input_container].sdfg_type()
+            contiguous_tensor: Tensor = Tensor(
+                input_tensor.element_type, input_tensor.shape
+            )
+            contiguous_container: str = self.create_intermediate_container(
+                node, builder, container_info, input_type, contiguous_tensor
+            )
+            builder.add_copy_op(
+                input_container,
+                input_tensor,
+                contiguous_container,
+                contiguous_tensor,
+                debug_info,
+            )
+            input_container = contiguous_container
+            input_tensor = contiguous_tensor
         builder.add_layernorm_with_bias(
             input_container,
             input_tensor,

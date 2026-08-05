@@ -1,226 +1,295 @@
 #include <gtest/gtest.h>
 
-#include <ostream>
-
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/tasklet.h"
 #include "sdfg/passes/dataflow/constant_propagation.h"
+#include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/for.h"
+#include "sdfg/structured_control_flow/if_else.h"
+#include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/structured_control_flow/while.h"
 
 using namespace sdfg;
 
-TEST(ConstantPropagationTest, Symbolic_Argument) {
-    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+namespace {
 
-    types::Scalar desc(types::PrimitiveType::Int32);
-    builder.add_container("arg", desc, true);
-    builder.add_container("i", desc);
-
-    builder.add_block(builder.subject().root(), {{symbolic::symbol("i"), symbolic::symbol("arg")}});
-    builder.add_block(builder.subject().root(), {{symbolic::symbol("i"), symbolic::symbol("arg")}});
-
-    // Apply pass
-    analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::ConstantPropagation pass;
-    EXPECT_TRUE(pass.run(builder, analysis_manager));
-
-    // Check result
-    auto& sdfg = builder.subject();
-
-    auto& trans1 = sdfg.root().at(0).second;
-    EXPECT_EQ(trans1.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(trans1.assignments().at(symbolic::symbol("i")), symbolic::symbol("arg")));
-
-    auto& trans2 = sdfg.root().at(1).second;
-    EXPECT_EQ(trans2.assignments().size(), 0);
+// Builds a `ConstantNode(value) -> assign -> AccessNode(name)` definition in `block`.
+void build_constant_definition(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Block& block,
+    const std::string& name,
+    const std::string& value,
+    const types::Scalar& type
+) {
+    auto& constant = builder.add_constant(block, value, type);
+    auto& out_node = builder.add_access(block, name);
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, constant, tasklet, "_in", {});
+    builder.add_computational_memlet(block, tasklet, "_out", out_node, {});
 }
 
-TEST(ConstantPropagationTest, Symbolic_Transient) {
-    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
-
-    types::Scalar desc(types::PrimitiveType::Int32);
-    builder.add_container("i", desc);
-    builder.add_container("j", desc);
-
-    builder.add_block(builder.subject().root(), {{symbolic::symbol("j"), symbolic::one()}});
-    builder.add_block(builder.subject().root(), {{symbolic::symbol("i"), symbolic::symbol("j")}});
-    builder.add_block(builder.subject().root(), {{symbolic::symbol("i"), symbolic::symbol("j")}});
-
-    // Apply pass
-    analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::ConstantPropagation pass;
-    EXPECT_TRUE(pass.run(builder, analysis_manager));
-
-    // Check result
-    auto& sdfg = builder.subject();
-
-    auto& trans1 = sdfg.root().at(0).second;
-    EXPECT_EQ(trans1.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(trans1.assignments().at(symbolic::symbol("j")), symbolic::one()));
-
-    auto& trans2 = sdfg.root().at(1).second;
-    EXPECT_EQ(trans2.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(trans2.assignments().at(symbolic::symbol("i")), symbolic::symbol("j")));
-
-    auto& trans3 = sdfg.root().at(2).second;
-    EXPECT_EQ(trans3.assignments().size(), 0);
+// Builds `AccessNode(src) -> assign -> AccessNode(dst)`, i.e. a read of `src`.
+void build_scalar_use(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Block& block,
+    const std::string& src,
+    const std::string& dst
+) {
+    auto& in_node = builder.add_access(block, src);
+    auto& out_node = builder.add_access(block, dst);
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, in_node, tasklet, "_in", {});
+    builder.add_computational_memlet(block, tasklet, "_out", out_node, {});
 }
 
-TEST(ConstantPropagationTest, Dataflow_Argument) {
-    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
-
-    types::Pointer opaque_ptr;
-    types::Scalar desc(types::PrimitiveType::Int32);
-    builder.add_container("p", opaque_ptr, true);
-    builder.add_container("i", desc);
-
-    auto& block1 = builder.add_block(builder.subject().root());
-    {
-        auto& in_node = builder.add_access(block1, "p");
-        auto& out_node = builder.add_access(block1, "i");
-        auto& tasklet = builder.add_tasklet(block1, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
-        builder.add_computational_memlet(block1, in_node, tasklet, "_in", {symbolic::zero()}, types::Pointer(desc));
-        builder.add_computational_memlet(block1, tasklet, "_out", out_node, {}, desc);
+// True if any tasklet in `block` reads a ConstantNode with the given literal.
+bool reads_constant(structured_control_flow::Block& block, const std::string& value) {
+    for (auto* tasklet : block.dataflow().tasklets()) {
+        for (auto& edge : block.dataflow().in_edges(*tasklet)) {
+            if (auto* constant = dynamic_cast<data_flow::ConstantNode*>(&edge.src())) {
+                if (constant->data() == value) {
+                    return true;
+                }
+            }
+        }
     }
-
-    auto& block2 = builder.add_block(builder.subject().root());
-    {
-        auto& in_node = builder.add_access(block2, "p");
-        auto& out_node = builder.add_access(block2, "i");
-        auto& tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
-        builder.add_computational_memlet(block2, in_node, tasklet, "_in", {symbolic::zero()}, types::Pointer(desc));
-        builder.add_computational_memlet(block2, tasklet, "_out", out_node, {}, desc);
-    }
-
-    // Apply pass
-    analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::ConstantPropagation pass;
-    EXPECT_TRUE(pass.run(builder, analysis_manager));
-
-    // Check result
-    auto& sdfg = builder.subject();
-
-    auto& child1 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(0).first);
-    EXPECT_EQ(child1.dataflow().nodes().size(), 3);
-
-    auto& child2 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(1).first);
-    EXPECT_EQ(child2.dataflow().nodes().size(), 0);
+    return false;
 }
 
-TEST(ConstantPropagationTest, Dataflow_Transient) {
-    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
-
-    types::Pointer opaque_ptr;
-    types::Scalar desc(types::PrimitiveType::Int32);
-    builder.add_container("p", opaque_ptr);
-    builder.add_container("i", desc);
-
-    auto& block0 = builder.add_block(builder.subject().root());
-    {
-        auto& zero_node = builder.add_constant(block0, "0", desc);
-        auto& out_node = builder.add_access(block0, "p");
-        auto& tasklet = builder.add_tasklet(block0, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
-        builder.add_computational_memlet(block0, zero_node, tasklet, "_in", {}, desc);
-        builder.add_computational_memlet(block0, tasklet, "_out", out_node, {symbolic::zero()}, types::Pointer(desc));
+// True if any tasklet in `block` still reads the (non-constant) container `name`.
+bool reads_container(structured_control_flow::Block& block, const std::string& name) {
+    for (auto* tasklet : block.dataflow().tasklets()) {
+        for (auto& edge : block.dataflow().in_edges(*tasklet)) {
+            auto* access = dynamic_cast<data_flow::AccessNode*>(&edge.src());
+            if (access == nullptr || dynamic_cast<data_flow::ConstantNode*>(access) != nullptr) {
+                continue;
+            }
+            if (access->data() == name) {
+                return true;
+            }
+        }
     }
-
-    auto& block1 = builder.add_block(builder.subject().root());
-    {
-        auto& in_node = builder.add_access(block1, "p");
-        auto& out_node = builder.add_access(block1, "i");
-        auto& tasklet = builder.add_tasklet(block1, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
-        builder.add_computational_memlet(block1, in_node, tasklet, "_in", {symbolic::zero()}, types::Pointer(desc));
-        builder.add_computational_memlet(block1, tasklet, "_out", out_node, {}, desc);
-    }
-
-    auto& block2 = builder.add_block(builder.subject().root());
-    {
-        auto& in_node = builder.add_access(block2, "p");
-        auto& out_node = builder.add_access(block2, "i");
-        auto& tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
-        builder.add_computational_memlet(block2, in_node, tasklet, "_in", {symbolic::zero()}, types::Pointer(desc));
-        builder.add_computational_memlet(block2, tasklet, "_out", out_node, {}, desc);
-    }
-
-    // Apply pass
-    analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::ConstantPropagation pass;
-    EXPECT_TRUE(pass.run(builder, analysis_manager));
-
-    // Check result
-    auto& sdfg = builder.subject();
-
-    auto& child0 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(0).first);
-    EXPECT_EQ(child0.dataflow().nodes().size(), 3);
-
-    auto& child1 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(1).first);
-    EXPECT_EQ(child1.dataflow().nodes().size(), 3);
-
-    auto& child2 = dyn_cast<structured_control_flow::Block&>(sdfg.root().at(2).first);
-    EXPECT_EQ(child2.dataflow().nodes().size(), 0);
+    return false;
 }
 
-TEST(ConstantPropagationTest, LoopInvariant_Symbolic) {
-    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
-
-    types::Scalar desc(types::PrimitiveType::Int32);
-    builder.add_container("i", desc);
-    builder.add_container("j", desc);
-
-    builder.add_block(builder.subject().root(), {{symbolic::symbol("j"), symbolic::one()}});
-    builder.add_block(builder.subject().root(), {{symbolic::symbol("i"), symbolic::symbol("j")}});
-
-    auto& loop_stmt = builder.add_while(builder.subject().root());
-    builder.add_block(loop_stmt.root(), {{symbolic::symbol("i"), symbolic::symbol("j")}});
-
-    // Apply pass
-    analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::ConstantPropagation pass;
-    EXPECT_TRUE(pass.run(builder, analysis_manager));
-
-    // Check result
-    auto& sdfg = builder.subject();
-
-    auto& trans1 = sdfg.root().at(0).second;
-    EXPECT_EQ(trans1.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(trans1.assignments().at(symbolic::symbol("j")), symbolic::one()));
-
-    auto& trans2 = sdfg.root().at(1).second;
-    EXPECT_EQ(trans2.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(trans2.assignments().at(symbolic::symbol("i")), symbolic::symbol("j")));
-
-    auto& trans3 = loop_stmt.root().at(0).second;
-    EXPECT_EQ(trans3.assignments().size(), 0);
+symbolic::Symbol add_index(builder::StructuredSDFGBuilder& builder, const std::string& name) {
+    builder.add_container(name, types::Scalar(types::PrimitiveType::UInt64));
+    return symbolic::symbol(name);
 }
 
-TEST(ConstantPropagationTest, Branchnvariant_Symbolic) {
+} // namespace
+
+TEST(ConstantPropagationTest, Sequence_StraightLine) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    types::Scalar type(types::PrimitiveType::Float);
+    builder.add_container("c", type);
+    builder.add_container("out", type);
 
-    types::Scalar desc(types::PrimitiveType::Int32);
-    builder.add_container("i", desc);
-    builder.add_container("j", desc);
+    auto& root = builder.subject().root();
+    auto& def = builder.add_block(root);
+    build_constant_definition(builder, def, "c", "1.0", type);
+    auto& use = builder.add_block(root);
+    build_scalar_use(builder, use, "c", "out");
 
-    builder.add_block(builder.subject().root(), {{symbolic::symbol("j"), symbolic::one()}});
-    builder.add_block(builder.subject().root(), {{symbolic::symbol("i"), symbolic::symbol("j")}});
-
-    auto& if_stmt = builder.add_if_else(builder.subject().root());
-    auto& if_block = builder.add_case(if_stmt, symbolic::Eq(symbolic::symbol("i"), symbolic::zero()));
-    builder.add_block(if_block, {{symbolic::symbol("i"), symbolic::symbol("j")}});
-
-    // Apply pass
     analysis::AnalysisManager analysis_manager(builder.subject());
     passes::ConstantPropagation pass;
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
-    // Check result
-    auto& sdfg = builder.subject();
+    EXPECT_TRUE(reads_constant(use, "1.0"));
+    EXPECT_FALSE(reads_container(use, "c"));
+}
 
-    auto& trans1 = sdfg.root().at(0).second;
-    EXPECT_EQ(trans1.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(trans1.assignments().at(symbolic::symbol("j")), symbolic::one()));
+TEST(ConstantPropagationTest, IfElse_PropagatesIntoBranch) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    types::Scalar type(types::PrimitiveType::Float);
+    builder.add_container("c", type);
+    builder.add_container("out", type);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
 
-    auto& trans2 = sdfg.root().at(1).second;
-    EXPECT_EQ(trans2.assignments().size(), 1);
-    EXPECT_TRUE(symbolic::eq(trans2.assignments().at(symbolic::symbol("i")), symbolic::symbol("j")));
+    auto& root = builder.subject().root();
+    auto& def = builder.add_block(root);
+    build_constant_definition(builder, def, "c", "2.0", type);
 
-    auto& trans3 = if_block.at(0).second;
-    EXPECT_EQ(trans3.assignments().size(), 0);
+    auto& if_else = builder.add_if_else(root);
+    auto& branch = builder.add_case(if_else, symbolic::Eq(symbolic::symbol("i"), symbolic::zero()));
+    auto& use = builder.add_block(branch);
+    build_scalar_use(builder, use, "c", "out");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::ConstantPropagation pass;
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    EXPECT_TRUE(reads_constant(use, "2.0"));
+    EXPECT_FALSE(reads_container(use, "c"));
+}
+
+TEST(ConstantPropagationTest, For_PropagatesIntoBody) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    types::Scalar type(types::PrimitiveType::Float);
+    builder.add_container("c", type);
+    builder.add_container("out", type);
+
+    auto& root = builder.subject().root();
+    auto& def = builder.add_block(root);
+    build_constant_definition(builder, def, "c", "3.0", type);
+
+    auto indvar = add_index(builder, "k");
+    auto& loop = builder.add_for(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(indvar, symbolic::one())
+    );
+    auto& use = builder.add_block(loop.root());
+    build_scalar_use(builder, use, "c", "out");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::ConstantPropagation pass;
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    EXPECT_TRUE(reads_constant(use, "3.0"));
+    EXPECT_FALSE(reads_container(use, "c"));
+}
+
+TEST(ConstantPropagationTest, While_PropagatesIntoBody) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    types::Scalar type(types::PrimitiveType::Float);
+    builder.add_container("c", type);
+    builder.add_container("out", type);
+
+    auto& root = builder.subject().root();
+    auto& def = builder.add_block(root);
+    build_constant_definition(builder, def, "c", "4.0", type);
+
+    auto& loop = builder.add_while(root);
+    auto& use = builder.add_block(loop.root());
+    build_scalar_use(builder, use, "c", "out");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::ConstantPropagation pass;
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    EXPECT_TRUE(reads_constant(use, "4.0"));
+    EXPECT_FALSE(reads_container(use, "c"));
+}
+
+TEST(ConstantPropagationTest, Map_PropagatesIntoBody) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    types::Scalar type(types::PrimitiveType::Float);
+    builder.add_container("c", type);
+    builder.add_container("out", type);
+
+    auto& root = builder.subject().root();
+    auto& def = builder.add_block(root);
+    build_constant_definition(builder, def, "c", "5.0", type);
+
+    auto indvar = add_index(builder, "k");
+    auto& loop = builder.add_map(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(indvar, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& use = builder.add_block(loop.root());
+    build_scalar_use(builder, use, "c", "out");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::ConstantPropagation pass;
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    EXPECT_TRUE(reads_constant(use, "5.0"));
+    EXPECT_FALSE(reads_container(use, "c"));
+}
+
+TEST(ConstantPropagationTest, LoopBodyDefinitionKilledAfter) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    types::Scalar type(types::PrimitiveType::Float);
+    builder.add_container("c", type);
+    builder.add_container("out", type);
+
+    auto& root = builder.subject().root();
+
+    // Definition sits INSIDE the loop body; it must not be assumed after the loop.
+    auto indvar = add_index(builder, "k");
+    auto& loop = builder.add_for(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(indvar, symbolic::one())
+    );
+    auto& def = builder.add_block(loop.root());
+    build_constant_definition(builder, def, "c", "6.0", type);
+
+    auto& use = builder.add_block(root);
+    build_scalar_use(builder, use, "c", "out");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::ConstantPropagation pass;
+    // Propagation happens inside the body would need a use there; here there is none, so nothing applies.
+    EXPECT_FALSE(pass.run(builder, analysis_manager));
+
+    EXPECT_FALSE(reads_constant(use, "6.0"));
+    EXPECT_TRUE(reads_container(use, "c"));
+}
+
+TEST(ConstantPropagationTest, OverwriteKillsConstant) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    types::Scalar type(types::PrimitiveType::Float);
+    builder.add_container("c", type);
+    builder.add_container("d", type, true); // argument feeding the non-constant overwrite
+    builder.add_container("out", type);
+
+    auto& root = builder.subject().root();
+    auto& def = builder.add_block(root);
+    build_constant_definition(builder, def, "c", "7.0", type);
+
+    // Overwrite c with a non-constant value: d -> assign -> c
+    auto& overwrite = builder.add_block(root);
+    build_scalar_use(builder, overwrite, "d", "c");
+
+    auto& use = builder.add_block(root);
+    build_scalar_use(builder, use, "c", "out");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::ConstantPropagation pass;
+    EXPECT_FALSE(pass.run(builder, analysis_manager));
+
+    EXPECT_FALSE(reads_constant(use, "7.0"));
+    EXPECT_TRUE(reads_container(use, "c"));
+}
+
+TEST(ConstantPropagationTest, WeaklyConnectedComponents) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    types::Scalar type(types::PrimitiveType::Float);
+    builder.add_container("c1", type);
+    builder.add_container("c2", type);
+    builder.add_container("o1", type);
+    builder.add_container("o2", type);
+
+    auto& root = builder.subject().root();
+
+    // One block with two independent weakly-connected components, each a constant definition.
+    auto& def = builder.add_block(root);
+    build_constant_definition(builder, def, "c1", "1.0", type);
+    build_constant_definition(builder, def, "c2", "2.0", type);
+    EXPECT_EQ(def.dataflow().weakly_connected_components().first, 2);
+
+    auto& use = builder.add_block(root);
+    build_scalar_use(builder, use, "c1", "o1");
+    build_scalar_use(builder, use, "c2", "o2");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::ConstantPropagation pass;
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+    EXPECT_TRUE(reads_constant(use, "1.0"));
+    EXPECT_TRUE(reads_constant(use, "2.0"));
+    EXPECT_FALSE(reads_container(use, "c1"));
+    EXPECT_FALSE(reads_container(use, "c2"));
 }

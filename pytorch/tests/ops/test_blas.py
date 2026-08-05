@@ -34,6 +34,23 @@ def test_addmm_broadcast(target: str) -> None:
     )
 
 
+def test_addmm_broadcast_square(target: str) -> None:
+    class AddMMBroadcastSquareNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, mat1: torch.Tensor, mat2: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.addmm(input, mat1, mat2)
+
+    # Square output (rows == cols == bias length) forces the bias broadcast to
+    # align on the trailing (feature) axis. A leading-axis alignment would
+    # silently add bias[row] instead of bias[col] without changing shapes.
+    check(
+        AddMMBroadcastSquareNet(),
+        *(torch.randn(4), torch.randn(4, 3), torch.randn(3, 4)),
+        target=target
+    )
+
+
 def test_addmm_alpha(target: str) -> None:
     class AddMMAlphaNet(nn.Module):
         def forward(

@@ -48,6 +48,7 @@ struct RpcOptRequest {
     std::string target;
     analysis::LoopInfo loop_info;
     bool enable_fusion = true;
+    bool normalize = true;
     std::optional<std::string> session_id;
 };
 

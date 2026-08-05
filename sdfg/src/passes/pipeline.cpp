@@ -173,5 +173,14 @@ Pipeline Pipeline::memory() {
     return p;
 };
 
+Pipeline Pipeline::constant_elimination() {
+    Pipeline p("ConstantElimination");
+
+    p.register_pass<ConstantPropagation>();
+    p.register_pass<DeadDataElimination>();
+
+    return p;
+};
+
 } // namespace passes
 } // namespace sdfg

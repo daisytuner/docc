@@ -1221,6 +1221,24 @@ void StructuredSDFGBuilder::remove_node(structured_control_flow::Block& block, c
     graph.nodes_.erase(v);
 };
 
+data_flow::Memlet& StructuredSDFGBuilder::replace_memlet_src_with_constant(
+    structured_control_flow::Block& block, data_flow::Memlet& edge, const std::string& data, const types::IType& type
+) {
+    auto& dst = edge.dst();
+    std::string dst_conn = edge.dst_conn();
+    data_flow::Subset subset = edge.subset();
+    DebugInfo debug_info = edge.debug_info();
+
+    auto& src = edge.src();
+    this->remove_memlet(block, edge);
+    if (block.dataflow().in_degree(src) == 0 && block.dataflow().out_degree(src) == 0) {
+        this->remove_node(block, src);
+    }
+
+    auto& constant = this->add_constant(block, data, type, debug_info);
+    return this->add_memlet(block, constant, "void", dst, dst_conn, subset, type, debug_info);
+};
+
 void StructuredSDFGBuilder::clear_code_node_legacy(structured_control_flow::Block& block, const data_flow::CodeNode& node) {
     auto& graph = block.dataflow();
 
