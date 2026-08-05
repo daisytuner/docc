@@ -79,8 +79,8 @@ static DoccTarget cuda_target = {
         sdfg::cuda::CudaLibraryNodeRewriterPass cuda_pass;
         return cuda_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers = [](const TargetOptions& options
-                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+    .get_target_loop_schedulers =
+        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::CUDAOffloadScheduler>());
         return schedulers;
@@ -137,8 +137,8 @@ static DoccTarget rocm_target = {
         sdfg::rocm::RocmLibraryNodeRewriterPass rocm_pass;
         return rocm_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers = [](const TargetOptions& options
-                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+    .get_target_loop_schedulers =
+        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::ROCMOffloadScheduler>());
         return schedulers;
