@@ -649,6 +649,19 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_upsample_bilinear2d",
+            &PyStructuredSDFGBuilder::add_upsample_bilinear2d,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("input_shape"),
+            py::arg("output_shape"),
+            py::arg("align_corners"),
+            py::arg("scale_factors"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_cast_op",
             &PyStructuredSDFGBuilder::add_cast_op,
             py::arg("A"),
