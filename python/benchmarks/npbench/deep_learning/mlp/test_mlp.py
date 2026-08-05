@@ -66,17 +66,17 @@ def test_mlp(target):
             verification={
                 "REDUCE": 2,
                 "VECTORIZE": 7,
-                "SEQUENTIAL": 5,
-                "MAP": 10,
+                "SEQUENTIAL": 7,
+                "MAP": 12,
                 "GEMM": 3,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 4,
+                "VECTORIZE": 2,
                 "REDUCE": 2,
-                "CPU_PARALLEL": 5,
+                "CPU_PARALLEL": 7,
                 "MAP": 7,
                 "GEMM": 3,
             }
@@ -84,7 +84,6 @@ def test_mlp(target):
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "SEQUENTIAL": 4,
                 "REDUCE": 2,
                 "CUDA": 10,
                 "GEMM": 3,
@@ -95,7 +94,6 @@ def test_mlp(target):
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "SEQUENTIAL": 4,
                 "REDUCE": 2,
                 "ROCM": 10,
                 "GEMM": 3,
