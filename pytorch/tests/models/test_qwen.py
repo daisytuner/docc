@@ -5,13 +5,14 @@ import torch._dynamo
 from tests import check
 
 # Define a small batch size matrix for fast testing
-BATCH_SIZES = [1, 2]
+BATCH_SIZES = [1, 2, 8]
 
 
 def get_qwen2_classes():
     try:
         from transformers import Qwen2Config
         from transformers.models.qwen2.modeling_qwen2 import (
+            Qwen2Model,
             Qwen2MLP,
             Qwen2Attention,
             Qwen2DecoderLayer,
@@ -20,6 +21,7 @@ def get_qwen2_classes():
 
         return (
             Qwen2Config,
+            Qwen2Model,
             Qwen2MLP,
             Qwen2Attention,
             Qwen2DecoderLayer,
@@ -30,7 +32,7 @@ def get_qwen2_classes():
 
 
 def get_dummy_config():
-    Qwen2Config, _, _, _, _ = get_qwen2_classes()
+    Qwen2Config, _, _, _, _, _ = get_qwen2_classes()
     return Qwen2Config(
         hidden_size=128,
         intermediate_size=256,
@@ -45,7 +47,7 @@ def get_dummy_config():
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
 def test_qwen_mlp(target: str, batch_size: int) -> None:
     torch._dynamo.reset()
-    _, Qwen2MLP, _, _, _ = get_qwen2_classes()
+    _, _, Qwen2MLP, _, _, _ = get_qwen2_classes()
 
     class QwenMLPWrapper(nn.Module):
         def __init__(self, config):
@@ -64,10 +66,13 @@ def test_qwen_mlp(target: str, batch_size: int) -> None:
     check(model, x, target=target)
 
 
+@pytest.mark.skip(
+    reason="docc fails to broadcast [1, 1, seq, dim] to [1, 4, seq, dim] in RoPE (aten.mul.Tensor)"
+)
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
 def test_qwen_attention(target: str, batch_size: int) -> None:
     torch._dynamo.reset()
-    _, _, Qwen2Attention, _, Qwen2RotaryEmbedding = get_qwen2_classes()
+    _, _, _, Qwen2Attention, _, Qwen2RotaryEmbedding = get_qwen2_classes()
 
     class QwenAttentionWrapper(nn.Module):
         def __init__(self, config):
@@ -99,10 +104,13 @@ def test_qwen_attention(target: str, batch_size: int) -> None:
     check(model, x, position_ids, target=target)
 
 
+@pytest.mark.skip(
+    reason="docc fails to broadcast [1, 1, seq, dim] to [1, 4, seq, dim] in RoPE (aten.mul.Tensor)"
+)
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
 def test_qwen_decoder_layer(target: str, batch_size: int) -> None:
     torch._dynamo.reset()
-    _, _, _, Qwen2DecoderLayer, Qwen2RotaryEmbedding = get_qwen2_classes()
+    _, _, _, _, Qwen2DecoderLayer, Qwen2RotaryEmbedding = get_qwen2_classes()
 
     class QwenDecoderLayerWrapper(nn.Module):
         def __init__(self, config):
@@ -131,3 +139,29 @@ def test_qwen_decoder_layer(target: str, batch_size: int) -> None:
     )
 
     check(model, x, position_ids, target=target)
+
+
+@pytest.mark.skip(
+    reason="docc fails to broadcast [1, 1, seq, dim] to [1, 4, seq, dim] in RoPE (aten.mul.Tensor)"
+)
+@pytest.mark.parametrize("batch_size", BATCH_SIZES)
+def test_qwen_model(target: str, batch_size: int) -> None:
+    torch._dynamo.reset()
+    _, Qwen2Model, _, _, _, _ = get_qwen2_classes()
+
+    class QwenModelWrapper(nn.Module):
+        def __init__(self, config):
+            super().__init__()
+            self.model = Qwen2Model(config)
+
+        def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+            return self.model(input_ids)[0]
+
+    config = get_dummy_config()
+    model = QwenModelWrapper(config)
+    model.eval()
+
+    seq_length = 16
+    input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_length))
+
+    check(model, input_ids, target=target)
