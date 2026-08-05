@@ -8,8 +8,8 @@ import re
 from docc.sdfg import StructuredSDFG, TargetOptions
 from docc.sdfg._sdfg import (
     _enable_statistics,
-    _statistics_enabled_by_env,
-    _statistics_summary,
+    _statistics_mode_by_env,
+    _statistics_report,
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
 from docc.compiler.target_registry import (
@@ -153,7 +153,8 @@ class DoccProgram(ABC):
                 sdfg.output_dir = output_folder
 
             # Enable statistics if envvar is set
-            if _statistics_enabled_by_env():
+            stats_mode = _statistics_mode_by_env()
+            if stats_mode > 0:
                 _enable_statistics()
 
             sdfg.validate()
@@ -249,8 +250,8 @@ class DoccProgram(ABC):
             )
 
         # Dump statistics after compile
-        if _statistics_enabled_by_env():
-            print(_statistics_summary(), file=sys.stderr)
+        if stats_mode > 0:
+            print(_statistics_report(stats_mode), file=sys.stderr)
 
         # Record the device-residency decision in the persisted (py4.norm) SDFG
         # metadata. It is computed here (not stored in metadata by the pass) and

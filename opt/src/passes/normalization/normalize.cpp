@@ -15,6 +15,7 @@ namespace passes {
 namespace normalization {
 
 void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion) {
+    sdfg::passes::CompileStatistics::enter_stage_if_enabled("normalize");
     builder::StructuredSDFGBuilder builder(sdfg);
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -51,6 +52,7 @@ void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion) {
         auto map_fusion_hoist = map_fusion(true, false);
         map_fusion_hoist.run(builder, analysis_manager);
     }
+    sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
 
 } // namespace normalization

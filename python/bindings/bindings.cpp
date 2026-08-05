@@ -987,9 +987,7 @@ PYBIND11_MODULE(_sdfg, m) {
     m.def(
         "_enable_statistics",
         []() {
-            sdfg::passes::PassStatistics::instance().enable();
-            sdfg::passes::PipelineStatistics::instance().enable();
-            sdfg::passes::AnalysisStatistics::instance().enable();
+            sdfg::passes::CompileStatistics::enable();
             sdfg::passes::CodegenStatistics::instance().enable();
         },
         "Enable pass, pipeline, and analysis statistics collection"
@@ -999,13 +997,23 @@ PYBIND11_MODULE(_sdfg, m) {
         &sdfg::passes::statistics_enabled_by_env,
         "Check if DOCC_STATISTICS envvar is set to 1"
     );
+    m.def("_statistics_mode_by_env", &sdfg::passes::statistics_mode_env, "Return int value of DOCC_STATISTICS env var");
+    m.def(
+        "_statistics_report",
+        [](int mode) {
+            std::string result;
+            result += sdfg::passes::CompileStatistics::instance()
+                          .report(static_cast<sdfg::passes::CompileStatistics::ReportLevel>(mode));
+            result += sdfg::passes::CodegenStatistics::instance().summary();
+            return result;
+        },
+        "Get pass and pipeline statistics summary"
+    );
     m.def(
         "_statistics_summary",
         []() {
             std::string result;
-            result += sdfg::passes::PassStatistics::instance().summary();
-            result += sdfg::passes::PipelineStatistics::instance().summary();
-            result += sdfg::passes::AnalysisStatistics::instance().summary();
+            result += sdfg::passes::CompileStatistics::instance().summary();
             result += sdfg::passes::CodegenStatistics::instance().summary();
             return result;
         },
