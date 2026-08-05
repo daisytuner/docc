@@ -51,6 +51,73 @@ def test_full_like_dtype_change(target: str) -> None:
     )
 
 
+# --- arange ---
+
+
+def test_arange_default(target: str) -> None:
+    class ArangeDefaultNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(5)
+
+    check(ArangeDefaultNet(), *(), target=target)
+
+
+def test_arange_start(target: str) -> None:
+    class ArangeStartNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(4, 10)
+
+    check(ArangeStartNet(), *(), target=target)
+
+
+def test_arange_start_step(target: str) -> None:
+    class ArangeStartStepNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(1, 5, 2)
+
+    check(ArangeStartStepNet(), *(), target=target)
+
+
+def test_arange_dtype(target: str) -> None:
+    class ArangeDtypeNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(1, 6, 2, dtype=torch.float64)
+
+    check(ArangeDtypeNet(), *(), target=target)
+
+
+def test_arange_float(target: str) -> None:
+    class ArangeFloatNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(0.0, 1.5, 0.5)
+
+    check(ArangeFloatNet(), *(), target=target)
+
+
+def test_arange_default_dtype(target: str) -> None:
+    class ArangeDefaultDtypeNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(8, dtype=torch.float32)
+
+    check(ArangeDefaultDtypeNet(), *(), target=target)
+
+
+def test_arange_default_pin_memory(target: str) -> None:
+    class ArangeDefaultPinMemoryNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(8, pin_memory=False)
+
+    check(ArangeDefaultPinMemoryNet(), *(), target=target)
+
+
+def test_arange_symbolic(target: str) -> None:
+    class ArangeSymbolicNet(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.arange(3, x.shape[0], 2)
+
+    check(ArangeSymbolicNet(), torch.ones(5), target=target)
+
+
 # --- scalar_tensor ---
 
 

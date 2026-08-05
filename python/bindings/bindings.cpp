@@ -179,14 +179,16 @@ PYBIND11_MODULE(_sdfg, m) {
     py::class_<docc::target::TargetOptions>(m, "TargetOptions")
         .def(py::init<>())
         .def(
-            py::init<std::string, std::string, bool>(),
+            py::init<std::string, std::string, bool, bool>(),
             py::arg("target"),
             py::arg("category"),
-            py::arg("remote_tuning") = false
+            py::arg("remote_tuning") = false,
+            py::arg("already_normalized") = false
         )
         .def_readwrite<>("target", &docc::target::TargetOptions::target)
         .def_readwrite<>("category", &docc::target::TargetOptions::category)
-        .def_readwrite<>("remote_tuning", &docc::target::TargetOptions::remote_tuning);
+        .def_readwrite<>("remote_tuning", &docc::target::TargetOptions::remote_tuning)
+        .def_readwrite<>("already_normalized", &docc::target::TargetOptions::already_normalized);
 
     // Register SDFG class
     py::class_<PyStructuredSDFG>(m, "StructuredSDFG")
@@ -756,6 +758,19 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("X_type"),
             py::arg("Y"),
             py::arg("Y_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_arange",
+            &PyStructuredSDFGBuilder::add_arange,
+            py::arg("start"),
+            py::arg("start_type"),
+            py::arg("end"),
+            py::arg("end_type"),
+            py::arg("step"),
+            py::arg("step_type"),
+            py::arg("out"),
+            py::arg("out_type"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(

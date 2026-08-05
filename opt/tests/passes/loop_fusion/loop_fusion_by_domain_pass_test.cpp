@@ -527,3 +527,73 @@ TEST(LoopFusionByDomainTest, DoNotCauseIndvarReuse) {
     EXPECT_EQ(lb_1.indvar()->get_name(), "b_j");
     EXPECT_EQ(lb_2.indvar()->get_name(), "b_k");
 }
+
+// Minimal reproducer of the MLP softmax fusion gap.
+// Nest 1 (row-max reduction):  Map i<N { tmp14[i]=init; For k<M { tmp14[i] = tmp14[i] + tmp12[i*M+k] } }
+// Nest 2 (exp broadcast):      Map i<N { Map j<M { tmp16[i*M+j] = tmp12[i*M+j] - tmp14[i] } }
+// Both iterate the outer row domain (N). tmp14[i] is produced per-row by nest 1 and read
+// per-row (broadcast over j) by nest 2, so fusing the two outer i-maps into a single row loop
+// is legal. The asymmetry is the nested structure: nest 1's inner is a sequential For (reduce,
+// map_stack_depth 1) while nest 2's inner is a Map (map_stack_depth 2).
+TEST(LoopFusionByDomainTest, FuseReduceThenBroadcast_Softmax) {
+    builder::StructuredSDFGBuilder builder("softmax_reduce_bcast", FunctionType_CPU);
+    MultiNestBuilder m(builder);
+
+    types::Scalar scalar(types::PrimitiveType::Float);
+    types::Pointer ptr(scalar);
+
+    builder.add_container("N", scalar, true);
+    builder.add_container("M", scalar, true);
+    builder.add_container("tmp12", ptr, true); // input [N*M]
+    builder.add_container("tmp14", ptr, false); // row reduction result [N]
+    builder.add_container("tmp16", ptr, true); // output [N*M]
+
+    // Nest 1: row reduction -> tmp14[i]
+    auto& max_i = m.add_map(m.root, "mi", "N");
+    {
+        auto& init = builder.add_block(max_i.root());
+        auto& c = builder.add_constant(init, "0.0", scalar);
+        auto& t14 = builder.add_access(init, "tmp14");
+        auto& tsk = builder.add_tasklet(init, data_flow::TaskletCode::assign, {"_out"}, {"_in"});
+        builder.add_computational_memlet(init, c, tsk, "_in", {}, scalar);
+        builder.add_computational_memlet(init, tsk, "_out", t14, {symbolic::parse("mi")}, ptr);
+
+        auto& red = m.add_for(max_i.root(), "mk", "M");
+        auto& blk = builder.add_block(red.root());
+        auto& in14 = builder.add_access(blk, "tmp14");
+        auto& in12 = builder.add_access(blk, "tmp12");
+        auto& out14 = builder.add_access(blk, "tmp14");
+        auto& tsk2 = builder.add_tasklet(blk, data_flow::TaskletCode::fp_add, {"_out"}, {"_in1", "_in2"});
+        builder.add_computational_memlet(blk, in14, tsk2, "_in1", {symbolic::parse("mi")}, ptr);
+        builder.add_computational_memlet(blk, in12, tsk2, "_in2", {symbolic::parse("mi*M+mk")}, ptr);
+        builder.add_computational_memlet(blk, tsk2, "_out", out14, {symbolic::parse("mi")}, ptr);
+    }
+
+    // Nest 2: exp broadcast -> tmp16[i*M+j] using tmp14[i]
+    auto& exp_i = m.add_map(m.root, "ei", "N");
+    auto& exp_j = m.add_map(exp_i.root(), "ej", "M");
+    {
+        auto& blk = builder.add_block(exp_j.root());
+        auto& in12 = builder.add_access(blk, "tmp12");
+        auto& in14 = builder.add_access(blk, "tmp14");
+        auto& out16 = builder.add_access(blk, "tmp16");
+        auto& tsk = builder.add_tasklet(blk, data_flow::TaskletCode::fp_sub, {"_out"}, {"_in1", "_in2"});
+        builder.add_computational_memlet(blk, in12, tsk, "_in1", {symbolic::parse("ei*M+ej")}, ptr);
+        builder.add_computational_memlet(blk, in14, tsk, "_in2", {symbolic::parse("ei")}, ptr);
+        builder.add_computational_memlet(blk, tsk, "_out", out16, {symbolic::parse("ei*M+ej")}, ptr);
+    }
+
+    builder.subject().validate();
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    LoopFusionPass pass({.map_fusion_by_domain = true, .map_fusion_by_access = false});
+    pass.run_pass(builder, analysis_manager);
+
+    auto& root = builder.subject().root();
+    // The two outer i-maps should fuse into a single row loop over N.
+    EXPECT_EQ(root.size(), 1) << "reduce nest and broadcast nest should fuse into one row loop";
+    auto* fused = dyn_cast<structured_control_flow::Map*>(&root.at(0));
+    ASSERT_TRUE(fused != nullptr);
+    // Fused body: init block + reduction For + exp Map = 3 children.
+    EXPECT_EQ(fused->root().size(), 3);
+}

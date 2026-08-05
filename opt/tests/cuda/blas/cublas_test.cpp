@@ -138,8 +138,8 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers) {
         symbolic::integer(dim_j) // ldc
     ));
 
-    auto& alpha_node = builder.add_constant(block, "1.0", desc);
-    auto& beta_node = builder.add_constant(block, "0.0", desc);
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
 
     builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
     builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
@@ -249,8 +249,8 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers) {
         symbolic::integer(dim_j) // ldc
     ));
 
-    auto& alpha_node = builder.add_constant(block, "1.0", desc);
-    auto& beta_node = builder.add_constant(block, "0.0", desc);
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
 
     builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
     builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
@@ -364,8 +364,8 @@ TEST(CuBlasTest, BatchedGemmNodeWithDataTransfers) {
             symbolic::integer(dim_i * dim_j) // stride_c
         ));
 
-    auto& alpha_node = builder.add_constant(block, "1.0", desc);
-    auto& beta_node = builder.add_constant(block, "0.0", desc);
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
 
     builder.add_computational_memlet(block, input_a_node, batched_gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
     builder.add_computational_memlet(block, input_b_node, batched_gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
@@ -483,8 +483,8 @@ TEST(CuBlasTest, BatchedGemmNodeWithoutDataTransfers) {
             symbolic::integer(dim_i * dim_j) // stride_c
         ));
 
-    auto& alpha_node = builder.add_constant(block, "1.0", desc);
-    auto& beta_node = builder.add_constant(block, "0.0", desc);
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
 
     builder.add_computational_memlet(block, input_a_node, batched_gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
     builder.add_computational_memlet(block, input_b_node, batched_gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);

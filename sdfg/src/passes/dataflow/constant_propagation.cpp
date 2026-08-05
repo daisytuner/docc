@@ -1,255 +1,273 @@
 #include "sdfg/passes/dataflow/constant_propagation.h"
 
-#include "sdfg/analysis/data_dependency_analysis.h"
-#include "sdfg/analysis/dominance_analysis.h"
-#include "sdfg/analysis/users.h"
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
+#include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/memlet.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/if_else.h"
+#include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/structured_control_flow/while.h"
+#include "sdfg/types/scalar.h"
+#include "sdfg/types/type.h"
 
 namespace sdfg {
 namespace passes {
+
+namespace {
+
+// A floating-point constant known to be held by a scalar container.
+struct ConstVal {
+    std::string data;
+    types::PrimitiveType prim;
+};
+
+using Env = std::unordered_map<std::string, ConstVal>;
+using ContainerSet = std::unordered_set<std::string>;
+
+bool is_fp_scalar(const types::IType& type) {
+    if (type.type_id() != types::TypeID::Scalar) {
+        return false;
+    }
+    return types::is_floating_point(static_cast<const types::Scalar&>(type).primitive_type());
+}
+
+// Collects containers used through a non-computational (reference/dereference) memlet. Such
+// containers are address-taken and must never be replaced by a literal.
+void collect_address_taken(structured_control_flow::ControlFlowNode& node, ContainerSet& blacklist) {
+    if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+        for (auto& edge : block->dataflow().edges()) {
+            if (edge.type() == data_flow::MemletType::Computational) {
+                continue;
+            }
+            if (auto* src = dynamic_cast<const data_flow::AccessNode*>(&edge.src())) {
+                blacklist.insert(src->data());
+            }
+            if (auto* dst = dynamic_cast<const data_flow::AccessNode*>(&edge.dst())) {
+                blacklist.insert(dst->data());
+            }
+        }
+    } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < seq->size(); i++) {
+            collect_address_taken(seq->at(i), blacklist);
+        }
+    } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < if_else->size(); i++) {
+            collect_address_taken(if_else->at(i).first, blacklist);
+        }
+    } else if (auto* while_loop = dynamic_cast<structured_control_flow::While*>(&node)) {
+        collect_address_taken(while_loop->root(), blacklist);
+    } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        collect_address_taken(loop->root(), blacklist);
+    }
+}
+
+// Processes a single block: repoints reads of known constants and records/kills definitions.
+// Returns the set of containers written in this block.
+ContainerSet process_block(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Block& block,
+    Env& env,
+    const ContainerSet& blacklist,
+    bool& applied
+) {
+    auto& dataflow = block.dataflow();
+
+    // Count writes per container (a computational edge into an access node is a write).
+    std::unordered_map<std::string, int> write_count;
+    for (auto& edge : dataflow.edges()) {
+        if (edge.type() != data_flow::MemletType::Computational || edge.dst_conn() != "void") {
+            continue;
+        }
+        if (auto* dst = dynamic_cast<const data_flow::AccessNode*>(&edge.dst())) {
+            write_count[dst->data()]++;
+        }
+    }
+
+    // Phase 1: collect scalar reads of known constants that are not (re)written in this block.
+    std::vector<std::pair<data_flow::Memlet*, ConstVal>> repoints;
+    for (auto& edge : dataflow.edges()) {
+        if (edge.type() != data_flow::MemletType::Computational || edge.dst_conn() == "void") {
+            continue;
+        }
+        auto* src = dynamic_cast<data_flow::AccessNode*>(&edge.src());
+        if (src == nullptr || dynamic_cast<data_flow::ConstantNode*>(src) != nullptr) {
+            continue;
+        }
+        if (!edge.subset().empty()) {
+            continue; // only whole-scalar reads
+        }
+        const std::string& name = src->data();
+        if (blacklist.count(name) != 0 || write_count.count(name) != 0) {
+            continue;
+        }
+        auto it = env.find(name);
+        if (it == env.end()) {
+            continue;
+        }
+        repoints.emplace_back(&edge, it->second);
+    }
+    for (auto& [edge, val] : repoints) {
+        types::Scalar type(val.prim);
+        builder.replace_memlet_src_with_constant(block, *edge, val.data, type);
+        applied = true;
+    }
+
+    // Phase 2: record new constant definitions (before killing overwrites).
+    std::vector<std::pair<std::string, ConstVal>> defs;
+    for (auto* tasklet : dataflow.tasklets()) {
+        if (tasklet->code() != data_flow::TaskletCode::assign) {
+            continue;
+        }
+        // Single constant input
+        const data_flow::Memlet* in_edge = nullptr;
+        int in_count = 0;
+        for (auto& ie : dataflow.in_edges(*tasklet)) {
+            in_edge = &ie;
+            in_count++;
+        }
+        if (in_count != 1 || in_edge == nullptr) {
+            continue;
+        }
+        auto* constant = dynamic_cast<const data_flow::ConstantNode*>(&in_edge->src());
+        if (constant == nullptr || !in_edge->subset().empty()) {
+            continue;
+        }
+        // Single whole-scalar output
+        const data_flow::Memlet* out_edge = nullptr;
+        int out_count = 0;
+        for (auto& oe : dataflow.out_edges(*tasklet)) {
+            out_edge = &oe;
+            out_count++;
+        }
+        if (out_count != 1 || out_edge == nullptr || out_edge->dst_conn() != "void" || !out_edge->subset().empty()) {
+            continue;
+        }
+        auto* dst = dynamic_cast<const data_flow::AccessNode*>(&out_edge->dst());
+        if (dst == nullptr || dynamic_cast<const data_flow::ConstantNode*>(dst) != nullptr) {
+            continue;
+        }
+        const std::string& name = dst->data();
+        if (blacklist.count(name) != 0 || write_count[name] != 1) {
+            continue; // only a single, unambiguous definition qualifies
+        }
+        auto& type = builder.subject().type(name);
+        if (!is_fp_scalar(type)) {
+            continue;
+        }
+        defs.emplace_back(name, ConstVal{constant->data(), static_cast<const types::Scalar&>(type).primitive_type()});
+    }
+
+    // Any write invalidates a previously known constant; the recorded definitions re-establish it.
+    ContainerSet written;
+    for (auto& [name, count] : write_count) {
+        env.erase(name);
+        written.insert(name);
+    }
+    for (auto& [name, val] : defs) {
+        env[name] = val;
+    }
+    return written;
+}
+
+ContainerSet process(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::ControlFlowNode& node,
+    Env& env,
+    const ContainerSet& blacklist,
+    bool& applied
+);
+
+// Threads the environment through a sequence of children in program order.
+ContainerSet process_sequence(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& sequence,
+    Env& env,
+    const ContainerSet& blacklist,
+    bool& applied
+) {
+    ContainerSet written;
+    for (size_t i = 0; i < sequence.size(); i++) {
+        auto child_written = process(builder, sequence.at(i), env, blacklist, applied);
+        written.insert(child_written.begin(), child_written.end());
+    }
+    return written;
+}
+
+ContainerSet process(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::ControlFlowNode& node,
+    Env& env,
+    const ContainerSet& blacklist,
+    bool& applied
+) {
+    if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+        return process_block(builder, *block, env, blacklist, applied);
+    } else if (auto* assignment = dynamic_cast<structured_control_flow::AssignmentBlock*>(&node)) {
+        ContainerSet written;
+        for (auto& entry : assignment->assignments()) {
+            const std::string& name = entry.first->get_name();
+            env.erase(name);
+            written.insert(name);
+        }
+        return written;
+    } else if (auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        return process_sequence(builder, *sequence, env, blacklist, applied);
+    } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+        ContainerSet written;
+        for (size_t i = 0; i < if_else->size(); i++) {
+            Env branch_env = env; // each branch sees the entry state
+            auto branch_written = process_sequence(builder, if_else->at(i).first, branch_env, blacklist, applied);
+            written.insert(branch_written.begin(), branch_written.end());
+        }
+        // A branch may or may not run, so any definition it makes cannot be assumed afterwards.
+        for (auto& name : written) {
+            env.erase(name);
+        }
+        return written;
+    } else if (auto* while_loop = dynamic_cast<structured_control_flow::While*>(&node)) {
+        Env body_env = env; // entry constants still hold at the top of the body
+        auto written = process_sequence(builder, while_loop->root(), body_env, blacklist, applied);
+        for (auto& name : written) {
+            env.erase(name);
+        }
+        return written;
+    } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        Env body_env = env;
+        auto written = process_sequence(builder, loop->root(), body_env, blacklist, applied);
+        for (auto& name : written) {
+            env.erase(name);
+        }
+        return written;
+    } else if (dynamic_cast<structured_control_flow::Return*>(&node) != nullptr ||
+               dynamic_cast<structured_control_flow::Break*>(&node) != nullptr ||
+               dynamic_cast<structured_control_flow::Continue*>(&node) != nullptr) {
+        return {}; // Return / Break / Continue: no scalar writes to track
+    } else {
+        throw InvalidSDFGException("ConstantPropagation: unrecognized structured control flow node type");
+    }
+}
+
+} // namespace
 
 ConstantPropagation::ConstantPropagation() : Pass() {};
 
 std::string ConstantPropagation::name() { return "ConstantPropagation"; };
 
-std::unordered_set<analysis::User*>
-inputs(const std::string& container, data_flow::AccessNode* access_node, analysis::Users& users) {
-    std::unordered_set<analysis::User*> inputs;
-
-    auto& graph = access_node->get_parent();
-    if (graph.in_degree(*access_node) != 1) {
-        return {};
-    }
-    auto& iedge = *graph.in_edges(*access_node).begin();
-
-    auto& src = iedge.src();
-    if (auto tasklet = dynamic_cast<data_flow::Tasklet*>(&src)) {
-        for (auto& iedge : graph.in_edges(*tasklet)) {
-            auto& src_node = static_cast<data_flow::AccessNode&>(iedge.src());
-            if (dynamic_cast<data_flow::ConstantNode*>(&src_node) != nullptr) {
-                continue;
-            }
-
-            inputs.insert(users.get_user(src_node.data(), &src_node, analysis::Use::READ));
-        }
-    } else if (auto access_node = dynamic_cast<data_flow::AccessNode*>(&src)) {
-        if (iedge.type() == data_flow::MemletType::Dereference_Src) {
-            inputs.insert(users.get_user(access_node->data(), access_node, analysis::Use::READ));
-        } else if (iedge.type() == data_flow::MemletType::Reference) {
-            inputs.insert(users.get_user(access_node->data(), access_node, analysis::Use::VIEW));
-        }
-    }
-
-    return inputs;
-}
-
-std::unordered_set<analysis::User*>
-inputs(const std::string& container, structured_control_flow::Transition* transition, analysis::Users& users) {
-    std::unordered_set<analysis::User*> inputs;
-    auto& assign = transition->assignments().at(symbolic::symbol(container));
-    for (auto& sym : symbolic::atoms(assign)) {
-        if (symbolic::eq(sym, symbolic::__nullptr__())) {
-            continue;
-        }
-        inputs.insert(users.get_user(sym->get_name(), transition, analysis::Use::READ));
-    }
-    return inputs;
-}
-
-std::unordered_set<analysis::User*> inputs(analysis::User& user, analysis::Users& users) {
-    if (auto access_node = dynamic_cast<data_flow::AccessNode*>(user.element())) {
-        return inputs(user.container(), access_node, users);
-    } else if (auto transition = dyn_cast<structured_control_flow::Transition*>(user.element())) {
-        return inputs(user.container(), transition, users);
-    } else {
-        return {};
-    }
-}
-
 bool ConstantPropagation::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    bool applied = false;
-
     auto& sdfg = builder.subject();
-    auto& users = analysis_manager.get<analysis::Users>();
-    auto& dominance_analysis = analysis_manager.get<analysis::DominanceAnalysis>();
-    auto& data_dependency_analysis = analysis_manager.get<analysis::DataDependencyAnalysis>();
 
-    // We seek to find two identical definitions of the same container
-    for (auto& name : sdfg.containers()) {
-        std::unordered_set<analysis::User*> defines;
-        if (users.writes(name).size() == 2 && users.moves(name).size() == 0) {
-            for (auto& write : users.writes(name)) {
-                defines.insert(write);
-            }
-        } else if (users.moves(name).size() == 2 && users.writes(name).size() == 0) {
-            for (auto& move : users.moves(name)) {
-                defines.insert(move);
-            }
-        } else {
-            continue;
-        }
-        auto define1 = *defines.begin();
-        auto define2 = *(++defines.begin());
+    ContainerSet blacklist;
+    collect_address_taken(sdfg.root(), blacklist);
 
-        // Criterion: One dominates the other
-        if (!dominance_analysis.dominates(*define1, *define2)) {
-            std::swap(define1, define2);
-        }
-        if (!dominance_analysis.dominates(*define1, *define2)) {
-            continue;
-        }
-
-        // Criterion: Prove identical subsets of definitions
-        auto subsets1 = define1->subsets();
-        auto subsets2 = define2->subsets();
-        if (subsets1.size() != 1 || subsets2.size() != 1) {
-            continue;
-        }
-        if (subsets1.begin()->size() != subsets2.begin()->size()) {
-            continue;
-        }
-        bool identical_subsets = true;
-        for (size_t i = 0; i < subsets1.begin()->size(); i++) {
-            auto dim1 = subsets1.begin()->at(i);
-            auto dim2 = subsets2.begin()->at(i);
-            if (!symbolic::eq(dim1, dim2)) {
-                identical_subsets = false;
-                break;
-            }
-            std::unordered_set<std::string> symbols;
-            for (auto& sym : symbolic::atoms(dim1)) {
-                symbols.insert(sym->get_name());
-            }
-            for (auto& user : users.all_uses_between(*define1, *define2)) {
-                if (user->use() == analysis::Use::READ) {
-                    continue;
-                }
-                if (symbols.find(user->container()) != symbols.end()) {
-                    identical_subsets = false;
-                    break;
-                }
-            }
-        }
-        if (!identical_subsets) {
-            continue;
-        }
-
-        // Criterion: Provide identical rhs/inputs of definitions
-        auto inputs1 = inputs(*define1, users);
-        if (inputs1.empty()) {
-            continue;
-        }
-        auto inputs2 = inputs(*define2, users);
-        if (inputs2.empty()) {
-            continue;
-        }
-        if (inputs1.size() != inputs2.size()) {
-            continue;
-        }
-
-        bool identical_inputs = true;
-        for (auto& input : inputs1) {
-            // Recursion
-            if (input->container() == name) {
-                identical_inputs = false;
-                break;
-            }
-
-            // If input is written, it must happen before define1
-            for (auto& write_user : users.writes(input->container())) {
-                if (!dominance_analysis.dominates(*write_user, *define1)) {
-                    identical_inputs = false;
-                    break;
-                }
-            }
-
-            // If input is moved, it must happen before define1
-            for (auto& move_user : users.moves(input->container())) {
-                if (!dominance_analysis.dominates(*move_user, *define1)) {
-                    identical_inputs = false;
-                    break;
-                }
-            }
-
-            // If input has views, it must be the definitions
-            for (auto& view : users.views(input->container())) {
-                auto& viewed_node = dynamic_cast<data_flow::AccessNode&>(*view->element());
-                auto& graph = viewed_node.get_parent();
-                if (graph.out_degree(viewed_node) != 1) {
-                    continue;
-                }
-                auto& viewing_node = (*graph.out_edges(viewed_node).begin()).dst();
-                if (&viewing_node != define1->element() && &viewing_node != define2->element()) {
-                    identical_inputs = false;
-                }
-            }
-            if (!identical_inputs) {
-                break;
-            }
-
-            // Find identical input in inputs2
-            analysis::User* input2 = nullptr;
-            for (auto& inp : inputs2) {
-                if (input->container() == inp->container()) {
-                    input2 = inp;
-                    break;
-                }
-            }
-            if (input2 == nullptr) {
-                identical_inputs = false;
-                break;
-            }
-
-            // same subsets
-            if (input->subsets().size() != 1 || input2->subsets().size() != 1) {
-                identical_inputs = false;
-                break;
-            }
-
-            auto subset1 = *input->subsets().begin();
-            auto subset2 = *input2->subsets().begin();
-            if (subset1.size() != subset2.size()) {
-                identical_inputs = false;
-                break;
-            }
-            for (size_t i = 0; i < subset1.size(); i++) {
-                auto dim1 = subset1[i];
-                auto dim2 = subset2[i];
-                if (!symbolic::eq(dim1, dim2)) {
-                    identical_inputs = false;
-                    break;
-                }
-                std::unordered_set<std::string> symbols;
-                for (auto& sym : symbolic::atoms(dim1)) {
-                    symbols.insert(sym->get_name());
-                }
-                for (auto& user : users.all_uses_between(*define1, *define2)) {
-                    if (user->use() == analysis::Use::READ) {
-                        continue;
-                    }
-                    if (symbols.find(user->container()) != symbols.end()) {
-                        identical_inputs = false;
-                        break;
-                    }
-                }
-            }
-        }
-        if (!identical_inputs) {
-            continue;
-        }
-
-        // Eliminate the dominated definition
-        auto write = define2->element();
-        if (auto transition = dyn_cast<structured_control_flow::Transition*>(write)) {
-            transition->assignments().erase(symbolic::symbol(name));
-            applied = true;
-        } else if (auto access_node = dynamic_cast<data_flow::AccessNode*>(write)) {
-            auto& graph = access_node->get_parent();
-            auto& block = dyn_cast<structured_control_flow::Block&>(*graph.get_parent());
-            builder.clear_node(block, *access_node);
-            applied = true;
-        }
-    }
-
+    bool applied = false;
+    Env env;
+    process(builder, sdfg.root(), env, blacklist, applied);
     return applied;
 };
 

@@ -13,6 +13,7 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/einsum_node.h"
@@ -1830,6 +1831,48 @@ void PyStructuredSDFGBuilder::add_fill_op(
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::FillNode>(block, debug_info, Y_type.shape());
     builder_.add_computational_memlet(block, *X_access, libnode, "X", {}, X_type, debug_info);
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_arange(
+    const std::string& start,
+    const sdfg::types::Scalar& start_type,
+    const std::string& end,
+    const sdfg::types::Scalar& end_type,
+    const std::string& step,
+    const sdfg::types::Scalar& step_type,
+    const std::string& out,
+    const sdfg::types::Tensor& out_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+
+    sdfg::data_flow::AccessNode* start_access = nullptr;
+    if (builder_.subject().exists(start)) {
+        start_access = &builder_.add_access(block, start, debug_info);
+    } else {
+        start_access = &builder_.add_constant(block, start, start_type, debug_info);
+    }
+
+    sdfg::data_flow::AccessNode* end_access = nullptr;
+    if (builder_.subject().exists(end)) {
+        end_access = &builder_.add_access(block, end, debug_info);
+    } else {
+        end_access = &builder_.add_constant(block, end, end_type, debug_info);
+    }
+
+    sdfg::data_flow::AccessNode* step_access = nullptr;
+    if (builder_.subject().exists(step)) {
+        step_access = &builder_.add_access(block, step, debug_info);
+    } else {
+        step_access = &builder_.add_constant(block, step, step_type, debug_info);
+    }
+
+    auto& out_access = builder_.add_access(block, out, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::ArangeNode>(block, debug_info, out_type.shape());
+    builder_.add_computational_memlet(block, *start_access, libnode, "_start", {}, start_type, debug_info);
+    builder_.add_computational_memlet(block, *end_access, libnode, "_end", {}, end_type, debug_info);
+    builder_.add_computational_memlet(block, *step_access, libnode, "_step", {}, step_type, debug_info);
+    builder_.add_computational_memlet(block, out_access, libnode, "_out", {}, out_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_einsum(

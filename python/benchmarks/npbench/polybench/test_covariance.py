@@ -49,9 +49,9 @@ def test_covariance(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 6,
+                "VECTORIZE": 5,
                 "REDUCE": 1,
-                "MAP": 9,
+                "MAP": 8,
                 "FOR": 1,
                 "SEQUENTIAL": 5,
             }
@@ -60,12 +60,11 @@ def test_covariance(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 2,
+                "VECTORIZE": 3,
                 "REDUCE": 1,
-                "CPU_PARALLEL": 5,
+                "CPU_PARALLEL": 4,
                 "MAP": 6,
                 "SEQUENTIAL": 1,
-                "FOR": 1,
             }
         )
     elif target == "cuda":
