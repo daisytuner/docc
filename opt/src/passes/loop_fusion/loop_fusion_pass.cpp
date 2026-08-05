@@ -357,6 +357,9 @@ bool LoopFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis:
         state.loop_analysis->dump_to_file(std::filesystem::path(*dir) / "loop_infos.post-fusion.json");
     }
 
+    CompileStatistics::add_metric_if_enabled("fused-by-domain", state.fused_by_domain_count);
+    CompileStatistics::add_metric_if_enabled("fused-by-access", state.fused_by_access_count);
+
     return state.total_fused_count();
 }
 
