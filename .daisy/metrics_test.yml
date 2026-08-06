@@ -1,0 +1,104 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+parameters:
+  container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+  timeout: 120
+  partitions:
+    - localRunners
+
+steps:
+  build: |
+    python3.11 -m venv venv
+    . venv/bin/activate
+
+    python -m pip install --upgrade pip
+    pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+    pip install numpy scipy cupy-cuda12x transformers ml_dtypes
+
+    pip install --no-build-isolation -e python/
+    pip install --no-build-isolation -e pytorch/
+
+    pip install -r pytorch/requirements.txt
+    pip uninstall -y torch torchvision
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+    # Warm start
+    export DOCC_DEBUG=dump
+
+    # Compile and cache binaries
+    venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=openmp
+    venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=cuda
+    venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
+
+    venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
+    venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cuda
+    venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
+    venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=cuda --remote-tuning
+
+  run:
+    adi:
+      energy: true
+      measurements: 10
+      control: true
+      env:
+        DOCC_REUSE_BINARIES: 1
+      variants:
+        numpy:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --numpy --size=M --n_runs=1
+          tags: { framework: numpy, device: cpu, model: openmp, precision: double, baseline: true }
+        docc-sequential:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, remote-tuning: true }
+        docc-sequential-prof:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, profiling: true, remote-tuning: true }
+          metrics: [ "flop_fp64", "flop_fp32", "dram_volume", "l2_volume" ]
+        docc-sequential-capture:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential
+          tags: { framework: docc, device: cpu, model: sequential, precision: double, arg-capture: true }
+        docc-omp:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double }
+        docc-omp-prof:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=openmp
+          tags: { framework: docc, device: cpu, model: openmp, precision: double, profiling: true }
+          metrics: [ "flop_fp64", "flop_fp32", "dram_volume", "l2_volume" ]
+        docc-cuda:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double }
+        docc-cuda-prof:
+          command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=cuda
+          tags: { framework: docc, device: gpu, model: cuda, precision: double, profiling: true }
+          metrics: [ "cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls" ]
+    resnet18:
+      energy: true
+      control: true
+      measurements: 3
+      env:
+        DOCC_REUSE_BINARIES: 1
+      variants:
+        torch:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
+          tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
+        torch-cuda:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cuda
+          tags: { framework: torch, device: gpu, model: cuda, precision: float, baseline: true }
+        docc-omp:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
+          tags: { framework: docc, device: cpu, model: openmp, precision: float, remote-tuning: true }
+        docc-omp-prof:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
+          tags: { framework: docc, device: cpu, model: openmp, precision: float, profiling: true, remote-tuning: true }
+          metrics: ["flop_fp64", "flop_fp32", "dram_volume", "l2_volume"]
+        docc-cuda:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=cuda --remote-tuning
+          tags: { framework: docc, device: gpu, model: cuda, precision: float, remote-tuning: true }
+        docc-cuda-prof:
+          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=cuda --remote-tuning
+          tags: { framework: docc, device: gpu, model: cuda, precision: float, profiling: true, remote-tuning: true }
+          metrics: ["cuda:::flop_fp64", "cuda:::flop_fp32", "cuda:::flop_fp16", "cuda:::flop_tensor_fp16", "cuda:::l1_volume", "cuda:::l2_volume", "cuda:::dram_volume", "cuda:::occupancy", "cuda:::stalls"]
