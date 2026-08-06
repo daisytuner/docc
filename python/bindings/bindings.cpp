@@ -15,6 +15,7 @@
 #include "data_flow/py_data_flow_node.h"
 #include "data_flow/py_memlet.h"
 #include "data_flow/py_tasklet.h"
+#include "metrics/py_metrics.h"
 #include "passes/py_passes.h"
 #include "py_structured_sdfg.h"
 #include "sdfg/data_flow/data_flow_node.h"
@@ -108,6 +109,7 @@ PYBIND11_MODULE(_sdfg, m) {
     register_transformations(m);
     register_passes(m);
     register_cutout(m);
+    register_metrics(m);
 
     py::class_<sdfg::passes::rpc::RpcContext>(m, "RpcContext");
 

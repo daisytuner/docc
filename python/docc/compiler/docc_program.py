@@ -4,8 +4,9 @@ from typing import Any, Dict, Optional
 import json
 import os
 import re
+import time
 
-from docc.sdfg import StructuredSDFG, TargetOptions
+from docc.sdfg import StructuredSDFG, TargetOptions, DoccMetrics
 from docc.sdfg._sdfg import (
     _enable_statistics,
     _statistics_enabled_by_env,
@@ -143,7 +144,10 @@ class DoccProgram(ABC):
         capture_args: bool,
         remote_tuning: Optional[bool] = None,
         reuse_sources: bool = False,
+        metrics: Optional[DoccMetrics] = None,
     ) -> str:
+
+        start_time = time.perf_counter()
 
         if not reuse_sources and output_folder:
             if self.debug_dump:
@@ -228,6 +232,13 @@ class DoccProgram(ABC):
 
         self.last_sdfg = sdfg
 
+        compile_end_time = time.perf_counter()
+        sdfg_opt_time = compile_end_time - start_time
+        if metrics is not None:
+            metrics.add_metric(
+                "sdfg_compile_time_ms", round(sdfg_opt_time * 1000), "compile_times"
+            )
+
         custom_compile_fn = get_target_compile_fn(self.target)
         if custom_compile_fn is not None:
             lib_path = custom_compile_fn(
@@ -246,6 +257,12 @@ class DoccProgram(ABC):
                 debug_build=self.debug_build,
                 threads=self.build_thread_count,
                 reuse_sources=reuse_sources,
+            )
+
+        bin_build_time = time.perf_counter() - compile_end_time
+        if metrics is not None:
+            metrics.add_metric(
+                "bin_build_time_ms", round(bin_build_time * 1000), "compile_times"
             )
 
         # Dump statistics after compile
