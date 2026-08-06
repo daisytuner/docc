@@ -36,7 +36,6 @@ steps:
     venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
 
     venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
-    venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cuda
     venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
     venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=cuda --remote-tuning
 
@@ -85,9 +84,6 @@ steps:
         torch:
           command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
           tags: { framework: torch, device: cpu, model: openmp, precision: float, baseline: true }
-        torch-cuda:
-          command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cuda
-          tags: { framework: torch, device: gpu, model: cuda, precision: float, baseline: true }
         docc-omp:
           command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
           tags: { framework: docc, device: cpu, model: openmp, precision: float, remote-tuning: true }
