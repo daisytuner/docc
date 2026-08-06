@@ -169,6 +169,7 @@ class DoccProgram(ABC):
             target_options.target = self.target
             target_options.category = self.category
             target_options.remote_tuning = remote_tuning
+            metrics.add_target_options(target_options)
 
             # Einsum detection
             sdfg.einsum()

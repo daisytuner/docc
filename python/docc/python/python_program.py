@@ -179,9 +179,7 @@ class PythonProgram(DoccProgram):
         metrics = DoccMetrics()
         compile_start_time = time.perf_counter()
         metrics.add_metric("function", self.name, "source")
-        metrics.add_metric("target", self.target, "target")
-        metrics.add_metric("category", self.category, "target")
-        metrics.add_metric("frontend", "python", "source")
+        metrics.add_frontend_source_info("python")
 
         # Resolve options
         instrumentation_mode, capture_args, remote_tuning = (
@@ -286,6 +284,9 @@ class PythonProgram(DoccProgram):
             if reused is not None:
                 if original_output_folder is None:
                     self.cache[mem_cache_key] = reused
+
+                metrics.capture_env_vars()
+                metrics.append_to(output_folder)
                 return reused
 
         # 4. Build SDFG
@@ -330,6 +331,7 @@ class PythonProgram(DoccProgram):
 
         compile_time_ms = round((time.perf_counter() - compile_start_time) * 1000)
         metrics.add_metric("compile_time_ms", compile_time_ms, "compile")
+        metrics.capture_env_vars()
         metrics.append_to(output_folder)
 
         return compiled
