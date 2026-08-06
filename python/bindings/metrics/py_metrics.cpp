@@ -13,6 +13,19 @@ void register_metrics(py::module& m) {
 
     py::class_<DoccMetrics>(m, "DoccMetrics")
         .def(py::init<>())
+        .def("add_target_options", &DoccMetrics::add_target_options, py::arg("target_options"))
+        .def(
+            "add_frontend_source_info",
+            &DoccMetrics::add_frontend_source_info,
+            py::arg("frontend"),
+            "Add generic info on the source of the SDFG and job, including capturing some env vars"
+        )
+        .def(
+            "capture_env_vars",
+            &DoccMetrics::capture_env_vars,
+            "Capture some env vars relevant to docc. For example DOCC_CI, DAISY_CI_RUN_NAME, DAISY_CI_STAGE that help "
+            "in identifying the outputs"
+        )
         .def(
             "add_metric",
             [](DoccMetrics& self, const std::string& key, const py::object& value, const std::string& section) {

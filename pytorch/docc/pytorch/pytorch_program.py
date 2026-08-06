@@ -131,10 +131,8 @@ class PyTorchProgram(DoccProgram):
 
         metrics = DoccMetrics()
         compile_start_time = time.perf_counter()
-        metrics.add_metric("target", self.target, "target")
-        metrics.add_metric("category", self.category, "target")
+        metrics.add_frontend_source_info("torch")
         metrics.add_metric("model_name", self.name, "source")
-        metrics.add_metric("frontend", "torch", "source")
 
         # Resolve options
         instrumentation_mode, capture_args, remote_tuning = (
@@ -293,7 +291,7 @@ class PyTorchProgram(DoccProgram):
 
             parse_sdfg_time = time.perf_counter() - compile_start_time
             metrics.add_metric(
-                "parse_to_sdfg_time_ms", round(parse_sdfg_time * 1000), "compile"
+                "parse_to_sdfg_time_ms", round(parse_sdfg_time * 1000), "compile_times"
             )
 
             sdfg = self._sdfg
@@ -388,9 +386,12 @@ class PyTorchProgram(DoccProgram):
 
         self._compiled = compiled
 
-        # Record compile time in milliseconds, rounded to the nearest integer.
-        compile_time_ms = round((time.perf_counter() - compile_start_time) * 1000)
-        metrics.add_metric("compile_time_ms", compile_time_ms, "compile_times")
+        if not docc_reuse_binaries:
+            # Record compile time in milliseconds, rounded to the nearest integer.
+            compile_time_ms = round((time.perf_counter() - compile_start_time) * 1000)
+            metrics.add_metric("compile_time_ms", compile_time_ms, "compile_times")
+
+        metrics.capture_env_vars()
         metrics.append_to(output_folder_path)
 
         return compiled
