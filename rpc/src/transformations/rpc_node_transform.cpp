@@ -73,9 +73,9 @@ bool RPCNodeTransform::
     );
 
     // Open a session once per SDFG.
-    // if (!this->session_id_.has_value()) {
-    //     this->session_id_ = rpc_context_.start_session();
-    // }
+    if (!this->session_id_.has_value()) {
+        this->session_id_ = rpc_context_.start_session();
+    }
     if (this->session_id_.has_value()) {
         builder.subject().add_metadata("transfer_tuning_session_id", this->session_id_.value());
     }
@@ -85,7 +85,7 @@ bool RPCNodeTransform::
          .category = this->category_,
          .target = this->target_,
          .enable_fusion = this->enable_fusion_,
-	 .normalize = this->normalize_,
+         .normalize = this->normalize_,
          .session_id = this->session_id_},
         rpc_context_
     );
