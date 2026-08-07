@@ -15,7 +15,7 @@ namespace passes {
 namespace normalization {
 
 void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion) {
-    sdfg::passes::CompileStatistics::enter_stage_if_enabled("normalize");
+    CompileStatistics::enter_stage_if_enabled("normalize");
     builder::StructuredSDFGBuilder builder(sdfg);
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -28,31 +28,31 @@ void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion) {
         auto pipeline = stride_minimization();
         pipeline.run(builder, analysis_manager);
 
-        sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
-        sdfg::passes::DeadDataElimination dde;
+        Pipeline dce = Pipeline::dead_code_elimination();
+        DeadDataElimination dde;
 
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
-        sdfg::passes::loop_fusion::LoopFusionPass loop_fusion_pass({.allow_init_hoist = true});
+        loop_fusion::LoopFusionPass loop_fusion_pass({.allow_init_hoist = true});
         loop_fusion_pass.run(builder, analysis_manager);
 
         // Cleanup of artifacts of MapFusion
         dde.run(builder, analysis_manager);
         dce.run(builder, analysis_manager);
-        sdfg::passes::Pipeline block_fusion("BlockFusion");
-        block_fusion.register_pass<sdfg::passes::BlockFusionPass>();
+        Pipeline block_fusion("BlockFusion");
+        block_fusion.register_pass<BlockFusionPass>();
         block_fusion.run(builder, analysis_manager);
 
-        sdfg::passes::RedundantLoadEliminationPass rle;
+        RedundantLoadEliminationPass rle;
         rle.run(builder, analysis_manager);
         dde.run(builder, analysis_manager);
-        sdfg::passes::TaskletFusionPass task_fuse_pass;
+        TaskletFusionPass task_fuse_pass;
         task_fuse_pass.run(builder, analysis_manager);
 
         // Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
         auto map_fusion_hoist = map_fusion(true, false);
         map_fusion_hoist.run(builder, analysis_manager);
     }
-    sdfg::passes::CompileStatistics::exit_stage_if_enabled();
+    CompileStatistics::exit_stage_if_enabled();
 }
 
 } // namespace normalization
