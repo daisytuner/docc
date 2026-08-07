@@ -330,7 +330,7 @@ class PythonProgram(DoccProgram):
             self.cache[mem_cache_key] = compiled
 
         compile_time_ms = round((time.perf_counter() - compile_start_time) * 1000)
-        metrics.add_metric("compile_time_ms", compile_time_ms, "compile")
+        metrics.add_metric("compile_time_ms", compile_time_ms, "compile_times")
         metrics.capture_env_vars()
         metrics.append_to(output_folder)
 
