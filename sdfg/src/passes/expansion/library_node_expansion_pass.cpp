@@ -94,10 +94,7 @@ LibNodeExpansionVisitor::BlockOutcome LibNodeExpansionVisitor::
         auto libnodes = dataflow.nodes() |
                         std::views::transform([](auto& n) { return dynamic_cast<const data_flow::LibraryNode*>(&n); }) |
                         std::views::filter([](auto* n) { return n != nullptr; }) |
-                        std::views::filter([last_element_id](auto* n) {
-                            return n->implementation_type() == data_flow::ImplementationType_NONE &&
-                                   n->element_id() > last_element_id;
-                        });
+                        std::views::filter([last_element_id](auto* n) { return n->element_id() > last_element_id; });
         std::vector<const data_flow::LibraryNode*> sorted_nodes(libnodes.begin(), libnodes.end());
         std::ranges::sort(sorted_nodes, std::less<>{}, [](const auto* n) { return n->element_id(); });
 
