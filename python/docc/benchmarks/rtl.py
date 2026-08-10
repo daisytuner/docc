@@ -26,7 +26,11 @@ Example::
 from __future__ import annotations
 
 import copy
+import ctypes
+import functools
 import json
+import os
+import sys
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -44,6 +48,9 @@ __all__ = [
     "PER_INVOCATION_CAT",
     "AGGREGATED_CAT",
     "STATIC_PREFIX",
+    "reset_instrumentation",
+    "total_stats",
+    "RtlTotalStats",
 ]
 
 PER_INVOCATION_CAT = "region,daisy"
@@ -52,6 +59,145 @@ STATIC_PREFIX = "static:::"
 _RUNTIME_KEY = "runtime"
 
 _SCHEMA_FILENAME = "daisy_trace.schema.json"
+
+
+# --- Runtime control of the instrumentation RTL -----------------------------
+#
+# When the RTL is built shared (DAISY_RTL_SHARED), every artifact in the process
+# links the same libdaisy_rtl, so a single handle controls the one global state.
+# The library ships in the wheel under docc/lib next to this module's package.
+
+_RTL_RESET_SYMBOL = "__daisy_instrumentation_reset_all"
+
+
+def _rtl_lib_names() -> tuple[str, str]:
+    """(exact filename, glob) for the RTL on the current platform."""
+    if sys.platform == "darwin":
+        return "libdaisy_rtl.dylib", "libdaisy_rtl*.dylib"
+    if sys.platform.startswith("win"):
+        return "daisy_rtl.dll", "daisy_rtl*.dll"
+    # Match the plain name and, defensively, any soname-versioned file.
+    return "libdaisy_rtl.so", "libdaisy_rtl.so*"
+
+
+def _candidate_lib_dirs() -> List[Path]:
+    dirs: List[Path] = []
+    # Installed wheel: docc/lib alongside docc/benchmarks/rtl.py.
+    dirs.append(Path(__file__).resolve().parents[1] / "lib")
+    # Editable / namespace installs: <docc root>/lib for each package root.
+    try:
+        import docc  # noqa: PLC0415
+
+        for root in getattr(docc, "__path__", []):
+            dirs.append(Path(root) / "lib")
+    except Exception:
+        pass
+    # De-duplicate while preserving order.
+    seen = set()
+    unique: List[Path] = []
+    for d in dirs:
+        key = str(d)
+        if key not in seen:
+            seen.add(key)
+            unique.append(d)
+    return unique
+
+
+def _find_rtl_lib() -> Optional[Path]:
+    """Locate the packaged shared RTL, or None when statically linked."""
+    override = os.environ.get("DAISY_RTL_LIB")
+    if override:
+        p = Path(override)
+        return p if p.is_file() else None
+
+    exact, pattern = _rtl_lib_names()
+    for d in _candidate_lib_dirs():
+        if not d.is_dir():
+            continue
+        exact_path = d / exact
+        if exact_path.is_file():
+            return exact_path
+        matches = sorted(d.glob(pattern))
+        if matches:
+            return matches[0]
+    return None
+
+
+@functools.lru_cache(maxsize=1)
+def _rtl_lib() -> Optional[ctypes.CDLL]:
+    """Load the shared RTL once; None if it is not a shared build."""
+    path = _find_rtl_lib()
+    if path is None:
+        return None
+    try:
+        return ctypes.CDLL(str(path))
+    except OSError:
+        return None
+
+
+def reset_instrumentation() -> None:
+    """Discard aggregated region stats so only post-reset runs are recorded.
+
+    Harnesses call this after an untimed warmup. With a shared RTL there is one
+    process-global instance, so a single reset covers every artifact; otherwise
+    it falls back to resetting each statically-linked artifact individually.
+    """
+    lib = _rtl_lib()
+    if lib is not None:
+        try:
+            # Subscript access bypasses ctypes' dunder-name guard.
+            reset = lib[_RTL_RESET_SYMBOL]
+        except (AttributeError, KeyError, ValueError):
+            reset = None
+        if reset is not None:
+            reset.restype = None
+            reset.argtypes = []
+            reset()
+            return
+
+    # Static build: no shared instance, reset each loaded artifact.
+    from docc.compiler.compiled_sdfg import reset_all_instrumentation
+
+    reset_all_instrumentation()
+
+
+@dataclass(frozen=True)
+class RtlTotalStats:
+    """Aggregated runtime across all live regions in the shared RTL instance."""
+
+    mean_us: float
+    variance_us2: float
+    #: Minimum invocation count over all regions (0 means some region is empty).
+    count: int
+
+
+def total_stats() -> Optional[RtlTotalStats]:
+    """Live aggregate runtime stats from the shared RTL, or None.
+
+    Returns None when the RTL is statically linked (no queryable shared instance)
+    or when no region has recorded a run yet.
+    """
+    lib = _rtl_lib()
+    if lib is None:
+        return None
+    try:
+        fn = lib["__daisy_instrumentation_total_stats"]
+    except (AttributeError, KeyError, ValueError):
+        return None
+    fn.restype = ctypes.c_bool
+    fn.argtypes = [
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_longlong),
+    ]
+    mean = ctypes.c_double(0.0)
+    variance = ctypes.c_double(0.0)
+    count = ctypes.c_longlong(0)
+    if not fn(ctypes.byref(mean), ctypes.byref(variance), ctypes.byref(count)):
+        return None
+    return RtlTotalStats(
+        mean_us=mean.value, variance_us2=variance.value, count=count.value
+    )
 
 
 def _find_schema() -> Path:

@@ -4,8 +4,37 @@ import numpy as np
 import tempfile
 import json
 import sys
+import subprocess
 
 from docc.python import native
+from docc.benchmarks import Trace
+from docc.benchmarks.rtl import _find_rtl_lib
+
+_requires_linux = pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="requires the shared RTL (DAISY_RTL_SHARED) build",
+)
+
+
+def _run_instrumented(code: str, trace_file: str):
+    """Run `code` in a subprocess with instrumentation enabled (trace flushes at exit)."""
+    fd_script, script_file = tempfile.mkstemp(suffix=".py")
+    os.close(fd_script)
+    with open(script_file, "w") as f:
+        f.write(code)
+
+    env = os.environ.copy()
+    env["DOCC_CI"] = "regions"
+    env["__DAISY_PAPI_VERSION"] = "0x07020000"
+    env["__DAISY_INSTRUMENTATION_FILE"] = trace_file
+    env["__DAISY_INSTRUMENTATION_MODE"] = "aggregate"
+    try:
+        return subprocess.run(
+            [sys.executable, script_file], env=env, capture_output=True, text=True
+        )
+    finally:
+        if os.path.exists(script_file):
+            os.remove(script_file)
 
 
 def test_instrumentation_compile():
@@ -100,3 +129,49 @@ vec_add_env(A, B, C)
             os.remove(trace_file)
         if os.path.exists(script_file):
             os.remove(script_file)
+
+
+_TWO_SDFGS = """
+from docc.python import native
+import numpy as np
+
+
+@native
+def kernel_add(A, B, C):
+    for i in range(A.shape[0]):
+        C[i] = A[i] + B[i]
+
+
+@native
+def kernel_mul(A, B, C):
+    for i in range(A.shape[0]):
+        C[i] = A[i] * B[i]
+
+
+N = 256
+A = np.random.rand(N)
+B = np.random.rand(N)
+C = np.zeros(N)
+kernel_add(A, B, C)
+kernel_mul(A, B, C)
+"""
+
+
+@_requires_linux
+def test_two_sdfgs_contribute_to_trace():
+    assert _find_rtl_lib() is not None
+
+    fd, trace_file = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    try:
+        result = _run_instrumented(_TWO_SDFGS, trace_file)
+        assert result.returncode == 0, result.stderr
+
+        # Both compiled functions feed the one shared RTL instance, so a single
+        # trace holds a region from each SDFG.
+        trace = Trace.load(trace_file, validate_schema=False)
+        functions = {r.function for r in trace.regions}
+        assert {"kernel_add", "kernel_mul"} <= functions, functions
+    finally:
+        if os.path.exists(trace_file):
+            os.remove(trace_file)

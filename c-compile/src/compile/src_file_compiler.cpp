@@ -278,6 +278,9 @@ bool SrcFileCompiler::run_compile_and_link_single(const std::filesystem::path& s
 void SrcFileCompiler::add_link_args(std::stringstream& cmd) const {
     for (auto& ld : this->library_paths_) {
         cmd << "-L " << ld << " ";
+        // Embed an rpath so a shared RTL (DAISY_RTL_SHARED) resolves at runtime
+        // without relying on LD_LIBRARY_PATH; a no-op for static-only dirs.
+        cmd << "-Wl,-rpath," << ld << " ";
     }
     for (auto& option : this->link_options_) {
         cmd << option << " ";
