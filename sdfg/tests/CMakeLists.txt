@@ -69,6 +69,7 @@ set(TEST_FILES
     data_flow/library_nodes/math/tensor/reduce_test.cpp
     data_flow/library_nodes/math/tensor/slice_node_test.cpp
     data_flow/library_nodes/math/tensor/tasklet_node_test.cpp
+    data_flow/library_nodes/math/tensor/upsample_test.cpp
     data_flow/memlet_test.cpp
     data_flow/pointer_metadata_test.cpp
     data_flow/tasklet_test.cpp

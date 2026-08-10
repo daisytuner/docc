@@ -1558,6 +1558,30 @@ void PyStructuredSDFGBuilder::add_pooling(
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
 }
 
+void PyStructuredSDFGBuilder::add_upsample_bilinear2d(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const std::vector<std::string>& input_shape_strs,
+    const std::vector<std::string>& output_shape_strs,
+    bool align_corners,
+    const std::vector<double>& scale_factors,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto input_shape = parse_and_expand(input_shape_strs);
+    auto output_shape = parse_and_expand(output_shape_strs);
+
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::UpsampleBilinear2DNode>(
+        block, debug_info, input_shape, output_shape, align_corners, scale_factors
+    );
+    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+}
+
 void PyStructuredSDFGBuilder::add_cast_op(
     const std::string& A,
     const sdfg::types::Tensor& A_type,

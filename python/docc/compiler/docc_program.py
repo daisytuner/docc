@@ -4,12 +4,13 @@ from typing import Any, Dict, Optional
 import json
 import os
 import re
+import time
 
-from docc.sdfg import StructuredSDFG, TargetOptions
+from docc.sdfg import StructuredSDFG, TargetOptions, DoccMetrics
 from docc.sdfg._sdfg import (
     _enable_statistics,
-    _statistics_enabled_by_env,
-    _statistics_summary,
+    _statistics_mode_by_env,
+    _statistics_report,
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
 from docc.compiler.target_registry import (
@@ -143,7 +144,10 @@ class DoccProgram(ABC):
         capture_args: bool,
         remote_tuning: Optional[bool] = None,
         reuse_sources: bool = False,
+        metrics: Optional[DoccMetrics] = None,
     ) -> str:
+
+        start_time = time.perf_counter()
 
         if not reuse_sources and output_folder:
             if self.debug_dump:
@@ -153,7 +157,8 @@ class DoccProgram(ABC):
                 sdfg.output_dir = output_folder
 
             # Enable statistics if envvar is set
-            if _statistics_enabled_by_env():
+            stats_mode = _statistics_mode_by_env()
+            if stats_mode > 0:
                 _enable_statistics()
 
             sdfg.validate()
@@ -165,6 +170,7 @@ class DoccProgram(ABC):
             target_options.target = self.target
             target_options.category = self.category
             target_options.remote_tuning = remote_tuning
+            metrics.add_target_options(target_options)
 
             # Einsum detection
             sdfg.einsum()
@@ -228,6 +234,13 @@ class DoccProgram(ABC):
 
         self.last_sdfg = sdfg
 
+        compile_end_time = time.perf_counter()
+        sdfg_opt_time = compile_end_time - start_time
+        if metrics is not None:
+            metrics.add_metric(
+                "sdfg_compile_time_ms", round(sdfg_opt_time * 1000), "compile_times"
+            )
+
         custom_compile_fn = get_target_compile_fn(self.target)
         if custom_compile_fn is not None:
             lib_path = custom_compile_fn(
@@ -248,9 +261,15 @@ class DoccProgram(ABC):
                 reuse_sources=reuse_sources,
             )
 
+        bin_build_time = time.perf_counter() - compile_end_time
+        if metrics is not None:
+            metrics.add_metric(
+                "bin_build_time_ms", round(bin_build_time * 1000), "compile_times"
+            )
+
         # Dump statistics after compile
-        if _statistics_enabled_by_env():
-            print(_statistics_summary(), file=sys.stderr)
+        if stats_mode > 0:
+            print(_statistics_report(stats_mode), file=sys.stderr)
 
         # Record the device-residency decision in the persisted (py4.norm) SDFG
         # metadata. It is computed here (not stored in metadata by the pass) and

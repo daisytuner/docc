@@ -129,6 +129,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/slice_node.cpp
     src/data_flow/library_nodes/math/tensor/spatial_tensor_node.cpp
     src/data_flow/library_nodes/math/tensor/tensor_expansion_utils.cpp
+    src/data_flow/library_nodes/math/tensor/upsample_node.cpp
     src/data_flow/library_nodes/math/tensor/tensor_layout.cpp
     src/data_flow/library_nodes/math/tensor/tensor_node.cpp
     src/data_flow/library_nodes/metadata_node.cpp

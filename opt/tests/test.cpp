@@ -43,6 +43,19 @@ void dump_sdfg(const sdfg::StructuredSDFG& sdfg, const std::string& step) {
     }
 }
 
+std::optional<std::filesystem::path> get_test_output_dir() {
+    if (test_output_dir) {
+        auto info = ::testing::UnitTest::GetInstance()->current_test_info();
+        auto suite_name = info->test_suite_name();
+        auto test_name = info->name();
+        auto base_path = test_output_dir.value() / suite_name / test_name;
+        std::filesystem::create_directories(base_path);
+        return base_path;
+    } else {
+        return {};
+    }
+}
+
 void dump_loop_info(const sdfg::analysis::LoopAnalysis& analysis, const std::string& step) {
     if (test_output_dir) {
         auto info = ::testing::UnitTest::GetInstance()->current_test_info();

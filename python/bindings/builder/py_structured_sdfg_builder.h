@@ -540,4 +540,16 @@ public:
         const std::vector<std::string>& dilations,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
+
+    void add_upsample_bilinear2d(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::vector<std::string>& input_shape,
+        const std::vector<std::string>& output_shape,
+        bool align_corners,
+        const std::vector<double>& scale_factors,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
 };

@@ -153,6 +153,7 @@ pybind11::dict PyStructuredSDFG::containers() const {
 void PyStructuredSDFG::validate() { sdfg_->validate(); }
 
 void PyStructuredSDFG::einsum() {
+    sdfg::passes::CompileStatistics::enter_stage_if_enabled("einsum");
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
@@ -171,6 +172,7 @@ void PyStructuredSDFG::einsum() {
     // Convert einsum into blas nodes (best-effort)
     sdfg::passes::EinsumConversionPass einsum_conversion_pass;
     einsum_conversion_pass.run(builder_opt, analysis_manager);
+    sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
 
 void PyStructuredSDFG::expand() {
@@ -184,6 +186,7 @@ void PyStructuredSDFG::expand(const std::string& target, const std::string& cate
 }
 
 void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
+    sdfg::passes::CompileStatistics::enter_stage_if_enabled("expand");
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
@@ -212,10 +215,12 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     // Workaround until built-in targets are supported by the above mechanism
     sdfg::passes::DotExpansionPass dot_expansion_pass;
     dot_expansion_pass.run(builder_opt, analysis_manager);
+    sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
 
 
 void PyStructuredSDFG::simplify() {
+    sdfg::passes::CompileStatistics::enter_stage_if_enabled("simplify");
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
@@ -364,9 +369,11 @@ void PyStructuredSDFG::simplify() {
     // normalize() map-fusion run so loop distribution and fusion do not fight)
     auto map_fusion = sdfg::passes::normalization::map_fusion(false, false);
     map_fusion.run(builder_opt, analysis_manager);
+
+    sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
 
-constexpr bool DEBUG_SDFG_DUMPS = false;
+constexpr bool DEBUG_SDFG_DUMPS = true;
 
 void PyStructuredSDFG::dump_debug(const std::string& type, bool dump_dot, bool dump_json) {
     if constexpr (DEBUG_SDFG_DUMPS) {
@@ -427,6 +434,7 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     schedule(topts);
 }
 void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
+    sdfg::passes::CompileStatistics::enter_stage_if_enabled("schedule");
     if (options.target == "none") {
         return;
     }
@@ -482,9 +490,11 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         sdfg::passes::DeadCFGElimination dead_cfg_elimination;
         dead_cfg_elimination.run(builder, analysis_manager);
     }
+    sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
 
 bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
+    sdfg::passes::CompileStatistics::enter_stage_if_enabled("promote_device_residency");
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
@@ -518,6 +528,7 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
         dead_data_elimination.run(builder, analysis_manager);
     }
 
+    sdfg::passes::CompileStatistics::exit_stage_if_enabled();
     return promoted;
 }
 

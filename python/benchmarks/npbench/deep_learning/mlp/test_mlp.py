@@ -65,19 +65,19 @@ def test_mlp(target):
         verifier = SDFGVerification(
             verification={
                 "REDUCE": 2,
-                "VECTORIZE": 7,
+                "VECTORIZE": 9,
                 "SEQUENTIAL": 5,
-                "MAP": 10,
+                "MAP": 12,
                 "GEMM": 3,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 4,
                 "REDUCE": 2,
-                "CPU_PARALLEL": 5,
-                "MAP": 7,
+                "VECTORIZE": 4,
+                "CPU_PARALLEL": 7,
+                "MAP": 9,
                 "GEMM": 3,
             }
         )

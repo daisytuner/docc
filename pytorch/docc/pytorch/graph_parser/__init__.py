@@ -34,6 +34,7 @@ import docc.pytorch.graph_parser.pooling
 import docc.pytorch.graph_parser.reduction
 import docc.pytorch.graph_parser.reshaping
 import docc.pytorch.graph_parser.tensor
+import docc.pytorch.graph_parser.vision
 
 
 class GraphParser(GraphParserBase):
