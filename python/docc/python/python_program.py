@@ -9,6 +9,7 @@ import hashlib
 import ml_dtypes
 import numpy as np
 from typing import Annotated, get_origin, get_args, Any, Optional
+import time
 
 from docc.sdfg import (
     Scalar,
@@ -20,6 +21,7 @@ from docc.sdfg import (
     Tensor,
     StructuredSDFG,
     StructuredSDFGBuilder,
+    DoccMetrics,
 )
 from docc.compiler.docc_program import DoccProgram
 from docc.compiler.compiled_sdfg import CompiledSDFG
@@ -174,6 +176,11 @@ class PythonProgram(DoccProgram):
     ) -> CompiledSDFG:
         original_output_folder = output_folder
 
+        metrics = DoccMetrics()
+        compile_start_time = time.perf_counter()
+        metrics.add_metric("function", self.name, "source")
+        metrics.add_frontend_source_info("python")
+
         # Resolve options
         instrumentation_mode, capture_args, remote_tuning = (
             self._resolve_compile_options(
@@ -277,6 +284,9 @@ class PythonProgram(DoccProgram):
             if reused is not None:
                 if original_output_folder is None:
                     self.cache[mem_cache_key] = reused
+
+                metrics.capture_env_vars()
+                metrics.append_to(output_folder)
                 return reused
 
         # 4. Build SDFG
@@ -288,7 +298,12 @@ class PythonProgram(DoccProgram):
         )
 
         lib_path = self.sdfg_pipe(
-            sdfg, output_folder, instrumentation_mode, capture_args, remote_tuning
+            sdfg,
+            output_folder,
+            instrumentation_mode,
+            capture_args,
+            remote_tuning,
+            metrics=metrics,
         )
 
         # Persist the return-value layout so a later DOCC_REUSE_BINARIES run can
@@ -313,6 +328,11 @@ class PythonProgram(DoccProgram):
         # Cache if using default output folder
         if original_output_folder is None:
             self.cache[mem_cache_key] = compiled
+
+        compile_time_ms = round((time.perf_counter() - compile_start_time) * 1000)
+        metrics.add_metric("compile_time_ms", compile_time_ms, "compile_times")
+        metrics.capture_env_vars()
+        metrics.append_to(output_folder)
 
         return compiled
 

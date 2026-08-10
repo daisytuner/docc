@@ -14,6 +14,8 @@ set(PYTHON_SOURCES
     bindings/data_flow/py_data_flow_node.cpp
     bindings/data_flow/py_memlet.cpp
     bindings/data_flow/py_tasklet.cpp
+    bindings/metrics/docc_metrics.cpp
+    bindings/metrics/py_metrics.cpp
     bindings/passes/py_passes.cpp
     bindings/py_structured_sdfg.cpp
     bindings/targets/target_mapping.cpp

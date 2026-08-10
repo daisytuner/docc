@@ -13,7 +13,7 @@ import shutil
 from typing import Any
 
 from docc.compiler import DoccProgram, CompiledSDFG
-from docc.sdfg import StructuredSDFG
+from docc.sdfg import StructuredSDFG, DoccMetrics
 
 from docc.pytorch.graph_parser import GraphParser
 
@@ -129,10 +129,10 @@ class PyTorchProgram(DoccProgram):
     ) -> CompiledSDFG:
         original_output_folder: str | None = output_folder
 
-        compile_profile: str = os.environ.get("DOCC_PROFILE_COMPILE", "")
-        if compile_profile:
-            print("Compiling Torch Model>")
-            compile_start_time: float = time.perf_counter()
+        metrics = DoccMetrics()
+        compile_start_time = time.perf_counter()
+        metrics.add_frontend_source_info("torch")
+        metrics.add_metric("model_name", self.name, "source")
 
         # Resolve options
         instrumentation_mode, capture_args, remote_tuning = (
@@ -289,6 +289,11 @@ class PyTorchProgram(DoccProgram):
             if self._sdfg is None:
                 self._sdfg = self.to_sdfg(output_folder_path)
 
+            parse_sdfg_time = time.perf_counter() - compile_start_time
+            metrics.add_metric(
+                "parse_to_sdfg_time_ms", round(parse_sdfg_time * 1000), "compile_times"
+            )
+
             sdfg = self._sdfg
 
             lib_path = self.sdfg_pipe(
@@ -297,6 +302,7 @@ class PyTorchProgram(DoccProgram):
                 instrumentation_mode,
                 capture_args,
                 remote_tuning,
+                metrics=metrics,
             )
 
         # Build shape sources from input info
@@ -380,9 +386,14 @@ class PyTorchProgram(DoccProgram):
 
         self._compiled = compiled
 
-        if compile_profile:
-            docc_compile_time = time.perf_counter() - compile_start_time
-            print(f">DOCC compile done: {docc_compile_time:.4f} s")
+        if not docc_reuse_binaries:
+            # Record compile time in milliseconds, rounded to the nearest integer.
+            compile_time_ms = round((time.perf_counter() - compile_start_time) * 1000)
+            metrics.add_metric("compile_time_ms", compile_time_ms, "compile_times")
+
+        metrics.capture_env_vars()
+        metrics.append_to(output_folder_path)
+
         return compiled
 
     def to_sdfg(self, output_folder: str | None = None) -> StructuredSDFG:

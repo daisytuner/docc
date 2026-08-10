@@ -15,6 +15,7 @@
 #include "data_flow/py_data_flow_node.h"
 #include "data_flow/py_memlet.h"
 #include "data_flow/py_tasklet.h"
+#include "metrics/py_metrics.h"
 #include "passes/py_passes.h"
 #include "py_structured_sdfg.h"
 #include "sdfg/data_flow/data_flow_node.h"
@@ -108,6 +109,7 @@ PYBIND11_MODULE(_sdfg, m) {
     register_transformations(m);
     register_passes(m);
     register_cutout(m);
+    register_metrics(m);
 
     py::class_<sdfg::passes::rpc::RpcContext>(m, "RpcContext");
 
@@ -651,6 +653,19 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_upsample_bilinear2d",
+            &PyStructuredSDFGBuilder::add_upsample_bilinear2d,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("input_shape"),
+            py::arg("output_shape"),
+            py::arg("align_corners"),
+            py::arg("scale_factors"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_cast_op",
             &PyStructuredSDFGBuilder::add_cast_op,
             py::arg("A"),
@@ -1009,9 +1024,7 @@ PYBIND11_MODULE(_sdfg, m) {
     m.def(
         "_enable_statistics",
         []() {
-            sdfg::passes::PassStatistics::instance().enable();
-            sdfg::passes::PipelineStatistics::instance().enable();
-            sdfg::passes::AnalysisStatistics::instance().enable();
+            sdfg::passes::CompileStatistics::enable();
             sdfg::passes::CodegenStatistics::instance().enable();
         },
         "Enable pass, pipeline, and analysis statistics collection"
@@ -1021,13 +1034,23 @@ PYBIND11_MODULE(_sdfg, m) {
         &sdfg::passes::statistics_enabled_by_env,
         "Check if DOCC_STATISTICS envvar is set to 1"
     );
+    m.def("_statistics_mode_by_env", &sdfg::passes::statistics_mode_env, "Return int value of DOCC_STATISTICS env var");
+    m.def(
+        "_statistics_report",
+        [](int mode) {
+            std::string result;
+            result += sdfg::passes::CompileStatistics::instance()
+                          .report(static_cast<sdfg::passes::CompileStatistics::ReportLevel>(mode));
+            result += sdfg::passes::CodegenStatistics::instance().summary();
+            return result;
+        },
+        "Get pass and pipeline statistics summary"
+    );
     m.def(
         "_statistics_summary",
         []() {
             std::string result;
-            result += sdfg::passes::PassStatistics::instance().summary();
-            result += sdfg::passes::PipelineStatistics::instance().summary();
-            result += sdfg::passes::AnalysisStatistics::instance().summary();
+            result += sdfg::passes::CompileStatistics::instance().summary();
             result += sdfg::passes::CodegenStatistics::instance().summary();
             return result;
         },

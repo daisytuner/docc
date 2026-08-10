@@ -25,9 +25,12 @@ class Pipeline : public Pass {
 private:
     std::vector<std::unique_ptr<Pass>> passes_;
     std::string name_;
+    bool debug_logging_ = false;
 
 public:
     Pipeline(const std::string& name);
+
+    void set_debug_logging(bool enable);
 
     virtual std::string name();
 

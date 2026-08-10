@@ -8,30 +8,25 @@
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/statistics.h"
 #include "sdfg/passes/structured_control_flow/block_fusion.h"
+#include "sdfg/visualizer/dot_visualizer.h"
 
 namespace sdfg {
 namespace passes {
 
-Pipeline::Pipeline(const std::string& name)
-    : Pass(), name_(name) {
+Pipeline::Pipeline(const std::string& name) : Pass(), name_(name) {}
 
-      };
+void Pipeline::set_debug_logging(bool enable) { debug_logging_ = enable; }
 
 std::string Pipeline::name() { return this->name_; };
 
 size_t Pipeline::size() const { return this->passes_.size(); };
 
 bool Pipeline::run(builder::SDFGBuilder& builder) {
-    std::chrono::high_resolution_clock::time_point start;
-    if (PipelineStatistics::instance().enabled()) {
-        start = std::chrono::high_resolution_clock::now();
-#ifndef NDEBUG
-        DEBUG_PRINTLN("Started SDFG Pipeline '" << this->name() << "' on '" << builder.subject().name() << "'");
-#endif
-    }
+    CompileStatistics::enter_pipeline_if_enabled(name_);
 
     bool applied = false;
     bool applied_pipeline;
+    uint32_t pipe_iterations = 0;
     do {
         applied_pipeline = false;
         for (auto& pass : this->passes_) {
@@ -42,51 +37,56 @@ bool Pipeline::run(builder::SDFGBuilder& builder) {
             } while (applied_pass);
         }
         applied |= applied_pipeline;
+        ++pipe_iterations;
     } while (applied_pipeline);
 
-    if (PipelineStatistics::instance().enabled()) {
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        PipelineStatistics::instance().add_sdfg_pipeline(this->name(), duration);
-#ifndef NDEBUG
-        DEBUG_PRINTLN("Finished SDFG Pipeline '" << this->name() << "' in " << duration << " ms");
-#endif
-    }
-
+    CompileStatistics::add_metric_if_enabled("pipeline_iterations", pipe_iterations);
+    CompileStatistics::exit_pipeline_if_enabled();
     return applied;
 };
 
 bool Pipeline::run(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    std::chrono::high_resolution_clock::time_point start;
-    if (PipelineStatistics::instance().enabled()) {
-        start = std::chrono::high_resolution_clock::now();
-#ifndef NDEBUG
-        DEBUG_PRINTLN("Started Structured SDFG Pipeline '" << this->name() << "' on '" << builder.subject().name() << "'");
-#endif
+    CompileStatistics::enter_pipeline_if_enabled(name_);
+
+    static uint32_t runs = 0;
+    auto dir = builder.subject().metadata_if_exists("output_dir");
+    std::optional<std::filesystem::path> output_dir;
+    if (dir) {
+        std::filesystem::path p = *dir;
+        output_dir = p / ("pipeline_" + this->name_ + "_" + std::to_string(runs));
     }
 
     bool applied = false;
     bool applied_pipeline;
+    uint32_t pipe_iterations = 0;
     do {
         applied_pipeline = false;
+        uint32_t pass_idx = 0;
         for (auto& pass : this->passes_) {
             bool applied_pass = false;
+            uint32_t pass_iterations = 0;
             do {
+                if (debug_logging_) {
+                    if (output_dir.has_value())
+                        visualizer::DotVisualizer::writeToFile(
+                            builder.subject(),
+                            output_dir.value() /
+                                ("pipe_" + std::to_string(pass_iterations) + "_" + std::to_string(pass_idx) + "_" +
+                                 pass->name() + "_" + std::to_string(pass_iterations) + ".sdfg.dot")
+                        );
+                }
                 applied_pass = pass->run(builder, analysis_manager);
                 applied_pipeline |= applied_pass;
+                ++pass_iterations;
             } while (applied_pass);
+            ++pass_idx;
         }
         applied |= applied_pipeline;
+        ++pipe_iterations;
     } while (applied_pipeline);
+    CompileStatistics::add_metric_if_enabled("pipeline_iterations", pipe_iterations);
 
-    if (PipelineStatistics::instance().enabled()) {
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        PipelineStatistics::instance().add_structured_sdfg_pipeline(this->name(), duration);
-#ifndef NDEBUG
-        DEBUG_PRINTLN("Finished Structured SDFG Pipeline '" << this->name() << "' in " << duration << " ms");
-#endif
-    }
+    CompileStatistics::exit_pipeline_if_enabled();
 
     return applied;
 };

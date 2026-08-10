@@ -1,7 +1,5 @@
 #pragma once
 
-#include <chrono>
-
 #include "sdfg/passes/statistics.h"
 #include "sdfg/structured_sdfg.h"
 
@@ -37,6 +35,8 @@ private:
 
     std::unordered_map<std::type_index, std::unique_ptr<Analysis>> cache_;
 
+    static constexpr const char* STATS_SCOPE = "AnalysisMgr";
+
 public:
     AnalysisManager(StructuredSDFG& sdfg);
     AnalysisManager(StructuredSDFG& sdfg, const symbolic::Assumptions& additional_assumptions);
@@ -55,19 +55,19 @@ public:
         }
 
         // Run a new analysis
-        std::chrono::high_resolution_clock::time_point start;
-        if (passes::AnalysisStatistics::instance().enabled()) {
-            start = std::chrono::high_resolution_clock::now();
-        }
-
         cache_[type] = std::make_unique<T>(this->sdfg_);
         cache_[type]->additional_assumptions_ = this->additional_assumptions_;
+
+        passes::CompileStatistics* stats = nullptr;
+        if (passes::CompileStatistics::enabled()) {
+            stats = &passes::CompileStatistics::instance();
+            stats->enter_scope(cache_[type]->name(), STATS_SCOPE);
+        }
+
         cache_[type]->run(*this);
 
-        if (passes::AnalysisStatistics::instance().enabled()) {
-            auto end = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-            passes::AnalysisStatistics::instance().add_analysis(cache_[type]->name(), duration);
+        if (stats) {
+            stats->exit_scope();
         }
 
         return *static_cast<T*>(cache_[type].get());

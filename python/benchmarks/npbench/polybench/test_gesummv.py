@@ -55,11 +55,21 @@ def test_gesummv(target):
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={"GEMM": 2, "CUDA": 5, "MAP": 5, "CUDAOffloading": 6},
+            verification={
+                "GEMM": 2,
+                "CUDA": 5,
+                "MAP": 5,
+                "CUDAOffloading": 6,
+            },
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={"GEMM": 2, "ROCM": 5, "MAP": 5, "ROCMOffloading": 6},
+            verification={
+                "GEMM": 2,
+                "ROCM": 5,
+                "MAP": 5,
+                "ROCMOffloading": 6,
+            },
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
