@@ -1,27 +1,10 @@
 import ctypes
 import re
-import time
 import warnings
-import weakref
 from docc.sdfg import Scalar, Array, Pointer, Structure, PrimitiveType
 
 import numpy as np
 import ml_dtypes
-
-
-# Every loaded artifact statically links its own instrumentation RTL singleton,
-# so a process-wide reset must reach each live artifact individually.
-_LIVE_ARTIFACTS: "weakref.WeakSet" = weakref.WeakSet()
-
-
-def reset_all_instrumentation() -> None:
-    """Discard aggregated region stats in every loaded artifact.
-
-    Frontend-agnostic entry point: harnesses call this after an untimed warmup
-    so recorded region counts/durations reflect only the measured runs.
-    """
-    for artifact in list(_LIVE_ARTIFACTS):
-        artifact.reset_instrumentation()
 
 
 class DoccPerformanceWarning(UserWarning):
@@ -299,9 +282,6 @@ class CompiledSDFG:
 
         # Pre-compute argument classification for fast __call__
         self._precompute_arg_metadata()
-
-        # Register for process-wide instrumentation reset (see reset_all_instrumentation).
-        _LIVE_ARTIFACTS.add(self)
 
     def reset_instrumentation(self) -> None:
         """Discard aggregated region stats collected so far (e.g. a warmup run).

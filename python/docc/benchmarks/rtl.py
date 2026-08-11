@@ -155,11 +155,6 @@ def reset_instrumentation() -> None:
             reset()
             return
 
-    # Static build: no shared instance, reset each loaded artifact.
-    from docc.compiler.compiled_sdfg import reset_all_instrumentation
-
-    reset_all_instrumentation()
-
 
 @dataclass(frozen=True)
 class RtlTotalStats:
