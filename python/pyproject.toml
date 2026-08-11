@@ -51,7 +51,6 @@ cmake.source-dir = ".."
 install.components = ["docc_python", "compile-runtime"]
 cmake.define.PARENT_PROJECT_INSTALL_PREFIX = "docc/"
 cmake.define.PYTHON_BUILD_FRONTEND = "ON"
-cmake.define.DAISY_RTL_SHARED = "ON"
 cmake.define.SDFG_BUILD_TESTS = "OFF"
 cmake.define.BUILD_TESTS = "OFF"
 cmake.define.BUILD_BENCHMARKS = "OFF"

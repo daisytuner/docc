@@ -63,9 +63,7 @@ _SCHEMA_FILENAME = "daisy_trace.schema.json"
 
 # --- Runtime control of the instrumentation RTL -----------------------------
 #
-# When the RTL is built shared (DAISY_RTL_SHARED), every artifact in the process
-# links the same libdaisy_rtl, so a single handle controls the one global state.
-# The library ships in the wheel under docc/lib next to this module's package.
+# libdaisy_rtl is now linked as dynamic lib, so it defaults to shared global state per process.
 
 _RTL_RESET_SYMBOL = "__daisy_instrumentation_reset_all"
 

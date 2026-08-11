@@ -195,7 +195,6 @@ jobs:
             -DBUILD_BENCHMARKS:BOOL=OFF \
             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
             -DPYTHON_BUILD_FRONTEND=ON \
-            -DDAISY_RTL_SHARED=ON \
             -Dpybind11_DIR=$(python -c "import pybind11; print(pybind11.get_cmake_dir())") \
             -DMLIR_BUILD_FRONTEND=ON \
             -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \

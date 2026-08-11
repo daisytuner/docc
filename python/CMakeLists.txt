@@ -37,23 +37,6 @@ add_custom_command(TARGET sdfg-py POST_BUILD
         COMMENT "Creating symlink to docc.sdfg._sdfg in src dir"
 )
 
-# Mirror the shared RTL into the source tree (docc/lib) so editable / in-build
-# test runs discover it via docc.benchmarks.rtl._find_rtl_lib without a wheel
-# install. A custom target is used because daisy_rtl lives in another directory.
-# The symlink resolves to the same build artifact the compiled SDFGs load via
-# their rpath, so python and the artifacts share one RTL instance.
-if(DAISY_RTL_SHARED)
-    add_custom_target(docc_link_rtl ALL
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/docc/lib"
-        COMMAND ${CMAKE_COMMAND} -E create_symlink
-            "$<TARGET_FILE:daisy_rtl>"
-            "${CMAKE_CURRENT_SOURCE_DIR}/docc/lib/$<TARGET_FILE_NAME:daisy_rtl>"
-        COMMENT "Linking daisy_rtl into docc/lib for python discovery"
-    )
-    add_dependencies(docc_link_rtl daisy_rtl)
-endif()
-
 target_include_directories(sdfg-py
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/bindings>

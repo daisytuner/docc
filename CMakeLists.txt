@@ -73,16 +73,6 @@ endif()
 add_subdirectory(sdfg)
 add_subdirectory(opt)
 add_subdirectory(rpc)
-
-# The python/mlir frontends need a single shared RTL instance per process so the
-# runtime bindings can reset/query it (see rtl/CMakeLists.txt). Decide the RTL
-# linkage before the rtl subdirectory is configured below.
-option(PYTHON_BUILD_FRONTEND "Build Python frontend" OFF)
-option(MLIR_BUILD_FRONTEND "Build MLIR frontend" OFF)
-if(PYTHON_BUILD_FRONTEND OR MLIR_BUILD_FRONTEND)
-    set(DAISY_RTL_SHARED ON CACHE BOOL "Build the daisy RTL as a shared library" FORCE)
-endif()
-
 add_subdirectory(rtl)
 add_subdirectory(c-compile)
 add_subdirectory(arg-capture-io)
@@ -94,10 +84,12 @@ if(LLVM_BUILD_FRONTEND)
     add_subdirectory(llvm)
 endif()
 
+option(PYTHON_BUILD_FRONTEND "Build Python frontend" OFF)
 if(PYTHON_BUILD_FRONTEND)
     add_subdirectory(python)
 endif()
 
+option(MLIR_BUILD_FRONTEND "Build MLIR frontend" OFF)
 if(MLIR_BUILD_FRONTEND)
     add_subdirectory(mlir)
 endif()

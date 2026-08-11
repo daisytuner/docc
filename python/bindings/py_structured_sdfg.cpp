@@ -598,7 +598,6 @@ std::string PyStructuredSDFG::compile(
         .add_compile_option("-std=c++20")
         .add_link_option("-shared")
         .add_link_option("-ldaisy_rtl")
-        .add_link_option("-larg_capture_io")
         .add_link_option("-lm")
         .add_link_option("-lstdc++");
 
