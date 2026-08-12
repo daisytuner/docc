@@ -49,6 +49,7 @@
 #include <sdfg/passes/statistics.h>
 
 #include "docc/target/docc_target.h"
+#include "docc/util/docc_paths.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
 #ifdef DOCC_HAS_TARGET_ET
@@ -445,6 +446,18 @@ PYBIND11_MODULE(_sdfg, m) {
             py::return_value_policy::reference
         )
         .def("end_map", &PyStructuredSDFGBuilder::end_map)
+        .def(
+            "begin_reduce",
+            &PyStructuredSDFGBuilder::begin_reduce,
+            py::arg("var"),
+            py::arg("start"),
+            py::arg("end"),
+            py::arg("step"),
+            py::arg("reductions"),
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
+        )
+        .def("end_reduce", &PyStructuredSDFGBuilder::end_reduce)
         .def(
             "add_assignments",
             &PyStructuredSDFGBuilder::add_assignments,
@@ -1033,5 +1046,22 @@ PYBIND11_MODULE(_sdfg, m) {
             return result;
         },
         "Get pass and pipeline statistics summary"
+    );
+
+    // Runtime library search paths, resolved the same way the native compiler
+    // driver resolves them (DefaultDoccPaths reconstructed from this extension
+    // module's on-disk location). Used by the Python RTL loader to locate
+    // libdaisy_rtl without guessing directory layouts.
+    m.def(
+        "_default_library_paths",
+        []() {
+            auto paths = docc::util::DefaultDoccPaths::from_lib_location(docc::util::find_lib_location());
+            std::vector<std::string> result;
+            for (const auto& p : paths->get_default_library_paths()) {
+                result.push_back(p.string());
+            }
+            return result;
+        },
+        "Default runtime library search paths, matching the native compiler driver"
     );
 }

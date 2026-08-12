@@ -29,7 +29,7 @@ symbolic::Expression find_nested_gpu_blocksize(
         bool foundY = false;
         bool foundZ = false;
         for (auto& loop : path) {
-            if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
+            if (auto map = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
                 if (map->schedule_type().value() == ScheduleT::value()) {
                     auto dim = ScheduleT::dimension(map->schedule_type());
                     if (dim == GPUDimension::X) {
@@ -55,7 +55,7 @@ symbolic::Expression find_nested_gpu_blocksize(
 
     // Find block size for the requested dimension
     for (auto loop : loops) {
-        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
             if (map->schedule_type().value() != ScheduleT::value() &&
                 map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value()) {
                 throw InvalidSDFGException("Nested map in GPU kernel not GPU or Sequential");
@@ -84,7 +84,7 @@ symbolic::Expression find_nested_gpu_iterations(
     symbolic::Expression max_num_iterations = symbolic::one();
 
     for (auto loop : loops) {
-        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
             if (map->schedule_type().value() != ScheduleT::value() &&
                 map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value()) {
                 throw InvalidSDFGException("Nested map in GPU kernel not GPU or Sequential");
@@ -165,15 +165,15 @@ get_gpu_maps(structured_control_flow::Map& node, analysis::AnalysisManager& anal
     return maps;
 }
 
-bool nested_parallelization_replicates_accumulation(
-    structured_control_flow::Map& loop, analysis::AnalysisManager& analysis_manager
+bool nested_parallelization_is_unsafe(
+    structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager
 ) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
     // The outermost enclosing GPU map is the kernel scope. Everything below it is
     // folded into a single flattened launch, so adding a dimension for `loop`
-    // replicates its siblings (and the siblings of any ancestor up to this map)
-    // across the new dimension's threads.
+    // distributes its iterations across the new dimension's threads and replicates
+    // its siblings (and the siblings of any ancestor up to this map) across them.
     auto is_parallelized = [](structured_control_flow::Map* map) {
         return map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value();
     };
@@ -195,28 +195,25 @@ bool nested_parallelization_replicates_accumulation(
     auto& users = analysis_manager.get<analysis::Users>();
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
     // Containers whose entire lifetime is confined to the kernel are privatized per
-    // thread (registers/stack, per-thread allocation), so a read-modify-write on one
-    // races nothing. Only an accumulation on a container that escapes the kernel
-    // (function argument/external or a transient living outside) is a hazard. Loop
-    // induction variables are locals by definition, so this subsumes loop-control
-    // bookkeeping without any special-casing.
+    // thread (registers/stack, per-thread allocation), so they race nothing. Only a
+    // container that escapes the kernel (function argument/external or a transient
+    // living outside, per ArgumentsAnalysis) is a hazard. Loop induction variables
+    // are locals by definition, so this subsumes loop-control bookkeeping.
     const auto& locals = arguments_analysis.locals(analysis_manager, *outermost);
     auto is_local = [&locals](const std::string& container) { return locals.count(container) != 0; };
 
-    // A subtree performs an unsafe accumulation if it reads and writes the same
-    // non-local container (e.g. `acc[i] += x`). A plain store is idempotent under
-    // replication and therefore allowed.
-    auto accumulates_on_shared = [&](structured_control_flow::ControlFlowNode& node) {
+    // Collect the container reads and writes of a subtree. Views alias memory and
+    // are treated conservatively as both a read and a write.
+    auto collect = [&](structured_control_flow::ControlFlowNode& node,
+                       std::unordered_set<std::string>& writes,
+                       std::unordered_set<std::string>& reads) {
         analysis::UsersView view(users, node);
-        std::unordered_set<std::string> writes;
-        std::unordered_set<std::string> reads;
         for (auto* u : view.writes()) {
             writes.insert(u->container());
         }
         for (auto* u : view.moves()) {
             writes.insert(u->container());
         }
-        // Views alias memory; treat conservatively as both a read and a write.
         for (auto* u : view.views()) {
             writes.insert(u->container());
             reads.insert(u->container());
@@ -224,6 +221,19 @@ bool nested_parallelization_replicates_accumulation(
         for (auto* u : view.reads()) {
             reads.insert(u->container());
         }
+    };
+
+    // `loop`'s writes vary across the new dimension (its iterations are distributed),
+    // so any replicated sibling that touches one of these shared containers races.
+    std::unordered_set<std::string> loop_writes;
+    std::unordered_set<std::string> loop_reads;
+    collect(loop, loop_writes, loop_reads);
+
+    // A subtree performs an unsafe self-accumulation if it reads and writes the same
+    // non-local container (e.g. `acc[i] += x`). A plain store is idempotent under
+    // replication and therefore allowed.
+    auto accumulates_on_shared = [&](const std::unordered_set<std::string>& writes,
+                                     const std::unordered_set<std::string>& reads) {
         for (const auto& container : writes) {
             if (reads.count(container) != 0 && !is_local(container)) {
                 return true;
@@ -246,14 +256,35 @@ bool nested_parallelization_replicates_accumulation(
             if (&sibling == node) {
                 continue;
             }
-            // A sibling that is itself a GPU map is already parallelized: codegen maps
-            // it onto its own threads, so its accumulation is not replicated.
+
+            std::unordered_set<std::string> sibling_writes;
+            std::unordered_set<std::string> sibling_reads;
+            collect(sibling, sibling_writes, sibling_reads);
+
+            // Hazard 1 (producer/consumer across the fold): a shared container that
+            // `loop` writes is read or written by a replicated sibling. `loop`'s
+            // writes vary across the new dimension, so the sibling observes another
+            // thread's incomplete data without synchronization. This is the reduce
+            // accumulator -> consumer race (softmax: reduce writes acc[i], a sibling
+            // divides by acc[i]). Applies even if the sibling is itself a GPU map.
+            for (const auto& container : loop_writes) {
+                if (is_local(container)) {
+                    continue;
+                }
+                if (sibling_writes.count(container) != 0 || sibling_reads.count(container) != 0) {
+                    return true;
+                }
+            }
+
+            // Hazard 2 (replicated self-accumulation): a sibling read-modify-writes a
+            // shared container. A sibling that is itself a GPU map is exempt: codegen
+            // maps it onto its own threads instead of replicating it.
             if (auto* sibling_map = dyn_cast<structured_control_flow::Map*>(&sibling)) {
                 if (is_parallelized(sibling_map)) {
                     continue;
                 }
             }
-            if (accumulates_on_shared(sibling)) {
+            if (accumulates_on_shared(sibling_writes, sibling_reads)) {
                 return true;
             }
         }

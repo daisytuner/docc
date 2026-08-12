@@ -59,11 +59,7 @@ bool CUDAScheduler::can_apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    auto* map = dyn_cast<structured_control_flow::Map*>(&loop);
-    if (!map) {
-        return false;
-    }
-    cuda::CUDATransform cuda_transform(*map, 32, offload_unknown_sizes);
+    cuda::CUDATransform cuda_transform(loop, 32, offload_unknown_sizes);
     return cuda_transform.can_be_applied(builder, analysis_manager);
 }
 
@@ -73,11 +69,10 @@ void CUDAScheduler::apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    auto* map = dyn_cast<structured_control_flow::Map*>(&loop);
     if (recorder_ != nullptr) {
-        recorder_->apply<cuda::CUDATransform>(builder, analysis_manager, false, *map, 32, offload_unknown_sizes);
+        recorder_->apply<cuda::CUDATransform>(builder, analysis_manager, false, loop, 32, offload_unknown_sizes);
     } else {
-        cuda::CUDATransform cuda_transform(*map, 32, offload_unknown_sizes);
+        cuda::CUDATransform cuda_transform(loop, 32, offload_unknown_sizes);
         cuda_transform.apply(builder, analysis_manager);
     }
 }
@@ -124,9 +119,13 @@ void CUDAScheduler::post_schedule(
     std::vector<structured_control_flow::StructuredLoop*>& scheduled_loops
 ) {
     std::vector<structured_control_flow::Map*> gpu_maps;
+    std::vector<structured_control_flow::StructuredLoop*> gpu_loops;
     for (auto* loop : scheduled_loops) {
-        if (auto* map = dyn_cast<structured_control_flow::Map*>(loop)) {
-            gpu_maps.push_back(map);
+        if (auto* sloop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            gpu_loops.push_back(sloop);
+            if (auto* map = dyn_cast<structured_control_flow::Map*>(loop)) {
+                gpu_maps.push_back(map);
+            }
         }
     }
 
@@ -134,11 +133,15 @@ void CUDAScheduler::post_schedule(
         GPULoopReorderingPass reordering_pass(gpu_maps);
         reordering_pass.run(builder, analysis_manager);
         analysis_manager.invalidate_all();
+    }
 
-        GPUNestedParallelizationPass nested_pass(gpu_maps, GPUTarget::CUDA, 8);
+    if (!gpu_loops.empty()) {
+        GPUNestedParallelizationPass nested_pass(gpu_loops, GPUTarget::CUDA, 8);
         nested_pass.run(builder, analysis_manager);
         analysis_manager.invalidate_all();
+    }
 
+    if (!gpu_maps.empty()) {
         GPUTilingPass tiling_pass(gpu_maps, 8);
         tiling_pass.run(builder, analysis_manager);
         analysis_manager.invalidate_all();

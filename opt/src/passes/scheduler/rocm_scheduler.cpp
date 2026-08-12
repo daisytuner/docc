@@ -58,12 +58,8 @@ bool ROCMScheduler::can_apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    auto* map = dyn_cast<structured_control_flow::Map*>(&loop);
-    if (!map) {
-        return false;
-    }
     // 64 is ROCM default wavefront size
-    rocm::ROCMTransform rocm_transform(*map, 64, offload_unknown_sizes);
+    rocm::ROCMTransform rocm_transform(loop, 64, offload_unknown_sizes);
     return rocm_transform.can_be_applied(builder, analysis_manager);
 }
 
@@ -73,12 +69,11 @@ void ROCMScheduler::apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    auto* map = dyn_cast<structured_control_flow::Map*>(&loop);
     // 64 is ROCM default wavefront size
     if (recorder_ != nullptr) {
-        recorder_->apply<rocm::ROCMTransform>(builder, analysis_manager, false, *map, 64, offload_unknown_sizes);
+        recorder_->apply<rocm::ROCMTransform>(builder, analysis_manager, false, loop, 64, offload_unknown_sizes);
     } else {
-        rocm::ROCMTransform rocm_transform(*map, 64, offload_unknown_sizes);
+        rocm::ROCMTransform rocm_transform(loop, 64, offload_unknown_sizes);
         rocm_transform.apply(builder, analysis_manager);
     }
 }
@@ -125,27 +120,33 @@ void ROCMScheduler::post_schedule(
     std::vector<structured_control_flow::StructuredLoop*>& scheduled_loops
 ) {
     std::vector<structured_control_flow::Map*> gpu_maps;
+    std::vector<structured_control_flow::StructuredLoop*> gpu_loops;
     for (auto* loop : scheduled_loops) {
-        if (auto* map = dyn_cast<structured_control_flow::Map*>(loop)) {
-            gpu_maps.push_back(map);
+        if (auto* sloop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            gpu_loops.push_back(sloop);
+            if (auto* map = dyn_cast<structured_control_flow::Map*>(loop)) {
+                gpu_maps.push_back(map);
+            }
         }
     }
 
-    if (gpu_maps.empty()) {
-        return;
+    if (!gpu_maps.empty()) {
+        GPULoopReorderingPass reordering_pass(gpu_maps);
+        reordering_pass.run(builder, analysis_manager);
+        analysis_manager.invalidate_all();
     }
 
-    GPULoopReorderingPass reordering_pass(gpu_maps);
-    reordering_pass.run(builder, analysis_manager);
-    analysis_manager.invalidate_all();
+    if (!gpu_loops.empty()) {
+        GPUNestedParallelizationPass nested_pass(gpu_loops, GPUTarget::ROCM, 8);
+        nested_pass.run(builder, analysis_manager);
+        analysis_manager.invalidate_all();
+    }
 
-    GPUNestedParallelizationPass nested_pass(gpu_maps, GPUTarget::ROCM, 8);
-    nested_pass.run(builder, analysis_manager);
-    analysis_manager.invalidate_all();
-
-    GPUTilingPass tiling_pass(gpu_maps, 8);
-    tiling_pass.run(builder, analysis_manager);
-    analysis_manager.invalidate_all();
+    if (!gpu_maps.empty()) {
+        GPUTilingPass tiling_pass(gpu_maps, 8);
+        tiling_pass.run(builder, analysis_manager);
+        analysis_manager.invalidate_all();
+    }
 
     rocm::RocmLibraryNodeTransferExtractionPass transfer_extraction_pass;
     transfer_extraction_pass.run(builder, analysis_manager);

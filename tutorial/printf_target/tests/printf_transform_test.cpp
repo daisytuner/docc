@@ -108,8 +108,9 @@ TEST(PrintfTransformTest, SerializationTest) {
     EXPECT_NO_THROW(transformation.to_json(j));
 
     // Verify JSON structure
-    EXPECT_EQ(j["type"], "PrintfTransform");
-    EXPECT_EQ(j["map_element_id"], map_id);
+    EXPECT_EQ(j["transformation_type"], "PrintfTransform");
+    EXPECT_EQ(j["subgraph"]["0"]["element_id"], map_id);
+    EXPECT_EQ(j["parameters"]["allow_dynamic_sizes"], false);
 }
 
 TEST(PrintfTransformTest, DeserializationTest) {
@@ -134,9 +135,13 @@ TEST(PrintfTransformTest, DeserializationTest) {
 
     // Create JSON for deserialization
     nlohmann::json j;
-    j["type"] = "PrintfTransform";
-    j["map_element_id"] = map_id;
-    j["allow_dynamic_sizes"] = false;
+    j["transformation_type"] = "PrintfTransform";
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    j["subgraph"]["0"]["element_id"] = map_id;
+    j["subgraph"]["0"]["type"] = "map";
+    j["parameters"] = nlohmann::json::object();
+    j["parameters"]["allow_dynamic_sizes"] = false;
 
     // Test from_json
     PrintfTransform deserialized = PrintfTransform::from_json(builder, j);

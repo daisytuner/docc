@@ -464,6 +464,7 @@ int final_link_pass(
     auto target_lib_paths = docc_paths.target_lib_paths();
     for (auto& libdir : target_lib_paths) {
         final_link_cmd_parts.push_back("-L'" + libdir.string() + "'");
+        final_link_cmd_parts.push_back("-rpath='" + libdir.string() + "'");
     }
 
     // replace modified modules by temporary files

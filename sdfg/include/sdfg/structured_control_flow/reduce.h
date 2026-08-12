@@ -113,6 +113,10 @@ public:
 
     void validate(const Function& function) const override;
 
+    void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
+
+    void replace(const symbolic::ExpressionMapping& replacements) override;
+
     /**
      * @brief Get the reductions carried by this loop
      *
@@ -120,6 +124,15 @@ public:
      * accumulator container it combines into. There is at least one entry.
      */
     const std::vector<ReductionInfo>& reductions() const;
+
+    /**
+     * @brief Retarget any reduction whose accumulator is @p old_name to @p new_name.
+     *
+     * The accumulator container name is denormalized here; passes that rewrite
+     * accumulator access nodes directly (e.g. reference propagation) use this to
+     * keep the ReductionInfo consistent with the dataflow graph.
+     */
+    void replace_reduction_container(const std::string& old_name, const std::string& new_name);
 };
 
 } // namespace structured_control_flow

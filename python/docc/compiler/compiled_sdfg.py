@@ -1,6 +1,5 @@
 import ctypes
 import re
-import time
 import warnings
 from docc.sdfg import Scalar, Array, Pointer, Structure, PrimitiveType
 
@@ -283,6 +282,18 @@ class CompiledSDFG:
 
         # Pre-compute argument classification for fast __call__
         self._precompute_arg_metadata()
+
+    def reset_instrumentation(self) -> None:
+        """Discard aggregated region stats collected so far (e.g. a warmup run).
+
+        The instrumentation RTL aggregates every region invocation regardless of
+        any external measurement window, so callers reset it before the timed
+        region to keep region counts aligned with the measured runs.
+        """
+        # getattr avoids Python name-mangling of the dunder-prefixed symbol.
+        reset = getattr(self.lib, "__daisy_instrumentation_reset_all", None)
+        if reset is not None:
+            reset()
 
     def _precompute_arg_metadata(self):
         """Pre-compute argument metadata for fast __call__ dispatch."""

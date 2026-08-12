@@ -2,6 +2,7 @@
 
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/transformations/transformation.h"
 
 namespace sdfg {
@@ -20,11 +21,11 @@ namespace transformations {
  * limit, the transformation is rejected (can_be_applied returns false).
  */
 class CUDAParallelizeNestedMap : public Transformation {
-    structured_control_flow::Map& loop_;
+    structured_control_flow::StructuredLoop& loop_;
     size_t block_size_;
 
 public:
-    CUDAParallelizeNestedMap(structured_control_flow::Map& loop, size_t block_size);
+    CUDAParallelizeNestedMap(structured_control_flow::StructuredLoop& loop, size_t block_size);
 
     virtual std::string name() const override;
 

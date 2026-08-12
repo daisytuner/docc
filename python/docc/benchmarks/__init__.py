@@ -11,6 +11,8 @@ from docc.benchmarks.rtl import (
     TraceRegion,
     TraceValidationError,
     load_schema,
+    reset_instrumentation,
+    total_stats,
     validate,
 )
 
@@ -28,4 +30,6 @@ __all__ = [
     "AGGREGATED_CAT",
     "STATIC_PREFIX",
     "PerfControl",
+    "reset_instrumentation",
+    "total_stats",
 ]

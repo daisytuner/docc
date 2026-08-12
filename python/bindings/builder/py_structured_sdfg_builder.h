@@ -9,6 +9,8 @@
 #include <sdfg/structured_control_flow/control_flow_node.h>
 #include <sdfg/structured_control_flow/for.h>
 #include <sdfg/structured_control_flow/if_else.h>
+#include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/structured_control_flow/sequence.h>
 #include <sdfg/structured_control_flow/while.h>
 #include <stack>
@@ -116,6 +118,17 @@ public:
     );
 
     void end_map();
+
+    sdfg::structured_control_flow::Reduce& begin_reduce(
+        const std::string& var,
+        const std::string& start,
+        const std::string& end,
+        const std::string& step,
+        const std::vector<std::pair<std::string, std::string>>& reductions,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void end_reduce();
 
     void add_assignments(
         const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()

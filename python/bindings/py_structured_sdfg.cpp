@@ -489,6 +489,13 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         dde.run(builder, analysis_manager);
         sdfg::passes::DeadCFGElimination dead_cfg_elimination;
         dead_cfg_elimination.run(builder, analysis_manager);
+
+        sdfg::passes::ReferencePropagation reference_propagation;
+        sdfg::passes::DeadReferenceElimination dead_reference_elimination;
+        reference_propagation.run(builder, analysis_manager);
+        dead_reference_elimination.run(builder, analysis_manager);
+        reference_propagation.run(builder, analysis_manager);
+        dead_reference_elimination.run(builder, analysis_manager);
     }
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
@@ -498,17 +505,11 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
-    sdfg::passes::ReferencePropagation reference_propagation;
-    sdfg::passes::DeadReferenceElimination dead_reference_elimination;
-    reference_propagation.run(builder, analysis_manager);
-    dead_reference_elimination.run(builder, analysis_manager);
-    reference_propagation.run(builder, analysis_manager);
-    dead_reference_elimination.run(builder, analysis_manager);
-
     sdfg::passes::DeviceResidentArgPromotionPass promotion_pass(is_rocm);
     bool promoted = promotion_pass.run(builder, analysis_manager);
-
     if (promoted) {
+        sdfg::passes::ReferencePropagation reference_propagation;
+        sdfg::passes::DeadReferenceElimination dead_reference_elimination;
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
         sdfg::passes::DeadDataElimination dead_data_elimination;
         sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
@@ -598,7 +599,6 @@ std::string PyStructuredSDFG::compile(
         .add_compile_option("-std=c++20")
         .add_link_option("-shared")
         .add_link_option("-ldaisy_rtl")
-        .add_link_option("-larg_capture_io")
         .add_link_option("-lm")
         .add_link_option("-lstdc++");
 

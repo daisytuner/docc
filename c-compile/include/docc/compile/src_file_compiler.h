@@ -2,6 +2,7 @@
 #include <docc/compile/codegen_compiler.h>
 
 #include "docc/compile/codegen_build_pool.h"
+#include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
 
 namespace docc::compile {
@@ -60,7 +61,7 @@ class SrcFileCompiler : public CodegenCompiler, public LinkOptContributor {
     std::optional<std::string> linker_;
     std::string common_args_;
     std::string compile_args_;
-    std::vector<std::filesystem::path> library_paths_;
+    std::vector<LibPath> library_paths_;
     std::vector<std::string> link_options_;
     std::string main_src_ext_;
     std::string main_header_ext_;
@@ -87,7 +88,7 @@ public:
         const std::optional<std::string>& linker,
         const std::string& common_args,
         const std::string& compile_args,
-        const std::vector<std::filesystem::path>& library_paths,
+        const std::vector<LibPath>& library_paths,
         const std::vector<std::string>& link_options,
         bool link_immediately,
         std::unordered_map<std::string, std::unique_ptr<SrcFileCompiler>>&& redirects,

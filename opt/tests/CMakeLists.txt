@@ -11,9 +11,11 @@ option(DOCC_TESTS_ENABLE_DUMP "Enable dumping intermediary files of test cases" 
 set(TEST_FILES
     cuda/blas/cublas_test.cpp
     cuda/cuda_kernel_test.cpp
+    cuda/cuda_reduce_dispatcher_test.cpp
     cuda/softmax_dispatcher_test.cpp
     rocm/blas/rocblas_test.cpp
     rocm/rocm_library_nodes_test.cpp
+    rocm/rocm_reduce_dispatcher_test.cpp
     cuda/cuda_library_nodes_test.cpp
     passes/einsum_test.cpp
     passes/loop_fusion/loop_fusion_by_domain_pass_test.cpp

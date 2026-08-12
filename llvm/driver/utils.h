@@ -195,9 +195,17 @@ struct DoccPaths {
         }
     }
 
-    static std::filesystem::path cmake_plugin_path(const std::filesystem::path &root) {
-        return root / plugin_filename;
+    // Peel the last component off `p` instead of appending "..", so the result
+    // stays free of ".." segments. Falls back to appending ".." when there is no
+    // real parent component to remove (e.g. empty path or a trailing "..").
+    static std::filesystem::path parent_of(const std::filesystem::path &p) {
+        if (p.has_parent_path() && p.has_filename() && p.filename() != ".." && p.filename() != ".") {
+            return p.parent_path();
+        }
+        return p / "..";
     }
+
+    static std::filesystem::path cmake_plugin_path(const std::filesystem::path &root) { return root / plugin_filename; }
 
     static std::filesystem::path dist_plugin_path(const std::filesystem::path &root) {
         return root / "lib" / plugin_filename;
@@ -206,7 +214,7 @@ struct DoccPaths {
     std::vector<std::filesystem::path> target_lib_paths() {
         switch (root_mode) {
             case DoccRootMode::CMake:
-                return {docc_root_path / ".." / "rtl", docc_root_path / ".." / "arg-capture-io"};
+                return {parent_of(docc_root_path) / "rtl", parent_of(docc_root_path) / "arg-capture-io"};
             case DoccRootMode::Dist:
                 return {docc_root_path / "lib"};
             default:
@@ -231,7 +239,7 @@ struct DoccPaths {
                     .root_mode = DoccRootMode::CMake,
                     .docc_root_path = path,
                     .plugin_path = dist_plugin_path(path),
-                    .ld_path = path / ".." / "bin" / "docc-ld",
+                    .ld_path = parent_of(path) / "bin" / "docc-ld",
                 };
             } else {
                 return find_docc_paths();
@@ -261,7 +269,8 @@ inline DoccPaths find_docc_paths() {
         maybe_plugin_path = DoccPaths::cmake_plugin_path(docc_root_path);
     }
     if (!std::filesystem::exists(maybe_plugin_path)) {
-        docc_root_path = driver_path.parent_path().parent_path() / "lib" / ("docc-llvm-" + std::string(DOCC_LLVM_VERSION));
+        docc_root_path = driver_path.parent_path().parent_path() / "lib" /
+                         ("docc-llvm-" + std::string(DOCC_LLVM_VERSION));
         root_mode = DoccRootMode::Dist;
         maybe_plugin_path = DoccPaths::dist_plugin_path(docc_root_path);
     }

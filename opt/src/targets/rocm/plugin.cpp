@@ -1,10 +1,13 @@
 #include "sdfg/targets/rocm/plugin.h"
 
+#include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"
+
 namespace sdfg::rocm {
 
 void register_rocm_plugin(plugins::Context& context) {
     auto& libNodeDispatcherRegistry = context.library_node_dispatcher_registry;
     auto& mapDispatcherRegistry = context.map_dispatcher_registry;
+    auto& reduceDispatcherRegistry = context.reduce_dispatcher_registry;
     auto& libNodeSerRegistry = context.library_node_serializer_registry;
 
     mapDispatcherRegistry.register_map_dispatcher(
@@ -16,6 +19,20 @@ void register_rocm_plugin(plugins::Context& context) {
            codegen::InstrumentationPlan& instrumentation_plan,
            codegen::ArgCapturePlan& arg_capture_plan) {
             return std::make_unique<ROCMMapDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            );
+        }
+    );
+
+    reduceDispatcherRegistry.register_reduce_dispatcher(
+        ScheduleType_ROCM::value(),
+        [](codegen::LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::Reduce& node,
+           codegen::InstrumentationPlan& instrumentation_plan,
+           codegen::ArgCapturePlan& arg_capture_plan) {
+            return std::make_unique<ROCMReduceDispatcher>(
                 language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
             );
         }

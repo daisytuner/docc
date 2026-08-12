@@ -20,7 +20,7 @@ bool ROCMTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, anal
 
     // Condition: Resulting ROCm grid X-dimension must not exceed hardware limits.
     // X grid dimension is limited to 2^31 - 1.
-    auto num_iters = this->map_.num_iterations();
+    auto num_iters = this->loop_.num_iterations();
     if (!num_iters.is_null() && SymEngine::is_a<SymEngine::Integer>(*num_iters)) {
         int64_t iters = SymEngine::down_cast<const SymEngine::Integer&>(*num_iters).as_int();
         int64_t block = static_cast<int64_t>(block_size_);
@@ -82,7 +82,7 @@ void ROCMTransform::allocate_device_arg(
         offloading::BufferLifecycle::ALLOC,
         out_type,
         out_type,
-        this->map_.debug_info(),
+        this->loop_.debug_info(),
         arg_size,
         symbolic::zero()
     );
@@ -105,7 +105,7 @@ void ROCMTransform::deallocate_device_arg(
         offloading::BufferLifecycle::FREE,
         free_type,
         free_type,
-        this->map_.debug_info(),
+        this->loop_.debug_info(),
         arg_size,
         symbolic::zero()
     );
@@ -128,7 +128,7 @@ void ROCMTransform::copy_to_device(
         offloading::BufferLifecycle::NO_CHANGE,
         builder.subject().type(host_arg_name),
         builder.subject().type(device_arg_name),
-        this->map_.debug_info(),
+        this->loop_.debug_info(),
         size,
         symbolic::integer(0)
     );
@@ -151,7 +151,7 @@ void ROCMTransform::copy_to_device_with_allocation(
         offloading::BufferLifecycle::ALLOC,
         builder.subject().type(host_arg_name),
         builder.subject().type(device_arg_name),
-        this->map_.debug_info(),
+        this->loop_.debug_info(),
         size,
         symbolic::integer(0)
     );
@@ -174,7 +174,7 @@ void ROCMTransform::copy_from_device(
         offloading::BufferLifecycle::NO_CHANGE,
         builder.subject().type(host_arg_name),
         builder.subject().type(device_arg_name),
-        this->map_.debug_info(),
+        this->loop_.debug_info(),
         size,
         symbolic::integer(0)
     );
@@ -197,7 +197,7 @@ void ROCMTransform::copy_from_device_with_free(
         offloading::BufferLifecycle::FREE,
         builder.subject().type(host_arg_name),
         builder.subject().type(device_arg_name),
-        this->map_.debug_info(),
+        this->loop_.debug_info(),
         size,
         symbolic::integer(0)
     );
@@ -211,7 +211,7 @@ void ROCMTransform::to_json(nlohmann::json& j) const {
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
     j["subgraph"]["0"] = nlohmann::json::object();
-    ser_flat.serialize_node(j["subgraph"]["0"], map_);
+    ser_flat.serialize_node(j["subgraph"]["0"], loop_);
 };
 
 ROCMTransform ROCMTransform::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
@@ -222,9 +222,14 @@ ROCMTransform ROCMTransform::from_json(builder::StructuredSDFGBuilder& builder, 
         throw transformations::
             InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto map = dyn_cast<structured_control_flow::Map*>(element);
+    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
+    if (!loop) {
+        throw transformations::InvalidTransformationDescriptionException(
+            "Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop."
+        );
+    }
 
-    return ROCMTransform(*map, block_size);
+    return ROCMTransform(*loop, block_size);
 };
 
 

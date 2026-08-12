@@ -68,6 +68,7 @@ set(SOURCE_FILES
     src/targets/cuda/blas/utils.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
+    src/targets/cuda/cuda_reduce_dispatcher.cpp
     src/targets/cuda/cuda.cpp
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
     src/targets/cuda/math/tensor/concat_expander.cpp
@@ -76,7 +77,22 @@ set(SOURCE_FILES
     src/targets/cuda/plugin.cpp
     src/targets/cuda/stdlib/memcpy.cpp
     src/targets/cuda/stdlib/memset.cpp
+    src/targets/rocm/blas/dot.cpp
+    src/targets/rocm/blas/gemm.cpp
+    src/targets/rocm/blas/gemm_handtuned.cpp
+    src/targets/rocm/blas/batched_gemm.cpp
+    src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/math/tensor/batched_matmul_expander.cpp
+    src/targets/rocm/math/tensor/conv_expander.cpp
+    src/targets/rocm/stdlib/memset.cpp
+    src/targets/rocm/stdlib/memcpy.cpp
+    src/targets/rocm/plugin.cpp
+    src/targets/rocm/rocm.cpp
+    src/targets/rocm/rocm_data_offloading_node.cpp
+    src/targets/rocm/rocm_map_dispatcher.cpp
+    src/targets/rocm/rocm_reduce_dispatcher.cpp
     src/targets/gpu/gpu_map_utils.cpp
+    src/targets/gpu/gpu_reduce_dispatcher.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp

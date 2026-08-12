@@ -20,25 +20,36 @@ namespace sdfg {
 namespace transformations {
 
 
-OffloadTransform::OffloadTransform(structured_control_flow::Map& map, bool allow_dynamic_sizes)
-    : map_(map), allow_dynamic_sizes_(allow_dynamic_sizes) {}
+OffloadTransform::OffloadTransform(structured_control_flow::StructuredLoop& loop, bool allow_dynamic_sizes)
+    : loop_(loop), allow_dynamic_sizes_(allow_dynamic_sizes) {}
 
 
 bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (dynamic_cast<structured_control_flow::Map*>(&loop_) == nullptr &&
+        dynamic_cast<structured_control_flow::Reduce*>(&loop_) == nullptr) {
+        return false;
+    }
+
+    if (dynamic_cast<structured_control_flow::Reduce*>(&loop_)) {
+        if (report_) report_->transform_impossible(this, "reduce");
+        DEBUG_PRINTLN("Cannot apply transform: Reduce nodes are not offloaded yet");
+        return false;
+    }
+
     auto& sdfg = builder.subject();
 
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
 
-    if (!arguments_analysis.inferred_types(analysis_manager, this->map_)) {
+    if (!arguments_analysis.inferred_types(analysis_manager, this->loop_)) {
         if (report_) report_->transform_impossible(this, "unranged args");
         DEBUG_PRINTLN("Cannot apply transform: argument types not inferred");
         return false;
     }
-    auto& arguments = arguments_analysis.arguments(analysis_manager, this->map_);
+    auto& arguments = arguments_analysis.arguments(analysis_manager, this->loop_);
 
     // Criterion: arg Data Types must be continuous
     for (auto& [argument, meta] : arguments) {
-        auto base_type = analysis::TypeAnalysis(sdfg, &map_, analysis_manager).get_outer_type(argument);
+        auto base_type = analysis::TypeAnalysis(sdfg, &loop_, analysis_manager).get_outer_type(argument);
         if (base_type == nullptr) {
             if (report_) report_->transform_impossible(this, "cannot infer type");
             DEBUG_PRINTLN("Cannot apply transform: argument type cannot be inferred");
@@ -61,7 +72,7 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
     //   `<map.indvar> = init + thread_flat_id * stride`,
     // and `num_iterations()` already accounts for both when computing the grid
     // geometry.
-    if (map_.num_iterations().is_null()) {
+    if (loop_.num_iterations().is_null()) {
         if (report_) report_->transform_impossible(this, "cannot determine num iterations");
         DEBUG_PRINTLN("Cannot apply transform: cannot determine number of iterations for map");
         return false;
@@ -76,14 +87,14 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
         }
     }
 
-    if (!arguments_analysis.argument_size_known(analysis_manager, this->map_, allow_dynamic_sizes_)) {
+    if (!arguments_analysis.argument_size_known(analysis_manager, this->loop_, allow_dynamic_sizes_)) {
         if (report_) report_->transform_impossible(this, "args not understood");
         DEBUG_PRINTLN("Cannot apply transform: argument sizes not known");
         return false;
     }
 
     // Criterion: Map cannot contain function calls with side effects (e.g. library nodes that write to memory)
-    SideEffectFinder side_effect_finder(sdfg, analysis_manager, this->map_);
+    SideEffectFinder side_effect_finder(sdfg, analysis_manager, this->loop_);
     if (side_effect_finder.visit()) {
         if (report_) report_->transform_impossible(this, "side effects");
         DEBUG_PRINTLN("Cannot apply transform: map contains library nodes with side effects");
@@ -96,20 +107,20 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
 
 void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Schedule
-    builder.update_schedule_type(this->map_, transformed_schedule_type());
+    builder.update_schedule_type(this->loop_, transformed_schedule_type());
 
     auto& sdfg = builder.subject();
 
     // Identify arguments and locals
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
 
-    auto& arguments = arguments_analysis.arguments(analysis_manager, this->map_);
-    auto& locals = arguments_analysis.locals(analysis_manager, this->map_);
+    auto& arguments = arguments_analysis.arguments(analysis_manager, this->loop_);
+    auto& locals = arguments_analysis.locals(analysis_manager, this->loop_);
 
     // Infer subsets for arguments
-    auto& argument_sizes = arguments_analysis.argument_sizes(analysis_manager, this->map_, allow_dynamic_sizes_);
+    auto& argument_sizes = arguments_analysis.argument_sizes(analysis_manager, this->loop_, allow_dynamic_sizes_);
 
-    auto parent_scope = static_cast<structured_control_flow::Sequence*>(this->map_.get_parent());
+    auto parent_scope = static_cast<structured_control_flow::Sequence*>(this->loop_.get_parent());
 
     // Key the device-buffer names by THIS map's element id so every offloaded loop nest gets its own SSA device
     // buffer. Keying by the parent scope instead would make two maps under the same sequence that offload the same
@@ -118,7 +129,7 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
     // (a device buffer with more than one free cannot be proven double-free safe), which blocks the D2H->H2D
     // device aliasing and leaves a redundant host round-trip. One buffer per loop nest keeps each name single-alloc
     // single-free, so the reuse fires and DeadDataElimination can drop the now-userless staging container.
-    std::string container_prefix = copy_prefix() + std::to_string(this->map_.element_id()) + "_";
+    std::string container_prefix = copy_prefix() + std::to_string(this->loop_.element_id()) + "_";
 
     // Allocate arguments and locals
     allocate_locals_on_device_stack(builder, analysis_manager, locals);
@@ -130,12 +141,12 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
             continue;
         }
         auto argument_device = container_prefix + argument;
-        auto& new_block = builder.add_block_before(*parent_scope, this->map_, this->map_.debug_info());
+        auto& new_block = builder.add_block_before(*parent_scope, this->loop_, this->loop_.debug_info());
         auto& size = argument_sizes.at(argument);
         copy_to_device_with_allocation(builder, argument, argument_device, size, SymEngine::null, new_block);
     }
 
-    update_map_containers(arguments, container_prefix);
+    update_loop_containers(arguments, container_prefix);
 
     // Copy-out arguments to host memory & free
     for (auto& [argument, meta] : arguments) {
@@ -143,7 +154,7 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
             continue;
         }
         auto argument_device = container_prefix + argument;
-        auto& new_block = builder.add_block_after(*parent_scope, this->map_, this->map_.debug_info());
+        auto& new_block = builder.add_block_after(*parent_scope, this->loop_, this->loop_.debug_info());
         auto& size = argument_sizes.at(argument);
         if (!skip_unneeded_d2h_ || meta.is_output) {
             copy_from_device_with_free(builder, new_block, argument, argument_device, size, SymEngine::null);
@@ -176,11 +187,11 @@ void OffloadTransform::handle_device_setup_and_teardown(
 }
 
 void OffloadTransform::
-    update_map_containers(const std::map<std::string, analysis::RegionArgument>& arguments, std::string prefix) {
+    update_loop_containers(const std::map<std::string, analysis::RegionArgument>& arguments, std::string prefix) {
     for (auto& [argument, meta] : arguments) {
         if (meta.is_ptr) {
             auto argument_device = prefix + argument;
-            this->map_.replace(symbolic::symbol(argument), symbolic::symbol(argument_device));
+            this->loop_.replace(symbolic::symbol(argument), symbolic::symbol(argument_device));
         }
     }
 }
@@ -195,13 +206,13 @@ bool ::sdfg::transformations::SideEffectFinder::accept(structured_control_flow::
 }
 
 bool ::sdfg::transformations::SideEffectFinder::visit() {
-    return visitor::ImmutableStructuredSDFGVisitor::visit_internal(map_.StructuredLoop::root());
+    return visitor::ImmutableStructuredSDFGVisitor::visit_internal(loop_.StructuredLoop::root());
 }
 
 ::sdfg::transformations::SideEffectFinder::SideEffectFinder(
-    StructuredSDFG& sdfg, analysis::AnalysisManager& analysis_manager, structured_control_flow::Map& map
+    StructuredSDFG& sdfg, analysis::AnalysisManager& analysis_manager, structured_control_flow::StructuredLoop& loop
 )
-    : visitor::ImmutableStructuredSDFGVisitor(sdfg, analysis_manager), map_(map) {}
+    : visitor::ImmutableStructuredSDFGVisitor(sdfg, analysis_manager), loop_(loop) {}
 
 } // namespace transformations
 } // namespace sdfg

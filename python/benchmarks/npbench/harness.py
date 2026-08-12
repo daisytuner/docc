@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import docc.python
 from docc.benchmarks.perf import PerfControl
+from docc.benchmarks import reset_instrumentation
 
 
 _GLOBAL_CAPSYS = None
@@ -258,6 +259,10 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
         # context init, kernel module load). Run it untimed and outside the
         # perf-counted region so measurements reflect the steady-state runtime.
         _run_docc()
+
+        # The RTL aggregates every region invocation, including the warmup above;
+        # drop those so region counts/durations match only the measured runs.
+        reset_instrumentation()
 
         with perf.measure():
             for _ in range(args.n_runs):

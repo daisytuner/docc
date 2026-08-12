@@ -21,6 +21,11 @@ public:
     const util::DefaultDoccPaths& docc_paths() const { return *docc_paths_; }
 };
 
+struct LibPath {
+    std::filesystem::path path;
+    bool is_rpath;
+};
+
 class SrcFileCompilerBuilder : public CodegenCompilerBuilderBase<SrcFileCompilerBuilder> {
     std::optional<std::filesystem::path> output_dir_;
     std::optional<std::filesystem::path> compiler_;
@@ -31,7 +36,7 @@ class SrcFileCompilerBuilder : public CodegenCompilerBuilderBase<SrcFileCompiler
     std::vector<std::string> compile_options_;
     std::vector<std::string> link_options_;
     std::vector<std::filesystem::path> include_paths_;
-    std::vector<std::filesystem::path> library_paths_;
+    std::vector<LibPath> library_paths_;
     bool link_immediately_ = false;
     std::unordered_map<std::string, std::unique_ptr<SrcFileCompiler>> redirects_;
     std::vector<std::string> parent_link_options_;
@@ -49,7 +54,19 @@ public:
     SrcFileCompilerBuilder& add_link_option(const std::string& opt);
     SrcFileCompilerBuilder& add_common_option(const std::string& opt);
     SrcFileCompilerBuilder& add_include_path(const std::filesystem::path& path);
+
+    /**
+     * calls [add_library_path(path, false)]
+     */
     SrcFileCompilerBuilder& add_library_path(const std::filesystem::path& path);
+
+    /**
+     * adds a path to the lookup paths the linker checks for libraries
+     * @param path
+     * @param is_rpath also append this path to the RPATH to bake into the binary, such that it can find the .so
+     * libraries at runtime
+     */
+    SrcFileCompilerBuilder& add_library_path(const std::filesystem::path& path, bool is_rpath);
     SrcFileCompilerBuilder& set_compiler(const std::filesystem::path& compiler);
     SrcFileCompilerBuilder& set_linker(const std::filesystem::path& linker);
     SrcFileCompilerBuilder& set_from_paths(std::shared_ptr<util::DefaultDoccPaths> paths) override;

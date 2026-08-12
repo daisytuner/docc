@@ -293,8 +293,13 @@ class PythonProgram(DoccProgram):
         if os.path.exists(output_folder):
             # Multiple python processes running the same code?
             shutil.rmtree(output_folder)
+
         sdfg, out_args, out_shapes, out_strides = self._build_sdfg(
             arg_types, args, arg_shape_mapping, shape_values
+        )
+        parse_sdfg_time = time.perf_counter() - compile_start_time
+        metrics.add_metric(
+            "parse_to_sdfg_time_ms", round(parse_sdfg_time * 1000), "compile_times"
         )
 
         lib_path = self.sdfg_pipe(

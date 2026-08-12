@@ -578,3 +578,68 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
     EXPECT_EQ(map4.schedule_type().value(), cuda::ScheduleType_CUDA::value());
     EXPECT_EQ(map5.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 }
+
+TEST(CUDASchedulerTest, DISABLED_OuterParallelMapWithInnerReduce) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Array desc_1(base_desc, symbolic::symbol("M"));
+    types::Pointer desc_2(desc_1);
+    types::Pointer acc_desc(base_desc);
+
+    builder.add_container("A", desc_2, true);
+    builder.add_container("acc", acc_desc, true);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    // Outer sequential map over i.
+    auto& map = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Nested sequential reduce over j accumulating into acc[i].
+    auto& reduce = builder.add_reduce(
+        map.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
+        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "acc"}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // Body: acc[i] = acc[i] + A[i][j]
+    auto& block = builder.add_block(reduce.root());
+    auto& a_access = builder.add_access(block, "A");
+    auto& acc_in = builder.add_access(block, "acc");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in0", "_in1"});
+    auto& acc_out = builder.add_access(block, "acc");
+    builder.add_computational_memlet(block, acc_in, tasklet, "_in0", {symbolic::symbol("i")}, acc_desc);
+    builder
+        .add_computational_memlet(block, a_access, tasklet, "_in1", {symbolic::symbol("i"), symbolic::symbol("j")}, desc_2);
+    builder.add_computational_memlet(block, tasklet, "_out", acc_out, {symbolic::symbol("i")}, acc_desc);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
+
+    EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
+
+    // Outer map is offloaded on the X dimension.
+    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(cuda::ScheduleType_CUDA::dimension(map.schedule_type()), cuda::CUDADimension::X);
+
+    // The nested reduce is parallelized onto the next (Y) dimension.
+    EXPECT_EQ(reduce.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(cuda::ScheduleType_CUDA::dimension(reduce.schedule_type()), cuda::CUDADimension::Y);
+}

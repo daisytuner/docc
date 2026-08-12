@@ -2,25 +2,59 @@
 
 #include <sdfg/analysis/loop_analysis.h>
 #include "sdfg/exceptions.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
+#include "sdfg/types/pointer.h"
+#include "sdfg/types/scalar.h"
 
 namespace sdfg {
 namespace transformations {
 
-CUDAParallelizeNestedMap::CUDAParallelizeNestedMap(structured_control_flow::Map& loop, size_t block_size)
+CUDAParallelizeNestedMap::CUDAParallelizeNestedMap(structured_control_flow::StructuredLoop& loop, size_t block_size)
     : loop_(loop), block_size_(block_size) {}
 
 std::string CUDAParallelizeNestedMap::name() const { return "CUDAParallelizeNestedMap"; }
 
 bool CUDAParallelizeNestedMap::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (dynamic_cast<structured_control_flow::Map*>(&loop_) == nullptr &&
+        dynamic_cast<structured_control_flow::Reduce*>(&loop_) == nullptr) {
+        return false;
+    }
+
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
     // Condition: Check if map is not yet parallelized with CUDA
     if (loop_.schedule_type().value() != ScheduleType_Sequential::value()) {
         return false;
+    }
+
+    // Condition: a nested Reduce can only be offloaded when every accumulator is a
+    // device-resident pointer to a scalar whose type the atomics baseline supports.
+    // Privatize + atomic merge (native atomicAdd or a CAS loop) is only defined for
+    // 32/64-bit numeric types, so bool and 8/16-bit accumulators (e.g. torch.any /
+    // torch.all over bool) must stay sequential.
+    if (auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(&loop_)) {
+        auto& sdfg = builder.subject();
+        for (auto& reduction : reduce->reductions()) {
+            auto& type = sdfg.type(reduction.container);
+            auto* ptr = dynamic_cast<const types::Pointer*>(&type);
+            if (ptr == nullptr || !ptr->has_pointee_type()) {
+                return false;
+            }
+            auto* scalar = dynamic_cast<const types::Scalar*>(&ptr->pointee_type());
+            if (scalar == nullptr) {
+                return false;
+            }
+            auto prim = scalar->primitive_type();
+            const bool numeric = types::is_floating_point(prim) || types::is_signed(prim) || types::is_unsigned(prim);
+            const size_t width = types::bit_width(prim);
+            if (!numeric || (width != 32 && width != 64)) {
+                return false;
+            }
+        }
     }
 
     // Condition: Check if parent loop exists
@@ -59,12 +93,13 @@ bool CUDAParallelizeNestedMap::
     // the natural strided value; `num_iterations()` accounts for both when
     // computing the grid geometry.
 
-    // Condition: Parallelizing this map must not replicate a sibling accumulation.
-    // Folding a new grid dimension re-runs every unguarded sibling on each thread of
-    // the new dimension; a sibling read-modify-write on a shared (non-privatizable)
-    // container would then race. Such a reduction must either be parallelized itself
-    // or block nested parallelism of its siblings.
-    if (gpu::nested_parallelization_replicates_accumulation(loop_, analysis_manager)) {
+    // Condition: Parallelizing this loop must not introduce a data race. Folding a new
+    // grid dimension distributes this loop's iterations across the new threads and
+    // re-runs every unguarded sibling on each of them, with no grid-wide barrier. That
+    // races when this loop produces a shared container a sibling consumes (a reduction
+    // accumulator -> consumer, e.g. softmax) or when a sibling read-modify-writes a
+    // shared container. Such a loop must be parallelized differently or left sequential.
+    if (gpu::nested_parallelization_is_unsafe(loop_, analysis_manager)) {
         return false;
     }
 
@@ -128,7 +163,7 @@ CUDAParallelizeNestedMap CUDAParallelizeNestedMap::
     size_t loop_id = node_desc.at("element_id").get<size_t>();
 
     size_t block_size = j.at("parameters").at("block_size").get<size_t>();
-    auto loop = dyn_cast<structured_control_flow::Map*>(builder.find_element_by_id(loop_id));
+    auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(builder.find_element_by_id(loop_id));
     if (!loop) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " is not a loop.");
     }

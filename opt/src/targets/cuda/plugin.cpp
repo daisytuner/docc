@@ -1,11 +1,14 @@
 #include "sdfg/targets/cuda/plugin.h"
 
+#include "sdfg/targets/cuda/cuda_reduce_dispatcher.h"
+
 
 namespace sdfg::cuda {
 
 void register_cuda_plugin(plugins::Context& context) {
     auto& libNodeDispatcherRegistry = context.library_node_dispatcher_registry;
     auto& mapDispatcherRegistry = context.map_dispatcher_registry;
+    auto& reduceDispatcherRegistry = context.reduce_dispatcher_registry;
     auto& libNodeSerRegistry = context.library_node_serializer_registry;
 
     mapDispatcherRegistry.register_map_dispatcher(
@@ -17,6 +20,20 @@ void register_cuda_plugin(plugins::Context& context) {
            codegen::InstrumentationPlan& instrumentation_plan,
            codegen::ArgCapturePlan& arg_capture_plan) {
             return std::make_unique<CUDAMapDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            );
+        }
+    );
+
+    reduceDispatcherRegistry.register_reduce_dispatcher(
+        ScheduleType_CUDA::value(),
+        [](codegen::LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::Reduce& node,
+           codegen::InstrumentationPlan& instrumentation_plan,
+           codegen::ArgCapturePlan& arg_capture_plan) {
+            return std::make_unique<CUDAReduceDispatcher>(
                 language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
             );
         }
