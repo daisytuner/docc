@@ -204,7 +204,7 @@ std::string TensorInfo::toStr() const {
 // ===----------------------------------------------------------------------===//
 
 SDFGTranslator::SDFGTranslator()
-    : builder_empty_(true), builder_("empty", ::sdfg::FunctionType_CPU), value_counter_(0) {}
+    : builder_empty_(true), builder_("empty", ::sdfg::FunctionType_CPU), value_counter_(0), hoist_cursor_(0) {}
 
 ::sdfg::builder::StructuredSDFGBuilder& SDFGTranslator::builder() { return this->builder_; }
 
@@ -359,13 +359,32 @@ void SDFGTranslator::
         throw std::runtime_error("Called handle_malloc with container that does not exist: " + container);
     }
 
+    // Hoistable iff every free symbol of the size is a function argument. Argument symbols are
+    // defined and invariant for the whole function, so the malloc can safely move to the function
+    // root (which dominates every use); loop induction variables and intermediate scalars are not
+    // arguments and therefore keep the allocation in its local scope.
+    bool hoistable = true;
+    for (auto& sym : ::sdfg::symbolic::atoms(size)) {
+        if (!this->builder_.subject().is_argument(sym->get_name())) {
+            hoistable = false;
+            break;
+        }
+    }
+
+    auto& root = *this->insertion_points_.front();
+    auto& target = hoistable ? root : this->insertion_point();
+
     auto& container_type = this->builder_.subject().type(container);
-    auto& block = this->builder_.add_block(this->insertion_point(), {}, deb_info);
+    // Hoisted allocations are prepended at the function entry in request order; others stay local.
+    auto& block = hoistable ? this->builder_.add_block_at(root, static_cast<int32_t>(this->hoist_cursor_++), deb_info)
+                            : this->builder_.add_block(target, {}, deb_info);
     auto& access = this->builder_.add_access(block, container, deb_info);
     auto& libnode = this->builder_.add_library_node<::sdfg::stdlib::MallocNode>(block, deb_info, size);
     this->builder_.add_computational_memlet(block, libnode, "_ret", access, {}, container_type, deb_info);
 
-    this->memory_map_.at(&this->insertion_point()).push_back(container);
+    // Register the free in the same scope as the allocation so hoisted buffers are freed at
+    // function exit and local buffers at their local scope exit.
+    this->memory_map_.at(&target).push_back(container);
 }
 
 void SDFGTranslator::handle_frees(std::string return_container, const ::sdfg::DebugInfo& deb_info) {
