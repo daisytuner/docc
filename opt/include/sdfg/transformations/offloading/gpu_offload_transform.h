@@ -1,40 +1,36 @@
 #pragma once
 
-#include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/transformations/offloading/offload_transform.h"
 
 namespace sdfg {
-namespace cuda {
+namespace gpu {
 
-/**
- * @brief Offloads a top-level loop to a CUDA kernel (X grid dimension).
- *
- * This transformation does not perform blocking or tiling on its own. It expects
- * the scheduler to have already identified a suitable loop for GPU offloading.
- * The transformation assigns the loop to the CUDA X grid dimension and handles
- * data transfers between host and device.
- *
- * The resulting grid X-dimension is validated against CUDA hardware limits
- * (2^31 - 1 blocks). If the grid would exceed this limit, the transformation
- * is rejected (can_be_applied returns false).
- * @deprecated Use CUDAOffloadTransform instead.
- */
-class CUDATransform_deprecated : public transformations::OffloadTransform {
+template<typename OffloaderNodeType>
+class GPUOffloadTransform : public transformations::OffloadTransform {
 public:
-    explicit CUDATransform_deprecated(
-        structured_control_flow::StructuredLoop& loop, int block_size = 32, bool allow_dynamic_sizes = false
+    explicit GPUOffloadTransform(
+        structured_control_flow::StructuredLoop& loop,
+        symbolic::Integer parallel_size = symbolic::integer(32),
+        TargetLevel target_level = TargetLevel::X_GRID,
+        bool allow_dynamic_sizes = false
     )
-        : OffloadTransform(loop, allow_dynamic_sizes), block_size_(block_size) {};
+        : OffloadTransform(loop, allow_dynamic_sizes), parallel_size_(parallel_size), target_level_(target_level) {};
 
-    std::string name() const override;
+    virtual std::string name() const override = 0;
 
     bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
     void to_json(nlohmann::json& j) const override;
 
-    static CUDATransform_deprecated from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
+    static GPUOffloadTransform<OffloaderNodeType>
+    from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
 
 protected:
+    const symbolic::Integer parallel_size_;
+    gpu::TargetLevel target_level_;
+
     types::StorageType local_device_storage_type() override {
         return types::StorageType(
             "NV_Generic",
@@ -53,15 +49,9 @@ protected:
         );
     }
 
-    ScheduleType transformed_schedule_type() override {
-        auto schedule = ScheduleType_CUDA_deprecated::create();
-        if (block_size_ != 0) {
-            ScheduleType_CUDA_deprecated::block_size(schedule, symbolic::integer(block_size_));
-        }
-        return schedule;
-    }
+    virtual ScheduleType transformed_schedule_type() override = 0;
 
-    std::string copy_prefix() override { return CUDA_DEVICE_PREFIX; }
+    virtual std::string copy_prefix() override = 0;
 
     void add_device_buffer(
         builder::StructuredSDFGBuilder& builder,
@@ -125,10 +115,7 @@ protected:
 
     void setup_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {}
     void teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {}
-
-private:
-    int block_size_;
 };
 
-} // namespace cuda
+} // namespace gpu
 } // namespace sdfg
