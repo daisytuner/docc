@@ -11,9 +11,10 @@
 namespace sdfg {
 namespace cuda {
 
-std::string CUDATransform::name() const { return "CUDATransform"; }
+std::string CUDATransform_deprecated::name() const { return "CUDATransform"; }
 
-bool CUDATransform::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+bool CUDATransform_deprecated::
+    can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (!OffloadTransform::can_be_applied(builder, analysis_manager)) {
         return false;
     }
@@ -35,7 +36,7 @@ bool CUDATransform::can_be_applied(builder::StructuredSDFGBuilder& builder, anal
     return true;
 }
 
-void CUDATransform::add_device_buffer(
+void CUDATransform_deprecated::add_device_buffer(
     builder::StructuredSDFGBuilder& builder,
     std::string host_arg_name,
     std::string device_arg_name,
@@ -49,7 +50,7 @@ void CUDATransform::add_device_buffer(
     builder.add_container(device_arg_name, *new_type);
 }
 
-void CUDATransform::allocate_device_arg(
+void CUDATransform_deprecated::allocate_device_arg(
     builder::StructuredSDFGBuilder& builder,
     Block& alloc_block,
     std::string host_arg_name,
@@ -89,7 +90,7 @@ void CUDATransform::allocate_device_arg(
     );
 }
 
-void CUDATransform::deallocate_device_arg(
+void CUDATransform_deprecated::deallocate_device_arg(
     builder::StructuredSDFGBuilder& builder,
     Block& dealloc_block,
     std::string device_arg_name,
@@ -112,7 +113,7 @@ void CUDATransform::deallocate_device_arg(
     );
 }
 
-void CUDATransform::copy_to_device(
+void CUDATransform_deprecated::copy_to_device(
     builder::StructuredSDFGBuilder& builder,
     const std::string host_arg_name,
     std::string device_arg_name,
@@ -135,7 +136,7 @@ void CUDATransform::copy_to_device(
     );
 }
 
-void CUDATransform::copy_to_device_with_allocation(
+void CUDATransform_deprecated::copy_to_device_with_allocation(
     builder::StructuredSDFGBuilder& builder,
     const std::string host_arg_name,
     std::string device_arg_name,
@@ -158,7 +159,7 @@ void CUDATransform::copy_to_device_with_allocation(
     );
 }
 
-void CUDATransform::copy_from_device(
+void CUDATransform_deprecated::copy_from_device(
     builder::StructuredSDFGBuilder& builder,
     Block& copy_out_block,
     const std::string host_arg_name,
@@ -181,7 +182,7 @@ void CUDATransform::copy_from_device(
     );
 }
 
-void CUDATransform::copy_from_device_with_free(
+void CUDATransform_deprecated::copy_from_device_with_free(
     builder::StructuredSDFGBuilder& builder,
     Block& copy_out_block,
     const std::string host_arg_name,
@@ -204,7 +205,7 @@ void CUDATransform::copy_from_device_with_free(
     );
 }
 
-void CUDATransform::to_json(nlohmann::json& j) const {
+void CUDATransform_deprecated::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["parameters"] = nlohmann::json::object();
     j["parameters"]["block_size"] = block_size_;
@@ -215,7 +216,8 @@ void CUDATransform::to_json(nlohmann::json& j) const {
     ser_flat.serialize_node(j["subgraph"]["0"], loop_);
 };
 
-CUDATransform CUDATransform::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
+CUDATransform_deprecated CUDATransform_deprecated::
+    from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
     auto loop_id = desc["subgraph"]["0"]["element_id"].get<size_t>();
     size_t block_size = desc["parameters"]["block_size"].get<size_t>();
     auto element = builder.find_element_by_id(loop_id);
@@ -230,7 +232,7 @@ CUDATransform CUDATransform::from_json(builder::StructuredSDFGBuilder& builder, 
         );
     }
 
-    return CUDATransform(*loop, block_size);
+    return CUDATransform_deprecated(*loop, block_size);
 };
 
 

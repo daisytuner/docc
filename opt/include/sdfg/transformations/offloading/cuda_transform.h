@@ -17,10 +17,11 @@ namespace cuda {
  * The resulting grid X-dimension is validated against CUDA hardware limits
  * (2^31 - 1 blocks). If the grid would exceed this limit, the transformation
  * is rejected (can_be_applied returns false).
+ * @deprecated Use CUDATransform instead.
  */
-class CUDATransform : public transformations::OffloadTransform {
+class CUDATransform_deprecated : public transformations::OffloadTransform {
 public:
-    explicit CUDATransform(
+    explicit CUDATransform_deprecated(
         structured_control_flow::StructuredLoop& loop, int block_size = 32, bool allow_dynamic_sizes = false
     )
         : OffloadTransform(loop, allow_dynamic_sizes), block_size_(block_size) {};
@@ -31,7 +32,7 @@ public:
 
     void to_json(nlohmann::json& j) const override;
 
-    static CUDATransform from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
+    static CUDATransform_deprecated from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
 
 protected:
     types::StorageType local_device_storage_type() override {

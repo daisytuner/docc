@@ -73,15 +73,17 @@ void Replayer::replay(
         } else if (transformation_name == "VectorizeTransform") {
             this->apply<transformations::VectorizeTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "CUDATransform") {
-            this->apply<cuda::CUDATransform>(builder, analysis_manager, desc, skip_if_not_applicable);
+            this->apply<cuda::CUDATransform_deprecated>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "CUDAParallelizeNestedMap") {
-            this->apply<
-                transformations::CUDAParallelizeNestedMap>(builder, analysis_manager, desc, skip_if_not_applicable);
+            this->apply<transformations::CUDAParallelizeNestedMap_deprecated>(
+                builder, analysis_manager, desc, skip_if_not_applicable
+            );
         } else if (transformation_name == "ROCMTransform") {
-            this->apply<rocm::ROCMTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
+            this->apply<rocm::ROCMTransform_deprecated>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "ROCMParallelizeNestedMap") {
-            this->apply<
-                transformations::ROCMParallelizeNestedMap>(builder, analysis_manager, desc, skip_if_not_applicable);
+            this->apply<transformations::ROCMParallelizeNestedMap_deprecated>(
+                builder, analysis_manager, desc, skip_if_not_applicable
+            );
         } else if (transformation_name == "GPUConditionPropagation") {
             this->apply<
                 transformations::GPUConditionPropagation>(builder, analysis_manager, desc, skip_if_not_applicable);

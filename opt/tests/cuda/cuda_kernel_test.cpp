@@ -473,7 +473,7 @@ TEST(CudaTransformTest, CudaTransformWithBlocksizeTest) {
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     // Create transform locally
-    auto cuda_transform = CUDATransform(map, 64);
+    auto cuda_transform = CUDATransform_deprecated(map, 64);
     if (cuda_transform.can_be_applied(builder, analysis_manager)) {
         cuda_transform.apply(builder, analysis_manager);
     }

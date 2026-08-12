@@ -19,18 +19,20 @@ enum class GPUTarget {
  * nested parallelization (CUDA or ROCM) in two phases:
  * 1. can_be_applied phase: collects all nested loops where parallelization is applicable
  * 2. apply phase: applies parallelization to all collected loops
+ * @deprecated This pass is deprecated and will be removed in future versions. Use the new GPU nested parallelization
+ * pass instead.
  */
-class GPUNestedParallelizationPass : public Pass {
+class GPUNestedParallelizationPass_deprecated : public Pass {
 private:
     const std::vector<structured_control_flow::StructuredLoop*>& loops_;
     GPUTarget target_;
     size_t block_size_;
 
 public:
-    GPUNestedParallelizationPass(
+    GPUNestedParallelizationPass_deprecated(
         const std::vector<structured_control_flow::StructuredLoop*>& loops, GPUTarget target, size_t block_size
     );
-    ~GPUNestedParallelizationPass() override = default;
+    ~GPUNestedParallelizationPass_deprecated() override = default;
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 

@@ -78,7 +78,7 @@ TEST(CUDANestedParallelismTransformation, AddYDimension) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::CUDAParallelizeNestedMap transformation(map2, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(map2, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
@@ -165,7 +165,7 @@ TEST(CUDANestedParallelismTransformation, AddZDimension) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::CUDAParallelizeNestedMap transformation(map3, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(map3, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
@@ -253,7 +253,7 @@ TEST(CUDANestedParallelismTransformation, AddNoDimension) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::CUDAParallelizeNestedMap transformation(map2, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(map2, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -325,7 +325,7 @@ TEST(CUDANestedParallelismTransformation, AlreadyParallel) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::CUDAParallelizeNestedMap transformation(map2, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(map2, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -396,7 +396,7 @@ TEST(CUDANestedParallelismTransformation, NoDirectCUDAParent) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::CUDAParallelizeNestedMap transformation(map3, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(map3, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -465,7 +465,7 @@ TEST(CUDANestedParallelismTransformation, OutermostLoop) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::CUDAParallelizeNestedMap transformation(map, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(map, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -536,7 +536,7 @@ TEST(CUDANestedParallelismTransformation, NonZeroStart) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::CUDAParallelizeNestedMap transformation(map2, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(map2, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
@@ -592,7 +592,7 @@ TEST(CUDANestedParallelismTransformation, GridSizeExceedsYZLimit) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::CUDAParallelizeNestedMap transformation(map2, 8);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(map2, 8);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -648,7 +648,7 @@ TEST(CUDANestedParallelismTransformation, GridSizeWithinYZLimit) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::CUDAParallelizeNestedMap transformation(map2, 8);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(map2, 8);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
@@ -738,7 +738,7 @@ TEST(CUDANestedParallelismTransformation, SiblingAccumulationBlocksNestedParalle
         builder.add_computational_memlet(block, tk, "out_", out, {idx}, pointer_type);
     }
 
-    transformations::CUDAParallelizeNestedMap transformation(target, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(target, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     // The sibling reduce accumulates on an escaping buffer; replicating it is unsafe.
@@ -847,7 +847,7 @@ TEST(CUDANestedParallelismTransformation, SiblingMismatchedIterationsRejected) {
 
     dump_sdfg(builder.subject(), "0.init");
 
-    transformations::CUDAParallelizeNestedMap transformation(target, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(target, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -927,7 +927,7 @@ TEST(CUDANestedParallelismTransformation, SiblingAccumulationOnLocalAllowsNested
         builder.add_computational_memlet(block, tk, "out_", out, {idx}, pointer_type);
     }
 
-    transformations::CUDAParallelizeNestedMap transformation(target, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(target, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     // acc is privatized per thread, so its read-modify-write races nothing.
@@ -1010,7 +1010,7 @@ TEST(CUDANestedParallelismTransformation, ParallelizedSiblingReductionAllowsNest
         builder.add_computational_memlet(block, tk, "out_", out, {idx}, pointer_type);
     }
 
-    transformations::CUDAParallelizeNestedMap transformation(target, 4);
+    transformations::CUDAParallelizeNestedMap_deprecated transformation(target, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     // The accumulating sibling is already parallelized, so it is not replicated.

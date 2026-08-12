@@ -61,7 +61,7 @@ TEST(ROCMNestedParallelismTransformation, GridSizeExceedsYZLimit) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::ROCMParallelizeNestedMap transformation(map2, 8);
+    transformations::ROCMParallelizeNestedMap_deprecated transformation(map2, 8);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -117,7 +117,7 @@ TEST(ROCMNestedParallelismTransformation, GridSizeWithinYZLimit) {
     builder.add_computational_memlet(block2, access2, tasklet2, "in_", {symbolic::zero()}, pointer_type);
     builder.add_computational_memlet(block2, tasklet2, "out_", access_B, {}, base_desc);
 
-    transformations::ROCMParallelizeNestedMap transformation(map2, 8);
+    transformations::ROCMParallelizeNestedMap_deprecated transformation(map2, 8);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
@@ -205,7 +205,7 @@ TEST(ROCMNestedParallelismTransformation, SiblingAccumulationBlocksNestedParalle
         builder.add_computational_memlet(block, tk, "out_", out, {idx}, pointer_type);
     }
 
-    transformations::ROCMParallelizeNestedMap transformation(target, 4);
+    transformations::ROCMParallelizeNestedMap_deprecated transformation(target, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
@@ -281,7 +281,7 @@ TEST(ROCMNestedParallelismTransformation, SiblingAccumulationOnLocalAllowsNested
         builder.add_computational_memlet(block, tk, "out_", out, {idx}, pointer_type);
     }
 
-    transformations::ROCMParallelizeNestedMap transformation(target, 4);
+    transformations::ROCMParallelizeNestedMap_deprecated transformation(target, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
@@ -362,7 +362,7 @@ TEST(ROCMNestedParallelismTransformation, ParallelizedSiblingReductionAllowsNest
         builder.add_computational_memlet(block, tk, "out_", out, {idx}, pointer_type);
     }
 
-    transformations::ROCMParallelizeNestedMap transformation(target, 4);
+    transformations::ROCMParallelizeNestedMap_deprecated transformation(target, 4);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));

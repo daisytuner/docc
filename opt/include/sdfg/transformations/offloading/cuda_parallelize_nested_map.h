@@ -19,13 +19,15 @@ namespace transformations {
  * The resulting grid dimension is validated against CUDA hardware limits:
  * Y and Z dimensions are limited to 65535 blocks. If the grid would exceed this
  * limit, the transformation is rejected (can_be_applied returns false).
+ * @deprecated This pass is deprecated and will be removed in future versions. Use the new GPU nested parallelization
+ * pass instead.
  */
-class CUDAParallelizeNestedMap : public Transformation {
+class CUDAParallelizeNestedMap_deprecated : public Transformation {
     structured_control_flow::StructuredLoop& loop_;
     size_t block_size_;
 
 public:
-    CUDAParallelizeNestedMap(structured_control_flow::StructuredLoop& loop, size_t block_size);
+    CUDAParallelizeNestedMap_deprecated(structured_control_flow::StructuredLoop& loop, size_t block_size);
 
     virtual std::string name() const override;
 
@@ -36,7 +38,7 @@ public:
 
     virtual void to_json(nlohmann::json& j) const override;
 
-    static CUDAParallelizeNestedMap from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
+    static CUDAParallelizeNestedMap_deprecated from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 };
 
 

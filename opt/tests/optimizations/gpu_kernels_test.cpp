@@ -33,7 +33,7 @@
 //     |
 //     |  === OFFLOAD ===
 //     |  (O1) cuda::CUDATransform(jO, TX=8)                    // offload to CUDA X-dim
-//     |  (O2) CUDAParallelizeNestedMap(iO, TY=4)               // nested Y-dim
+//     |  (O2) CUDAParallelizeNestedMap_deprecated(iO, TY=4)               // nested Y-dim
 //     v
 //   Map_X(jO,TX) Map_Y(iO,TY) For(kk) For(kI) Map(iI) Map(jI) { fma }
 //     |
@@ -472,7 +472,7 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
     // -------------------------------------------------------------------------
     // (O1) CUDATransform(jO, TX)
     {
-        cuda::CUDATransform offload(*for_j_outer, /*block_size=*/TX);
+        cuda::CUDATransform_deprecated offload(*for_j_outer, /*block_size=*/TX);
         ASSERT_TRUE(offload.can_be_applied(builder, am)) << "CUDATransform on Map(jO) must apply";
         offload.apply(builder, am);
         am.invalidate_all();
@@ -483,10 +483,11 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
                     eq(cuda::ScheduleType_CUDA_deprecated::block_size(for_j_outer->schedule_type()),
                        symbolic::integer(TX)));
 
-    // (O2) CUDAParallelizeNestedMap(iO, TY)
+    // (O2) CUDAParallelizeNestedMap_deprecated(iO, TY)
     {
-        transformations::CUDAParallelizeNestedMap parallelize(*for_i_inner, /*block_size=*/TY);
-        ASSERT_TRUE(parallelize.can_be_applied(builder, am)) << "CUDAParallelizeNestedMap on Map(iO) must apply";
+        transformations::CUDAParallelizeNestedMap_deprecated parallelize(*for_i_inner, /*block_size=*/TY);
+        ASSERT_TRUE(parallelize.can_be_applied(builder, am))
+            << "CUDAParallelizeNestedMap_deprecated on Map(iO) must apply";
         parallelize.apply(builder, am);
         am.invalidate_all();
     }
