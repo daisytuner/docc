@@ -201,7 +201,6 @@ jobs:
             -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
             ..
           ninja -j$(nproc)
-          ninja install
 
       - name: Unit Tests
         run: |

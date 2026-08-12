@@ -80,16 +80,27 @@ def _rtl_lib_names() -> tuple[str, str]:
 
 def _candidate_lib_dirs() -> List[Path]:
     dirs: List[Path] = []
-    # Installed wheel: docc/lib alongside docc/benchmarks/rtl.py.
-    dirs.append(Path(__file__).resolve().parents[1] / "lib")
-    # Editable / namespace installs: <docc root>/lib for each package root.
+    # Authoritative: the native driver's own library search paths, reconstructed
+    # from the extension module's on-disk location (DefaultDoccPaths). This is the
+    # exact set of directories the compiler uses to link against libdaisy_rtl.
     try:
-        import docc  # noqa: PLC0415
+        from docc.sdfg._sdfg import _default_library_paths  # noqa: PLC0415
 
-        for root in getattr(docc, "__path__", []):
-            dirs.append(Path(root) / "lib")
+        for p in _default_library_paths():
+            dirs.append(Path(p))
     except Exception:
         pass
+
+    # Only when the native resolver yields nothing do we fall back to the dynamic
+    # linker's own search path (LD_LIBRARY_PATH / DYLD_LIBRARY_PATH). When we do
+    # have authoritative paths, the loader would search these anyway, so adding
+    # them here is redundant.
+    if not dirs:
+        env_var = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+        for entry in os.environ.get(env_var, "").split(os.pathsep):
+            if entry:
+                dirs.append(Path(entry))
+
     # De-duplicate while preserving order.
     seen = set()
     unique: List[Path] = []
