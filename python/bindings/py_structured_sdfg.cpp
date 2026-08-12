@@ -487,15 +487,14 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         device_buffer_reuse_pass.run(builder, analysis_manager);
         sdfg::passes::DeadDataElimination dde(false);
         dde.run(builder, analysis_manager);
+        sdfg::passes::ReferencePropagation reference_propagation;
+        reference_propagation.run(builder, analysis_manager);
+        sdfg::passes::DeadReferenceElimination dead_reference_elimination;
+        dead_reference_elimination.run(builder, analysis_manager);
+        reference_propagation.run(builder, analysis_manager);
+        dead_reference_elimination.run(builder, analysis_manager);
         sdfg::passes::DeadCFGElimination dead_cfg_elimination;
         dead_cfg_elimination.run(builder, analysis_manager);
-
-        sdfg::passes::ReferencePropagation reference_propagation;
-        sdfg::passes::DeadReferenceElimination dead_reference_elimination;
-        reference_propagation.run(builder, analysis_manager);
-        dead_reference_elimination.run(builder, analysis_manager);
-        reference_propagation.run(builder, analysis_manager);
-        dead_reference_elimination.run(builder, analysis_manager);
     }
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
