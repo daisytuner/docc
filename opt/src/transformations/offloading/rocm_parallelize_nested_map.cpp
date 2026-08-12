@@ -64,10 +64,10 @@ bool ROCMParallelizeNestedMap::
 
     // Condition: Check if parent loop is a ROCM map, and not Z dimension (final dimension)
     if (auto map = dyn_cast<structured_control_flow::Map*>(parent)) {
-        if (map->schedule_type().value() != rocm::ScheduleType_ROCM::value()) {
+        if (map->schedule_type().value() != rocm::ScheduleType_ROCM_deprecated::value()) {
             return false;
         }
-        if (rocm::ScheduleType_ROCM::dimension(map->schedule_type()) == rocm::ROCMDimension::Z) {
+        if (rocm::ScheduleType_ROCM_deprecated::dimension(map->schedule_type()) == rocm::ROCMDimension::Z) {
             return false;
         }
         auto parent_indvar = map->indvar();
@@ -123,8 +123,8 @@ void ROCMParallelizeNestedMap::apply(builder::StructuredSDFGBuilder& builder, an
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto parent = loop_analysis.parent_loop(&loop_);
 
-    auto parent_dim =
-        rocm::ScheduleType_ROCM::dimension(static_cast<structured_control_flow::Map*>(parent)->schedule_type());
+    auto parent_dim = rocm::ScheduleType_ROCM_deprecated::dimension(static_cast<structured_control_flow::Map*>(parent)
+                                                                        ->schedule_type());
 
     rocm::ROCMDimension child_dim;
     if (parent_dim == rocm::ROCMDimension::X) {
@@ -135,9 +135,9 @@ void ROCMParallelizeNestedMap::apply(builder::StructuredSDFGBuilder& builder, an
         throw InvalidSDFGException("Parent loop is Z dimension, cannot parallelize nested map.");
     }
 
-    auto new_schedule = rocm::ScheduleType_ROCM::create();
-    rocm::ScheduleType_ROCM::dimension(new_schedule, child_dim);
-    rocm::ScheduleType_ROCM::block_size(new_schedule, symbolic::integer(block_size_));
+    auto new_schedule = rocm::ScheduleType_ROCM_deprecated::create();
+    rocm::ScheduleType_ROCM_deprecated::dimension(new_schedule, child_dim);
+    rocm::ScheduleType_ROCM_deprecated::block_size(new_schedule, symbolic::integer(block_size_));
 
     builder.update_schedule_type(loop_, new_schedule);
 }

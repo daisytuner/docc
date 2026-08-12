@@ -673,7 +673,7 @@ TEST(DataTransferMinimizationPassTest, NotReadOnlyDataReuseTest) {
         symbolic::Lt(indvar, arr_size),
         symbolic::zero(),
         symbolic::add(indvar, symbolic::one()),
-        cuda::ScheduleType_CUDA::create()
+        cuda::ScheduleType_CUDA_deprecated::create()
     );
     auto& block_modify = builder.add_block(map_modify.root());
 
@@ -858,7 +858,7 @@ TEST(DataTransferMinimizationPassTest, RemoveRedundantD2HTest) {
         symbolic::Lt(indvar, arr_size),
         symbolic::zero(),
         symbolic::add(indvar, symbolic::one()),
-        cuda::ScheduleType_CUDA::create()
+        cuda::ScheduleType_CUDA_deprecated::create()
     );
     auto& block_modify = builder.add_block(map_modify.root());
 

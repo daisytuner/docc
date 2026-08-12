@@ -7,6 +7,7 @@
 #include "sdfg/codegen/utils.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_types.h"
+#include "sdfg/targets/gpu/old_gpu_schedule_type.h"
 
 namespace sdfg {
 namespace rocm {
@@ -32,7 +33,18 @@ using ROCMDimension = gpu::GPUDimension;
  * @brief ROCM schedule type inheriting shared GPU functionality
  * Provides ROCM-specific value() and default block size (64 for wavefront size)
  */
-class ScheduleType_ROCM : public gpu::ScheduleType_GPU_Base<ScheduleType_ROCM> {
+class ScheduleType_ROCM : public gpu::ScheduleType_GPU<ScheduleType_ROCM> {
+public:
+    static const std::string value() { return "ROCM"; }
+};
+
+/**
+ * @brief ROCM schedule type inheriting shared GPU functionality
+ * Provides ROCM-specific value() and default block size (64 for wavefront size)
+ * @deprecated This class is deprecated and will be removed in future versions. Use the new GPU schedule type classes
+ * instead.
+ */
+class ScheduleType_ROCM_deprecated : public gpu::ScheduleType_GPU_Base_Deprecated<ScheduleType_ROCM_deprecated> {
 public:
     static const std::string value() { return "ROCM"; }
     static symbolic::Integer default_block_size_x() { return symbolic::integer(64); }

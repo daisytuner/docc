@@ -24,6 +24,7 @@
 #include <sdfg/types/type.h>
 
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
+#include "sdfg/targets/gpu/old_gpu_schedule_type.h"
 
 namespace sdfg {
 namespace gpu {

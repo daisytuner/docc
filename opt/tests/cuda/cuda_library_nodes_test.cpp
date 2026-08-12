@@ -772,21 +772,21 @@ TEST(CUDAMallocTest, SymbolSetTest) {
 }
 
 TEST(CUDAScheduleTypeTest, ScheduleTypeTest) {
-    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
 
-    EXPECT_EQ(cuda_schedule.value(), ScheduleType_CUDA::value());
-    EXPECT_EQ(ScheduleType_CUDA::dimension(cuda_schedule), CUDADimension::X);
+    EXPECT_EQ(cuda_schedule.value(), ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(ScheduleType_CUDA_deprecated::dimension(cuda_schedule), CUDADimension::X);
 
-    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::Y);
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::Y);
 
     serializer::JSONSerializer serializer;
     nlohmann::json j;
     serializer.schedule_type_to_json(j, cuda_schedule);
 
-    EXPECT_EQ(ScheduleType_CUDA::dimension(cuda_schedule), CUDADimension::Y);
+    EXPECT_EQ(ScheduleType_CUDA_deprecated::dimension(cuda_schedule), CUDADimension::Y);
 
-    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(256));
-    EXPECT_TRUE(symbolic::eq(ScheduleType_CUDA::block_size(cuda_schedule), symbolic::integer(256)));
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(256));
+    EXPECT_TRUE(symbolic::eq(ScheduleType_CUDA_deprecated::block_size(cuda_schedule), symbolic::integer(256)));
 }
 
 } // namespace sdfg::cuda

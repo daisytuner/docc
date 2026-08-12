@@ -477,9 +477,11 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
         offload.apply(builder, am);
         am.invalidate_all();
     }
-    EXPECT_EQ(for_j_outer->schedule_type().value(), cuda::ScheduleType_CUDA::value());
-    EXPECT_EQ(cuda::ScheduleType_CUDA::dimension(for_j_outer->schedule_type()), cuda::CUDADimension::X);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(for_j_outer->schedule_type()), symbolic::integer(TX)));
+    EXPECT_EQ(for_j_outer->schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(cuda::ScheduleType_CUDA_deprecated::dimension(for_j_outer->schedule_type()), cuda::CUDADimension::X);
+    EXPECT_TRUE(symbolic::
+                    eq(cuda::ScheduleType_CUDA_deprecated::block_size(for_j_outer->schedule_type()),
+                       symbolic::integer(TX)));
 
     // (O2) CUDAParallelizeNestedMap(iO, TY)
     {
@@ -488,9 +490,11 @@ TEST(GPUKernelTest, GEMM_CudaTilingILS) {
         parallelize.apply(builder, am);
         am.invalidate_all();
     }
-    EXPECT_EQ(for_i_inner->schedule_type().value(), cuda::ScheduleType_CUDA::value());
-    EXPECT_EQ(cuda::ScheduleType_CUDA::dimension(for_i_inner->schedule_type()), cuda::CUDADimension::Y);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(for_i_inner->schedule_type()), symbolic::integer(TY)));
+    EXPECT_EQ(for_i_inner->schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(cuda::ScheduleType_CUDA_deprecated::dimension(for_i_inner->schedule_type()), cuda::CUDADimension::Y);
+    EXPECT_TRUE(symbolic::
+                    eq(cuda::ScheduleType_CUDA_deprecated::block_size(for_i_inner->schedule_type()),
+                       symbolic::integer(TY)));
 
     // -------------------------------------------------------------------------
     // Phase 4: LOCAL STORAGE. Stage A/B in SMEM at for_kI; promote C to a

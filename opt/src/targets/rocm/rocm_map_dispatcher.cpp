@@ -84,9 +84,9 @@ void ROCMMapDispatcher::dispatch_node(
 
     std::vector<std::string> scope_variables;
 
-    auto x_vars = gpu::get_gpu_indvars<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::X);
-    auto y_vars = gpu::get_gpu_indvars<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Y);
-    auto z_vars = gpu::get_gpu_indvars<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Z);
+    auto x_vars = gpu::get_gpu_indvars<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::X);
+    auto y_vars = gpu::get_gpu_indvars<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::Y);
+    auto z_vars = gpu::get_gpu_indvars<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::Z);
 
     for (auto& var : scope_variables_unfiltered) {
         if (x_vars.find(symbolic::symbol(var)) == x_vars.end() && y_vars.find(symbolic::symbol(var)) == y_vars.end() &&
@@ -103,19 +103,25 @@ void ROCMMapDispatcher::dispatch_node(
         arguments_declaration.push_back(this->language_extension_.declaration(container, sdfg_.type(container)));
     }
 
-    auto block_size_x = gpu::find_nested_gpu_blocksize<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::X);
-    auto block_size_y = gpu::find_nested_gpu_blocksize<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Y);
-    auto block_size_z = gpu::find_nested_gpu_blocksize<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Z);
-    auto num_iters_x = gpu::find_nested_gpu_iterations<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::X);
-    auto num_iters_y = gpu::find_nested_gpu_iterations<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Y);
-    auto num_iters_z = gpu::find_nested_gpu_iterations<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Z);
+    auto block_size_x =
+        gpu::find_nested_gpu_blocksize<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::X);
+    auto block_size_y =
+        gpu::find_nested_gpu_blocksize<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::Y);
+    auto block_size_z =
+        gpu::find_nested_gpu_blocksize<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::Z);
+    auto num_iters_x =
+        gpu::find_nested_gpu_iterations<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::X);
+    auto num_iters_y =
+        gpu::find_nested_gpu_iterations<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::Y);
+    auto num_iters_z =
+        gpu::find_nested_gpu_iterations<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::Z);
 
     symbolic::Expression num_iters;
-    if (ROCMDimension::X == ScheduleType_ROCM::dimension(node_.schedule_type())) {
+    if (ROCMDimension::X == ScheduleType_ROCM_deprecated::dimension(node_.schedule_type())) {
         num_iters = num_iters_x;
-    } else if (ROCMDimension::Y == ScheduleType_ROCM::dimension(node_.schedule_type())) {
+    } else if (ROCMDimension::Y == ScheduleType_ROCM_deprecated::dimension(node_.schedule_type())) {
         num_iters = num_iters_y;
-    } else if (ROCMDimension::Z == ScheduleType_ROCM::dimension(node_.schedule_type())) {
+    } else if (ROCMDimension::Z == ScheduleType_ROCM_deprecated::dimension(node_.schedule_type())) {
         num_iters = num_iters_z;
     } else {
         throw InvalidSDFGException("Invalid ROCM dimension");
@@ -131,7 +137,7 @@ void ROCMMapDispatcher::dispatch_node(
 
     std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
 
-    if (gpu::is_outermost_gpu_map<ScheduleType_ROCM>(node_, analysis_manager)) {
+    if (gpu::is_outermost_gpu_map<ScheduleType_ROCM_deprecated>(node_, analysis_manager)) {
         this->dispatch_kernel_call(
             main_stream,
             kernel_name,
@@ -186,7 +192,7 @@ void ROCMMapDispatcher::dispatch_kernel_body(
     symbolic::Expression& num_iterations
 ) {
     codegen::ROCMLanguageExtension rocm_language_extension(sdfg_);
-    if (gpu::is_outermost_gpu_map<ScheduleType_ROCM>(node_, analysis_manager_)) {
+    if (gpu::is_outermost_gpu_map<ScheduleType_ROCM_deprecated>(node_, analysis_manager_)) {
         // Declare and optionally allocate scope variables
         for (auto& local : scope_variables) {
             if (local.starts_with("__daisy_hip")) {
@@ -207,9 +213,9 @@ void ROCMMapDispatcher::dispatch_kernel_body(
         }
     }
     // Boundary Conditions
-    if (!ScheduleType_ROCM::nested_sync(node_.schedule_type())) {
+    if (!ScheduleType_ROCM_deprecated::nested_sync(node_.schedule_type())) {
         std::string flat_id;
-        switch (ScheduleType_ROCM::dimension(node_.schedule_type())) {
+        switch (ScheduleType_ROCM_deprecated::dimension(node_.schedule_type())) {
             case ROCMDimension::X:
                 flat_id = "__daisy_hip_indvar_x";
                 break;
@@ -243,7 +249,7 @@ void ROCMMapDispatcher::dispatch_kernel_body(
         }
     }
 
-    if (!ScheduleType_ROCM::nested_sync(node_.schedule_type())) {
+    if (!ScheduleType_ROCM_deprecated::nested_sync(node_.schedule_type())) {
         library_stream.setIndent(library_stream.indent() - 4);
         library_stream << "}" << std::endl;
     }
@@ -334,9 +340,9 @@ void ROCMMapDispatcher::dispatch_kernel_preamble(
 
     // Declare each per-Map indvar as a strided affine of the flat thread id:
     //   <map.indvar> = <map.init> + <thread_flat_id> * <map.stride>
-    auto x_maps = gpu::get_gpu_maps<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::X);
-    auto y_maps = gpu::get_gpu_maps<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Y);
-    auto z_maps = gpu::get_gpu_maps<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::Z);
+    auto x_maps = gpu::get_gpu_maps<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::X);
+    auto y_maps = gpu::get_gpu_maps<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::Y);
+    auto z_maps = gpu::get_gpu_maps<ScheduleType_ROCM_deprecated>(node_, analysis_manager, ROCMDimension::Z);
 
     auto emit_indvar = [&](structured_control_flow::Map* map, const std::string& flat_id_var) {
         symbolic::Expression value = symbolic::symbol(flat_id_var);

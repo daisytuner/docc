@@ -22,9 +22,9 @@ TEST(ROCMReduceDispatcherTest, AtomicSumKernel) {
     builder.add_container("__daisy_hip_A", pointer_type);
     builder.add_container("__daisy_hip_acc", pointer_type);
 
-    auto rocm_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(rocm_schedule, ROCMDimension::X);
-    ScheduleType_ROCM::block_size(rocm_schedule, symbolic::integer(64));
+    auto rocm_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(rocm_schedule, ROCMDimension::X);
+    ScheduleType_ROCM_deprecated::block_size(rocm_schedule, symbolic::integer(64));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -115,9 +115,9 @@ TEST(ROCMReduceDispatcherTest, NestedReduceInlinesGridStride) {
     builder.add_container("__daisy_hip_acc", pointer_type);
 
     // Enclosing ROCm map over i on the X dimension.
-    auto map_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(map_schedule, ROCMDimension::X);
-    ScheduleType_ROCM::block_size(map_schedule, symbolic::integer(64));
+    auto map_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(map_schedule, ROCMDimension::X);
+    ScheduleType_ROCM_deprecated::block_size(map_schedule, symbolic::integer(64));
     auto& map = builder.add_map(
         root,
         symbolic::symbol("i"),
@@ -128,9 +128,9 @@ TEST(ROCMReduceDispatcherTest, NestedReduceInlinesGridStride) {
     );
 
     // Nested ROCm reduce over j on the Y dimension.
-    auto reduce_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(reduce_schedule, ROCMDimension::Y);
-    ScheduleType_ROCM::block_size(reduce_schedule, symbolic::integer(64));
+    auto reduce_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(reduce_schedule, ROCMDimension::Y);
+    ScheduleType_ROCM_deprecated::block_size(reduce_schedule, symbolic::integer(64));
     auto& reduce = builder.add_reduce(
         map.root(),
         symbolic::symbol("j"),
@@ -202,9 +202,9 @@ TEST(ROCMReduceDispatcherTest, IndexedAccumulatorAtomicAtSlot) {
     builder.add_container("__daisy_hip_acc", pointer_type);
 
     // Enclosing data-parallel ROCm map over i on the X dimension.
-    auto map_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(map_schedule, ROCMDimension::X);
-    ScheduleType_ROCM::block_size(map_schedule, symbolic::integer(64));
+    auto map_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(map_schedule, ROCMDimension::X);
+    ScheduleType_ROCM_deprecated::block_size(map_schedule, symbolic::integer(64));
     auto& map = builder.add_map(
         root,
         symbolic::symbol("i"),
@@ -215,9 +215,9 @@ TEST(ROCMReduceDispatcherTest, IndexedAccumulatorAtomicAtSlot) {
     );
 
     // Nested ROCm reduce over j on the Y dimension, accumulating into acc[i].
-    auto reduce_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(reduce_schedule, ROCMDimension::Y);
-    ScheduleType_ROCM::block_size(reduce_schedule, symbolic::integer(64));
+    auto reduce_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(reduce_schedule, ROCMDimension::Y);
+    ScheduleType_ROCM_deprecated::block_size(reduce_schedule, symbolic::integer(64));
     auto& reduce = builder.add_reduce(
         map.root(),
         symbolic::symbol("j"),
@@ -287,9 +287,9 @@ TEST(ROCMReduceDispatcherTest, MulReductionUsesCASHelper) {
     builder.add_container("__daisy_hip_A", pointer_type);
     builder.add_container("__daisy_hip_acc", pointer_type);
 
-    auto rocm_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(rocm_schedule, ROCMDimension::X);
-    ScheduleType_ROCM::block_size(rocm_schedule, symbolic::integer(64));
+    auto rocm_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(rocm_schedule, ROCMDimension::X);
+    ScheduleType_ROCM_deprecated::block_size(rocm_schedule, symbolic::integer(64));
 
     auto& reduce = builder.add_reduce(
         root,

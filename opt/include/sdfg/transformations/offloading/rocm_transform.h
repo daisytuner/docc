@@ -53,9 +53,9 @@ protected:
     }
 
     ScheduleType transformed_schedule_type() override {
-        auto schedule = ScheduleType_ROCM::create();
+        auto schedule = ScheduleType_ROCM_deprecated::create();
         if (block_size_ != 0) {
-            ScheduleType_ROCM::block_size(schedule, symbolic::integer(block_size_));
+            ScheduleType_ROCM_deprecated::block_size(schedule, symbolic::integer(block_size_));
         }
         return schedule;
     }

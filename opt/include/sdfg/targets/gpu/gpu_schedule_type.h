@@ -4,11 +4,59 @@
 
 #include "sdfg/exceptions.h"
 #include "sdfg/serializer/json_serializer.h"
-#include "sdfg/structured_control_flow/map.h"
 #include "sdfg/targets/gpu/gpu_types.h"
 
 namespace sdfg {
 namespace gpu {
+
+enum class TargetLevel {
+    X_GRID,
+    Y_GRID,
+    Z_GRID,
+    X_BLOCK,
+    Y_BLOCK,
+    Z_BLOCK,
+    WARP,
+};
+
+inline std::string to_string(const TargetLevel& target_level) {
+    switch (target_level) {
+        case TargetLevel::X_GRID:
+            return "X_GRID";
+        case TargetLevel::Y_GRID:
+            return "Y_GRID";
+        case TargetLevel::Z_GRID:
+            return "Z_GRID";
+        case TargetLevel::X_BLOCK:
+            return "X_BLOCK";
+        case TargetLevel::Y_BLOCK:
+            return "Y_BLOCK";
+        case TargetLevel::Z_BLOCK:
+            return "Z_BLOCK";
+        case TargetLevel::WARP:
+            return "WARP";
+    }
+    throw InvalidSDFGException("Invalid TargetLevel");
+}
+
+inline TargetLevel target_level_from_string(const std::string& value) {
+    if (value == "X_GRID") {
+        return TargetLevel::X_GRID;
+    } else if (value == "Y_GRID") {
+        return TargetLevel::Y_GRID;
+    } else if (value == "Z_GRID") {
+        return TargetLevel::Z_GRID;
+    } else if (value == "X_BLOCK") {
+        return TargetLevel::X_BLOCK;
+    } else if (value == "Y_BLOCK") {
+        return TargetLevel::Y_BLOCK;
+    } else if (value == "Z_BLOCK") {
+        return TargetLevel::Z_BLOCK;
+    } else if (value == "WARP") {
+        return TargetLevel::WARP;
+    }
+    throw InvalidSDFGException("Invalid TargetLevel: " + value);
+}
 
 /**
  * @brief Base class for GPU schedule types (CUDA/ROCm) using CRTP pattern
@@ -21,50 +69,38 @@ namespace gpu {
  * @tparam Derived The derived class (ScheduleType_CUDA or ScheduleType_ROCM)
  */
 template<typename Derived>
-class ScheduleType_GPU_Base {
+class ScheduleType_GPU {
 public:
     /**
-     * @brief Set the GPU dimension for a schedule
+     * @brief Set the target level for a schedule
      */
-    static void dimension(structured_control_flow::ScheduleType& schedule, const GPUDimension& dimension) {
-        schedule.set_property("dimension", std::to_string(dimension));
+    static void target_level(structured_control_flow::ScheduleType& schedule, const TargetLevel& target_level) {
+        schedule.set_property("target_level", gpu::to_string(target_level));
     }
 
     /**
-     * @brief Get the GPU dimension from a schedule
+     * @brief Get the target level from a schedule
      */
-    static GPUDimension dimension(const structured_control_flow::ScheduleType& schedule) {
-        return static_cast<GPUDimension>(std::stoi(schedule.properties().at("dimension")));
+    static TargetLevel target_level(const structured_control_flow::ScheduleType& schedule) {
+        return gpu::target_level_from_string(schedule.properties().at("target_level"));
     }
 
     /**
-     * @brief Set the block size for a schedule
+     * @brief Set the parallel size for a schedule
      */
-    static void block_size(structured_control_flow::ScheduleType& schedule, const symbolic::Expression block_size) {
+    static void parallel_size(structured_control_flow::ScheduleType& schedule, const symbolic::Integer parallel_size) {
         serializer::JSONSerializer serializer;
-        schedule.set_property("block_size", serializer.expression(block_size));
+        schedule.set_property("parallel_size", serializer.expression(parallel_size));
     }
 
     /**
-     * @brief Get the block size from a schedule
-     * Returns default values if not explicitly set:
-     * - X: Derived::default_block_size_x() (32 for CUDA, 64 for ROCm)
-     * - Y: 8
-     * - Z: 4
+     * @brief Get the parallel size from a schedule
      */
-    static symbolic::Integer block_size(const structured_control_flow::ScheduleType& schedule) {
-        if (schedule.properties().find("block_size") == schedule.properties().end()) {
-            if (dimension(schedule) == GPUDimension::X) {
-                return Derived::default_block_size_x();
-            } else if (dimension(schedule) == GPUDimension::Y) {
-                return symbolic::integer(8);
-            } else if (dimension(schedule) == GPUDimension::Z) {
-                return symbolic::integer(4);
-            } else {
-                throw InvalidSDFGException("Invalid GPU dimension");
-            }
+    static symbolic::Integer parallel_size(const structured_control_flow::ScheduleType& schedule) {
+        if (schedule.properties().find("parallel_size") == schedule.properties().end()) {
+            throw InvalidSDFGException("Parallel size not set for schedule type: " + schedule.value());
         }
-        std::string expr_str = schedule.properties().at("block_size");
+        std::string expr_str = schedule.properties().at("parallel_size");
         return symbolic::integer(std::stoi(expr_str));
     }
 
@@ -89,10 +125,12 @@ public:
     /**
      * @brief Create a new GPU schedule type
      */
-    static structured_control_flow::ScheduleType create() {
+    static structured_control_flow::ScheduleType
+    create(const TargetLevel& target_level_, const symbolic::Integer& parallel_size_) {
         auto schedule_type = structured_control_flow::
             ScheduleType(Derived::value(), structured_control_flow::ScheduleTypeCategory::Offloader);
-        dimension(schedule_type, GPUDimension::X);
+        target_level(schedule_type, target_level_);
+        parallel_size(schedule_type, parallel_size_);
         return schedule_type;
     }
 };
@@ -105,53 +143,17 @@ inline bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedul
 }
 
 /**
- * @brief Get the GPU dimension from any GPU schedule type
+ * @brief Get the GPU target level from any GPU schedule type
  */
-inline GPUDimension gpu_dimension(const structured_control_flow::ScheduleType& schedule) {
-    return static_cast<GPUDimension>(std::stoi(schedule.properties().at("dimension")));
+inline TargetLevel gpu_target_level(const structured_control_flow::ScheduleType& schedule) {
+    return target_level_from_string(schedule.properties().at("target_level"));
 }
 
 /**
- * @brief Set the GPU dimension on any GPU schedule type
+ * @brief Set the GPU target level on any GPU schedule type
  */
-inline void gpu_dimension(structured_control_flow::ScheduleType& schedule, const GPUDimension& dimension) {
-    schedule.set_property("dimension", std::to_string(dimension));
-}
-
-/**
- * @brief Get the block size from any GPU schedule type
- * Returns default values if not explicitly set:
- * - X: 32 for CUDA, 64 for ROCM
- * - Y: 8
- * - Z: 4
- */
-inline symbolic::Integer gpu_block_size(const structured_control_flow::ScheduleType& schedule) {
-    if (schedule.properties().find("block_size") == schedule.properties().end()) {
-        auto dim = gpu_dimension(schedule);
-        if (dim == GPUDimension::X) {
-            // Default block size depends on the backend
-            if (schedule.value() == "ROCM") {
-                return symbolic::integer(64);
-            }
-            return symbolic::integer(32);
-        } else if (dim == GPUDimension::Y) {
-            return symbolic::integer(8);
-        } else if (dim == GPUDimension::Z) {
-            return symbolic::integer(4);
-        } else {
-            throw InvalidSDFGException("Invalid GPU dimension");
-        }
-    }
-    std::string expr_str = schedule.properties().at("block_size");
-    return symbolic::integer(std::stoi(expr_str));
-}
-
-/**
- * @brief Set the block size on any GPU schedule type
- */
-inline void gpu_block_size(structured_control_flow::ScheduleType& schedule, const symbolic::Expression block_size) {
-    serializer::JSONSerializer serializer;
-    schedule.set_property("block_size", serializer.expression(block_size));
+inline void gpu_target_level(structured_control_flow::ScheduleType& schedule, const TargetLevel& target_level) {
+    schedule.set_property("target_level", to_string(target_level));
 }
 
 } // namespace gpu

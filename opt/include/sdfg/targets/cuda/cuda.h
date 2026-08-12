@@ -7,6 +7,7 @@
 #include "sdfg/codegen/utils.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_types.h"
+#include "sdfg/targets/gpu/old_gpu_schedule_type.h"
 
 namespace sdfg {
 namespace cuda {
@@ -32,7 +33,18 @@ using CUDADimension = gpu::GPUDimension;
  * @brief CUDA schedule type inheriting shared GPU functionality
  * Provides CUDA-specific value() and default block size (32 for warp size)
  */
-class ScheduleType_CUDA : public gpu::ScheduleType_GPU_Base<ScheduleType_CUDA> {
+class ScheduleType_CUDA : public gpu::ScheduleType_GPU<ScheduleType_CUDA> {
+public:
+    static const std::string value() { return "CUDA"; }
+};
+
+/**
+ * @brief CUDA schedule type inheriting shared GPU functionality
+ * Provides CUDA-specific value() and default block size (32 for warp size)
+ * @deprecated This class is deprecated and will be removed in future versions. Use the new GPU schedule type classes
+ * instead.
+ */
+class ScheduleType_CUDA_deprecated : public gpu::ScheduleType_GPU_Base_Deprecated<ScheduleType_CUDA_deprecated> {
 public:
     static const std::string value() { return "CUDA"; }
     static symbolic::Integer default_block_size_x() { return symbolic::integer(32); }

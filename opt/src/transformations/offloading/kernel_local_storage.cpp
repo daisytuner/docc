@@ -30,6 +30,8 @@
 #include "sdfg/types/utils.h"
 #include "symengine/symengine_rcp.h"
 
+#include "sdfg/targets/gpu/old_gpu_schedule_type.h"
+
 namespace sdfg {
 namespace transformations {
 

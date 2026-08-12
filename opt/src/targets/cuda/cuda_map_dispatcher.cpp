@@ -85,9 +85,9 @@ void CUDAMapDispatcher::dispatch_node(
 
     std::vector<std::string> scope_variables;
 
-    auto x_vars = gpu::get_gpu_indvars<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::X);
-    auto y_vars = gpu::get_gpu_indvars<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Y);
-    auto z_vars = gpu::get_gpu_indvars<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Z);
+    auto x_vars = gpu::get_gpu_indvars<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::X);
+    auto y_vars = gpu::get_gpu_indvars<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Y);
+    auto z_vars = gpu::get_gpu_indvars<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Z);
 
     for (auto& var : scope_variables_unfiltered) {
         if (x_vars.find(symbolic::symbol(var)) == x_vars.end() && y_vars.find(symbolic::symbol(var)) == y_vars.end() &&
@@ -104,19 +104,25 @@ void CUDAMapDispatcher::dispatch_node(
         arguments_declaration.push_back(this->language_extension_.declaration(container, sdfg_.type(container)));
     }
 
-    auto block_size_x = gpu::find_nested_gpu_blocksize<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::X);
-    auto block_size_y = gpu::find_nested_gpu_blocksize<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Y);
-    auto block_size_z = gpu::find_nested_gpu_blocksize<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Z);
-    auto num_iters_x = gpu::find_nested_gpu_iterations<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::X);
-    auto num_iters_y = gpu::find_nested_gpu_iterations<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Y);
-    auto num_iters_z = gpu::find_nested_gpu_iterations<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Z);
+    auto block_size_x =
+        gpu::find_nested_gpu_blocksize<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::X);
+    auto block_size_y =
+        gpu::find_nested_gpu_blocksize<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Y);
+    auto block_size_z =
+        gpu::find_nested_gpu_blocksize<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Z);
+    auto num_iters_x =
+        gpu::find_nested_gpu_iterations<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::X);
+    auto num_iters_y =
+        gpu::find_nested_gpu_iterations<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Y);
+    auto num_iters_z =
+        gpu::find_nested_gpu_iterations<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Z);
 
     symbolic::Expression num_iters;
-    if (CUDADimension::X == ScheduleType_CUDA::dimension(node_.schedule_type())) {
+    if (CUDADimension::X == ScheduleType_CUDA_deprecated::dimension(node_.schedule_type())) {
         num_iters = num_iters_x;
-    } else if (CUDADimension::Y == ScheduleType_CUDA::dimension(node_.schedule_type())) {
+    } else if (CUDADimension::Y == ScheduleType_CUDA_deprecated::dimension(node_.schedule_type())) {
         num_iters = num_iters_y;
-    } else if (CUDADimension::Z == ScheduleType_CUDA::dimension(node_.schedule_type())) {
+    } else if (CUDADimension::Z == ScheduleType_CUDA_deprecated::dimension(node_.schedule_type())) {
         num_iters = num_iters_z;
     } else {
         throw InvalidSDFGException("Invalid CUDA dimension");
@@ -132,7 +138,7 @@ void CUDAMapDispatcher::dispatch_node(
 
     std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
 
-    if (gpu::is_outermost_gpu_map<ScheduleType_CUDA>(node_, analysis_manager)) {
+    if (gpu::is_outermost_gpu_map<ScheduleType_CUDA_deprecated>(node_, analysis_manager)) {
         this->dispatch_kernel_call(
             main_stream,
             kernel_name,
@@ -186,7 +192,7 @@ void CUDAMapDispatcher::dispatch_kernel_body(
     symbolic::Expression& num_iterations
 ) {
     codegen::CUDALanguageExtension cuda_language_extension(sdfg_);
-    if (gpu::is_outermost_gpu_map<ScheduleType_CUDA>(node_, analysis_manager_)) {
+    if (gpu::is_outermost_gpu_map<ScheduleType_CUDA_deprecated>(node_, analysis_manager_)) {
         // Declare and optionally allocate scope variables
         for (auto& local : scope_variables) {
             if (local.starts_with("__daisy_cuda")) {
@@ -207,13 +213,13 @@ void CUDAMapDispatcher::dispatch_kernel_body(
         }
     }
     // Boundary Conditions
-    if (!ScheduleType_CUDA::nested_sync(node_.schedule_type())) {
+    if (!ScheduleType_CUDA_deprecated::nested_sync(node_.schedule_type())) {
         // Guard on the flat thread id rather than the per-Map indvar so that
         // Maps with non-unit stride or non-zero init still get a correct OOB
         // check (the per-Map indvar = init + flat_id * stride and is
         // only well-defined when flat_id < num_iterations).
         std::string flat_id;
-        switch (ScheduleType_CUDA::dimension(node_.schedule_type())) {
+        switch (ScheduleType_CUDA_deprecated::dimension(node_.schedule_type())) {
             case CUDADimension::X:
                 flat_id = "__daisy_cuda_indvar_x";
                 break;
@@ -247,7 +253,7 @@ void CUDAMapDispatcher::dispatch_kernel_body(
         }
     }
 
-    if (!ScheduleType_CUDA::nested_sync(node_.schedule_type())) {
+    if (!ScheduleType_CUDA_deprecated::nested_sync(node_.schedule_type())) {
         library_stream.setIndent(library_stream.indent() - 4);
         library_stream << "}" << std::endl;
     }
@@ -344,9 +350,9 @@ void CUDAMapDispatcher::dispatch_kernel_preamble(
     // (e.g. block-tiled outer loops produced by LoopTiling). The bound check
     // in dispatch_kernel_body() guards on the flat id against num_iterations,
     // so out-of-grid threads are skipped before any body access.
-    auto x_maps = gpu::get_gpu_maps<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::X);
-    auto y_maps = gpu::get_gpu_maps<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Y);
-    auto z_maps = gpu::get_gpu_maps<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::Z);
+    auto x_maps = gpu::get_gpu_maps<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::X);
+    auto y_maps = gpu::get_gpu_maps<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Y);
+    auto z_maps = gpu::get_gpu_maps<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Z);
 
     std::unordered_map<std::string, symbolic::Expression> indvars;
 

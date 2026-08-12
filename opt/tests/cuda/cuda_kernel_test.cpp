@@ -26,9 +26,9 @@ TEST(CUDAKernel, DispatcherTest) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
-    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -118,9 +118,9 @@ TEST(CUDAKernel, NestedXYDispatcherTest) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
-    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -128,9 +128,9 @@ TEST(CUDAKernel, NestedXYDispatcherTest) {
 
     auto& map = builder.add_map(root, symbolic::symbol("i"), condition, init, update, cuda_schedule);
 
-    ScheduleType cuda_schedule2 = ScheduleType_CUDA::create();
-    ScheduleType_CUDA::dimension(cuda_schedule2, CUDADimension::Y);
-    ScheduleType_CUDA::block_size(cuda_schedule2, symbolic::integer(4));
+    ScheduleType cuda_schedule2 = ScheduleType_CUDA_deprecated::create();
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule2, CUDADimension::Y);
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule2, symbolic::integer(4));
 
     auto condition2 = symbolic::Lt(symbolic::symbol("j"), symbolic::integer(40));
     auto init2 = symbolic::integer(0);
@@ -225,9 +225,9 @@ TEST(CUDAKernel, NestedXZDispatcherTest) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
-    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -235,9 +235,9 @@ TEST(CUDAKernel, NestedXZDispatcherTest) {
 
     auto& map = builder.add_map(root, symbolic::symbol("i"), condition, init, update, cuda_schedule);
 
-    ScheduleType cuda_schedule2 = ScheduleType_CUDA::create();
-    ScheduleType_CUDA::dimension(cuda_schedule2, CUDADimension::Z);
-    ScheduleType_CUDA::block_size(cuda_schedule2, symbolic::integer(4));
+    ScheduleType cuda_schedule2 = ScheduleType_CUDA_deprecated::create();
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule2, CUDADimension::Z);
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule2, symbolic::integer(4));
 
     auto condition2 = symbolic::Lt(symbolic::symbol("j"), symbolic::integer(40));
     auto init2 = symbolic::integer(0);
@@ -333,9 +333,9 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
-    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -343,9 +343,9 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
 
     auto& map = builder.add_map(root, symbolic::symbol("i"), condition, init, update, cuda_schedule);
 
-    ScheduleType cuda_schedule2 = ScheduleType_CUDA::create();
-    ScheduleType_CUDA::dimension(cuda_schedule2, CUDADimension::Y);
-    ScheduleType_CUDA::block_size(cuda_schedule2, symbolic::integer(4));
+    ScheduleType cuda_schedule2 = ScheduleType_CUDA_deprecated::create();
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule2, CUDADimension::Y);
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule2, symbolic::integer(4));
 
     auto condition2 = symbolic::Lt(symbolic::symbol("j"), symbolic::integer(40));
     auto init2 = symbolic::integer(0);
@@ -353,9 +353,9 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
 
     auto& map2 = builder.add_map(map.root(), symbolic::symbol("j"), condition2, init2, update2, cuda_schedule2);
 
-    ScheduleType cuda_schedule3 = ScheduleType_CUDA::create();
-    ScheduleType_CUDA::dimension(cuda_schedule3, CUDADimension::Z);
-    ScheduleType_CUDA::block_size(cuda_schedule3, symbolic::integer(2));
+    ScheduleType cuda_schedule3 = ScheduleType_CUDA_deprecated::create();
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule3, CUDADimension::Z);
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule3, symbolic::integer(2));
 
     auto condition3 = symbolic::Lt(symbolic::symbol("k"), symbolic::integer(200));
     auto init3 = symbolic::integer(0);
@@ -460,9 +460,9 @@ TEST(CudaTransformTest, CudaTransformWithBlocksizeTest) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
-    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
+    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -480,7 +480,7 @@ TEST(CudaTransformTest, CudaTransformWithBlocksizeTest) {
 
     auto transformed_schedule = map.schedule_type();
 
-    EXPECT_TRUE(SymEngine::eq(*ScheduleType_CUDA::block_size(transformed_schedule), *symbolic::integer(64)));
+    EXPECT_TRUE(SymEngine::eq(*ScheduleType_CUDA_deprecated::block_size(transformed_schedule), *symbolic::integer(64)));
 }
 
 

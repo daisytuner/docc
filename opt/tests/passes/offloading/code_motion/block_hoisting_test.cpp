@@ -1621,7 +1621,8 @@ TEST(BlockHoistingTest, waxpby_CUDA) {
     }
 
     {
-        auto& map = builder.add_map(case1, indvar, condition, init, update, cuda::ScheduleType_CUDA::create());
+        auto& map =
+            builder.add_map(case1, indvar, condition, init, update, cuda::ScheduleType_CUDA_deprecated::create());
         auto& block = builder.add_block(map.root());
         auto& d_w = builder.add_access(block, d_w1);
         auto& d_x = builder.add_access(block, d_x1);
@@ -1682,7 +1683,8 @@ TEST(BlockHoistingTest, waxpby_CUDA) {
     }
 
     {
-        auto& map = builder.add_map(case2, indvar, condition, init, update, cuda::ScheduleType_CUDA::create());
+        auto& map =
+            builder.add_map(case2, indvar, condition, init, update, cuda::ScheduleType_CUDA_deprecated::create());
         auto& block = builder.add_block(map.root());
         auto& d_w = builder.add_access(block, d_w2);
         auto& alpha = builder.add_access(block, "alpha");
@@ -1743,7 +1745,8 @@ TEST(BlockHoistingTest, waxpby_CUDA) {
     }
 
     {
-        auto& map = builder.add_map(case3, indvar, condition, init, update, cuda::ScheduleType_CUDA::create());
+        auto& map =
+            builder.add_map(case3, indvar, condition, init, update, cuda::ScheduleType_CUDA_deprecated::create());
         auto& block = builder.add_block(map.root());
         auto& d_w = builder.add_access(block, d_w2);
         auto& alpha = builder.add_access(block, "alpha");

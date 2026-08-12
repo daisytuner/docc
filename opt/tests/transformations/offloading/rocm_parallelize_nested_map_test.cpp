@@ -24,9 +24,9 @@ TEST(ROCMNestedParallelismTransformation, GridSizeExceedsYZLimit) {
     auto& A_device = builder.add_container("__daisy_hip_A", pointer_type);
     auto& B_host = builder.add_container("B", base_desc);
 
-    ScheduleType rocm_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(rocm_schedule, ROCMDimension::X);
-    ScheduleType_ROCM::block_size(rocm_schedule, symbolic::integer(64));
+    ScheduleType rocm_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(rocm_schedule, ROCMDimension::X);
+    ScheduleType_ROCM_deprecated::block_size(rocm_schedule, symbolic::integer(64));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -80,9 +80,9 @@ TEST(ROCMNestedParallelismTransformation, GridSizeWithinYZLimit) {
     auto& A_device = builder.add_container("__daisy_hip_A", pointer_type);
     auto& B_host = builder.add_container("B", base_desc);
 
-    ScheduleType rocm_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(rocm_schedule, ROCMDimension::X);
-    ScheduleType_ROCM::block_size(rocm_schedule, symbolic::integer(64));
+    ScheduleType rocm_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(rocm_schedule, ROCMDimension::X);
+    ScheduleType_ROCM_deprecated::block_size(rocm_schedule, symbolic::integer(64));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -152,9 +152,9 @@ TEST(ROCMNestedParallelismTransformation, SiblingAccumulationBlocksNestedParalle
     auto r = symbolic::symbol("r");
     auto m = symbolic::symbol("m");
 
-    ScheduleType outer_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(outer_schedule, ROCMDimension::X);
-    ScheduleType_ROCM::block_size(outer_schedule, symbolic::integer(64));
+    ScheduleType outer_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(outer_schedule, ROCMDimension::X);
+    ScheduleType_ROCM_deprecated::block_size(outer_schedule, symbolic::integer(64));
     auto& outer = builder.add_map(
         root,
         i,
@@ -230,9 +230,9 @@ TEST(ROCMNestedParallelismTransformation, SiblingAccumulationOnLocalAllowsNested
     auto r = symbolic::symbol("r");
     auto m = symbolic::symbol("m");
 
-    ScheduleType outer_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(outer_schedule, ROCMDimension::X);
-    ScheduleType_ROCM::block_size(outer_schedule, symbolic::integer(64));
+    ScheduleType outer_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(outer_schedule, ROCMDimension::X);
+    ScheduleType_ROCM_deprecated::block_size(outer_schedule, symbolic::integer(64));
     auto& outer = builder.add_map(
         root,
         i,
@@ -306,9 +306,9 @@ TEST(ROCMNestedParallelismTransformation, ParallelizedSiblingReductionAllowsNest
     auto r = symbolic::symbol("r");
     auto m = symbolic::symbol("m");
 
-    ScheduleType outer_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(outer_schedule, ROCMDimension::X);
-    ScheduleType_ROCM::block_size(outer_schedule, symbolic::integer(64));
+    ScheduleType outer_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(outer_schedule, ROCMDimension::X);
+    ScheduleType_ROCM_deprecated::block_size(outer_schedule, symbolic::integer(64));
     auto& outer = builder.add_map(
         root,
         i,
@@ -320,9 +320,9 @@ TEST(ROCMNestedParallelismTransformation, ParallelizedSiblingReductionAllowsNest
 
     // Sibling 1: reduce that is itself parallelized (a ROCm map) - mapped onto its
     // own threads, so it is not replicated by the target's new dimension.
-    ScheduleType reduce_schedule = ScheduleType_ROCM::create();
-    ScheduleType_ROCM::dimension(reduce_schedule, ROCMDimension::Y);
-    ScheduleType_ROCM::block_size(reduce_schedule, symbolic::integer(8));
+    ScheduleType reduce_schedule = ScheduleType_ROCM_deprecated::create();
+    ScheduleType_ROCM_deprecated::dimension(reduce_schedule, ROCMDimension::Y);
+    ScheduleType_ROCM_deprecated::block_size(reduce_schedule, symbolic::integer(8));
     auto& reduce = builder.add_map(
         outer.root(),
         r,
