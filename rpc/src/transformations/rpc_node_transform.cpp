@@ -80,12 +80,17 @@ bool RPCNodeTransform::
         builder.subject().add_metadata("transfer_tuning_session_id", this->session_id_.value());
     }
 
+    std::cout << "[RPC] Sending optimization request to " << rpc_context_.get_remote_address() << " for node "
+              << get_node_id_str() << " (target=" << this->target_ << ", category=" << this->category_ << ")"
+              << std::endl;
+    std::cout << "[RPC]   enable_fusion=" << (this->enable_fusion_ ? "true" : "false")
+              << ", normalize=" << (this->normalize_ ? "true" : "false") << std::endl;
     auto opt_resp = query_rpc_server(
         {.sdfg = builder.subject(),
          .category = this->category_,
          .target = this->target_,
          .enable_fusion = this->enable_fusion_,
-	 .normalize = this->normalize_,
+         .normalize = this->normalize_,
          .session_id = this->session_id_},
         rpc_context_
     );
