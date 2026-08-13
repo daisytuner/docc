@@ -36,6 +36,14 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
         return false;
     }
 
+    // Already-scheduled loops (e.g. tuned cutouts returned from remote tuning) must not be
+    // offloaded again, which would nest device buffers (double offloading).
+    if (loop_.schedule_type().category() != structured_control_flow::ScheduleTypeCategory::None) {
+        if (report_) report_->transform_impossible(this, "already scheduled");
+        DEBUG_PRINTLN("Cannot apply transform: loop already carries a non-sequential schedule");
+        return false;
+    }
+
     auto& sdfg = builder.subject();
 
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();

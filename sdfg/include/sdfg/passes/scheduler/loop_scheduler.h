@@ -16,6 +16,7 @@ namespace scheduler {
 enum SchedulerAction {
     NEXT,
     CHILDREN,
+    SKIP,
 };
 
 struct SchedulerLoopInfo {
@@ -39,7 +40,9 @@ public:
      * @brief Phase 1: Determine the action for a loop during loop discovery.
      *
      * Returns NEXT if the loop should be scheduled (added to the applicable set),
-     * or CHILDREN if the scheduler should descend into child loops instead.
+     * CHILDREN if the scheduler should descend into child loops instead, or SKIP
+     * if the loop already carries a non-None schedule and must be left untouched
+     * (neither scheduled nor traversed into).
      */
     virtual SchedulerAction find(
         builder::StructuredSDFGBuilder& builder,

@@ -108,6 +108,9 @@ bool LoopSchedulingPass::run_pass_target(
                 }
                 break;
             }
+            case SchedulerAction::SKIP: {
+                break;
+            }
         }
     }
 
