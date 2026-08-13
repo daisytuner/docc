@@ -479,8 +479,9 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
     std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
 
     sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
-    bool loop_scheduling_changes = loop_scheduling_pass.run(builder, analysis_manager);
-    if (loop_scheduling_changes) {
+    loop_scheduling_pass.run(builder, analysis_manager);
+
+    if (options.target == "cuda" || options.target == "rocm") {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
         data_transfer_minimization_pass.run(builder, analysis_manager);
         sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
