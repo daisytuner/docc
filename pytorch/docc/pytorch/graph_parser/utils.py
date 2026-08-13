@@ -25,6 +25,7 @@ from docc.sdfg import (
     Tasklet,
     TaskletCode,
 )
+from docc.python.memory import ManagedMemoryHandler
 
 
 def primitive_type_is_signed_integer(primitive_type: PrimitiveType) -> bool:
@@ -432,10 +433,21 @@ class ContainerInfos:
     """
 
     _data: dict[str, ContainerInfoBase]
+    _memory_handler: "ManagedMemoryHandler | None"
 
     def __init__(self) -> None:
         """Initialization"""
         self._data = {}
+        self._memory_handler = None
+
+    def memory_handler(self, builder: StructuredSDFGBuilder) -> ManagedMemoryHandler:
+        """
+        Returns the shared memory handler used to hoist argument-only allocations to the function
+        entry, creating it lazily from the given builder on first use.
+        """
+        if self._memory_handler is None:
+            self._memory_handler = ManagedMemoryHandler(builder)
+        return self._memory_handler
 
     def __getitem__(self, container: str) -> ContainerInfoBase:
         """Returns container information to the given container key"""
@@ -995,9 +1007,17 @@ class GraphParserModule(GraphParserBase, ABC):
                 "Could not allocate memory for non-tensor container: " + container,
             )
         size: str = sdfg_tensor_type.total_size()
-        if size != "0":
+        if size == "0":
+            return
+        # Hoist allocations whose size depends only on function arguments to the function entry
+        # (emitted later by emit_allocations); otherwise allocate in place. Either way the buffer
+        # is freed by the memory_managed sweep at the end of parsing.
+        ptr_type: Type = info.sdfg_type()
+        if not container_info.memory_handler(builder).allocate(
+            container, ptr_type, size
+        ):
             builder.add_malloc_block(container, size, debug_info_)
-            info.update(memory_managed=True)
+        info.update(memory_managed=True)
 
     def resolve_contaner_name_forward(
         self,

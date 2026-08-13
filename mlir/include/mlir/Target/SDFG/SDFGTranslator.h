@@ -89,6 +89,10 @@ class SDFGTranslator {
 
     std::unordered_map<::sdfg::structured_control_flow::Sequence*, std::list<std::string>> memory_map_;
 
+    // Insertion index in the function root for the next hoisted allocation; keeps hoisted
+    // mallocs at the top of the function in request order.
+    size_t hoist_cursor_;
+
     std::unordered_map<std::string, std::string> alias_map_;
 
     // Maps a linalg.fill result whose materialization was deferred to the constant scalar value it
