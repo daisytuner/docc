@@ -195,14 +195,14 @@ public:
     void on_write_via(const std::string& container, const ControlFlowNode* node, const data_flow::Memlet* user) override;
     void on_read_via(const std::string& container, const ControlFlowNode* node, const data_flow::Memlet* user) override;
 
-    void use_as_return_src(const std::string& container, const Return& ret) override {
+    void use_as_return_src(const std::string& container, Return& ret) override {
         PointerEscapeAnalyzer::use_as_return_src(container, ret);
         PointerUsedAnalyzer::use_as_return_src(container, ret);
     }
     void use_as_symbol_read(
         const std::string& container,
-        const ControlFlowNode* node,
-        const Element* user,
+        ControlFlowNode* node,
+        Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
@@ -210,26 +210,18 @@ public:
         PointerEscapeAnalyzer::use_as_symbol_read(container, node, user, loc, loc_index, expr);
         PointerUsedAnalyzer::use_as_symbol_read(container, node, user, loc, loc_index, expr);
     }
-    void use_as_src_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_src_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         PointerEscapeAnalyzer::use_as_src_node(container, node, edge, block);
         PointerUsedAnalyzer::use_as_src_node(container, node, edge, block);
     }
-    void use_as_dst_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_dst_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         PointerEscapeAnalyzer::use_as_dst_node(container, node, edge, block);
         PointerUsedAnalyzer::use_as_dst_node(container, node, edge, block);
     }
     void use_as_symbol_write(
-        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+        const symbolic::Symbol& container, ControlFlowNode* node, Element* user, SymbolWriteLocation loc
     ) override {
         PointerEscapeAnalyzer::use_as_symbol_write(container, node, user, loc);
         PointerUsedAnalyzer::use_as_symbol_write(container, node, user, loc);

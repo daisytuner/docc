@@ -29,10 +29,12 @@ set(SOURCE_FILES
     src/analysis/base_user_visitor.cpp
     src/analysis/control_flow_analysis.cpp
     src/analysis/data_dependency_analysis.cpp
+    src/analysis/data_dependency_analyzer.cpp
     src/analysis/dominance_analysis.cpp
     src/analysis/flop_analysis.cpp
     src/analysis/loop_analysis.cpp
     src/analysis/loop_carried_dependency_analysis.cpp
+    src/analysis/loop_carried_dependency_analyzer.cpp
     src/analysis/memory_layout_analysis.cpp
     src/analysis/reference_analysis.cpp
     src/analysis/type_analysis.cpp

@@ -57,6 +57,18 @@ std::unordered_set<std::string> StrideMinimization::allowed_swaps(
     return allowed_swaps;
 };
 
+std::ostream& operator<<(std::ostream& os, const std::vector<std::string>& permutation) {
+    os << "[";
+    for (size_t i = 0; i < permutation.size(); i++) {
+        os << permutation.at(i);
+        if (i != permutation.size() - 1) {
+            os << ", ";
+        }
+    }
+    os << "]";
+    return os;
+}
+
 std::pair<bool, std::vector<std::string>> StrideMinimization::can_be_applied(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
@@ -78,6 +90,12 @@ std::pair<bool, std::vector<std::string>> StrideMinimization::can_be_applied(
     }
 
     auto admissible_swaps = allowed_swaps(builder, analysis_manager, nested_loops);
+    std::cerr << "StrideMin: #" << nested_loops.at(0)->element_id() << ": " << permutation << std::endl;
+    std::cerr << "\toptions: ";
+    for (auto& swap : admissible_swaps) {
+        std::cerr << swap << " ";
+    }
+    std::cerr << std::endl;
 
     // Collect all memory accesses of body
     structured_control_flow::ControlFlowNode* nested_root = nullptr;
@@ -248,6 +266,10 @@ std::pair<bool, std::vector<std::string>> StrideMinimization::can_be_applied(
         }
     } while (std::next_permutation(current.begin(), current.end()));
 
+    if (best_permutation != permutation) {
+        std::cerr << " -> " << best_permutation << std::endl;
+    }
+
     // Check if permutation is better than original
     return {best_permutation != permutation, best_permutation};
 };
@@ -325,9 +347,14 @@ bool StrideMinimization::run_pass(builder::StructuredSDFGBuilder& builder, analy
         auto& permutation = permutations.at(0).first;
         auto& path = permutations.at(0).second;
 
+        std::cerr << "StrideMin #" << loop->element_id() << ":" << permutation << std::endl;
+
         this->apply(builder, analysis_manager, path, permutation);
         applied = true;
     }
+    CompileStatistics::add_metric_if_enabled("strid_min", loop_permutations.size());
+    std::cerr << "StridMin Run Done" << std::endl;
+
     return applied;
 };
 

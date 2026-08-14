@@ -140,8 +140,8 @@ public:
 
     void use_as_symbol_read(
         const std::string& container,
-        const ControlFlowNode* node,
-        const Element* user,
+        ControlFlowNode* node,
+        Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
@@ -213,28 +213,20 @@ public:
     }
 
 
-    void use_as_dst_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_dst_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         auto current = get_current_loop();
         if (current && edge.is_dst_pointed_to_write()) {
             found_indirect_arg_access(container, edge, block, current, true);
         }
     }
-    void use_as_return_src(const std::string& container, const Return& ret) override {}
+    void use_as_return_src(const std::string& container, Return& ret) override {}
     /**
      * Dangerous, if somebody builds a value derived from indvar and then uses that for addressing we would not notice.
      * But normally those should be folded into the accesses
      */
-    void use_as_src_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_src_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         auto current = get_current_loop();
         if (current && (edge.is_src_address_leak() || edge.is_src_pointed_to_address_leak(sdfg_.type(container)))) {
             current->fusion_candidate.aliasing_encountered();
@@ -243,7 +235,7 @@ public:
         }
     }
     void use_as_symbol_write(
-        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+        const symbolic::Symbol& container, ControlFlowNode* node, Element* user, SymbolWriteLocation loc
     ) override {}
 };
 

@@ -86,15 +86,15 @@ public:
     bool visit(sdfg::structured_control_flow::Block& node) override;
 
     void use_as_symbol_write(
-        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+        const symbolic::Symbol& container, ControlFlowNode* node, Element* user, SymbolWriteLocation loc
     ) override {
         PointerEscapeAnalyzer::use_as_symbol_write(container, node, user, loc);
         PointerOverwriteAnalyzer::use_as_symbol_write(container, node, user, loc);
     }
     void use_as_symbol_read(
         const std::string& container,
-        const ControlFlowNode* node,
-        const Element* user,
+        ControlFlowNode* node,
+        Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
@@ -102,25 +102,17 @@ public:
         PointerEscapeAnalyzer::use_as_symbol_read(container, node, user, loc, loc_index, std::move(expr));
         PointerOverwriteAnalyzer::use_as_symbol_read(container, node, user, loc, loc_index, std::move(expr));
     }
-    void use_as_src_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_src_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         PointerEscapeAnalyzer::use_as_src_node(container, node, edge, block);
         PointerOverwriteAnalyzer::use_as_src_node(container, node, edge, block);
     }
-    void use_as_dst_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_dst_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         PointerEscapeAnalyzer::use_as_dst_node(container, node, edge, block);
         PointerOverwriteAnalyzer::use_as_dst_node(container, node, edge, block);
     }
-    void use_as_return_src(const std::string& container, const Return& ret) override {
+    void use_as_return_src(const std::string& container, Return& ret) override {
         PointerEscapeAnalyzer::use_as_return_src(container, ret);
         PointerOverwriteAnalyzer::use_as_return_src(container, ret);
     }
@@ -313,36 +305,27 @@ public:
 
     void use_as_symbol_read(
         const std::string& container,
-        const ControlFlowNode* node,
-        const Element* user,
+        ControlFlowNode* node,
+        Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
     ) override {}
     void use_as_symbol_write(
-        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+        const symbolic::Symbol& container, ControlFlowNode* node, Element* user, SymbolWriteLocation loc
     ) override {}
-    void use_as_src_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override;
-    void use_as_dst_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override;
-    void use_as_return_src(const std::string& container, const Return& ret) override {}
+    void use_as_src_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override;
+    void use_as_dst_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override;
+    void use_as_return_src(const std::string& container, Return& ret) override {}
 };
 
 IndirectMemoryAccessFinder::IndirectMemoryAccessFinder(const std::unordered_set<std::string>& target_containers)
     : target_containers_(target_containers) {}
 
-void IndirectMemoryAccessFinder::use_as_src_node(
-    const std::string& container, const data_flow::AccessNode& node, const data_flow::Memlet& edge, const Block& block
-) {
+void IndirectMemoryAccessFinder::
+    use_as_src_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block) {
     if (target_containers_.contains(container)) {
         if (edge.is_src_pointed_to_read()) {
             indirect_reads_[container].insert(&edge);
@@ -365,9 +348,8 @@ void IndirectMemoryAccessFinder::use_as_src_node(
     }
 }
 
-void IndirectMemoryAccessFinder::use_as_dst_node(
-    const std::string& container, const data_flow::AccessNode& node, const data_flow::Memlet& edge, const Block& block
-) {
+void IndirectMemoryAccessFinder::
+    use_as_dst_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block) {
     if (target_containers_.contains(container)) {
         if (edge.is_dst_pointed_to_write()) {
             writes_to_remove_[container][&edge] = {&block, IndirectWriteType::AccessNode};

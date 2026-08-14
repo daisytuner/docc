@@ -28,28 +28,22 @@ public:
 
     virtual void use_as_symbol_read(
         const std::string& container,
-        const ControlFlowNode* node,
-        const Element* user,
+        ControlFlowNode* node,
+        Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
     ) = 0;
     virtual void use_as_symbol_write(
-        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+        const symbolic::Symbol& container, ControlFlowNode* node, Element* user, SymbolWriteLocation loc
     ) = 0;
     virtual void use_as_src_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
+        const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block
     ) = 0;
     virtual void use_as_dst_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
+        const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block
     ) = 0;
-    virtual void use_as_return_src(const std::string& container, const Return& ret) = 0;
+    virtual void use_as_return_src(const std::string& container, Return& ret) = 0;
 };
 
 /**

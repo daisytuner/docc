@@ -40,7 +40,7 @@ class PointerEscapeAnalyzer : public virtual BaseUserAnalyzer {
 public:
     PointerEscapeAnalyzer(const StructuredSDFG& sdfg, Policy& policy) : sdfg_(sdfg), policy_(policy) {}
 
-    void use_as_return_src(const std::string& container, const Return& ret) override {
+    void use_as_return_src(const std::string& container, Return& ret) override {
         if (sdfg_.type(container).type_id() == types::TypeID::Pointer) {
             policy_.on_escape(container, &ret, &ret);
         }
@@ -48,8 +48,8 @@ public:
 
     void use_as_symbol_read(
         const std::string& container,
-        const ControlFlowNode* node,
-        const Element* user,
+        ControlFlowNode* node,
+        Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
@@ -60,12 +60,8 @@ public:
         }
     }
 
-    void use_as_src_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_src_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         auto& type = sdfg_.type(container);
         if (edge.is_src_pointed_to_address_leak(type) || edge.is_src_address_leak()) {
             // pulls a reference to the owned memory area or can alias the entire pointer
@@ -76,14 +72,10 @@ public:
         }
     }
 
-    void use_as_dst_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {}
+    void use_as_dst_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {}
     void use_as_symbol_write(
-        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+        const symbolic::Symbol& container, ControlFlowNode* node, Element* user, SymbolWriteLocation loc
     ) override {}
 };
 
@@ -101,12 +93,8 @@ class PointerOverwriteAnalyzer : public BaseUserAnalyzer {
 public:
     PointerOverwriteAnalyzer(const StructuredSDFG& sdfg, Policy& policy) : sdfg_(sdfg), policy_(policy) {}
 
-    void use_as_dst_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_dst_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         if (edge.is_dst_write()) { // writes to the ptr
             auto& type = sdfg_.type(container);
             if (type.type_id() == types::TypeID::Pointer) {
@@ -116,7 +104,7 @@ public:
     }
 
     void use_as_symbol_write(
-        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+        const symbolic::Symbol& container, ControlFlowNode* node, Element* user, SymbolWriteLocation loc
     ) override {
         auto name = container->get_name();
         if (sdfg_.type(name).type_id() == types::TypeID::Pointer) {
@@ -124,17 +112,13 @@ public:
         }
     }
 
-    void use_as_return_src(const std::string& container, const Return& ret) override {}
-    void use_as_src_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {}
+    void use_as_return_src(const std::string& container, Return& ret) override {}
+    void use_as_src_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {}
     void use_as_symbol_read(
         const std::string& container,
-        const ControlFlowNode* node,
-        const Element* user,
+        ControlFlowNode* node,
+        Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
@@ -159,38 +143,30 @@ class PointerUsedAnalyzer : public BaseUserAnalyzer {
 public:
     PointerUsedAnalyzer(const StructuredSDFG& sdfg, Policy& policy) : sdfg_(sdfg), policy_(policy) {}
 
-    void use_as_src_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_src_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         if (edge.is_src_pointed_to_read()) {
             policy_.on_read_via(container, &block, &edge);
         }
     }
 
-    void use_as_dst_node(
-        const std::string& container,
-        const data_flow::AccessNode& node,
-        const data_flow::Memlet& edge,
-        const Block& block
-    ) override {
+    void use_as_dst_node(const std::string& container, data_flow::AccessNode& node, data_flow::Memlet& edge, Block& block)
+        override {
         if (edge.is_dst_pointed_to_write()) {
             policy_.on_write_via(container, &block, &edge);
         }
     }
 
     void use_as_symbol_write(
-        const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
+        const symbolic::Symbol& container, ControlFlowNode* node, Element* user, SymbolWriteLocation loc
     ) override {}
 
-    void use_as_return_src(const std::string& container, const Return& ret) override {}
+    void use_as_return_src(const std::string& container, Return& ret) override {}
 
     void use_as_symbol_read(
         const std::string& container,
-        const ControlFlowNode* node,
-        const Element* user,
+        ControlFlowNode* node,
+        Element* user,
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -175,6 +176,21 @@ public:
 
     std::list<User*> uses(const std::string& container) const;
 
+    /// Lazy, non-copying variant of uses(): returns a filtered view over all non-NOP users.
+    auto uses_view() const {
+        return users_ | std::views::values |
+               std::views::transform([](const std::unique_ptr<User>& u) { return u.get(); }) |
+               std::views::filter([](User* u) { return u->use() != Use::NOP; });
+    }
+
+    /// Lazy, non-copying variant of uses(container): returns a filtered view over all non-NOP
+    /// users of the given container.
+    auto uses_view(const std::string& container) const {
+        return users_ | std::views::values |
+               std::views::transform([](const std::unique_ptr<User>& u) { return u.get(); }) |
+               std::views::filter([container](User* u) { return u->use() != Use::NOP && u->container() == container; });
+    }
+
     size_t num_uses(const std::string& container) const;
 
     std::list<User*> writes() const;
@@ -228,6 +244,18 @@ public:
     std::vector<User*> uses() const;
 
     std::vector<User*> uses(const std::string& container) const;
+
+    /// Lazy, non-copying variant of uses(): returns a filtered view over all non-NOP users.
+    auto uses_view() const {
+        return sub_users_ | std::views::filter([](User* u) { return u->use() != Use::NOP; });
+    }
+
+    /// Lazy, non-copying variant of uses(container): returns a filtered view over all non-NOP
+    /// users of the given container.
+    auto uses_view(const std::string& container) const {
+        return sub_users_ |
+               std::views::filter([container](User* u) { return u->use() != Use::NOP && u->container() == container; });
+    }
 
     std::vector<User*> writes() const;
 

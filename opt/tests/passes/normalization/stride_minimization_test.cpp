@@ -5,6 +5,7 @@
 #include <sdfg/passes/pipeline.h>
 
 #include "fixtures/polybench.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -1456,4 +1457,56 @@ TEST(StrideMinimizationTest, Polybench_fdtd_2d) {
     } while (applies);
 
     auto& sdfg = builder->subject();
+}
+
+TEST(StrideMinimizationTest, PerfTest) {
+    nlohmann::json j;
+    std::ifstream ifs("opt/json/segformer_cuda.opt.json");
+    ifs >> j;
+    serializer::JSONSerializer js;
+    auto sdfg = js.deserialize(j);
+    auto dir = get_test_output_dir();
+    sdfg->add_metadata("output_dir", dir.value());
+    builder::StructuredSDFGBuilder builder(*sdfg);
+
+    passes::CompileStatistics::enable();
+
+    sdfg::passes::Pipeline p("StrideMin");
+    p.set_debug_logging(true);
+    p.register_pass<sdfg::passes::normalization::StrideMinimization>();
+
+    analysis::AnalysisManager am(builder.subject());
+
+    p.run(builder, am);
+
+    dump_sdfg(builder.subject(), "1.processed");
+
+    std::cerr << "Simplify Stats:" << std::endl
+              << sdfg::passes::CompileStatistics::instance().report(passes::CompileStatistics::ReportLevel::All)
+              << std::endl;
+}
+
+TEST(StrideMinimizationTest, PerfTest_LoopDist) {
+    nlohmann::json j;
+    std::ifstream ifs("opt/json/segformer_cuda.opt.json");
+    ifs >> j;
+    serializer::JSONSerializer js;
+    auto sdfg = js.deserialize(j);
+    auto dir = get_test_output_dir();
+    sdfg->add_metadata("output_dir", dir.value());
+    builder::StructuredSDFGBuilder builder(*sdfg);
+
+    passes::CompileStatistics::instance().enable();
+
+    sdfg::passes::Pipeline p("StrideMin");
+    p.set_debug_logging(true);
+    p.register_pass<sdfg::passes::normalization::PerfectLoopDistributionPass>();
+
+    analysis::AnalysisManager am(builder.subject());
+
+    p.run(builder, am);
+
+    dump_sdfg(builder.subject(), "1.processed");
+
+    std::cerr << "Simplify Stats:" << std::endl << sdfg::passes::CompileStatistics::instance().summary() << std::endl;
 }
