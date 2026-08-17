@@ -299,10 +299,12 @@ class ElementwiseTensorOpParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_container: str = self.get_arg_container(
+            node, container_info, 0, resolve=False
+        )
         self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
         other: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
-            node, container_info, 1
+            node, container_info, 1, resolve=False
         )
         if isinstance(other, str):
             other_container: str = other
@@ -382,10 +384,12 @@ class ElementwiseTaskletOpParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_container: str = self.get_arg_container(
+            node, container_info, 0, resolve=False
+        )
         self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
         other: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
-            node, container_info, 1
+            node, container_info, 1, resolve=False
         )
         if isinstance(other, str):
             other_container: str = other
@@ -497,11 +501,15 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
                 node,
                 "Expected exactly 2 arguments but got " + str(len(node.args)),
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_container: str = self.get_arg_container(
+            node, container_info, 0, resolve=False
+        )
         self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
         debug_info: DebugInfo = self.get_debug_info(node)
         if len(node.kwargs) == 0:
-            intermediate_operand = self.get_arg_sdfg_value(node, container_info, 1)
+            intermediate_operand = self.get_arg_sdfg_value(
+                node, container_info, 1, resolve=False
+            )
             if isinstance(intermediate_operand, str):
                 intermediate_tensor = self.get_tensor_type(
                     node, container_info, intermediate_operand
@@ -515,7 +523,7 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
                 )
         elif len(node.kwargs) == 1:
             other: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
-                node, container_info, 1
+                node, container_info, 1, resolve=False
             )
             if isinstance(other, str):
                 other_container: str = other

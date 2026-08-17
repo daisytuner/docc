@@ -183,6 +183,61 @@ def test_view_permute(target: str) -> None:
     check(ViewPermuteNet(), torch.randn(2, 3, 5), target=target)
 
 
+def test_intermediate_view_transpose_output(target: str) -> None:
+    class IntermediateViewTransposeNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.linear = nn.Linear(32, 32, bias=False)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            x = self.linear(input)
+            v = x.view(1, 4, 2, 16)
+            return v.transpose(1, 2)
+
+    check(
+        IntermediateViewTransposeNet(),
+        torch.randn(1, 4, 32),
+        target=target,
+    )
+
+
+def test_transpose_elementwise_mul(target: str) -> None:
+    class TransposeElementwiseMulNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.linear = nn.Linear(32, 32, bias=False)
+
+        def forward(self, input: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+            x = self.linear(input)
+            v = x.view(1, 4, 2, 16).transpose(1, 2)
+            return v * scale
+
+    check(
+        TransposeElementwiseMulNet(),
+        *(torch.randn(1, 4, 32), torch.randn(1, 1, 4, 16)),
+        target=target,
+    )
+
+
+def test_rotate_half_rope(target: str) -> None:
+    class RotateHalfNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.linear = nn.Linear(32, 32, bias=False)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            x = self.linear(input).view(1, 4, 2, 16).transpose(1, 2)
+            x1 = x[..., :8]
+            x2 = x[..., 8:]
+            return torch.cat((-x2, x1), dim=-1)
+
+    check(
+        RotateHalfNet(),
+        torch.randn(1, 4, 32),
+        target=target,
+    )
+
+
 # --- slice ---
 
 
