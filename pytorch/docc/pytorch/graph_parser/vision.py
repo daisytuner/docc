@@ -37,10 +37,31 @@ class UpsampleBilinear2DParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        input_container: str = self.get_arg_container(node, container_info, 0)
+        input_container: str = self.get_arg_container(node, container_info, 0, resolve=False)
         input_tensor: Tensor = self.get_tensor_type(
             node, container_info, input_container
         )
+        if not input_tensor.is_contiguous():
+            info = container_info[input_container]
+            base_container: str = self.get_arg_container(
+                node, container_info, 0, resolve=True
+            )
+            contiguous_input_tensor: Tensor = Tensor(
+                input_tensor.element_type, input_tensor.shape
+            )
+            intermediate: str = self.create_intermediate_container(
+                node, builder, container_info, info.sdfg_type(), contiguous_input_tensor
+            )
+            debug_info_copy: DebugInfo = self.get_debug_info(node)
+            builder.add_copy_op(
+                base_container,
+                input_tensor,
+                intermediate,
+                contiguous_input_tensor,
+                debug_info_copy,
+            )
+            input_container = intermediate
+            input_tensor = contiguous_input_tensor
         if len(input_tensor.shape) != 4:
             raise GraphParserError(
                 self,
