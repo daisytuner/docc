@@ -27,7 +27,7 @@ types::StorageType ROCMOffloadTransform::global_device_storage_type(symbolic::Ex
 }
 
 ScheduleType ROCMOffloadTransform::transformed_schedule_type() {
-    return ScheduleType_ROCM::create(target_level_, parallel_size_);
+    return ScheduleType_ROCM::create<ScheduleType_ROCM>(target_level_, parallel_size_);
 }
 
 std::string ROCMOffloadTransform::copy_prefix() { return ROCM_DEVICE_PREFIX; }

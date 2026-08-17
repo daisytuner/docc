@@ -68,7 +68,7 @@ inline TargetLevel target_level_from_string(const std::string& value) {
  *
  * @tparam Derived The derived class (ScheduleType_CUDA or ScheduleType_ROCM)
  */
-template<typename Derived>
+
 class ScheduleType_GPU {
 public:
     /**
@@ -125,6 +125,7 @@ public:
     /**
      * @brief Create a new GPU schedule type
      */
+    template<typename Derived>
     static structured_control_flow::ScheduleType
     create(const TargetLevel& target_level_, const symbolic::Integer& parallel_size_) {
         auto schedule_type = structured_control_flow::

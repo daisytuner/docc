@@ -33,7 +33,7 @@ using ROCMDimension = gpu::GPUDimension;
  * @brief ROCM schedule type inheriting shared GPU functionality
  * Provides ROCM-specific value() and default block size (64 for wavefront size)
  */
-class ScheduleType_ROCM : public gpu::ScheduleType_GPU<ScheduleType_ROCM> {
+class ScheduleType_ROCM : public gpu::ScheduleType_GPU {
 public:
     static const std::string value() { return "ROCM"; }
 };

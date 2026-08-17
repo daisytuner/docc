@@ -27,7 +27,7 @@ types::StorageType CUDAOffloadTransform::global_device_storage_type(symbolic::Ex
 }
 
 ScheduleType CUDAOffloadTransform::transformed_schedule_type() {
-    return ScheduleType_CUDA::create(target_level_, parallel_size_);
+    return ScheduleType_CUDA::create<ScheduleType_CUDA>(target_level_, parallel_size_);
 }
 
 std::string CUDAOffloadTransform::copy_prefix() { return CUDA_DEVICE_PREFIX; }

@@ -19,7 +19,7 @@ namespace {
 
 // Build a GPU schedule for the given target level / parallel size.
 structured_control_flow::ScheduleType gpu_schedule(gpu::TargetLevel level, int64_t parallel_size) {
-    return cuda::ScheduleType_CUDA::create(level, symbolic::integer(parallel_size));
+    return cuda::ScheduleType_CUDA::create<cuda::ScheduleType_CUDA>(level, symbolic::integer(parallel_size));
 }
 
 // A simple loop condition `<indvar> < bound`.

@@ -207,7 +207,7 @@ void GPUOffloadNestedLoop<
     GPUType>::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
-    auto new_schedule = cuda::ScheduleType_CUDA::create(target_level_, parallel_size_);
+    auto new_schedule = cuda::ScheduleType_CUDA::create<GPUType>(target_level_, parallel_size_);
 
     builder.update_schedule_type(loop_, new_schedule);
 }

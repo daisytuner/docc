@@ -33,7 +33,7 @@ using CUDADimension = gpu::GPUDimension;
  * @brief CUDA schedule type inheriting shared GPU functionality
  * Provides CUDA-specific value() and default block size (32 for warp size)
  */
-class ScheduleType_CUDA : public gpu::ScheduleType_GPU<ScheduleType_CUDA> {
+class ScheduleType_CUDA : public gpu::ScheduleType_GPU {
 public:
     static const std::string value() { return "CUDA"; }
 };
