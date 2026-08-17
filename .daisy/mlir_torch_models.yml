@@ -6,7 +6,7 @@ on:
     types: [opened, reopened, synchronize]
 
 parameters:
-  container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+  container: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
   timeout: 120
   partitions:
     - chamomile
@@ -25,7 +25,7 @@ steps:
 
     pip install -r mlir/requirements.txt
     pip uninstall -y torch torchvision
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu132
 
     # Warm start
     export DOCC_DEBUG=dump

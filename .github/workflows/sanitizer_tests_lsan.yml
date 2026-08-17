@@ -13,7 +13,7 @@ jobs:
       group: dahlia
       labels: openmp
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -25,8 +25,8 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-19 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-19 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
 
       - name: Build and test
         run: |
@@ -34,8 +34,8 @@ jobs:
           cd build
           cmake \
             -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DSDFG_ENABLE_SANITIZER=ON \
             -DSDFG_SANITIZER=leak \

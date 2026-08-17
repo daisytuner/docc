@@ -92,12 +92,21 @@ static bool is_link_step(const std::vector<std::string> &args) {
     return true;
 }
 
+std::ostream &operator<<(std::ostream &lhs, const std::vector<std::string> &cmd) {
+    lhs << "[";
+    for (const auto &arg : cmd) {
+        lhs << arg << " ";
+    }
+    lhs << "]";
+    return lhs;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // main
 // ──────────────────────────────────────────────────────────────────────────────
 int main(int argc, char *argv[]) {
     const bool cpp_mode = docc::ends_with(argv[0], "docc-cpp");
-    const std::string cc = cpp_mode ? "clang++-19" : "clang-19";
+    const std::string cc = cpp_mode ? "clang++-21" : "clang-21";
 
     std::vector<std::string> cmd{cc};
     docc::collect_args(cmd, argc, argv);
@@ -155,5 +164,6 @@ int main(int argc, char *argv[]) {
     }
 
     // ── Execute ───────────────────────────────────────────────────────────────
+    std::cerr << "### clang call: " << cmd;
     return docc::execvp_or_die(cmd);
 }

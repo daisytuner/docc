@@ -15,7 +15,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64 # TODO et not buildable, upstream problem
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -33,8 +33,8 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-19 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-19 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
 
       - name: Build
         run: |
@@ -42,15 +42,15 @@ jobs:
           cd build
           cmake \
             -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_INSTALL_PREFIX=/usr/local \
             -DCMAKE_BUILD_TYPE=Debug \
             -DSDFG_ENABLE_COVERAGE=ON \
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
-            -DDOCC_BUILD_TARGET_ET=ON \
+            -DDOCC_BUILD_TARGET_ET=OFF \
             -DCMAKE_PREFIX_PATH=/opt/et \
             ..
           ninja -j$(nproc)
@@ -61,14 +61,14 @@ jobs:
           cd build/
           LLVM_PROFILE_FILE="sdfglib_test.profraw" ./sdfg/tests/sdfglib_test
           LLVM_PROFILE_FILE="sdfgopt_test.profraw" ./opt/tests/sdfgopt_test
-          LLVM_PROFILE_FILE="docc-target-et_test.profraw" ./targets/et/tests/docc-target-et_test
+          #LLVM_PROFILE_FILE="docc-target-et_test.profraw" ./targets/et/tests/docc-target-et_test
           LLVM_PROFILE_FILE="c-compile_test.profraw" ./c-compile/tests/c-compile_test
           ./tutorial/printf_target/tests/printf_target_test
 
           # Run coverage
-          llvm-profdata-19 merge -sparse sdfglib_test.profraw sdfgopt_test.profraw docc-target-et_test.profraw c-compile_test.profraw -o default.profdata
+          llvm-profdata-21 merge -sparse sdfglib_test.profraw sdfgopt_test.profraw c-compile_test.profraw -o default.profdata
           cd ../
-          llvm-cov-19 export ./build/sdfg/tests/sdfglib_test -object ./build/opt/tests/sdfgopt_test -object ./build/targets/et/tests/docc-target-et_test -object ./build/c-compile/tests/c-compile_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
+          llvm-cov-21 export ./build/sdfg/tests/sdfglib_test -object ./build/opt/tests/sdfgopt_test -object ./build/targets/et/tests/docc-target-et_test -object ./build/c-compile/tests/c-compile_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
           lcov --ignore-errors unused --extract build/coverage_full.lcov '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' '*/targets/et/src/*' '*/targets/et/include/*' '*/c-compile/src/*' '*/c-compile/include/*' --output-file build/coverage.lcov
 
       - name: Test Arg-Capture-IO
@@ -101,7 +101,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install Node dependencies for transfer server
         working-directory: ${{ github.workspace }}/examples/transfer-server
@@ -236,7 +236,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-build-env-llvm19-base:latest-amd64
+      image: daisytuner/docc-build-env-llvm21-ubuntu-24.04:beta-amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -251,15 +251,15 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-19 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
 
       - name: Build
         run: |
           mkdir build
           cd build
           cmake -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DSDFG_ENABLE_COVERAGE=ON \
             -DLLVM_BUILD_FRONTEND=ON \
@@ -279,9 +279,9 @@ jobs:
           LLVM_PROFILE_FILE="docc_llvm_pass_test.profraw" ./llvm/tests/docc_llvm_pass_test
 
           # Run coverage
-          llvm-profdata-19 merge -sparse docc_llvm_pass_test.profraw -o default.profdata
+          llvm-profdata-21 merge -sparse docc_llvm_pass_test.profraw -o default.profdata
           cd ../
-          llvm-cov-19 export ./build/llvm/tests/docc_llvm_pass_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
+          llvm-cov-21 export ./build/llvm/tests/docc_llvm_pass_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
           lcov --ignore-errors unused --extract build/coverage_full.lcov '*/llvm/src/*' '*/llvm/include/*' --output-file build/coverage.lcov
 
       - name: Coveralls
@@ -307,7 +307,7 @@ jobs:
 
       - name: Integration Tests
         run: |
-          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-21)
 
           cd llvm/integration
           pytest -v llvm_test_suite.py
@@ -317,7 +317,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
     strategy:
       fail-fast: false
       matrix:
@@ -354,14 +354,14 @@ jobs:
           mkdir build
           cd build
           cmake -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
-            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
+            -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-21/build/utils/lit/lit.py \
             -DINSTALL_GTEST=OFF \
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
@@ -398,7 +398,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64 # -et not buildable, upstream problem
       options: >-
         --cap-add=PERFMON
     strategy:
@@ -435,7 +435,7 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-19 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
           black --check python/docc/ python/tests/
 
       - name: Build
@@ -454,7 +454,8 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          coverage run --source=python/docc -m pytest -v python/tests -m "unmarked or etsoc"
+          #etsoc removed, not buildable
+          coverage run --source=python/docc -m pytest -v python/tests -m "unmarked"
           coverage xml
 
       - name: Integration Tests
@@ -478,7 +479,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
     strategy:
@@ -549,7 +550,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -582,25 +583,25 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes jsonschema cupy-cuda12x transformers
+          pip install numpy scipy ml_dtypes jsonschema cupy-cuda13x transformers
 
           pip install -r mlir/requirements.txt
           pip uninstall -y torch torchvision
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu132
 
       - name: Build
         run: |
           mkdir build
           cd build
           cmake -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
-            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
+            -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-21/build/utils/lit/lit.py \
             -DINSTALL_GTEST=OFF \
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
@@ -628,7 +629,7 @@ jobs:
           .venv-pytorch/bin/python -m pip install --upgrade pip
           .venv-pytorch/bin/pip install -r pytorch/requirements-cuda.txt
           .venv-pytorch/bin/pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          .venv-pytorch/bin/pip install numpy scipy ml_dtypes jsonschema cupy-cuda12x transformers
+          .venv-pytorch/bin/pip install numpy scipy ml_dtypes jsonschema cupy-cuda13x transformers
           export PYTHONPATH=$PWD/python:$PWD/pytorch
 
           .venv-pytorch/bin/pytest -v pytorch/tests --target=cuda
@@ -638,7 +639,7 @@ jobs:
       group: dahlia
       labels: rocm
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04-et:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
         --device /dev/kfd
@@ -674,12 +675,7 @@ jobs:
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
           pip install numpy scipy ml_dtypes jsonschema transformers
 
-          # Build cupy-rocm from source for ROCm 6x
-          # To be removed when docker image is updated to ROCm 7x
-          export CUPY_INSTALL_USE_HIP=1
-          export ROCM_HOME=/opt/rocm
-          export HCC_AMDGPU_TARGET=$(rocminfo | grep -m1 -o 'gfx[0-9a-f]*')
-          pip install cupy --no-cache-dir
+          pip install cupy-rocm-7-0
 
           pip install -r mlir/requirements.txt
           pip uninstall -y torch torchvision
@@ -690,14 +686,14 @@ jobs:
           mkdir build
           cd build
           cmake -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
-            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
+            -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-21/build/utils/lit/lit.py \
             -DINSTALL_GTEST=OFF \
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
@@ -732,12 +728,7 @@ jobs:
 
           export PYTHONPATH=$PWD/python:$PWD/pytorch
 
-          # Build cupy-rocm from source for ROCm 6x
-          # To be removed when docker image is updated to ROCm 7x
-          export CUPY_INSTALL_USE_HIP=1
-          export ROCM_HOME=/opt/rocm
-          export HCC_AMDGPU_TARGET=$(rocminfo | grep -m1 -o 'gfx[0-9a-f]*')
-          .venv-pytorch/bin/pip install cupy --no-cache-dir
+          .venv-pytorch/bin/pip install cupy-rocm-7-0
 
           .venv-pytorch/bin/pytest -v pytorch/tests --target=rocm
 
@@ -786,14 +777,14 @@ jobs:
           mkdir build
           cd build
           cmake -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPYTHON_BUILD_FRONTEND=ON \
             -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
             -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir \
-            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
+            -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-21/build/utils/lit/lit.py \
             -DINSTALL_GTEST=OFF \
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
