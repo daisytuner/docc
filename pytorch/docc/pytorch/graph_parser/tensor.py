@@ -123,35 +123,8 @@ class AssertTensorMetadataParser(GraphParserModule):
                     f"Mismatched dtype! Expected {scalar} but got {self_tensor.element_type}",
                 )
 
-        if "device" in node.kwargs:
-            device: Argument = node.kwargs["device"]
-            if not device is None:
-                if not isinstance(device, torch.device):
-                    raise GraphParserError(
-                        self,
-                        node,
-                        "Expected device kwarg to be torch.device type but got: "
-                        + str(type(device)),
-                    )
-                if device.type != "cpu":
-                    raise GraphParserError(
-                        self, node, "Currently only the CPU device is supported"
-                    )
-
-        if "layout" in node.kwargs:
-            layout: Argument = node.kwargs["layout"]
-            if not layout is None:
-                if not isinstance(layout, torch.layout):
-                    raise GraphParserError(
-                        self,
-                        node,
-                        "Expected layout kwarg to be torch.layout type but got: "
-                        + str(type(layout)),
-                    )
-                if layout != torch.strided:
-                    raise GraphParserError(
-                        self, node, "Currently only the strided layout is supported"
-                    )
+        self.get_kwarg_device(node)
+        self.get_kwarg_layout(node)
 
 
 register_module("aten._assert_tensor_metadata.default", AssertTensorMetadataParser())
@@ -170,23 +143,11 @@ class CloneParser(GraphParserModule):
                 node,
                 "Expected exactly 2 arguments but got: " + str(len(node.args)),
             )
-        if "memory_format" in node.kwargs:
-            memory_format: Argument = node.kwargs["memory_format"]
-            if not isinstance(memory_format, torch.memory_format):
-                raise GraphParserError(
-                    self,
-                    node,
-                    "Expected memory_format kwarg to be torch.memory_format type but got: "
-                    + str(type(memory_format)),
-                )
-            if memory_format not in [torch.contiguous_format, torch.preserve_format]:
-                raise GraphParserError(
-                    self, node, "Unsupported memory_format: " + str(memory_format)
-                )
-        elif len(node.kwargs) != 0:
-            raise GraphParserError(
-                self, node, "Unsupported kwargs: " + str(node.kwargs)
-            )
+        if not set(node.kwargs.keys()).issubset({"memory_format"}):
+            raise GraphParserError(self, node, f"Unsupported kwargs: {node.kwargs}")
+
+        self.get_kwarg_memory_format(node)
+
         self_container: str = self.get_arg_container(node, container_info, 0)
         self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
         result_container: str = self.get_result_container(node, builder, container_info)
@@ -363,51 +324,10 @@ class ToCopyParser(GraphParserModule):
         self_container: str = self.get_arg_container(node, container_info, 0)
         self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
 
-        if "layout" in node.kwargs:
-            layout: Argument = node.kwargs["layout"]
-            if not layout is None:
-                if not isinstance(layout, torch.layout):
-                    raise GraphParserError(
-                        self,
-                        node,
-                        "Expected layout kwarg to be torch.layout type but got: "
-                        + str(type(layout)),
-                    )
-                if layout != torch.strided:
-                    raise GraphParserError(
-                        self, node, "Currently only the strided layout is supported"
-                    )
-
-        if "device" in node.kwargs:
-            device: Argument = node.kwargs["device"]
-            if not device is None:
-                if not isinstance(device, torch.device):
-                    raise GraphParserError(
-                        self,
-                        node,
-                        "Expected device kwarg to be torch.device type but got: "
-                        + str(type(device)),
-                    )
-                if device.type != "cpu":
-                    raise GraphParserError(
-                        self, node, "Currently only the CPU device is supported"
-                    )
-
-        if "pin_memory" in node.kwargs:
-            pin_memory: Argument = node.kwargs["pin_memory"]
-            if not pin_memory is None:
-                if not isinstance(pin_memory, bool):
-                    raise GraphParserError(
-                        self,
-                        node,
-                        "Expected pin_memory kwarg to be bool type but got: "
-                        + str(type(pin_memory)),
-                    )
-                if pin_memory:
-                    raise GraphParserError(
-                        self, node, "Currently pin_memory is unsupported"
-                    )
-
+        self.get_kwarg_layout(node)
+        self.get_kwarg_device(node)
+        self.get_kwarg_pin_memory(node)
+        self.get_kwarg_memory_format(node)
         if "non_blocking" in node.kwargs:
             non_blocking: Argument = node.kwargs["non_blocking"]
             if not isinstance(non_blocking, bool):
@@ -422,48 +342,22 @@ class ToCopyParser(GraphParserModule):
                     self, node, "Currently non_blocking is unsupported"
                 )
 
-        if "memory_format" in node.kwargs:
-            memory_format: Argument = node.kwargs["memory_format"]
-            if not memory_format is None:
-                if not isinstance(memory_format, torch.memory_format):
-                    raise GraphParserError(
-                        self,
-                        node,
-                        "Expected memory_format kwarg to be torch.memory_format type but got: "
-                        + str(type(memory_format)),
-                    )
-                if not memory_format in [
-                    torch.contiguous_format,
-                    torch.preserve_format,
-                ]:
-                    raise GraphParserError(
-                        self, node, "Unsupported memory_format: " + str(memory_format)
-                    )
-
         result_container: str = self.get_result_container(node, builder, container_info)
         result_tensor: Tensor = self.get_tensor_type(
             node, container_info, result_container
         )
 
         cast: bool = False
-        if "dtype" in node.kwargs:
-            dtype: Argument = node.kwargs["dtype"]
-            if not dtype is None:
-                if not isinstance(dtype, torch.dtype):
-                    raise GraphParserError(
-                        self,
-                        node,
-                        "Expected dtype kwarg to be torch.dtype type but got: "
-                        + str(type(dtype)),
-                    )
-                dtype_scalar: Scalar = self.determine_sdfg_scalar_type(node, dtype)
-                if dtype_scalar.primitive_type != result_tensor.primitive_type:
-                    raise GraphParserError(
-                        self,
-                        node,
-                        f"dtype mismatch! Expected {dtype_scalar} but got {result_tensor.element_type}",
-                    )
-                cast: bool = True
+        dtype: torch.dtype | None = self.get_kwarg_dtype(node)
+        if not dtype is None:
+            dtype_scalar: Scalar = self.determine_sdfg_scalar_type(node, dtype)
+            if dtype_scalar.primitive_type != result_tensor.primitive_type:
+                raise GraphParserError(
+                    self,
+                    node,
+                    f"dtype mismatch! Expected {dtype_scalar} but got {result_tensor.element_type}",
+                )
+            cast: bool = True
 
         debug_info: DebugInfo = self.get_debug_info(node)
         if cast:

@@ -1433,6 +1433,99 @@ class GraphParserModule(GraphParserBase, ABC):
                 tensor2.element_type, tensor1.shape, new_strides, tensor2.offset
             )
 
+    def get_kwarg_dtype(self, node: torch.fx.Node) -> torch.dtype | None:
+        if not "dtype" in node.kwargs:
+            return
+        dtype_arg: Argument = node.kwargs["dtype"]
+        if dtype_arg is None:
+            return
+        if not isinstance(dtype_arg, torch.dtype):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected dtype kwarg to be torch.dtype type but got: "
+                + str(type(dtype_arg)),
+            )
+        return dtype_arg
+
+    def get_kwarg_layout(self, node: torch.fx.Node) -> torch.layout | None:
+        if not "layout" in node.kwargs:
+            return
+        layout_arg: Argument = node.kwargs["layout"]
+        if layout_arg is None:
+            return
+        if not isinstance(layout_arg, torch.layout):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected layout kwarg to be torch.layout type but got: "
+                + str(type(layout_arg)),
+            )
+        if layout_arg != torch.strided:
+            raise GraphParserError(
+                self,
+                node,
+                "Only layout torch.strided is supported but got: " + str(layout_arg),
+            )
+        return layout_arg
+
+    def get_kwarg_device(self, node: torch.fx.Node) -> torch.device | None:
+        if not "device" in node.kwargs:
+            return
+        device_arg: Argument = node.kwargs["device"]
+        if device_arg is None:
+            return
+        if not isinstance(device_arg, torch.device):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected device kwarg to be torch.device type but got: "
+                + str(type(device_arg)),
+            )
+        if device_arg.type != "cpu":
+            raise GraphParserError(
+                self, node, "Currently only CPU device kwarg is supported"
+            )
+        return device_arg
+
+    def get_kwarg_pin_memory(self, node: torch.fx.Node) -> bool | None:
+        if not "pin_memory" in node.kwargs:
+            return
+        pin_memory_arg: Argument = node.kwargs["pin_memory"]
+        if pin_memory_arg is None:
+            return
+        if not isinstance(pin_memory_arg, bool):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected pin_memory kwarg to be bool type but got: "
+                + str(type(pin_memory_arg)),
+            )
+        if pin_memory_arg:
+            raise GraphParserError(self, node, "Currently pin_memory is unsupported")
+        return pin_memory_arg
+
+    def get_kwarg_memory_format(
+        self, node: torch.fx.Node
+    ) -> torch.memory_format | None:
+        if not "memory_format" in node.kwargs:
+            return
+        memory_format_arg: Argument = node.kwargs["memory_format"]
+        if memory_format_arg is None:
+            return
+        if not isinstance(memory_format_arg, torch.memory_format):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected memory_format kwarg to be torch.memory_format type but got: "
+                + str(type(memory_format_arg)),
+            )
+        if memory_format_arg not in [torch.contiguous_format, torch.preserve_format]:
+            raise GraphParserError(
+                self, node, "Unsupported memory_format: " + str(memory_format_arg)
+            )
+        return memory_format_arg
+
 
 GRAPH_PARSER_PRE_MODULES: dict[str, GraphParserModule] = {}
 GRAPH_PARSER_MODULES: dict[str, GraphParserModule] = {}
