@@ -1,5 +1,6 @@
 -r requirements-base.txt
+cupy-rocm-7-0
 
---extra-index-url https://download.pytorch.org/whl/rocm6.4
+--extra-index-url https://download.pytorch.org/whl/rocm7.2
 torch==2.9.1
 torchvision==0.24.1
