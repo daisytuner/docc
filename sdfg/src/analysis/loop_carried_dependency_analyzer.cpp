@@ -3,16 +3,41 @@
 namespace sdfg::analysis {
 
 void NewLoopDependencyAnalysis::ScopeState::direct_write(DepAccess& access) {
-    auto& list = de_writes[access.container_];
-    auto entries = list.size();
+    auto& space = this->direct_accesses_[access.container_];
+    if (!space) {
+        space = std::make_unique<GroupedAccesses>();
+    }
+    auto& grouped = *space;
+    auto entries = grouped.de_writes.size();
     if (entries > 0) {
         if (entries > 1) {
-            // there are indirect accesses, whose base has likely become invalid and we need to be uncertain about
-            // matching them up with new ones
+            throw std::runtime_error("Multiple DE direct writes to " + access.container_ + "?");
         }
-        auto* prev = list.front() if (prev) { local_writes[access.container_].push_back(prev); }
+
+        auto* prev = grouped.de_writes.front();
+        if (prev) {
+            grouped.local_writes.push_back(prev);
+        }
     }
-    list.push_back(&access);
+    grouped.de_writes[0] = &access;
+}
+
+void NewLoopDependencyAnalysis::ScopeState::direct_read(DepAccess& access) {
+    auto& space = this->direct_accesses_[access.container_];
+    if (!space) {
+        space = std::make_unique<GroupedAccesses>();
+    }
+    auto& grouped = *space;
+
+    auto entries = grouped.de_writes.size();
+    if (entries > 0) {
+        if (entries > 1) {
+            throw std::runtime_error("Multiple DE direct writes to " + access.container_ + "?");
+        }
+        // read of the most current value
+    } else {
+        // grouped.ue_reads.push_back()
+    }
 }
 
 NewLoopDependencyAnalysis::NewLoopDependencyAnalysis(StructuredSDFG& sdfg, analysis::AnalysisManager& analysis)

@@ -52,7 +52,7 @@ DepAccess& DataDependencyAnalyzer::create_symbol_write(
     const symbolic::Symbol& container, ControlFlowNode* node, Element* user, SymbolWriteLocation loc
 ) {
     // exact write operation not identifiable anymore...
-    auto ptr = std::make_unique<DepAccess>(container, node, user, data_flow::Subset{});
+    auto ptr = std::make_unique<DepAccess>(container->get_name(), node, user, data_flow::Subset{});
     accesses_.push_back(std::move(ptr));
     return *accesses_.back().get();
 }

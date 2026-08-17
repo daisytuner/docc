@@ -23,6 +23,7 @@ typedef std::string RegId;
 class LoopDepDataDepShim;
 
 struct GroupedAccesses {
+    DepAccess* owning_write = nullptr;
     std::vector<DepAccess*> ue_reads;
     std::vector<DepAccess*> local_writes;
     std::vector<DepAccess*> de_writes;
@@ -43,7 +44,7 @@ class NewLoopDependencyAnalysis : BaseUserVisitor {
         bool not_understood_ = false;
 
         std::unordered_map<RegId, std::unique_ptr<GroupedAccesses>> indirect_areas_;
-        std::unordered_map<RegId, std::unique_ptr<GroupedAccesses>> direct_areas_;
+        std::unordered_map<RegId, std::unique_ptr<GroupedAccesses>> direct_accesses_;
 
     public:
         ScopeState(StructuredLoop& loop) : scope_(&loop), loop_(&loop) {}
