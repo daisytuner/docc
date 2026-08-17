@@ -90,6 +90,17 @@ bool __daisy_instrumentation_total_stats(double* mean_us, double* variance_us2, 
 // before the timed sampling loop). Leaves region registration intact.
 void __daisy_instrumentation_reset_all(void);
 
+// Globally enable/disable measurement. While disabled, __daisy_instrumentation_enter,
+// __daisy_instrumentation_exit and the metric/increment calls are no-ops, so no
+// runtime or counter samples are recorded. Registration and finalize are unaffected.
+// The shared RTL has a single process-global instance, so this toggles measurement
+// for every artifact loaded into the process at once. Enabled by default.
+void __daisy_instrumentation_start(void);
+void __daisy_instrumentation_stop(void);
+
+// Query whether measurement is currently enabled (true by default).
+bool __daisy_instrumentation_is_enabled(void);
+
 typedef struct __daisy_capture __daisy_capture_t;
 
 __daisy_capture_t* __daisy_capture_init(const char* name, const char* base_dir);

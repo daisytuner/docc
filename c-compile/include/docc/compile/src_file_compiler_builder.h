@@ -24,6 +24,8 @@ public:
 struct LibPath {
     std::filesystem::path path;
     bool is_rpath;
+
+    LibPath(std::filesystem::path path, bool is_rpath) : path(std::move(path)), is_rpath(is_rpath) {}
 };
 
 class SrcFileCompilerBuilder : public CodegenCompilerBuilderBase<SrcFileCompilerBuilder> {

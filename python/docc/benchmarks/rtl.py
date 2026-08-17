@@ -49,6 +49,9 @@ __all__ = [
     "AGGREGATED_CAT",
     "STATIC_PREFIX",
     "reset_instrumentation",
+    "start_instrumentation",
+    "stop_instrumentation",
+    "instrumentation_enabled",
     "total_stats",
     "RtlTotalStats",
 ]
@@ -66,6 +69,9 @@ _SCHEMA_FILENAME = "daisy_trace.schema.json"
 # libdaisy_rtl is now linked as dynamic lib, so it defaults to shared global state per process.
 
 _RTL_RESET_SYMBOL = "__daisy_instrumentation_reset_all"
+_RTL_START_SYMBOL = "__daisy_instrumentation_start"
+_RTL_STOP_SYMBOL = "__daisy_instrumentation_stop"
+_RTL_IS_ENABLED_SYMBOL = "__daisy_instrumentation_is_enabled"
 
 
 def _rtl_lib_names() -> tuple[str, str]:
@@ -163,6 +169,59 @@ def reset_instrumentation() -> None:
             reset.argtypes = []
             reset()
             return
+
+
+def _rtl_void_call(symbol: str) -> bool:
+    """Invoke a no-argument, void RTL entry point; return True if it ran."""
+    lib = _rtl_lib()
+    if lib is None:
+        return False
+    try:
+        # Subscript access bypasses ctypes' dunder-name guard.
+        fn = lib[symbol]
+    except (AttributeError, KeyError, ValueError):
+        return False
+    fn.restype = None
+    fn.argtypes = []
+    fn()
+    return True
+
+
+def start_instrumentation() -> None:
+    """Globally (re-)enable measurement in the shared RTL.
+
+    Undoes :func:`stop_instrumentation`. With a shared RTL there is one
+    process-global instance, so this re-enables measurement for every artifact at
+    once. No-op when the RTL is statically linked (no queryable shared instance).
+    """
+    _rtl_void_call(_RTL_START_SYMBOL)
+
+
+def stop_instrumentation() -> None:
+    """Globally disable measurement in the shared RTL.
+
+    While stopped, region enter/exit and metric calls are no-ops, so no runtime or
+    counter samples accumulate; registration is untouched. Call
+    :func:`start_instrumentation` to resume. No-op when statically linked.
+    """
+    _rtl_void_call(_RTL_STOP_SYMBOL)
+
+
+def instrumentation_enabled() -> Optional[bool]:
+    """Whether measurement is currently enabled, or None if not queryable.
+
+    Returns None when the RTL is statically linked (no shared instance to query).
+    """
+    lib = _rtl_lib()
+    if lib is None:
+        return None
+    try:
+        fn = lib[_RTL_IS_ENABLED_SYMBOL]
+    except (AttributeError, KeyError, ValueError):
+        return None
+    fn.restype = ctypes.c_bool
+    fn.argtypes = []
+    return bool(fn())
 
 
 @dataclass(frozen=True)

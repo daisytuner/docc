@@ -288,6 +288,7 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("reuse_sources") = false
         )
         .def("metadata", &PyStructuredSDFG::metadata, py::arg("key"), "Get metadata value")
+        .def("add_metadata", &PyStructuredSDFG::add_metadata, py::arg("key"), py::arg("value"), "Set metadata value")
         .def_property(
             "output_dir",
             [](PyStructuredSDFG* self) { return self->metadata("output_dir"); },

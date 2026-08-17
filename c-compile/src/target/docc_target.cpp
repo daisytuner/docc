@@ -110,6 +110,17 @@ static DoccTarget sequential_target = {
 
 static DoccTarget openmp_target = {
     .short_name = "openmp",
+    .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
+#if defined(__APPLE__)
+        builder.add_common_option("-Xpreprocessor -fopenmp");
+        builder.add_library_path("/opt/homebrew/opt/libomp/lib");
+        builder.add_library_path("/opt/homebrew/opt/libomp/include");
+        builder.add_link_option("-lomp");
+#else
+        builder.add_common_option("-fopenmp");
+#endif
+        return true;
+    },
     .get_target_loop_schedulers = [](const TargetOptions& options
                                   ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;

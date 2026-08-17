@@ -32,6 +32,7 @@ set(TEST_FILES
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_offload_transform_test.cpp
     transformations/offloading/rocm_parallelize_nested_map_test.cpp
+    transformations/offloading/rocm_transform_test.cpp
     transformations/offloading/cuda_transform_im2col_test.cpp
     transformations/offloading/gpu_tiling_test.cpp
     transformations/offloading/kernel_local_storage_test.cpp
@@ -51,6 +52,8 @@ set(TEST_FILES
     passes/offloading/rocm_library_node_rewriter_pass_test.cpp
     passes/scheduler/cuda_scheduler_test.cpp
     passes/scheduler/omp_scheduler_test.cpp
+    passes/scheduler/rocm_scheduler_test.cpp
+    passes/scheduler/vectorize_scheduler_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
     targets/omp/schedule_test.cpp
     transformations/collapse_to_depth_test.cpp

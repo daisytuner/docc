@@ -42,6 +42,15 @@ class LoopIndirectAccessFinder : public analysis::BaseUserVisitor {
         symbolic::Expression indvar_placeholder; // SymEngine::Function(tight_lower_bound, tight_upper_bound, step,
                                                  // loop-level)
         std::unordered_set<std::string> indvars;
+
+        LoopEntry(
+            ControlFlowNode* loop,
+            analysis::LocalLoopInfo::LoopType type,
+            FusionLoopCandidate& fusion_candidate,
+            symbolic::Expression indvar_placeholder
+        )
+            : loop(loop), type(type), fusion_candidate(fusion_candidate),
+              indvar_placeholder(std::move(indvar_placeholder)) {}
     };
     std::deque<LoopEntry> loop_stack_;
 

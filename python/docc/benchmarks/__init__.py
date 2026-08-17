@@ -12,6 +12,9 @@ from docc.benchmarks.rtl import (
     TraceValidationError,
     load_schema,
     reset_instrumentation,
+    start_instrumentation,
+    stop_instrumentation,
+    instrumentation_enabled,
     total_stats,
     validate,
 )
@@ -31,5 +34,8 @@ __all__ = [
     "STATIC_PREFIX",
     "PerfControl",
     "reset_instrumentation",
+    "start_instrumentation",
+    "stop_instrumentation",
+    "instrumentation_enabled",
     "total_stats",
 ]

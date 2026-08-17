@@ -213,6 +213,19 @@ class DoccProgram(ABC):
             else:
                 sdfg.schedule(target_options)
 
+            # Promote pointer arguments to device residency when the whole program keeps
+            # data on device. Communicated explicitly via the pass return value (bool),
+            # not through SDFG metadata.
+            self._device_resident = False
+            self._device_backend = None
+            if self.target in ("cuda", "rocm"):
+                if sdfg.promote_device_residency(self.target == "rocm"):
+                    self._device_resident = True
+                    self._device_backend = self.target
+            sdfg.add_metadata("device_resident", "1" if self._device_resident else "0")
+            if self._device_resident:
+                sdfg.add_metadata("device_backend", self.target)
+
             if self.debug_dump or instrumentation_mode or capture_args:
                 sdfg.dump(
                     output_folder,
@@ -221,16 +234,10 @@ class DoccProgram(ABC):
                     dump_json=True,
                     record_for_instrumentation=True,
                 )
-
-        # Promote pointer arguments to device residency when the whole program keeps
-        # data on device. Communicated explicitly via the pass return value (bool),
-        # not through SDFG metadata.
-        self._device_resident = False
-        self._device_backend = None
-        if self.target in ("cuda", "rocm"):
-            if sdfg.promote_device_residency(self.target == "rocm"):
-                self._device_resident = True
-                self._device_backend = self.target
+        else:
+            self._device_resident = sdfg.metadata("device_resident") == "1"
+            backend = sdfg.metadata("device_backend")
+            self._device_backend = backend or None
 
         self.last_sdfg = sdfg
 
@@ -271,39 +278,7 @@ class DoccProgram(ABC):
         if stats_mode > 0:
             print(_statistics_report(stats_mode), file=sys.stderr)
 
-        # Record the device-residency decision in the persisted (py4.norm) SDFG
-        # metadata. It is computed here (not stored in metadata by the pass) and
-        # decides host vs device argument marshalling. Binary-reuse paths
-        # (DOCC_REUSE_BINARIES) load only the cached .so + normalized SDFG and
-        # never re-run scheduling/promotion, so without this they default to
-        # host execution and feed host pointers into a device-resident binary
-        # -> heap corruption / double free.
-        if output_folder:
-            self._persist_device_residency(output_folder, sdfg)
-
         return lib_path
-
-    def _persist_device_residency(
-        self, output_folder: str, sdfg: StructuredSDFG
-    ) -> None:
-        """Stamp the device-residency decision into the persisted SDFG metadata.
-
-        Patches only the ``metadata`` object of the already-written
-        ``py4.norm.json`` (the file the reuse path loads), leaving the SDFG
-        structure and element IDs untouched so instrumentation references stay
-        valid.
-        """
-        json_path = os.path.join(output_folder, f"{sdfg.name}.py4.norm.json")
-        try:
-            with open(json_path) as f:
-                data = json.load(f)
-            metadata = data.setdefault("metadata", {})
-            metadata["device_resident"] = "1" if self._device_resident else "0"
-            metadata["device_backend"] = self._device_backend or ""
-            with open(json_path, "w") as f:
-                json.dump(data, f)
-        except (OSError, ValueError):
-            pass
 
     @abstractmethod
     def to_sdfg(self, *args: Any) -> StructuredSDFG:

@@ -78,17 +78,6 @@
 #include <docc/target/et/target.h>
 #endif
 
-// Platform-specific compiler selection
-#ifndef DOCC_CXX_COMPILER
-#if defined(__APPLE__)
-#define DOCC_CXX_COMPILER "clang++"
-#elif defined(__linux__)
-#define DOCC_CXX_COMPILER "clang-19"
-#else
-#error "Unsupported platform"
-#endif
-#endif
-
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
@@ -479,8 +468,9 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
     std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
 
     sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
-    bool loop_scheduling_changes = loop_scheduling_pass.run(builder, analysis_manager);
-    if (loop_scheduling_changes) {
+    loop_scheduling_pass.run(builder, analysis_manager);
+
+    if (options.target == "cuda" || options.target == "rocm") {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
         data_transfer_minimization_pass.run(builder, analysis_manager);
         sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
@@ -491,11 +481,13 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         dead_cfg_elimination.run(builder, analysis_manager);
 
         sdfg::passes::ReferencePropagation reference_propagation;
+        reference_propagation.run(builder, analysis_manager);
         sdfg::passes::DeadReferenceElimination dead_reference_elimination;
-        reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
         reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
+
+        dead_cfg_elimination.run(builder, analysis_manager);
     }
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
@@ -513,6 +505,7 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
         sdfg::passes::DeadDataElimination dead_data_elimination;
         sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
+        sdfg::passes::DeadCFGElimination dead_cfg_elimination;
 
         // 1st round
         reference_propagation.run(builder, analysis_manager);
@@ -520,6 +513,7 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
         data_transfer_minimization.run(builder, analysis_manager);
         device_buffer_reuse_pass.run(builder, analysis_manager);
         dead_data_elimination.run(builder, analysis_manager);
+        dead_cfg_elimination.run(builder, analysis_manager);
 
         // 2nd round
         reference_propagation.run(builder, analysis_manager);
@@ -527,6 +521,7 @@ bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
         data_transfer_minimization.run(builder, analysis_manager);
         device_buffer_reuse_pass.run(builder, analysis_manager);
         dead_data_elimination.run(builder, analysis_manager);
+        dead_cfg_elimination.run(builder, analysis_manager);
     }
 
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
@@ -537,6 +532,25 @@ struct SnippetMetadata {
     std::string name;
     std::string extension;
 };
+
+std::string docc_backend_compiler() {
+    const char* env_compiler = std::getenv("DOCC_BACKEND_COMPILER");
+    if (env_compiler) {
+        return std::string(env_compiler);
+    } else {
+        // Platform-specific compiler selection
+#ifndef DOCC_CXX_COMPILER
+#if defined(__APPLE__)
+#define DOCC_CXX_COMPILER "clang++"
+#elif defined(__linux__)
+#define DOCC_CXX_COMPILER "clang-19"
+#else
+#error "Unsupported platform"
+#endif
+#endif
+        return DOCC_CXX_COMPILER;
+    }
+}
 
 std::string PyStructuredSDFG::compile(
     const std::string& output_folder,
@@ -581,8 +595,11 @@ std::string PyStructuredSDFG::compile(
     std::shared_ptr<docc::util::DefaultDoccPaths> paths =
         docc::util::DefaultDoccPaths::from_lib_location(docc::util::find_lib_location());
 
+
+    auto backend_compiler_exec = docc_backend_compiler();
+
     docc::compile::SrcFileCompilerBuilder compile_builder;
-    compile_builder.set_compiler(DOCC_CXX_COMPILER)
+    compile_builder.set_compiler(backend_compiler_exec)
         .set_from_paths(paths)
         .set_src_extension("cpp")
         .set_bin_extension("so")
@@ -607,15 +624,10 @@ std::string PyStructuredSDFG::compile(
     }
 
 #if defined(__APPLE__)
-    compile_builder.add_common_option("-Xpreprocessor -fopenmp");
     compile_builder.add_include_path("/opt/homebrew/include");
-    compile_builder.add_library_path("/opt/homebrew/opt/libomp/lib")
-        .add_library_path("/opt/homebrew/opt/libomp/include")
-        .add_library_path("/opt/homebrew/lib");
-    compile_builder.add_link_option("-lomp");
+    compile_builder.add_library_path("/opt/homebrew/lib");
     compile_builder.add_link_option("-framework Accelerate");
 #else
-    compile_builder.add_common_option("-fopenmp");
     compile_builder.add_link_option("-lblas");
 #endif
 
@@ -659,6 +671,10 @@ std::string PyStructuredSDFG::metadata(const std::string& key) const {
     } else {
         return "";
     }
+}
+
+void PyStructuredSDFG::add_metadata(const std::string& key, const std::string& value) {
+    sdfg_->add_metadata(key, value);
 }
 
 pybind11::dict PyStructuredSDFG::loop_report() const {

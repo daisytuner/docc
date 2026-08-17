@@ -47,13 +47,21 @@ bool LoopSchedulingPass::run_pass_target(
 
         bool found_incompatible = false;
 
+        // Check if the loop is scheduled already
+        if (auto sloop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            auto compatible_schedules = scheduler.compatible_types();
+            if (compatible_schedules.find(sloop->schedule_type().category()) == compatible_schedules.end()) {
+                found_incompatible = true;
+            }
+        }
+
         // Check descendants
         if (!found_incompatible) {
             auto descendants = loop_analysis.descendants(loop);
             for (auto descendant : descendants) {
-                if (auto map_node = dyn_cast<structured_control_flow::Map*>(descendant)) {
+                if (auto sloop = dyn_cast<structured_control_flow::StructuredLoop*>(descendant)) {
                     auto compatible_schedules = scheduler.compatible_types();
-                    if (compatible_schedules.find(map_node->schedule_type().category()) == compatible_schedules.end()) {
+                    if (compatible_schedules.find(sloop->schedule_type().category()) == compatible_schedules.end()) {
                         found_incompatible = true;
                         break;
                     }
@@ -80,7 +88,7 @@ bool LoopSchedulingPass::run_pass_target(
             report_->in_outermost_loop(scheduling_info.loop_info.loopnest_index);
         }
 
-        SchedulerAction action;
+        SchedulerAction action = SchedulerAction::NEXT;
         if (auto while_loop = dyn_cast<structured_control_flow::While*>(loop)) {
             action = scheduler.find(builder, analysis_manager, *while_loop, offload_unknown_sizes_);
         } else if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
@@ -90,10 +98,13 @@ bool LoopSchedulingPass::run_pass_target(
         }
 
         switch (action) {
-            case SchedulerAction::NEXT: {
+            case SchedulerAction::APPLY: {
                 if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
                     applicable_loops.push_back(structured_loop);
                 }
+                break;
+            }
+            case SchedulerAction::NEXT: {
                 break;
             }
             case SchedulerAction::CHILDREN: {
@@ -110,7 +121,6 @@ bool LoopSchedulingPass::run_pass_target(
             }
         }
     }
-
     if (applicable_loops.empty()) {
         return false;
     }

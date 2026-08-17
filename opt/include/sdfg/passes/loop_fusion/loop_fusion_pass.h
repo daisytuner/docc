@@ -71,6 +71,13 @@ public:
         uint32_t fused_by_domain_count = 0;
         uint32_t fused_by_access_count = 0;
 
+        State(
+            builder::StructuredSDFGBuilder& builder,
+            analysis::AnalysisManager& analysis_manager,
+            std::unique_ptr<analysis::LoopAnalysis> loop_analysis
+        )
+            : builder(builder), analysis_manager(analysis_manager), loop_analysis(std::move(loop_analysis)), run(0) {}
+
         loop_fusion::FusionLoopCandidate* get_next_level_map_stack(loop_fusion::FusionLoopCandidate& current);
 
         loop_fusion::FusionLoopCandidate* get_parent(loop_fusion::FusionLoopCandidate& current);

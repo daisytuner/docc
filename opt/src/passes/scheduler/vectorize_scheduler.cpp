@@ -21,7 +21,7 @@ SchedulerAction VectorizeScheduler::find(
         return CHILDREN;
     }
 
-    return NEXT;
+    return APPLY;
 }
 
 SchedulerAction VectorizeScheduler::find(
@@ -36,7 +36,7 @@ SchedulerAction VectorizeScheduler::find(
     if (!is_innermost) {
         return CHILDREN;
     }
-    return NEXT;
+    return APPLY;
 }
 
 bool VectorizeScheduler::can_apply_schedule(

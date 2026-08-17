@@ -58,6 +58,9 @@ struct ExposedOffload {
     OffloadHolder* offload;
     std::string container;
     int read_count = 0;
+
+    ExposedOffload(OffloadHolder* offload, std::string container, int read_count = 0)
+        : offload(offload), container(std::move(container)), read_count(read_count) {}
 };
 
 /**

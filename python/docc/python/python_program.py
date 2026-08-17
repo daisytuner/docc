@@ -189,7 +189,7 @@ class PythonProgram(DoccProgram):
         )
 
         # When binary reuse is requested, the build run must persist the
-        # normalized SDFG (py4.norm.json) so a later run can reload it without
+        # SDFG (py5.post_sched.json) so a later run can reload it without
         # re-parsing/recompiling. Force the dump if instrumentation/capture
         # would not already produce it.
         docc_reuse_binaries = os.environ.get("DOCC_REUSE_BINARIES")
@@ -348,11 +348,11 @@ class PythonProgram(DoccProgram):
 
         The return shapes/strides are discovered while parsing the kernel and
         are not otherwise recoverable from the SDFG structure. Persisting them
-        (into the same ``py4.norm.json`` the reuse path loads) lets a later
+        (into the same ``py5.post_sched.json`` the reuse path loads) lets a later
         ``DOCC_REUSE_BINARIES`` run reconstruct the CompiledSDFG without
         re-parsing/recompiling.
         """
-        json_path = os.path.join(output_folder, f"{sdfg.name}.py4.norm.json")
+        json_path = os.path.join(output_folder, f"{sdfg.name}.py5.post_sched.json")
         if not os.path.exists(json_path):
             return
         try:
@@ -390,7 +390,7 @@ class PythonProgram(DoccProgram):
 
         sdfg_name = f"{self.name}_sdfg"
         lib_path = os.path.join(output_folder, f"lib{sdfg_name}.so")
-        json_path = os.path.join(output_folder, f"{sdfg_name}.py4.norm.json")
+        json_path = os.path.join(output_folder, f"{sdfg_name}.py5.post_sched.json")
         if not os.path.exists(lib_path):
             raise ValueError(f"Tried reusing binary '{lib_path}' but does not exist")
         if not os.path.exists(json_path):

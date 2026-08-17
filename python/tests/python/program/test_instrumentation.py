@@ -175,3 +175,66 @@ def test_two_sdfgs_contribute_to_trace():
     finally:
         if os.path.exists(trace_file):
             os.remove(trace_file)
+
+
+_STOP_ONE_SDFG = """
+from docc.python import native
+from docc.benchmarks.rtl import start_instrumentation, stop_instrumentation
+import numpy as np
+
+
+@native
+def kernel_add(A, B, C):
+    for i in range(A.shape[0]):
+        C[i] = A[i] + B[i]
+
+
+@native
+def kernel_mul(A, B, C):
+    for i in range(A.shape[0]):
+        C[i] = A[i] * B[i]
+
+
+N = 256
+A = np.random.rand(N)
+B = np.random.rand(N)
+C = np.zeros(N)
+
+# Run kernel_mul with measurement globally stopped, then re-enable for kernel_add.
+# Both regions still register with the shared RTL, but only kernel_add records
+# samples.
+stop_instrumentation()
+kernel_mul(A, B, C)
+start_instrumentation()
+kernel_add(A, B, C)
+"""
+
+
+@_requires_linux
+def test_start_stop_excludes_one_sdfg():
+    assert _find_rtl_lib() is not None
+
+    fd, trace_file = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    try:
+        result = _run_instrumented(_STOP_ONE_SDFG, trace_file)
+        assert result.returncode == 0, result.stderr
+
+        trace = Trace.load(trace_file, validate_schema=False)
+        by_function = {r.function: r for r in trace.regions}
+
+        # kernel_add ran while enabled: it has at least one runtime sample.
+        assert "kernel_add" in by_function, by_function.keys()
+        add = by_function["kernel_add"]
+        assert add.runtime is not None
+        assert add.runtime.count >= 1, add.runtime.count
+
+        # kernel_mul ran while stopped: it may register but records no samples.
+        mul = by_function.get("kernel_mul")
+        if mul is not None:
+            assert mul.runtime is None or mul.runtime.count == 0, (
+                mul.runtime.count if mul.runtime else None
+            )
+    finally:
+        if os.path.exists(trace_file):
+            os.remove(trace_file)
