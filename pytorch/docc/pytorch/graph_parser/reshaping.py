@@ -212,12 +212,12 @@ class TensorReshape2dParser(GraphParserModule):
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        if len(node.args) not in (2, 3):
+        if len(node.args) != 2:
             raise GraphParserError(
                 self,
                 node,
-                "Expected 2 or 3 arguments but got " + str(len(node.args)),
-            )   
+                "Expected exactly 2 arguments but got " + str(len(node.args)),
+            )
         if len(node.kwargs) != 0:
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
@@ -255,11 +255,11 @@ class TensorReshape2dParser(GraphParserModule):
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        if len(node.args) not in (2, 3):
+        if len(node.args) != 2:
             raise GraphParserError(
                 self,
                 node,
-                "Expected 2 or 3 arguments but got " + str(len(node.args)),
+                "Expected exactly 2 arguments but got " + str(len(node.args)),
             )   
         if len(node.kwargs) != 0:
             raise GraphParserError(

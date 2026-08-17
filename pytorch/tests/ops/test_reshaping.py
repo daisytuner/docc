@@ -504,3 +504,39 @@ def test_where_input_broadcast(target: str) -> None:
         ),
         target=target,
     )
+
+
+# --- select ---
+
+
+def test_select_dim0(target: str) -> None:
+    class SelectDim0Net(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.select(x, 0, 1)
+
+    check(SelectDim0Net(), torch.randn(3, 4, 5), target=target)
+
+
+def test_select_dim1(target: str) -> None:
+    class SelectDim1Net(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.select(x, 1, 2)
+
+    check(SelectDim1Net(), torch.randn(3, 4, 5), target=target)
+
+
+def test_select_dim_neg(target: str) -> None:
+    class SelectDimNegNet(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.select(x, -1, -2)
+
+    check(SelectDimNegNet(), torch.randn(3, 4, 5), target=target)
+
+
+def test_select_2d(target: str) -> None:
+    class Select2DNet(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.select(x, 0, 0)
+
+    check(Select2DNet(), torch.randn(2, 3), target=target)
+
