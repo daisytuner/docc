@@ -41,8 +41,8 @@ class UpsampleBilinear2DParser(GraphParserModule):
         input_tensor: Tensor = self.get_tensor_type(
             node, container_info, input_container
         )
-        if not input_tensor.is_contiguous():
-            info = container_info[input_container]
+        info = container_info[input_container]
+        if isinstance(info, ContainerRefInfo) or not input_tensor.is_contiguous():
             base_container: str = self.get_arg_container(
                 node, container_info, 0, resolve=True
             )
