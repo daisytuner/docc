@@ -11,12 +11,19 @@ from torch.fx.node import Argument
 
 from typing import Any
 
-from docc.sdfg import StructuredSDFGBuilder, StructuredSDFG, Type, Tensor
+from docc.sdfg import (
+    StructuredSDFGBuilder,
+    StructuredSDFG,
+    Type,
+    Tensor,
+    DebugInfo,
+)
 
 from docc.pytorch.graph_parser.utils import (
     ContainerInfoBase,
     ContainerInfo,
     ContainerPreInfo,
+    ContainerRefInfo,
     ContainerInfos,
     GraphParserError,
     GraphParserBase,
@@ -64,7 +71,9 @@ class GraphParser(GraphParserBase):
 
         self.container_info: ContainerInfos = ContainerInfos()
 
-    def get_output_containers(self, node: torch.fx.Node, args: Argument) -> list[str]:
+    def get_output_containers(
+        self, node: torch.fx.Node, args: Argument, resolve: bool = True
+    ) -> list[str]:
         """
         Flattens a nested tuple to a list and converts each PyTorch Argument to an SDFG container.
         Example: ((arg_0, arg_1), arg_2) -> ["arg_0", "arg_1", "arg_2"]
@@ -72,10 +81,12 @@ class GraphParser(GraphParserBase):
         result = []
         if isinstance(args, tuple):
             for elem in list(args):
-                result += self.get_output_containers(node, elem)
+                result += self.get_output_containers(node, elem, resolve=resolve)
         else:
             result.append(
-                self.convert_arg_to_container(node, self.container_info, args)
+                self.convert_arg_to_container(
+                    node, self.container_info, args, resolve=resolve
+                )
             )
         return result
 
@@ -100,7 +111,7 @@ class GraphParser(GraphParserBase):
                 dispatch_to_pre_module(node, self.builder, self.container_info)
             elif node.op == "output":
                 output_containers: list[str] = self.get_output_containers(
-                    node, node.args
+                    node, node.args, resolve=False
                 )
                 for output_container in output_containers:
                     if output_container in self.container_info:
@@ -120,15 +131,12 @@ class GraphParser(GraphParserBase):
                             output_container, out_argument=True
                         )
 
+        # Parse all operations
         for node in nodes:
             if node.op == "placeholder":
                 self.parse_placeholder(node)
             elif node.op == "call_function":
-                dispatch_to_module(
-                    node,
-                    self.builder,
-                    self.container_info,
-                )
+                dispatch_to_module(node, self.builder, self.container_info)
             elif node.op == "output":
                 self.parse_output(node)
             else:
@@ -170,9 +178,21 @@ class GraphParser(GraphParserBase):
         Parses a PyTorch output operation by setting the SDFG metadata about output arguments and
         their shape information.
         """
-        output_containers: list[str] = self.get_output_containers(node, node.args)
-        for i in range(len(output_containers)):
-            container: str = output_containers[i]
+        raw_output_containers: list[str] = self.get_output_containers(
+            node, node.args, resolve=False
+        )
+        output_containers: list[str] = []
+        for i, container in enumerate(raw_output_containers):
+            info: ContainerInfoBase = self.container_info[container]
+            src_tensor: Tensor | None = info.sdfg_tensor_type()
+            needs_copy: bool = False
+            if not info.out_argument():
+                needs_copy = True
+            elif src_tensor is not None and not src_tensor.is_contiguous():
+                needs_copy = True
+            elif isinstance(info, ContainerRefInfo):
+                needs_copy = True
+
             output_container: str = container + "_out"
             if output_container in self.container_info:
                 self.copy_scalar_tensor(
@@ -182,13 +202,38 @@ class GraphParser(GraphParserBase):
                     container,
                     output_container,
                 )
-                output_containers[i] = output_container
+                output_containers.append(output_container)
+            elif needs_copy and src_tensor is not None:
+                base_container: str = (
+                    info.ref().name()
+                    if isinstance(info, ContainerRefInfo)
+                    else info.name()
+                )
+                dst_tensor: Tensor = Tensor(src_tensor.element_type, src_tensor.shape)
+                out_type: Type = info.sdfg_type()
+                new_out_container: str = self.builder.find_new_name(
+                    container + "_out"
+                )
+                self.builder.add_container(
+                    new_out_container, out_type, is_argument=True
+                )
+                self.container_info[new_out_container] = ContainerInfo(
+                    new_out_container, out_type, dst_tensor, out_argument=True
+                )
+                debug_info: DebugInfo = self.get_debug_info(node)
+                self.builder.add_copy_op(
+                    base_container,
+                    src_tensor,
+                    new_out_container,
+                    dst_tensor,
+                    debug_info,
+                )
+                output_containers.append(new_out_container)
+            else:
+                output_containers.append(container)
+
         self.builder.add_metadata("output_args", ",".join(output_containers))
         for output_container in output_containers:
-            if not self.container_info[output_container].out_argument():
-                raise GraphParserError(
-                    self, node, "Unsupported for now; needs explicit copy"
-                )
             self.builder.add_metadata(
                 f"{output_container}_shape",
                 self.container_info.get_shape_str(output_container),

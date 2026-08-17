@@ -277,14 +277,16 @@ class ContainerRefInfo(ContainerInfoBase):
     """
 
     _ref: ContainerInfo
+    _out_argument: bool
 
-    def __init__(self, ref: ContainerInfo) -> None:
+    def __init__(self, ref: ContainerInfo, out_argument: bool = False) -> None:
         """Initialization"""
         self._ref: ContainerInfo = ref
+        self._out_argument: bool = out_argument
 
     def __str__(self) -> str:
         """Prints the container information as a string. Helpful for debugging purposes."""
-        return "ContainerRefInfo(" + str(self._ref) + ")"
+        return "ContainerRefInfo(" + str(self._ref) + ", out=" + str(self._out_argument) + ")"
 
     def ref(self) -> ContainerInfo:
         """Returns the container information"""
@@ -320,7 +322,16 @@ class ContainerRefInfo(ContainerInfoBase):
 
     def out_argument(self) -> bool:
         """Returns True iff the container is an output argument"""
-        return self._ref.out_argument()
+        return self._out_argument or self._ref.out_argument()
+
+    def update(
+        self,
+        out_argument: bool | None = None,
+    ) -> "ContainerRefInfo":
+        """Updates the container ref information."""
+        if out_argument is not None:
+            self._out_argument = out_argument
+        return self
 
 
 class ContainerPreInfo(ContainerInfoBase):
@@ -1027,12 +1038,15 @@ class GraphParserModule(GraphParserBase, ABC):
             else:
                 current = info.name()
                 break
+        if len(ref_containers) > 0:
+            out_argument = False
         if current in container_info:
             info: ContainerInfoBase = container_info[current]
             if isinstance(info, ContainerPreInfo):
                 current_info: ContainerInfo = ContainerInfo.from_tuple(
                     current, sdfg_types, out_argument=out_argument
                 )
+                container_info[current] = current_info
             elif isinstance(info, ContainerInfo):
                 current_info: ContainerInfo = info.update(out_argument=out_argument)
             elif isinstance(info, ContainerRefInfo):
@@ -1049,19 +1063,29 @@ class GraphParserModule(GraphParserBase, ABC):
             )
         container_info[current] = current_info
         for ref_container in ref_containers:
+            is_out: bool = False
             if ref_container in container_info:
                 info: ContainerInfoBase = container_info[ref_container]
+                is_out = info.out_argument()
                 if isinstance(info, ContainerPreInfo):
-                    container_info[ref_container] = ContainerRefInfo(current_info)
+                    container_info[ref_container] = ContainerRefInfo(
+                        current_info, out_argument=is_out
+                    )
+                elif isinstance(info, ContainerRefInfo):
+                    container_info[ref_container] = ContainerRefInfo(
+                        current_info, out_argument=is_out
+                    )
                 else:
                     raise GraphParserError(
                         self,
                         node,
-                        "Expected ContainerPreInfo for ref container but got: "
+                        "Expected ContainerPreInfo or ContainerRefInfo for ref container but got: "
                         + str(type(info)),
                     )
             else:
-                container_info[ref_container] = ContainerRefInfo(current_info)
+                container_info[ref_container] = ContainerRefInfo(
+                    current_info, out_argument=is_out
+                )
         return current_info
 
     def update_container_types(
@@ -1097,7 +1121,7 @@ class GraphParserModule(GraphParserBase, ABC):
         info: ContainerInfo = self.resolve_contaner_name_forward(
             node, container_info, container, sdfg_types
         )
-        if info.in_argument() and info.out_argument():
+        if info.out_argument() or (container in container_info and container_info[container].out_argument()):
             ref_info: ContainerInfoBase = container_info[container]
             if not isinstance(ref_info, ContainerRefInfo):
                 raise GraphParserError(
@@ -1187,6 +1211,8 @@ class GraphParserModule(GraphParserBase, ABC):
             else:
                 current = info.name()
                 break
+        if len(ref_containers) > 0:
+            out_argument = False
         if current in container_info:
             info: ContainerInfoBase = container_info[current]
             if isinstance(info, ContainerPreInfo):
@@ -1210,10 +1236,14 @@ class GraphParserModule(GraphParserBase, ABC):
             )
             container_info[current] = current_info
         for ref_container in ref_containers:
+            is_out: bool = False
             if ref_container in container_info:
                 info: ContainerInfoBase = container_info[ref_container]
+                is_out = info.out_argument()
                 if isinstance(info, ContainerPreInfo):
-                    container_info[ref_container] = ContainerRefInfo(current_info)
+                    container_info[ref_container] = ContainerRefInfo(
+                        current_info, out_argument=is_out
+                    )
                 else:
                     raise GraphParserError(
                         self,
@@ -1222,7 +1252,9 @@ class GraphParserModule(GraphParserBase, ABC):
                         + str(type(info)),
                     )
             else:
-                container_info[ref_container] = ContainerRefInfo(current_info)
+                container_info[ref_container] = ContainerRefInfo(
+                    current_info, out_argument=is_out
+                )
         return current_info
 
     def get_result_container(
@@ -1249,6 +1281,11 @@ class GraphParserModule(GraphParserBase, ABC):
         else:
             sdfg_types: tuple[Type, Tensor | None] = self.determine_sdfg_type(
                 node, node.meta["val"]
+            )
+        if sdfg_types[1] is not None and not sdfg_types[1].is_contiguous():
+            sdfg_types = (
+                sdfg_types[0],
+                Tensor(sdfg_types[1].element_type, sdfg_types[1].shape),
             )
         info: ContainerInfo = self.resolve_container_name_backward(
             node, container_info, node.name, sdfg_types
@@ -1308,6 +1345,11 @@ class GraphParserModule(GraphParserBase, ABC):
             sdfg_types: tuple[Type, Tensor | None] = self.determine_sdfg_type(
                 node, node.meta["val"][i]
             )
+            if sdfg_types[1] is not None and not sdfg_types[1].is_contiguous():
+                sdfg_types = (
+                    sdfg_types[0],
+                    Tensor(sdfg_types[1].element_type, sdfg_types[1].shape),
+                )
             info: ContainerInfo = self.resolve_container_name_backward(
                 node, container_info, f"{base_name}_{i}", sdfg_types
             )
@@ -1362,21 +1404,38 @@ class GraphParserModule(GraphParserBase, ABC):
             else target_element_type
         )
         if isinstance(operand, str):
+            info = container_info[operand]
             src_tensor = self.get_tensor_type(node, container_info, operand)
-            if src_tensor.shape == target_shape:
+            base_container = (
+                info.ref().name() if isinstance(info, ContainerRefInfo) else operand
+            )
+            if (
+                src_tensor.shape == target_shape
+                and src_tensor.is_contiguous()
+                and not isinstance(info, ContainerRefInfo)
+            ):
                 return operand, src_tensor
             intermediate = self.create_intermediate_container(
                 node, builder, container_info, target_type, target_tensor
             )
-            builder.add_broadcast_op(
-                operand,
-                src_tensor,
-                intermediate,
-                target_tensor,
-                src_tensor.shape,
-                target_shape,
-                debug_info,
-            )
+            if src_tensor.shape == target_shape:
+                builder.add_copy_op(
+                    base_container,
+                    src_tensor,
+                    intermediate,
+                    target_tensor,
+                    debug_info,
+                )
+            else:
+                builder.add_broadcast_op(
+                    base_container,
+                    src_tensor,
+                    intermediate,
+                    target_tensor,
+                    src_tensor.shape,
+                    target_shape,
+                    debug_info,
+                )
             return intermediate, target_tensor
         else:
             # Constant scalar: fill into target container
