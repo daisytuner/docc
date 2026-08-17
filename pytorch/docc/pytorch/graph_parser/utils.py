@@ -1341,6 +1341,60 @@ class GraphParserModule(GraphParserBase, ABC):
             self.allocate_memory(node, builder, container_info, container)
         return container
 
+    def broadcast_or_fill_to_shape(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+        operand: str | tuple[str, Scalar],
+        target_shape: list[str],
+        target_element_type: Scalar,
+    ) -> tuple[str, Tensor]:
+        """
+        Broadcasts or fills an operand (container name or constant tuple) to a target shape.
+        Returns the resulting container name and its Tensor type.
+        """
+        debug_info: DebugInfo = self.get_debug_info(node)
+        target_tensor = Tensor(target_element_type, target_shape)
+        target_type: Type = (
+            Pointer(target_element_type)
+            if len(target_shape) > 0
+            else target_element_type
+        )
+        if isinstance(operand, str):
+            src_tensor = self.get_tensor_type(node, container_info, operand)
+            if src_tensor.shape == target_shape:
+                return operand, src_tensor
+            intermediate = self.create_intermediate_container(
+                node, builder, container_info, target_type, target_tensor
+            )
+            builder.add_broadcast_op(
+                operand,
+                src_tensor,
+                intermediate,
+                target_tensor,
+                src_tensor.shape,
+                target_shape,
+                debug_info,
+            )
+            return intermediate, target_tensor
+        else:
+            # Constant scalar: fill into target container
+            intermediate = self.create_intermediate_container(
+                node, builder, container_info, target_type, target_tensor
+            )
+            val_str = operand[0]
+            if target_element_type.primitive_type == PrimitiveType.Bool:
+                val_str = "1" if val_str in ("1", "True", "true") else "0"
+            builder.add_fill_op(
+                val_str,
+                target_element_type,
+                intermediate,
+                target_tensor,
+                debug_info,
+            )
+            return intermediate, target_tensor
+
     def align_constant_type(
         self, node: torch.fx.Node, constant: tuple[str, Scalar], dst_type: Scalar
     ) -> Scalar:

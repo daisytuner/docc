@@ -316,76 +316,29 @@ class ElementwiseTensorOpParser(GraphParserModule):
                 [],
             )
 
-        if len(self_tensor.shape) != len(other_tensor.shape):
-            self_tensor, other_tensor = self.align_elementwise_tensors(
-                node, self_tensor, other_tensor
-            )
-
-        # check if two tensors have same shapes for elementwise operation. if not, broadcast the shapes.
-        debug_info: DebugInfo = self.get_debug_info(node)
-        if self_tensor.shape != other_tensor.shape and len(self_tensor.shape) == len(
-            other_tensor.shape
-        ):
-            common_shape = []
-            for s1, s2 in zip(self_tensor.shape, other_tensor.shape):
-                if s1 == "1":
-                    common_shape.append(s2)
-                elif s2 == "1":
-                    common_shape.append(s1)
-                else:
-                    common_shape.append(s1)
-
-            if self_tensor.shape != common_shape:
-                broadcast_self_tensor = Tensor(self_tensor.element_type, common_shape)
-                broadcast_self_container = self.create_intermediate_container(
-                    node,
-                    builder,
-                    container_info,
-                    container_info[self_container].sdfg_type(),
-                    broadcast_self_tensor,
-                )
-                builder.add_broadcast_op(
-                    self_container,
-                    self_tensor,
-                    broadcast_self_container,
-                    broadcast_self_tensor,
-                    self_tensor.shape,
-                    common_shape,
-                    debug_info,
-                )
-                self_container = broadcast_self_container
-                self_tensor = broadcast_self_tensor
-
-            if other_tensor.shape != common_shape:
-                broadcast_other_tensor = Tensor(other_tensor.element_type, common_shape)
-                broadcast_other_container = self.create_intermediate_container(
-                    node,
-                    builder,
-                    container_info,
-                    (
-                        container_info[other_container].sdfg_type()
-                        if other_container in container_info
-                        else container_info[self_container].sdfg_type()
-                    ),
-                    broadcast_other_tensor,
-                )
-                builder.add_broadcast_op(
-                    other_container,
-                    other_tensor,
-                    broadcast_other_container,
-                    broadcast_other_tensor,
-                    other_tensor.shape,
-                    common_shape,
-                    debug_info,
-                )
-                other_container = broadcast_other_container
-                other_tensor = broadcast_other_tensor
-
         result_container: str = self.get_result_container(node, builder, container_info)
         result_tensor: Tensor = self.get_tensor_type(
             node, container_info, result_container
         )
         debug_info: DebugInfo = self.get_debug_info(node)
+
+        self_container, self_tensor = self.broadcast_or_fill_to_shape(
+            node,
+            builder,
+            container_info,
+            self_container,
+            result_tensor.shape,
+            self_tensor.element_type,
+        )
+        other_container, other_tensor = self.broadcast_or_fill_to_shape(
+            node,
+            builder,
+            container_info,
+            other,
+            result_tensor.shape,
+            other_tensor.element_type,
+        )
+
         builder.add_elementwise_op(
             self.op_type,
             self_container,
@@ -450,6 +403,23 @@ class ElementwiseTaskletOpParser(GraphParserModule):
         )
         debug_info: DebugInfo = self.get_debug_info(node)
 
+        self_container, self_tensor = self.broadcast_or_fill_to_shape(
+            node,
+            builder,
+            container_info,
+            self_container,
+            result_tensor.shape,
+            self_tensor.element_type,
+        )
+        other_container, other_tensor = self.broadcast_or_fill_to_shape(
+            node,
+            builder,
+            container_info,
+            other,
+            result_tensor.shape,
+            other_tensor.element_type,
+        )
+
         is_float = primitive_type_is_floating_point(
             self_tensor.element_type.primitive_type
         )
@@ -491,6 +461,22 @@ register_module(
     "aten.bitwise_and.Tensor",
     ElementwiseTaskletOpParser(TaskletCode.int_and, TaskletCode.int_and),
 )
+register_module(
+    "aten.logical_and.default",
+    ElementwiseTaskletOpParser(TaskletCode.int_and, TaskletCode.int_and),
+)
+register_module(
+    "aten.logical_or.default",
+    ElementwiseTaskletOpParser(TaskletCode.int_or, TaskletCode.int_or),
+)
+register_module(
+    "aten.bitwise_or.Tensor",
+    ElementwiseTaskletOpParser(TaskletCode.int_or, TaskletCode.int_or),
+)
+register_module(
+    "aten.bitwise_or.Scalar",
+    ElementwiseTaskletOpParser(TaskletCode.int_or, TaskletCode.int_or),
+)
 
 
 class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
@@ -515,19 +501,15 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
         self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
         debug_info: DebugInfo = self.get_debug_info(node)
         if len(node.kwargs) == 0:
-            intermediate: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
-                node, container_info, 1
-            )
-            if isinstance(intermediate, str):
-                intermediate_container: str = intermediate
-                intermediate_tensor: Tensor = self.get_tensor_type(
-                    node, container_info, intermediate_container
+            intermediate_operand = self.get_arg_sdfg_value(node, container_info, 1)
+            if isinstance(intermediate_operand, str):
+                intermediate_tensor = self.get_tensor_type(
+                    node, container_info, intermediate_operand
                 )
             else:
-                intermediate_container: str = intermediate[0]
-                intermediate_tensor: Tensor = Tensor(
+                intermediate_tensor = Tensor(
                     self.align_constant_type(
-                        node, intermediate, self_tensor.element_type
+                        node, intermediate_operand, self_tensor.element_type
                     ),
                     [],
                 )
@@ -593,20 +575,33 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
                 intermediate_tensor,
                 debug_info,
             )
+            intermediate_operand = intermediate_container
         else:
             raise GraphParserError(
                 self, node, "Unsupported number of kwargs: " + str(len(node.kwargs))
-            )
-
-        if len(self_tensor.shape) != len(intermediate_tensor.shape):
-            self_tensor, intermediate_tensor = self.align_elementwise_tensors(
-                node, self_tensor, intermediate_tensor
             )
 
         result_container: str = self.get_result_container(node, builder, container_info)
         result_tensor: Tensor = self.get_tensor_type(
             node, container_info, result_container
         )
+        self_container, self_tensor = self.broadcast_or_fill_to_shape(
+            node,
+            builder,
+            container_info,
+            self_container,
+            result_tensor.shape,
+            self_tensor.element_type,
+        )
+        intermediate_container, intermediate_tensor = self.broadcast_or_fill_to_shape(
+            node,
+            builder,
+            container_info,
+            intermediate_operand,
+            result_tensor.shape,
+            intermediate_tensor.element_type,
+        )
+
         builder.add_elementwise_op(
             self.op_type,
             self_container,
@@ -620,6 +615,7 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
 
 
 register_module("aten.add.Tensor", ElementwiseTensorOpParserWithAlpha("add"))
+register_module("aten.sub.Tensor", ElementwiseTensorOpParserWithAlpha("sub"))
 
 
 class ElementwiseCMathTensorOpParser(GraphParserModule):

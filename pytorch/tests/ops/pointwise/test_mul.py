@@ -16,6 +16,26 @@ def test_mul_tensor_tensor(target: str) -> None:
     check(MulTensorNet(), x, y, target=target)
 
 
+def test_mul_4d_broadcast(target: str) -> None:
+    class Mul4dBroadcastNet(nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return torch.mul(x, y)
+
+    x = torch.randn(1, 4, 16, 32)
+    y = torch.randn(1, 1, 16, 32)
+    check(Mul4dBroadcastNet(), x, y, target=target)
+
+
+def test_mul_constant_scalar_literal(target: str) -> None:
+    class MulConstantScalarLiteralNet(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x * 0.1767
+
+    x = torch.randn(1, 4, 16, 32)
+    check(MulConstantScalarLiteralNet(), x, target=target)
+
+
+
 def test_mul_tensor_scalar_float(target: str) -> None:
     class MulScalarFloatNet(nn.Module):
         def forward(self, x: torch.Tensor, y: float) -> torch.Tensor:

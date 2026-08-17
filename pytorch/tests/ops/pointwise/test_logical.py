@@ -38,3 +38,34 @@ def test_bitwise_and_int(target: str) -> None:
     x = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
     y = torch.tensor([1, 3, 2, 5], dtype=torch.int32)
     check(BitwiseAndNet(), x, y, target=target)
+
+
+def test_logical_and(target: str) -> None:
+    class LogicalAndNet(nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return torch.logical_and(x, y)
+
+    x = torch.tensor([True, False, True, False])
+    y = torch.tensor([True, True, False, False])
+    check(LogicalAndNet(), x, y, target=target)
+
+
+def test_logical_or(target: str) -> None:
+    class LogicalOrNet(nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return torch.logical_or(x, y)
+
+    x = torch.tensor([True, False, True, False])
+    y = torch.tensor([True, True, False, False])
+    check(LogicalOrNet(), x, y, target=target)
+
+
+def test_bitwise_or(target: str) -> None:
+    class BitwiseOrNet(nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return torch.bitwise_or(x, y)
+
+    x = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
+    y = torch.tensor([1, 3, 2, 5], dtype=torch.int32)
+    check(BitwiseOrNet(), x, y, target=target)
+

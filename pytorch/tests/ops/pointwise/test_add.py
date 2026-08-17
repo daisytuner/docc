@@ -208,3 +208,34 @@ def test_addcmul_int_value(target: str) -> None:
         *(torch.randn(1, 3), torch.randn(1, 3), torch.randn(1, 3), 2),
         target=target
     )
+
+
+def test_add_4d_broadcast(target: str) -> None:
+    class Add4dBroadcastNet(nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return torch.add(x, y)
+
+    x = torch.randn(1, 4, 16, 32)
+    y = torch.randn(1, 1, 16, 32)
+    check(Add4dBroadcastNet(), x, y, target=target)
+
+
+def test_sub_simple(target: str) -> None:
+    class SubNet(nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return torch.sub(x, y)
+
+    x = torch.randn(4, 4)
+    y = torch.randn(4, 4)
+    check(SubNet(), x, y, target=target)
+
+
+def test_sub_4d_broadcast(target: str) -> None:
+    class Sub4dBroadcastNet(nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return torch.sub(x, y)
+
+    x = torch.randn(1, 4, 16, 32)
+    y = torch.randn(1, 1, 16, 32)
+    check(Sub4dBroadcastNet(), x, y, target=target)
+
