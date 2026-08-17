@@ -38,7 +38,7 @@ TEST(ROCMSchedulerTest, SkipsLoneAlreadyROCMScheduledMap) {
         symbolic::Lt(indvar, symbolic::symbol("N")),
         symbolic::integer(0),
         symbolic::add(indvar, symbolic::integer(1)),
-        rocm::ScheduleType_ROCM::create()
+        rocm::ScheduleType_ROCM_deprecated::create()
     );
     auto& block = builder.add_block(map.root());
     auto& a_in = builder.add_access(block, "A");
@@ -54,7 +54,7 @@ TEST(ROCMSchedulerTest, SkipsLoneAlreadyROCMScheduledMap) {
     EXPECT_FALSE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // Schedule unchanged and no device buffers created (not re-offloaded).
-    EXPECT_EQ(map.schedule_type().value(), rocm::ScheduleType_ROCM::value());
+    EXPECT_EQ(map.schedule_type().value(), rocm::ScheduleType_ROCM_deprecated::value());
     for (auto& container : builder.subject().containers()) {
         std::string name = container;
         EXPECT_EQ(name.find(rocm::ROCM_DEVICE_PREFIX), std::string::npos)

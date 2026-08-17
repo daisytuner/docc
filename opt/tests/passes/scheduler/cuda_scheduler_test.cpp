@@ -668,7 +668,7 @@ TEST(CUDASchedulerTest, SkipsLoneAlreadyCUDAScheduledMap) {
         symbolic::Lt(indvar, symbolic::symbol("N")),
         symbolic::integer(0),
         symbolic::add(indvar, symbolic::integer(1)),
-        cuda::ScheduleType_CUDA::create()
+        cuda::ScheduleType_CUDA_deprecated::create()
     );
     auto& block = builder.add_block(map.root());
     auto& a_in = builder.add_access(block, "A");
@@ -684,7 +684,7 @@ TEST(CUDASchedulerTest, SkipsLoneAlreadyCUDAScheduledMap) {
     EXPECT_FALSE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // Schedule unchanged and no device buffers created (not re-offloaded).
-    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
     for (auto& container : builder.subject().containers()) {
         std::string name = container;
         EXPECT_EQ(name.find("__daisy_cuda_"), std::string::npos)

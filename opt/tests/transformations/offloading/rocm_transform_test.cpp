@@ -1,6 +1,7 @@
 #include "sdfg/transformations/offloading/rocm_transform.h"
 
 #include <gtest/gtest.h>
+#include "sdfg/targets/rocm/rocm.h"
 
 using namespace sdfg;
 
@@ -22,7 +23,7 @@ TEST(ROCMTransformTest, MapWithSequentialSchedule) {
     );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    rocm::ROCMTransform transformation(map, 64);
+    rocm::ROCMTransform_deprecated transformation(map, 64);
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
@@ -44,13 +45,13 @@ TEST(ROCMTransformTest, RejectsAlreadyROCMScheduledMap) {
         symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
-        rocm::ScheduleType_ROCM::create()
+        rocm::ScheduleType_ROCM_deprecated::create()
     );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    rocm::ROCMTransform transformation(map, 128);
+    rocm::ROCMTransform_deprecated transformation(map, 128);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 
     // Schedule left untouched.
-    EXPECT_EQ(map.schedule_type().value(), rocm::ScheduleType_ROCM::value());
+    EXPECT_EQ(map.schedule_type().value(), rocm::ScheduleType_ROCM_deprecated::value());
 }
