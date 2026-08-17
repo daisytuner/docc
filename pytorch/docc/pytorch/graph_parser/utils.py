@@ -278,11 +278,13 @@ class ContainerRefInfo(ContainerInfoBase):
 
     _ref: ContainerInfo
     _out_argument: bool
+    _sdfg_tensor_type: Tensor | None
 
-    def __init__(self, ref: ContainerInfo, out_argument: bool = False) -> None:
+    def __init__(self, ref: ContainerInfo, out_argument: bool = False, sdfg_tensor_type: Tensor | None = None) -> None:
         """Initialization"""
         self._ref: ContainerInfo = ref
         self._out_argument: bool = out_argument
+        self._sdfg_tensor_type: Tensor | None = sdfg_tensor_type
 
     def __str__(self) -> str:
         """Prints the container information as a string. Helpful for debugging purposes."""
@@ -307,6 +309,8 @@ class ContainerRefInfo(ContainerInfoBase):
         """
         Returns the SDFG tensor type if available. If no tensor type is available None is returned.
         """
+        if self._sdfg_tensor_type is not None:
+            return self._sdfg_tensor_type
         return self._ref.sdfg_tensor_type()
 
     def memory_managed(self) -> bool:
@@ -326,9 +330,12 @@ class ContainerRefInfo(ContainerInfoBase):
 
     def update(
         self,
+        sdfg_tensor_type: Tensor | None = None,
         out_argument: bool | None = None,
     ) -> "ContainerRefInfo":
         """Updates the container ref information."""
+        if sdfg_tensor_type is not None:
+            self._sdfg_tensor_type = sdfg_tensor_type
         if out_argument is not None:
             self._out_argument = out_argument
         return self
@@ -1069,11 +1076,11 @@ class GraphParserModule(GraphParserBase, ABC):
                 is_out = info.out_argument()
                 if isinstance(info, ContainerPreInfo):
                     container_info[ref_container] = ContainerRefInfo(
-                        current_info, out_argument=is_out
+                        current_info, sdfg_tensor_type=sdfg_types[1], out_argument=is_out
                     )
                 elif isinstance(info, ContainerRefInfo):
                     container_info[ref_container] = ContainerRefInfo(
-                        current_info, out_argument=is_out
+                        current_info, sdfg_tensor_type=sdfg_types[1], out_argument=is_out
                     )
                 else:
                     raise GraphParserError(
@@ -1084,7 +1091,7 @@ class GraphParserModule(GraphParserBase, ABC):
                     )
             else:
                 container_info[ref_container] = ContainerRefInfo(
-                    current_info, out_argument=is_out
+                    current_info, sdfg_tensor_type=sdfg_types[1], out_argument=is_out
                 )
         return current_info
 
@@ -1242,7 +1249,11 @@ class GraphParserModule(GraphParserBase, ABC):
                 is_out = info.out_argument()
                 if isinstance(info, ContainerPreInfo):
                     container_info[ref_container] = ContainerRefInfo(
-                        current_info, out_argument=is_out
+                        current_info, sdfg_tensor_type=sdfg_types[1], out_argument=is_out
+                    )
+                elif isinstance(info, ContainerRefInfo):
+                    container_info[ref_container] = ContainerRefInfo(
+                        current_info, sdfg_tensor_type=sdfg_types[1], out_argument=is_out
                     )
                 else:
                     raise GraphParserError(
@@ -1253,7 +1264,7 @@ class GraphParserModule(GraphParserBase, ABC):
                     )
             else:
                 container_info[ref_container] = ContainerRefInfo(
-                    current_info, out_argument=is_out
+                    current_info, sdfg_tensor_type=sdfg_types[1], out_argument=is_out
                 )
         return current_info
 
@@ -1427,12 +1438,34 @@ class GraphParserModule(GraphParserBase, ABC):
                     debug_info,
                 )
             else:
+                broadcast_src_container = base_container
+                broadcast_src_tensor = src_tensor
+                if isinstance(info, ContainerRefInfo):
+                    contiguous_src_tensor = Tensor(
+                        src_tensor.element_type, src_tensor.shape
+                    )
+                    src_intermediate = self.create_intermediate_container(
+                        node,
+                        builder,
+                        container_info,
+                        info.sdfg_type(),
+                        contiguous_src_tensor,
+                    )
+                    builder.add_copy_op(
+                        base_container,
+                        src_tensor,
+                        src_intermediate,
+                        contiguous_src_tensor,
+                        debug_info,
+                    )
+                    broadcast_src_container = src_intermediate
+                    broadcast_src_tensor = contiguous_src_tensor
                 builder.add_broadcast_op(
-                    base_container,
-                    src_tensor,
+                    broadcast_src_container,
+                    broadcast_src_tensor,
                     intermediate,
                     target_tensor,
-                    src_tensor.shape,
+                    broadcast_src_tensor.shape,
                     target_shape,
                     debug_info,
                 )

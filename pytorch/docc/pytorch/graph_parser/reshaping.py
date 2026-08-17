@@ -5,7 +5,7 @@ GraphParser modules for parsing indexing, slicing, joining, and mutating operati
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo, Pointer
 
 from docc.pytorch.graph_parser.utils import (
     ContainerInfoBase,
@@ -212,12 +212,12 @@ class TensorReshape2dParser(GraphParserModule):
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        if len(node.args) != 2:
+        if len(node.args) not in (2, 3):
             raise GraphParserError(
                 self,
                 node,
-                "Expected exactly 2 arguments but got " + str(len(node.args)),
-            )
+                "Expected 2 or 3 arguments but got " + str(len(node.args)),
+            )   
         if len(node.kwargs) != 0:
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
@@ -255,12 +255,12 @@ class TensorReshape2dParser(GraphParserModule):
         builder: StructuredSDFGBuilder,
         container_info: ContainerInfos,
     ) -> None:
-        if len(node.args) != 2:
+        if len(node.args) not in (2, 3):
             raise GraphParserError(
                 self,
                 node,
-                "Expected exactly 2 arguments but got " + str(len(node.args)),
-            )
+                "Expected 2 or 3 arguments but got " + str(len(node.args)),
+            )   
         if len(node.kwargs) != 0:
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
@@ -275,6 +275,109 @@ register_module("aten.squeeze.dims", TensorReshape2dParser())
 register_pre_module("aten.unsqueeze.default", TensorReshape2dParser())
 register_module("aten.unsqueeze.default", TensorReshape2dParser())
 
+
+class SelectParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        if len(node.args) < 2 or len(node.args) > 3:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected 2 or 3 arguments but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        rank: int = len(self_tensor.shape)
+
+        dim: Argument = node.args[1] if len(node.args) > 1 else 0
+        if not isinstance(dim, int):
+            raise GraphParserError(
+                self, node, "Expected dim arg to be int type but got: " + str(type(dim))
+            )
+        if dim < 0:
+            dim = dim + rank
+        if dim < 0 or dim >= rank:
+            raise GraphParserError(self, node, "Select dim out of range: " + str(dim))
+
+        try:
+            size: int = int(self_tensor.shape[dim])
+        except (TypeError, ValueError):
+            raise GraphParserError(
+                self,
+                node,
+                "Select requires a static size along dim "
+                + str(dim)
+                + " but got: "
+                + str(self_tensor.shape[dim]),
+            )
+
+        index: Argument = node.args[2] if len(node.args) > 2 else 0
+        if not isinstance(index, int):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected index arg to be int type but got: " + str(type(index)),
+            )
+        if index < 0:
+            index = index + size
+        if index < 0 or index >= size:
+            raise GraphParserError(
+                self, node, "Select index out of range: " + str(index)
+            )
+
+        start = index
+        end = index + 1
+        step = 1
+
+        sliced_shape = list(self_tensor.shape)
+        sliced_shape[dim] = "1"
+        sliced_tensor = Tensor(self_tensor.element_type, sliced_shape)
+
+        result_container: str = self.get_result_container(node, builder, container_info)
+        result_tensor: Tensor = self.get_tensor_type(
+            node, container_info, result_container
+        )
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        slice_intermediate = self.create_intermediate_container(
+            node,
+            builder,
+            container_info,
+            Pointer(self_tensor.element_type) if len(sliced_shape) > 0 else self_tensor.element_type,
+            sliced_tensor,
+        )
+
+        builder.add_slice_op(
+            self_container,
+            self_tensor,
+            slice_intermediate,
+            sliced_tensor,
+            dim,
+            start,
+            end,
+            step,
+            debug_info,
+        )
+
+        builder.add_copy_op(
+            slice_intermediate,
+            sliced_tensor,
+            result_container,
+            result_tensor,
+            debug_info,
+        )
+
+
+register_module("aten.select.int", SelectParser())
+register_module("aten.select_copy.int", SelectParser())
 
 class WhereParser(GraphParserModule):
     def parse(

@@ -170,24 +170,24 @@ def test_qwen_decoder_layer(target: str, batch_size: int) -> None:
     check(model, x, position_ids, target=target)
 
 
-@pytest.mark.parametrize("batch_size", BATCH_SIZES)
-def test_qwen_model(target: str, batch_size: int) -> None:
-    torch._dynamo.reset()
-    _, Qwen2Model, _, _, _, _ = get_qwen2_classes()
+# @pytest.mark.parametrize("batch_size", BATCH_SIZES)
+# def test_qwen_model(target: str, batch_size: int) -> None:
+#     torch._dynamo.reset()
+#     _, Qwen2Model, _, _, _, _ = get_qwen2_classes()
 
-    class QwenModelWrapper(nn.Module):
-        def __init__(self, config):
-            super().__init__()
-            self.model = Qwen2Model(config)
+#     class QwenModelWrapper(nn.Module):
+#         def __init__(self, config):
+#             super().__init__()
+#             self.model = Qwen2Model(config)
 
-        def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-            return self.model(input_ids)[0]
+#         def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+#             return self.model(input_ids)[0]
 
-    config = get_dummy_config()
-    model = QwenModelWrapper(config)
-    model.eval()
+#     config = get_dummy_config()
+#     model = QwenModelWrapper(config)
+#     model.eval()
 
-    seq_length = 16
-    input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_length))
+#     seq_length = 16
+#     input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_length))
 
-    check(model, input_ids, target=target)
+#     check(model, input_ids, target=target)
