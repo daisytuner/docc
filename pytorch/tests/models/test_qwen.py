@@ -101,9 +101,6 @@ def test_qwen_qkv(target: str, batch_size: int) -> None:
     check(model, x, position_ids, target=target)
 
 
-@pytest.mark.skip(
-    reason="docc fails to broadcast [1, 1, seq, dim] to [1, 4, seq, dim] in RoPE (aten.mul.Tensor)"
-)
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
 def test_qwen_attention(target: str, batch_size: int) -> None:
     torch._dynamo.reset()
@@ -139,9 +136,6 @@ def test_qwen_attention(target: str, batch_size: int) -> None:
     check(model, x, position_ids, target=target)
 
 
-@pytest.mark.skip(
-    reason="docc fails to broadcast [1, 1, seq, dim] to [1, 4, seq, dim] in RoPE (aten.mul.Tensor)"
-)
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
 def test_qwen_decoder_layer(target: str, batch_size: int) -> None:
     torch._dynamo.reset()
@@ -176,9 +170,6 @@ def test_qwen_decoder_layer(target: str, batch_size: int) -> None:
     check(model, x, position_ids, target=target)
 
 
-@pytest.mark.skip(
-    reason="docc fails to broadcast [1, 1, seq, dim] to [1, 4, seq, dim] in RoPE (aten.mul.Tensor)"
-)
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)
 def test_qwen_model(target: str, batch_size: int) -> None:
     torch._dynamo.reset()
