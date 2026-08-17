@@ -79,7 +79,6 @@ set(SOURCE_FILES
     src/targets/cuda/stdlib/memset.cpp
     src/targets/rocm/blas/dot.cpp
     src/targets/rocm/blas/gemm.cpp
-    src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/batched_gemm.cpp
     src/targets/rocm/blas/utils.cpp
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp
@@ -98,7 +97,6 @@ set(SOURCE_FILES
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/targets/rocm/blas/batched_gemm.cpp
     src/targets/rocm/blas/dot.cpp
-    src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp
