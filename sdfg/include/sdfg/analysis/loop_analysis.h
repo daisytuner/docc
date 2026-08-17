@@ -231,6 +231,9 @@ public:
     std::unordered_set<sdfg::structured_control_flow::ControlFlowNode*>
     descendants(sdfg::structured_control_flow::ControlFlowNode* loop) const;
 
+    std::unordered_set<sdfg::structured_control_flow::ControlFlowNode*>
+    ancestors(sdfg::structured_control_flow::ControlFlowNode* loop) const;
+
     std::vector<sdfg::structured_control_flow::ControlFlowNode*>::const_iterator
     get_loop_iterator(structured_control_flow::ControlFlowNode* loop);
     /**
