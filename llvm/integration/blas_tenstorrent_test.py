@@ -121,7 +121,7 @@ def test_gemm(precision: str, expand: str, rtol: float):
         "BLAS",
         test_case,
         "docc",
-        "clang-19",
+        "clang-21",
         [
             "-g",
             f"-DDATA_TYPE_IS_{precision}",
@@ -137,6 +137,7 @@ def test_gemm(precision: str, expand: str, rtol: float):
         docc_flags=["-mllvm", "-docc-expand=" + expand],
     )
     return runner.run()
+
 
 @pytest.mark.skip(reason="docc-expand will be deprecated")
 @pytest.mark.parametrize(
@@ -171,7 +172,7 @@ def test_dot(precision: str, expand: str, rtol: float):
         "BLAS",
         test_case,
         "docc",
-        "clang-19",
+        "clang-21",
         [
             "-g",
             f"-DDATA_TYPE_IS_{precision}",
@@ -183,7 +184,9 @@ def test_dot(precision: str, expand: str, rtol: float):
         partial(
             verify, dtype=np.float64 if precision == "d" else np.float32, rtol=rtol
         ),
-        sdfg_verification=verifier_expand if expand == "tenstorrent" else verifier_no_expand,
+        sdfg_verification=(
+            verifier_expand if expand == "tenstorrent" else verifier_no_expand
+        ),
         docc_flags=["-mllvm", "-docc-expand=" + expand],
     )
     return runner.run()

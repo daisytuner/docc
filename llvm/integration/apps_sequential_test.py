@@ -57,7 +57,7 @@ def test_HPCCG():
         "Apps",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         ["-O3", "-g", "-lm"],
         "sequential",
         [
@@ -142,7 +142,7 @@ def test_LULESH():
         "Apps",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         [
             "-O3",
             "-fopenmp",
@@ -249,7 +249,7 @@ def test_miniFE(data_layout, precision):
         "Apps",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         [
             "-O3",
             "-g",
@@ -392,7 +392,7 @@ def test_miniAMR2():
         "Apps",
         test_case,
         "docc",
-        "clang-19",
+        "clang-21",
         ["-O3", "-g", "-fopenmp", "-latomic", "-DMANTEVO_DUMP_ARRAYS"],
         "sequential",
         [
@@ -464,7 +464,7 @@ def test_cloudsc():
         "Apps",
         test_case,
         "docc",
-        "clang-19",
+        "clang-21",
         [
             "-O3",
             "-g",

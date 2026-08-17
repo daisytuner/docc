@@ -27,7 +27,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "utils.h"
 
-const std::string BASE_LINKER = "ld.lld-19";
+const std::string BASE_LINKER = "ld.lld-21";
 
 std::vector<std::filesystem::path> find_modules(const std::vector<std::string>& cmd) {
     const std::regex object_file("[a-z,A-Z,0-9,\\+,\\-,\\_,\\/,\\.]+.o");

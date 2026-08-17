@@ -1438,6 +1438,8 @@ public:
                 return false;
             case llvm::NotLibFunc:
                 return false;
+            case llvm::LibFunc_exit:
+                return false;
         }
     };
 };

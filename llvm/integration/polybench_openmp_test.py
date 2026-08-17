@@ -102,7 +102,7 @@ def verify(reference_file: Path, test_file: Path, dtype, max_ulps=None):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_correlation(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
     )
@@ -111,10 +111,10 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 13,
+            "SEQUENTIAL": 11,
             "MAP": 15,
             "CPU_PARALLEL": 10,
-            "FOR": 4,
+            "FOR": 2,
         },
     )
     test_case = benchmark_path / "correlation.c"
@@ -155,7 +155,7 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_covariance(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance"
     )
@@ -165,8 +165,8 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "MAP": 11,
             "CPU_PARALLEL": 7,
-            "FOR": 4,
-            "SEQUENTIAL": 11,
+            "FOR": 2,
+            "SEQUENTIAL": 9,
             "REDUCE": 3,
         },
     )
@@ -208,7 +208,7 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_gemm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -224,8 +224,8 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "MAP": 4,
             "CPU_PARALLEL": 4,
             "GEMM": 1,
-            "FOR": 2,
-            "SEQUENTIAL": 5,
+            "FOR": 0,
+            "SEQUENTIAL": 3,
             "REDUCE": 3,
         },
     )
@@ -268,7 +268,7 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_gemver(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -282,10 +282,10 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 7,
+            "SEQUENTIAL": 6,
             "MAP": 5,
             "CPU_PARALLEL": 4,
-            "FOR": 2,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "gemver.c"
@@ -327,7 +327,7 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_gesummv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -343,8 +343,8 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "MAP": 4,
             "CPU_PARALLEL": 4,
-            "SEQUENTIAL": 5,
-            "FOR": 1,
+            "SEQUENTIAL": 4,
+            "FOR": 0,
         },
     )
     test_case = benchmark_path / "gesummv.c"
@@ -385,7 +385,7 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_symm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -401,8 +401,8 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "REDUCE": 3,
             "MAP": 6,
             "CPU_PARALLEL": 3,
-            "SEQUENTIAL": 10,
-            "FOR": 4,
+            "SEQUENTIAL": 8,
+            "FOR": 2,
         },
     )
     test_case = benchmark_path / "symm.c"
@@ -443,7 +443,7 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_syr2k(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -457,10 +457,10 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 8,
+            "SEQUENTIAL": 6,
             "MAP": 6,
             "CPU_PARALLEL": 4,
-            "FOR": 2,
+            "FOR": 0,
         },
     )
     test_case = benchmark_path / "syr2k.c"
@@ -501,7 +501,7 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_syrk(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -515,10 +515,10 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 8,
+            "SEQUENTIAL": 6,
             "MAP": 6,
             "CPU_PARALLEL": 4,
-            "FOR": 2,
+            "FOR": 0,
         },
     )
     test_case = benchmark_path / "syrk.c"
@@ -563,7 +563,7 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         ),
     ],
 )
-def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_trmm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -621,7 +621,7 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_2mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -635,11 +635,11 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 3,
             "MAP": 6,
             "CPU_PARALLEL": 6,
             "GEMM": 2,
-            "FOR": 2,
+            "FOR": 0,
         },
     )
     test_case = benchmark_path / "2mm.c"
@@ -681,7 +681,7 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_3mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -695,11 +695,11 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 3,
             "MAP": 7,
             "CPU_PARALLEL": 7,
             "GEMM": 3,
-            "FOR": 2,
+            "FOR": 0,
         },
     )
     test_case = benchmark_path / "3mm.c"
@@ -741,7 +741,7 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_atax(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -757,8 +757,8 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "MAP": 6,
             "CPU_PARALLEL": 5,
-            "SEQUENTIAL": 7,
-            "FOR": 2,
+            "SEQUENTIAL": 6,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "atax.c"
@@ -803,7 +803,7 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         ),
     ],
 )
-def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_bicg(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -861,7 +861,7 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_doitgen(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -875,9 +875,9 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 9,
             "REDUCE": 3,
-            "SEQUENTIAL": 18,
+            "SEQUENTIAL": 15,
             "CPU_PARALLEL": 2,
-            "FOR": 9,
+            "FOR": 6,
             "MAP": 8,
         },
     )
@@ -919,7 +919,7 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_mvt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -935,8 +935,8 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "MAP": 3,
             "CPU_PARALLEL": 2,
-            "SEQUENTIAL": 8,
-            "FOR": 3,
+            "SEQUENTIAL": 6,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "mvt.c"
@@ -977,7 +977,7 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_cholesky(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -991,10 +991,10 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 6,
-            "SEQUENTIAL": 12,
+            "SEQUENTIAL": 10,
             "MAP": 8,
             "CPU_PARALLEL": 6,
-            "FOR": 4,
+            "FOR": 2,
         },
     )
     test_case = benchmark_path / "cholesky.c"
@@ -1035,7 +1035,7 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_durbin(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -1051,8 +1051,8 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "MAP": 3,
             "CPU_PARALLEL": 3,
-            "FOR": 2,
-            "SEQUENTIAL": 6,
+            "FOR": 1,
+            "SEQUENTIAL": 5,
         },
     )
     test_case = benchmark_path / "durbin.c"
@@ -1093,7 +1093,7 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_gramschmidt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -1107,10 +1107,10 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "SEQUENTIAL": 11,
+            "SEQUENTIAL": 7,
             "MAP": 6,
             "CPU_PARALLEL": 5,
-            "FOR": 6,
+            "FOR": 2,
         },
     )
     test_case = benchmark_path / "gramschmidt.c"
@@ -1151,7 +1151,7 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_lu(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -1165,10 +1165,10 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 6,
-            "SEQUENTIAL": 13,
+            "SEQUENTIAL": 11,
             "MAP": 9,
             "CPU_PARALLEL": 6,
-            "FOR": 4,
+            "FOR": 2,
         },
     )
     test_case = benchmark_path / "lu.c"
@@ -1209,7 +1209,7 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_ludcmp(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -1223,10 +1223,10 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 8,
-            "SEQUENTIAL": 16,
+            "SEQUENTIAL": 15,
             "MAP": 10,
             "CPU_PARALLEL": 7,
-            "FOR": 5,
+            "FOR": 4,
         },
     )
     test_case = benchmark_path / "ludcmp.c"
@@ -1271,7 +1271,7 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         ),
     ],
 )
-def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_trisolv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -1329,7 +1329,7 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_deriche(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "medley" / "deriche"
     )
@@ -1338,10 +1338,10 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 9,
+            "SEQUENTIAL": 7,
             "MAP": 7,
             "CPU_PARALLEL": 7,
-            "FOR": 6,
+            "FOR": 4,
         },
     )
     test_case = benchmark_path / "deriche.c"
@@ -1375,7 +1375,7 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
     return runner.run(timeout=120)
 
 
-def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
+def test_floyd_warshall(compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "medley" / "floyd-warshall"
     )
@@ -1385,8 +1385,8 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "MAP": 1,
             "CPU_PARALLEL": 1,
-            "FOR": 5,
-            "SEQUENTIAL": 8,
+            "FOR": 3,
+            "SEQUENTIAL": 6,
             "REDUCE": 3,
         },
     )
@@ -1418,7 +1418,7 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
     return runner.run(timeout=120)
 
 
-def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
+def test_nussinov(compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "medley" / "nussinov"
     )
@@ -1428,8 +1428,8 @@ def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "MAP": 2,
             "CPU_PARALLEL": 2,
-            "FOR": 4,
-            "SEQUENTIAL": 7,
+            "FOR": 2,
+            "SEQUENTIAL": 5,
             "WHILE": 1,
             "REDUCE": 3,
         },
@@ -1469,17 +1469,17 @@ def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_adi(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "adi"
 
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 10,
+            "SEQUENTIAL": 8,
             "MAP": 9,
             "CPU_PARALLEL": 9,
-            "FOR": 7,
+            "FOR": 5,
         },
     )
     test_case = benchmark_path / "adi.c"
@@ -1520,7 +1520,7 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_fdtd_2d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "stencils" / "fdtd-2d"
     )
@@ -1529,10 +1529,10 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 10,
+            "SEQUENTIAL": 4,
             "MAP": 6,
             "CPU_PARALLEL": 6,
-            "FOR": 7,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "fdtd-2d.c"
@@ -1573,7 +1573,7 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_heat_3d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "stencils" / "heat-3d"
     )
@@ -1582,10 +1582,10 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 7,
+            "SEQUENTIAL": 4,
             "MAP": 3,
             "CPU_PARALLEL": 3,
-            "FOR": 4,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "heat-3d.c"
@@ -1626,7 +1626,7 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_jacobi_1d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-1d"
     )
@@ -1636,8 +1636,8 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "MAP": 3,
             "CPU_PARALLEL": 3,
-            "FOR": 2,
-            "SEQUENTIAL": 5,
+            "FOR": 1,
+            "SEQUENTIAL": 4,
             "REDUCE": 3,
         },
     )
@@ -1679,7 +1679,7 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_jacobi_2d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-2d"
     )
@@ -1689,8 +1689,8 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "MAP": 3,
             "CPU_PARALLEL": 3,
-            "FOR": 3,
-            "SEQUENTIAL": 6,
+            "FOR": 1,
+            "SEQUENTIAL": 4,
             "REDUCE": 3,
         },
     )
@@ -1732,7 +1732,7 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_seidel_2d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent / "tests" / "polybench" / "stencils" / "seidel-2d"
     )
@@ -1742,8 +1742,8 @@ def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "MAP": 1,
             "CPU_PARALLEL": 1,
-            "FOR": 5,
-            "SEQUENTIAL": 8,
+            "FOR": 3,
+            "SEQUENTIAL": 6,
             "REDUCE": 3,
         },
     )

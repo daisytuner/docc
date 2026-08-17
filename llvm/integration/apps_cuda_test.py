@@ -45,6 +45,7 @@ def evaluate_hpccg(reference_file: Path, test_file: Path, args) -> float:
     test_final_residual = np.array([float(header.split(":")[1].strip())])
     assert np.abs(test_final_residual - ref_final_residual) <= 1e-19
 
+
 @pytest.mark.skip(reason="Flaky.")
 def test_HPCCG():
     test_case = Path(__file__).parent / "tests" / "apps" / "HPCCG" / "main.cpp"
@@ -63,14 +64,18 @@ def test_HPCCG():
         "Apps",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         ["-O3", "-g", "-lm"],
         "cuda",
         [
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "compute_residual.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "ddot.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "generate_matrix.cpp",
-            Path(__file__).parent / "tests" / "apps" / "HPCCG" / "HPC_Sparse_Matrix.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "HPCCG"
+            / "HPC_Sparse_Matrix.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "HPC_sparsemv.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "HPCCG.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "mytimer.cpp",
@@ -147,7 +152,7 @@ def test_LULESH():
         "Apps",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         [
             "-O3",
             "-fopenmp",
@@ -249,15 +254,25 @@ def test_miniFE(data_layout, precision):
         "Apps",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         [
             "-O3",
             "-g",
             "-fopenmp",
-            "-I" + str((Path(__file__).parent / "tests" / "apps" / "miniFE" / "src").absolute()),
             "-I"
-            + str((Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils").absolute()),
-            "-I" + str((Path(__file__).parent / "tests" / "apps" / "miniFE" / "fem").absolute()),
+            + str(
+                (Path(__file__).parent / "tests" / "apps" / "miniFE" / "src").absolute()
+            ),
+            "-I"
+            + str(
+                (
+                    Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils"
+                ).absolute()
+            ),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "apps" / "miniFE" / "fem").absolute()
+            ),
             "-DMINIFE_SCALAR=" + precision,
             "-DMINIFE_LOCAL_ORDINAL=int",
             "-DMINIFE_GLOBAL_ORDINAL=int",
@@ -267,12 +282,37 @@ def test_miniFE(data_layout, precision):
         ],
         "cuda",
         [
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils" / "param_utils.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "utils"
+            / "param_utils.cpp",
             Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils" / "utils.cpp",
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "utils" / "mytimer.cpp",
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "src" / "YAML_Element.cpp",
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "src" / "YAML_Doc.cpp",
-            Path(__file__).parent / "tests" / "apps" / "miniFE" / "basic" / "BoxPartition.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "utils"
+            / "mytimer.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "src"
+            / "YAML_Element.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "src"
+            / "YAML_Doc.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "miniFE"
+            / "basic"
+            / "BoxPartition.cpp",
         ],
         partial(
             evaluate_miniFE,
@@ -352,13 +392,20 @@ def test_miniAMR2():
     test_case = Path(__file__).parent / "tests" / "apps" / "miniAMR2" / "main.c"
 
     verifier = SDFGVerification(
-        verification={'sdfgs': 48, 'CUDAOffloading': 4, 'MAP': 3, 'CUDA': 2, 'FOR': 55, 'SEQUENTIAL': 1}
+        verification={
+            "sdfgs": 48,
+            "CUDAOffloading": 4,
+            "MAP": 3,
+            "CUDA": 2,
+            "FOR": 55,
+            "SEQUENTIAL": 1,
+        }
     )
     runner = TestRunner(
         "Apps",
         test_case,
         "docc",
-        "clang-19",
+        "clang-21",
         ["-O3", "-g", "-fopenmp", "-latomic", "-DMANTEVO_DUMP_ARRAYS"],
         "cuda",
         [
@@ -411,7 +458,9 @@ def evaluate_cloudsc(reference_file: Path, test_file: Path, args) -> float:
 
 @pytest.mark.skip(reason="Compile time")
 def test_cloudsc():
-    test_case = Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "dwarf_cloudsc.c"
+    test_case = (
+        Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "dwarf_cloudsc.c"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -428,7 +477,7 @@ def test_cloudsc():
         "Apps",
         test_case,
         "docc",
-        "clang-19",
+        "clang-21",
         [
             "-O3",
             "-g",
@@ -439,7 +488,12 @@ def test_cloudsc():
         ],
         "cuda",
         [
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "cloudsc_c.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "cloudsc_c.c",
             Path(__file__).parent
             / "tests"
             / "apps"
@@ -452,11 +506,36 @@ def test_cloudsc():
             / "cloudsc_c"
             / "cloudsc"
             / "cloudsc_validate.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "load_state.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "mycpu.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "yoecldp_c.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "yoethf_c.c",
-            Path(__file__).parent / "tests" / "apps" / "cloudsc_c" / "cloudsc" / "yomcst_c.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "load_state.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "mycpu.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "yoecldp_c.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "yoethf_c.c",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "cloudsc_c"
+            / "cloudsc"
+            / "yomcst_c.c",
         ],
         partial(
             evaluate_cloudsc,

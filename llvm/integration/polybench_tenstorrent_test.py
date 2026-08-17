@@ -96,7 +96,9 @@ def verify(
             test_arrays[current_array].append(row)
 
     for array in reference_arrays:
-        assert np.allclose(reference_arrays[array], test_arrays[array], rtol=rtol, atol=atol)
+        assert np.allclose(
+            reference_arrays[array], test_arrays[array], rtol=rtol, atol=atol
+        )
 
 
 @pytest.mark.skip(reason="Validation fails")
@@ -106,8 +108,10 @@ def verify(
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+def test_correlation(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -130,7 +134,10 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -151,8 +158,10 @@ def test_correlation(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance"
+def test_covariance(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -175,14 +184,17 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
         [Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"],
         partial(
             verify,
-            dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32
+            dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
         ),
         sdfg_verification=verifier,
         docc_flags=[],
@@ -196,9 +208,14 @@ def test_covariance(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_gemm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "gemm"
     )
 
     verifier = SDFGVerification(
@@ -207,7 +224,7 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "FOR": 13,
             "MAP": 8,
             "SEQUENTIAL": 8,
-            "GEMM": 1
+            "GEMM": 1,
             # "TTOffloading": 8,
         },
     )
@@ -223,7 +240,10 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -231,7 +251,7 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-            atol=1e0
+            atol=1e0,
         ),
         sdfg_verification=verifier,
         docc_flags=["-docc-einsum"],
@@ -245,9 +265,14 @@ def test_gemm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_gemver(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemver"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "gemver"
     )
 
     verifier = SDFGVerification(
@@ -271,7 +296,10 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -279,7 +307,7 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -292,9 +320,14 @@ def test_gemver(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_gesummv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gesummv"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "gesummv"
     )
 
     verifier = SDFGVerification(
@@ -318,7 +351,10 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -326,7 +362,7 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -336,13 +372,17 @@ def test_gesummv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_symm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "symm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "symm"
     )
 
     verifier = SDFGVerification(
@@ -366,7 +406,10 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -374,7 +417,7 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -384,13 +427,17 @@ def test_symm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_syr2k(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syr2k"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "syr2k"
     )
 
     verifier = SDFGVerification(
@@ -414,7 +461,10 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -422,7 +472,7 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -432,13 +482,17 @@ def test_syr2k(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_syrk(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syrk"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "syrk"
     )
 
     verifier = SDFGVerification(
@@ -462,7 +516,10 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -470,7 +527,7 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -480,13 +537,17 @@ def test_syrk(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         # pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_trmm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "trmm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "trmm"
     )
 
     verifier = SDFGVerification(
@@ -510,7 +571,10 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -518,7 +582,7 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -528,13 +592,17 @@ def test_trmm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_2mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "2mm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "2mm"
     )
 
     verifier = SDFGVerification(
@@ -557,7 +625,10 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -565,7 +636,7 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-            atol=1e0
+            atol=1e0,
         ),
         sdfg_verification=verifier,
         docc_flags=[],
@@ -576,13 +647,17 @@ def test_2mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_3mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "3mm"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "3mm"
     )
 
     verifier = SDFGVerification(
@@ -606,7 +681,10 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -614,7 +692,7 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-            atol=1e0
+            atol=1e0,
         ),
         sdfg_verification=verifier,
         docc_flags=[],
@@ -625,13 +703,17 @@ def test_3mm(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_atax(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "atax"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "atax"
     )
 
     verifier = SDFGVerification(
@@ -655,7 +737,10 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -663,7 +748,7 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -673,13 +758,17 @@ def test_atax(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_bicg(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "bicg"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "bicg"
     )
 
     verifier = SDFGVerification(
@@ -703,7 +792,10 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -711,7 +803,7 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -721,13 +813,17 @@ def test_bicg(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_doitgen(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "doitgen"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "doitgen"
     )
 
     verifier = SDFGVerification(
@@ -751,7 +847,10 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -759,7 +858,7 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -769,13 +868,17 @@ def test_doitgen(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_mvt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "mvt"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "kernels"
+        / "mvt"
     )
 
     verifier = SDFGVerification(
@@ -799,7 +902,10 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -807,7 +913,7 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -817,13 +923,17 @@ def test_mvt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_cholesky(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "cholesky"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "cholesky"
     )
 
     verifier = SDFGVerification(
@@ -847,7 +957,10 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -855,7 +968,7 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -865,13 +978,17 @@ def test_cholesky(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_durbin(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "durbin"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "durbin"
     )
 
     verifier = SDFGVerification(
@@ -895,7 +1012,10 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -903,7 +1023,7 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -913,11 +1033,10 @@ def test_durbin(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_gramschmidt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
         Path(__file__).parent
         / "tests"
@@ -948,7 +1067,10 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -956,7 +1078,7 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -966,13 +1088,17 @@ def test_gramschmidt(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_lu(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "lu"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "lu"
     )
 
     verifier = SDFGVerification(
@@ -996,7 +1122,10 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1004,7 +1133,7 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -1014,13 +1143,17 @@ def test_lu(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_ludcmp(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "ludcmp"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "ludcmp"
     )
 
     verifier = SDFGVerification(
@@ -1044,7 +1177,10 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1052,7 +1188,7 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -1062,13 +1198,17 @@ def test_ludcmp(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_trisolv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = (
-        Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "trisolv"
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "solvers"
+        / "trisolv"
     )
 
     verifier = SDFGVerification(
@@ -1091,7 +1231,10 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1099,7 +1242,7 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
@@ -1109,12 +1252,13 @@ def test_trisolv(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         # pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "medley" / "deriche"
+def test_deriche(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "medley" / "deriche"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -1136,7 +1280,10 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1144,15 +1291,17 @@ def test_deriche(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         partial(
             verify,
             dtype=np.float64 if datatype == "-DDATA_TYPE_IS_DOUBLE" else np.float32,
-                    ),
+        ),
         sdfg_verification=verifier,
         docc_flags=[],
     )
     return runner.run()
 
 
-def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "medley" / "floyd-warshall"
+def test_floyd_warshall(compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "medley" / "floyd-warshall"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -1175,7 +1324,10 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             "-DDATA_TYPE_IS_INT",
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1190,8 +1342,10 @@ def test_floyd_warshall(compiler="clang-19", size="MEDIUM_DATASET"):
     return runner.run()
 
 
-def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "medley" / "nussinov"
+def test_nussinov(compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "medley" / "nussinov"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -1214,7 +1368,10 @@ def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             "-DDATA_TYPE_IS_INT",
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1232,11 +1389,10 @@ def test_nussinov(compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
+def test_adi(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "adi"
 
     verifier = SDFGVerification(
@@ -1260,7 +1416,10 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1278,12 +1437,13 @@ def test_adi(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "fdtd-2d"
+def test_fdtd_2d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "fdtd-2d"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -1306,7 +1466,10 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1324,12 +1487,13 @@ def test_fdtd_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "heat-3d"
+def test_heat_3d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "heat-3d"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -1352,7 +1516,10 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1370,12 +1537,13 @@ def test_heat_3d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-1d"
+def test_jacobi_1d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-1d"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -1398,7 +1566,10 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1416,12 +1587,13 @@ def test_jacobi_1d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-2d"
+def test_jacobi_2d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "jacobi-2d"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -1444,7 +1616,10 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",
@@ -1465,8 +1640,10 @@ def test_jacobi_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
         pytest.param("-DDATA_TYPE_IS_FLOAT"),
     ],
 )
-def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
-    benchmark_path = Path(__file__).parent / "tests" / "polybench" / "stencils" / "seidel-2d"
+def test_seidel_2d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
+    benchmark_path = (
+        Path(__file__).parent / "tests" / "polybench" / "stencils" / "seidel-2d"
+    )
 
     verifier = SDFGVerification(
         verification={
@@ -1489,7 +1666,10 @@ def test_seidel_2d(datatype, compiler="clang-19", size="MEDIUM_DATASET"):
             "-DPOLYBENCH_DUMP_ARRAYS",
             "-D" + size,
             datatype,
-            "-I" + str((Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()),
+            "-I"
+            + str(
+                (Path(__file__).parent / "tests" / "polybench" / "utilities").absolute()
+            ),
             "-lm",
         ],
         "tenstorrent",

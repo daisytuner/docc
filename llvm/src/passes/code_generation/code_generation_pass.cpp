@@ -582,7 +582,7 @@ llvm::PreservedAnalyses CodeGenerationPass::
         std::stringstream opt_report_stream;
         opt_report_stream << "\nDOCC Optimization Report Start:\n";
         opt_report_stream << "  source_language: " << (language == llvm::dwarf::DW_LANG_C ? "C" : "C++") << "\n";
-        opt_report_stream << "  target_triple: " << triple << "\n";
+        opt_report_stream << "  target_triple: " << triple.str() << "\n";
         opt_report_stream << "  data_layout: " << datalayout << "\n";
         opt_report_stream << "  sdfgs: " << sdfgs.size() << "\n";
         for (auto& [key, value] : cumulated_report) {
@@ -685,7 +685,7 @@ bool CodeGenerationPass::compile_to_object_file(
     const std::filesystem::path& object_file,
     const std::vector<std::string>& compile_args
 ) {
-    std::vector<std::string> cmd{"clang++-19"};
+    std::vector<std::string> cmd{"clang++-21"};
     for (auto& arg : compile_args) {
         cmd.push_back(arg);
     }
@@ -714,10 +714,10 @@ std::unique_ptr<llvm::Module> CodeGenerationPass::compile_to_ir_in_memory(
     const std::filesystem::path& source_path,
     const std::vector<std::string>& compile_args,
     const std::vector<std::string>& add_compile_args,
-    llvm::StringRef target_triple
+    const llvm::Triple& target_triple
 ) {
     std::ostringstream cmd;
-    cmd << "clang-19 ";
+    cmd << "clang-21 ";
     for (auto& arg : add_compile_args) {
         cmd << arg << " ";
     }

@@ -143,8 +143,7 @@ llvm::PreservedAnalyses FunctionToSDFGPass::
 };
 
 bool FunctionToSDFGPass::applies(llvm::Module& Module) {
-    std::string triple_str = Module.getTargetTriple();
-    llvm::Triple triple(triple_str);
+    auto& triple = Module.getTargetTriple();
     switch (triple.getArch()) {
         case llvm::Triple::x86:
         case llvm::Triple::x86_64:
