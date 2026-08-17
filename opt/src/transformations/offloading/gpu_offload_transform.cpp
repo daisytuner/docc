@@ -240,7 +240,8 @@ GPUOffloadTransform<OffloaderNodeType> GPUOffloadTransform<
     OffloaderNodeType>::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
     auto loop_id = desc["subgraph"]["0"]["element_id"].get<size_t>();
     auto target_level = target_level_from_string(desc["parameters"]["target_level"].get<std::string>());
-    symbolic::Integer parallel_size = symbolic::parse(desc["parameters"]["parallel_size"]);
+    symbolic::Integer parallel_size =
+        SymEngine::rcp_static_cast<const SymEngine::Integer>(symbolic::parse(desc["parameters"]["parallel_size"]));
     auto element = builder.find_element_by_id(loop_id);
     if (!element) {
         throw transformations::

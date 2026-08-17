@@ -140,6 +140,7 @@ set(SOURCE_FILES
     src/transformations/offloading/cuda_transform.cpp
     src/transformations/offloading/gpu_condition_propagation.cpp
     src/transformations/offloading/gpu_loop_reordering.cpp
+    src/transformations/offloading/gpu_offload_nested_loop.cpp
     src/transformations/offloading/gpu_offload_transform.cpp
     src/transformations/offloading/gpu_tiling.cpp
     src/transformations/offloading/kernel_local_storage.cpp
