@@ -23,6 +23,14 @@ inline passes::Pipeline loop_normalization() {
     return pipeline;
 }
 
+inline passes::Pipeline stride_minimization() {
+    passes::Pipeline pipeline("Stride Minimization");
+
+    pipeline.register_pass<normalization::StrideMinimization>();
+
+    return pipeline;
+}
+
 inline passes::Pipeline map_fusion(bool allow_init_hoist = true, bool allow_prod_into_cons = true) {
     passes::Pipeline p("MapFusion");
 

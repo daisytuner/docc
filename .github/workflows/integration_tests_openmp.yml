@@ -5,12 +5,12 @@ on:
     branches:
       - main
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize]
   schedule:
     - cron: "0 5 * * *"
 
 jobs:
-  tests:
+  integration-test-openmp:
     runs-on:
       group: dahlia
       labels: openmp
@@ -56,7 +56,7 @@ jobs:
       - name: Integration tests - OpenMP
         run: |
           export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
-  
+
           pip install pytest==7.1.3 --break-system-packages
           pip install pytest-parallel --break-system-packages
 

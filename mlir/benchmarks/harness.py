@@ -8,6 +8,7 @@ import pytest
 
 import docc.torch
 from docc.benchmarks.perf import PerfControl
+from docc.benchmarks import reset_instrumentation
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "1"  # Enable TF32 for CUDA and ROCm backends
 
@@ -119,6 +120,11 @@ def run_benchmark(setup_func, name, batch_size=32):
     with torch.no_grad():
         _invoke(program, x)
     sync_fn()
+
+    # The RTL aggregates every region invocation, including the warmup above;
+    # drop those so region counts/durations match only the measured runs. The
+    # compiled artifact is hidden inside torch.compile, so reset all artifacts.
+    reset_instrumentation()
 
     with perf.measure():
         for i in range(args.n_runs):

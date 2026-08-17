@@ -1540,6 +1540,10 @@ void register_default_serializers() {
         .register_library_node_serializer(math::tensor::LibraryNodeType_Index.value(), []() {
             return std::make_unique<math::tensor::IndexNodeSerializer>();
         });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_UpsampleBilinear2D.value(), []() {
+            return std::make_unique<math::tensor::UpsampleBilinear2DNodeSerializer>();
+        });
 
     // Elementwise
     LibraryNodeSerializerRegistry::instance()

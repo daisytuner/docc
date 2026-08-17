@@ -10,10 +10,34 @@
 #include "sdfg/element.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace passes {
+
+namespace {
+
+// A Reduce node stores its accumulator container name denormalized in the
+// ReductionInfo. Reference propagation rewrites accumulator access nodes
+// directly, so walk up from a rewritten node and retarget any enclosing
+// reduction to keep the ReductionInfo consistent with the dataflow graph.
+void retarget_enclosing_reductions(
+    data_flow::AccessNode& node, const std::string& old_container, const std::string& new_container
+) {
+    if (old_container == new_container) {
+        return;
+    }
+    auto* current = dynamic_cast<structured_control_flow::ControlFlowNode*>(node.get_parent().get_parent());
+    while (current != nullptr) {
+        if (auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(current)) {
+            reduce->replace_reduction_container(old_container, new_container);
+        }
+        current = current->get_parent();
+    }
+}
+
+} // namespace
 
 bool ReferencePropagation::
     compatible_type(const Function& function, const data_flow::Memlet& reference, const data_flow::Memlet& target) {
@@ -153,6 +177,7 @@ bool ReferencePropagation::run_pass(builder::StructuredSDFGBuilder& builder, ana
             // Simple case: No arithmetic on pointer, just replace container
             if (move_subset.size() == 1 && symbolic::eq(move_subset[0], symbolic::zero())) {
                 user_node.data(viewed_container);
+                retarget_enclosing_reductions(user_node, container, viewed_container);
                 applied = true;
                 invalidated.insert(viewed_container);
                 replaced_nodes.insert(&user_node);
@@ -217,6 +242,7 @@ bool ReferencePropagation::run_pass(builder::StructuredSDFGBuilder& builder, ana
 
             // Step 1: Replace container
             user_node.data(viewed_container);
+            retarget_enclosing_reductions(user_node, container, viewed_container);
 
             // Step 2: Update edges
             for (auto& oedge : user_graph.out_edges(user_node)) {

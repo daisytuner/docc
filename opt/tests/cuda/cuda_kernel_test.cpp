@@ -472,15 +472,15 @@ TEST(CudaTransformTest, CudaTransformWithBlocksizeTest) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    // Create transform locally
+    // Re-applying CUDATransform to a map that already carries a CUDA schedule is rejected:
+    // this is what prevents double-offloading of remote-tuned cutouts. The schedule (and its
+    // block size) is left untouched.
     auto cuda_transform = CUDATransform(map, 64);
-    if (cuda_transform.can_be_applied(builder, analysis_manager)) {
-        cuda_transform.apply(builder, analysis_manager);
-    }
+    EXPECT_FALSE(cuda_transform.can_be_applied(builder, analysis_manager));
 
     auto transformed_schedule = map.schedule_type();
 
-    EXPECT_TRUE(SymEngine::eq(*ScheduleType_CUDA::block_size(transformed_schedule), *symbolic::integer(64)));
+    EXPECT_TRUE(SymEngine::eq(*ScheduleType_CUDA::block_size(transformed_schedule), *symbolic::integer(32)));
 }
 
 

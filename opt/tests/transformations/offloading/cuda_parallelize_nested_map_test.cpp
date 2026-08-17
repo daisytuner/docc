@@ -9,6 +9,7 @@
 #include "sdfg/symbolic/symbolic.h"
 
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg_debug_dump.h"
 
 namespace sdfg::cuda {
 
@@ -737,6 +738,116 @@ TEST(CUDANestedParallelismTransformation, SiblingAccumulationBlocksNestedParalle
 
     // The sibling reduce accumulates on an escaping buffer; replicating it is unsafe.
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+}
+
+/**
+ * Reproduced a problem seen in npbench gesummv, where a map contains a nested map-reduce constellation that does not
+ *get fused into a single reduce-loop
+ **/
+TEST(CUDANestedParallelismTransformation, SiblingMismatchedIterationsRejected) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer pointer_type(base_desc);
+    types::Scalar int_desc(types::PrimitiveType::Int32);
+
+    builder.add_container("N", int_desc, true);
+    builder.add_container("i", int_desc);
+    builder.add_container("r", int_desc);
+    builder.add_container("m", int_desc);
+    builder.add_container("alpha", base_desc, true);
+    builder.add_container("P", pointer_type, true); // input argument
+    builder.add_container("acc", pointer_type, true); // reduction accumulator (escapes the kernel)
+    builder.add_container("T", pointer_type, true); // intermediary
+    builder.add_container("Out", pointer_type, true); // result
+
+    auto i = symbolic::symbol("i");
+    auto r = symbolic::symbol("r");
+    auto m = symbolic::symbol("m");
+
+    // Outer X-dimension CUDA map (the kernel scope).
+    ScheduleType outer_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(outer_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(outer_schedule, symbolic::integer(32));
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        outer_schedule
+    );
+
+    // Sibling 1 (target): sequential map loop doing a plain store.
+    auto& target = builder.add_map(
+        outer.root(),
+        m,
+        symbolic::Lt(m, symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(m, symbolic::integer(1)),
+        ScheduleType_Sequential::create()
+    );
+    {
+        auto& block = builder.add_block(target.root());
+        auto& p_in = builder.add_access(block, "P");
+        auto& alpha = builder.add_access(block, "alpha");
+        auto& t_out = builder.add_access(block, "T");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "out_", {"in1_", "in2_"});
+        auto idx = symbolic::add(symbolic::mul(i, symbolic::symbol("N")), m);
+        builder.add_computational_memlet(block, p_in, tk, "in1_", {idx}, pointer_type);
+        builder.add_computational_memlet(block, alpha, tk, "in2_", {}, base_desc);
+        builder.add_computational_memlet(block, tk, "out_", t_out, {idx}, pointer_type);
+    }
+
+    {
+        auto& init_block = builder.add_block(outer.root());
+        auto& init_access = builder.add_access(init_block, "acc");
+        auto& init_constant = builder.add_constant(init_block, "0.0f", types::Scalar(types::PrimitiveType::Float));
+        auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "out_", {"in_"});
+        builder.add_computational_memlet(init_block, init_constant, init_tasklet, "in_", {}, base_desc);
+        builder.add_computational_memlet(init_block, init_tasklet, "out_", init_access, {}, base_desc);
+    }
+
+    // Sibling 2: sequential reduce loop accumulating into scalar acc
+    auto& reduce = builder.add_reduce(
+        outer.root(),
+        r,
+        symbolic::Lt(r, symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(r, symbolic::integer(1)),
+        {{ReductionOperation::Add, "acc"}},
+        ScheduleType_Sequential::create()
+    );
+    {
+        auto& block = builder.add_block(reduce.root());
+        auto& acc_in = builder.add_access(block, "acc");
+        auto& t_in = builder.add_access(block, "T");
+        auto& acc_out = builder.add_access(block, "acc");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+        auto idx = symbolic::add(symbolic::mul(i, symbolic::symbol("N")), m);
+        builder.add_computational_memlet(block, acc_in, tk, "_in1", {}, base_desc);
+        builder.add_computational_memlet(block, t_in, tk, "_in2", {idx}, pointer_type);
+        builder.add_computational_memlet(block, tk, "_out", acc_out, {}, base_desc);
+    }
+    {
+        auto& block = builder.add_block(outer.root());
+        auto& acc_in = builder.add_access(block, "acc");
+        auto& out = builder.add_access(block, "Out");
+        auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::assign, "out_", {"in_"});
+        builder.add_computational_memlet(block, acc_in, tk, "in_", {}, base_desc);
+        builder.add_computational_memlet(block, tk, "out_", out, {symbolic::symbol("i")}, pointer_type);
+    }
+
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    transformations::CUDAParallelizeNestedMap transformation(target, 4);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+
+    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+
+    dump_sdfg(builder.subject(), "1.unchanged");
 }
 
 TEST(CUDANestedParallelismTransformation, SiblingAccumulationOnLocalAllowsNestedParallelism) {

@@ -118,6 +118,8 @@ public:
 
     std::string metadata(const std::string& key) const;
 
+    void add_metadata(const std::string& key, const std::string& value);
+
     pybind11::dict loop_report() const;
 
     std::string to_json() const;

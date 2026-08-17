@@ -57,7 +57,11 @@ SrcFileCompilerBuilder& SrcFileCompilerBuilder::add_include_path(const std::file
 }
 
 SrcFileCompilerBuilder& SrcFileCompilerBuilder::add_library_path(const std::filesystem::path& path) {
-    library_paths_.push_back(path);
+    return add_library_path(path, false);
+}
+
+SrcFileCompilerBuilder& SrcFileCompilerBuilder::add_library_path(const std::filesystem::path& path, bool is_rpath) {
+    library_paths_.emplace_back(path, is_rpath);
     return *this;
 }
 
@@ -75,7 +79,10 @@ SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_from_paths(std::shared_ptr<u
     auto incs = paths->get_default_include_paths();
     include_paths_.insert(include_paths_.end(), incs.cbegin(), incs.cend());
     auto libs = paths->get_default_library_paths();
-    library_paths_.insert(library_paths_.end(), libs.cbegin(), libs.cend());
+    for (auto& lib : libs) {
+        add_library_path(lib, true);
+    }
+
     return CodegenCompilerBuilderBase::set_from_paths(paths);
 }
 

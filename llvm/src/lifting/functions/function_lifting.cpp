@@ -4,7 +4,7 @@
 #include "docc/lifting/functions/intrinsic_lifting.h"
 #include "docc/lifting/functions/libfunc_lifting.h"
 
-#include <llvm-19/llvm/IR/DebugInfoMetadata.h>
+#include <llvm/IR/DebugInfoMetadata.h>
 #include <sdfg/data_flow/library_nodes/call_node.h>
 #include <sdfg/data_flow/library_nodes/invoke_node.h>
 

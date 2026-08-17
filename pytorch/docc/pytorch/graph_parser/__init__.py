@@ -6,6 +6,7 @@ This module contains the PyTorch GraphModule Parser.
 import torch
 import torch.export
 import torch.fx
+import torch.utils._pytree
 from torch.fx.node import Argument
 
 from typing import Any
@@ -33,6 +34,7 @@ import docc.pytorch.graph_parser.pooling
 import docc.pytorch.graph_parser.reduction
 import docc.pytorch.graph_parser.reshaping
 import docc.pytorch.graph_parser.tensor
+import docc.pytorch.graph_parser.vision
 
 
 class GraphParser(GraphParserBase):
@@ -191,6 +193,18 @@ class GraphParser(GraphParserBase):
                 f"{output_container}_shape",
                 self.container_info.get_shape_str(output_container),
             )
+
+        # Preserve the original PyTorch output structure (nested tuples, dicts,
+        # dataclasses, single tensor, None leaves, ...) as a serialized pytree
+        # spec. At runtime the flat outputs produced by the compiled artifact are
+        # reassembled with this spec so the returned structure matches eager
+        # PyTorch exactly.
+        out_spec: torch.utils._pytree.TreeSpec | None = self.ep.call_spec.out_spec
+        if out_spec is not None:
+            self.builder.add_metadata(
+                "output_pytree_spec", torch.utils._pytree.treespec_dumps(out_spec)
+            )
+            self.builder.add_metadata("output_num_leaves", str(out_spec.num_leaves))
 
     def to_sdfg(self) -> StructuredSDFG:
         """

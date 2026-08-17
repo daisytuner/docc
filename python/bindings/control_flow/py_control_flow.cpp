@@ -8,6 +8,7 @@
 #include <sdfg/structured_control_flow/for.h>
 #include <sdfg/structured_control_flow/if_else.h>
 #include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/structured_control_flow/return.h>
 #include <sdfg/structured_control_flow/sequence.h>
 #include <sdfg/structured_control_flow/structured_loop.h>

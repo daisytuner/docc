@@ -15,6 +15,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(DAISY_STACKTRACE_LIBS Boost::stacktrace Boost::stacktrace_from_exception)
     set(USE_BOOST_EXC_STACKTRACE_INJECTION ON)
+    # We link against the GCC runtime (libstdc++), not the libc++ runtime, so the
+    # libc++-specific memory leak in from_exception does not apply.
+    add_compile_definitions(BOOST_STACKTRACE_LIBCXX_RUNTIME_MAY_CAUSE_MEMORY_LEAK)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(DAISY_STACK_TRACCE_LIBS Boost::stacktrace)
     set(USE_BOOST_EXC_STACKTRACE_INJECTION OFF)

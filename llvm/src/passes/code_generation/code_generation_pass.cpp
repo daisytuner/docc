@@ -631,7 +631,6 @@ llvm::PreservedAnalyses CodeGenerationPass::
 
     if (codegen_capture_args_results || !codegen_instrumentation_mode.empty()) {
         link_2nd_args.emplace("-ldaisy_rtl");
-        link_2nd_args.emplace("-larg_capture_io");
         link_2nd_args.emplace("-lstdc++");
     }
 

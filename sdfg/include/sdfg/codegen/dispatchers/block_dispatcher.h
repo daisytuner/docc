@@ -120,12 +120,18 @@ struct DispatchInput {
     const std::string expr;
     const data_flow::Memlet& edge;
     bool is_locally_modifiable;
+
+    DispatchInput(std::string expr, const data_flow::Memlet& edge, bool is_locally_modifiable)
+        : expr(std::move(expr)), edge(edge), is_locally_modifiable(is_locally_modifiable) {}
 };
 
 struct DispatchOutput {
     const std::string* local_name;
     std::unique_ptr<types::IType> out_type;
     bool used;
+
+    DispatchOutput(const std::string* local_name, std::unique_ptr<types::IType> out_type, bool used)
+        : local_name(local_name), out_type(std::move(out_type)), used(used) {}
 };
 
 /**

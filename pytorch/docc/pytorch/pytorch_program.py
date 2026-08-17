@@ -2,6 +2,7 @@ import torch
 import torch.fx
 import torch._dynamo
 import torch.export
+import torch.utils._pytree
 import numpy as np
 import ml_dtypes
 import os
@@ -12,7 +13,7 @@ import shutil
 from typing import Any
 
 from docc.compiler import DoccProgram, CompiledSDFG
-from docc.sdfg import StructuredSDFG
+from docc.sdfg import StructuredSDFG, DoccMetrics
 
 from docc.pytorch.graph_parser import GraphParser
 
@@ -68,6 +69,14 @@ class PyTorchProgram(DoccProgram):
         self._output_info: list[tuple[torch.Size, torch.dtype]] = (
             []
         )  # [(shape, dtype), ...] for each output
+        # PyTree spec describing the original PyTorch output structure. Loaded
+        # from SDFG metadata after compilation and used to reassemble the flat
+        # outputs into the exact structure eager PyTorch would return.
+        self._out_spec: torch.utils._pytree.TreeSpec | None = None
+        # Permutation mapping the compiled artifact's output order (SDFG function
+        # signature order) to the PyTorch graph output order (== pytree leaf
+        # order). Computed at compile time; None when no reordering is needed.
+        self._output_perm: list[int] | None = None
         self.force_rebuild: bool = force_rebuild
 
     def __call__(self, *args: Any) -> Any:
@@ -120,10 +129,10 @@ class PyTorchProgram(DoccProgram):
     ) -> CompiledSDFG:
         original_output_folder: str | None = output_folder
 
-        compile_profile: str = os.environ.get("DOCC_PROFILE_COMPILE", "")
-        if compile_profile:
-            print("Compiling Torch Model>")
-            compile_start_time: float = time.perf_counter()
+        metrics = DoccMetrics()
+        compile_start_time = time.perf_counter()
+        metrics.add_frontend_source_info("torch")
+        metrics.add_metric("model_name", self.name, "source")
 
         # Resolve options
         instrumentation_mode, capture_args, remote_tuning = (
@@ -240,7 +249,7 @@ class PyTorchProgram(DoccProgram):
                 raise ValueError(
                     f"Tried reusing binary '{lib_path}' but does not exist"
                 )
-            sdfg_path = f"{output_folder_path}/__docc_{self.name}.py4.norm.json"
+            sdfg_path = f"{output_folder_path}/__docc_{self.name}.py5.post_sched.json"
             if not os.path.exists(sdfg_path):
                 raise ValueError(f"Tried loading SDFG '{sdfg_path}' but does not exist")
             sdfg = StructuredSDFG.from_file(sdfg_path)
@@ -280,6 +289,11 @@ class PyTorchProgram(DoccProgram):
             if self._sdfg is None:
                 self._sdfg = self.to_sdfg(output_folder_path)
 
+            parse_sdfg_time = time.perf_counter() - compile_start_time
+            metrics.add_metric(
+                "parse_to_sdfg_time_ms", round(parse_sdfg_time * 1000), "compile_times"
+            )
+
             sdfg = self._sdfg
 
             lib_path = self.sdfg_pipe(
@@ -288,6 +302,7 @@ class PyTorchProgram(DoccProgram):
                 instrumentation_mode,
                 capture_args,
                 remote_tuning,
+                metrics=metrics,
             )
 
         # Build shape sources from input info
@@ -320,7 +335,39 @@ class PyTorchProgram(DoccProgram):
                 ]
                 output_shapes[arg_name] = dims
 
+        # Load the PyTorch output pytree spec (if present) so results can be
+        # reassembled into the exact structure eager PyTorch would return.
+        # Reading from SDFG metadata (rather than the live ExportedProgram) means
+        # reused binaries reconstruct outputs correctly as well.
+        out_spec_str = sdfg.metadata("output_pytree_spec")
+        if out_spec_str:
+            self._out_spec = torch.utils._pytree.treespec_loads(out_spec_str)
+        else:
+            self._out_spec = None
+
+        # CompiledSDFG (with sort_output_args=False) returns outputs in SDFG
+        # function-signature order, i.e. the order the output containers appear
+        # in sdfg.arguments. The PyTorch graph output order (and thus the pytree
+        # leaf order) is the order given by output_args. Precompute a permutation
+        # that reorders the artifact's flat outputs back into output_args order
+        # so results line up with the pytree spec and match eager PyTorch.
+        self._output_perm = None
+        if len(output_args) > 1 and hasattr(sdfg, "arguments"):
+            output_args_set = set(output_args)
+            signature_order = [n for n in sdfg.arguments if n in output_args_set]
+            # Only reorder when the sets match 1:1 (no duplicate outputs) and the
+            # order actually differs; otherwise the flat order is already correct.
+            if (
+                len(signature_order) == len(output_args)
+                and set(signature_order) == output_args_set
+                and signature_order != output_args
+            ):
+                self._output_perm = [
+                    signature_order.index(name) for name in output_args
+                ]
+
         # Create CompiledSDFG with output_args for multi-output support
+
         compiled = CompiledSDFG(
             lib_path,
             sdfg,
@@ -339,9 +386,14 @@ class PyTorchProgram(DoccProgram):
 
         self._compiled = compiled
 
-        if compile_profile:
-            docc_compile_time = time.perf_counter() - compile_start_time
-            print(f">DOCC compile done: {docc_compile_time:.4f} s")
+        if not docc_reuse_binaries:
+            # Record compile time in milliseconds, rounded to the nearest integer.
+            compile_time_ms = round((time.perf_counter() - compile_start_time) * 1000)
+            metrics.add_metric("compile_time_ms", compile_time_ms, "compile_times")
+
+        metrics.capture_env_vars()
+        metrics.append_to(output_folder_path)
+
         return compiled
 
     def to_sdfg(self, output_folder: str | None = None) -> StructuredSDFG:
@@ -447,6 +499,20 @@ class PyTorchProgram(DoccProgram):
             converted: list[torch.Tensor] = [convert_single(r) for r in result]
         else:
             converted: list[torch.Tensor] = [convert_single(result)]
+
+        # Reorder the artifact's flat outputs (SDFG signature order) into the
+        # PyTorch graph output order (== pytree leaf order) before reassembly.
+        if self._output_perm is not None and len(converted) == len(self._output_perm):
+            converted = [converted[p] for p in self._output_perm]
+
+        # Reassemble the flat outputs into the original PyTorch structure (nested
+        # tuples, dicts, dataclasses, single tensor, None leaves, ...) using the
+        # pytree spec captured at compile time. The compiled artifact preserves
+        # the flat leaf order (sort_output_args=False), so it lines up with the
+        # spec's leaves. Fall back to the flat single/tuple behavior when no spec
+        # is available (e.g. legacy artifacts) or the leaf count does not match.
+        if self._out_spec is not None and len(converted) == self._out_spec.num_leaves:
+            return torch.utils._pytree.tree_unflatten(converted, self._out_spec)
 
         # Return single value if only one output, otherwise tuple
         if len(converted) == 1:

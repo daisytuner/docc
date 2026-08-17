@@ -9,6 +9,8 @@
 #include <sdfg/structured_control_flow/control_flow_node.h>
 #include <sdfg/structured_control_flow/for.h>
 #include <sdfg/structured_control_flow/if_else.h>
+#include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/structured_control_flow/sequence.h>
 #include <sdfg/structured_control_flow/while.h>
 #include <stack>
@@ -116,6 +118,17 @@ public:
     );
 
     void end_map();
+
+    sdfg::structured_control_flow::Reduce& begin_reduce(
+        const std::string& var,
+        const std::string& start,
+        const std::string& end,
+        const std::string& step,
+        const std::vector<std::pair<std::string, std::string>>& reductions,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void end_reduce();
 
     void add_assignments(
         const std::string& lhs, const std::string& rhs, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
@@ -538,6 +551,18 @@ public:
         const std::vector<std::string>& strides,
         const std::vector<std::string>& pads,
         const std::vector<std::string>& dilations,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_upsample_bilinear2d(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::vector<std::string>& input_shape,
+        const std::vector<std::string>& output_shape,
+        bool align_corners,
+        const std::vector<double>& scale_factors,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 };

@@ -175,6 +175,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DINSTALL_GTEST=OFF \
             -DBUILD_TESTS:BOOL=OFF \
+            -DLLVM_BUILD_FRONTEND=ON \
+            -DLLVM_BUILD_TESTS=OFF \
             -DSDFGLIB_AUTO_INSTALL_MODE=ON \
             -DBUILD_BENCHMARKS:BOOL=OFF \
             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \

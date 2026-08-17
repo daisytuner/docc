@@ -5,13 +5,11 @@ on:
     branches:
       - main
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize]
   schedule:
     - cron: "0 4 * * *"
 
 jobs:
-  ##### CORE #####
-
   cpp-tests-linux:
     runs-on:
       group: dahlia
@@ -203,7 +201,6 @@ jobs:
             -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-19/build/utils/lit/lit.py \
             ..
           ninja -j$(nproc)
-          ninja install
 
       - name: Unit Tests
         run: |

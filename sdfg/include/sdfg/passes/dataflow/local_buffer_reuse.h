@@ -280,7 +280,7 @@ public:
     virtual bool accept(structured_control_flow::Sequence& node) override {
         bool applied = false;
 
-        auto& users_analysis = this->analysis_manager_.get<analysis::Users>();
+        auto& users_analysis = this->analysis_manager_.template get<analysis::Users>();
 
         // Each pattern needs N * 3 blocks: (malloc, ref, lib) for each of N lib nodes
         constexpr int pattern_size = N * 3;

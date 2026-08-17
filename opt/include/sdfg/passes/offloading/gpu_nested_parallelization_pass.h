@@ -15,20 +15,20 @@ enum class GPUTarget {
 /**
  * @brief Phased GPU nested map parallelization pass.
  *
- * Given a set of outer maps, finds all nested maps within them and applies
+ * Given a set of outer loops, finds all nested loops within them and applies
  * nested parallelization (CUDA or ROCM) in two phases:
- * 1. can_be_applied phase: collects all nested maps where parallelization is applicable
- * 2. apply phase: applies parallelization to all collected maps
+ * 1. can_be_applied phase: collects all nested loops where parallelization is applicable
+ * 2. apply phase: applies parallelization to all collected loops
  */
 class GPUNestedParallelizationPass : public Pass {
 private:
-    const std::vector<structured_control_flow::Map*>& maps_;
+    const std::vector<structured_control_flow::StructuredLoop*>& loops_;
     GPUTarget target_;
     size_t block_size_;
 
 public:
     GPUNestedParallelizationPass(
-        const std::vector<structured_control_flow::Map*>& maps, GPUTarget target, size_t block_size
+        const std::vector<structured_control_flow::StructuredLoop*>& loops, GPUTarget target, size_t block_size
     );
     ~GPUNestedParallelizationPass() override = default;
 

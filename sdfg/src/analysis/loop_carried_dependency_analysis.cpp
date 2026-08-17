@@ -389,8 +389,10 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
     //                                       cont(W) = cont(R), Δ ≠ ∅ }
     //            ∪ { (W₁,W₂, WAW, Δ_L(W₁,W₂)) : W₁,W₂ ∈ esc(L),
     //                                           cont(W₁) = cont(W₂), Δ ≠ ∅ }
+    passes::CompileStatistics::enter_analysis_if_enabled("DetailedDDA");
     auto& dda = detailed_dda();
     dda.run(analysis_manager);
+    passes::CompileStatistics::exit_analysis_if_enabled();
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
     for (auto* loop_node : loop_analysis.loops()) {

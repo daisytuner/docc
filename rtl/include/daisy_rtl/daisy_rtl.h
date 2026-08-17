@@ -90,6 +90,17 @@ bool __daisy_instrumentation_total_stats(double* mean_us, double* variance_us2, 
 // before the timed sampling loop). Leaves region registration intact.
 void __daisy_instrumentation_reset_all(void);
 
+// Globally enable/disable measurement. While disabled, __daisy_instrumentation_enter,
+// __daisy_instrumentation_exit and the metric/increment calls are no-ops, so no
+// runtime or counter samples are recorded. Registration and finalize are unaffected.
+// The shared RTL has a single process-global instance, so this toggles measurement
+// for every artifact loaded into the process at once. Enabled by default.
+void __daisy_instrumentation_start(void);
+void __daisy_instrumentation_stop(void);
+
+// Query whether measurement is currently enabled (true by default).
+bool __daisy_instrumentation_is_enabled(void);
+
 typedef struct __daisy_capture __daisy_capture_t;
 
 __daisy_capture_t* __daisy_capture_init(const char* name, const char* base_dir);
@@ -292,3 +303,91 @@ inline int __daisy_sym_pow(int base, int exp) {
 #define __daisy_fma_rz_ftz_f __nvvm_fma_rz_ftz_f
 
 #endif // __DAISY_NVVM__
+
+// ---------------------------------------------------------------------------
+// Atomic reduce-combine helpers for nested GPU reductions.
+//
+// A parallel (e.g. CUDA-Y / HIP-Y scheduled) reduction merges each thread's
+// partial result into a single accumulator slot with an atomic. For `add` on
+// types with a native `atomicAdd` overload the code generator emits that
+// directly; every other operator/type uses one of the compare-and-swap (CAS)
+// helpers below. The names match what the reduce dispatchers emit:
+//
+//     __daisy_reduce_combine_<op>_<ctype-with-spaces-as-underscores>
+//
+// e.g. `__daisy_reduce_combine_max_float`, `__daisy_reduce_combine_add_long_long`.
+//
+// Defined for every device translation unit (CUDA `.cu` / HIP `.cpp`), so they
+// are visible to the kernels regardless of which TU references them. They use
+// `atomicCAS` plus the `__uint_as_float` / `__float_as_uint` /
+// `__longlong_as_double` / `__double_as_longlong` bit-reinterpretation
+// intrinsics: CUDA provides them as builtins, while HIP declares them in its
+// runtime header, which may be included after this one; pull it in here so the
+// helpers are self-sufficient regardless of include order.
+#if defined(__CUDACC__) || defined(__HIPCC__)
+
+#if defined(__HIPCC__)
+#include <hip/hip_runtime.h>
+#endif
+
+// Emit one CAS-loop combine function. TO_VAL reinterprets the CAS word as the
+// typed value; FROM_VAL reinterprets the combined typed value back to the CAS
+// word; COMBINE computes `cur OP val`.
+#define __DAISY_REDUCE_COMBINE(NAME, TYPE, CASTYPE, TO_VAL, FROM_VAL, COMBINE) \
+    static __device__ inline void NAME(TYPE* __daisy_addr, TYPE __daisy_val) { \
+        CASTYPE* __daisy_p = reinterpret_cast<CASTYPE*>(__daisy_addr);         \
+        CASTYPE __daisy_old = *__daisy_p;                                      \
+        CASTYPE __daisy_assumed;                                               \
+        do {                                                                   \
+            __daisy_assumed = __daisy_old;                                     \
+            TYPE __daisy_cur = (TO_VAL);                                       \
+            TYPE __daisy_new = (COMBINE);                                      \
+            __daisy_old = atomicCAS(__daisy_p, __daisy_assumed, (FROM_VAL));   \
+        } while (__daisy_assumed != __daisy_old);                              \
+    }
+
+// Emit all four operators (add/mul/min/max) for a given accumulator type.
+#define __DAISY_REDUCE_COMBINE_ALL(SUFFIX, TYPE, CASTYPE, TO_VAL, FROM_VAL)                                                 \
+    __DAISY_REDUCE_COMBINE(__daisy_reduce_combine_add_##SUFFIX, TYPE, CASTYPE, TO_VAL, FROM_VAL, __daisy_cur + __daisy_val) \
+    __DAISY_REDUCE_COMBINE(__daisy_reduce_combine_mul_##SUFFIX, TYPE, CASTYPE, TO_VAL, FROM_VAL, __daisy_cur* __daisy_val)  \
+    __DAISY_REDUCE_COMBINE(                                                                                                 \
+        __daisy_reduce_combine_min_##SUFFIX,                                                                                \
+        TYPE,                                                                                                               \
+        CASTYPE,                                                                                                            \
+        TO_VAL,                                                                                                             \
+        FROM_VAL,                                                                                                           \
+        __daisy_cur < __daisy_val ? __daisy_cur : __daisy_val                                                               \
+    )                                                                                                                       \
+    __DAISY_REDUCE_COMBINE(                                                                                                 \
+        __daisy_reduce_combine_max_##SUFFIX,                                                                                \
+        TYPE,                                                                                                               \
+        CASTYPE,                                                                                                            \
+        TO_VAL,                                                                                                             \
+        FROM_VAL,                                                                                                           \
+        __daisy_cur > __daisy_val ? __daisy_cur : __daisy_val                                                               \
+    )
+
+__DAISY_REDUCE_COMBINE_ALL(float, float, unsigned int, __uint_as_float(__daisy_assumed), __float_as_uint(__daisy_new))
+__DAISY_REDUCE_COMBINE_ALL(
+    double,
+    double,
+    unsigned long long,
+    __longlong_as_double((long long) __daisy_assumed),
+    (unsigned long long) __double_as_longlong(__daisy_new)
+)
+__DAISY_REDUCE_COMBINE_ALL(int, int, unsigned int, (int) __daisy_assumed, (unsigned int) __daisy_new)
+__DAISY_REDUCE_COMBINE_ALL(
+    unsigned_int, unsigned int, unsigned int, (unsigned int) __daisy_assumed, (unsigned int) __daisy_new
+)
+__DAISY_REDUCE_COMBINE_ALL(
+    long_long, long long, unsigned long long, (long long) __daisy_assumed, (unsigned long long) __daisy_new
+)
+__DAISY_REDUCE_COMBINE_ALL(
+    unsigned_long_long,
+    unsigned long long,
+    unsigned long long,
+    (unsigned long long) __daisy_assumed,
+    (unsigned long long) __daisy_new
+)
+
+#endif // defined(__CUDACC__) || defined(__HIPCC__)

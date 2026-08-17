@@ -174,6 +174,15 @@ def test_permute_simple(target: str) -> None:
     check(PermuteSimpleNet(), torch.randn(2, 3, 5), target=target)
 
 
+def test_view_permute(target: str) -> None:
+    class ViewPermuteNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            input = input.view(2, 3, 5)
+            return torch.permute(input, (2, 0, 1))
+
+    check(ViewPermuteNet(), torch.randn(2, 3, 5), target=target)
+
+
 # --- slice ---
 
 

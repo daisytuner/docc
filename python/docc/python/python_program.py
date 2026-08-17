@@ -9,6 +9,7 @@ import hashlib
 import ml_dtypes
 import numpy as np
 from typing import Annotated, get_origin, get_args, Any, Optional
+import time
 
 from docc.sdfg import (
     Scalar,
@@ -20,6 +21,7 @@ from docc.sdfg import (
     Tensor,
     StructuredSDFG,
     StructuredSDFGBuilder,
+    DoccMetrics,
 )
 from docc.compiler.docc_program import DoccProgram
 from docc.compiler.compiled_sdfg import CompiledSDFG
@@ -174,6 +176,11 @@ class PythonProgram(DoccProgram):
     ) -> CompiledSDFG:
         original_output_folder = output_folder
 
+        metrics = DoccMetrics()
+        compile_start_time = time.perf_counter()
+        metrics.add_metric("function", self.name, "source")
+        metrics.add_frontend_source_info("python")
+
         # Resolve options
         instrumentation_mode, capture_args, remote_tuning = (
             self._resolve_compile_options(
@@ -182,7 +189,7 @@ class PythonProgram(DoccProgram):
         )
 
         # When binary reuse is requested, the build run must persist the
-        # normalized SDFG (py4.norm.json) so a later run can reload it without
+        # SDFG (py5.post_sched.json) so a later run can reload it without
         # re-parsing/recompiling. Force the dump if instrumentation/capture
         # would not already produce it.
         docc_reuse_binaries = os.environ.get("DOCC_REUSE_BINARIES")
@@ -277,18 +284,31 @@ class PythonProgram(DoccProgram):
             if reused is not None:
                 if original_output_folder is None:
                     self.cache[mem_cache_key] = reused
+
+                metrics.capture_env_vars()
+                metrics.append_to(output_folder)
                 return reused
 
         # 4. Build SDFG
         if os.path.exists(output_folder):
             # Multiple python processes running the same code?
             shutil.rmtree(output_folder)
+
         sdfg, out_args, out_shapes, out_strides = self._build_sdfg(
             arg_types, args, arg_shape_mapping, shape_values
         )
+        parse_sdfg_time = time.perf_counter() - compile_start_time
+        metrics.add_metric(
+            "parse_to_sdfg_time_ms", round(parse_sdfg_time * 1000), "compile_times"
+        )
 
         lib_path = self.sdfg_pipe(
-            sdfg, output_folder, instrumentation_mode, capture_args, remote_tuning
+            sdfg,
+            output_folder,
+            instrumentation_mode,
+            capture_args,
+            remote_tuning,
+            metrics=metrics,
         )
 
         # Persist the return-value layout so a later DOCC_REUSE_BINARIES run can
@@ -314,6 +334,11 @@ class PythonProgram(DoccProgram):
         if original_output_folder is None:
             self.cache[mem_cache_key] = compiled
 
+        compile_time_ms = round((time.perf_counter() - compile_start_time) * 1000)
+        metrics.add_metric("compile_time_ms", compile_time_ms, "compile_times")
+        metrics.capture_env_vars()
+        metrics.append_to(output_folder)
+
         return compiled
 
     def _persist_return_layout(
@@ -323,11 +348,11 @@ class PythonProgram(DoccProgram):
 
         The return shapes/strides are discovered while parsing the kernel and
         are not otherwise recoverable from the SDFG structure. Persisting them
-        (into the same ``py4.norm.json`` the reuse path loads) lets a later
+        (into the same ``py5.post_sched.json`` the reuse path loads) lets a later
         ``DOCC_REUSE_BINARIES`` run reconstruct the CompiledSDFG without
         re-parsing/recompiling.
         """
-        json_path = os.path.join(output_folder, f"{sdfg.name}.py4.norm.json")
+        json_path = os.path.join(output_folder, f"{sdfg.name}.py5.post_sched.json")
         if not os.path.exists(json_path):
             return
         try:
@@ -365,7 +390,7 @@ class PythonProgram(DoccProgram):
 
         sdfg_name = f"{self.name}_sdfg"
         lib_path = os.path.join(output_folder, f"lib{sdfg_name}.so")
-        json_path = os.path.join(output_folder, f"{sdfg_name}.py4.norm.json")
+        json_path = os.path.join(output_folder, f"{sdfg_name}.py5.post_sched.json")
         if not os.path.exists(lib_path):
             raise ValueError(f"Tried reusing binary '{lib_path}' but does not exist")
         if not os.path.exists(json_path):

@@ -1,11 +1,11 @@
 #include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
 
-#include "../../../../sdfg/include/sdfg/symbolic/assumptions.h"
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/base_user_visitor.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/structured_sdfg.h"
+#include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/utils.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
 #include "sdfg/visualizer/dot_visualizer.h"
@@ -42,6 +42,15 @@ class LoopIndirectAccessFinder : public analysis::BaseUserVisitor {
         symbolic::Expression indvar_placeholder; // SymEngine::Function(tight_lower_bound, tight_upper_bound, step,
                                                  // loop-level)
         std::unordered_set<std::string> indvars;
+
+        LoopEntry(
+            ControlFlowNode* loop,
+            analysis::LocalLoopInfo::LoopType type,
+            FusionLoopCandidate& fusion_candidate,
+            symbolic::Expression indvar_placeholder
+        )
+            : loop(loop), type(type), fusion_candidate(fusion_candidate),
+              indvar_placeholder(std::move(indvar_placeholder)) {}
     };
     std::deque<LoopEntry> loop_stack_;
 
@@ -114,7 +123,7 @@ public:
             auto type = is_a(node.type_id(), ElementType::Map) ? analysis::LocalLoopInfo::LoopType::Map
                                                                : analysis::LocalLoopInfo::LoopType::For;
             auto& candidate = *cand_it->second.get();
-            loop_stack_.emplace_back(&node, type, candidate, get_indvar_placeholder(candidate, loop_stack_.size() - 1));
+            loop_stack_.emplace_back(&node, type, candidate, get_indvar_placeholder(candidate, loop_stack_.size()));
             loop_stack_.back().indvars.emplace(node.indvar()->get_name());
         }
         auto res = BaseUserVisitor::handleStructuredLoop(node);
@@ -356,6 +365,9 @@ bool LoopFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis:
     if (dir) {
         state.loop_analysis->dump_to_file(std::filesystem::path(*dir) / "loop_infos.post-fusion.json");
     }
+
+    CompileStatistics::add_metric_if_enabled("fused-by-domain", state.fused_by_domain_count);
+    CompileStatistics::add_metric_if_enabled("fused-by-access", state.fused_by_access_count);
 
     return state.total_fused_count();
 }

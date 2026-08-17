@@ -12,7 +12,8 @@ BroadcastNode::BroadcastNode(
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
     const std::vector<symbolic::Expression>& input_shape,
-    const std::vector<symbolic::Expression>& output_shape
+    const std::vector<symbolic::Expression>& output_shape,
+    bool padded
 )
     : TensorNode(
           element_id,
@@ -24,7 +25,7 @@ BroadcastNode::BroadcastNode(
           {"Y", "X"},
           data_flow::ImplementationType_NONE
       ),
-      input_shape_(input_shape), output_shape_(output_shape) {}
+      input_shape_(input_shape), output_shape_(output_shape), padded_(padded) {}
 
 void BroadcastNode::validate(const Function& function) const {
     TensorNode::validate(function);
@@ -166,20 +167,43 @@ passes::LibNodeExpander::ExpandOutcome BroadcastNode::
     auto& out_acc = standalone->add_indirect_write_access(tasklet_block, RESULT_PTR_IDX);
 
     symbolic::MultiExpression input_subset = {};
-    size_t j = 0;
-    for (size_t i = 0; i < output_shape_.size(); ++i) {
-        if (j >= input_shape_.size()) {
-            break;
-        } else if (symbolic::eq(output_shape_[i], input_shape_[j])) {
-            input_subset.push_back(loop_vars[i]);
-            j++;
-        } else if (symbolic::eq(input_shape_[j], symbolic::one())) {
-            input_subset.push_back(symbolic::zero());
-            j++;
+    if (padded_) {
+        // Leading-alignment (linalg.broadcast): scan output dimensions from the
+        // outermost side, matching input dimensions in order and skipping the
+        // output dimensions that were inserted by the broadcast.
+        size_t j = 0;
+        for (size_t i = 0; i < output_shape_.size(); ++i) {
+            if (j >= input_shape_.size()) {
+                break;
+            } else if (symbolic::eq(output_shape_[i], input_shape_[j])) {
+                input_subset.push_back(loop_vars[i]);
+                j++;
+            } else if (symbolic::eq(input_shape_[j], symbolic::one())) {
+                input_subset.push_back(symbolic::zero());
+                j++;
+            }
         }
-    }
-    if (j < input_shape_.size()) {
-        throw InvalidSDFGException("BroadcastNode: Could not resolve indvars for inputs");
+        if (j < input_shape_.size()) {
+            throw InvalidSDFGException("BroadcastNode: Could not resolve indvars for inputs");
+        }
+    } else {
+        // Trailing-alignment (NumPy/PyTorch): input dimension j corresponds to
+        // output dimension (offset + j); the leading `offset` output dimensions
+        // have no matching input dimension and are broadcast.
+        if (output_shape_.size() < input_shape_.size()) {
+            throw InvalidSDFGException("BroadcastNode: Could not resolve indvars for inputs");
+        }
+        size_t offset = output_shape_.size() - input_shape_.size();
+        for (size_t j = 0; j < input_shape_.size(); ++j) {
+            size_t i = offset + j;
+            if (symbolic::eq(output_shape_[i], input_shape_[j])) {
+                input_subset.push_back(loop_vars[i]);
+            } else if (symbolic::eq(input_shape_[j], symbolic::one())) {
+                input_subset.push_back(symbolic::zero());
+            } else {
+                throw InvalidSDFGException("BroadcastNode: Could not resolve indvars for inputs");
+            }
+        }
     }
     auto& iedge_tensor = static_cast<const types::Tensor&>(in_edge.base_type());
     if (iedge_tensor.is_scalar()) {
@@ -202,7 +226,7 @@ passes::LibNodeExpander::ExpandOutcome BroadcastNode::
 std::unique_ptr<data_flow::DataFlowNode> BroadcastNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(
-        new BroadcastNode(element_id, this->debug_info(), vertex, parent, input_shape_, output_shape_)
+        new BroadcastNode(element_id, this->debug_info(), vertex, parent, input_shape_, output_shape_, padded_)
     );
 }
 

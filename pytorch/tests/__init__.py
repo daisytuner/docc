@@ -72,6 +72,14 @@ def check(
     program = torch.compile(
         model,
         backend="docc",
+        # Specialize on concrete input shapes. Without this, Dynamo's automatic
+        # dynamic-shape behavior turns the batch dimension into a symbolic SymInt
+        # on the second compile of the same model code (e.g. the batch_size=1 and
+        # batch_size=4 parametrizations of the same test). That makes the traced
+        # example_input shapes identical (s0, ...) across batch sizes, so the
+        # compile cache key / stable_id collide and both batches reuse the same
+        # SDFG and .so. Forcing static shapes gives each batch size its own graph.
+        dynamic=False,
         options={
             "target": target,
             "category": category,

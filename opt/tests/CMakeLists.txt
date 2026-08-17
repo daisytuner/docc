@@ -11,9 +11,11 @@ option(DOCC_TESTS_ENABLE_DUMP "Enable dumping intermediary files of test cases" 
 set(TEST_FILES
     cuda/blas/cublas_test.cpp
     cuda/cuda_kernel_test.cpp
+    cuda/cuda_reduce_dispatcher_test.cpp
     cuda/softmax_dispatcher_test.cpp
     rocm/blas/rocblas_test.cpp
     rocm/rocm_library_nodes_test.cpp
+    rocm/rocm_reduce_dispatcher_test.cpp
     cuda/cuda_library_nodes_test.cpp
     passes/einsum_test.cpp
     passes/loop_fusion/loop_fusion_by_domain_pass_test.cpp
@@ -28,6 +30,7 @@ set(TEST_FILES
     passes/offloading/device_buffer_reuse_pass_test.cpp
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_parallelize_nested_map_test.cpp
+    transformations/offloading/rocm_transform_test.cpp
     transformations/offloading/cuda_transform_im2col_test.cpp
     transformations/offloading/gpu_tiling_test.cpp
     transformations/offloading/kernel_local_storage_test.cpp
@@ -47,6 +50,8 @@ set(TEST_FILES
     passes/offloading/rocm_library_node_rewriter_pass_test.cpp
     passes/scheduler/cuda_scheduler_test.cpp
     passes/scheduler/omp_scheduler_test.cpp
+    passes/scheduler/rocm_scheduler_test.cpp
+    passes/scheduler/vectorize_scheduler_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
     targets/omp/schedule_test.cpp
     transformations/collapse_to_depth_test.cpp
