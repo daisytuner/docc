@@ -120,7 +120,6 @@ set(SOURCE_FILES
     src/targets/omp/math/tensor/conv_expander.cpp
     src/targets/rocm/blas/batched_gemm.cpp
     src/targets/rocm/blas/dot.cpp
-    src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
     src/targets/rocm/tiles/pipeline_node.cpp
