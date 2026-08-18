@@ -317,7 +317,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
     strategy:
       fail-fast: false
       matrix:
@@ -398,7 +398,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64 # -et not buildable, upstream problem
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64 # -et not buildable, upstream problem
       options: >-
         --cap-add=PERFMON
     strategy:
@@ -479,7 +479,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
       options: >-
         --cap-add=PERFMON
     strategy:
@@ -550,7 +550,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -639,7 +639,7 @@ jobs:
       group: dahlia
       labels: rocm
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
       options: >-
         --cap-add=PERFMON
         --device /dev/kfd
@@ -737,7 +737,7 @@ jobs:
       group: dahlia
       labels: tenstorrent
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:beta-amd64
       options: >-
         --cap-add=PERFMON
     strategy:
