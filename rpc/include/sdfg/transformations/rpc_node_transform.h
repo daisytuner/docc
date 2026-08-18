@@ -34,6 +34,8 @@ private:
 
     bool normalize_;
 
+    bool schedule_loops_;
+
     std::optional<std::string> session_id_;
 
     std::string get_node_id_str() const;
@@ -51,6 +53,7 @@ public:
         sdfg::passes::rpc::RpcContext& rpc_context,
         bool enable_fusion = true,
         bool normalize = true,
+        bool schedule_loops = true,
         bool print_steps = false
     );
 

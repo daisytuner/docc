@@ -266,8 +266,10 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def(
             "schedule",
-            static_cast<void (PyStructuredSDFG::*)(const docc::target::TargetOptions&)>(&PyStructuredSDFG::schedule),
+            static_cast<void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool)>(&PyStructuredSDFG::schedule
+            ),
             py::arg("options"),
+            py::arg("schedule_loops") = true,
             "Schedule the SDFG"
         )
         .def(

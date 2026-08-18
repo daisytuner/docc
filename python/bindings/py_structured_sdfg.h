@@ -82,7 +82,7 @@ public:
     void normalize();
 
     void schedule(const std::string& target, const std::string& category, bool remote_tuning = false);
-    void schedule(const docc::target::TargetOptions& options);
+    void schedule(const docc::target::TargetOptions& options, bool schedule_loops = true);
 
     /**
      * Run the device-resident argument promotion pass.

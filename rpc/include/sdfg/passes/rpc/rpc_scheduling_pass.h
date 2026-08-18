@@ -19,15 +19,18 @@ private:
     docc::target::TargetOptions options_;
     sdfg::PassReportConsumer* report_ = nullptr;
     bool enable_fusion_ = true;
+    bool schedule_loops_ = true;
 
 public:
     RpcOptimizationPass(
         std::shared_ptr<rpc::RpcContext> rpc_context,
         docc::target::TargetOptions options,
         bool enable_fusion = true,
+        bool schedule_loops = true,
         sdfg::PassReportConsumer* report = nullptr
     )
-        : rpc_context_(rpc_context), options_(std::move(options)), report_(report), enable_fusion_(enable_fusion) {}
+        : rpc_context_(rpc_context), options_(std::move(options)), report_(report), enable_fusion_(enable_fusion),
+          schedule_loops_(schedule_loops) {}
     ~RpcOptimizationPass() override = default;
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;

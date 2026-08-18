@@ -422,7 +422,7 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     docc::target::TargetOptions topts = {.target = target, .category = category, .remote_tuning = remote_tuning};
     schedule(topts);
 }
-void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
+void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool schedule_loops) {
     sdfg::passes::CompileStatistics::enter_stage_if_enabled("schedule");
     if (options.target == "none") {
         return;
@@ -430,7 +430,6 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
 
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
-
 
     docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, options);
 
@@ -448,8 +447,14 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
             sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
         sdfg::passes::scheduler::RpcOptimizationPass
-            rpc_optimization_pass(context, options, enable_fusion_in_normalize_);
+            rpc_optimization_pass(context, options, enable_fusion_in_normalize_, schedule_loops);
         rpc_optimization_pass.run(builder, analysis_manager);
+    }
+
+    // Arg-capture mode: Pretends to schedule for target
+    // but keeps all execution on single-core host
+    if (!schedule_loops) {
+        return;
     }
 
     // Acquire target-specific loop schedulers only after remote tuning, since they are consumed
