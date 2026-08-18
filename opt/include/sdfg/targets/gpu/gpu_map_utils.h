@@ -4,7 +4,9 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_types.h"
 
 namespace sdfg {
@@ -128,6 +130,16 @@ get_gpu_maps(structured_control_flow::Map& node, analysis::AnalysisManager& anal
  */
 bool nested_parallelization_is_unsafe(
     structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager
+);
+
+symbolic::Expression get_target_level_dim(TargetLevel target_level);
+
+symbolic::Expression get_target_level_idx(TargetLevel target_level);
+
+bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager);
+
+structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
+    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager
 );
 
 // Extern template declarations to prevent implicit instantiation

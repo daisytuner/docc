@@ -24,6 +24,7 @@
 #include "sdfg/element.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/targets/rocm/rocm.h"
 
@@ -258,7 +259,7 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     if (is_outermost_map(analysis_manager_)) {
         // Declare and optionally allocate scope variables
         for (auto& local : scope_variables) {
-            if (local.starts_with("__daisy_cuda")) {
+            if (local.starts_with("__daisy_gpu")) {
                 continue;
             }
             std::string val = kernel_language_extension.declaration(local, sdfg_.type(local), false, true);
@@ -275,35 +276,69 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
             }
         }
     }
+    // generate coverage loop
+    TargetLevel target_level = ScheduleType_GPU::target_level(node_.schedule_type());
+    std::string coverage_loop_var = "__daisy_gpu_coverage_loop_" + gpu::to_string(target_level);
+    std::string size = kernel_language_extension.expression(node_.num_iterations());
+    if (target_level == TargetLevel::WARP) {
+        library_stream << "uint32_t num_warps = ceildiv("
+                       << kernel_language_extension.expression(symbolic::blockDim_x()) << ", "
+                       << kernel_language_extension.expression(get_target_level_dim(target_level)) << ");" << std::endl;
+        library_stream << "uint32_t warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x())
+                       << " / " << kernel_language_extension.expression(get_target_level_dim(target_level)) << ";"
+                       << std::endl;
+        library_stream << "uint32_t lane = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " & ("
+                       << kernel_language_extension.expression(get_target_level_dim(target_level)) << " - 1);"
+                       << std::endl;
+    }
+
+    library_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
+                   << "max(1, " << size << "/"
+                   << kernel_language_extension.expression(get_target_level_dim(target_level)) << "); "
+                   << coverage_loop_var << "++) {" << std::endl;
+    library_stream.setIndent(library_stream.indent() + 4);
+
+    if (target_level == TargetLevel::WARP) {
+        std::string indvar_name = indvar->get_name();
+        std::string x_block_coverage_loop_var = "__daisy_gpu_coverage_loop_" + gpu::to_string(TargetLevel::X_BLOCK);
+        auto x_block_parent = find_x_block_owning_warp_level(node_, analysis_manager_);
+        if (!x_block_parent) {
+            throw InvalidSDFGException("WARP level map must be nested within an X_BLOCK level map");
+        }
+        std::string x_block_indvar_name = x_block_parent->indvar()->get_name();
+        std::string x_block_num_iterations = kernel_language_extension.expression(x_block_parent->num_iterations());
+        std::string x_block_init = kernel_language_extension.expression(x_block_parent->init());
+
+        std::string num_iterations = kernel_language_extension.expression(node_.num_iterations());
+
+        library_stream << "size_t " << indvar_name << " = " << x_block_init << " + num_warps * " << num_iterations
+                       << " * warp_id * " << num_iterations << " + " << coverage_loop_var << " * " << size << " + lane;"
+                       << std::endl;
+    } else {
+        std::string target_level_idx_access = kernel_language_extension.expression(node_.stride()) + " * " +
+                                              kernel_language_extension.expression(get_target_level_idx(target_level));
+
+        if (target_level == TargetLevel::X_BLOCK && nested_warp_dim(node_, analysis_manager_)) {
+            target_level_idx_access = kernel_language_extension.expression(get_target_level_idx(target_level));
+        }
+
+        // compute the effective indvar for this coverage loop iteration
+        library_stream << "size_t " << indvar->get_name() << " = " << kernel_language_extension.expression(node_.init())
+                       << " + " << coverage_loop_var << " * "
+                       << kernel_language_extension.expression(get_target_level_dim(target_level)) << " + "
+                       << target_level_idx_access << ";" << std::endl;
+    }
+
+
     // Boundary Conditions
     if (!ScheduleType_GPU::nested_sync(node_.schedule_type())) {
-        // Guard on the flat thread id rather than the per-Map indvar so that
-        // Maps with non-unit stride or non-zero init still get a correct OOB
-        // check (the per-Map indvar = init + flat_id * stride and is
-        // only well-defined when flat_id < num_iterations).
-        std::string flat_id;
-        switch (ScheduleType_GPU::dimension(node_.schedule_type())) {
-            case CUDADimension::X:
-                flat_id = "__daisy_cuda_indvar_x";
-                break;
-            case CUDADimension::Y:
-                flat_id = "__daisy_cuda_indvar_y";
-                break;
-            case CUDADimension::Z:
-                flat_id = "__daisy_cuda_indvar_z";
-                break;
-            default:
-                flat_id = indvar->get_name();
-                break;
-        }
-        library_stream << "if (" << flat_id << " < " << cuda_language_extension.expression(num_iterations) << ") {"
-                       << std::endl;
+        library_stream << "if (" << kernel_language_extension.expression(node_.condition()) << ") {" << std::endl;
         library_stream.setIndent(library_stream.indent() + 4);
     }
 
     // Body
     codegen::SequenceDispatcher dispatcher(
-        cuda_language_extension, sdfg_, analysis_manager_, node_.root(), instrumentation_plan_, arg_capture_plan_
+        kernel_language_extension, sdfg_, analysis_manager_, node_.root(), instrumentation_plan_, arg_capture_plan_
     );
     dispatcher.dispatch(library_stream, library_stream, library_snippet_factory);
 
@@ -316,7 +351,10 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         }
     }
 
-    if (!ScheduleType_CUDA_deprecated::nested_sync(node_.schedule_type())) {
+    library_stream.setIndent(library_stream.indent() - 4);
+    library_stream << "}" << std::endl;
+
+    if (!ScheduleType_GPU::nested_sync(node_.schedule_type())) {
         library_stream.setIndent(library_stream.indent() - 4);
         library_stream << "}" << std::endl;
     }
@@ -334,89 +372,6 @@ void GPUOffloadMapDispatcher::dispatch_kernel_preamble(
     // Kernel Body
     library_stream << "{" << std::endl;
     library_stream.setIndent(library_stream.indent() + 4);
-
-    std::string indvar_x = "__daisy_cuda_indvar_x";
-    std::string indvar_y = "__daisy_cuda_indvar_y";
-    std::string indvar_z = "__daisy_cuda_indvar_z";
-
-    std::string thread_idx_x = "__daisy_cuda_thread_idx_x";
-    std::string thread_idx_y = "__daisy_cuda_thread_idx_y";
-    std::string thread_idx_z = "__daisy_cuda_thread_idx_z";
-
-    // Declare all indvars in the kernel
-    symbolic::Expression gpu_thread_idx_x = symbolic::threadIdx_x();
-    library_stream << "int " << thread_idx_x << " = " << this->language_extension_.expression(gpu_thread_idx_x) << ";"
-                   << std::endl;
-    symbolic::Expression gpu_indvar_x =
-        symbolic::add(symbolic::threadIdx_x(), symbolic::mul(symbolic::blockIdx_x(), symbolic::blockDim_x()));
-    library_stream << "int " << indvar_x << " = " << this->language_extension_.expression(gpu_indvar_x) << ";"
-                   << std::endl;
-
-    symbolic::Expression gpu_thread_idx_y = symbolic::threadIdx_y();
-    library_stream << "int " << thread_idx_y << " = " << this->language_extension_.expression(gpu_thread_idx_y) << ";"
-                   << std::endl;
-    symbolic::Expression gpu_indvar_y =
-        symbolic::add(symbolic::threadIdx_y(), symbolic::mul(symbolic::blockIdx_y(), symbolic::blockDim_y()));
-    library_stream << "int " << indvar_y << " = " << this->language_extension_.expression(gpu_indvar_y) << ";"
-                   << std::endl;
-
-    symbolic::Expression gpu_thread_idx_z = symbolic::threadIdx_z();
-    library_stream << "int " << thread_idx_z << " = " << this->language_extension_.expression(gpu_thread_idx_z) << ";"
-                   << std::endl;
-    symbolic::Expression gpu_indvar_z =
-        symbolic::add(symbolic::threadIdx_z(), symbolic::mul(symbolic::blockIdx_z(), symbolic::blockDim_z()));
-    library_stream << "int " << indvar_z << " = " << this->language_extension_.expression(gpu_indvar_z) << ";"
-                   << std::endl;
-
-    // Declare each per-Map indvar as a strided affine of the flat thread id:
-    //   <map.indvar> = <map.init> + <thread_flat_id> * <map.stride>
-    //
-    // This lets the dispatcher consume Maps with arbitrary init / stride
-    // (e.g. block-tiled outer loops produced by LoopTiling). The bound check
-    // in dispatch_kernel_body() guards on the flat id against num_iterations,
-    // so out-of-grid threads are skipped before any body access.
-    auto x_maps = gpu::get_gpu_maps<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::X);
-    auto y_maps = gpu::get_gpu_maps<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Y);
-    auto z_maps = gpu::get_gpu_maps<ScheduleType_CUDA_deprecated>(node_, analysis_manager, CUDADimension::Z);
-
-    std::unordered_map<std::string, symbolic::Expression> indvars;
-
-    auto emit_indvar = [&](structured_control_flow::Map* map, const std::string& flat_id_var) {
-        symbolic::Expression value = symbolic::symbol(flat_id_var);
-        auto stride = map->stride();
-        if (!stride.is_null() && !symbolic::eq(stride, symbolic::one())) {
-            value = symbolic::mul(value, stride);
-        }
-        auto init = map->init();
-        if (!symbolic::eq(init, symbolic::zero())) {
-            value = symbolic::add(init, value);
-        }
-        auto indvar_name = map->indvar()->get_name();
-        auto it = indvars.find(indvar_name);
-        if (it != indvars.end()) {
-            if (!symbolic::eq(it->second, value)) {
-                throw InvalidSDFGException(
-                    "Conflicting expressions for Map #" + std::to_string(node_.element_id()) + " indvar " +
-                    map->indvar()->get_name() + ": " + this->language_extension_.expression(it->second) + " vs " +
-                    this->language_extension_.expression(value)
-                );
-            }
-        } else {
-            library_stream << "int " << indvar_name << " = " << this->language_extension_.expression(value) << ";"
-                           << std::endl;
-            indvars.emplace(indvar_name, value);
-        }
-    };
-
-    for (auto* map : x_maps) {
-        emit_indvar(map, indvar_x);
-    }
-    for (auto* map : y_maps) {
-        emit_indvar(map, indvar_y);
-    }
-    for (auto* map : z_maps) {
-        emit_indvar(map, indvar_z);
-    }
 }
 
 
