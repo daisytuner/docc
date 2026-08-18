@@ -788,7 +788,7 @@ def test_lavaMD(compiler="clang-21"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 4, "FOR": 20, "WHILE": 6, "Malloc": 8, "Free": 8},
+        verification={"sdfgs": 4, "FOR": 22, "WHILE": 4, "Malloc": 8, "Free": 8},
     )
     runner = TestRunner(
         "Rodinia",

@@ -15,7 +15,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64 # TODO et not buildable, upstream problem
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -33,8 +33,8 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
+          clang-format-19 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
+          clang-format-19 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
 
       - name: Build
         run: |
@@ -50,7 +50,7 @@ jobs:
             -DBUILD_TESTS:BOOL=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
-            -DDOCC_BUILD_TARGET_ET=OFF \
+            -DDOCC_BUILD_TARGET_ET=ON \
             -DCMAKE_PREFIX_PATH=/opt/et \
             ..
           ninja -j$(nproc)
@@ -61,12 +61,12 @@ jobs:
           cd build/
           LLVM_PROFILE_FILE="sdfglib_test.profraw" ./sdfg/tests/sdfglib_test
           LLVM_PROFILE_FILE="sdfgopt_test.profraw" ./opt/tests/sdfgopt_test
-          #LLVM_PROFILE_FILE="docc-target-et_test.profraw" ./targets/et/tests/docc-target-et_test
+          LLVM_PROFILE_FILE="docc-target-et_test.profraw" ./targets/et/tests/docc-target-et_test
           LLVM_PROFILE_FILE="c-compile_test.profraw" ./c-compile/tests/c-compile_test
           ./tutorial/printf_target/tests/printf_target_test
 
           # Run coverage
-          llvm-profdata-21 merge -sparse sdfglib_test.profraw sdfgopt_test.profraw c-compile_test.profraw -o default.profdata
+          llvm-profdata-21 merge -sparse sdfglib_test.profraw sdfgopt_test.profraw docc-target-et_test.profraw  c-compile_test.profraw -o default.profdata
           cd ../
           llvm-cov-21 export ./build/sdfg/tests/sdfglib_test -object ./build/opt/tests/sdfgopt_test -object ./build/targets/et/tests/docc-target-et_test -object ./build/c-compile/tests/c-compile_test -instr-profile=build/default.profdata -format=lcov > build/coverage_full.lcov
           lcov --ignore-errors unused --extract build/coverage_full.lcov '*/sdfg/src/*' '*/sdfg/include/*' '*/opt/src/*' '*/opt/include/*' '*/targets/et/src/*' '*/targets/et/include/*' '*/c-compile/src/*' '*/c-compile/include/*' --output-file build/coverage.lcov
@@ -175,12 +175,7 @@ jobs:
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
           pip install numpy scipy ml_dtypes jsonschema
 
-          # Build cupy-rocm from source for ROCm 6x
-          # To be removed when docker image is updated to ROCm 7x
-          export CUPY_INSTALL_USE_HIP=1
-          export ROCM_HOME=/opt/rocm
-          export HCC_AMDGPU_TARGET=$(rocminfo | grep -m1 -o 'gfx[0-9a-f]*')
-          pip install cupy --no-cache-dir
+          pip install cupy-rocm-7-0
 
       - name: Build
         run: |
@@ -236,7 +231,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-build-env-llvm21-ubuntu-24.04:beta-amd64
+      image: daisytuner/docc-build-env-llvm21-ubuntu-24.04:latest-amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -251,7 +246,7 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
+          clang-format-19 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
 
       - name: Build
         run: |
@@ -317,7 +312,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
     strategy:
       fail-fast: false
       matrix:
@@ -398,7 +393,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64 # -et not buildable, upstream problem
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-et:latest-amd64
       options: >-
         --cap-add=PERFMON
     strategy:
@@ -435,7 +430,7 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
+          clang-format-19 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
           black --check python/docc/ python/tests/
 
       - name: Build
@@ -454,8 +449,7 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          #etsoc removed, not buildable
-          coverage run --source=python/docc -m pytest -v python/tests -m "unmarked"
+          coverage run --source=python/docc -m pytest -v python/tests -m "unmarked or etsoc"
           coverage xml
 
       - name: Integration Tests
@@ -479,7 +473,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
     strategy:
@@ -550,7 +544,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -583,11 +577,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          pip install numpy scipy ml_dtypes jsonschema cupy-cuda13x transformers
+          pip install numpy scipy ml_dtypes jsonschema cupy-cuda12x transformers
 
           pip install -r mlir/requirements.txt
           pip uninstall -y torch torchvision
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu132
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
       - name: Build
         run: |
@@ -629,7 +623,7 @@ jobs:
           .venv-pytorch/bin/python -m pip install --upgrade pip
           .venv-pytorch/bin/pip install -r pytorch/requirements-cuda.txt
           .venv-pytorch/bin/pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-          .venv-pytorch/bin/pip install numpy scipy ml_dtypes jsonschema cupy-cuda13x transformers
+          .venv-pytorch/bin/pip install numpy scipy ml_dtypes jsonschema cupy-cuda12x transformers
           export PYTHONPATH=$PWD/python:$PWD/pytorch
 
           .venv-pytorch/bin/pytest -v pytorch/tests --target=cuda
@@ -639,7 +633,7 @@ jobs:
       group: dahlia
       labels: rocm
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
         --device /dev/kfd
@@ -737,7 +731,7 @@ jobs:
       group: dahlia
       labels: tenstorrent
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:beta-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
     strategy:

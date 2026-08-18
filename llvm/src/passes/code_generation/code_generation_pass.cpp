@@ -618,7 +618,11 @@ llvm::PreservedAnalyses CodeGenerationPass::
     }
     subcomp_args.insert(subcomp_args.end(), this->sub_compile_opts_.begin(), this->sub_compile_opts_.end());
 
-    std::set<std::string> link_2nd_args = {"-L/usr/lib/llvm-19/lib/", "-lomp"};
+    std::set<std::string> link_2nd_args = {"-L/usr/lib/llvm-21/lib/"};
+    if (DOCC_TUNE == "openmp") {
+        link_2nd_args.emplace("-lomp");
+    }
+
     bool success = true;
     docc::analysis::SDFGRegistry::for_each_sdfg_modifiable(sdfgs, [&](analysis::SDFGHolder&, sdfg::StructuredSDFG& sdfg) {
         auto& attributes = registry.attributes(sdfg.name());
