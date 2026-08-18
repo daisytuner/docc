@@ -1,6 +1,5 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
 
-#include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"

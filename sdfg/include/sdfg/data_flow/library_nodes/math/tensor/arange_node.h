@@ -9,6 +9,16 @@ namespace tensor {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_Arange("ml::Arange");
 
+/** @brief Tensor node that generates a sequence of numbers.
+ *
+ * The input connectors are _out, _start, _end, and _step. The output tensor is a one-dimensional tensor of size
+ * ceil((_end - _start) / _step). The values are taken from the interval [_start, _end) with common difference _step and
+ * beginning from _start.
+ * Examples:
+ * - _start=0,_end=5,_step=1: [0, 1, 2, 3, 4]
+ * - _start=1,_end=5,_step=1: [1, 2, 3, 4]
+ * - _start=1,_end=5,_step=2: [1, 3]
+ */
 class ArangeNode : public TensorNode {
 private:
     std::vector<symbolic::Expression> shape_;
