@@ -237,7 +237,8 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
         # device-resident artifacts with cupy arrays so the benchmark measures
         # pure on-device execution without host<->device copies at the boundary.
         compiled = kernel_with_target.compile(*inputs_docc)
-        if kernel_with_target._device_resident:
+        device_resident = compiled.device_resident
+        if device_resident:
             import cupy as cp
 
             device_inputs = [
@@ -332,7 +333,7 @@ def run_pytest(
     # Compile with host arrays so shape inference and caching are correct, then
     # learn whether the device-residency promotion pass succeeded.
     compiled = kernel_with_target.compile(*inputs_docc)
-    device_resident = kernel_with_target._device_resident
+    device_resident = compiled.device_resident
 
     if device_resident:
         # Device-resident artifacts keep their data on the device: feed cupy

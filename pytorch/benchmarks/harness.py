@@ -42,6 +42,36 @@ def _invoke(model, model_input):
     return model(model_input)
 
 
+def _make_checked_docc_backend(target, remote_tuning, residency):
+    from docc.pytorch.pytorch_program import PyTorchProgram
+
+    def _checked_docc_backend(gm, example_inputs, *, options=None):
+        example_input = (
+            example_inputs[0] if len(example_inputs) == 1 else tuple(example_inputs)
+        )
+        program = PyTorchProgram(
+            gm,
+            example_input=example_input,
+            target=target,
+            category="server",
+            remote_tuning=remote_tuning,
+        )
+
+        compiled = program.compile()
+        residency["device_resident"] = compiled.device_resident
+        residency["device_backend"] = compiled.device_backend
+
+        def compiled_fn(*args):
+            result = program(*args)
+            if isinstance(result, (tuple, list)):
+                return result
+            return (result,)
+
+        return compiled_fn
+
+    return _checked_docc_backend
+
+
 def run_benchmark(setup_func, name, batch_size=32):
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -83,24 +113,41 @@ def run_benchmark(setup_func, name, batch_size=32):
             torch.cuda.synchronize(device)
 
     compile_kwargs: dict = {}
+    docc_residency: dict = {}
     backend_label = args.device
     if args.device == "docc":
-        compile_kwargs["backend"] = "docc"
-        compile_kwargs["options"] = {
-            "target": args.target,
-            "category": "server",
-            "remote_tuning": args.remote_tuning,
-        }
+        compile_kwargs["backend"] = _make_checked_docc_backend(
+            args.target,
+            args.remote_tuning,
+            docc_residency,
+        )
 
         backend_label = f"docc_{args.target}"
-
-    print(f"Backend: {backend_label}  |  torch device: {device}", flush=True)
-    if device.type == "cuda":
-        print(f"GPU: {torch.cuda.get_device_name(device)}", flush=True)
 
     model, model_input = setup_func(batch_size)
     model = model.eval()
     program = torch.compile(model, fullgraph=True, **compile_kwargs)
+
+    if args.device == "docc" and args.target in ("cuda", "rocm"):
+        # Force compilation with host tensors first, then choose benchmark input
+        # residency from the compiled artifact instead of assuming promotion worked.
+        probe_input = _detach_input(_prepare_input(model_input, torch.device("cpu")))
+        with torch.no_grad():
+            _invoke(program, probe_input)
+
+        if "device_resident" not in docc_residency:
+            raise RuntimeError("Docc backend did not report device residency.")
+
+        device = torch.device("cuda" if docc_residency["device_resident"] else "cpu")
+        print(
+            f"Docc device-resident: {docc_residency['device_resident']}"
+            f"  |  backend: {docc_residency['device_backend']}",
+            flush=True,
+        )
+
+    print(f"Backend: {backend_label}  |  torch device: {device}", flush=True)
+    if device.type == "cuda":
+        print(f"GPU: {torch.cuda.get_device_name(device)}", flush=True)
 
     start = time.time()
     model.to(device)
