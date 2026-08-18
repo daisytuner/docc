@@ -124,7 +124,10 @@ def test_qwen_attention(target: str, batch_size: int) -> None:
     seq_length = 16
     x = torch.randn(batch_size, seq_length, config.hidden_size)
     position_ids = (
-        torch.arange(seq_length, dtype=torch.long).unsqueeze(0).expand(batch_size, -1)
+        torch.arange(seq_length, dtype=torch.long)
+        .unsqueeze(0)
+        .expand(batch_size, -1)
+        .clone()
     )
 
     check(model, x, position_ids, target=target)
@@ -158,7 +161,10 @@ def test_qwen_decoder_layer(target: str, batch_size: int) -> None:
     seq_length = 16
     x = torch.randn(batch_size, seq_length, config.hidden_size)
     position_ids = (
-        torch.arange(seq_length, dtype=torch.long).unsqueeze(0).expand(batch_size, -1)
+        torch.arange(seq_length, dtype=torch.long)
+        .unsqueeze(0)
+        .expand(batch_size, -1)
+        .clone()
     )
 
     check(model, x, position_ids, target=target)
