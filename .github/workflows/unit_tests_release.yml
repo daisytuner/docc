@@ -15,7 +15,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:beta-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all
