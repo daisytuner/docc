@@ -1,4 +1,5 @@
 import argparse
+from collections import deque
 import os
 import sys
 import torch
@@ -42,6 +43,50 @@ def _invoke(model, model_input):
     return model(model_input)
 
 
+def _find_docc_device_resident(program):
+    """Best-effort lookup for the Docc TorchProgram hidden by torch.compile."""
+    seen = set()
+    queue = deque([program])
+
+    while queue and len(seen) < 2000:
+        obj = queue.popleft()
+        obj_id = id(obj)
+        if obj_id in seen:
+            continue
+        seen.add(obj_id)
+
+        compiled = getattr(obj, "_compiled", None)
+        if compiled is not None and hasattr(compiled, "device_resident"):
+            return bool(compiled.device_resident)
+
+        if isinstance(obj, torch.Tensor) or isinstance(obj, np.ndarray):
+            continue
+
+        closure = getattr(obj, "__closure__", None)
+        if closure:
+            for cell in closure:
+                try:
+                    queue.append(cell.cell_contents)
+                except ValueError:
+                    pass
+
+        obj_dict = getattr(obj, "__dict__", None)
+        if obj_dict:
+            queue.extend(obj_dict.values())
+
+        if isinstance(obj, dict):
+            queue.extend(obj.values())
+        elif isinstance(obj, (tuple, list, set, frozenset)):
+            queue.extend(obj)
+
+    return None
+
+
+def _sync_device(device):
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
 def run_benchmark(setup_func, name, batch_size=32):
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -69,18 +114,30 @@ def run_benchmark(setup_func, name, batch_size=32):
         if not torch.cuda.is_available():
             print(f"{args.device.upper()} not available, exiting.", file=sys.stderr)
             sys.exit(1)
-        device = torch.device("cuda")
+        requested_device = torch.device("cuda")
     elif args.device == "docc":
-        if args.target == "cuda" or args.target == "rocm":
-            device = torch.device("cuda")
+        if args.target in ("cuda", "rocm") and torch.cuda.is_available():
+            requested_device = torch.device("cuda")
         else:
-            device = torch.device("cpu")
+            requested_device = torch.device("cpu")
     else:
-        device = torch.device("cpu")
+        requested_device = torch.device("cpu")
+
+    device = torch.device("cpu") if args.device == "docc" else requested_device
+
+    # torch-mlir cannot legalize the vendor-specific ops PyTorch emits on GPU
+    # (e.g. aten.miopen_batch_norm on ROCm, which CUDA avoids by emitting the
+    # torch-mlir-supported aten.cudnn_batch_norm). Disabling the cuDNN/MIOpen
+    # backend forces batchnorm/convolution to decompose into portable native
+    # aten ops that torch-mlir can lower, while the tensors stay resident on the
+    # GPU so no host<->device transfer enters the timed region. This only
+    # affects the traced representation used for export -- docc regenerates the
+    # kernels for its target, so measured performance is unaffected.
+    if args.device == "docc" and requested_device.type == "cuda":
+        torch.backends.cudnn.enabled = False
 
     def sync_fn():
-        if device.type == "cuda":
-            torch.cuda.synchronize(device)
+        _sync_device(device)
 
     compile_kwargs: dict = {}
     backend_label = args.device
@@ -95,8 +152,8 @@ def run_benchmark(setup_func, name, batch_size=32):
         backend_label = f"docc_{args.target}"
 
     print(f"Backend: {backend_label}  |  torch device: {device}", flush=True)
-    if device.type == "cuda":
-        print(f"GPU: {torch.cuda.get_device_name(device)}", flush=True)
+    if requested_device.type == "cuda":
+        print(f"GPU: {torch.cuda.get_device_name(requested_device)}", flush=True)
 
     model, model_input = setup_func(batch_size)
     model = model.eval()
@@ -120,6 +177,18 @@ def run_benchmark(setup_func, name, batch_size=32):
     with torch.no_grad():
         _invoke(program, x)
     sync_fn()
+
+    if args.device == "docc" and requested_device.type == "cuda":
+        device_resident = _find_docc_device_resident(program)
+        print(f"Docc device resident: {device_resident}", flush=True)
+        if device_resident:
+            device = requested_device
+            model.to(device)
+            x = _prepare_input(model_input, device)
+            x = _detach_input(x)
+            with torch.no_grad():
+                _invoke(program, x)
+            sync_fn()
 
     # The RTL aggregates every region invocation, including the warmup above;
     # drop those so region counts/durations match only the measured runs. The
