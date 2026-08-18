@@ -131,7 +131,7 @@ def test_LULESH():
     test_case = Path(__file__).parent / "tests" / "apps" / "LULESH" / "lulesh.cc"
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 29, "FOR": 22, "SEQUENTIAL": 36, "WHILE": 24, "MAP": 14}
+        verification={"sdfgs": 30, "FOR": 23, "SEQUENTIAL": 44, "WHILE": 24, "MAP": 21}
     )
     runner = TestRunner(
         "Apps",

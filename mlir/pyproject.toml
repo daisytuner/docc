@@ -51,7 +51,7 @@ cmake.define.PARENT_PROJECT_INSTALL_PREFIX = "docc/"
 cmake.define.MLIR_BUILD_FRONTEND = "ON"
 
 cmake.define.MLIR_BUILD_BINDINGS = "ON"
-cmake.define.MLIR_DIR = "/usr/lib/llvm-19/lib/cmake/mlir"
+cmake.define.MLIR_DIR = "/usr/lib/llvm-21/lib/cmake/mlir"
 cmake.define.MLIR_BUILD_TESTS = "OFF"
 cmake.define.SDFG_BUILD_TESTS = "OFF"
 cmake.define.BUILD_TESTS = "OFF"
@@ -84,14 +84,14 @@ before-all = [
   "cd /tmp/isl-0.27 && ./configure && make -j$(nproc) && make install",
 
   # Build LLVM 19 + MLIR from source with RTTI enabled (required for SymEngine)
-  "curl -L https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.0/llvm-project-19.1.0.src.tar.xz | tar -xJ -C /tmp",
-  "cmake -S /tmp/llvm-project-19.1.0.src/llvm -B /tmp/llvm-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/llvm19 -DLLVM_ENABLE_PROJECTS=mlir -DLLVM_ENABLE_RTTI=ON -DLLVM_BUILD_EXAMPLES=OFF -DLLVM_TARGETS_TO_BUILD=host -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF",
+  "curl -L https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.6/llvm-project-21.1.6.src.tar.xz | tar -xJ -C /tmp",
+  "cmake -S /tmp/llvm-project-21.1.6.src/llvm -B /tmp/llvm-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/llvm21 -DLLVM_ENABLE_PROJECTS=mlir -DLLVM_ENABLE_RTTI=ON -DLLVM_BUILD_EXAMPLES=OFF -DLLVM_TARGETS_TO_BUILD=host -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF",
   "cmake --build /tmp/llvm-build --target install -j$(nproc)",
-  "rm -rf /tmp/llvm-project-19.1.0.src /tmp/llvm-build",
+  "rm -rf /tmp/llvm-project-21.1.6.src /tmp/llvm-build",
 ]
 
 [tool.cibuildwheel.linux.environment]
-MLIR_DIR = "/opt/llvm19/lib/cmake/mlir"
+MLIR_DIR = "/opt/llvm21/lib/cmake/mlir"
 
 [tool.cibuildwheel.macos]
 before-all = [
@@ -99,11 +99,11 @@ before-all = [
   "brew install cmake ninja uv",
 
   # Build dependencies (linked into the wheel)
-  "brew install boost gmp isl nlohmann-json llvm@19",
+  "brew install boost gmp isl nlohmann-json llvm@21",
 ]
 
 # Ensure we build universal2 wheels for both Intel and Apple Silicon
 [tool.cibuildwheel.macos.environment]
 MACOSX_DEPLOYMENT_TARGET = "14.0"
 MAKEFLAGS = "-j$(sysctl -n hw.ncpu)"
-MLIR_DIR = "/opt/homebrew/opt/llvm@19/lib/cmake/mlir"
+MLIR_DIR = "/opt/homebrew/opt/llvm@21/lib/cmake/mlir"

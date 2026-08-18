@@ -25,7 +25,7 @@ steps:
 
     pip install -r pytorch/requirements.txt
     pip uninstall -y torch torchvision
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu132
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
     # Warm start
     export DOCC_DEBUG=dump
