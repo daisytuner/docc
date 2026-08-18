@@ -1392,6 +1392,12 @@ class GraphParserModule(GraphParserBase, ABC):
     def align_elementwise_tensors(
         self, node: torch.fx.Node, tensor1: Tensor, tensor2: Tensor
     ) -> tuple[Tensor, Tensor]:
+        """
+        Align two tensor types to each other, i.e., virtually broadcast the tensor type with smaller
+        shape to the tensor type with bigger shape by adding zero stride entries. For example:
+        align_elementwise_tensors(Tensor(shape=[3],strides=(1,)), Tensor(shape=[2,3],strides=(3,1)))
+         = Tensor(shape=[2,3],strides=(0,1)), Tensor(shape=[2,3],strides=(3,1))
+        """
         dims1: int = len(tensor1.shape)
         dims2: int = len(tensor2.shape)
         if dims1 == dims2 or dims1 == 0 or dims2 == 0:
@@ -1434,6 +1440,7 @@ class GraphParserModule(GraphParserBase, ABC):
             )
 
     def get_kwarg_dtype(self, node: torch.fx.Node) -> torch.dtype | None:
+        """Check and return the "dtype" kwarg as torch.dtype if available"""
         if not "dtype" in node.kwargs:
             return
         dtype_arg: Argument = node.kwargs["dtype"]
@@ -1449,6 +1456,7 @@ class GraphParserModule(GraphParserBase, ABC):
         return dtype_arg
 
     def get_kwarg_layout(self, node: torch.fx.Node) -> torch.layout | None:
+        """Check and return the "layout" kwarg as torch.layout if available"""
         if not "layout" in node.kwargs:
             return
         layout_arg: Argument = node.kwargs["layout"]
@@ -1470,6 +1478,7 @@ class GraphParserModule(GraphParserBase, ABC):
         return layout_arg
 
     def get_kwarg_device(self, node: torch.fx.Node) -> torch.device | None:
+        """Check and return the "device" kwarg as torch.device if available"""
         if not "device" in node.kwargs:
             return
         device_arg: Argument = node.kwargs["device"]
@@ -1489,6 +1498,7 @@ class GraphParserModule(GraphParserBase, ABC):
         return device_arg
 
     def get_kwarg_pin_memory(self, node: torch.fx.Node) -> bool | None:
+        """Check and return the "pin_memory" kwarg as bool if available"""
         if not "pin_memory" in node.kwargs:
             return
         pin_memory_arg: Argument = node.kwargs["pin_memory"]
@@ -1508,6 +1518,7 @@ class GraphParserModule(GraphParserBase, ABC):
     def get_kwarg_memory_format(
         self, node: torch.fx.Node
     ) -> torch.memory_format | None:
+        """Check and return the "memory_format" kwarg as torch.memory_format if available"""
         if not "memory_format" in node.kwargs:
             return
         memory_format_arg: Argument = node.kwargs["memory_format"]
