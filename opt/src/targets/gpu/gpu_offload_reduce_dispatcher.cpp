@@ -1,4 +1,4 @@
-#include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
+#include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 
 #include <iostream>
 #include <sdfg/analysis/analysis.h>
@@ -31,11 +31,11 @@
 namespace sdfg {
 namespace gpu {
 
-GPUOffloadMapDispatcher::GPUOffloadMapDispatcher(
+GPUOffloadReduceDispatcher::GPUOffloadReduceDispatcher(
     codegen::LanguageExtension& language_extension,
     StructuredSDFG& sdfg,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Map& node,
+    structured_control_flow::Reduce& node,
     codegen::InstrumentationPlan& instrumentation_plan,
     codegen::ArgCapturePlan& arg_capture_plan
 )
@@ -45,7 +45,7 @@ GPUOffloadMapDispatcher::GPUOffloadMapDispatcher(
       };
 
 symbolic::SymbolSet target_level_indvars(
-    structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, TargetLevel target_level
+    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, TargetLevel target_level
 ) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto loops = loop_analysis.descendants(&node);
@@ -65,7 +65,7 @@ symbolic::SymbolSet target_level_indvars(
 }
 
 void get_nested_schedule_types(
-    structured_control_flow::Map& node,
+    structured_control_flow::StructuredLoop& node,
     analysis::AnalysisManager& analysis_manager,
     std::unordered_map<TargetLevel, ScheduleType>& output
 ) {
@@ -81,11 +81,11 @@ void get_nested_schedule_types(
     }
 }
 
-bool GPUOffloadMapDispatcher::is_outermost_map(analysis::AnalysisManager& analysis_manager) {
+bool GPUOffloadReduceDispatcher::is_outermost_map(analysis::AnalysisManager& analysis_manager) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto ancestors = loop_analysis.ancestors(&node_);
     for (auto ancestor : ancestors) {
-        if (auto loop = dyn_cast<StructuredLoop*>(ancestor)) {
+        if (auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(ancestor)) {
             if (loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
                 return false;
             }
@@ -94,7 +94,7 @@ bool GPUOffloadMapDispatcher::is_outermost_map(analysis::AnalysisManager& analys
     return true;
 }
 
-void GPUOffloadMapDispatcher::dispatch_node(
+void GPUOffloadReduceDispatcher::dispatch_node(
     codegen::PrettyPrinter& main_stream,
     codegen::PrettyPrinter& globals_stream,
     codegen::CodeSnippetFactory& library_snippet_factory
@@ -204,6 +204,8 @@ void GPUOffloadMapDispatcher::dispatch_node(
 
         std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
 
+        // TODO: Find GRID levels performing a reduction
+
 
         this->dispatch_kernel_call(
             main_stream,
@@ -216,6 +218,8 @@ void GPUOffloadMapDispatcher::dispatch_node(
             block_size_z,
             arguments_device
         );
+
+        // TODO: generate grid level reduction code here(kernel call + grid level reduction code)
 
         library_snippet_factory.add_global("#include <cstdio>");
         // Kernel Declaration
@@ -238,7 +242,7 @@ void GPUOffloadMapDispatcher::dispatch_node(
     }
 };
 
-void GPUOffloadMapDispatcher::dispatch_header(
+void GPUOffloadReduceDispatcher::dispatch_header(
     codegen::PrettyPrinter& globals_stream,
     const std::string& kernel_name,
     std::vector<std::string>& arguments_declaration
@@ -248,7 +252,7 @@ void GPUOffloadMapDispatcher::dispatch_header(
     globals_stream << ")";
 }
 
-void GPUOffloadMapDispatcher::dispatch_kernel_body(
+void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     codegen::CodeSnippetFactory& library_snippet_factory,
     codegen::PrettyPrinter& library_stream,
     symbolic::Symbol indvar,
@@ -276,10 +280,19 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
             }
         }
     }
+
     // generate coverage loop
     TargetLevel target_level = ScheduleType_GPU::target_level(node_.schedule_type());
     std::string coverage_loop_var = "__daisy_gpu_coverage_loop_" + gpu::to_string(target_level);
     std::string size = kernel_language_extension.expression(node_.num_iterations());
+
+    // TODO: Handle reductions in WARP and BLOCK levels.
+    // prepare reduction variables
+    // local registers for WARP level
+    // shared memory for BLOCK level (based on the block size, potentially multi-dimensional for x,y,z)
+    // replace original reduction variable with the local register or shared memory variable
+
+
     if (target_level == TargetLevel::WARP) {
         library_stream << "uint32_t num_warps = ceildiv("
                        << kernel_language_extension.expression(symbolic::blockDim_x()) << ", "
@@ -336,11 +349,15 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         library_stream.setIndent(library_stream.indent() + 4);
     }
 
+
     // Body
     codegen::SequenceDispatcher dispatcher(
         kernel_language_extension, sdfg_, analysis_manager_, node_.root(), instrumentation_plan_, arg_capture_plan_
     );
     dispatcher.dispatch(library_stream, library_stream, library_snippet_factory);
+
+    // TODO: Handle reductions (accumulation) in WARP and BLOCK levels.
+
 
     // Free managed scope variables
     for (auto& local : scope_variables) {
@@ -360,7 +377,7 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     library_stream << "}" << std::endl;
 }
 
-void GPUOffloadMapDispatcher::dispatch_kernel_preamble(
+void GPUOffloadReduceDispatcher::dispatch_kernel_preamble(
     codegen::PrettyPrinter& library_stream,
     analysis::AnalysisManager& analysis_manager,
     const std::string& kernel_name,
