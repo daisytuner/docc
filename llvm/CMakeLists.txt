@@ -125,7 +125,7 @@ else()
 endif()
 
 target_package_deps(docc_llvm_pass
-    TOOLS clang-19
+    TOOLS clang-21
 )
 
 

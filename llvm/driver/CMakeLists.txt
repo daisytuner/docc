@@ -34,7 +34,7 @@ add_executable(docc
 )
 target_compile_definitions(docc PRIVATE ${driver_definitions})
 target_package_deps(docc
-    TOOLS clang-19
+    TOOLS clang-21
 )
 
 install(TARGETS docc DESTINATION bin COMPONENT docc-driver)
@@ -45,7 +45,7 @@ add_executable(docc-cpp
 )
 target_compile_definitions(docc-cpp PRIVATE ${driver_definitions})
 target_package_deps(docc-cpp
-    TOOLS clang-19
+    TOOLS clang-21
 )
 
 install(TARGETS docc-cpp DESTINATION bin COMPONENT docc-driver)
@@ -57,7 +57,7 @@ add_executable(docc-ld
 target_compile_definitions(docc-ld PRIVATE ${driver_definitions})
 target_link_libraries(docc-ld PRIVATE ${LLVM_LIBS})
 target_package_deps(docc-ld
-    TOOLS lld-19
+    TOOLS lld-21
 )
 
 install(TARGETS docc-ld DESTINATION bin COMPONENT docc-driver)

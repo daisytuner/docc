@@ -7,6 +7,7 @@ on:
 
 parameters:
   container: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+  docc_version: ~
   timeout: 120
   partitions:
     - zinnia
