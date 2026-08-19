@@ -129,6 +129,16 @@ void add_schedule_type_specific_linker_args(const ScheduleType& schedule_type, s
     }
 }
 
+static void add_cuda_arch_args(std::vector<std::string>& args) {
+    const char* arch_env = std::getenv("DOCC_CUDA_ARCH");
+    if (arch_env) {
+        args.emplace_back("--cuda-gpu-arch=" + std::string(arch_env));
+    } else {
+        args.emplace_back("--cuda-gpu-arch=sm_70");
+        args.emplace_back("--cuda-include-ptx=all");
+    }
+}
+
 void add_schedule_type_specific_compile_args(
     const ScheduleType& schedule_type,
     llvm::dwarf::SourceLanguage& language,
@@ -144,7 +154,7 @@ void add_schedule_type_specific_compile_args(
         language = llvm::dwarf::DW_LANG_C_plus_plus;
     } else if (schedule_type.value() == sdfg::cuda::ScheduleType_CUDA::value()) {
         compile_args.emplace_back("-x cuda");
-        compile_args.emplace_back("--cuda-gpu-arch=sm_70");
+        add_cuda_arch_args(compile_args);
         compile_args.emplace_back("--cuda-host-only");
         language = llvm::dwarf::DW_LANG_C_plus_plus;
     } else if (sdfg::tenstorrent::is_tenstorrent_schedule(schedule_type)) {
@@ -203,6 +213,8 @@ bool CodeGenerationPass::compile_additional_files(
         for (const auto& inc : docc_paths.get_default_include_paths()) {
             comp_args.push_back("-I" + inc.string());
         }
+        comp_args.emplace_back("-x cuda");
+        add_cuda_arch_args(comp_args);
         auto& cu_files = it->second;
         for (auto& cu_file : cu_files) {
             auto fn = cu_file.filename().string();

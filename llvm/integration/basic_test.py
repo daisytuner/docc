@@ -134,10 +134,10 @@ def test_device_transfers():
     output_path = benchmark_path / f"device_transfers.out"
     cmd = [
         "docc",
-        "-mllvm",
         "-docc-tune=cuda",
         "-g",
         "-O3",
+        "-docc-save-temps",
         str(benchmark_path / "device_transfers.c"),
         str(benchmark_path / "device_transfers_lib.c"),
         "-o",
@@ -174,12 +174,12 @@ def test_device_transfers_lib():
     output_path_lib = benchmark_path / f"libdevice_transfers.so"
     cmd_lib = [
         "docc",
-        "-mllvm",
         "-docc-tune=cuda",
         "-fPIC",
         "-shared",
         "-g",
         "-O3",
+        "-docc-save-temps",
         str(benchmark_path / "device_transfers_lib.c"),
         "-o",
         str(output_path_lib),

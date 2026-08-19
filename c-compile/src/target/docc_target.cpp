@@ -22,15 +22,21 @@ static DoccTarget cuda_target = {
         builder.add_link_option("/usr/local/cuda/lib64/libcudart.so");
         builder.add_link_option("/usr/local/cuda/lib64/libcublas.so");
 
-        const char* arch_env = std::getenv("DOCC_CUDA_ARCH");
-        if (!arch_env) {
-            arch_env = "sm_70";
-        }
-        builder.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
-
         compile::SrcFileCompilerBuilder b;
         b.inherit(builder, true);
-        b.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
+
+        const char* arch_env = std::getenv("DOCC_CUDA_ARCH");
+        if (arch_env) { // build for a specific arch
+            builder.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
+            b.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
+        } else { // don't know the arch, so try to build for all with the driver handling the rest (may not work for all
+                 // cases)
+            builder.add_compile_option("--cuda-gpu-arch=sm_70");
+            builder.add_compile_option("--cuda-include-ptx=all");
+            b.add_compile_option("--cuda-gpu-arch=sm_70");
+            b.add_compile_option("--cuda-include-ptx=all");
+        }
+
         b.add_compile_option("--cuda-path=/usr/local/cuda");
         b.set_bin_extension("cu");
         builder.redirect_snippet("cu", std::move(b));
