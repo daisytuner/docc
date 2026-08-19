@@ -64,6 +64,19 @@ protected:
     // in which case this (block) level combines per-warp partials instead of per-thread.
     bool has_nested_warp_reduction(const std::string& container);
 
+    // Linearized flat thread index within the block: threadIdx.x + threadIdx.y * blockDim.x
+    // + threadIdx.z * blockDim.x * blockDim.y. Used to address per-thread shared slots so
+    // that every thread of a multi-dimensional block owns a distinct accumulator entry.
+    std::string reduce_linear_thread_index(codegen::LanguageExtension& language_extension);
+
+    // Element stride, in the flat shared layout, between consecutive threads along the
+    // reduce node's own axis: 1 for x, blockDim.x for y, blockDim.x * blockDim.y for z.
+    std::string reduce_axis_stride(codegen::LanguageExtension& language_extension, TargetLevel target_level);
+
+    // Compile-time product of all block-level parallel sizes enclosing/within this node
+    // (x * y * z). Sizes the per-thread shared buffer for a multi-dimensional block.
+    symbolic::Expression reduce_block_size_product();
+
     void dispatch_reduction_declarations(
         codegen::LanguageExtension& language_extension,
         codegen::PrettyPrinter& stream,
