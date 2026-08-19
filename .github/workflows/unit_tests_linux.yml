@@ -15,7 +15,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-et:latest-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -552,6 +552,8 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12"]
+    env:
+      DOCC_CUDA_ARCH: sm_120
 
     steps:
       - uses: actions/checkout@v4
@@ -576,12 +578,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          pip install pybind11 pytest coverage build scikit-build-core
           pip install numpy scipy ml_dtypes jsonschema cupy-cuda12x transformers
 
-          pip install -r mlir/requirements.txt
-          pip uninstall -y torch torchvision
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+          pip install -r mlir/requirements-cuda.txt
 
       - name: Build
         run: |
@@ -642,6 +642,8 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12"]
+    env:
+      DOCC_ROCM_ARCH: gfx1201
 
     steps:
       - uses: actions/checkout@v4
@@ -666,14 +668,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          pip install pybind11 pytest coverage build scikit-build-core
           pip install numpy scipy ml_dtypes jsonschema transformers
 
-          pip install cupy-rocm-7-0
-
-          pip install -r mlir/requirements.txt
-          pip uninstall -y torch torchvision
-          pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/rocm6.4
+          pip install -r mlir/requirements-rocm.txt
 
       - name: Build
         run: |
@@ -762,7 +760,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+          pip install pybind11 pytest coverage build scikit-build-core
           pip install numpy scipy ml_dtypes jsonschema
           pip install -r mlir/requirements.txt
 

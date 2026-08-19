@@ -34,8 +34,8 @@ jobs:
           cd build
           cmake \
             -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DSDFG_ENABLE_SANITIZER=ON \
             -DSDFG_SANITIZER=undefined \

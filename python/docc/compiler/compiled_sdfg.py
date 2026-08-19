@@ -77,7 +77,6 @@ def import_cupy_for_target(target):
                 f"but it could not be imported: {exc}"
             ) from exc
         is_hip = bool(getattr(cupy.cuda.runtime, "is_hip", False))
-        print("cupy is hip:", is_hip)
         _cupy_module = (cupy, is_hip)
 
     if target in "rocm" and not is_hip:
