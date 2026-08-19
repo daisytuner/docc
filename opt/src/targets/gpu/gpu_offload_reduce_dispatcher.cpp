@@ -473,10 +473,10 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
 
 
     if (target_level == TargetLevel::WARP) {
-        library_stream << "uint32_t num_warps = ceildiv("
-                       << kernel_language_extension.expression(symbolic::blockDim_x()) << ", "
-                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
-                       << ");" << std::endl;
+        std::string warp_dim = kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())
+        );
+        library_stream << "uint32_t num_warps = (" << kernel_language_extension.expression(symbolic::blockDim_x())
+                       << " + " << warp_dim << " - 1) / " << warp_dim << ";" << std::endl;
         library_stream << "uint32_t warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x())
                        << " / "
                        << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
@@ -486,9 +486,10 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
                        << " - 1);" << std::endl;
     }
 
+    std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())
+    );
     library_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
-                   << "max(1, " << size << "/"
-                   << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())) << "); "
+                   << "max(1, (" << size << " + " << coverage_dim << " - 1) / " << coverage_dim << "); "
                    << coverage_loop_var << "++) {" << std::endl;
     library_stream.setIndent(library_stream.indent() + 4);
 

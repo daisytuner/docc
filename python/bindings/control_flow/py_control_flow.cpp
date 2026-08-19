@@ -14,6 +14,11 @@
 #include <sdfg/structured_control_flow/structured_loop.h>
 #include <sdfg/structured_control_flow/while.h>
 
+#include <sdfg/symbolic/symbolic.h>
+#include <sdfg/targets/cuda/cuda.h>
+#include <sdfg/targets/gpu/gpu_schedule_type.h>
+#include <sdfg/targets/offloading/data_offloading_node.h>
+
 using namespace sdfg::structured_control_flow;
 
 void register_control_flow(py::module& m) {
@@ -227,12 +232,50 @@ void register_control_flow(py::module& m) {
         .value("None_", ScheduleTypeCategory::None)
         .export_values();
 
+    // TargetLevel enum (GPU offload target levels)
+    py::enum_<sdfg::gpu::TargetLevel>(m, "TargetLevel")
+        .value("X_GRID", sdfg::gpu::TargetLevel::X_GRID)
+        .value("Y_GRID", sdfg::gpu::TargetLevel::Y_GRID)
+        .value("Z_GRID", sdfg::gpu::TargetLevel::Z_GRID)
+        .value("X_BLOCK", sdfg::gpu::TargetLevel::X_BLOCK)
+        .value("Y_BLOCK", sdfg::gpu::TargetLevel::Y_BLOCK)
+        .value("Z_BLOCK", sdfg::gpu::TargetLevel::Z_BLOCK)
+        .value("WARP", sdfg::gpu::TargetLevel::WARP)
+        .export_values();
+
+    // DataTransferDirection enum (host/device transfers)
+    py::enum_<sdfg::offloading::DataTransferDirection>(m, "DataTransferDirection")
+        .value("D2H", sdfg::offloading::DataTransferDirection::D2H)
+        .value("NONE", sdfg::offloading::DataTransferDirection::NONE)
+        .value("H2D", sdfg::offloading::DataTransferDirection::H2D)
+        .export_values();
+
+    // BufferLifecycle enum (device buffer allocation lifecycle)
+    py::enum_<sdfg::offloading::BufferLifecycle>(m, "BufferLifecycle")
+        .value("FREE", sdfg::offloading::BufferLifecycle::FREE)
+        .value("NO_CHANGE", sdfg::offloading::BufferLifecycle::NO_CHANGE)
+        .value("ALLOC", sdfg::offloading::BufferLifecycle::ALLOC)
+        .export_values();
+
     // ScheduleType class
     py::class_<ScheduleType>(m, "ScheduleType")
         .def_property_readonly("value", &ScheduleType::value, "Get the schedule type identifier")
         .def_property_readonly("category", &ScheduleType::category, "Get the schedule type category")
         .def_property_readonly(
             "properties", [](const ScheduleType& st) { return st.properties(); }, "Get all schedule properties"
+        )
+        .def_static(
+            "sequential", []() { return ScheduleType_Sequential::create(); }, "Create a sequential schedule type"
+        )
+        .def_static(
+            "cuda_offload",
+            [](sdfg::gpu::TargetLevel target_level, int64_t parallel_size) {
+                return sdfg::cuda::ScheduleType_CUDA::create<
+                    sdfg::cuda::ScheduleType_CUDA>(target_level, sdfg::symbolic::integer(parallel_size));
+            },
+            py::arg("target_level"),
+            py::arg("parallel_size"),
+            "Create a CUDA offload schedule type for the given target level and parallel size"
         )
         .def("__repr__", [](const ScheduleType& st) {
             std::ostringstream oss;

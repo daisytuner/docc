@@ -443,6 +443,7 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("start"),
             py::arg("end"),
             py::arg("step"),
+            py::arg("schedule_type") = nullptr,
             py::arg("debug_info") = sdfg::DebugInfo(),
             py::return_value_policy::reference
         )
@@ -455,6 +456,7 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("end"),
             py::arg("step"),
             py::arg("reductions"),
+            py::arg("schedule_type") = nullptr,
             py::arg("debug_info") = sdfg::DebugInfo(),
             py::return_value_policy::reference
         )
@@ -922,6 +924,19 @@ PYBIND11_MODULE(_sdfg, m) {
             &PyStructuredSDFGBuilder::add_free_block,
             py::arg("container"),
             py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_cuda_offloading_block",
+            &PyStructuredSDFGBuilder::add_cuda_offloading_block,
+            py::arg("host_container"),
+            py::arg("dev_container"),
+            py::arg("direction"),
+            py::arg("lifecycle"),
+            py::arg("data_type"),
+            py::arg("size"),
+            py::arg("device_id") = "0",
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            "Add a CUDA data-offloading block (cudaMalloc/cudaMemcpy/cudaFree) to the current sequence"
         )
         .def(
             "is_hoistable_size",
