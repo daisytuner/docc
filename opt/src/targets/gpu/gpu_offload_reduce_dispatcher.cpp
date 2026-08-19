@@ -599,6 +599,28 @@ bool GPUOffloadReduceDispatcher::has_nested_warp_reduction(const std::string& co
     return false;
 }
 
+bool GPUOffloadReduceDispatcher::has_enclosing_block_reduction(const std::string& container) {
+    auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
+    for (auto* loop : loop_analysis.ancestors(&node_)) {
+        auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(loop);
+        if (reduce == nullptr) {
+            continue;
+        }
+        if (reduce->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+            continue;
+        }
+        if (!is_block_level(ScheduleType_GPU::target_level(reduce->schedule_type()))) {
+            continue;
+        }
+        for (const auto& r : reduce->reductions()) {
+            if (r.container == container) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 std::string GPUOffloadReduceDispatcher::reduce_linear_thread_index(codegen::LanguageExtension& language_extension) {
     // threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y
     symbolic::Expression lin = symbolic::add(
@@ -783,8 +805,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                              language_extension.expression(index) + "]";
 
         if (warp) {
-            // Reduce the per-lane partials, then publish into the enclosing block's shared
-            // buffer at this warp's flat slot (distinct per row of a multi-dimensional block).
+            // Reduce the per-lane partials into every lane's register.
             std::string shfl = "__shfl_xor_sync(0xffffffff, " + reg_name + ", __daisy_reduce_mask)";
             stream << "for (int __daisy_reduce_mask = " << warp_size << " / 2; __daisy_reduce_mask > 0; "
                    << "__daisy_reduce_mask >>= 1) {" << std::endl;
@@ -792,7 +813,29 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             stream << reg_name << " = " << combine_expr(r.operation, reg_name, shfl) << ";" << std::endl;
             stream.setIndent(stream.indent() - 4);
             stream << "}" << std::endl;
-            stream << smem_name << "[" << global_warp << "] = " << reg_name << ";" << std::endl;
+
+            if (has_enclosing_block_reduction(r.container)) {
+                // Publish into the enclosing block's shared buffer at this warp's flat
+                // slot (distinct per row of a multi-dimensional block); the block level
+                // combines the per-warp partials.
+                stream << smem_name << "[" << global_warp << "] = " << reg_name << ";" << std::endl;
+            } else {
+                // No block level owns this container, so the per-warp result must reach
+                // the global accumulator directly. The warp leader atomically merges its
+                // register (cross-warp and cross-block combine) into acc[index].
+                stream << "if (lane == 0) {" << std::endl;
+                stream.setIndent(stream.indent() + 4);
+                if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
+                    stream << "atomicAdd(&" << target << ", " << reg_name << ");" << std::endl;
+                } else {
+                    std::string type_tag = ctype;
+                    std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
+                    std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
+                    stream << helper << "(&" << target << ", " << reg_name << ");" << std::endl;
+                }
+                stream.setIndent(stream.indent() - 4);
+                stream << "}" << std::endl;
+            }
         } else if (block) {
             std::string axis_idx = language_extension.expression(get_target_level_idx(target_level));
             std::string mvar = "__daisy_reduce_m_" + r.container;

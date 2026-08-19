@@ -17,6 +17,25 @@
 namespace sdfg {
 namespace transformations {
 
+namespace {
+
+// Warp/wavefront size of the target, mirroring the offload dispatchers'
+// get_warp_size() (cuda::CUDA_WARP_SIZE / rocm::ROCM_WARP_SIZE).
+template<typename GPUType>
+int64_t gpu_warp_size();
+
+template<>
+int64_t gpu_warp_size<cuda::ScheduleType_CUDA>() {
+    return cuda::CUDA_WARP_SIZE;
+}
+
+template<>
+int64_t gpu_warp_size<rocm::ScheduleType_ROCM>() {
+    return rocm::ROCM_WARP_SIZE;
+}
+
+} // namespace
+
 template<typename GPUType>
 GPUOffloadNestedLoop<GPUType>::GPUOffloadNestedLoop(
     structured_control_flow::StructuredLoop& loop, gpu::TargetLevel target_level, symbolic::Integer parallel_size
@@ -78,15 +97,14 @@ bool GPUOffloadNestedLoop<
             return false;
         }
     } else if (target_level_ == gpu::TargetLevel::Z_BLOCK) {
-        // Z block dimension is limited to 64.
-        constexpr int64_t max_block_dim_z = 64;
+        // Z block dimension is limited to 1024.
+        constexpr int64_t max_block_dim_z = 1024;
         if (parallel_size_->as_int() > max_block_dim_z) {
             return false;
         }
     } else if (target_level_ == gpu::TargetLevel::WARP) {
-        // WARP dimension is limited to 32.
-        constexpr int64_t max_warp_dim = 32;
-        if (parallel_size_->as_int() != max_warp_dim) {
+        // WARP dimension must equal the target's warp/wavefront size.
+        if (parallel_size_->as_int() != gpu_warp_size<GPUType>()) {
             return false;
         }
     } else {
@@ -165,6 +183,11 @@ bool GPUOffloadNestedLoop<
     }
     constexpr int64_t max_threads_per_block = 1024;
     if (block_product > max_threads_per_block) {
+        return false;
+    }
+
+    // Condition: num threads >= warp size
+    if (target_level_ == gpu::TargetLevel::WARP && block_product < gpu_warp_size<GPUType>()) {
         return false;
     }
 
