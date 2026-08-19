@@ -6,12 +6,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # LLVM dependency
-find_package(LLVM REQUIRED CONFIG 19.1)
-if (LLVM_VERSION VERSION_GREATER_EQUAL "20.0.0")
-	message(FATAL_ERROR "LLVM version too new: ${LLVM_VERSION}")
+find_package(LLVM 21.1 REQUIRED CONFIG)
+if (LLVM_VERSION VERSION_GREATER_EQUAL "22.0.0")
+    message(FATAL_ERROR "LLVM version too new: ${LLVM_VERSION}")
 endif()
-if (LLVM_VERSION VERSION_LESS "19.0.0")
-	message(FATAL_ERROR "LLVM version too old: ${LLVM_VERSION}")
+if (LLVM_VERSION VERSION_LESS "21.0.0")
+    message(FATAL_ERROR "LLVM version too old: ${LLVM_VERSION}")
 endif()
 
 # LLVM cmake configurations
