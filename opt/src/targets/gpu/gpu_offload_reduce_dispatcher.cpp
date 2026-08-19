@@ -475,18 +475,20 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     if (target_level == TargetLevel::WARP) {
         library_stream << "uint32_t num_warps = ceildiv("
                        << kernel_language_extension.expression(symbolic::blockDim_x()) << ", "
-                       << kernel_language_extension.expression(get_target_level_dim(target_level)) << ");" << std::endl;
+                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
+                       << ");" << std::endl;
         library_stream << "uint32_t warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x())
-                       << " / " << kernel_language_extension.expression(get_target_level_dim(target_level)) << ";"
-                       << std::endl;
+                       << " / "
+                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
+                       << ";" << std::endl;
         library_stream << "uint32_t lane = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " & ("
-                       << kernel_language_extension.expression(get_target_level_dim(target_level)) << " - 1);"
-                       << std::endl;
+                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
+                       << " - 1);" << std::endl;
     }
 
     library_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
                    << "max(1, " << size << "/"
-                   << kernel_language_extension.expression(get_target_level_dim(target_level)) << "); "
+                   << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())) << "); "
                    << coverage_loop_var << "++) {" << std::endl;
     library_stream.setIndent(library_stream.indent() + 4);
 
@@ -517,8 +519,8 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
         // compute the effective indvar for this coverage loop iteration
         library_stream << "size_t " << indvar->get_name() << " = " << kernel_language_extension.expression(node_.init())
                        << " + " << coverage_loop_var << " * "
-                       << kernel_language_extension.expression(get_target_level_dim(target_level)) << " + "
-                       << target_level_idx_access << ";" << std::endl;
+                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
+                       << " + " << target_level_idx_access << ";" << std::endl;
     }
 
 
@@ -668,7 +670,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
     // addressed by its flat thread index; the buffer spans the whole block (x * y * z).
     std::string lin_tid = reduce_linear_thread_index(language_extension);
     std::string block_size = language_extension.expression(reduce_block_size_product());
-    std::string warp_size = language_extension.expression(get_target_level_dim(TargetLevel::WARP));
+    std::string warp_size = language_extension.expression(get_target_level_dim(TargetLevel::WARP, get_warp_size()));
     std::string num_warps = "(" + block_size + " / " + warp_size + ")";
 
     bool needs_cstdint = false;
@@ -765,7 +767,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
     std::string lin_tid = reduce_linear_thread_index(language_extension);
     std::string axis_dim = language_extension.expression(ScheduleType_GPU::parallel_size(node_.schedule_type()));
     std::string block_size = language_extension.expression(reduce_block_size_product());
-    std::string warp_size = language_extension.expression(get_target_level_dim(TargetLevel::WARP));
+    std::string warp_size = language_extension.expression(get_target_level_dim(TargetLevel::WARP, get_warp_size()));
     std::string warps_per_axis = "(" + axis_dim + " / " + warp_size + ")";
     std::string global_warp = "(" + lin_tid + " / " + warp_size + ")";
     std::string stride = reduce_axis_stride(language_extension, target_level);

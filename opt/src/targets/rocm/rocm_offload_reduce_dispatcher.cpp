@@ -1,4 +1,4 @@
-#include "sdfg/targets/cuda/cuda_offload_map_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_offload_reduce_dispatcher.h"
 
 #include <string>
 #include <unordered_map>
@@ -9,29 +9,29 @@
 #include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/helpers/helpers.h>
 
-#include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/rocm/rocm.h"
 
 namespace sdfg {
-namespace cuda {
+namespace rocm {
 
-CUDAOffloadMapDispatcher::CUDAOffloadMapDispatcher(
+ROCMOffloadReduceDispatcher::ROCMOffloadReduceDispatcher(
     codegen::LanguageExtension& language_extension,
     StructuredSDFG& sdfg,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Map& node,
+    structured_control_flow::Reduce& node,
     codegen::InstrumentationPlan& instrumentation_plan,
     codegen::ArgCapturePlan& arg_capture_plan
 )
-    : gpu::GPUOffloadMapDispatcher(
+    : gpu::GPUOffloadReduceDispatcher(
           language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
       ),
       kernel_language_extension_(sdfg) {};
 
-codegen::LanguageExtension& CUDAOffloadMapDispatcher::create_kernel_language_extension() {
+codegen::LanguageExtension& ROCMOffloadReduceDispatcher::create_kernel_language_extension() {
     return kernel_language_extension_;
 }
 
-void CUDAOffloadMapDispatcher::dispatch_kernel_call(
+void ROCMOffloadReduceDispatcher::dispatch_kernel_call(
     codegen::PrettyPrinter& main_stream,
     const std::string& kernel_name,
     symbolic::Expression& num_blocks_x,
@@ -46,14 +46,14 @@ void CUDAOffloadMapDispatcher::dispatch_kernel_call(
     main_stream.setIndent(main_stream.indent() + 4);
 
     // Kernel launch
-    main_stream << kernel_name << "<<<";
+    main_stream << "hipLaunchKernelGGL(" << kernel_name << ", ";
     main_stream << "dim3((int)(" << this->language_extension_.expression(num_blocks_x) << "), ";
     main_stream << "(int)(" << this->language_extension_.expression(num_blocks_y) << "), ";
     main_stream << "(int)(" << this->language_extension_.expression(num_blocks_z) << ")), ";
     main_stream << "dim3((int)(" << this->language_extension_.expression(block_size_x) << "), ";
     main_stream << "(int)(" << this->language_extension_.expression(block_size_y) << "), ";
-    main_stream << "(int)(" << this->language_extension_.expression(block_size_z) << "))";
-    main_stream << ">>>(";
+    main_stream << "(int)(" << this->language_extension_.expression(block_size_z) << ")), ";
+    main_stream << "0, 0, "; // shared memory size and stream
     main_stream << helpers::join(arguments_device, ", ");
     main_stream << ")";
     main_stream << ";" << std::endl;
@@ -67,13 +67,14 @@ void CUDAOffloadMapDispatcher::dispatch_kernel_call(
     main_stream << "}" << std::endl;
 }
 
-void CUDAOffloadMapDispatcher::dispatch_kernel_launch_error_check(
+void ROCMOffloadReduceDispatcher::dispatch_kernel_launch_error_check(
     codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension, bool instrumented
 ) {
-    check_cuda_kernel_launch_errors(stream, language_extension, instrumented);
+    (void) instrumented; // ROCm launch-error check does not take an instrumentation flag
+    check_rocm_kernel_launch_errors(stream, language_extension);
 }
 
-codegen::InstrumentationInfo CUDAOffloadMapDispatcher::instrumentation_info() const {
+codegen::InstrumentationInfo ROCMOffloadReduceDispatcher::instrumentation_info() const {
     auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
     analysis::LoopInfo loop_info = loop_analysis.loop_info(&node_);
 
@@ -89,14 +90,15 @@ codegen::InstrumentationInfo CUDAOffloadMapDispatcher::instrumentation_info() co
     return codegen::InstrumentationInfo(
         node_.element_id(),
         node_.element_type(),
-        TargetType_CUDA,
+        TargetType_ROCM,
         codegen::InstrumentationEventType::CUDA,
         loop_info,
         metrics
     );
 };
 
-int CUDAOffloadMapDispatcher::get_warp_size() const { return CUDA_WARP_SIZE; }
+int ROCMOffloadReduceDispatcher::get_warp_size() const { return ROCM_WARP_SIZE; }
 
-} // namespace cuda
+
+} // namespace rocm
 } // namespace sdfg

@@ -285,18 +285,20 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     if (target_level == TargetLevel::WARP) {
         library_stream << "uint32_t num_warps = ceildiv("
                        << kernel_language_extension.expression(symbolic::blockDim_x()) << ", "
-                       << kernel_language_extension.expression(get_target_level_dim(target_level)) << ");" << std::endl;
+                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
+                       << ");" << std::endl;
         library_stream << "uint32_t warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x())
-                       << " / " << kernel_language_extension.expression(get_target_level_dim(target_level)) << ";"
-                       << std::endl;
+                       << " / "
+                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
+                       << ";" << std::endl;
         library_stream << "uint32_t lane = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " & ("
-                       << kernel_language_extension.expression(get_target_level_dim(target_level)) << " - 1);"
-                       << std::endl;
+                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
+                       << " - 1);" << std::endl;
     }
 
     library_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
                    << "max(1, " << size << "/"
-                   << kernel_language_extension.expression(get_target_level_dim(target_level)) << "); "
+                   << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())) << "); "
                    << coverage_loop_var << "++) {" << std::endl;
     library_stream.setIndent(library_stream.indent() + 4);
 
@@ -327,8 +329,8 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         // compute the effective indvar for this coverage loop iteration
         library_stream << "size_t " << indvar->get_name() << " = " << kernel_language_extension.expression(node_.init())
                        << " + " << coverage_loop_var << " * "
-                       << kernel_language_extension.expression(get_target_level_dim(target_level)) << " + "
-                       << target_level_idx_access << ";" << std::endl;
+                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
+                       << " + " << target_level_idx_access << ";" << std::endl;
     }
 
 

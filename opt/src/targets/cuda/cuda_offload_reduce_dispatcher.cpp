@@ -1,4 +1,4 @@
-#include "sdfg/targets/cuda/cuda_offload_map_dispatcher.h"
+#include "sdfg/targets/cuda/cuda_offload_reduce_dispatcher.h"
 
 #include <string>
 #include <unordered_map>
@@ -14,24 +14,24 @@
 namespace sdfg {
 namespace cuda {
 
-CUDAOffloadMapDispatcher::CUDAOffloadMapDispatcher(
+CUDAOffloadReduceDispatcher::CUDAOffloadReduceDispatcher(
     codegen::LanguageExtension& language_extension,
     StructuredSDFG& sdfg,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Map& node,
+    structured_control_flow::Reduce& node,
     codegen::InstrumentationPlan& instrumentation_plan,
     codegen::ArgCapturePlan& arg_capture_plan
 )
-    : gpu::GPUOffloadMapDispatcher(
+    : gpu::GPUOffloadReduceDispatcher(
           language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
       ),
       kernel_language_extension_(sdfg) {};
 
-codegen::LanguageExtension& CUDAOffloadMapDispatcher::create_kernel_language_extension() {
+codegen::LanguageExtension& CUDAOffloadReduceDispatcher::create_kernel_language_extension() {
     return kernel_language_extension_;
 }
 
-void CUDAOffloadMapDispatcher::dispatch_kernel_call(
+void CUDAOffloadReduceDispatcher::dispatch_kernel_call(
     codegen::PrettyPrinter& main_stream,
     const std::string& kernel_name,
     symbolic::Expression& num_blocks_x,
@@ -67,13 +67,13 @@ void CUDAOffloadMapDispatcher::dispatch_kernel_call(
     main_stream << "}" << std::endl;
 }
 
-void CUDAOffloadMapDispatcher::dispatch_kernel_launch_error_check(
+void CUDAOffloadReduceDispatcher::dispatch_kernel_launch_error_check(
     codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension, bool instrumented
 ) {
     check_cuda_kernel_launch_errors(stream, language_extension, instrumented);
 }
 
-codegen::InstrumentationInfo CUDAOffloadMapDispatcher::instrumentation_info() const {
+codegen::InstrumentationInfo CUDAOffloadReduceDispatcher::instrumentation_info() const {
     auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
     analysis::LoopInfo loop_info = loop_analysis.loop_info(&node_);
 
@@ -96,7 +96,7 @@ codegen::InstrumentationInfo CUDAOffloadMapDispatcher::instrumentation_info() co
     );
 };
 
-int CUDAOffloadMapDispatcher::get_warp_size() const { return CUDA_WARP_SIZE; }
+int CUDAOffloadReduceDispatcher::get_warp_size() const { return CUDA_WARP_SIZE; }
 
 } // namespace cuda
 } // namespace sdfg

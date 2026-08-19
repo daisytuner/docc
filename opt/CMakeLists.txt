@@ -69,6 +69,8 @@ set(SOURCE_FILES
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/cuda/cuda_reduce_dispatcher.cpp
+    src/targets/cuda/cuda_offload_map_dispatcher.cpp
+    src/targets/cuda/cuda_offload_reduce_dispatcher.cpp
     src/targets/cuda/cuda.cpp
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
     src/targets/cuda/math/tensor/concat_expander.cpp
@@ -91,6 +93,8 @@ set(SOURCE_FILES
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/rocm/rocm_reduce_dispatcher.cpp
+    src/targets/rocm/rocm_offload_map_dispatcher.cpp
+    src/targets/rocm/rocm_offload_reduce_dispatcher.cpp
     src/targets/gpu/gpu_map_utils.cpp
     src/targets/gpu/gpu_reduce_dispatcher.cpp
     src/targets/gpu/gpu_offload_map_dispatcher.cpp

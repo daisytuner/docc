@@ -50,7 +50,7 @@ protected:
         symbolic::Expression& block_size_y,
         symbolic::Expression& block_size_z,
         std::vector<std::string>& arguments_device
-    );
+    ) = 0;
 
     void dispatch_kernel_preamble(
         codegen::PrettyPrinter& library_stream,
@@ -60,6 +60,8 @@ protected:
     );
 
     virtual codegen::LanguageExtension& create_kernel_language_extension() = 0;
+
+    virtual int get_warp_size() const = 0;
 
 public:
     GPUOffloadMapDispatcher(

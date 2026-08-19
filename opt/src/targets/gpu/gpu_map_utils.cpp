@@ -298,7 +298,7 @@ bool nested_parallelization_is_unsafe(
     return false;
 }
 
-symbolic::Expression get_target_level_dim(TargetLevel target_level, bool is_cuda) {
+symbolic::Expression get_target_level_dim(TargetLevel target_level, int warp_size) {
     switch (target_level) {
         case TargetLevel::X_GRID:
             return symbolic::gridDim_x();
@@ -313,11 +313,7 @@ symbolic::Expression get_target_level_dim(TargetLevel target_level, bool is_cuda
         case TargetLevel::Z_BLOCK:
             return symbolic::blockDim_z();
         case TargetLevel::WARP:
-            if (is_cuda) {
-                return symbolic::integer(32);
-            } else {
-                return symbolic::integer(64);
-            }
+            return symbolic::integer(warp_size);
         default:
             throw InvalidSDFGException(
                 "Invalid target level for GPU map: " + std::to_string(static_cast<int>(target_level))

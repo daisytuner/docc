@@ -14,6 +14,8 @@ namespace rocm {
 
 inline std::string ROCM_DEVICE_PREFIX = "__daisy_hip_";
 
+constexpr int ROCM_WARP_SIZE = 64;
+
 /**
  * @brief ROCM implementation with automatic memory transfers
  * Used for ROCm BLAS, memset, and other ROCm-accelerated library nodes
@@ -35,7 +37,7 @@ using ROCMDimension = gpu::GPUDimension;
  */
 class ScheduleType_ROCM : public gpu::ScheduleType_GPU {
 public:
-    static const std::string value() { return "ROCM"; }
+    static const std::string value() { return "ROCM_Offloading"; }
 };
 
 /**

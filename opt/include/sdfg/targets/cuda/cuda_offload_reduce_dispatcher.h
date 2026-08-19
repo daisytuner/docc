@@ -8,19 +8,19 @@
 #include "sdfg/codegen/language_extensions/cuda_language_extension.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
-#include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
+#include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 
 
 namespace sdfg {
 namespace cuda {
 
 /**
- * @brief CUDA specialization of @ref gpu::GPUOffloadMapDispatcher.
+ * @brief CUDA specialization of @ref gpu::GPUOffloadReduceDispatcher.
  *
- * Supplies the CUDA-specific policy for the shared coverage-loop offload lowering:
+ * Supplies the CUDA-specific policy for the multi-level reduction offload lowering:
  * the device language extension, the `<<<...>>>` kernel launch and launch-error check.
  */
-class CUDAOffloadMapDispatcher : public gpu::GPUOffloadMapDispatcher {
+class CUDAOffloadReduceDispatcher : public gpu::GPUOffloadReduceDispatcher {
 protected:
     codegen::CUDALanguageExtension kernel_language_extension_;
 
@@ -39,11 +39,11 @@ protected:
     ) override;
 
 public:
-    CUDAOffloadMapDispatcher(
+    CUDAOffloadReduceDispatcher(
         codegen::LanguageExtension& language_extension,
         StructuredSDFG& sdfg,
         analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::Map& node,
+        structured_control_flow::Reduce& node,
         codegen::InstrumentationPlan& instrumentation_plan,
         codegen::ArgCapturePlan& arg_capture_plan
     );

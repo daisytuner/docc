@@ -14,6 +14,8 @@ namespace cuda {
 
 inline std::string CUDA_DEVICE_PREFIX = "__daisy_cuda_";
 
+constexpr int CUDA_WARP_SIZE = 32;
+
 /**
  * @brief CUDA implementation with automatic memory transfers
  * Used for CUBLAS, memset, and other CUDA-accelerated library nodes
@@ -35,7 +37,7 @@ using CUDADimension = gpu::GPUDimension;
  */
 class ScheduleType_CUDA : public gpu::ScheduleType_GPU {
 public:
-    static const std::string value() { return "CUDA"; }
+    static const std::string value() { return "CUDA_Offloading"; }
 };
 
 /**

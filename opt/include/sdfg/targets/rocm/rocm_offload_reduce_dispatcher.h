@@ -5,24 +5,24 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
-#include "sdfg/codegen/language_extensions/cuda_language_extension.h"
+#include "sdfg/codegen/language_extensions/rocm_language_extension.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
-#include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
+#include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 
 
 namespace sdfg {
-namespace cuda {
+namespace rocm {
 
 /**
- * @brief CUDA specialization of @ref gpu::GPUOffloadMapDispatcher.
+ * @brief ROCm/HIP specialization of @ref gpu::GPUOffloadReduceDispatcher.
  *
- * Supplies the CUDA-specific policy for the shared coverage-loop offload lowering:
- * the device language extension, the `<<<...>>>` kernel launch and launch-error check.
+ * Supplies the HIP-specific policy for the multi-level reduction offload lowering:
+ * the device language extension, the `hipLaunchKernelGGL` kernel launch and launch-error check.
  */
-class CUDAOffloadMapDispatcher : public gpu::GPUOffloadMapDispatcher {
+class ROCMOffloadReduceDispatcher : public gpu::GPUOffloadReduceDispatcher {
 protected:
-    codegen::CUDALanguageExtension kernel_language_extension_;
+    codegen::ROCMLanguageExtension kernel_language_extension_;
 
     codegen::LanguageExtension& create_kernel_language_extension() override;
 
@@ -39,11 +39,11 @@ protected:
     ) override;
 
 public:
-    CUDAOffloadMapDispatcher(
+    ROCMOffloadReduceDispatcher(
         codegen::LanguageExtension& language_extension,
         StructuredSDFG& sdfg,
         analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::Map& node,
+        structured_control_flow::Reduce& node,
         codegen::InstrumentationPlan& instrumentation_plan,
         codegen::ArgCapturePlan& arg_capture_plan
     );
@@ -57,5 +57,5 @@ public:
     int get_warp_size() const override;
 };
 
-} // namespace cuda
+} // namespace rocm
 } // namespace sdfg

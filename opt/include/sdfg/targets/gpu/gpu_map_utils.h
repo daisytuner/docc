@@ -132,7 +132,7 @@ bool nested_parallelization_is_unsafe(
     structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager
 );
 
-symbolic::Expression get_target_level_dim(TargetLevel target_level);
+symbolic::Expression get_target_level_dim(TargetLevel target_level, int warp_size);
 
 symbolic::Expression get_target_level_idx(TargetLevel target_level);
 
