@@ -75,7 +75,9 @@ void get_nested_schedule_types(
     for (const auto& loop : loops) {
         if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
             if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
-                output[ScheduleType_GPU::target_level(struc_loop->schedule_type())] = struc_loop->schedule_type();
+                output.insert_or_assign(
+                    ScheduleType_GPU::target_level(struc_loop->schedule_type()), struc_loop->schedule_type()
+                );
             }
         }
     }
@@ -183,22 +185,22 @@ void GPUOffloadMapDispatcher::dispatch_node(
         symbolic::Expression grid_size_z = symbolic::one();
 
         if (nested_schedule_types.find(TargetLevel::X_BLOCK) != nested_schedule_types.end()) {
-            block_size_x = ScheduleType_GPU::parallel_size(nested_schedule_types[TargetLevel::X_BLOCK]);
+            block_size_x = ScheduleType_GPU::parallel_size(nested_schedule_types.at(TargetLevel::X_BLOCK));
         }
         if (nested_schedule_types.find(TargetLevel::Y_BLOCK) != nested_schedule_types.end()) {
-            block_size_y = ScheduleType_GPU::parallel_size(nested_schedule_types[TargetLevel::Y_BLOCK]);
+            block_size_y = ScheduleType_GPU::parallel_size(nested_schedule_types.at(TargetLevel::Y_BLOCK));
         }
         if (nested_schedule_types.find(TargetLevel::Z_BLOCK) != nested_schedule_types.end()) {
-            block_size_z = ScheduleType_GPU::parallel_size(nested_schedule_types[TargetLevel::Z_BLOCK]);
+            block_size_z = ScheduleType_GPU::parallel_size(nested_schedule_types.at(TargetLevel::Z_BLOCK));
         }
         if (nested_schedule_types.find(TargetLevel::X_GRID) != nested_schedule_types.end()) {
-            grid_size_x = ScheduleType_GPU::parallel_size(nested_schedule_types[TargetLevel::X_GRID]);
+            grid_size_x = ScheduleType_GPU::parallel_size(nested_schedule_types.at(TargetLevel::X_GRID));
         }
         if (nested_schedule_types.find(TargetLevel::Y_GRID) != nested_schedule_types.end()) {
-            grid_size_y = ScheduleType_GPU::parallel_size(nested_schedule_types[TargetLevel::Y_GRID]);
+            grid_size_y = ScheduleType_GPU::parallel_size(nested_schedule_types.at(TargetLevel::Y_GRID));
         }
         if (nested_schedule_types.find(TargetLevel::Z_GRID) != nested_schedule_types.end()) {
-            grid_size_z = ScheduleType_GPU::parallel_size(nested_schedule_types[TargetLevel::Z_GRID]);
+            grid_size_z = ScheduleType_GPU::parallel_size(nested_schedule_types.at(TargetLevel::Z_GRID));
         }
 
 

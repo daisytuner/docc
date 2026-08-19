@@ -5,6 +5,7 @@
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_schedule_type.h"
 
 
 namespace sdfg {
@@ -57,6 +58,28 @@ protected:
         analysis::AnalysisManager& analysis_manager,
         const std::string& kernel_name,
         std::vector<std::string>& arguments_declaration
+    );
+
+    // Whether a WARP-level reduction nested below this node reduces @p container,
+    // in which case this (block) level combines per-warp partials instead of per-thread.
+    bool has_nested_warp_reduction(const std::string& container);
+
+    void dispatch_reduction_declarations(
+        codegen::LanguageExtension& language_extension,
+        codegen::PrettyPrinter& stream,
+        codegen::CodeSnippetFactory& library_snippet_factory,
+        TargetLevel target_level
+    );
+
+    void dispatch_reduction_shadow(
+        codegen::LanguageExtension& language_extension, codegen::PrettyPrinter& stream, TargetLevel target_level
+    );
+
+    void dispatch_reduction_combine(
+        codegen::LanguageExtension& language_extension,
+        codegen::PrettyPrinter& stream,
+        codegen::CodeSnippetFactory& library_snippet_factory,
+        TargetLevel target_level
     );
 
     virtual codegen::LanguageExtension& create_kernel_language_extension() = 0;
