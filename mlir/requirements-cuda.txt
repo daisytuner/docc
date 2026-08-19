@@ -1,4 +1,5 @@
 -r requirements-base.txt
+cupy-cuda12x
 
 --extra-index-url https://download.pytorch.org/whl/ccu128
 torch==2.13.0+cu128

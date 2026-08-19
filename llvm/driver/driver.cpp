@@ -164,6 +164,5 @@ int main(int argc, char* argv[]) {
     }
 
     // ── Execute ───────────────────────────────────────────────────────────────
-    std::cerr << "### clang call: " << cmd;
     return docc::execvp_or_die(cmd);
 }
