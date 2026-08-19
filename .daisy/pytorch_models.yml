@@ -31,6 +31,7 @@ steps:
     export DOCC_DEBUG=dump
 
     # Compile and cache binaries
+    env
     venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
     venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cuda
     venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device docc --target=openmp --remote-tuning
