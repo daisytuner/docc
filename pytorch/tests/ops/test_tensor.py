@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import pytest
 
 from tests import check
 
@@ -172,3 +173,125 @@ def test_view_shape_identity(target: str) -> None:
             return input.view(1, 3, 2, 4)
 
     check(TensorMutatingViewShapeIdentityNet(), torch.randn(1, 3, 2, 4), target=target)
+
+
+# --- "slicing" ---
+
+
+def test_slicing_simple(target: str) -> None:
+    class SlicingSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[1:7:2]
+
+    check(SlicingSimpleNet(), torch.arange(10), target=target)
+
+
+def test_slicing_negative_start(target: str) -> None:
+    class SlicingNegativeStartNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[-2:10]
+
+    check(SlicingNegativeStartNet(), torch.arange(10), target=target)
+
+
+def test_slicing_unbound_start(target: str) -> None:
+    class SlicingUnboundStartNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:5]
+
+    check(SlicingUnboundStartNet(), torch.arange(10), target=target)
+
+
+def test_slicing_unbound_end(target: str) -> None:
+    class SlicingUnboundEndNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[5:]
+
+    check(SlicingUnboundEndNet(), torch.arange(10), target=target)
+
+
+def test_slicing_assumed_dim(target: str) -> None:
+    class SlicingAssumedDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[1:2]
+
+    check(
+        SlicingAssumedDimNet(),
+        torch.tensor([[[1], [2], [3]], [[4], [5], [6]]]),
+        target=target,
+    )
+
+
+def test_slicing_ellipsis(target: str) -> None:
+    class SlicingEllipsis(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[..., 1:4]
+
+    check(SlicingEllipsis(), torch.arange(10).reshape(2, 5), target=target)
+
+
+def test_slicing_colon(target: str) -> None:
+    class SlicingEllipsis(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, 1:4]
+
+    check(SlicingEllipsis(), torch.arange(10).reshape(2, 5), target=target)
+
+
+@pytest.mark.skip(reason="Needs support for aten.select.int")
+def test_slicing_select_ellipsis(target: str) -> None:
+    class SlicingSelectEllipsisNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[..., 0]
+
+    check(
+        SlicingSelectEllipsisNet(),
+        torch.tensor([[[1], [2], [3]], [[4], [5], [6]]]),
+        target=target,
+    )
+
+
+@pytest.mark.skip(reason="Needs support for aten.select.int")
+def test_slicing_select_colon(target: str) -> None:
+    class SlicingSelectColonNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, :, 0]
+
+    check(
+        SlicingSelectColonNet(),
+        torch.tensor([[[1], [2], [3]], [[4], [5], [6]]]),
+        target=target,
+    )
+
+
+def test_slicing_newaxis(target: str) -> None:
+    class SlicingNewaxisNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, torch.newaxis, :, :]
+
+    check(
+        SlicingNewaxisNet(),
+        torch.tensor([[[1], [2], [3]], [[4], [5], [6]]]),
+        target=target,
+    )
+
+
+def test_slicing_None(target: str) -> None:
+    class SlicingNoneNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[:, None, :, :]
+
+    check(
+        SlicingNoneNet(),
+        torch.tensor([[[1], [2], [3]], [[4], [5], [6]]]),
+        target=target,
+    )
+
+
+@pytest.mark.skip(reason="Does not work, in progress...")
+def test_slicing_multi(target: str) -> None:
+    class SlicingSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[1:4, 1:3]
+
+    check(SlicingSimpleNet(), torch.arange(20).reshape(5, 4), target=target)

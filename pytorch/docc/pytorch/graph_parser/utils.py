@@ -222,6 +222,7 @@ class ContainerInfo(ContainerInfoBase):
 
     def update(
         self,
+        name: str | None = None,
         sdfg_type: Type | None = None,
         sdfg_tensor_type: Tensor | None = None,
         memory_managed: bool | None = None,
@@ -232,6 +233,8 @@ class ContainerInfo(ContainerInfoBase):
         Updates the container information. Each value is updated only if it is not None. Also
         returns the updated container information.
         """
+        if not name is None:
+            self._name: str = name
         if not sdfg_type is None:
             self._sdfg_type: Type = sdfg_type
         if not sdfg_tensor_type is None:
@@ -247,6 +250,7 @@ class ContainerInfo(ContainerInfoBase):
     @staticmethod
     def copy(
         info: ContainerInfoBase,
+        name: str | None = None,
         sdfg_type: Type | None = None,
         sdfg_tensor_type: Tensor | None = None,
         memory_managed: bool | None = None,
@@ -260,7 +264,7 @@ class ContainerInfo(ContainerInfoBase):
         information.
         """
         return ContainerInfo(
-            info.name(),
+            info.name() if name is None else name,
             info.sdfg_type() if sdfg_type is None else sdfg_type,
             info.sdfg_tensor_type() if sdfg_tensor_type is None else sdfg_tensor_type,
             info.memory_managed() if memory_managed is None else memory_managed,
@@ -405,6 +409,7 @@ class ContainerPreInfo(ContainerInfoBase):
     @staticmethod
     def copy(
         pre_info: "ContainerPreInfo",
+        name: str | None = None,
         ref: str | None = None,
         refed_by: str | None = None,
         in_argument: bool | None = None,
@@ -417,7 +422,7 @@ class ContainerPreInfo(ContainerInfoBase):
         information.
         """
         return ContainerPreInfo(
-            pre_info._name,
+            pre_info._name if name is None else name,
             pre_info._ref if ref is None else ref,
             pre_info._refed_by if refed_by is None else refed_by,
             pre_info._in_argument if in_argument is None else in_argument,
@@ -576,19 +581,23 @@ class GraphParserBase:
             base_type: Scalar = self.determine_sdfg_scalar_type(node, input.dtype)
             tensor_shape: list[str] = [str(dim) for dim in input.shape]
             tensor_stride: list[str] = [str(stride) for stride in input.stride()]
+            tensor_offset: str = str(input.storage_offset())
             if len(tensor_shape) == 0:
                 sdfg_type: Type = base_type
             else:
                 sdfg_type: Type = Pointer(base_type)
-            return sdfg_type, Tensor(base_type, tensor_shape, tensor_stride)
+            return sdfg_type, Tensor(
+                base_type, tensor_shape, tensor_stride, tensor_offset
+            )
         # Fallback to scalar types
         return self.determine_sdfg_scalar_type(node, input), None
 
-    def convert_tensor_meta(
+    def update_with_tensor_meta(
         self,
         node: torch.fx.Node,
+        tensor: Tensor,
         tensor_meta: torch.fx.passes.shape_prop.TensorMetadata,
-    ) -> tuple[Type, Tensor]:
+    ) -> Tensor:
         """
         Converts a PyTorch TensorMetadata to a pair of the SDFG container type and the SDFG Tensor
         type.
@@ -596,11 +605,51 @@ class GraphParserBase:
         base_type: Scalar = self.determine_sdfg_scalar_type(node, tensor_meta.dtype)
         tensor_shape: list[str] = [str(dim) for dim in tensor_meta.shape]
         tensor_stride: list[str] = [str(stride) for stride in tensor_meta.stride]
-        if len(tensor_shape) == 0:
-            sdfg_type: Type = base_type
-        else:
-            sdfg_type: Type = Pointer(base_type)
-        return sdfg_type, Tensor(base_type, tensor_shape, tensor_stride)
+        if tensor.element_type.primitive_type != base_type.primitive_type:
+            raise GraphParserError(
+                self,
+                node,
+                f"Tensor and TensorMetadata element type mismatch: {tensor.element_type.print()} != {base_type.print()}",
+            )
+        if tensor.shape != tensor_shape:
+            raise GraphParserError(
+                self,
+                node,
+                f"Tensor and TensorMetadata shape mismatch: {tensor.shape} != {tensor_shape}",
+            )
+        if tensor.strides != tensor_stride:
+            raise GraphParserError(
+                self,
+                node,
+                f"Tensor and TensorMetadata strides mismatch: {tensor.strides} != {tensor_stride}",
+            )
+        return tensor
+
+    def get_node_sdfg_types(self, node: torch.fx.Node):
+        if not "val" in node.meta:
+            raise GraphParserError(
+                self,
+                node,
+                "No result type information in metadata",
+            )
+        sdfg_types: tuple[Type, Tensor | None] = self.determine_sdfg_type(
+            node, node.meta["val"]
+        )
+        sdfg_tensor: Tensor | None = sdfg_types[1]
+        if not sdfg_tensor is None and "tensor_meta" in node.meta:
+            tensor_meta: Any = node.meta["tensor_meta"]
+            if not isinstance(tensor_meta, torch.fx.passes.shape_prop.TensorMetadata):
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected tensor_meta metadata to be TensorMetadata type but got: "
+                    + str(type(tensor_meta)),
+                )
+            sdfg_types: tuple[Type, Tensor | None] = (
+                sdfg_types[0],
+                self.update_with_tensor_meta(node, sdfg_tensor, tensor_meta),
+            )
+        return sdfg_types
 
     def convert_arg_to_container(
         self,
@@ -1080,20 +1129,7 @@ class GraphParserModule(GraphParserBase, ABC):
         simultaneously. As this is not possible, a SDFG tensor copy node is generated in this case
         to explicitly copy the data.
         """
-        if not "val" in node.meta:
-            raise GraphParserError(
-                self,
-                node,
-                "No result type information in metadata",
-            )
-        if "tensor_meta" in node.meta:
-            sdfg_types: tuple[Type, Tensor | None] = self.convert_tensor_meta(
-                node, node.meta["tensor_meta"]
-            )
-        else:
-            sdfg_types: tuple[Type, Tensor | None] = self.determine_sdfg_type(
-                node, node.meta["val"]
-            )
+        sdfg_types: tuple[Type, Tensor | None] = self.get_node_sdfg_types(node)
         info: ContainerInfo = self.resolve_contaner_name_forward(
             node, container_info, container, sdfg_types
         )
@@ -1236,20 +1272,7 @@ class GraphParserModule(GraphParserBase, ABC):
         container for an intermediate result, see ``create_intermediate_container``. If the
         operation has multiple results (tuple), use ``create_result_containers``.
         """
-        if not "val" in node.meta:
-            raise GraphParserError(
-                self,
-                node,
-                "No result type information in metadata",
-            )
-        if "tensor_meta" in node.meta:
-            sdfg_types: tuple[Type, Tensor | None] = self.convert_tensor_meta(
-                node, node.meta["tensor_meta"]
-            )
-        else:
-            sdfg_types: tuple[Type, Tensor | None] = self.determine_sdfg_type(
-                node, node.meta["val"]
-            )
+        sdfg_types: tuple[Type, Tensor | None] = self.get_node_sdfg_types(node)
         info: ContainerInfo = self.resolve_container_name_backward(
             node, container_info, node.name, sdfg_types
         )

@@ -7,6 +7,7 @@ import torch
 import torch.export
 import torch.fx
 import torch.utils._pytree
+import torch._functorch._aot_autograd.descriptors
 from torch.fx.node import Argument
 
 from typing import Any
@@ -60,7 +61,7 @@ class GraphParser(GraphParserBase):
         self.example_input: tuple[Any, ...] = example_input
 
         self.builder: StructuredSDFGBuilder = StructuredSDFGBuilder("__docc_" + name)
-        self._placeholder_index: int = 0
+        self._arguments: list[Any] = []
 
         self.container_info: ContainerInfos = ContainerInfos()
 
@@ -142,15 +143,30 @@ class GraphParser(GraphParserBase):
         Parses a PyTorch placeholder operation by creating an SDFG container for it. Notice, that
         all arguments of an SDFG must have C-strides. This is also ensured here.
         """
-        if self._placeholder_index >= len(self.example_input):
-            raise GraphParserError(
-                self,
-                node,
-                f"No example input for placeholder {self._placeholder_index}",
+        if not "desc" in node.meta:
+            raise GraphParserError(self, node, "Missing desc metadata in placeholder")
+        desc: Any = node.meta["desc"]
+        if isinstance(desc, torch._functorch._aot_autograd.descriptors.PlainAOTInput):
+            if desc.idx >= len(self.example_input):
+                raise GraphParserError(
+                    self,
+                    node,
+                    f"No example input for placeholder {desc.idx}",
+                )
+            sdfg_types: tuple[Type, Tensor | None] = self.determine_sdfg_type(
+                node, self.example_input[desc.idx]
             )
-        sdfg_types: tuple[Type, Tensor | None] = self.determine_sdfg_type(
-            node, self.example_input[self._placeholder_index]
-        )
+            self._arguments.append(self.example_input[desc.idx])
+        elif isinstance(
+            desc, torch._functorch._aot_autograd.descriptors.BufferAOTInput
+        ):
+            sdfg_types: tuple[Type, Tensor | None] = self.get_node_sdfg_types(node)
+            self._arguments.append(node.meta["val"])
+        else:
+            raise GraphParserError(
+                self, node, "Unsupported desc metadata type: " + str(desc)
+            )
+
         # The call always provides a tensor with C-strides. If the tensor has non C-strides we
         # enforce them here.
         if sdfg_types[1] is None:
@@ -163,7 +179,6 @@ class GraphParser(GraphParserBase):
         self.container_info[node.name] = ContainerInfo(
             node.name, sdfg_types[0], contiguous_tensor, in_argument=True
         )
-        self._placeholder_index += 1
 
     def parse_output(self, node: torch.fx.Node) -> None:
         """
@@ -211,3 +226,7 @@ class GraphParser(GraphParserBase):
         Detaches the structured SDFG from the internal structured SDFG builder and returns it.
         """
         return self.builder.move()
+
+    def get_arguments(self) -> tuple[Any, ...]:
+        """Return all the arguments"""
+        return tuple(self._arguments)

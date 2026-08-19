@@ -4,11 +4,14 @@ GraphParser module for parsing operations performed directly on a tensor object.
 
 import torch.fx
 from torch.fx.node import Argument
+from math import ceil
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, Scalar, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, Tensor, Scalar, DebugInfo, Type
 
 from docc.pytorch.graph_parser.utils import (
     ContainerInfoBase,
+    ContainerInfo,
+    ContainerRefInfo,
     ContainerPreInfo,
     ContainerInfos,
     GraphParserError,
@@ -371,3 +374,157 @@ class ToCopyParser(GraphParserModule):
 
 
 register_module("aten._to_copy.default", ToCopyParser())
+
+
+class SlicingParser(GraphParserModule):
+    _force_copy: bool
+
+    def __init__(self, force_copy: bool = False) -> None:
+        self._force_copy: bool = force_copy
+
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        container_info: ContainerInfos,
+    ) -> None:
+        if len(node.args) < 1 or len(node.args) > 5:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected between 1 and 5 arguments but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_container: str = self.get_arg_container(node, container_info, 0)
+        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        if len(node.args) >= 2:
+            dim_arg: Argument = node.args[1]
+            if not isinstance(dim_arg, int):
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected dim arg to be int type but got: " + str(type(dim_arg)),
+                )
+            dim: int = dim_arg
+        else:
+            dim: int = 0
+
+        if dim < 0:
+            dim: int = len(self_tensor.shape) + dim
+        if dim < 0 or dim >= len(self_tensor.shape) or dim >= len(self_tensor.strides):
+            raise GraphParserError(
+                self, node, f"Dim arg out of tensor bounds: {dim}, {self_tensor.shape}"
+            )
+        # For now, until symbolic expressions are supported
+        try:
+            size: int = int(self_tensor.shape[dim])
+            stride: int = int(self_tensor.strides[dim])
+            offset: int = int(self_tensor.offset)
+        except ValueError as ve:
+            raise GraphParserError(self, node, str(ve))
+
+        if len(node.args) >= 3:
+            start_arg: Argument = node.args[2]
+            if start_arg is None:
+                start: int = 0
+            elif isinstance(start_arg, int):
+                start: int = start_arg
+            else:
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected start arg to be int type but got: "
+                    + str(type(start_arg)),
+                )
+        else:
+            start: int = 0
+        if start < 0:
+            start: int = size + start
+
+        if len(node.args) >= 4:
+            end_arg: Argument = node.args[3]
+            if end_arg is None:
+                end: int = size
+            elif isinstance(end_arg, int):
+                end: int = end_arg
+            else:
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected end arg to be int type but got: " + str(type(end_arg)),
+                )
+        else:
+            end: int = size
+        if end == 9_223_372_036_854_775_807:
+            end: int = size
+
+        if len(node.args) == 5:
+            step_arg: Argument = node.args[4]
+            if not isinstance(step_arg, int):
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected step arg to be int type but got: " + str(type(step_arg)),
+                )
+            step: int = step_arg
+        else:
+            step: int = 1
+
+        new_shape: list[str] = self_tensor.shape
+        new_shape[dim] = str(ceil((end - start) / step))
+        new_strides: list[str] = self_tensor.strides
+        new_strides[dim] = str(stride * step)
+        new_offset = str(offset + start * stride)
+
+        sdfg_types: tuple[Type, Tensor | None] = self.get_node_sdfg_types(node)
+        new_tensor: Tensor | None = sdfg_types[1]
+        if new_tensor is None:
+            raise GraphParserError(
+                self,
+                node,
+                "No tensor type available for result container",
+            )
+        if not self._force_copy:
+            if new_shape != new_tensor.shape:
+                raise GraphParserError(
+                    self, node, f"Shapes mismatch: {new_shape} != {new_tensor.shape}"
+                )
+            if new_strides != new_tensor.strides:
+                raise GraphParserError(
+                    self,
+                    node,
+                    f"Strides mismatch: {new_strides} != {new_tensor.strides}",
+                )
+            if new_offset != new_tensor.offset:
+                raise GraphParserError(
+                    self, node, f"Offset mismatch: {new_offset} != {new_tensor.offset}"
+                )
+
+        info: ContainerInfo = self.resolve_container_name_backward(
+            node, container_info, node.name, sdfg_types
+        )
+        if info.out_argument() or self._force_copy:
+            builder.add_container(info.name(), sdfg_types[0], True)
+            new_result_tensor: Tensor = Tensor(
+                new_tensor.element_type, new_tensor.shape
+            )
+            builder.add_copy_op(
+                self_container,
+                new_tensor,
+                info.name(),
+                new_result_tensor,
+                debug_info,
+            )
+            info.update(sdfg_tensor_type=new_result_tensor)
+        else:
+            info.update(name=self_container, memory_managed=False)
+
+
+register_module("aten.slice.Tensor", SlicingParser())
+register_module("aten.slice_copy.Tensor", SlicingParser(force_copy=True))
