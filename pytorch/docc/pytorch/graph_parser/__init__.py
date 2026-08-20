@@ -12,30 +12,39 @@ from torch.fx.node import Argument
 
 from typing import Any
 
-from docc.sdfg import StructuredSDFGBuilder, StructuredSDFG, Type, Tensor
+from docc.sdfg import (
+    StructuredSDFGBuilder,
+    StructuredSDFG,
+    Type,
+    Tensor,
+    Scalar,
+    Pointer,
+)
 
 from docc.pytorch.graph_parser.utils import (
-    ContainerInfoBase,
+    TensorName,
+    ContainerMemory,
+    TensorInfo,
     ContainerInfo,
-    ContainerPreInfo,
-    ContainerInfos,
+    TensorMetadata,
     GraphParserError,
     GraphParserBase,
-    dispatch_to_pre_module,
     dispatch_to_module,
 )
-import docc.pytorch.graph_parser.blas
-import docc.pytorch.graph_parser.builtin
-import docc.pytorch.graph_parser.convolution
-import docc.pytorch.graph_parser.creation
+
+# import docc.pytorch.graph_parser.blas
+# import docc.pytorch.graph_parser.builtin
+# import docc.pytorch.graph_parser.convolution
+# import docc.pytorch.graph_parser.creation
 import docc.pytorch.graph_parser.elementwise
-import docc.pytorch.graph_parser.nonlinear_activation
-import docc.pytorch.graph_parser.normalization
-import docc.pytorch.graph_parser.pooling
-import docc.pytorch.graph_parser.reduction
-import docc.pytorch.graph_parser.reshaping
-import docc.pytorch.graph_parser.tensor
-import docc.pytorch.graph_parser.vision
+
+# import docc.pytorch.graph_parser.nonlinear_activation
+# import docc.pytorch.graph_parser.normalization
+# import docc.pytorch.graph_parser.pooling
+# import docc.pytorch.graph_parser.reduction
+# import docc.pytorch.graph_parser.reshaping
+# import docc.pytorch.graph_parser.tensor
+# import docc.pytorch.graph_parser.vision
 
 
 class GraphParser(GraphParserBase):
@@ -63,22 +72,28 @@ class GraphParser(GraphParserBase):
         self.builder: StructuredSDFGBuilder = StructuredSDFGBuilder("__docc_" + name)
         self._arguments: list[Any] = []
 
-        self.container_info: ContainerInfos = ContainerInfos()
+        self.metadata: TensorMetadata = TensorMetadata()
+        self.result_copy: dict[TensorName, TensorName] = {}
 
-    def get_output_containers(self, node: torch.fx.Node, args: Argument) -> list[str]:
+    def flatten_arg(self, arg: Argument) -> list[torch.fx.Node]:
         """
-        Flattens a nested tuple to a list and converts each PyTorch Argument to an SDFG container.
+        Flattens a nested tuple/list to a list of torch.fx.Node's.
         Example: ((arg_0, arg_1), arg_2) -> ["arg_0", "arg_1", "arg_2"]
         """
-        result = []
-        if isinstance(args, tuple):
-            for elem in list(args):
-                result += self.get_output_containers(node, elem)
-        else:
-            result.append(
-                self.convert_arg_to_container(node, self.container_info, args)
-            )
+        result: list[torch.fx.Node] = []
+        if isinstance(arg, (tuple, list)):
+            for elem in arg:
+                result: list[torch.fx.Node] = result + self.flatten_arg(elem)
+        elif isinstance(arg, torch.fx.Node):
+            result.append(arg)
         return result
+
+    def get_tensors_from_arg(self, arg: Argument) -> list[TensorName]:
+        """
+        Returns a list of all tensor names form an argument. Recursively calls itself for lists and
+        tuples.
+        """
+        return [node.name for node in self.flatten_arg(arg)]
 
     def parse(self) -> None:
         """
@@ -94,49 +109,92 @@ class GraphParser(GraphParserBase):
         # Collect all outputs for out args
         for node in nodes:
             if node.op == "placeholder":
-                self.container_info[node.name] = ContainerPreInfo(
-                    node.name, in_argument=True
-                )
+                self.parse_placeholder(node)
             elif node.op == "call_function":
-                dispatch_to_pre_module(node, self.builder, self.container_info)
-            elif node.op == "output":
-                output_containers: list[str] = self.get_output_containers(
-                    node, node.args
+                sdfg_tensors: tuple[Tensor | None, ...] = self.get_node_sdfg_tensors(
+                    node
                 )
-                for output_container in output_containers:
-                    if output_container in self.container_info:
-                        info: ContainerInfoBase = self.container_info[output_container]
-                        if not isinstance(info, ContainerPreInfo):
-                            raise GraphParserError(
-                                self,
-                                node,
-                                "Expected ContainterPreInfo but got: "
-                                + str(type(info)),
-                            )
-                        self.container_info[output_container] = ContainerPreInfo.copy(
-                            info, out_argument=True
+                deps: list[TensorName] = self.get_tensors_from_arg(node.args)
+                if len(sdfg_tensors) == 1:
+                    self.metadata.add_tensor(
+                        node.name, TensorInfo(node.name, sdfg_tensors[0])
+                    )
+                    for dep in deps:
+                        self.metadata.add_dependency(node.name, dep)
+                else:
+                    contained_names: list[TensorName] = []
+                    for i in range(len(sdfg_tensors)):
+                        tensor_name: TensorName = f"{node.name}_{i}"
+                        contained_names.append(tensor_name)
+                        self.metadata.add_tensor(
+                            tensor_name, TensorInfo(tensor_name, sdfg_tensors[i])
                         )
+                        for dep in deps:
+                            self.metadata.add_dependency(tensor_name, dep)
+                    self.metadata.add_tensor_tuple(node.name, contained_names)
+            elif node.op == "output":
+                output_nodes: list[torch.fx.Node] = self.flatten_arg(node.args)
+                for output_node in output_nodes:
+                    sdfg_type: Type = self.get_node_sdfg_type(output_node)
+                    out_name: str = output_node.name
+
+                    if not self.metadata.tensor(out_name).is_contiguous() or isinstance(
+                        sdfg_type, Scalar
+                    ):
+                        new_out_name: str = f"{out_name}_out"
+                        self.builder.add_container(
+                            new_out_name, sdfg_type, is_argument=True
+                        )
+                        self.metadata.add_container(
+                            new_out_name,
+                            ContainerInfo(
+                                new_out_name, sdfg_type, ContainerMemory.OUT_ARGUMENT
+                            ),
+                        )
+                        out_shape: list[str] = self.metadata.tensor(out_name).shape()
+                        if len(out_shape) == 0:
+                            out_shape: list[str] = ["1"]
+                        new_out_tensor: Tensor = Tensor(
+                            self.metadata.tensor(out_name).element_type(),
+                            out_shape,
+                        )
+                        self.metadata.add_tensor(
+                            new_out_name,
+                            TensorInfo(new_out_name, new_out_tensor, new_out_name),
+                        )
+                        self.metadata.add_dependency(new_out_name, out_name)
+                        self.result_copy[out_name] = new_out_name
                     else:
-                        self.container_info[output_container] = ContainerPreInfo(
-                            output_container, out_argument=True
+                        self.builder.add_container(
+                            out_name, sdfg_type, is_argument=True
                         )
+                        self.metadata.add_container(
+                            out_name,
+                            ContainerInfo(
+                                out_name, sdfg_type, ContainerMemory.OUT_ARGUMENT
+                            ),
+                        )
+                        self.metadata.tensor(out_name).set_container(out_name)
 
         for node in nodes:
             if node.op == "placeholder":
-                self.parse_placeholder(node)
+                self.metadata.live(self.metadata.tensor(node.name).container())
             elif node.op == "call_function":
+                pass
                 dispatch_to_module(
                     node,
                     self.builder,
-                    self.container_info,
+                    self.metadata,
                 )
             elif node.op == "output":
                 self.parse_output(node)
             else:
                 raise GraphParserError(self, node, "Unknown op kind: " + node.op)
 
-        for container in self.container_info.memory_managed():
-            self.builder.add_free_block(container)
+        for name in self.metadata.containers_memory_managed():
+            if isinstance(self.metadata.container(name).sdfg_type(), Pointer):
+                self.builder.add_free_block(name)
+            self.metadata.dead(name)
 
     def parse_placeholder(self, node: torch.fx.Node) -> None:
         """
@@ -153,31 +211,39 @@ class GraphParser(GraphParserBase):
                     node,
                     f"No example input for placeholder {desc.idx}",
                 )
-            sdfg_types: tuple[Type, Tensor | None] = self.determine_sdfg_type(
+            sdfg_type: Type = self.determine_sdfg_type(
+                node, self.example_input[desc.idx]
+            )
+            sdfg_tensor: Tensor | None = self.determine_sdfg_tensor_type(
                 node, self.example_input[desc.idx]
             )
             self._arguments.append(self.example_input[desc.idx])
         elif isinstance(
             desc, torch._functorch._aot_autograd.descriptors.BufferAOTInput
         ):
-            sdfg_types: tuple[Type, Tensor | None] = self.get_node_sdfg_types(node)
+            sdfg_type: Type = self.get_node_sdfg_type(node)
+            sdfg_tensor: Tensor | None = self.get_node_sdfg_tensor(node)
             self._arguments.append(node.meta["val"])
         else:
             raise GraphParserError(
                 self, node, "Unsupported desc metadata type: " + str(desc)
             )
 
+        self.builder.add_container(node.name, sdfg_type, is_argument=True)
+        self.metadata.add_container(
+            node.name, ContainerInfo(node.name, sdfg_type, ContainerMemory.IN_ARGUMENT)
+        )
+
         # The call always provides a tensor with C-strides. If the tensor has non C-strides we
         # enforce them here.
-        if sdfg_types[1] is None:
+        if sdfg_tensor is None:
             contiguous_tensor: Tensor | None = None
         else:
             contiguous_tensor: Tensor | None = Tensor(
-                sdfg_types[1].element_type, sdfg_types[1].shape
+                sdfg_tensor.element_type, sdfg_tensor.shape
             )
-        self.builder.add_container(node.name, sdfg_types[0], True)
-        self.container_info[node.name] = ContainerInfo(
-            node.name, sdfg_types[0], contiguous_tensor, in_argument=True
+        self.metadata.add_tensor(
+            node.name, TensorInfo(node.name, contiguous_tensor, node.name)
         )
 
     def parse_output(self, node: torch.fx.Node) -> None:
@@ -185,28 +251,23 @@ class GraphParser(GraphParserBase):
         Parses a PyTorch output operation by setting the SDFG metadata about output arguments and
         their shape information.
         """
-        output_containers: list[str] = self.get_output_containers(node, node.args)
-        for i in range(len(output_containers)):
-            container: str = output_containers[i]
-            output_container: str = container + "_out"
-            if output_container in self.container_info:
-                self.copy_scalar_tensor(
-                    node,
-                    self.builder,
-                    self.container_info,
-                    container,
-                    output_container,
+        outputs: list[TensorName] = self.get_tensors_from_arg(node.args)
+        for i in range(len(outputs)):
+            output: TensorName = outputs[i]
+            if output in self.result_copy:
+                new_output: TensorName = self.result_copy[output]
+                output_info: TensorInfo = self.metadata.tensor(output)
+                new_output_info: TensorInfo = self.metadata.tensor(new_output)
+                self.copy_output_tensor(
+                    node, self.builder, self.metadata, output_info, new_output_info
                 )
-                output_containers[i] = output_container
-        self.builder.add_metadata("output_args", ",".join(output_containers))
-        for output_container in output_containers:
-            if not self.container_info[output_container].out_argument():
-                raise GraphParserError(
-                    self, node, "Unsupported for now; needs explicit copy"
-                )
+                outputs[i] = new_output
+
+        self.builder.add_metadata("output_args", ",".join(outputs))
+        for output in outputs:
             self.builder.add_metadata(
-                f"{output_container}_shape",
-                self.container_info.get_shape_str(output_container),
+                f"{output}_shape",
+                self.metadata.tensor(output).shape_str(),
             )
 
         # Preserve the original PyTorch output structure (nested tuples, dicts,
