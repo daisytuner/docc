@@ -940,9 +940,16 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 // identity set at declaration time. The block-level per-thread reduction
                 // tree then folds these partials (across all remaining block dimensions)
                 // exactly as it folds ordinary per-thread partials.
+                //
+                // Combine (rather than overwrite) into the slot: when the enclosing block
+                // owner's count exceeds its parallel_size its coverage loop runs multiple
+                // tiles, re-executing this publish once per tile, and each tile's warp
+                // result must fold into the identity-initialised slot instead of clobbering
+                // the previous tiles. For a single tile combine(identity, reg) == reg.
+                std::string slot = smem_name + "[" + lin_tid + "]";
                 stream << "if (lane == 0) {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
-                stream << smem_name << "[" << lin_tid << "] = " << reg_name << ";" << std::endl;
+                stream << slot << " = " << combine_expr(r.operation, slot, reg_name) << ";" << std::endl;
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             } else {

@@ -1037,6 +1037,19 @@ for (_grel, (_gc, _gp)), (_wrel, (_wc, _wp)) in itertools.product(
             "add",
         )
     )
+# warp count crossed with its X_BLOCK owner's own count regime: the block folds its
+# coverage tiles (count == k*WARP_SIZE over a fixed WARP_SIZE parallel_size) while the
+# warp independently folds its own swept coverage loop.
+for (_brel, (_bc, _bp)), (_wrel, (_wc, _wp)) in itertools.product(
+    _SIZE_RELATIONS.items(), _WARP_SIZE_RELATIONS.items()
+):
+    MAP_NEST_SCENARIOS.append(
+        (
+            f"size_xb_{_brel}_warp_{_wrel}",
+            [("xg", 1, 1), ("xb", _bc * WARP_SIZE, WARP_SIZE), ("w", _wc, _wp)],
+            "add",
+        )
+    )
 
 
 @pytest.mark.parametrize(
