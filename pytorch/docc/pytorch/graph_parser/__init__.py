@@ -29,22 +29,25 @@ from docc.pytorch.graph_parser.utils import (
     TensorMetadata,
     GraphParserError,
     GraphParserBase,
+    get_node_target_name,
     dispatch_to_module,
 )
 
 import docc.pytorch.graph_parser.blas
+import docc.pytorch.graph_parser.builtin
 
-# import docc.pytorch.graph_parser.builtin
 # import docc.pytorch.graph_parser.convolution
 # import docc.pytorch.graph_parser.creation
 import docc.pytorch.graph_parser.elementwise
 
 # import docc.pytorch.graph_parser.nonlinear_activation
-# import docc.pytorch.graph_parser.normalization
+import docc.pytorch.graph_parser.normalization
+
 # import docc.pytorch.graph_parser.pooling
 # import docc.pytorch.graph_parser.reduction
-# import docc.pytorch.graph_parser.reshaping
-# import docc.pytorch.graph_parser.tensor
+import docc.pytorch.graph_parser.reshaping
+import docc.pytorch.graph_parser.tensor
+
 # import docc.pytorch.graph_parser.vision
 
 
@@ -112,6 +115,11 @@ class GraphParser(GraphParserBase):
             if node.op == "placeholder":
                 self.parse_placeholder(node)
             elif node.op == "call_function":
+                if get_node_target_name(node.target) in (
+                    "aten._assert_tensor_metadata.default",
+                ):
+                    continue  # Skip output-less ops
+
                 sdfg_tensors: tuple[Tensor | None, ...] = self.get_node_sdfg_tensors(
                     node
                 )

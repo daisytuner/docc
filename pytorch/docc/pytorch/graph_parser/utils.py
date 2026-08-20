@@ -129,6 +129,10 @@ class TensorInfo:
             )
         return self._sdfg_tensor_type
 
+    def set_sdfg_tensor_type(self, sdfg_tensor_type: Tensor | None) -> None:
+        """Sets the SDFG tensor type of this tensor information to the provided SDFG tensor type"""
+        self._sdfg_tensor_type = sdfg_tensor_type
+
     def element_type(self) -> Scalar:
         """Returns the element type of the sdfg tensor type"""
         return self.sdfg_tensor_type().element_type
@@ -1381,7 +1385,7 @@ class GraphParserModule(GraphParserBase, ABC):
         """
         Creates a new container to use as the result of the current operation. For creating a
         container for an intermediate result, see ``create_intermediate_tensor_info``. If the
-        operation has multiple results (tuple), use ``create_result_containers``.
+        operation has multiple results (tuple), use ``create_result_tensor_infos``.
         """
         if metadata.has_tensor(node.name):
             tensor_info: TensorInfo = metadata.tensor(node.name)
@@ -1394,6 +1398,7 @@ class GraphParserModule(GraphParserBase, ABC):
             container_info: ContainerInfo = metadata.container(tensor_info.container())
         elif metadata.has_container(node.name):
             container_info: ContainerInfo = metadata.container(node.name)
+            tensor_info.set_container(node.name)
         else:
             sdfg_type: Type = self.get_node_sdfg_type(node)
             builder.add_container(node.name, sdfg_type)
@@ -1412,45 +1417,133 @@ class GraphParserModule(GraphParserBase, ABC):
 
         return tensor_info
 
-    def get_result_containers(
+    def get_result_tensor_infos(
         self,
         num: int,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
-    ) -> tuple[str, ...]:
+        metadata: TensorMetadata,
+    ) -> tuple[TensorInfo, ...]:
         """
         Creates new containers to use as the results of the current operation. Because SDFGs do not
         support tuples, a container for each element of the tuple is created. Access to them are
         resolved with the help of virtual containers. For creating only a single result of the
-        current operation, see ``get_result_container``.
+        current operation, see ``get_result_tensor_info``.
         """
-        base_name: str = node.name
-        containers: list[str] = []
-        if not "val" in node.meta:
+        sdfg_tensors: tuple[Tensor | None, ...] = self.get_node_sdfg_tensors(node)
+        if len(sdfg_tensors) != num:
             raise GraphParserError(
                 self,
                 node,
-                "No result type information in metadata",
+                f"Expected {num} result tensors but got: {len(sdfg_tensors)}",
             )
-        if (not isinstance(node.meta["val"], tuple)) or len(node.meta["val"]) != num:
-            raise GraphParserError(
-                self, node, f"Not exactly {num} result type information in metadata"
-            )
+
+        infos: list[TensorInfo] = []
         for i in range(num):
-            sdfg_types: tuple[Type, Tensor | None] = self.determine_sdfg_type(
-                node, node.meta["val"][i]
+            name: TensorName = f"{node.name}_{i}"
+            if metadata.has_tensor(name):
+                tensor_info: TensorInfo = metadata.tensor(name)
+            else:
+                tensor_info: TensorInfo = TensorInfo(name, sdfg_tensors[i])
+                metadata.add_tensor(name, tensor_info)
+
+            if tensor_info.has_container():
+                container_info: ContainerInfo = metadata.container(
+                    tensor_info.container()
+                )
+            elif metadata.has_container(name):
+                container_info: ContainerInfo = metadata.container(name)
+                tensor_info.set_container(name)
+            else:
+                sdfg_type: Type = tensor_info.sdfg_type()
+                builder.add_container(name, sdfg_type)
+                container_info: ContainerInfo = ContainerInfo(
+                    name, sdfg_type, ContainerMemory.MANAGED
+                )
+                metadata.add_container(name, container_info)
+                tensor_info.set_container(name)
+
+            if container_info.memory_managed() and isinstance(
+                container_info.sdfg_type(), Pointer
+            ):
+                self.allocate_memory(node, builder, metadata, tensor_info)
+
+            metadata.live(name)
+
+            infos.append(tensor_info)
+
+        return tuple(infos)
+
+    def create_view(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+        info: TensorInfo,
+        ref_info: TensorInfo,
+    ) -> None:
+        if not ref_info.has_container():
+            raise GraphParserError(
+                self,
+                node,
+                "Cannot create view from tensor information without container: "
+                + str(ref_info),
             )
-            info: ContainerInfo = self.resolve_container_name_backward(
-                node, container_info, f"{base_name}_{i}", sdfg_types
-            )
-            builder.add_container(
-                info.name(), sdfg_types[0], is_argument=info.out_argument()
-            )
-            if not info.out_argument() and not isinstance(sdfg_types[0], Scalar):
-                self.allocate_memory(node, builder, container_info, info.name())
-            containers.append(info.name())
-        return tuple(containers)
+        if info.has_container():
+            if not info.has_sdfg_tensor_type():
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Cannot create view (copy) from tensor information without SDFG tensor type: "
+                    + str(info),
+                )
+            if not ref_info.has_sdfg_tensor_type():
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Cannot create view (copy) from tensor information without SDFG tensor type: "
+                    + str(ref_info),
+                )
+            debug_info: DebugInfo = self.get_debug_info(node)
+            if (
+                info.sdfg_tensor_type().total_elements()
+                == ref_info.sdfg_tensor_type().total_elements()
+            ):
+                builder.add_copy_op(
+                    ref_info.container(),
+                    ref_info.sdfg_tensor_type(),
+                    info.container(),
+                    info.sdfg_tensor_type(),
+                    debug_info,
+                )
+            else:
+                builder.add_broadcast_op(
+                    ref_info.container(),
+                    ref_info.sdfg_tensor_type(),
+                    info.container(),
+                    info.sdfg_tensor_type(),
+                    ref_info.shape(),
+                    info.shape(),
+                    debug_info,
+                )
+        else:
+            info.set_container(ref_info.container())
+        metadata.live(info.container())
+
+    def create_result_view(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+        ref_info: TensorInfo,
+    ) -> None:
+        if metadata.has_tensor(node.name):
+            info: TensorInfo = metadata.tensor(node.name)
+        else:
+            sdfg_tensor: Tensor | None = self.get_node_sdfg_tensor(node)
+            info: TensorInfo = TensorInfo(node.name, sdfg_tensor)
+            metadata.add_tensor(node.name, info)
+        self.create_view(node, builder, metadata, info, ref_info)
 
     def create_intermediate_tensor_info(
         self,
@@ -1463,8 +1556,8 @@ class GraphParserModule(GraphParserBase, ABC):
     ) -> TensorInfo:
         """
         Creates a container to use for intermediate results. Memory allocation and management is
-        automatically handled. DO NOT use this method for creating result container(s). See
-        ``get_result_container`` and ``get_result_containers`` for that.
+        automatically handled. DO NOT use this method for creating result information. See
+        ``get_result_tensor_info`` and ``get_result_containers`` for that.
         """
         name: str = builder.find_new_name("intermediate")
         builder.add_container(name, sdfg_type)

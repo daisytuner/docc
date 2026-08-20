@@ -223,19 +223,19 @@ def test_slicing_assumed_dim(target: str) -> None:
 
 
 def test_slicing_ellipsis(target: str) -> None:
-    class SlicingEllipsis(nn.Module):
+    class SlicingEllipsisNet(nn.Module):
         def forward(self, input: torch.Tensor) -> torch.Tensor:
             return input[..., 1:4]
 
-    check(SlicingEllipsis(), torch.arange(10).reshape(2, 5), target=target)
+    check(SlicingEllipsisNet(), torch.arange(10).reshape(2, 5), target=target)
 
 
 def test_slicing_colon(target: str) -> None:
-    class SlicingEllipsis(nn.Module):
+    class SlicingColonNet(nn.Module):
         def forward(self, input: torch.Tensor) -> torch.Tensor:
             return input[:, 1:4]
 
-    check(SlicingEllipsis(), torch.arange(10).reshape(2, 5), target=target)
+    check(SlicingColonNet(), torch.arange(10).reshape(2, 5), target=target)
 
 
 @pytest.mark.skip(reason="Needs support for aten.select.int")
@@ -288,10 +288,9 @@ def test_slicing_None(target: str) -> None:
     )
 
 
-@pytest.mark.skip(reason="Does not work, in progress...")
 def test_slicing_multi(target: str) -> None:
-    class SlicingSimpleNet(nn.Module):
+    class SlicingMultiNet(nn.Module):
         def forward(self, input: torch.Tensor) -> torch.Tensor:
             return input[1:4, 1:3]
 
-    check(SlicingSimpleNet(), torch.arange(20).reshape(5, 4), target=target)
+    check(SlicingMultiNet(), torch.arange(20).reshape(5, 4), target=target)

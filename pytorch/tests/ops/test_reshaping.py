@@ -194,6 +194,59 @@ def test_slice_copy_simple(target: str) -> None:
     check(SliceCopySimpleNet(), torch.arange(10), target=target)
 
 
+def test_slice_copy_negative_start(target: str) -> None:
+    class SliceCopyNegativeStartNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.slice_copy(input, 0, -2, 10)
+
+    check(SliceCopyNegativeStartNet(), torch.arange(10), target=target)
+
+
+def test_slice_copy_unbound_start(target: str) -> None:
+    class SliceCopyUnboundStartNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.slice_copy(input, end=5)
+
+    check(SliceCopyUnboundStartNet(), torch.arange(10), target=target)
+
+
+def test_slice_copy_unbound_end(target: str) -> None:
+    class SliceCopyUnboundEndNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.slice_copy(input, start=5)
+
+    check(SliceCopyUnboundEndNet(), torch.arange(10), target=target)
+
+
+def test_slice_copy_assumed_dim(target: str) -> None:
+    class SliceCopyAssumedDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.slice_copy(input, start=1, end=2)
+
+    check(
+        SliceCopyAssumedDimNet(),
+        torch.tensor([[[1], [2], [3]], [[4], [5], [6]]]),
+        target=target,
+    )
+
+
+def test_slice_copy_dim1(target: str) -> None:
+    class SliceCopyDim1Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.slice_copy(input, 1, 1, 4)
+
+    check(SliceCopyDim1Net(), torch.arange(10).reshape(2, 5), target=target)
+
+
+def test_slice_copy_multi(target: str) -> None:
+    class SliceCopyMultiNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            tmp: torch.Tensor = torch.slice_copy(input, 0, 1, 4)
+            return torch.slice_copy(tmp, 1, 1, 3)
+
+    check(SliceCopyMultiNet(), torch.arange(20).reshape(5, 4), target=target)
+
+
 # --- squeeze ---
 
 
