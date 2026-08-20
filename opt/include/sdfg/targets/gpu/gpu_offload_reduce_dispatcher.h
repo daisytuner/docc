@@ -89,6 +89,12 @@ protected:
     // target the same global slot and must combine atomically rather than overwrite.
     bool block_result_collides_across_grid(const symbolic::Expression& index);
 
+    // Predicate (as a C expression) selecting the single thread that commits the folded
+    // result of @p container to global memory: the leader across every reduced block axis,
+    // i.e. this level's axis index and every nested block-reduce level's axis index are 0.
+    // Any remaining (mapped) block dimensions stay free so each of their slots is written.
+    std::string block_reduce_leader_condition(codegen::LanguageExtension& language_extension, const std::string& container);
+
     // Linearized flat thread index within the block: threadIdx.x + threadIdx.y * blockDim.x
     // + threadIdx.z * blockDim.x * blockDim.y. Used to address per-thread shared slots so
     // that every thread of a multi-dimensional block owns a distinct accumulator entry.

@@ -968,10 +968,24 @@ REDUCE_NEST_SCENARIOS = [
     ("reduce_xg_xb_max_same", [], [("xg", 8, 4), ("xb", 5, 5)], "max"),
     ("map_xg_reduce_xb_min", [("xg", 8, 4)], [("xb", 16, 8)], "min"),
     # multi-dimensional BLOCK reductions: a single reduce node folding over two
-    # or three block dimensions (xb+yb[+zb]) -- currently miscompiled
-    ("reduce_xb_yb", [("xg", 1, 1), ("yg", 1, 1)], [("xb", 8, 4), ("yb", 4, 4)], "add"),
+    # or three block dimensions (xb+yb[+zb]), each nested under a trivial grid map.
+    # The "_cover" variants use count > parallel_size so the block coverage loop
+    # iterates multiple times; the fully-covered variants use count == parallel_size.
+    ("reduce_xb_yb", [("xg", 1, 1), ("yg", 1, 1)], [("xb", 8, 8), ("yb", 4, 4)], "add"),
+    (
+        "reduce_xb_yb_cover",
+        [("xg", 1, 1), ("yg", 1, 1)],
+        [("xb", 8, 4), ("yb", 4, 4)],
+        "add",
+    ),
     (
         "reduce_xb_yb_zb",
+        [("xg", 1, 1), ("yg", 1, 1), ("zg", 1, 1)],
+        [("xb", 8, 8), ("yb", 2, 2), ("zb", 2, 2)],
+        "add",
+    ),
+    (
+        "reduce_xb_yb_zb_cover",
         [("xg", 1, 1), ("yg", 1, 1), ("zg", 1, 1)],
         [("xb", 8, 4), ("yb", 2, 2), ("zb", 2, 2)],
         "add",
