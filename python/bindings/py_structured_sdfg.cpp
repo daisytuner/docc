@@ -28,7 +28,6 @@
 #include <sdfg/passes/normalization/normalize.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
-#include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/rpc/rpc_scheduling_pass.h>
@@ -45,6 +44,7 @@
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/passes/symbolic/type_minimization.h>
+#include <sdfg/passes/targets/device_residency.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
@@ -499,35 +499,8 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
 
 bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     sdfg::passes::CompileStatistics::enter_stage_if_enabled("promote_device_residency");
-    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
-    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
-    sdfg::passes::DeviceResidentArgPromotionPass promotion_pass(is_rocm);
-    bool promoted = promotion_pass.run(builder, analysis_manager);
-    if (promoted) {
-        sdfg::passes::ReferencePropagation reference_propagation;
-        sdfg::passes::DeadReferenceElimination dead_reference_elimination;
-        sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
-        sdfg::passes::DeadDataElimination dead_data_elimination;
-        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
-        sdfg::passes::DeadCFGElimination dead_cfg_elimination;
-
-        // 1st round
-        reference_propagation.run(builder, analysis_manager);
-        dead_reference_elimination.run(builder, analysis_manager);
-        data_transfer_minimization.run(builder, analysis_manager);
-        device_buffer_reuse_pass.run(builder, analysis_manager);
-        dead_data_elimination.run(builder, analysis_manager);
-        dead_cfg_elimination.run(builder, analysis_manager);
-
-        // 2nd round
-        reference_propagation.run(builder, analysis_manager);
-        dead_reference_elimination.run(builder, analysis_manager);
-        data_transfer_minimization.run(builder, analysis_manager);
-        device_buffer_reuse_pass.run(builder, analysis_manager);
-        dead_data_elimination.run(builder, analysis_manager);
-        dead_cfg_elimination.run(builder, analysis_manager);
-    }
+    bool promoted = sdfg::passes::promote_device_residency(*sdfg_, is_rocm);
 
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
     return promoted;
