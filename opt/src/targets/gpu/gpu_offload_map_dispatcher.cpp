@@ -298,27 +298,27 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
 
     std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())
     );
+    // For the WARP level each thread iterates sequentially over the warp-level
+    // iteration space (the cross-lane reduction is performed by the reduce
+    // dispatcher via __shfl_xor_sync over the enclosing X_BLOCK lanes), so the
+    // coverage loop must run once per iteration rather than once per warp_size.
+    std::string coverage_count_dim = (target_level == TargetLevel::WARP) ? std::string("1") : coverage_dim;
     library_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
-                   << "max(1, (" << size << " + " << coverage_dim << " - 1) / " << coverage_dim << "); "
+                   << "max(1, (" << size << " + " << coverage_count_dim << " - 1) / " << coverage_count_dim << "); "
                    << coverage_loop_var << "++) {" << std::endl;
     library_stream.setIndent(library_stream.indent() + 4);
 
     if (target_level == TargetLevel::WARP) {
         std::string indvar_name = indvar->get_name();
-        std::string x_block_coverage_loop_var = "__daisy_gpu_coverage_loop_" + gpu::to_string(TargetLevel::X_BLOCK);
         auto x_block_parent = find_x_block_owning_warp_level(node_, analysis_manager_);
         if (!x_block_parent) {
             throw InvalidSDFGException("WARP level map must be nested within an X_BLOCK level map");
         }
-        std::string x_block_indvar_name = x_block_parent->indvar()->get_name();
-        std::string x_block_num_iterations = kernel_language_extension.expression(x_block_parent->num_iterations());
-        std::string x_block_init = kernel_language_extension.expression(x_block_parent->init());
 
-        std::string num_iterations = kernel_language_extension.expression(node_.num_iterations());
-
-        library_stream << "size_t " << indvar_name << " = " << x_block_init << " + num_warps * " << num_iterations
-                       << " * warp_id * " << num_iterations << " + " << coverage_loop_var << " * " << size << " + lane;"
-                       << std::endl;
+        // Sequential per-thread iteration over the warp-level space.
+        library_stream << "size_t " << indvar_name << " = " << kernel_language_extension.expression(node_.init())
+                       << " + " << coverage_loop_var << " * " << kernel_language_extension.expression(node_.stride())
+                       << ";" << std::endl;
     } else {
         std::string target_level_idx_access = kernel_language_extension.expression(node_.stride()) + " * " +
                                               kernel_language_extension.expression(get_target_level_idx(target_level));

@@ -488,27 +488,28 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
 
     std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())
     );
+    // For the WARP level each thread iterates sequentially over the warp-level
+    // iteration space and accumulates into its per-thread register; the
+    // cross-lane reduction is performed afterwards via __shfl_xor_sync over the
+    // enclosing X_BLOCK lanes. The coverage loop therefore runs once per
+    // iteration rather than once per warp_size.
+    std::string coverage_count_dim = (target_level == TargetLevel::WARP) ? std::string("1") : coverage_dim;
     library_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
-                   << "max(1, (" << size << " + " << coverage_dim << " - 1) / " << coverage_dim << "); "
+                   << "max(1, (" << size << " + " << coverage_count_dim << " - 1) / " << coverage_count_dim << "); "
                    << coverage_loop_var << "++) {" << std::endl;
     library_stream.setIndent(library_stream.indent() + 4);
 
     if (target_level == TargetLevel::WARP) {
         std::string indvar_name = indvar->get_name();
-        std::string x_block_coverage_loop_var = "__daisy_gpu_coverage_loop_" + gpu::to_string(TargetLevel::X_BLOCK);
         auto x_block_parent = find_x_block_owning_warp_level(node_, analysis_manager_);
         if (!x_block_parent) {
             throw InvalidSDFGException("WARP level map must be nested within an X_BLOCK level map");
         }
-        std::string x_block_indvar_name = x_block_parent->indvar()->get_name();
-        std::string x_block_num_iterations = kernel_language_extension.expression(x_block_parent->num_iterations());
-        std::string x_block_init = kernel_language_extension.expression(x_block_parent->init());
 
-        std::string num_iterations = kernel_language_extension.expression(node_.num_iterations());
-
-        library_stream << "size_t " << indvar_name << " = " << x_block_init << " + num_warps * " << num_iterations
-                       << " * warp_id * " << num_iterations << " + " << coverage_loop_var << " * " << size << " + lane;"
-                       << std::endl;
+        // Sequential per-thread iteration over the warp-level space.
+        library_stream << "size_t " << indvar_name << " = " << kernel_language_extension.expression(node_.init())
+                       << " + " << coverage_loop_var << " * " << kernel_language_extension.expression(node_.stride())
+                       << ";" << std::endl;
     } else {
         std::string target_level_idx_access = kernel_language_extension.expression(node_.stride()) + " * " +
                                               kernel_language_extension.expression(get_target_level_idx(target_level));
@@ -616,6 +617,79 @@ bool GPUOffloadReduceDispatcher::has_enclosing_block_reduction(const std::string
             if (r.container == container) {
                 return true;
             }
+        }
+    }
+    return false;
+}
+
+bool GPUOffloadReduceDispatcher::has_nested_block_reduction(const std::string& container) {
+    auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
+    for (auto* loop : loop_analysis.descendants(&node_)) {
+        auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(loop);
+        if (reduce == nullptr) {
+            continue;
+        }
+        if (reduce->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+            continue;
+        }
+        if (!is_block_level(ScheduleType_GPU::target_level(reduce->schedule_type()))) {
+            continue;
+        }
+        for (const auto& r : reduce->reductions()) {
+            if (r.container == container) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool GPUOffloadReduceDispatcher::has_enclosing_grid_reduction(const std::string& container) {
+    auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
+    for (auto* loop : loop_analysis.ancestors(&node_)) {
+        auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(loop);
+        if (reduce == nullptr) {
+            continue;
+        }
+        if (reduce->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+            continue;
+        }
+        if (!is_grid_level(ScheduleType_GPU::target_level(reduce->schedule_type()))) {
+            continue;
+        }
+        for (const auto& r : reduce->reductions()) {
+            if (r.container == container) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool GPUOffloadReduceDispatcher::block_result_collides_across_grid(const symbolic::Expression& index) {
+    auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
+
+    // Free symbols of the accumulator index.
+    std::unordered_set<std::string> index_symbols;
+    for (auto& atom : symbolic::atoms(index)) {
+        index_symbols.insert(atom->get_name());
+    }
+
+    for (auto* loop : loop_analysis.ancestors(&node_)) {
+        auto* struc_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
+        if (struc_loop == nullptr) {
+            continue;
+        }
+        if (struc_loop->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+            continue;
+        }
+        if (!is_grid_level(ScheduleType_GPU::target_level(struc_loop->schedule_type()))) {
+            continue;
+        }
+        // If this grid loop's induction variable does not index the accumulator, every
+        // grid block (and coverage-loop iteration) writes the same global slot.
+        if (index_symbols.find(struc_loop->indvar()->get_name()) == index_symbols.end()) {
+            return true;
         }
     }
     return false;
@@ -865,9 +939,28 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream << "}" << std::endl;
 
                 // One writer per axis-row: the axis leader (its flat slot holds the result).
+                // When this block reduce is nested under a grid reduce of the same container,
+                // the target is the grid's register accumulator, which must retain the partials
+                // of every grid coverage-loop iteration -> combine instead of overwrite.
+                std::string block_src = smem_name + "[" + global_warp + "]";
+                bool same_container_grid = has_enclosing_grid_reduction(r.container);
+                bool collides = !same_container_grid && block_result_collides_across_grid(index);
                 stream << "if (" << axis_idx << " == 0) {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
-                stream << target << " = " << smem_name << "[" << global_warp << "];" << std::endl;
+                if (collides) {
+                    if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
+                        stream << "atomicAdd(&" << target << ", " << block_src << ");" << std::endl;
+                    } else {
+                        std::string type_tag = ctype;
+                        std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
+                        std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
+                        stream << helper << "(&" << target << ", " << block_src << ");" << std::endl;
+                    }
+                } else {
+                    std::string block_write = same_container_grid ? combine_expr(r.operation, target, block_src)
+                                                                  : block_src;
+                    stream << target << " = " << block_write << ";" << std::endl;
+                }
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             } else {
@@ -892,14 +985,46 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream << "}" << std::endl;
 
                 // One writer per axis-row: the axis leader (its flat slot holds the result).
+                // When this block reduce is nested under a grid reduce of the same container,
+                // the target is the grid's register accumulator, which must retain the partials
+                // of every grid coverage-loop iteration -> combine instead of overwrite.
+                std::string block_src = smem_name + "[" + lin_tid + "]";
+                bool same_container_grid = has_enclosing_grid_reduction(r.container);
+                bool collides = !same_container_grid && block_result_collides_across_grid(index);
                 stream << "if (" << axis_idx << " == 0) {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
-                stream << target << " = " << smem_name << "[" << lin_tid << "];" << std::endl;
+                if (collides) {
+                    if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
+                        stream << "atomicAdd(&" << target << ", " << block_src << ");" << std::endl;
+                    } else {
+                        std::string type_tag = ctype;
+                        std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
+                        std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
+                        stream << helper << "(&" << target << ", " << block_src << ");" << std::endl;
+                    }
+                } else {
+                    std::string block_write = same_container_grid ? combine_expr(r.operation, target, block_src)
+                                                                  : block_src;
+                    stream << target << " = " << block_write << ";" << std::endl;
+                }
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             }
         } else if (grid) {
-            // Atomics are exclusive to grid-level reductions.
+            // Atomics are exclusive to grid-level reductions. When the grid register is
+            // fed by a nested block/warp reduction of the same container, only the block's
+            // axis leaders hold a non-identity value (every other thread holds the operator
+            // identity), so committing every thread is correct. Otherwise the grid body is
+            // replicated verbatim across all block threads and each holds an identical copy
+            // of the partial; committing all of them would multiply the result by blockDim,
+            // so only one thread per block may commit. (For a pure grid reduction blockDim
+            // == 1, making the guard a no-op.)
+            bool fed_by_nested_reduction = has_nested_block_reduction(r.container) ||
+                                           has_nested_warp_reduction(r.container);
+            if (!fed_by_nested_reduction) {
+                stream << "if (" << lin_tid << " == 0) {" << std::endl;
+                stream.setIndent(stream.indent() + 4);
+            }
             if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
                 stream << "atomicAdd(&" << target << ", " << reg_name << ");" << std::endl;
             } else {
@@ -907,6 +1032,10 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
                 std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
                 stream << helper << "(&" << target << ", " << reg_name << ");" << std::endl;
+            }
+            if (!fed_by_nested_reduction) {
+                stream.setIndent(stream.indent() - 4);
+                stream << "}" << std::endl;
             }
         }
     }

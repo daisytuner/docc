@@ -64,11 +64,30 @@ protected:
     // in which case this (block) level combines per-warp partials instead of per-thread.
     bool has_nested_warp_reduction(const std::string& container);
 
+    // Whether a BLOCK-level reduction nested below this node reduces @p container. When a
+    // grid reduce owns such a nested block reduce of the same container, its register is
+    // populated only by the block's axis leaders (via the block combine), so every other
+    // thread holds the operator identity and the grid commit must stay unguarded.
+    bool has_nested_block_reduction(const std::string& container);
+
     // Whether a BLOCK-level reduction enclosing this node reduces @p container. A WARP
     // reduce relies on such an enclosing block reduce to own the shared buffer its
     // per-warp partials are published into; without one, the warp must flush directly
     // to the global accumulator instead.
     bool has_enclosing_block_reduction(const std::string& container);
+
+    // Whether a GRID-level reduction enclosing this node reduces @p container. When a
+    // block reduce is nested under such a grid reduce, its per-block result is folded
+    // into the grid's register accumulator, which persists across the grid coverage
+    // loop; the block level must therefore combine (accumulate) into that target rather
+    // than overwrite it, so partials from every coverage-loop iteration are retained.
+    bool has_enclosing_grid_reduction(const std::string& container);
+
+    // Whether this block reduce's per-block result written to @p index collides across the
+    // grid: true when an enclosing grid-level offloaded loop's induction variable does not
+    // appear in the accumulator index, so multiple grid blocks / coverage-loop iterations
+    // target the same global slot and must combine atomically rather than overwrite.
+    bool block_result_collides_across_grid(const symbolic::Expression& index);
 
     // Linearized flat thread index within the block: threadIdx.x + threadIdx.y * blockDim.x
     // + threadIdx.z * blockDim.x * blockDim.y. Used to address per-thread shared slots so
