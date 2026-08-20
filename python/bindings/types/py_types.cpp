@@ -60,6 +60,7 @@ void register_types(py::module& m) {
         .def_static("NV_Shared", []() { return StorageType::NV_Shared(); })
         .def_static("NV_Constant", []() { return StorageType::NV_Constant(); })
         .def_static("NV_Symbol", []() { return StorageType::NV_Symbol(); })
+        .def_static("AMD_Generic", []() { return StorageType("AMD_Generic"); })
         .def_property_readonly("value", [](const StorageType& st) { return st.value(); })
         .def("__repr__", [](const StorageType& st) { return "<StorageType value='" + st.value() + "'>"; });
 

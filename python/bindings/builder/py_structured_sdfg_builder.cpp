@@ -30,6 +30,7 @@
 #include "sdfg/exceptions.h"
 #include "sdfg/passes/debug_info_propagation.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
+#include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
@@ -880,6 +881,33 @@ void PyStructuredSDFGBuilder::add_cuda_offloading_block(
     auto device_id_expr = parse_and_expand(device_id);
 
     sdfg::offloading::add_offloading_block<sdfg::cuda::CUDADataOffloadingNode>(
+        builder_,
+        current_sequence(),
+        host_container,
+        dev_container,
+        direction,
+        lifecycle,
+        data_type,
+        debug_info,
+        size_expr,
+        device_id_expr
+    );
+}
+
+void PyStructuredSDFGBuilder::add_rocm_offloading_block(
+    const std::string& host_container,
+    const std::string& dev_container,
+    sdfg::offloading::DataTransferDirection direction,
+    sdfg::offloading::BufferLifecycle lifecycle,
+    const sdfg::types::IType& data_type,
+    const std::string& size,
+    const std::string& device_id,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto size_expr = parse_and_expand(size);
+    auto device_id_expr = parse_and_expand(device_id);
+
+    sdfg::offloading::add_offloading_block<sdfg::rocm::ROCMDataOffloadingNode>(
         builder_,
         current_sequence(),
         host_container,

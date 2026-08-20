@@ -18,6 +18,7 @@
 #include <sdfg/targets/cuda/cuda.h>
 #include <sdfg/targets/gpu/gpu_schedule_type.h>
 #include <sdfg/targets/offloading/data_offloading_node.h>
+#include <sdfg/targets/rocm/rocm.h>
 
 using namespace sdfg::structured_control_flow;
 
@@ -276,6 +277,16 @@ void register_control_flow(py::module& m) {
             py::arg("target_level"),
             py::arg("parallel_size"),
             "Create a CUDA offload schedule type for the given target level and parallel size"
+        )
+        .def_static(
+            "rocm_offload",
+            [](sdfg::gpu::TargetLevel target_level, int64_t parallel_size) {
+                return sdfg::rocm::ScheduleType_ROCM::create<
+                    sdfg::rocm::ScheduleType_ROCM>(target_level, sdfg::symbolic::integer(parallel_size));
+            },
+            py::arg("target_level"),
+            py::arg("parallel_size"),
+            "Create a ROCm offload schedule type for the given target level and parallel size"
         )
         .def("__repr__", [](const ScheduleType& st) {
             std::ostringstream oss;

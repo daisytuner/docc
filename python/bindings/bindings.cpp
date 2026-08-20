@@ -945,6 +945,19 @@ PYBIND11_MODULE(_sdfg, m) {
             "Add a CUDA data-offloading block (cudaMalloc/cudaMemcpy/cudaFree) to the current sequence"
         )
         .def(
+            "add_rocm_offloading_block",
+            &PyStructuredSDFGBuilder::add_rocm_offloading_block,
+            py::arg("host_container"),
+            py::arg("dev_container"),
+            py::arg("direction"),
+            py::arg("lifecycle"),
+            py::arg("data_type"),
+            py::arg("size"),
+            py::arg("device_id") = "0",
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            "Add a ROCm data-offloading block (hipMalloc/hipMemcpy/hipFree) to the current sequence"
+        )
+        .def(
             "is_hoistable_size",
             &PyStructuredSDFGBuilder::is_hoistable_size,
             py::arg("size_expr"),

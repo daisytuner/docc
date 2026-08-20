@@ -267,6 +267,28 @@ public:
     );
 
     /**
+     * @brief Add a ROCm data-offloading block (hipMalloc/hipMemcpy/hipFree) to the current sequence
+     * @param host_container Name of the host-side container
+     * @param dev_container Name of the device-side container
+     * @param direction Transfer direction (H2D, D2H, NONE)
+     * @param lifecycle Buffer lifecycle (ALLOC, FREE, NO_CHANGE)
+     * @param data_type The element/pointer type transferred
+     * @param size Size expression in bytes
+     * @param device_id Device id expression (default "0")
+     * @param debug_info Optional debug info
+     */
+    void add_rocm_offloading_block(
+        const std::string& host_container,
+        const std::string& dev_container,
+        sdfg::offloading::DataTransferDirection direction,
+        sdfg::offloading::BufferLifecycle lifecycle,
+        const sdfg::types::IType& data_type,
+        const std::string& size,
+        const std::string& device_id = "0",
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    /**
      * @brief Check if a size expression only depends on function arguments (hoistable to function entry)
      * @param size_expr Size expression string to check
      * @return true if all symbols in the expression are function arguments
