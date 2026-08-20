@@ -98,6 +98,13 @@ protected:
     // reduce node's own axis: 1 for x, blockDim.x for y, blockDim.x * blockDim.y for z.
     std::string reduce_axis_stride(codegen::LanguageExtension& language_extension, TargetLevel target_level);
 
+    // Static size of a single block dimension, taken from the corresponding block level's
+    // schedule parallel_size in the enclosing/nested loop nest (1 if that level is absent).
+    // The launched blockDim equals these constants, so using them instead of the dynamic
+    // blockDim.x/y/z keeps the flat thread-index layout a compile-time constant expression
+    // that matches the statically sized shared buffer.
+    symbolic::Expression reduce_block_dim(TargetLevel block_level);
+
     // Compile-time product of all block-level parallel sizes enclosing/within this node
     // (x * y * z). Sizes the per-thread shared buffer for a multi-dimensional block.
     symbolic::Expression reduce_block_size_product();

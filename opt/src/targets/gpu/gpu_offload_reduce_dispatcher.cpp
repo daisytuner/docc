@@ -696,41 +696,45 @@ bool GPUOffloadReduceDispatcher::block_result_collides_across_grid(const symboli
 }
 
 std::string GPUOffloadReduceDispatcher::reduce_linear_thread_index(codegen::LanguageExtension& language_extension) {
-    // threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y
-    symbolic::Expression lin = symbolic::add(
-        symbolic::threadIdx_x(),
-        symbolic::
-            add(symbolic::mul(symbolic::threadIdx_y(), symbolic::blockDim_x()),
-                symbolic::mul(symbolic::threadIdx_z(), symbolic::mul(symbolic::blockDim_x(), symbolic::blockDim_y())))
-    );
+    // threadIdx.x + threadIdx.y * BX + threadIdx.z * BX * BY, where BX/BY are the static
+    // block dimensions from the schedule (== launched blockDim.x/y), so the flat layout is
+    // a constant expression consistent with the statically sized shared buffer.
+    symbolic::Expression bx = reduce_block_dim(TargetLevel::X_BLOCK);
+    symbolic::Expression by = reduce_block_dim(TargetLevel::Y_BLOCK);
+    symbolic::Expression lin = symbolic::
+        add(symbolic::threadIdx_x(),
+            symbolic::
+                add(symbolic::mul(symbolic::threadIdx_y(), bx),
+                    symbolic::mul(symbolic::threadIdx_z(), symbolic::mul(bx, by))));
     return language_extension.expression(lin);
 }
 
 std::string GPUOffloadReduceDispatcher::
     reduce_axis_stride(codegen::LanguageExtension& language_extension, TargetLevel target_level) {
+    symbolic::Expression bx = reduce_block_dim(TargetLevel::X_BLOCK);
+    symbolic::Expression by = reduce_block_dim(TargetLevel::Y_BLOCK);
     switch (target_level) {
         case TargetLevel::Y_BLOCK:
         case TargetLevel::Y_GRID:
-            return language_extension.expression(symbolic::blockDim_x());
+            return language_extension.expression(bx);
         case TargetLevel::Z_BLOCK:
         case TargetLevel::Z_GRID:
-            return language_extension.expression(symbolic::mul(symbolic::blockDim_x(), symbolic::blockDim_y()));
+            return language_extension.expression(symbolic::mul(bx, by));
         default:
             return language_extension.expression(symbolic::one());
     }
 }
 
-symbolic::Expression GPUOffloadReduceDispatcher::reduce_block_size_product() {
+symbolic::Expression GPUOffloadReduceDispatcher::reduce_block_dim(TargetLevel block_level) {
     auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
 
-    std::unordered_map<TargetLevel, symbolic::Expression> dims;
+    symbolic::Expression dim = symbolic::one();
     auto collect = [&](structured_control_flow::StructuredLoop* loop) {
         if (loop->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
             return;
         }
-        auto level = ScheduleType_GPU::target_level(loop->schedule_type());
-        if (is_block_level(level)) {
-            dims.insert_or_assign(level, ScheduleType_GPU::parallel_size(loop->schedule_type()));
+        if (ScheduleType_GPU::target_level(loop->schedule_type()) == block_level) {
+            dim = ScheduleType_GPU::parallel_size(loop->schedule_type());
         }
     };
 
@@ -745,12 +749,13 @@ symbolic::Expression GPUOffloadReduceDispatcher::reduce_block_size_product() {
             collect(struc_loop);
         }
     }
+    return dim;
+}
 
-    symbolic::Expression product = symbolic::one();
-    for (auto& entry : dims) {
-        product = symbolic::mul(product, entry.second);
-    }
-    return product;
+symbolic::Expression GPUOffloadReduceDispatcher::reduce_block_size_product() {
+    return symbolic::
+        mul(reduce_block_dim(TargetLevel::X_BLOCK),
+            symbolic::mul(reduce_block_dim(TargetLevel::Y_BLOCK), reduce_block_dim(TargetLevel::Z_BLOCK)));
 }
 
 void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
@@ -765,10 +770,16 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
 
     // Every thread of a (possibly multi-dimensional) block owns a distinct shared slot,
     // addressed by its flat thread index; the buffer spans the whole block (x * y * z).
+    // Sizing to the full flat thread count (rather than only this reduction's own block
+    // axes) keeps every thread's slot distinct even when the reduction is nested inside a
+    // map over another block dimension, which would otherwise alias slots and race.
+    // A warp nested inside the block publishes its result into its lane-0 slot and leaves
+    // the rest at identity, so the same per-thread layout serves warp and non-warp blocks.
     std::string lin_tid = reduce_linear_thread_index(language_extension);
+    // Compile-time constant: __shared__ arrays may not be variable-length. The launched
+    // blockDim equals the product of the block levels' parallel_size, so this constant
+    // matches blockDim.x*blockDim.y*blockDim.z while remaining a constant expression.
     std::string block_size = language_extension.expression(reduce_block_size_product());
-    std::string warp_size = language_extension.expression(get_target_level_dim(TargetLevel::WARP, get_warp_size()));
-    std::string num_warps = "(" + block_size + " / " + warp_size + ")";
 
     bool needs_cstdint = false;
     bool needs_cmath = false;
@@ -791,17 +802,8 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
             stream << ctype << " " << reg_name << " = " << identity << ";" << std::endl;
         } else if (block) {
             declared_shared = true;
-            if (has_nested_warp_reduction(r.container)) {
-                stream << "__shared__ " << ctype << " " << smem_name << "[" << num_warps << "];" << std::endl;
-                stream << "if (" << lin_tid << " < " << num_warps << ") {" << std::endl;
-                stream.setIndent(stream.indent() + 4);
-                stream << smem_name << "[" << lin_tid << "] = " << identity << ";" << std::endl;
-                stream.setIndent(stream.indent() - 4);
-                stream << "}" << std::endl;
-            } else {
-                stream << "__shared__ " << ctype << " " << smem_name << "[" << block_size << "];" << std::endl;
-                stream << smem_name << "[" << lin_tid << "] = " << identity << ";" << std::endl;
-            }
+            stream << "__shared__ " << ctype << " " << smem_name << "[" << block_size << "];" << std::endl;
+            stream << smem_name << "[" << lin_tid << "] = " << identity << ";" << std::endl;
         }
     }
 
@@ -863,10 +865,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
     // in the flat layout, while the axis-local index bounds the loop and selects writers.
     std::string lin_tid = reduce_linear_thread_index(language_extension);
     std::string axis_dim = language_extension.expression(ScheduleType_GPU::parallel_size(node_.schedule_type()));
-    std::string block_size = language_extension.expression(reduce_block_size_product());
     std::string warp_size = language_extension.expression(get_target_level_dim(TargetLevel::WARP, get_warp_size()));
-    std::string warps_per_axis = "(" + axis_dim + " / " + warp_size + ")";
-    std::string global_warp = "(" + lin_tid + " / " + warp_size + ")";
     std::string stride = reduce_axis_stride(language_extension, target_level);
 
     for (const auto& r : node_.reductions()) {
@@ -879,20 +878,32 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                              language_extension.expression(index) + "]";
 
         if (warp) {
-            // Reduce the per-lane partials into every lane's register.
-            std::string shfl = "__shfl_xor_sync(0xffffffff, " + reg_name + ", __daisy_reduce_mask)";
+            // Reduce the per-lane partials into every lane's register. The shuffle is read
+            // once into a temporary before combining: emitting the __shfl_xor_sync inside a
+            // combine expression (e.g. a min/max ternary) would duplicate it into divergent
+            // branches, and on Volta+ a masked shuffle stalls until every named lane reaches
+            // that exact instruction, deadlocking the warp.
+            std::string other = "__daisy_reduce_shfl_" + r.container;
             stream << "for (int __daisy_reduce_mask = " << warp_size << " / 2; __daisy_reduce_mask > 0; "
                    << "__daisy_reduce_mask >>= 1) {" << std::endl;
             stream.setIndent(stream.indent() + 4);
-            stream << reg_name << " = " << combine_expr(r.operation, reg_name, shfl) << ";" << std::endl;
+            stream << ctype << " " << other << " = __shfl_xor_sync(0xffffffff, " << reg_name
+                   << ", __daisy_reduce_mask);" << std::endl;
+            stream << reg_name << " = " << combine_expr(r.operation, reg_name, other) << ";" << std::endl;
             stream.setIndent(stream.indent() - 4);
             stream << "}" << std::endl;
 
             if (has_enclosing_block_reduction(r.container)) {
-                // Publish into the enclosing block's shared buffer at this warp's flat
-                // slot (distinct per row of a multi-dimensional block); the block level
-                // combines the per-warp partials.
-                stream << smem_name << "[" << global_warp << "] = " << reg_name << ";" << std::endl;
+                // Publish this warp's result into the enclosing block's per-thread shared
+                // buffer at the lane-0 flat slot; every other slot keeps the operator
+                // identity set at declaration time. The block-level per-thread reduction
+                // tree then folds these partials (across all remaining block dimensions)
+                // exactly as it folds ordinary per-thread partials.
+                stream << "if (lane == 0) {" << std::endl;
+                stream.setIndent(stream.indent() + 4);
+                stream << smem_name << "[" << lin_tid << "] = " << reg_name << ";" << std::endl;
+                stream.setIndent(stream.indent() - 4);
+                stream << "}" << std::endl;
             } else {
                 // No block level owns this container, so the per-warp result must reach
                 // the global accumulator directly. The warp leader atomically merges its
@@ -915,101 +926,62 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             std::string mvar = "__daisy_reduce_m_" + r.container;
             std::string hvar = "__daisy_reduce_half_" + r.container;
 
-            if (has_nested_warp_reduction(r.container)) {
-                // Combine the per-warp partials of each axis-row. Warps along the reduce
-                // axis are contiguous in the flat warp index, so the tree strides by one in
-                // warp space; the lane-0 thread of each axis-warp drives it.
-                std::string warp_in_axis = "(" + axis_idx + " / " + warp_size + ")";
-                std::string a = smem_name + "[" + global_warp + "]";
-                std::string b = smem_name + "[" + global_warp + " + " + hvar + "]";
+            // Every block dimension (whether or not a warp reduction is nested inside)
+            // uses one uniform scheme: each thread owns a distinct flat shared slot, the
+            // per-thread partials are reduced along this level's axis, and the result
+            // telescopes into the enclosing level's accumulator. A nested warp publishes
+            // its per-warp result into the lane-0 slot and leaves every other slot at the
+            // operator identity, so the same per-thread tree passes those partials through
+            // unchanged instead of relying on a separate (single-axis-only) warp tree.
+            //
+            // Combine the per-thread partials along the reduce axis. Neighbours are
+            // `hvar * stride` slots apart in the flat layout (stride 1/bx/bx*by for x/y/z).
+            std::string a = smem_name + "[" + lin_tid + "]";
+            std::string b = smem_name + "[" + lin_tid + " + " + hvar + " * " + stride + "]";
 
-                stream << "__syncthreads();" << std::endl;
-                stream << "for (int " << mvar << " = " << warps_per_axis << "; " << mvar << " > 1; ) {" << std::endl;
-                stream.setIndent(stream.indent() + 4);
-                stream << "int " << hvar << " = (" << mvar << " + 1) / 2;" << std::endl;
-                stream << "if (" << axis_idx << " % " << warp_size << " == 0 && " << warp_in_axis << " < " << mvar
-                       << " - " << hvar << ") {" << std::endl;
-                stream.setIndent(stream.indent() + 4);
-                stream << a << " = " << combine_expr(r.operation, a, b) << ";" << std::endl;
-                stream.setIndent(stream.indent() - 4);
-                stream << "}" << std::endl;
-                stream << "__syncthreads();" << std::endl;
-                stream << mvar << " = " << hvar << ";" << std::endl;
-                stream.setIndent(stream.indent() - 4);
-                stream << "}" << std::endl;
+            // Halving tree over `axis_dim` slots; ceil-half + bound guard handles non-power-of-two sizes.
+            stream << "__syncthreads();" << std::endl;
+            stream << "for (int " << mvar << " = " << axis_dim << "; " << mvar << " > 1; ) {" << std::endl;
+            stream.setIndent(stream.indent() + 4);
+            stream << "int " << hvar << " = (" << mvar << " + 1) / 2;" << std::endl;
+            stream << "if (" << axis_idx << " < " << mvar << " - " << hvar << ") {" << std::endl;
+            stream.setIndent(stream.indent() + 4);
+            stream << a << " = " << combine_expr(r.operation, a, b) << ";" << std::endl;
+            stream.setIndent(stream.indent() - 4);
+            stream << "}" << std::endl;
+            stream << "__syncthreads();" << std::endl;
+            stream << mvar << " = " << hvar << ";" << std::endl;
+            stream.setIndent(stream.indent() - 4);
+            stream << "}" << std::endl;
 
-                // One writer per axis-row: the axis leader (its flat slot holds the result).
-                // When this block reduce is nested under a grid reduce of the same container,
-                // the target is the grid's register accumulator, which must retain the partials
-                // of every grid coverage-loop iteration -> combine instead of overwrite.
-                std::string block_src = smem_name + "[" + global_warp + "]";
-                bool same_container_grid = has_enclosing_grid_reduction(r.container);
-                bool collides = !same_container_grid && block_result_collides_across_grid(index);
-                stream << "if (" << axis_idx << " == 0) {" << std::endl;
-                stream.setIndent(stream.indent() + 4);
-                if (collides) {
-                    if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
-                        stream << "atomicAdd(&" << target << ", " << block_src << ");" << std::endl;
-                    } else {
-                        std::string type_tag = ctype;
-                        std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
-                        std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
-                        stream << helper << "(&" << target << ", " << block_src << ");" << std::endl;
-                    }
+            // One writer per axis-row: the axis leader (its flat slot holds the result).
+            // When this block reduce is nested inside another reduce of the same container
+            // (an enclosing grid register, or an enclosing block's shared slot), the target
+            // is an accumulator that persists across the enclosing level's coverage-loop
+            // iterations and is pre-initialised to identity, so it must be combined into
+            // rather than overwritten -- otherwise every coverage tile but the last is lost.
+            std::string block_src = smem_name + "[" + lin_tid + "]";
+            bool enclosed_by_reduction = has_enclosing_grid_reduction(r.container) ||
+                                         has_enclosing_block_reduction(r.container);
+            bool collides = !enclosed_by_reduction && block_result_collides_across_grid(index);
+            stream << "if (" << axis_idx << " == 0) {" << std::endl;
+            stream.setIndent(stream.indent() + 4);
+            if (collides) {
+                if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
+                    stream << "atomicAdd(&" << target << ", " << block_src << ");" << std::endl;
                 } else {
-                    std::string block_write = same_container_grid ? combine_expr(r.operation, target, block_src)
-                                                                  : block_src;
-                    stream << target << " = " << block_write << ";" << std::endl;
+                    std::string type_tag = ctype;
+                    std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
+                    std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
+                    stream << helper << "(&" << target << ", " << block_src << ");" << std::endl;
                 }
-                stream.setIndent(stream.indent() - 4);
-                stream << "}" << std::endl;
             } else {
-                // Combine the per-thread partials along the reduce axis. Neighbours are
-                // `hvar * stride` slots apart in the flat layout (stride 1/bx/bx*by for x/y/z).
-                std::string a = smem_name + "[" + lin_tid + "]";
-                std::string b = smem_name + "[" + lin_tid + " + " + hvar + " * " + stride + "]";
-
-                // Halving tree over `axis_dim` slots; ceil-half + bound guard handles non-power-of-two sizes.
-                stream << "__syncthreads();" << std::endl;
-                stream << "for (int " << mvar << " = " << axis_dim << "; " << mvar << " > 1; ) {" << std::endl;
-                stream.setIndent(stream.indent() + 4);
-                stream << "int " << hvar << " = (" << mvar << " + 1) / 2;" << std::endl;
-                stream << "if (" << axis_idx << " < " << mvar << " - " << hvar << ") {" << std::endl;
-                stream.setIndent(stream.indent() + 4);
-                stream << a << " = " << combine_expr(r.operation, a, b) << ";" << std::endl;
-                stream.setIndent(stream.indent() - 4);
-                stream << "}" << std::endl;
-                stream << "__syncthreads();" << std::endl;
-                stream << mvar << " = " << hvar << ";" << std::endl;
-                stream.setIndent(stream.indent() - 4);
-                stream << "}" << std::endl;
-
-                // One writer per axis-row: the axis leader (its flat slot holds the result).
-                // When this block reduce is nested under a grid reduce of the same container,
-                // the target is the grid's register accumulator, which must retain the partials
-                // of every grid coverage-loop iteration -> combine instead of overwrite.
-                std::string block_src = smem_name + "[" + lin_tid + "]";
-                bool same_container_grid = has_enclosing_grid_reduction(r.container);
-                bool collides = !same_container_grid && block_result_collides_across_grid(index);
-                stream << "if (" << axis_idx << " == 0) {" << std::endl;
-                stream.setIndent(stream.indent() + 4);
-                if (collides) {
-                    if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
-                        stream << "atomicAdd(&" << target << ", " << block_src << ");" << std::endl;
-                    } else {
-                        std::string type_tag = ctype;
-                        std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
-                        std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
-                        stream << helper << "(&" << target << ", " << block_src << ");" << std::endl;
-                    }
-                } else {
-                    std::string block_write = same_container_grid ? combine_expr(r.operation, target, block_src)
-                                                                  : block_src;
-                    stream << target << " = " << block_write << ";" << std::endl;
-                }
-                stream.setIndent(stream.indent() - 4);
-                stream << "}" << std::endl;
+                std::string block_write = enclosed_by_reduction ? combine_expr(r.operation, target, block_src)
+                                                                : block_src;
+                stream << target << " = " << block_write << ";" << std::endl;
             }
+            stream.setIndent(stream.indent() - 4);
+            stream << "}" << std::endl;
         } else if (grid) {
             // Atomics are exclusive to grid-level reductions. When the grid register is
             // fed by a nested block/warp reduction of the same container, only the block's

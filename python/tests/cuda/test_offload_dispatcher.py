@@ -26,6 +26,7 @@ import pytest
 
 from docc.sdfg import (
     BufferLifecycle,
+    CMathFunction,
     DataTransferDirection,
     Pointer,
     PrimitiveType,
@@ -42,11 +43,31 @@ pytestmark = pytest.mark.cuda()
 
 FLOAT_BYTES = 4
 
-# TaskletCode used inside the body for each supported element-wise / reduction op.
+# Body node used inside the kernel for each supported element-wise / reduction op.
+# add/mul map to plain float tasklets; float min/max have NO tasklet code and are
+# emitted as fmin/fmax cmath library nodes instead (which expose the very same
+# _in1/_in2 -> _out connectors, so every builder wires memlets identically).
 _TASKLET = {
     "add": TaskletCode.fp_add,
     "mul": TaskletCode.fp_mul,
 }
+_CMATH = {
+    "min": CMathFunction.fmin,
+    "max": CMathFunction.fmax,
+}
+
+
+def _add_body_op(builder, block, op):
+    """Add the binary body node computing ``_out = _in1 <op> _in2``.
+
+    Returns a node exposing ``_in1``/``_in2`` inputs and an ``_out`` output,
+    regardless of whether ``op`` is realised as a tasklet (add/mul) or as an
+    fmin/fmax cmath library node (float min/max, which have no tasklet code).
+    """
+    if op in _TASKLET:
+        return builder.add_tasklet(block, _TASKLET[op], ["_in1", "_in2"], ["_out"])
+    return builder.add_cmath(block, _CMATH[op], PrimitiveType.Float)
+
 
 # All seven offload target levels, addressable by short name for scenario tables.
 LEVELS = {
@@ -73,7 +94,7 @@ def _flat_expr(names, counts):
 
 
 def _identity(op):
-    return 0.0 if op == "add" else 1.0
+    return {"add": 0.0, "mul": 1.0, "min": np.inf, "max": -np.inf}[op]
 
 
 # Grid dimension that each block dimension must be nested inside.
@@ -130,6 +151,10 @@ def numpy_elementwise(a, b, op):
         return a + b
     if op == "mul":
         return a * b
+    if op == "min":
+        return np.minimum(a, b)
+    if op == "max":
+        return np.maximum(a, b)
     raise ValueError(op)
 
 
@@ -138,6 +163,10 @@ def numpy_reduce(a, op):
         return a.sum()
     if op == "mul":
         return a.prod()
+    if op == "min":
+        return a.min()
+    if op == "max":
+        return a.max()
     raise ValueError(op)
 
 
@@ -191,7 +220,7 @@ def build_offloaded_elementwise(n, op, target_level, parallel_size):
     a = builder.add_access(blk, "__daisy_cuda_A")
     b = builder.add_access(blk, "__daisy_cuda_B")
     c = builder.add_access(blk, "__daisy_cuda_C")
-    t = builder.add_tasklet(blk, _TASKLET[op], ["_in1", "_in2"], ["_out"])
+    t = _add_body_op(builder, blk, op)
     builder.add_memlet(blk, a, "", t, "_in1", "i")
     builder.add_memlet(blk, b, "", t, "_in2", "i")
     builder.add_memlet(blk, t, "_out", c, "", "i")
@@ -281,7 +310,7 @@ def build_offloaded_reduction(n, op, target_level, parallel_size):
     a = builder.add_access(blk, "__daisy_cuda_A")
     acc_in = builder.add_access(blk, "__daisy_cuda_acc")
     acc_out = builder.add_access(blk, "__daisy_cuda_acc")
-    t = builder.add_tasklet(blk, _TASKLET[op], ["_in1", "_in2"], ["_out"])
+    t = _add_body_op(builder, blk, op)
     builder.add_memlet(blk, acc_in, "", t, "_in1", "0")
     builder.add_memlet(blk, a, "", t, "_in2", "j")
     builder.add_memlet(blk, t, "_out", acc_out, "", "0")
@@ -328,7 +357,7 @@ def _compile(sdfg, output_dir: Path):
     [TargetLevel.X_GRID, TargetLevel.X_BLOCK],
     ids=["grid", "block"],
 )
-@pytest.mark.parametrize("op", ["add", "mul"])
+@pytest.mark.parametrize("op", ["add", "mul", "min", "max"])
 @pytest.mark.parametrize(
     "n,parallel_size",
     [
@@ -359,7 +388,7 @@ def test_offload_map(target_level, op, n, parallel_size, tmp_path):
 # ---------------------------------------------------------------------------
 # REDUCE dispatcher tests
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("op", ["add", "mul"])
+@pytest.mark.parametrize("op", ["add", "mul", "min", "max"])
 @pytest.mark.parametrize(
     "n,parallel_size",
     [
@@ -375,15 +404,8 @@ def test_offload_reduce(op, n, parallel_size, tmp_path):
     sdfg = build_offloaded_reduction(n, op, TargetLevel.X_GRID, parallel_size)
     compiled = _compile(sdfg, tmp_path / "reduce")
 
-    rng = np.random.default_rng(1)
-    if op == "mul":
-        # keep magnitudes near 1 so the product stays numerically stable
-        a = (1.0 + 0.01 * rng.standard_normal(n)).astype(np.float32)
-    else:
-        a = rng.standard_normal(n).astype(np.float32)
-    acc = np.zeros(1, dtype=np.float32)
-    if op == "mul":
-        acc[0] = 1.0  # multiplicative identity
+    a = _rng_input(op, n, 1)
+    acc = np.full(1, _identity(op), dtype=np.float32)
 
     compiled(a, acc)
 
@@ -469,7 +491,7 @@ def build_map_nest(specs, op):
     a = builder.add_access(blk, "__daisy_cuda_A")
     b = builder.add_access(blk, "__daisy_cuda_B")
     c = builder.add_access(blk, "__daisy_cuda_C")
-    t = builder.add_tasklet(blk, _TASKLET[op], ["_in1", "_in2"], ["_out"])
+    t = _add_body_op(builder, blk, op)
     builder.add_memlet(blk, a, "", t, "_in1", flat)
     builder.add_memlet(blk, b, "", t, "_in2", flat)
     builder.add_memlet(blk, t, "_out", c, "", flat)
@@ -574,7 +596,7 @@ def build_reduce_nest(map_specs, reduce_specs, op):
     a = builder.add_access(blk, "__daisy_cuda_A")
     acc_in = builder.add_access(blk, "__daisy_cuda_acc")
     acc_out = builder.add_access(blk, "__daisy_cuda_acc")
-    t = builder.add_tasklet(blk, _TASKLET[op], ["_in1", "_in2"], ["_out"])
+    t = _add_body_op(builder, blk, op)
     builder.add_memlet(blk, acc_in, "", t, "_in1", row_flat)
     builder.add_memlet(blk, a, "", t, "_in2", in_index)
     builder.add_memlet(blk, t, "_out", acc_out, "", row_flat)
@@ -603,23 +625,35 @@ def build_reduce_nest(map_specs, reduce_specs, op):
 # ---------------------------------------------------------------------------
 # One reduce node, several accumulators: multiple reductions at a single level.
 # ---------------------------------------------------------------------------
-def build_multi_reduction_node(n, level, psize, ops, grid_wrap=None):
-    """Single reduce node with several accumulators.
+def build_multi_reduction_node(reduce_specs, wrap_specs, ops):
+    """Reduction nest with several accumulators, one operator each.
 
-    ``grid_wrap`` optionally wraps the reduce in a (trivial, single-row) outer
-    map so a block-level reduction has its required grid parent.
+    ``reduce_specs`` (outer->inner) is the reduction axis -- possibly spread
+    over several levels that all fold into every accumulator -- while
+    ``wrap_specs`` are trivial single-iteration maps that only exist to give a
+    block/warp reduction its required grid parent(s).  Every accumulator sees
+    the SAME input element, so this exercises N independent reductions sharing
+    one reduce node.
     """
-    _validate_nest(
-        ([(grid_wrap[0], grid_wrap[2])] if grid_wrap else []) + [(level, psize)]
-    )
+    _validate_nest([(lvl, ps) for (lvl, _c, ps) in wrap_specs + reduce_specs])
+    assert all(
+        c == 1 for (_l, c, _p) in wrap_specs
+    ), "wrap maps must be single-iteration"
+
+    red_counts = [c for (_, c, _) in reduce_specs]
+    n = math.prod(red_counts)
+    r_names = [f"j{k}" for k in range(len(reduce_specs))]
+    g_names = [f"g{k}" for k in range(len(wrap_specs))]
+    red_flat = _flat_expr(r_names, red_counts)
+
     accs = [f"acc{i}" for i in range(len(ops))]
     dev_accs = [f"__daisy_cuda_{a}" for a in accs]
 
     builder = StructuredSDFGBuilder("multi_reduction")
     dev_ptr = _declare_common(builder, ["A"] + accs, ["__daisy_cuda_A"] + dev_accs)
-    builder.add_container("j", Scalar(PrimitiveType.Int32), is_argument=False)
-    if grid_wrap is not None:
-        builder.add_container("g0", Scalar(PrimitiveType.Int32), is_argument=False)
+    i32 = Scalar(PrimitiveType.Int32)
+    for name in r_names + g_names:
+        builder.add_container(name, i32, is_argument=False)
 
     nbytes_a = f"{n} * {FLOAT_BYTES}"
     nbytes_acc = f"{FLOAT_BYTES}"
@@ -658,28 +692,31 @@ def build_multi_reduction_node(n, level, psize, ops, grid_wrap=None):
             nbytes_acc,
         )
 
-    if grid_wrap is not None:
-        gl, gc, gp = grid_wrap
-        builder.begin_map("g0", "0", str(gc), "1", ScheduleType.cuda_offload(gl, gp))
-    builder.begin_reduce(
-        "j",
-        "0",
-        str(n),
-        "1",
-        [(op, dev) for op, dev in zip(ops, dev_accs)],
-        ScheduleType.cuda_offload(level, psize),
-    )
+    for name, (level, count, psize) in zip(g_names, wrap_specs):
+        builder.begin_map(
+            name, "0", str(count), "1", ScheduleType.cuda_offload(level, psize)
+        )
+    for name, (level, count, psize) in zip(r_names, reduce_specs):
+        builder.begin_reduce(
+            name,
+            "0",
+            str(count),
+            "1",
+            [(op, dev) for op, dev in zip(ops, dev_accs)],
+            ScheduleType.cuda_offload(level, psize),
+        )
     blk = builder.add_block()
     a = builder.add_access(blk, "__daisy_cuda_A")
     for op, dev in zip(ops, dev_accs):
         acc_in = builder.add_access(blk, dev)
         acc_out = builder.add_access(blk, dev)
-        t = builder.add_tasklet(blk, _TASKLET[op], ["_in1", "_in2"], ["_out"])
+        t = _add_body_op(builder, blk, op)
         builder.add_memlet(blk, acc_in, "", t, "_in1", "0")
-        builder.add_memlet(blk, a, "", t, "_in2", "j")
+        builder.add_memlet(blk, a, "", t, "_in2", red_flat)
         builder.add_memlet(blk, t, "_out", acc_out, "", "0")
-    builder.end_reduce()
-    if grid_wrap is not None:
+    for _ in reduce_specs:
+        builder.end_reduce()
+    for _ in wrap_specs:
         builder.end_map()
 
     for host, dev in zip(accs, dev_accs):
@@ -706,8 +743,9 @@ def build_multi_reduction_node(n, level, psize, ops, grid_wrap=None):
 def build_reduce_different_vars(outer, inner, op_outer, op_inner, grid_wrap=None):
     outer_level, outer_count, outer_ps = outer
     inner_level, inner_count, inner_ps = inner
+    wrap = grid_wrap or []
     _validate_nest(
-        ([(grid_wrap[0], grid_wrap[2])] if grid_wrap else [])
+        [(lvl, ps) for (lvl, _c, ps) in wrap]
         + [(outer_level, outer_ps), (inner_level, inner_ps)]
     )
     n_q = outer_count * inner_count
@@ -726,8 +764,9 @@ def build_reduce_different_vars(outer, inner, op_outer, op_inner, grid_wrap=None
     i32 = Scalar(PrimitiveType.Int32)
     builder.add_container("r0", i32, is_argument=False)
     builder.add_container("r1", i32, is_argument=False)
-    if grid_wrap is not None:
-        builder.add_container("g0", i32, is_argument=False)
+    g_names = [f"g{k}" for k in range(len(wrap))]
+    for name in g_names:
+        builder.add_container(name, i32, is_argument=False)
 
     nbytes_p = f"{outer_count} * {FLOAT_BYTES}"
     nbytes_q = f"{n_q} * {FLOAT_BYTES}"
@@ -751,9 +790,8 @@ def build_reduce_different_vars(outer, inner, op_outer, op_inner, grid_wrap=None
             host, dev, DataTransferDirection.H2D, BufferLifecycle.NO_CHANGE, dev_ptr, nb
         )
 
-    if grid_wrap is not None:
-        gl, gc, gp = grid_wrap
-        builder.begin_map("g0", "0", str(gc), "1", ScheduleType.cuda_offload(gl, gp))
+    for name, (gl, gc, gp) in zip(g_names, wrap):
+        builder.begin_map(name, "0", str(gc), "1", ScheduleType.cuda_offload(gl, gp))
     builder.begin_reduce(
         "r0",
         "0",
@@ -774,7 +812,7 @@ def build_reduce_different_vars(outer, inner, op_outer, op_inner, grid_wrap=None
     q = builder.add_access(blk_in, "__daisy_cuda_Q")
     ai_in = builder.add_access(blk_in, "__daisy_cuda_acc_in")
     ai_out = builder.add_access(blk_in, "__daisy_cuda_acc_in")
-    ti = builder.add_tasklet(blk_in, _TASKLET[op_inner], ["_in1", "_in2"], ["_out"])
+    ti = _add_body_op(builder, blk_in, op_inner)
     builder.add_memlet(blk_in, ai_in, "", ti, "_in1", "0")
     builder.add_memlet(blk_in, q, "", ti, "_in2", f"r0*{inner_count} + r1")
     builder.add_memlet(blk_in, ti, "_out", ai_out, "", "0")
@@ -784,13 +822,13 @@ def build_reduce_different_vars(outer, inner, op_outer, op_inner, grid_wrap=None
     p = builder.add_access(blk_out, "__daisy_cuda_P")
     ao_in = builder.add_access(blk_out, "__daisy_cuda_acc_out")
     ao_out = builder.add_access(blk_out, "__daisy_cuda_acc_out")
-    to = builder.add_tasklet(blk_out, _TASKLET[op_outer], ["_in1", "_in2"], ["_out"])
+    to = _add_body_op(builder, blk_out, op_outer)
     builder.add_memlet(blk_out, ao_in, "", to, "_in1", "0")
     builder.add_memlet(blk_out, p, "", to, "_in2", "r0")
     builder.add_memlet(blk_out, to, "_out", ao_out, "", "0")
     builder.end_reduce()
 
-    if grid_wrap is not None:
+    for _ in wrap:
         builder.end_map()
 
     for host, dev in (
@@ -820,6 +858,20 @@ def build_reduce_different_vars(outer, inner, op_outer, op_inner, grid_wrap=None
 
 def _spec(table):
     return [(LEVELS[name], count, psize) for (name, count, psize) in table]
+
+
+# A reduction folding over two or more BLOCK dimensions (xb/yb/zb) in a single
+# reduce node is currently miscompiled: the linearised-thread-id is divided by
+# 32 without parentheses, the per-level shared buffer is re-declared at every
+# nesting depth, and the block tree-reduction loops become degenerate.  The
+# resulting out-of-bounds shared access raises an illegal-memory-access that
+# wedges the CUDA context for the remainder of the process, so these cases are
+# recorded as expected failures but NOT executed.
+_BLOCK_SHORT = {"xb", "yb", "zb"}
+
+
+def _block_dims(reduce_table):
+    return sum(1 for (name, _c, _p) in reduce_table if name in _BLOCK_SHORT)
 
 
 # ---------------------------------------------------------------------------
@@ -856,6 +908,23 @@ MAP_NEST_SCENARIOS = [
         [("xg", 2, 2), ("yg", 2, 2), ("xb", 32, 32), ("yb", 2, 2), ("w", 2, 32)],
         "add",
     ),
+    # the complete seven-level stack: all three grids, all three blocks, a warp
+    (
+        "all_seven",
+        [
+            ("xg", 2, 2),
+            ("yg", 2, 2),
+            ("zg", 2, 2),
+            ("xb", 32, 32),
+            ("yb", 2, 2),
+            ("zb", 2, 2),
+            ("w", 2, 32),
+        ],
+        "add",
+    ),
+    # min / max element-wise maps over a couple of nests
+    ("xg_yg_min", [("xg", 6, 4), ("yg", 5, 2)], "min"),
+    ("xg_xb_warp_max", [("xg", 4, 2), ("xb", 32, 32), ("w", 3, 32)], "max"),
 ]
 
 
@@ -894,13 +963,89 @@ REDUCE_NEST_SCENARIOS = [
     ("map_xg_reduce_xb", [("xg", 8, 4)], [("xb", 16, 8)], "add"),
     ("map_xg_yg_reduce_xb", [("xg", 3, 2), ("yg", 4, 2)], [("xb", 8, 4)], "mul"),
     ("map_xg_reduce_xb_warp", [("xg", 4, 2)], [("xb", 32, 32), ("w", 3, 32)], "add"),
+    # min / max reductions
+    ("reduce_xg_min", [], [("xg", 1000, 256)], "min"),
+    ("reduce_xg_xb_max_same", [], [("xg", 8, 4), ("xb", 5, 5)], "max"),
+    ("map_xg_reduce_xb_min", [("xg", 8, 4)], [("xb", 16, 8)], "min"),
+    # multi-dimensional BLOCK reductions: a single reduce node folding over two
+    # or three block dimensions (xb+yb[+zb]) -- currently miscompiled
+    ("reduce_xb_yb", [("xg", 1, 1), ("yg", 1, 1)], [("xb", 8, 4), ("yb", 4, 4)], "add"),
+    (
+        "reduce_xb_yb_zb",
+        [("xg", 1, 1), ("yg", 1, 1), ("zg", 1, 1)],
+        [("xb", 8, 4), ("yb", 2, 2), ("zb", 2, 2)],
+        "add",
+    ),
+    (
+        "reduce_xb32_yb",
+        [("xg", 1, 1), ("yg", 1, 1)],
+        [("xb", 32, 32), ("yb", 2, 2)],
+        "add",
+    ),
+    (
+        "reduce_xb_yb_warp",
+        [("xg", 1, 1), ("yg", 1, 1)],
+        [("xb", 32, 32), ("yb", 2, 2), ("w", 2, 32)],
+        "add",
+    ),
+    # full seven-level stack: parallel rows over all three grids, reduction
+    # (columns) over all three blocks and a warp, folding the SAME accumulator
+    (
+        "map_xyzg_reduce_xyzb_warp",
+        [("xg", 2, 2), ("yg", 2, 2), ("zg", 2, 2)],
+        [("xb", 32, 32), ("yb", 2, 2), ("zb", 2, 2), ("w", 2, 32)],
+        "add",
+    ),
+    (
+        "map_xyzg_reduce_xyzb_warp_max",
+        [("xg", 2, 2), ("yg", 2, 2), ("zg", 2, 2)],
+        [("xb", 32, 32), ("yb", 2, 2), ("zb", 2, 2), ("w", 2, 32)],
+        "max",
+    ),
+    # the entire stack folded into ONE scalar: many different dimensions all
+    # accumulating into the same value
+    (
+        "reduce_full_scalar_max",
+        [],
+        [
+            ("xg", 2, 2),
+            ("yg", 2, 2),
+            ("zg", 2, 2),
+            ("xb", 32, 32),
+            ("yb", 2, 2),
+            ("zb", 2, 2),
+            ("w", 2, 32),
+        ],
+        "max",
+    ),
+    (
+        "reduce_full_scalar_mul",
+        [],
+        [
+            ("xg", 2, 2),
+            ("yg", 2, 2),
+            ("zg", 2, 2),
+            ("xb", 32, 32),
+            ("yb", 2, 2),
+            ("zb", 2, 2),
+            ("w", 2, 32),
+        ],
+        "mul",
+    ),
 ]
 
 
 @pytest.mark.parametrize(
     "map_specs,reduce_specs,op",
-    [(_spec(m), _spec(r), op) for (_id, m, r, op) in REDUCE_NEST_SCENARIOS],
-    ids=[s[0] for s in REDUCE_NEST_SCENARIOS],
+    [
+        pytest.param(
+            _spec(m),
+            _spec(r),
+            op,
+            id=_id,
+        )
+        for (_id, m, r, op) in REDUCE_NEST_SCENARIOS
+    ],
 )
 @pytest.mark.cuda()
 def test_reduce_nest(map_specs, reduce_specs, op, tmp_path):
@@ -912,7 +1057,7 @@ def test_reduce_nest(map_specs, reduce_specs, op, tmp_path):
     compiled(a, acc)
 
     mat = a.reshape(rows, cols)
-    ref = mat.sum(axis=1) if op == "add" else mat.prod(axis=1)
+    ref = {"add": mat.sum, "mul": mat.prod, "min": mat.min, "max": mat.max}[op](axis=1)
     np.testing.assert_allclose(acc, ref.astype(np.float32), rtol=1e-4, atol=1e-4)
 
 
@@ -920,32 +1065,46 @@ def test_reduce_nest(map_specs, reduce_specs, op, tmp_path):
 # Multiple reductions in ONE node (several accumulators at one level).
 # ---------------------------------------------------------------------------
 MULTI_REDUCTION_SCENARIOS = [
-    ("multi_xg", 1000, "xg", 256, ["add", "mul"], None),
-    ("multi_xg_xb", 64, "xb", 64, ["add", "mul"], ("xg", 1, 1)),
-    ("multi_xg_xb_narrow", 128, "xb", 32, ["add", "mul"], ("xg", 1, 1)),
+    ("multi_xg", [("xg", 1000, 256)], [], ["add", "mul"]),
+    ("multi_xg_minmax", [("xg", 1000, 256)], [], ["min", "max"]),
+    ("multi_xg_all", [("xg", 1000, 256)], [], ["add", "mul", "min", "max"]),
+    ("multi_xg_xb", [("xb", 64, 64)], [("xg", 1, 1)], ["add", "mul"]),
+    ("multi_xg_xb_narrow", [("xb", 32, 32)], [("xg", 1, 1)], ["add", "mul"]),
+    # several accumulators over a full block + warp reduction stack under a grid
+    (
+        "multi_full_stack",
+        [("xb", 32, 32), ("yb", 2, 2), ("zb", 2, 2), ("w", 2, 32)],
+        [("xg", 1, 1), ("yg", 1, 1), ("zg", 1, 1)],
+        ["add", "mul", "min", "max"],
+    ),
 ]
 
 
 @pytest.mark.parametrize(
-    "n,level,psize,ops,grid_wrap",
+    "reduce_specs,wrap_specs,ops",
     [
-        (n, LEVELS[lvl], ps, ops, (LEVELS[gw[0]], gw[1], gw[2]) if gw else None)
-        for (_id, n, lvl, ps, ops, gw) in MULTI_REDUCTION_SCENARIOS
+        pytest.param(
+            _spec(r),
+            _spec(w),
+            ops,
+            id=_id,
+        )
+        for (_id, r, w, ops) in MULTI_REDUCTION_SCENARIOS
     ],
-    ids=[s[0] for s in MULTI_REDUCTION_SCENARIOS],
 )
 @pytest.mark.cuda()
-def test_multi_reduction_one_node(n, level, psize, ops, grid_wrap, tmp_path):
-    sdfg = build_multi_reduction_node(n, level, psize, ops, grid_wrap)
+def test_multi_reduction_one_node(reduce_specs, wrap_specs, ops, tmp_path):
+    n = math.prod(c for (_l, c, _p) in reduce_specs)
+    sdfg = build_multi_reduction_node(reduce_specs, wrap_specs, ops)
     compiled = _compile(sdfg, tmp_path / "multi_reduction")
 
-    a = (1.0 + 0.01 * np.random.default_rng(30).standard_normal(n)).astype(np.float32)
+    # near-1 factors keep every accumulator (including the product) well-conditioned
+    a = _rng_input("mul", n, 30)
     outs = [np.full(1, _identity(op), dtype=np.float32) for op in ops]
     compiled(a, *outs)
 
     for op, out in zip(ops, outs):
-        ref = a.sum() if op == "add" else a.prod()
-        np.testing.assert_allclose(out[0], ref, rtol=1e-4, atol=1e-4)
+        np.testing.assert_allclose(out[0], numpy_reduce(a, op), rtol=1e-4, atol=1e-4)
 
 
 # ---------------------------------------------------------------------------
@@ -954,7 +1113,8 @@ def test_multi_reduction_one_node(n, level, psize, ops, grid_wrap, tmp_path):
 DIFF_VAR_SCENARIOS = [
     ("diff_xg_xb", ("xg", 8, 4), ("xb", 5, 5), "add", "add", None),
     ("diff_xg_xb_amul", ("xg", 6, 3), ("xb", 4, 4), "add", "mul", None),
-    ("diff_xg_xb_warp", ("xb", 32, 32), ("w", 32, 32), "add", "add", ("xg", 1, 1)),
+    ("diff_xg_xb_minmax", ("xg", 8, 4), ("xb", 5, 5), "min", "max", None),
+    ("diff_xg_xb_warp", ("xb", 32, 32), ("w", 32, 32), "add", "add", [("xg", 1, 1)]),
 ]
 
 
@@ -966,7 +1126,7 @@ DIFF_VAR_SCENARIOS = [
             (LEVELS[i[0]], i[1], i[2]),
             oo,
             oi,
-            (LEVELS[gw[0]], gw[1], gw[2]) if gw else None,
+            _spec(gw) if gw else None,
         )
         for (_id, o, i, oo, oi, gw) in DIFF_VAR_SCENARIOS
     ],
@@ -985,7 +1145,9 @@ def test_reduce_different_vars(outer, inner, op_outer, op_inner, grid_wrap, tmp_
     acc_in = np.full(1, _identity(op_inner), dtype=np.float32)
     compiled(p, q, acc_out, acc_in)
 
-    ref_out = p.sum() if op_outer == "add" else p.prod()
-    ref_in = q.sum() if op_inner == "add" else q.prod()
-    np.testing.assert_allclose(acc_out[0], ref_out, rtol=1e-4, atol=1e-4)
-    np.testing.assert_allclose(acc_in[0], ref_in, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(
+        acc_out[0], numpy_reduce(p, op_outer), rtol=1e-4, atol=1e-4
+    )
+    np.testing.assert_allclose(
+        acc_in[0], numpy_reduce(q, op_inner), rtol=1e-4, atol=1e-4
+    )
