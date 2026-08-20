@@ -18,6 +18,7 @@ The parallel size is deliberately varied between:
 so the grid-stride coverage loop and its boundary guard are both exercised.
 """
 
+import itertools
 import math
 from pathlib import Path
 
@@ -860,18 +861,67 @@ def _spec(table):
     return [(LEVELS[name], count, psize) for (name, count, psize) in table]
 
 
-# A reduction folding over two or more BLOCK dimensions (xb/yb/zb) in a single
-# reduce node is currently miscompiled: the linearised-thread-id is divided by
-# 32 without parentheses, the per-level shared buffer is re-declared at every
-# nesting depth, and the block tree-reduction loops become degenerate.  The
-# resulting out-of-bounds shared access raises an illegal-memory-access that
-# wedges the CUDA context for the remainder of the process, so these cases are
-# recorded as expected failures but NOT executed.
-_BLOCK_SHORT = {"xb", "yb", "zb"}
+# (count, parallel_size) pairs realising every relationship between a loop's
+# iteration count and its schedule parallel_size.  Sweeping these drives the
+# grid/block coverage loop and its boundary guard into every regime:
+#   smaller  -- count < parallel_size: single pass, boundary guard active
+#   equals   -- count == parallel_size: single exact pass
+#   multiple -- count == k*parallel_size (k>1): whole coverage tiles, no remainder
+#   ragged   -- count > parallel_size, not a multiple: coverage tiles + remainder
+_SIZE_RELATIONS = {
+    "smaller": (3, 8),
+    "equals": (8, 8),
+    "multiple": (16, 8),
+    "ragged": (10, 4),
+}
+
+# Warp count/parallel_size regimes.  A warp's parallel_size is architecturally
+# fixed at WARP_SIZE (its lanes ARE the 32 hardware lanes), but the iteration
+# COUNT it folds is not: each lane walks its slice of the count sequentially
+# before the single cross-lane shuffle.  Sweep the warp coverage loop into every
+# regime while keeping parallel_size == WARP_SIZE:
+#   smaller  -- count < WARP_SIZE: some lanes fold nothing (identity), guard active
+#   equals   -- count == WARP_SIZE: one element per lane
+#   multiple -- count == k*WARP_SIZE: every lane folds k elements, no remainder
+#   ragged   -- count > WARP_SIZE, not a multiple: full tiles + partial remainder
+_WARP_SIZE_RELATIONS = {
+    "smaller": (20, WARP_SIZE),
+    "equals": (WARP_SIZE, WARP_SIZE),
+    "multiple": (3 * WARP_SIZE, WARP_SIZE),
+    "ragged": (50, WARP_SIZE),
+}
 
 
-def _block_dims(reduce_table):
-    return sum(1 for (name, _c, _p) in reduce_table if name in _BLOCK_SHORT)
+# Grid dimension that each block dimension must be nested inside (short names).
+_GRID_SHORT = {"xb": "xg", "yb": "yg", "zb": "zg"}
+
+
+def _with_grid_parent(level, count, psize):
+    """Spec table for a single dimension, adding the trivial size-1 grid parent
+    that a block dimension requires (grids may stand alone)."""
+    if level in _GRID_SHORT:
+        return [(_GRID_SHORT[level], 1, 1), (level, count, psize)]
+    return [(level, count, psize)]
+
+
+def _single_dim_size_scenarios():
+    """One offloaded dimension per scenario, sweeping every count/parallel_size
+    relationship across every grid and block level."""
+    out = []
+    for level in ("xg", "yg", "zg", "xb", "yb", "zb"):
+        for rel, (c, p) in _SIZE_RELATIONS.items():
+            out.append((f"size_{level}_{rel}", _with_grid_parent(level, c, p), "add"))
+    return out
+
+
+def _two_dim_size_tables(a_level, b_level, parents):
+    """Full cross product of relationships across two offloaded dimensions,
+    prefixed by any required size-1 grid parents.  Yields (id, table)."""
+    for (ra, (ca, pa)), (rb, (cb, pb)) in itertools.product(
+        _SIZE_RELATIONS.items(), repeat=2
+    ):
+        table = list(parents) + [(a_level, ca, pa), (b_level, cb, pb)]
+        yield (f"size_{a_level}_{ra}_{b_level}_{rb}", table)
 
 
 # ---------------------------------------------------------------------------
@@ -926,6 +976,67 @@ MAP_NEST_SCENARIOS = [
     ("xg_yg_min", [("xg", 6, 4), ("yg", 5, 2)], "min"),
     ("xg_xb_warp_max", [("xg", 4, 2), ("xb", 32, 32), ("w", 3, 32)], "max"),
 ]
+
+# Systematic count-vs-parallel_size sweeps (see _SIZE_RELATIONS): every single
+# dimension in each regime, plus full cross products over two dimensions -- pure
+# grids (xg,yg), grid+block on the SAME axis (xg,xb: grid coverage nested inside
+# block coverage) and two block dimensions (xb,yb) under trivial grid parents --
+# and a three-dimensional diagonal for both grids and blocks.
+MAP_NEST_SCENARIOS += _single_dim_size_scenarios()
+MAP_NEST_SCENARIOS += [
+    (sid, table, "add") for (sid, table) in _two_dim_size_tables("xg", "yg", [])
+]
+MAP_NEST_SCENARIOS += [
+    (sid, table, "add") for (sid, table) in _two_dim_size_tables("xg", "xb", [])
+]
+MAP_NEST_SCENARIOS += [
+    (sid, table, "add")
+    for (sid, table) in _two_dim_size_tables("xb", "yb", [("xg", 1, 1), ("yg", 1, 1)])
+]
+for _rel, (_c, _p) in _SIZE_RELATIONS.items():
+    MAP_NEST_SCENARIOS.append(
+        (
+            f"size_xyz_grid_{_rel}",
+            [("xg", _c, _p), ("yg", _c, _p), ("zg", _c, _p)],
+            "add",
+        )
+    )
+    MAP_NEST_SCENARIOS.append(
+        (
+            f"size_xyz_block_{_rel}",
+            [
+                ("xg", 1, 1),
+                ("yg", 1, 1),
+                ("zg", 1, 1),
+                ("xb", _c, _p),
+                ("yb", _c, _p),
+                ("zb", _c, _p),
+            ],
+            "add",
+        )
+    )
+
+# Warp coverage-loop size sweeps (parallel_size fixed at WARP_SIZE, count varied):
+# the warp innermost under its X_BLOCK/X_GRID owner, alone and crossed with an
+# enclosing grid whose own coverage loop is swept in the same regimes.
+for _wrel, (_wc, _wp) in _WARP_SIZE_RELATIONS.items():
+    MAP_NEST_SCENARIOS.append(
+        (
+            f"size_warp_{_wrel}",
+            [("xg", 1, 1), ("xb", WARP_SIZE, WARP_SIZE), ("w", _wc, _wp)],
+            "add",
+        )
+    )
+for (_grel, (_gc, _gp)), (_wrel, (_wc, _wp)) in itertools.product(
+    _SIZE_RELATIONS.items(), _WARP_SIZE_RELATIONS.items()
+):
+    MAP_NEST_SCENARIOS.append(
+        (
+            f"size_xg_{_grel}_warp_{_wrel}",
+            [("xg", _gc, _gp), ("xb", WARP_SIZE, WARP_SIZE), ("w", _wc, _wp)],
+            "add",
+        )
+    )
 
 
 @pytest.mark.parametrize(
@@ -1047,6 +1158,107 @@ REDUCE_NEST_SCENARIOS = [
         "mul",
     ),
 ]
+
+
+def _reduce_size_scenarios():
+    """Systematic count-vs-parallel_size sweeps for reductions (see
+    _SIZE_RELATIONS): every single reduction dimension in each regime, plus full
+    cross products over two reduced dimensions -- grid+block on the SAME axis
+    (xg,xb folded into one scalar), two block dimensions (xb,yb), and a mapped
+    (parallel) row axis crossed with a reduced column axis (map xg x reduce xb)
+    -- and a three-dimensional block-reduction diagonal.  ``add`` keeps the
+    reference numerically exact regardless of element count.
+    """
+    out = []
+    rels = list(_SIZE_RELATIONS.items())
+
+    # single reduced grid dimension (grids stand alone)
+    for rel, (c, p) in rels:
+        out.append((f"rsize_xg_{rel}", [], [("xg", c, p)], "add"))
+    # single reduced block dimension, under its trivial size-1 grid parent
+    for level in ("xb", "yb", "zb"):
+        grid = _GRID_SHORT[level]
+        for rel, (c, p) in rels:
+            out.append((f"rsize_{level}_{rel}", [(grid, 1, 1)], [(level, c, p)], "add"))
+
+    # grid + block on the SAME axis, both folding the one scalar accumulator
+    for (ra, (ca, pa)), (rb, (cb, pb)) in itertools.product(rels, repeat=2):
+        out.append(
+            (
+                f"rsize_xg_{ra}_xb_{rb}",
+                [],
+                [("xg", ca, pa), ("xb", cb, pb)],
+                "add",
+            )
+        )
+    # two reduced block dimensions under trivial grid parents
+    for (ra, (ca, pa)), (rb, (cb, pb)) in itertools.product(rels, repeat=2):
+        out.append(
+            (
+                f"rsize_xb_{ra}_yb_{rb}",
+                [("xg", 1, 1), ("yg", 1, 1)],
+                [("xb", ca, pa), ("yb", cb, pb)],
+                "add",
+            )
+        )
+    # parallel (mapped) rows crossed with a reduced column axis
+    for (ra, (ca, pa)), (rb, (cb, pb)) in itertools.product(rels, repeat=2):
+        out.append(
+            (
+                f"rsize_map_xg_{ra}_red_xb_{rb}",
+                [("xg", ca, pa)],
+                [("xb", cb, pb)],
+                "add",
+            )
+        )
+    # three reduced block dimensions, diagonal (all in the same regime)
+    for rel, (c, p) in rels:
+        out.append(
+            (
+                f"rsize_xyz_block_{rel}",
+                [("xg", 1, 1), ("yg", 1, 1), ("zg", 1, 1)],
+                [("xb", c, p), ("yb", c, p), ("zb", c, p)],
+                "add",
+            )
+        )
+
+    # reduced warp, parallel_size fixed at WARP_SIZE, coverage-loop count swept.
+    # The warp is reduced under its owning X_BLOCK (also reduced) and grid.
+    warp_rels = list(_WARP_SIZE_RELATIONS.items())
+    for wrel, (wc, wp) in warp_rels:
+        out.append(
+            (
+                f"rsize_warp_{wrel}",
+                [("xg", 1, 1)],
+                [("xb", WARP_SIZE, WARP_SIZE), ("w", wc, wp)],
+                "add",
+            )
+        )
+    # warp count crossed with the reduced X_BLOCK owner's own count regime: the
+    # block folds its coverage tiles while the warp folds its (independent) ones.
+    for (brel, (bc, bp)), (wrel, (wc, wp)) in itertools.product(rels, warp_rels):
+        out.append(
+            (
+                f"rsize_xb_{brel}_warp_{wrel}",
+                [("xg", 1, 1)],
+                [("xb", bc * WARP_SIZE, WARP_SIZE), ("w", wc, wp)],
+                "add",
+            )
+        )
+    # mapped (parallel) grid rows crossed with a reduced warp of swept count
+    for (grel, (gc, gp)), (wrel, (wc, wp)) in itertools.product(rels, warp_rels):
+        out.append(
+            (
+                f"rsize_map_xg_{grel}_red_warp_{wrel}",
+                [("xg", gc, gp)],
+                [("xb", WARP_SIZE, WARP_SIZE), ("w", wc, wp)],
+                "add",
+            )
+        )
+    return out
+
+
+REDUCE_NEST_SCENARIOS += _reduce_size_scenarios()
 
 
 @pytest.mark.parametrize(
