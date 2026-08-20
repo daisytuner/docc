@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import torch
+import torch._dynamo
 import time
 import numpy as np
 import pytest
@@ -64,66 +65,82 @@ def run_benchmark(setup_func, name, batch_size=32):
     parser.add_argument("--n_runs", type=int, default=10)
     args = parser.parse_args()
 
-    # ROCm uses the same CUDA API in PyTorch
+    device = torch.device("cpu")
+    # Select device for torch. DOCC backend checks after device_residency
     if args.device in ("rocm", "cuda"):
         if not torch.cuda.is_available():
             print(f"{args.device.upper()} not available, exiting.", file=sys.stderr)
             sys.exit(1)
         device = torch.device("cuda")
-    elif args.device == "docc":
-        if args.target == "cuda" or args.target == "rocm":
-            device = torch.device("cuda")
-        else:
-            device = torch.device("cpu")
-    else:
-        device = torch.device("cpu")
 
     def sync_fn():
         if device.type == "cuda":
             torch.cuda.synchronize(device)
 
-    compile_kwargs: dict = {}
     backend_label = args.device
+    compile_kwargs: dict = {}
+    residency: dict = {"device_resident": None}
     if args.device == "docc":
+
+        def _record_residency(info):
+            # fullgraph inference compiles a single graph; record its residency.
+            residency["device_resident"] = info["device_resident"]
+
         compile_kwargs["backend"] = "docc"
         compile_kwargs["options"] = {
             "target": args.target,
             "category": "server",
             "remote_tuning": args.remote_tuning,
+            "on_compile": _record_residency,
         }
 
         backend_label = f"docc_{args.target}"
+
+    model, model_input = setup_func(batch_size)
+    model = model.eval()
+    model.to(device)
+    model.requires_grad_(False)
+    sync_fn()
+    program = torch.compile(model, fullgraph=True, **compile_kwargs)
+
+    # Warmup: the first invocation absorbs one-time cold-start costs (TorchDynamo
+    # tracing, docc compilation, CUDA context init). Run it untimed and outside
+    # the perf-counted region so measurements reflect the steady-state runtime.
+    #
+    # For the docc backend this first, host-only run doubles as a probe: it builds
+    # the artifact and reports through on_compile whether it ended up
+    # device-resident. Host (cpu) inputs are accepted by both host and
+    # device-resident artifacts, so this never raises regardless of the outcome.
+    x = _prepare_input(model_input, device)
+    x = _detach_input(x)
+    with torch.no_grad():
+        _invoke(program, x)
+
+    sync_fn()
+
+    # Residency is now known. A device-resident artifact consumes device pointers
+    # zero-copy, so move model + inputs to the GPU. Changing the model's device
+    # invalidates dynamo's guards, so reset and recompile, then warm up again to
+    # keep the (full) GPU rebuild out of the measured region.
+    if args.device == "docc" and residency.get("device_resident"):
+        print(f"{name} {backend_label}: device-resident artifact", flush=True)
+        device = torch.device("cuda")
+        model.to(device)
+        torch._dynamo.reset()
+        program = torch.compile(model, fullgraph=True, **compile_kwargs)
+        x = _prepare_input(model_input, device)
+        x = _detach_input(x)
+        with torch.no_grad():
+            _invoke(program, x)
+
+    sync_fn()
 
     print(f"Backend: {backend_label}  |  torch device: {device}", flush=True)
     if device.type == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(device)}", flush=True)
 
-    model, model_input = setup_func(batch_size)
-    model = model.eval()
-    program = torch.compile(model, fullgraph=True, **compile_kwargs)
-
-    start = time.time()
-    model.to(device)
-    model.requires_grad_(False)
-    x = _prepare_input(model_input, device)
-    x = _detach_input(x)
-    sync_fn()
-    end = time.time()
-    print(f"{name} {backend_label} setup time: {end - start:.6f} seconds")
-
+    # Start the measurements
     perf = PerfControl.from_env()
-
-    # Warmup: the first invocation absorbs one-time cold-start costs (TorchDynamo
-    # tracing, docc reuse-binary load / SDFG parse, CUDA context init). Run it
-    # untimed and outside the perf-counted region so measurements reflect the
-    # steady-state runtime.
-    with torch.no_grad():
-        _invoke(program, x)
-    sync_fn()
-
-    # The RTL aggregates every region invocation, including the warmup above;
-    # drop those so region counts/durations match only the measured runs. The
-    # compiled artifact is hidden inside torch.compile, so reset all artifacts.
     reset_instrumentation()
 
     with perf.measure():
@@ -134,13 +151,6 @@ def run_benchmark(setup_func, name, batch_size=32):
             sync_fn()
             end = time.time()
             print(f"{name} {backend_label} execution time: {end - start:.6f} seconds")
-
-    start = time.time()
-    if isinstance(out, torch.Tensor):
-        out.to("cpu").detach()
-        sync_fn()
-    end = time.time()
-    print(f"{name} {backend_label} output transfer time: {end - start:.6f} seconds")
 
 
 def run_pytest(setup_func, target="none"):

@@ -10,12 +10,91 @@ import time
 import hashlib
 import getpass
 import shutil
-from typing import Any
+import contextlib
+from typing import Any, Callable, Optional
 
 from docc.compiler import DoccProgram, CompiledSDFG
 from docc.sdfg import StructuredSDFG, DoccMetrics
 
 from docc.pytorch.graph_parser import GraphParser
+
+
+def _strip_guards_fn(model) -> None:
+    """Remove dynamo's ``_guards_fn`` node from an FX graph.
+
+    Recent PyTorch embeds a ``_guards_fn`` call (dynamo's guard checks) in the
+    graph handed to backends. It has no users and references the guard locals
+    dict ``L``, which is undefined when the graph is re-run via torch.export,
+    so drop it before export.
+    """
+    if not isinstance(model, torch.fx.GraphModule):
+        return
+
+    graph = model.graph
+    removed = False
+    for node in list(graph.nodes):
+        if node.op == "call_module" and node.target == "_guards_fn" and not node.users:
+            graph.erase_node(node)
+            removed = True
+
+    if not removed:
+        return
+
+    if hasattr(model, "_guards_fn"):
+        try:
+            delattr(model, "_guards_fn")
+        except Exception:
+            pass
+    model.recompile()
+
+
+@contextlib.contextmanager
+def _disable_export_guards():
+    """Disable torch.export's ``_guards_fn`` insertion during (re-)export.
+
+    Recent PyTorch inserts a ``_guards_fn`` submodule when unlifting an
+    ExportedProgram (``ExportedProgram.module()``, called inside
+    ``run_decompositions``). Its body references the guard locals dict ``L``,
+    which is undefined when the graph is re-traced ->
+    ``NameError: name 'L' is not defined``. Force ``check_guards=False`` (torch's
+    own escape hatch, which emits no ``_guards_fn`` node) for the export.
+    """
+    import inspect
+
+    patches = []
+    try:
+        from torch.export.exported_program import ExportedProgram
+
+        original_module = ExportedProgram.module
+        try:
+            has_flag = "check_guards" in inspect.signature(original_module).parameters
+        except (TypeError, ValueError):
+            has_flag = False
+        if has_flag:
+
+            def _module_no_guards(self, check_guards=False):
+                return original_module(self, check_guards=False)
+
+            ExportedProgram.module = _module_no_guards
+            patches.append((ExportedProgram, "module", original_module))
+    except Exception:
+        pass
+
+    try:
+        from torch.export import _unlift
+
+        if hasattr(_unlift, "_ok_to_generate_guards_fn"):
+            original_ok = _unlift._ok_to_generate_guards_fn
+            _unlift._ok_to_generate_guards_fn = lambda: False
+            patches.append((_unlift, "_ok_to_generate_guards_fn", original_ok))
+    except Exception:
+        pass
+
+    try:
+        yield
+    finally:
+        for obj, name, original in patches:
+            setattr(obj, name, original)
 
 
 class PyTorchProgram(DoccProgram):
@@ -401,13 +480,18 @@ class PyTorchProgram(DoccProgram):
         if self.example_input is None:
             raise ValueError("No example input provided for SDFG conversion.")
 
+        # Drop dynamo's guard node so re-exporting the graph does not run its
+        # guard code (which references the undefined locals dict `L`).
+        _strip_guards_fn(self.gm)
+
         # Use torch.export and run decompositions
-        exported_program: torch.export.ExportedProgram = torch.export.export(
-            self.gm, self.example_input
-        )
-        ir: torch.export.ExportedProgram = exported_program.run_decompositions(
-            decomp_table=None
-        )
+        with _disable_export_guards():
+            exported_program: torch.export.ExportedProgram = torch.export.export(
+                self.gm, self.example_input
+            )
+            ir: torch.export.ExportedProgram = exported_program.run_decompositions(
+                decomp_table=None
+            )
 
         # Dump the IR to a file for inspection
         if self.debug_dump and output_folder is not None:
@@ -538,11 +622,12 @@ class PyTorchProgram(DoccProgram):
 
 
 def _docc_get_backend_options(
-    options: None | dict[str, str | bool],
-) -> tuple[str, str, bool]:
+    options: None | dict[str, Any],
+) -> tuple[str, str, bool, Optional[Callable[[dict], None]]]:
     target: str = "none"
     category: str = "server"
     remote_tuning: bool = False
+    on_compile: Optional[Callable[[dict], None]] = None
     if options:
         if "target" in options and type(options["target"]) == str:
             target: str = options["target"]
@@ -550,7 +635,37 @@ def _docc_get_backend_options(
             category: str = options["category"]
         if "remote_tuning" in options and type(options["remote_tuning"]) == bool:
             remote_tuning: bool = options["remote_tuning"]
-    return target, category, remote_tuning
+        if "on_compile" in options:
+            on_compile = options["on_compile"]
+            if on_compile is not None and not callable(on_compile):
+                raise TypeError("backend option 'on_compile' must be callable")
+    return target, category, remote_tuning, on_compile
+
+
+def _invoke_on_compile(
+    on_compile: Optional[Callable[[dict], None]],
+    program: "PyTorchProgram",
+    graph: str,
+) -> None:
+    """Notify a caller-supplied callback about a freshly compiled artifact.
+
+    The info dict includes the scheduled ``StructuredSDFG`` under "sdfg".
+    """
+    if on_compile is None:
+        return
+    compiled = program._compiled
+    assert compiled is not None
+    on_compile(
+        {
+            "name": program.name,
+            "graph": graph,
+            "target": program.target,
+            "category": program.category,
+            "device_resident": compiled.device_resident,
+            "device_backend": compiled.device_backend,
+            "sdfg": program._sdfg,
+        }
+    )
 
 
 def _docc_inference_compiler(
@@ -565,7 +680,9 @@ def _docc_inference_compiler(
     else:
         example_input = tuple(example_inputs)
 
-    target, category, remote_tuning = _docc_get_backend_options(backend_options)
+    target, category, remote_tuning, on_compile = _docc_get_backend_options(
+        backend_options
+    )
     program = PyTorchProgram(
         gm,
         example_input=example_input,
@@ -573,6 +690,12 @@ def _docc_inference_compiler(
         category=category,
         remote_tuning=remote_tuning,
     )
+
+    # Compile eagerly: torch backends receive example inputs precisely so the
+    # artifact can be built ahead of execution. This also makes the resolved
+    # calling convention (e.g. device residency) known before the first call.
+    program.compile()
+    _invoke_on_compile(on_compile, program, "inference")
 
     def compiled_fn(*args):
         result = program(*args)

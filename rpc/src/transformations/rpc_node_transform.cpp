@@ -32,10 +32,11 @@ RPCNodeTransform::RPCNodeTransform(
     sdfg::passes::rpc::RpcContext& rpc_context,
     bool enable_fusion,
     bool normalize,
+    bool schedule_loops,
     bool dump_steps
 )
     : node_(node), target_(target), category_(category), rpc_context_(rpc_context), dump_steps_(dump_steps),
-      enable_fusion_(enable_fusion), normalize_(normalize) {}
+      enable_fusion_(enable_fusion), normalize_(normalize), schedule_loops_(schedule_loops) {}
 
 std::string RPCNodeTransform::name() const { return "RPCNodeTransform"; }
 
@@ -85,7 +86,8 @@ bool RPCNodeTransform::
          .category = this->category_,
          .target = this->target_,
          .enable_fusion = this->enable_fusion_,
-	 .normalize = this->normalize_,
+         .normalize = this->normalize_,
+         .schedule_loops = this->schedule_loops_,
          .session_id = this->session_id_},
         rpc_context_
     );
@@ -136,7 +138,8 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
         {"category", request.category},
         {"target", request.target},
         {"enable_fusion", request.enable_fusion},
-        {"normalize", request.normalize}
+        {"normalize", request.normalize},
+        {"schedule_loops", request.schedule_loops}
     };
     if (request.session_id.has_value()) {
         payload["session_id"] = request.session_id.value();

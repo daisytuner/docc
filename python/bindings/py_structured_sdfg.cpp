@@ -28,7 +28,6 @@
 #include <sdfg/passes/normalization/normalize.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
-#include <sdfg/passes/offloading/device_resident_arg_promotion_pass.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/rpc/rpc_scheduling_pass.h>
@@ -45,6 +44,7 @@
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/passes/symbolic/type_minimization.h>
+#include <sdfg/passes/targets/device_residency.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
@@ -422,7 +422,7 @@ void PyStructuredSDFG::schedule(const std::string& target, const std::string& ca
     docc::target::TargetOptions topts = {.target = target, .category = category, .remote_tuning = remote_tuning};
     schedule(topts);
 }
-void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
+void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool schedule_loops) {
     sdfg::passes::CompileStatistics::enter_stage_if_enabled("schedule");
     if (options.target == "none") {
         return;
@@ -430,7 +430,6 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
 
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
-
 
     docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, options);
 
@@ -448,8 +447,14 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
         std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
             sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
         sdfg::passes::scheduler::RpcOptimizationPass
-            rpc_optimization_pass(context, options, enable_fusion_in_normalize_);
+            rpc_optimization_pass(context, options, enable_fusion_in_normalize_, schedule_loops);
         rpc_optimization_pass.run(builder, analysis_manager);
+    }
+
+    // Arg-capture mode: Pretends to schedule for target
+    // but keeps all execution on single-core host
+    if (!schedule_loops) {
+        return;
     }
 
     // Acquire target-specific loop schedulers only after remote tuning, since they are consumed
@@ -494,35 +499,8 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options) {
 
 bool PyStructuredSDFG::promote_device_residency(bool is_rocm) {
     sdfg::passes::CompileStatistics::enter_stage_if_enabled("promote_device_residency");
-    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
-    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_);
 
-    sdfg::passes::DeviceResidentArgPromotionPass promotion_pass(is_rocm);
-    bool promoted = promotion_pass.run(builder, analysis_manager);
-    if (promoted) {
-        sdfg::passes::ReferencePropagation reference_propagation;
-        sdfg::passes::DeadReferenceElimination dead_reference_elimination;
-        sdfg::passes::DataTransferMinimizationPass data_transfer_minimization;
-        sdfg::passes::DeadDataElimination dead_data_elimination;
-        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
-        sdfg::passes::DeadCFGElimination dead_cfg_elimination;
-
-        // 1st round
-        reference_propagation.run(builder, analysis_manager);
-        dead_reference_elimination.run(builder, analysis_manager);
-        data_transfer_minimization.run(builder, analysis_manager);
-        device_buffer_reuse_pass.run(builder, analysis_manager);
-        dead_data_elimination.run(builder, analysis_manager);
-        dead_cfg_elimination.run(builder, analysis_manager);
-
-        // 2nd round
-        reference_propagation.run(builder, analysis_manager);
-        dead_reference_elimination.run(builder, analysis_manager);
-        data_transfer_minimization.run(builder, analysis_manager);
-        device_buffer_reuse_pass.run(builder, analysis_manager);
-        dead_data_elimination.run(builder, analysis_manager);
-        dead_cfg_elimination.run(builder, analysis_manager);
-    }
+    bool promoted = sdfg::passes::promote_device_residency(*sdfg_, is_rocm);
 
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
     return promoted;
@@ -612,6 +590,10 @@ std::string PyStructuredSDFG::compile(
         .add_common_option("-fno-strict-aliasing")
         .add_common_option("-march=native")
         .add_common_option("-mtune=native")
+        .add_common_option("-ffp-contract=fast")
+        .add_common_option("-fassociative-math")
+        .add_common_option("-freciprocal-math")
+        .add_common_option("-fno-signed-zeros")
         .add_compile_option("-funroll-loops")
         .add_compile_option("-std=c++20")
         .add_link_option("-shared")

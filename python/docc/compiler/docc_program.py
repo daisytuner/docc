@@ -211,7 +211,7 @@ class DoccProgram(ABC):
                     sdfg, self.category, {"remote_tuning": remote_tuning}
                 )
             else:
-                sdfg.schedule(target_options)
+                sdfg.schedule(target_options, not capture_args)
 
             # Promote pointer arguments to device residency when the whole program keeps
             # data on device. Communicated explicitly via the pass return value (bool),

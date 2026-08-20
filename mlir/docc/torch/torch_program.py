@@ -2,7 +2,8 @@ import os
 import getpass
 import hashlib
 import shutil
-from typing import Any, Optional, List
+import contextlib
+from typing import Any, Callable, Optional, List
 import time
 import numpy as np
 
@@ -68,6 +69,86 @@ def _filter_none_outputs(model) -> List[int]:
     model.recompile()
 
     return none_positions
+
+
+def _strip_guards_fn(model) -> None:
+    """Remove dynamo's ``_guards_fn`` node from an FX graph.
+
+    Recent PyTorch embeds a ``_guards_fn`` call (dynamo's guard checks) in the
+    graph handed to backends. It has no users and references the guard locals
+    dict ``L``, which is undefined when the graph is re-run via torch.export /
+    torch-mlir, so drop it before export.
+    """
+    import torch.fx
+
+    if not isinstance(model, torch.fx.GraphModule):
+        return
+
+    graph = model.graph
+    removed = False
+    for node in list(graph.nodes):
+        if node.op == "call_module" and node.target == "_guards_fn" and not node.users:
+            graph.erase_node(node)
+            removed = True
+
+    if not removed:
+        return
+
+    if hasattr(model, "_guards_fn"):
+        try:
+            delattr(model, "_guards_fn")
+        except Exception:
+            pass
+    model.recompile()
+
+
+@contextlib.contextmanager
+def _disable_export_guards():
+    """Disable torch.export's ``_guards_fn`` insertion during (re-)export.
+
+    Recent PyTorch inserts a ``_guards_fn`` submodule when unlifting an
+    ExportedProgram (``ExportedProgram.module()``, called inside
+    ``run_decompositions``). Its body references the guard locals dict ``L``,
+    which is undefined when torch-mlir re-traces the graph ->
+    ``NameError: name 'L' is not defined``. Force ``check_guards=False`` (torch's
+    own escape hatch, which emits no ``_guards_fn`` node) for the export.
+    """
+    import inspect
+
+    patches = []
+    try:
+        from torch.export.exported_program import ExportedProgram
+
+        original_module = ExportedProgram.module
+        try:
+            has_flag = "check_guards" in inspect.signature(original_module).parameters
+        except (TypeError, ValueError):
+            has_flag = False
+        if has_flag:
+
+            def _module_no_guards(self, check_guards=False):
+                return original_module(self, check_guards=False)
+
+            ExportedProgram.module = _module_no_guards
+            patches.append((ExportedProgram, "module", original_module))
+    except Exception:
+        pass
+
+    try:
+        from torch.export import _unlift
+
+        if hasattr(_unlift, "_ok_to_generate_guards_fn"):
+            original_ok = _unlift._ok_to_generate_guards_fn
+            _unlift._ok_to_generate_guards_fn = lambda: False
+            patches.append((_unlift, "_ok_to_generate_guards_fn", original_ok))
+    except Exception:
+        pass
+
+    try:
+        yield
+    finally:
+        for obj, name, original in patches:
+            setattr(obj, name, original)
 
 
 class TorchProgram(DoccProgram):
@@ -434,6 +515,10 @@ class TorchProgram(DoccProgram):
             else (self.example_input,)
         )
 
+        # Drop dynamo's guard node so re-exporting the graph does not run its
+        # guard code (which references the undefined locals dict `L`).
+        _strip_guards_fn(self.model)
+
         self._frozen_buffer_args = []
         try:
             prog = torch.export.export(self.model, example_inputs)
@@ -453,12 +538,13 @@ class TorchProgram(DoccProgram):
         # torch.constant.none, so we filter them here and restore after execution.
         self._none_output_positions = _filter_none_outputs(self.model)
 
-        torch_mlir = fx.export_and_import(
-            self.model,
-            *example_inputs,
-            output_type="linalg_on_tensors",
-            func_name=self.name,
-        )
+        with _disable_export_guards():
+            torch_mlir = fx.export_and_import(
+                self.model,
+                *example_inputs,
+                output_type="linalg_on_tensors",
+                func_name=self.name,
+            )
         torch_mlir = str(torch_mlir)
 
         # Dump the MLIR code to a file for inspection
@@ -617,11 +703,12 @@ def compile_torch(
 
 
 def _docc_get_backend_options(
-    options: None | dict[str, str | bool],
-) -> tuple[str, str, bool]:
+    options: None | dict[str, Any],
+) -> tuple[str, str, bool, Optional[Callable[[dict], None]]]:
     target = "none"
     category = "server"
     remote_tuning = False
+    on_compile: Optional[Callable[[dict], None]] = None
     if options:
         if "target" in options:
             target = options["target"]
@@ -629,7 +716,39 @@ def _docc_get_backend_options(
             category = options["category"]
         if "remote_tuning" in options:
             remote_tuning = options["remote_tuning"]
-    return target, category, remote_tuning
+        if "on_compile" in options:
+            on_compile = options["on_compile"]
+            if on_compile is not None and not callable(on_compile):
+                raise TypeError("backend option 'on_compile' must be callable")
+    return target, category, remote_tuning, on_compile
+
+
+def _invoke_on_compile(
+    on_compile: Optional[Callable[[dict], None]],
+    program: "TorchProgram",
+    graph: str,
+) -> None:
+    """Notify a caller-supplied callback about a freshly compiled artifact.
+
+    ``graph`` is "inference", "forward", or "backward" (the latter two for the
+    AOTAutograd training path, whose graphs can differ in device residency).
+    The info dict includes the scheduled ``StructuredSDFG`` under "sdfg".
+    """
+    if on_compile is None:
+        return
+    compiled = program._compiled
+    assert compiled is not None
+    on_compile(
+        {
+            "name": program.name,
+            "graph": graph,
+            "target": program.target,
+            "category": program.category,
+            "device_resident": compiled.device_resident,
+            "device_backend": compiled.device_backend,
+            "sdfg": program._sdfg,
+        }
+    )
 
 
 def _docc_dynamo_compiler(gm, example_inputs, backend_options):
@@ -655,7 +774,9 @@ def _docc_dynamo_compiler(gm, example_inputs, backend_options):
     else:
         example_input = tuple(example_inputs)
 
-    target, category, remote_tuning = _docc_get_backend_options(backend_options)
+    target, category, remote_tuning, on_compile = _docc_get_backend_options(
+        backend_options
+    )
     program = TorchProgram(
         gm,
         example_input=example_input,
@@ -663,6 +784,12 @@ def _docc_dynamo_compiler(gm, example_inputs, backend_options):
         category=category,
         remote_tuning=remote_tuning,
     )
+
+    # Compile eagerly: torch backends receive example inputs precisely so the
+    # artifact can be built ahead of execution. This also makes the resolved
+    # calling convention (e.g. device residency) known before the first call.
+    program.compile()
+    _invoke_on_compile(on_compile, program, "inference")
 
     def compiled_fn(*args):
         result = program(*args)
@@ -673,7 +800,13 @@ def _docc_dynamo_compiler(gm, example_inputs, backend_options):
     return compiled_fn
 
 
-def _docc_aot_compiler_wrapper(target: str, category: str, remote_tuning: bool):
+def _docc_aot_compiler_wrapper(
+    target: str,
+    category: str,
+    remote_tuning: bool,
+    on_compile: Optional[Callable[[dict], None]] = None,
+    graph: str = "forward",
+):
     def _docc_aot_compiler(gm, example_inputs):
         """AOTAutograd Compiler based on TorchProgram (inference and training)."""
         from functorch.compile import make_boxed_func
@@ -701,6 +834,12 @@ def _docc_aot_compiler_wrapper(target: str, category: str, remote_tuning: bool):
             category=category,
             remote_tuning=remote_tuning,
         )
+
+        # Compile eagerly so the resolved calling convention (e.g. device
+        # residency) is known before execution. For AOTAutograd this runs once
+        # per graph (forward and backward), which may differ in residency.
+        program.compile()
+        _invoke_on_compile(on_compile, program, graph)
 
         def compiled_fn(*args):
             result = program(*args)
@@ -740,10 +879,14 @@ def _docc_backend(gm, example_inputs, *, options=None):
     if _needs_autograd(gm, example_inputs):
         from torch._dynamo.backends.common import aot_autograd
 
-        target, category, remote_tuning = _docc_get_backend_options(options)
+        target, category, remote_tuning, on_compile = _docc_get_backend_options(options)
         aot_backend = aot_autograd(
-            fw_compiler=_docc_aot_compiler_wrapper(target, category, remote_tuning),
-            bw_compiler=_docc_aot_compiler_wrapper(target, category, remote_tuning),
+            fw_compiler=_docc_aot_compiler_wrapper(
+                target, category, remote_tuning, on_compile, "forward"
+            ),
+            bw_compiler=_docc_aot_compiler_wrapper(
+                target, category, remote_tuning, on_compile, "backward"
+            ),
         )
         return aot_backend(gm, example_inputs)
     else:
