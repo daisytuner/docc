@@ -3,16 +3,11 @@ GraphParser modules for parsing elementwise operations.
 """
 
 import torch.fx
-from torch.fx.node import Argument
-
-from typing import Any
 
 from docc.sdfg import (
     DebugInfo,
     StructuredSDFGBuilder,
-    Type,
     Tensor,
-    Scalar,
     CMathFunction,
     TaskletCode,
 )
@@ -347,7 +342,7 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
                 other_info_or_const.element_type(), other_info_or_const.shape()
             )
             intermediate_info_or_const: TensorInfo | TensorConstant = (
-                self.create_intermediate_container(
+                self.create_intermediate_tensor_info(
                     node,
                     builder,
                     metadata,

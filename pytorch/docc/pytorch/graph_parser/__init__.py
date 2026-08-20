@@ -32,7 +32,8 @@ from docc.pytorch.graph_parser.utils import (
     dispatch_to_module,
 )
 
-# import docc.pytorch.graph_parser.blas
+import docc.pytorch.graph_parser.blas
+
 # import docc.pytorch.graph_parser.builtin
 # import docc.pytorch.graph_parser.convolution
 # import docc.pytorch.graph_parser.creation

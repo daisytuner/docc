@@ -1380,7 +1380,7 @@ class GraphParserModule(GraphParserBase, ABC):
     ) -> TensorInfo:
         """
         Creates a new container to use as the result of the current operation. For creating a
-        container for an intermediate result, see ``create_intermediate_container``. If the
+        container for an intermediate result, see ``create_intermediate_tensor_info``. If the
         operation has multiple results (tuple), use ``create_result_containers``.
         """
         if metadata.has_tensor(node.name):
@@ -1452,7 +1452,7 @@ class GraphParserModule(GraphParserBase, ABC):
             containers.append(info.name())
         return tuple(containers)
 
-    def create_intermediate_container(
+    def create_intermediate_tensor_info(
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
