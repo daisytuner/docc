@@ -75,9 +75,16 @@ void get_nested_schedule_types(
     for (const auto& loop : loops) {
         if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
             if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
-                output.insert_or_assign(
-                    ScheduleType_GPU::target_level(struc_loop->schedule_type()), struc_loop->schedule_type()
-                );
+                auto level = ScheduleType_GPU::target_level(struc_loop->schedule_type());
+                auto it = output.find(level);
+                // Sibling offloaders can share a level with different parallel_size; keep the
+                // largest so the launch dimension covers every sibling.
+                if (it == output.end() ||
+                    symbolic::is_true(symbolic::
+                                          Gt(ScheduleType_GPU::parallel_size(struc_loop->schedule_type()),
+                                             ScheduleType_GPU::parallel_size(it->second)))) {
+                    output.insert_or_assign(level, struc_loop->schedule_type());
+                }
             }
         }
     }

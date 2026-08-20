@@ -926,6 +926,12 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_barrier_local_block",
+            &PyStructuredSDFGBuilder::add_barrier_local_block,
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            "Add a block-local thread barrier (__syncthreads) to the current sequence"
+        )
+        .def(
             "add_cuda_offloading_block",
             &PyStructuredSDFGBuilder::add_cuda_offloading_block,
             py::arg("host_container"),

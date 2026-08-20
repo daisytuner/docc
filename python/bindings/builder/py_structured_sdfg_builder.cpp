@@ -11,6 +11,7 @@
 #include <symengine/real_double.h>
 #include "py_structured_sdfg.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
@@ -858,6 +859,11 @@ void PyStructuredSDFGBuilder::add_free_block(const std::string& container, const
     builder_.add_computational_memlet(
         block, container_access, libnode, "_ptr", {}, builder_.subject().type(container), debug_info
     );
+}
+
+void PyStructuredSDFGBuilder::add_barrier_local_block(const sdfg::DebugInfo& debug_info) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    builder_.add_library_node<sdfg::data_flow::BarrierLocalNode>(block, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_cuda_offloading_block(

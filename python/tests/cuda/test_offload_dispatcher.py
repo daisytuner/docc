@@ -857,6 +857,226 @@ def build_reduce_different_vars(outer, inner, op_outer, op_inner, grid_wrap=None
     return builder.move()
 
 
+# ---------------------------------------------------------------------------
+# Non-perfectly-nested SIBLING loops: a parent grid map whose body holds several
+# INDEPENDENT sibling sub-nests -- map(map, map) and map(block, reduce).  The
+# offload dispatcher emits NO __syncthreads() between siblings, so a shared
+# element is race-free only when its producer and consumer are the SAME thread
+# (identical level / count / parallel_size / index -- elementwise).  Cross-thread
+# sharing (index reversal, per-row broadcast) is instead made legal by an
+# explicit block-local barrier (__syncthreads) placed between the producing and
+# consuming sibling; this is only valid at block/warp level, since a grid
+# parent's coverage loop is block-uniform (all threads of a block reach it).
+# ---------------------------------------------------------------------------
+def _dev(name):
+    return f"__daisy_cuda_{name}"
+
+
+def _alloc(builder, dev_ptr, name, nbytes):
+    builder.add_cuda_offloading_block(
+        _dev(name),
+        _dev(name),
+        DataTransferDirection.NONE,
+        BufferLifecycle.ALLOC,
+        dev_ptr,
+        nbytes,
+    )
+
+
+def _h2d(builder, dev_ptr, name, nbytes):
+    builder.add_cuda_offloading_block(
+        name,
+        _dev(name),
+        DataTransferDirection.H2D,
+        BufferLifecycle.NO_CHANGE,
+        dev_ptr,
+        nbytes,
+    )
+
+
+def _d2h(builder, dev_ptr, name, nbytes):
+    builder.add_cuda_offloading_block(
+        name,
+        _dev(name),
+        DataTransferDirection.D2H,
+        BufferLifecycle.NO_CHANGE,
+        dev_ptr,
+        nbytes,
+    )
+
+
+def _free(builder, dev_ptr, name):
+    builder.add_cuda_offloading_block(
+        _dev(name),
+        _dev(name),
+        DataTransferDirection.NONE,
+        BufferLifecycle.FREE,
+        dev_ptr,
+        "0",
+    )
+
+
+def build_sibling_nest(parent, sib, containers, siblings):
+    """Parent grid map (or None) whose body holds several sibling sub-nests.
+
+    ``parent``     -- ``(grid_short, R, Pg)`` or ``None`` for top-level grid
+                      siblings (each becomes its own kernel launch).
+    ``sib``        -- shared column nest ``[(level_short, count, psize), ...]``
+                      used by every map/reduce sibling; equal across siblings so
+                      a shared element maps to the same thread.
+    ``containers`` -- ``name -> (role, nelems)``; role in {'in','out','acc','tmp'}.
+                      'in' is copied host->device; 'out'/'acc' device->host; 'acc'
+                      is additionally identity-initialised host->device; 'tmp' is
+                      a device-only transient (no host argument, no transfer).
+    ``siblings``   -- ordered body entries:
+        ``('map', op, out, [(in, idx), (in, idx)], out_idx[, sib_override])``
+        ``('reduce', op, acc, acc_idx, in, in_idx[, sib_override])``
+        ``('barrier',)``  -> a block-local __syncthreads between siblings.
+      A ``sib_override`` replaces the shared column nest for that sibling (its
+      counts must still multiply to the same ``C``); this lets independent
+      siblings run at different parallel sizes to exercise blockDim adaptation.
+      Index strings are ``str.format`` templates over ``{i} {row} {c} {col}
+      {elem} {rev} {C} {Cm1}``.
+
+    Returns ``(sdfg, R, C, host_names)``.
+    """
+    has_parent = parent is not None
+    R = parent[1] if has_parent else 1
+    C = math.prod(c for (_l, c, _p) in sib)
+
+    branch = ([(LEVELS[parent[0]], parent[2])] if has_parent else []) + [
+        (LEVELS[l], p) for (l, _c, p) in sib
+    ]
+    _validate_nest(branch)
+
+    builder = StructuredSDFGBuilder("sibling_nest")
+    host_names = [n for n, (role, _ne) in containers.items() if role != "tmp"]
+    dev_ptr = _declare_common(builder, host_names, [_dev(n) for n in containers])
+    i32 = Scalar(PrimitiveType.Int32)
+    if has_parent:
+        builder.add_container("i", i32, is_argument=False)
+
+    def _sib_of(entry):
+        if entry[0] == "map" and len(entry) == 6:
+            return entry[5]
+        if entry[0] == "reduce" and len(entry) == 7:
+            return entry[6]
+        return sib
+
+    sib_vars = []
+    sib_nests = []
+    for k, entry in enumerate(siblings):
+        if entry[0] == "barrier":
+            sib_vars.append(None)
+            sib_nests.append(None)
+            continue
+        this_sib = _sib_of(entry)
+        sib_nests.append(this_sib)
+        vs = [f"k{k}_c{d}" for d in range(len(this_sib))]
+        for v in vs:
+            builder.add_container(v, i32, is_argument=False)
+        sib_vars.append(vs)
+
+    def nbytes(name):
+        return f"{containers[name][1]} * {FLOAT_BYTES}"
+
+    for name in containers:
+        _alloc(builder, dev_ptr, name, nbytes(name))
+    for name, (role, _ne) in containers.items():
+        if role in ("in", "acc"):
+            _h2d(builder, dev_ptr, name, nbytes(name))
+
+    if has_parent:
+        builder.begin_map(
+            "i",
+            "0",
+            str(R),
+            "1",
+            ScheduleType.cuda_offload(LEVELS[parent[0]], parent[2]),
+        )
+
+    i_val = "i" if has_parent else "0"
+    for k, entry in enumerate(siblings):
+        if entry[0] == "barrier":
+            builder.add_barrier_local_block()
+            continue
+        vs = sib_vars[k]
+        this_sib = sib_nests[k]
+        counts = [c for (_l, c, _p) in this_sib]
+        col_flat = _flat_expr(vs, counts)
+        elem = f"({col_flat})" if not has_parent else f"(i)*{C} + ({col_flat})"
+        rev_col = f"{C - 1} - ({vs[0]})"
+        rev = f"({rev_col})" if not has_parent else f"(i)*{C} + ({rev_col})"
+        fmt = dict(
+            i=i_val,
+            row=i_val,
+            c=vs[0],
+            col=col_flat,
+            elem=elem,
+            rev=rev,
+            C=C,
+            Cm1=C - 1,
+        )
+
+        if entry[0] == "map":
+            op, out, in_specs, out_idx = entry[1], entry[2], entry[3], entry[4]
+            for v, (level, count, psize) in zip(vs, this_sib):
+                builder.begin_map(
+                    v,
+                    "0",
+                    str(count),
+                    "1",
+                    ScheduleType.cuda_offload(LEVELS[level], psize),
+                )
+            blk = builder.add_block()
+            node = _add_body_op(builder, blk, op)
+            for conn, (cont, idx) in zip(("_in1", "_in2"), in_specs):
+                src = builder.add_access(blk, _dev(cont))
+                builder.add_memlet(blk, src, "", node, conn, idx.format(**fmt))
+            dst = builder.add_access(blk, _dev(out))
+            builder.add_memlet(blk, node, "_out", dst, "", out_idx.format(**fmt))
+            for _ in this_sib:
+                builder.end_map()
+        else:  # reduce
+            op, acc, acc_idx, cont, in_idx = (
+                entry[1],
+                entry[2],
+                entry[3],
+                entry[4],
+                entry[5],
+            )
+            for v, (level, count, psize) in zip(vs, this_sib):
+                builder.begin_reduce(
+                    v,
+                    "0",
+                    str(count),
+                    "1",
+                    [(op, _dev(acc))],
+                    ScheduleType.cuda_offload(LEVELS[level], psize),
+                )
+            blk = builder.add_block()
+            node = _add_body_op(builder, blk, op)
+            acc_in = builder.add_access(blk, _dev(acc))
+            src = builder.add_access(blk, _dev(cont))
+            acc_out = builder.add_access(blk, _dev(acc))
+            builder.add_memlet(blk, acc_in, "", node, "_in1", acc_idx.format(**fmt))
+            builder.add_memlet(blk, src, "", node, "_in2", in_idx.format(**fmt))
+            builder.add_memlet(blk, node, "_out", acc_out, "", acc_idx.format(**fmt))
+            for _ in this_sib:
+                builder.end_reduce()
+
+    if has_parent:
+        builder.end_map()
+
+    for name, (role, _ne) in containers.items():
+        if role in ("out", "acc"):
+            _d2h(builder, dev_ptr, name, nbytes(name))
+    for name in containers:
+        _free(builder, dev_ptr, name)
+
+    return builder.move(), R, C, host_names
+
+
 def _spec(table):
     return [(LEVELS[name], count, psize) for (name, count, psize) in table]
 
@@ -1390,3 +1610,268 @@ def test_reduce_different_vars(outer, inner, op_outer, op_inner, grid_wrap, tmp_
     np.testing.assert_allclose(
         acc_in[0], numpy_reduce(q, op_inner), rtol=1e-4, atol=1e-4
     )
+
+
+# ---------------------------------------------------------------------------
+# Sibling (non-perfectly-nested) scenarios.  Each factory returns the container
+# table, the ordered sibling body and a NumPy reference; legality is analysed in
+# the module docstring above ``build_sibling_nest``.  Only race-free shapes are
+# exercised: independent outputs, same-thread producer->consumer chains, and
+# cross-thread reversal / broadcast that are guarded by an explicit barrier.
+# ---------------------------------------------------------------------------
+def _p_independent(R, C):
+    return (
+        {
+            "A": ("in", R * C),
+            "B": ("in", R * C),
+            "C1": ("out", R * C),
+            "C2": ("out", R * C),
+        },
+        [
+            ("map", "add", "C1", [("A", "{elem}"), ("B", "{elem}")], "{elem}"),
+            ("map", "mul", "C2", [("A", "{elem}"), ("B", "{elem}")], "{elem}"),
+        ],
+        lambda ins, R, C: {"C1": ins["A"] + ins["B"], "C2": ins["A"] * ins["B"]},
+    )
+
+
+def _p_chain(R, C):
+    return (
+        {
+            "A": ("in", R * C),
+            "B": ("in", R * C),
+            "T": ("tmp", R * C),
+            "Cout": ("out", R * C),
+        },
+        [
+            ("map", "add", "T", [("A", "{elem}"), ("B", "{elem}")], "{elem}"),
+            ("map", "mul", "Cout", [("T", "{elem}"), ("T", "{elem}")], "{elem}"),
+        ],
+        lambda ins, R, C: {"Cout": (ins["A"] + ins["B"]) ** 2},
+    )
+
+
+def _p_map_reduce(R, C):
+    return (
+        {
+            "A": ("in", R * C),
+            "B": ("in", R * C),
+            "T": ("tmp", R * C),
+            "acc": ("acc", R),
+        },
+        [
+            ("map", "add", "T", [("A", "{elem}"), ("B", "{elem}")], "{elem}"),
+            ("reduce", "add", "acc", "{row}", "T", "{elem}"),
+        ],
+        lambda ins, R, C: {"acc": (ins["A"] + ins["B"]).reshape(R, C).sum(axis=1)},
+    )
+
+
+def _p_reverse(R, C):
+    # cross-thread: thread j reads T[C-1-j]; legal ONLY with the barrier below.
+    return (
+        {
+            "A": ("in", R * C),
+            "B": ("in", R * C),
+            "T": ("tmp", R * C),
+            "Cout": ("out", R * C),
+        },
+        [
+            ("map", "add", "T", [("A", "{elem}"), ("B", "{elem}")], "{elem}"),
+            ("barrier",),
+            ("map", "add", "Cout", [("T", "{rev}"), ("A", "{elem}")], "{elem}"),
+        ],
+        lambda ins, R, C: {
+            "Cout": (
+                (ins["A"] + ins["B"]).reshape(R, C)[:, ::-1] + ins["A"].reshape(R, C)
+            ).ravel()
+        },
+    )
+
+
+def _p_broadcast(R, C):
+    # cross-thread: every lane reads the row scalar s[i]; legal ONLY with barrier.
+    return (
+        {"A": ("in", R * C), "s": ("acc", R), "Cout": ("out", R * C)},
+        [
+            ("reduce", "add", "s", "{row}", "A", "{elem}"),
+            ("barrier",),
+            ("map", "mul", "Cout", [("A", "{elem}"), ("s", "{row}")], "{elem}"),
+        ],
+        lambda ins, R, C: {
+            "s": ins["A"].reshape(R, C).sum(axis=1),
+            "Cout": (
+                ins["A"].reshape(R, C)
+                * ins["A"].reshape(R, C).sum(axis=1, keepdims=True)
+            ).ravel(),
+        },
+    )
+
+
+def _sib_scn(sid, parent, sib, factory):
+    R = parent[1] if parent else 1
+    C = math.prod(c for (_l, c, _p) in sib)
+    conts, sibs, ref = factory(R, C)
+    return dict(
+        id=sid, parent=parent, sib=sib, containers=conts, siblings=sibs, ref=ref
+    )
+
+
+SIBLING_SCENARIOS = [
+    # Independent siblings write disjoint arrays -> race-free, no barrier needed;
+    # swept across every block level (each under its own grid) and two top-level
+    # grid siblings (each lowered to its own kernel launch).
+    _sib_scn("indep_xb", ("xg", 4, 2), [("xb", 8, 8)], _p_independent),
+    _sib_scn("indep_yb", ("yg", 4, 2), [("yb", 8, 8)], _p_independent),
+    _sib_scn("indep_zb", ("zg", 4, 2), [("zb", 8, 8)], _p_independent),
+    _sib_scn("indep_grid", None, [("xg", 32, 8)], _p_independent),
+    # Same-thread producer -> consumer chain: T written and read at the same
+    # (row, col) -> race-free without a barrier.
+    _sib_scn("chain_xb", ("xg", 4, 2), [("xb", 8, 8)], _p_chain),
+    _sib_scn("chain_warp", ("xg", 2, 2), [("xb", 32, 32), ("w", 4, 32)], _p_chain),
+    # A block map feeding a block/warp reduction -- map(block, reduce); the
+    # reduce reads each thread's own T element, so no barrier is required.
+    _sib_scn("map_reduce_xb", ("xg", 4, 2), [("xb", 8, 8)], _p_map_reduce),
+    _sib_scn("map_reduce_yb", ("yg", 4, 2), [("yb", 8, 8)], _p_map_reduce),
+    _sib_scn(
+        "map_reduce_warp", ("xg", 2, 2), [("xb", 32, 32), ("w", 4, 32)], _p_map_reduce
+    ),
+    # Cross-thread index reversal made legal by a block-local barrier between the
+    # producing and consuming sibling (full-cover and coverage-loop variants).
+    _sib_scn("reverse_barrier_xb", ("xg", 4, 2), [("xb", 8, 8)], _p_reverse),
+    _sib_scn("reverse_barrier_xb_cover", ("xg", 4, 2), [("xb", 8, 4)], _p_reverse),
+    # Reduce -> per-row broadcast made legal by a block-local barrier.
+    _sib_scn("broadcast_barrier_xb", ("xg", 4, 2), [("xb", 8, 8)], _p_broadcast),
+    _sib_scn(
+        "broadcast_barrier_warp",
+        ("xg", 2, 2),
+        [("xb", 32, 32), ("w", 4, 32)],
+        _p_broadcast,
+    ),
+]
+
+
+def _sib_indep_mixed(sid, parent, C, p1, p2):
+    """Two INDEPENDENT siblings over the same column count ``C`` but different
+    parallel sizes, so the parent's blockDim must adapt to the larger of the two
+    (the ``get_nested_schedule_types`` largest-wins rule)."""
+    R = parent[1]
+    conts = {
+        "A": ("in", R * C),
+        "B": ("in", R * C),
+        "C1": ("out", R * C),
+        "C2": ("out", R * C),
+    }
+    sibs = [
+        (
+            "map",
+            "add",
+            "C1",
+            [("A", "{elem}"), ("B", "{elem}")],
+            "{elem}",
+            [("xb", C, p1)],
+        ),
+        (
+            "map",
+            "mul",
+            "C2",
+            [("A", "{elem}"), ("B", "{elem}")],
+            "{elem}",
+            [("xb", C, p2)],
+        ),
+    ]
+    return dict(
+        id=sid,
+        parent=parent,
+        sib=[("xb", C, max(p1, p2))],
+        containers=conts,
+        siblings=sibs,
+        ref=lambda ins, R, C: {"C1": ins["A"] + ins["B"], "C2": ins["A"] * ins["B"]},
+    )
+
+
+def _sibling_size_scenarios():
+    """Sweep the shared sibling column dimension across every count/parallel_size
+    regime (see ``_SIZE_RELATIONS``) for each sibling pattern, so each sibling's
+    block coverage loop and boundary guard are driven into all four regimes while
+    it sits beside another sibling under the same grid parent."""
+    out = []
+    patterns = [
+        ("indep", _p_independent),
+        ("chain", _p_chain),
+        ("mapred", _p_map_reduce),
+        ("revbar", _p_reverse),
+        ("bcastbar", _p_broadcast),
+    ]
+    for pname, factory in patterns:
+        for rel, (c, p) in _SIZE_RELATIONS.items():
+            out.append(
+                _sib_scn(
+                    f"size_{pname}_xb_{rel}", ("xg", 4, 2), [("xb", c, p)], factory
+                )
+            )
+    # a reduced warp sibling whose coverage-loop count is swept while its owning
+    # X_BLOCK stays a full warp -- map(block-map, warp-reduce) with a varied warp.
+    for wrel, (wc, wp) in _WARP_SIZE_RELATIONS.items():
+        out.append(
+            _sib_scn(
+                f"size_mapred_warp_{wrel}",
+                ("xg", 2, 2),
+                [("xb", WARP_SIZE, WARP_SIZE), ("w", wc, wp)],
+                _p_map_reduce,
+            )
+        )
+    return out
+
+
+def _sibling_mixed_psize_scenarios():
+    """Independent siblings sharing a column count but running at DIFFERENT
+    parallel sizes; the parent blockDim must cover the larger sibling."""
+    return [
+        _sib_indep_mixed("indep_mix_8_16", ("xg", 4, 2), 16, 8, 16),
+        _sib_indep_mixed("indep_mix_16_8", ("xg", 4, 2), 16, 16, 8),
+        _sib_indep_mixed("indep_mix_4_16", ("xg", 4, 2), 16, 4, 16),
+        _sib_indep_mixed("indep_mix_ragged", ("xg", 4, 2), 10, 4, 8),
+    ]
+
+
+SIBLING_SCENARIOS += _sibling_size_scenarios()
+SIBLING_SCENARIOS += _sibling_mixed_psize_scenarios()
+
+
+@pytest.mark.parametrize(
+    "scn", SIBLING_SCENARIOS, ids=[s["id"] for s in SIBLING_SCENARIOS]
+)
+@pytest.mark.cuda()
+def test_sibling_nest(scn, tmp_path):
+    sdfg, R, C, host_names = build_sibling_nest(
+        scn["parent"], scn["sib"], scn["containers"], scn["siblings"]
+    )
+    compiled = _compile(sdfg, tmp_path / "sibling_nest")
+
+    containers = scn["containers"]
+    ins = {}
+    args = []
+    seed = 50
+    for name in host_names:
+        role, nel = containers[name]
+        if role == "in":
+            arr = _rng_input("add", nel, seed)
+            seed += 1
+            ins[name] = arr
+        elif role == "acc":  # reduction accumulator: identity for 'add'
+            arr = np.full(nel, 0.0, dtype=np.float32)
+        else:  # 'out'
+            arr = np.zeros(nel, dtype=np.float32)
+        args.append(arr)
+
+    compiled(*args)
+    argmap = dict(zip(host_names, args))
+
+    for name, expected in scn["ref"](ins, R, C).items():
+        np.testing.assert_allclose(
+            argmap[name].ravel(),
+            np.asarray(expected, dtype=np.float32).ravel(),
+            rtol=1e-4,
+            atol=1e-4,
+        )

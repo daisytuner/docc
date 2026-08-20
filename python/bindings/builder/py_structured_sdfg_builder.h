@@ -241,6 +241,9 @@ public:
 
     void add_free_block(const std::string& container, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
 
+    // Emits a block-local thread barrier (__syncthreads) into the current sequence.
+    void add_barrier_local_block(const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
+
     /**
      * @brief Add a CUDA data-offloading block (cudaMalloc/cudaMemcpy/cudaFree) to the current sequence
      * @param host_container Name of the host-side container
