@@ -36,6 +36,7 @@
 #include "docc/analysis/attributes.h"
 #include "docc/cmd_args.h"
 #include "docc/target/tenstorrent/tenstorrent_offloading_node.h"
+#include "docc/util/cuda_query_compute_capability.h"
 #include "docc/util/docc_paths.h"
 #include "docc/utils.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -129,13 +130,34 @@ void add_schedule_type_specific_linker_args(const ScheduleType& schedule_type, s
     }
 }
 
+static std::optional<util::CudaComputeCapability> cuda_select_compute_cap() {
+    auto caps = util::query_cuda_compute_capabilities();
+
+    if (!caps.empty()) {
+        auto& first = caps.front();
+        std::cerr << "[DOCC] Compiling CUDA for sm_" << first.compute_cap << " of "
+                  << ((first.device_names.empty()) ? "unidentified GPU" : first.device_names.front()) << std::endl;
+        return first;
+    } else {
+        std::cerr << "[DOCC] No CUDA ARCH identified, trying to compile for all supported architectures" << std::endl;
+        return {};
+    }
+}
+
 static void add_cuda_arch_args(std::vector<std::string>& args) {
-    const char* arch_env = std::getenv("DOCC_CUDA_ARCH");
+    static const char* arch_env = std::getenv("DOCC_CUDA_ARCH");
+
     if (arch_env) {
         args.emplace_back("--cuda-gpu-arch=" + std::string(arch_env));
     } else {
-        args.emplace_back("--cuda-gpu-arch=sm_70");
-        args.emplace_back("--cuda-include-ptx=all");
+        static auto selected = cuda_select_compute_cap();
+        if (selected) {
+            util::clang_21_set_cuda_specific_compute_cap(args, selected->compute_cap);
+        } else {
+            // don't know the arch, so try to build for all with the driver handling the rest (may not work for all
+            // cases)
+            util::clang_21_set_cuda_forward_compatible_options(args);
+        }
     }
 }
 
@@ -154,7 +176,6 @@ void add_schedule_type_specific_compile_args(
         language = llvm::dwarf::DW_LANG_C_plus_plus;
     } else if (schedule_type.value() == sdfg::cuda::ScheduleType_CUDA::value()) {
         compile_args.emplace_back("-x cuda");
-        add_cuda_arch_args(compile_args);
         compile_args.emplace_back("--cuda-host-only");
         language = llvm::dwarf::DW_LANG_C_plus_plus;
     } else if (sdfg::tenstorrent::is_tenstorrent_schedule(schedule_type)) {

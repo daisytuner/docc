@@ -2,6 +2,7 @@
 #include <filesystem>
 
 #include "docc/compile/src_file_compiler_builder.h"
+#include "docc/util/cuda_query_compute_capability.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
@@ -29,12 +30,21 @@ static DoccTarget cuda_target = {
         if (arch_env) { // build for a specific arch
             builder.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
             b.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
-        } else { // don't know the arch, so try to build for all with the driver handling the rest (may not work for all
-                 // cases)
-            builder.add_compile_option("--cuda-gpu-arch=sm_70");
-            builder.add_compile_option("--cuda-include-ptx=all");
-            b.add_compile_option("--cuda-gpu-arch=sm_70");
-            b.add_compile_option("--cuda-include-ptx=all");
+        } else {
+            auto caps = util::query_cuda_compute_capabilities();
+            if (!caps.empty()) {
+                auto& first = caps.front();
+                std::cerr << "[DOCC] Compiling CUDA for sm_" << first.compute_cap << " of "
+                          << ((first.device_names.empty()) ? "unidentified GPU" : first.device_names.front())
+                          << std::endl;
+                util::clang_21_set_cuda_specific_compute_cap(builder, b, caps.front().compute_cap);
+            } else {
+                // don't know the arch, so try to build for all with the driver handling the rest (may not work for all
+                // cases)
+                std::cerr << "[DOCC] No CUDA ARCH identified, trying to compile for all supported architectures"
+                          << std::endl;
+                util::clang_21_set_cuda_forward_compatible_options(builder, b);
+            }
         }
 
         b.add_compile_option("--cuda-path=/usr/local/cuda");
