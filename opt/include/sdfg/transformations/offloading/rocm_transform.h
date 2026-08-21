@@ -17,7 +17,6 @@ namespace rocm {
  * The resulting grid X-dimension is validated against ROCm/HIP hardware limits
  * (2^31 - 1 blocks). If the grid would exceed this limit, the transformation
  * is rejected (can_be_applied returns false).
- * @deprecated Use ROCMTransform instead.
  */
 class ROCMTransform : public transformations::OffloadTransform {
 public:

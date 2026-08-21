@@ -19,8 +19,6 @@ namespace transformations {
  * The resulting grid dimension is validated against ROCm/HIP hardware limits:
  * Y and Z dimensions are limited to 65535 blocks. If the grid would exceed this
  * limit, the transformation is rejected (can_be_applied returns false).
- * @deprecated This pass is deprecated and will be removed in future versions. Use the new GPU nested parallelization
- * pass instead.
  */
 class ROCMParallelizeNestedMap : public Transformation {
     structured_control_flow::StructuredLoop& loop_;
