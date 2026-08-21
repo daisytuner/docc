@@ -2,6 +2,7 @@
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/transformations/offloading/gpu_condition_propagation.h"
 namespace sdfg::passes {

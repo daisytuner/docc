@@ -5,6 +5,7 @@
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/structured_control_flow/for.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 
 namespace sdfg {

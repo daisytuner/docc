@@ -80,6 +80,11 @@ symbolic::SymbolSet get_gpu_indvars(
 );
 
 /**
+ * @brief Check if a schedule type is a GPU schedule (CUDA or ROCM)
+ */
+inline bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule);
+
+/**
  * @brief Get all GPU Map nodes in a given dimension (in tree traversal order).
  *
  * Unlike get_gpu_indvars, this preserves access to each Map's init / stride

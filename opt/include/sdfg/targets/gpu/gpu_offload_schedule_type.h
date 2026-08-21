@@ -137,13 +137,6 @@ public:
 };
 
 /**
- * @brief Check if a schedule type is a GPU schedule (CUDA or ROCM)
- */
-inline bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule) {
-    return schedule.value() == "CUDA" || schedule.value() == "ROCM";
-}
-
-/**
  * @brief Get the GPU target level from any GPU schedule type
  */
 inline TargetLevel gpu_target_level(const structured_control_flow::ScheduleType& schedule) {

@@ -10,6 +10,7 @@
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/rocm/rocm.h"
 
 namespace sdfg {
@@ -352,7 +353,7 @@ bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::An
     for (const auto& loop : loops) {
         if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
             if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
-                if (ScheduleType_GPU::target_level(struc_loop->schedule_type()) == TargetLevel::WARP) {
+                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == TargetLevel::WARP) {
                     return true;
                 }
             }
@@ -365,7 +366,7 @@ structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager
 ) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    if (ScheduleType_GPU::target_level(node.schedule_type()) != TargetLevel::WARP) {
+    if (ScheduleType_GPU_Offload::target_level(node.schedule_type()) != TargetLevel::WARP) {
         return nullptr;
     }
 
@@ -373,13 +374,21 @@ structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
     for (auto ancestor : ancestors) {
         if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(ancestor)) {
             if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
-                if (ScheduleType_GPU::target_level(struc_loop->schedule_type()) == TargetLevel::X_BLOCK) {
+                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == TargetLevel::X_BLOCK) {
                     return struc_loop;
                 }
             }
         }
     }
     return nullptr;
+}
+
+/**
+ * @brief Check if a schedule type is a GPU schedule (CUDA or ROCM)
+ */
+inline bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule) {
+    return schedule.value() == "CUDA_Offload" || schedule.value() == "ROCM_Offload" || schedule.value() == "CUDA" ||
+           schedule.value() == "ROCM";
 }
 
 // Explicit template instantiations for CUDA

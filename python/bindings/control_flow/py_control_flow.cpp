@@ -16,7 +16,7 @@
 
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/targets/cuda/cuda.h>
-#include <sdfg/targets/gpu/gpu_schedule_type.h>
+#include <sdfg/targets/gpu/gpu_offload_schedule_type.h>
 #include <sdfg/targets/offloading/data_offloading_node.h>
 #include <sdfg/targets/rocm/rocm.h>
 
@@ -271,8 +271,8 @@ void register_control_flow(py::module& m) {
         .def_static(
             "cuda_offload",
             [](sdfg::gpu::TargetLevel target_level, int64_t parallel_size) {
-                return sdfg::cuda::ScheduleType_CUDA::create<
-                    sdfg::cuda::ScheduleType_CUDA>(target_level, sdfg::symbolic::integer(parallel_size));
+                return sdfg::cuda::ScheduleType_CUDA_Offload::create<
+                    sdfg::cuda::ScheduleType_CUDA_Offload>(target_level, sdfg::symbolic::integer(parallel_size));
             },
             py::arg("target_level"),
             py::arg("parallel_size"),
@@ -281,8 +281,8 @@ void register_control_flow(py::module& m) {
         .def_static(
             "rocm_offload",
             [](sdfg::gpu::TargetLevel target_level, int64_t parallel_size) {
-                return sdfg::rocm::ScheduleType_ROCM::create<
-                    sdfg::rocm::ScheduleType_ROCM>(target_level, sdfg::symbolic::integer(parallel_size));
+                return sdfg::rocm::ScheduleType_ROCM_Offload::create<
+                    sdfg::rocm::ScheduleType_ROCM_Offload>(target_level, sdfg::symbolic::integer(parallel_size));
             },
             py::arg("target_level"),
             py::arg("parallel_size"),
