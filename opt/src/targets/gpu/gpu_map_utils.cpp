@@ -383,10 +383,7 @@ structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
     return nullptr;
 }
 
-/**
- * @brief Check if a schedule type is a GPU schedule (CUDA or ROCM)
- */
-inline bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule) {
+bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule) {
     return schedule.value() == "CUDA_Offload" || schedule.value() == "ROCM_Offload" || schedule.value() == "CUDA" ||
            schedule.value() == "ROCM";
 }
