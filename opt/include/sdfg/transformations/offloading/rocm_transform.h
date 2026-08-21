@@ -19,9 +19,9 @@ namespace rocm {
  * is rejected (can_be_applied returns false).
  * @deprecated Use ROCMTransform instead.
  */
-class ROCMTransform_deprecated : public transformations::OffloadTransform {
+class ROCMTransform : public transformations::OffloadTransform {
 public:
-    explicit ROCMTransform_deprecated(
+    explicit ROCMTransform(
         structured_control_flow::StructuredLoop& loop, int block_size = 64, bool allow_dynamic_sizes = false
     )
         : OffloadTransform(loop, allow_dynamic_sizes), block_size_(block_size) {};
@@ -32,7 +32,7 @@ public:
 
     void to_json(nlohmann::json& j) const override;
 
-    static ROCMTransform_deprecated from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
+    static ROCMTransform from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
 
 protected:
     types::StorageType local_device_storage_type() override {

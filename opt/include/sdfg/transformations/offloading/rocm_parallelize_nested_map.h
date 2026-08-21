@@ -22,12 +22,12 @@ namespace transformations {
  * @deprecated This pass is deprecated and will be removed in future versions. Use the new GPU nested parallelization
  * pass instead.
  */
-class ROCMParallelizeNestedMap_deprecated : public Transformation {
+class ROCMParallelizeNestedMap : public Transformation {
     structured_control_flow::StructuredLoop& loop_;
     size_t block_size_;
 
 public:
-    ROCMParallelizeNestedMap_deprecated(structured_control_flow::StructuredLoop& loop, size_t block_size);
+    ROCMParallelizeNestedMap(structured_control_flow::StructuredLoop& loop, size_t block_size);
 
     virtual std::string name() const override;
 
@@ -38,7 +38,7 @@ public:
 
     virtual void to_json(nlohmann::json& j) const override;
 
-    static ROCMParallelizeNestedMap_deprecated from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
+    static ROCMParallelizeNestedMap from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 };
 
 

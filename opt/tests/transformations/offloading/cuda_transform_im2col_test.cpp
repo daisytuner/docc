@@ -155,7 +155,7 @@ TEST(CudaTransformIm2colTest, CollapsedTwoDimMap) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    CUDATransform_deprecated transform(outer_map, /*block_size=*/32);
+    CUDATransform transform(outer_map, /*block_size=*/32);
 
     // The outer map of the collapsed im2col pattern must be recognised as
     // offloadable to a single CUDA kernel.
@@ -240,7 +240,7 @@ TEST(CudaTransformIm2colTest, ExplicitSixDimMap) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    CUDATransform_deprecated transform(m_n, /*block_size=*/32);
+    CUDATransform transform(m_n, /*block_size=*/32);
 
     EXPECT_TRUE(transform.can_be_applied(builder, analysis_manager))
         << "OffloadTransform should accept the explicit (un-collapsed) im2col map.";

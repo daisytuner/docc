@@ -12,13 +12,12 @@
 namespace sdfg {
 namespace transformations {
 
-CUDAParallelizeNestedMap_deprecated::
-    CUDAParallelizeNestedMap_deprecated(structured_control_flow::StructuredLoop& loop, size_t block_size)
+CUDAParallelizeNestedMap::CUDAParallelizeNestedMap(structured_control_flow::StructuredLoop& loop, size_t block_size)
     : loop_(loop), block_size_(block_size) {}
 
-std::string CUDAParallelizeNestedMap_deprecated::name() const { return "CUDAParallelizeNestedMap"; }
+std::string CUDAParallelizeNestedMap::name() const { return "CUDAParallelizeNestedMap"; }
 
-bool CUDAParallelizeNestedMap_deprecated::
+bool CUDAParallelizeNestedMap::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (dynamic_cast<structured_control_flow::Map*>(&loop_) == nullptr &&
         dynamic_cast<structured_control_flow::Reduce*>(&loop_) == nullptr) {
@@ -121,8 +120,7 @@ bool CUDAParallelizeNestedMap_deprecated::
     return true;
 }
 
-void CUDAParallelizeNestedMap_deprecated::
-    apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+void CUDAParallelizeNestedMap::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto parent = loop_analysis.parent_loop(&loop_);
 
@@ -145,7 +143,7 @@ void CUDAParallelizeNestedMap_deprecated::
     builder.update_schedule_type(loop_, new_schedule);
 }
 
-void CUDAParallelizeNestedMap_deprecated::to_json(nlohmann::json& j) const {
+void CUDAParallelizeNestedMap::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["parameters"] = nlohmann::json::object();
     j["parameters"]["block_size"] = block_size_;
@@ -156,7 +154,7 @@ void CUDAParallelizeNestedMap_deprecated::to_json(nlohmann::json& j) const {
     ser_flat.serialize_node(j["subgraph"]["0"], loop_);
 }
 
-CUDAParallelizeNestedMap_deprecated CUDAParallelizeNestedMap_deprecated::
+CUDAParallelizeNestedMap CUDAParallelizeNestedMap::
     from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     // Prefer the embedding-compatible representation (subgraph/parameters),
     // but fall back to legacy fields (loop/block_size) if needed.
@@ -169,7 +167,7 @@ CUDAParallelizeNestedMap_deprecated CUDAParallelizeNestedMap_deprecated::
     if (!loop) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " is not a loop.");
     }
-    return CUDAParallelizeNestedMap_deprecated(*loop, block_size);
+    return CUDAParallelizeNestedMap(*loop, block_size);
 }
 
 } // namespace transformations

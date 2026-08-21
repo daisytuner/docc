@@ -59,7 +59,7 @@ bool ROCMScheduler::can_apply_schedule(
     bool offload_unknown_sizes
 ) {
     // 64 is ROCM default wavefront size
-    rocm::ROCMTransform_deprecated rocm_transform(loop, 64, offload_unknown_sizes);
+    rocm::ROCMTransform rocm_transform(loop, 64, offload_unknown_sizes);
     return rocm_transform.can_be_applied(builder, analysis_manager);
 }
 
@@ -71,10 +71,9 @@ void ROCMScheduler::apply_schedule(
 ) {
     // 64 is ROCM default wavefront size
     if (recorder_ != nullptr) {
-        recorder_
-            ->apply<rocm::ROCMTransform_deprecated>(builder, analysis_manager, false, loop, 64, offload_unknown_sizes);
+        recorder_->apply<rocm::ROCMTransform>(builder, analysis_manager, false, loop, 64, offload_unknown_sizes);
     } else {
-        rocm::ROCMTransform_deprecated rocm_transform(loop, 64, offload_unknown_sizes);
+        rocm::ROCMTransform rocm_transform(loop, 64, offload_unknown_sizes);
         rocm_transform.apply(builder, analysis_manager);
     }
 }
@@ -138,7 +137,7 @@ void ROCMScheduler::post_schedule(
     }
 
     if (!gpu_loops.empty()) {
-        GPUNestedParallelizationPass_deprecated nested_pass(gpu_loops, GPUTarget::ROCM, 8);
+        GPUNestedParallelizationPass nested_pass(gpu_loops, GPUTarget::ROCM, 8);
         nested_pass.run(builder, analysis_manager);
         analysis_manager.invalidate_all();
     }

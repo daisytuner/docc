@@ -23,7 +23,7 @@ TEST(ROCMTransformTest, MapWithSequentialSchedule) {
     );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    rocm::ROCMTransform_deprecated transformation(map, 64);
+    rocm::ROCMTransform transformation(map, 64);
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
@@ -49,7 +49,7 @@ TEST(ROCMTransformTest, RejectsAlreadyROCMScheduledMap) {
     );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    rocm::ROCMTransform_deprecated transformation(map, 128);
+    rocm::ROCMTransform transformation(map, 128);
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 
     // Schedule left untouched.

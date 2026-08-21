@@ -212,19 +212,19 @@ TEST(TransformationSerializationTest, OffloadingAndGPUTransformationsShape) {
     LoopFixture f;
 
     // CUDATransform
-    cuda::CUDATransform_deprecated cuda_t(*f.outer_map, 32);
+    cuda::CUDATransform cuda_t(*f.outer_map, 32);
     nlohmann::json jc;
     cuda_t.to_json(jc);
     ValidateSerialization(jc, 1);
-    auto cuda_t2 = cuda::CUDATransform_deprecated::from_json(f.builder, jc);
+    auto cuda_t2 = cuda::CUDATransform::from_json(f.builder, jc);
     ASSERT_EQ(cuda_t2.name(), cuda_t.name());
 
     // CUDAParallelizeNestedMap
-    transformations::CUDAParallelizeNestedMap_deprecated nested(*f.inner_map, 32);
+    transformations::CUDAParallelizeNestedMap nested(*f.inner_map, 32);
     nlohmann::json jn;
     nested.to_json(jn);
     ValidateSerialization(jn, 1);
-    auto nested2 = transformations::CUDAParallelizeNestedMap_deprecated::from_json(f.builder, jn);
+    auto nested2 = transformations::CUDAParallelizeNestedMap::from_json(f.builder, jn);
     ASSERT_EQ(nested2.name(), nested.name());
 
     // GPUTiling

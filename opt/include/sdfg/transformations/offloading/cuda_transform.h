@@ -19,9 +19,9 @@ namespace cuda {
  * is rejected (can_be_applied returns false).
  * @deprecated Use CUDAOffloadTransform instead.
  */
-class CUDATransform_deprecated : public transformations::OffloadTransform {
+class CUDATransform : public transformations::OffloadTransform {
 public:
-    explicit CUDATransform_deprecated(
+    explicit CUDATransform(
         structured_control_flow::StructuredLoop& loop, int block_size = 32, bool allow_dynamic_sizes = false
     )
         : OffloadTransform(loop, allow_dynamic_sizes), block_size_(block_size) {};
@@ -32,7 +32,7 @@ public:
 
     void to_json(nlohmann::json& j) const override;
 
-    static CUDATransform_deprecated from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
+    static CUDATransform from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
 
 protected:
     types::StorageType local_device_storage_type() override {

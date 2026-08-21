@@ -475,7 +475,7 @@ TEST(CudaTransformTest, CudaTransformWithBlocksizeTest) {
     // Re-applying CUDATransform to a map that already carries a CUDA schedule is rejected:
     // this is what prevents double-offloading of remote-tuned cutouts. The schedule (and its
     // block size) is left untouched.
-    auto cuda_transform = CUDATransform_deprecated(map, 64);
+    auto cuda_transform = CUDATransform(map, 64);
     EXPECT_FALSE(cuda_transform.can_be_applied(builder, analysis_manager));
 
     auto transformed_schedule = map.schedule_type();

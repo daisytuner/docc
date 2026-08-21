@@ -22,17 +22,17 @@ enum class GPUTarget {
  * @deprecated This pass is deprecated and will be removed in future versions. Use the new GPU nested parallelization
  * pass instead.
  */
-class GPUNestedParallelizationPass_deprecated : public Pass {
+class GPUNestedParallelizationPass : public Pass {
 private:
     const std::vector<structured_control_flow::StructuredLoop*>& loops_;
     GPUTarget target_;
     size_t block_size_;
 
 public:
-    GPUNestedParallelizationPass_deprecated(
+    GPUNestedParallelizationPass(
         const std::vector<structured_control_flow::StructuredLoop*>& loops, GPUTarget target, size_t block_size
     );
-    ~GPUNestedParallelizationPass_deprecated() override = default;
+    ~GPUNestedParallelizationPass() override = default;
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 

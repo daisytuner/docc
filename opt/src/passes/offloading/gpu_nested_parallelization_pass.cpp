@@ -9,12 +9,12 @@
 namespace sdfg {
 namespace passes {
 
-GPUNestedParallelizationPass_deprecated::GPUNestedParallelizationPass_deprecated(
+GPUNestedParallelizationPass::GPUNestedParallelizationPass(
     const std::vector<structured_control_flow::StructuredLoop*>& loops, GPUTarget target, size_t block_size
 )
     : loops_(loops), target_(target), block_size_(block_size) {}
 
-bool GPUNestedParallelizationPass_deprecated::
+bool GPUNestedParallelizationPass::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (loops_.empty()) {
         return false;
@@ -31,10 +31,10 @@ bool GPUNestedParallelizationPass_deprecated::
             if (auto* nested_loop = dyn_cast<structured_control_flow::StructuredLoop*>(descendant)) {
                 bool applicable = false;
                 if (target_ == GPUTarget::CUDA) {
-                    transformations::CUDAParallelizeNestedMap_deprecated transform(*nested_loop, block_size_);
+                    transformations::CUDAParallelizeNestedMap transform(*nested_loop, block_size_);
                     applicable = transform.can_be_applied(builder, analysis_manager);
                 } else {
-                    transformations::ROCMParallelizeNestedMap_deprecated transform(*nested_loop, block_size_);
+                    transformations::ROCMParallelizeNestedMap transform(*nested_loop, block_size_);
                     applicable = transform.can_be_applied(builder, analysis_manager);
                 }
                 if (applicable) {
@@ -51,10 +51,10 @@ bool GPUNestedParallelizationPass_deprecated::
     // Phase 2: Apply all parallelizations
     for (auto* nested_loop : candidates) {
         if (target_ == GPUTarget::CUDA) {
-            transformations::CUDAParallelizeNestedMap_deprecated transform(*nested_loop, block_size_);
+            transformations::CUDAParallelizeNestedMap transform(*nested_loop, block_size_);
             transform.apply(builder, analysis_manager);
         } else {
-            transformations::ROCMParallelizeNestedMap_deprecated transform(*nested_loop, block_size_);
+            transformations::ROCMParallelizeNestedMap transform(*nested_loop, block_size_);
             transform.apply(builder, analysis_manager);
         }
     }

@@ -227,7 +227,7 @@ void register_transformations(py::module& m) {
         });
 
     // CUDATransform transformation (offload a top-level map to a CUDA kernel, X grid dim)
-    py::class_<sdfg::cuda::CUDATransform_deprecated, Transformation>(m, "CUDATransform")
+    py::class_<sdfg::cuda::CUDATransform, Transformation>(m, "CUDATransform")
         .def(
             py::init<Map&, int, bool>(),
             py::arg("map"),
@@ -239,14 +239,14 @@ void register_transformations(py::module& m) {
             "    block_size: Threads per block along X (default: 32)\n"
             "    allow_dynamic_sizes: Permit non-constant iteration counts (default: False)"
         )
-        .def("__repr__", [](const sdfg::cuda::CUDATransform_deprecated& t) {
+        .def("__repr__", [](const sdfg::cuda::CUDATransform& t) {
             std::ostringstream oss;
             oss << "<CUDATransform name='" << t.name() << "'>";
             return oss.str();
         });
 
     // CUDAParallelizeNestedMap transformation (add a nested map as the next grid dim)
-    py::class_<CUDAParallelizeNestedMap_deprecated, Transformation>(m, "CUDAParallelizeNestedMap")
+    py::class_<CUDAParallelizeNestedMap, Transformation>(m, "CUDAParallelizeNestedMap")
         .def(
             py::init<Map&, size_t>(),
             py::arg("loop"),
@@ -256,7 +256,7 @@ void register_transformations(py::module& m) {
             "    loop: The nested (sequential) map to parallelize\n"
             "    block_size: Threads per block along this dimension"
         )
-        .def("__repr__", [](const CUDAParallelizeNestedMap_deprecated& t) {
+        .def("__repr__", [](const CUDAParallelizeNestedMap& t) {
             std::ostringstream oss;
             oss << "<CUDAParallelizeNestedMap name='" << t.name() << "'>";
             return oss.str();
