@@ -102,5 +102,7 @@ bool CUDAOffloadMapDispatcher::is_device_pointer_storage(const types::StorageTyp
     return storage.is_nv_generic();
 }
 
+std::string CUDAOffloadMapDispatcher::kernel_file_extension() const { return "cu"; }
+
 } // namespace cuda
 } // namespace sdfg

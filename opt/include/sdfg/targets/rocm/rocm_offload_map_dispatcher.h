@@ -57,6 +57,8 @@ public:
     int get_warp_size() const override;
 
     bool is_device_pointer_storage(const types::StorageType& storage) const override;
+
+    std::string kernel_file_extension() const override;
 };
 
 } // namespace rocm

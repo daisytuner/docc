@@ -231,7 +231,8 @@ void GPUOffloadMapDispatcher::dispatch_node(
         this->dispatch_header(globals_stream, kernel_name, arguments_declaration);
         globals_stream << ";" << std::endl;
 
-        auto& library_stream = library_snippet_factory.require(kernel_name, "cu", true).stream();
+        auto& library_stream =
+            library_snippet_factory.require(kernel_name, this->kernel_file_extension(), true).stream();
 
         library_stream << "#include " << library_snippet_factory.header_path().filename() << std::endl
                        << std::endl; // we expect the compiler-call to do this instead

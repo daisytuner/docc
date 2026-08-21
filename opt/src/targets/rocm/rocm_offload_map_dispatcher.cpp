@@ -103,5 +103,7 @@ bool ROCMOffloadMapDispatcher::is_device_pointer_storage(const types::StorageTyp
     return storage.is_amd_generic();
 }
 
+std::string ROCMOffloadMapDispatcher::kernel_file_extension() const { return "rocm.cpp"; }
+
 } // namespace rocm
 } // namespace sdfg

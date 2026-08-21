@@ -65,6 +65,9 @@ protected:
 
     virtual bool is_device_pointer_storage(const types::StorageType& storage) const = 0;
 
+    /// File extension for the kernel translation unit ("cu"/"rocm.cpp").
+    virtual std::string kernel_file_extension() const = 0;
+
 public:
     GPUOffloadMapDispatcher(
         codegen::LanguageExtension& language_extension,
