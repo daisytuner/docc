@@ -99,6 +99,10 @@ codegen::InstrumentationInfo ROCMOffloadReduceDispatcher::instrumentation_info()
 
 int ROCMOffloadReduceDispatcher::get_warp_size() const { return ROCM_WARP_SIZE; }
 
+bool ROCMOffloadReduceDispatcher::is_device_pointer_storage(const types::StorageType& storage) const {
+    return storage.is_amd_generic();
+}
+
 
 } // namespace rocm
 } // namespace sdfg

@@ -5,7 +5,7 @@
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
-
+#include "sdfg/types/type.h"
 
 namespace sdfg {
 namespace gpu {
@@ -62,6 +62,8 @@ protected:
     virtual codegen::LanguageExtension& create_kernel_language_extension() = 0;
 
     virtual int get_warp_size() const = 0;
+
+    virtual bool is_device_pointer_storage(const types::StorageType& storage) const = 0;
 
 public:
     GPUOffloadMapDispatcher(

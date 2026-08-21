@@ -55,6 +55,8 @@ public:
     codegen::InstrumentationInfo instrumentation_info() const override;
 
     int get_warp_size() const override;
+
+    bool is_device_pointer_storage(const types::StorageType& storage) const override;
 };
 
 } // namespace rocm

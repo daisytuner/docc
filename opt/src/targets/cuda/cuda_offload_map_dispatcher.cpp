@@ -98,5 +98,9 @@ codegen::InstrumentationInfo CUDAOffloadMapDispatcher::instrumentation_info() co
 
 int CUDAOffloadMapDispatcher::get_warp_size() const { return CUDA_WARP_SIZE; }
 
+bool CUDAOffloadMapDispatcher::is_device_pointer_storage(const types::StorageType& storage) const {
+    return storage.is_nv_generic();
+}
+
 } // namespace cuda
 } // namespace sdfg

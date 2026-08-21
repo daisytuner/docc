@@ -168,6 +168,9 @@ public:
     /// @brief Checks if this storage is NVIDIA generic memory
     bool is_nv_generic() const { return value_ == "NV_Generic"; }
 
+    /// @brief Checks if this storage is AMD generic memory
+    bool is_amd_generic() const { return value_ == "AMD_Generic"; }
+
     /// @brief Checks if this storage is NVIDIA global memory
     bool is_nv_global() const { return value_ == "NV_Global"; }
 

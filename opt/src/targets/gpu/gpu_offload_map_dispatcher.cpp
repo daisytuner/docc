@@ -137,7 +137,7 @@ void GPUOffloadMapDispatcher::dispatch_node(
     std::vector<std::string> arguments_device;
     for (auto& argument : arguments) {
         auto& arg_type = sdfg_.type(argument);
-        if (arg_type.storage_type().is_nv_generic()) {
+        if (this->is_device_pointer_storage(arg_type.storage_type())) {
             arguments_device.push_back(argument);
         } else if (arg_type.type_id() == types::TypeID::Scalar) {
             arguments_device.push_back(argument);
