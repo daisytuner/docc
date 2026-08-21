@@ -38,6 +38,9 @@ set(TEST_FILES
     transformations/offloading/rocblas_data_transfer_extraction_test.cpp
     transformations/offloading/cuda_stdlib_data_transfer_extraction_test.cpp
     transformations/offloading/rocm_stdlib_data_transfer_extraction_test.cpp
+    transformations/offloading/gpu_offload_nested_loop_test.cpp
+    transformations/offloading/cuda_offload_transform_test.cpp
+    transformations/offloading/rocm_offload_transform_test.cpp
     optimizations/diamond_tiling_test.cpp
     optimizations/blocking_test.cpp
     optimizations/gpu_kernels_test.cpp

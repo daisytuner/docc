@@ -134,16 +134,20 @@ set(SOURCE_FILES
     src/transformations/map_fusion.cpp
     src/transformations/multi_level_tiling.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_offload_transform.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_transform.cpp
     src/transformations/offloading/gpu_condition_propagation.cpp
     src/transformations/offloading/gpu_loop_reordering.cpp
+    src/transformations/offloading/gpu_offload_nested_loop.cpp
+    src/transformations/offloading/gpu_offload_transform.cpp
     src/transformations/offloading/gpu_tiling.cpp
     src/transformations/offloading/kernel_local_storage.cpp
     src/transformations/offloading/offload_transform.cpp
     src/transformations/offloading/rocblas_data_transfer_extraction.cpp
+    src/transformations/offloading/rocm_offload_transform.cpp
     src/transformations/offloading/rocm_parallelize_nested_map.cpp
     src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/rocm_transform.cpp
