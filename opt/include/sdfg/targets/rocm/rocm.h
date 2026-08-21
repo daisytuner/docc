@@ -37,7 +37,7 @@ using ROCMDimension = gpu::GPUDimension;
  */
 class ScheduleType_ROCM_Offload : public gpu::ScheduleType_GPU_Offload {
 public:
-    static const std::string value() { return "ROCM_Offloading"; }
+    static const std::string value() { return "ROCM_Offload"; }
 };
 
 /**

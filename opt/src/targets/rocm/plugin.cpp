@@ -45,7 +45,7 @@ void register_rocm_plugin(plugins::Context& context) {
     // are currently shadowed by the deprecated dimension-based ROCm dispatchers registered above
     // and remain inactive until the deprecated registrations are removed.
     mapDispatcherRegistry.register_map_dispatcher(
-        ScheduleType_ROCM::value(),
+        ScheduleType_ROCM_Offload::value(),
         [](codegen::LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
            analysis::AnalysisManager& analysis_manager,
@@ -59,7 +59,7 @@ void register_rocm_plugin(plugins::Context& context) {
     );
 
     reduceDispatcherRegistry.register_reduce_dispatcher(
-        ScheduleType_ROCM::value(),
+        ScheduleType_ROCM_Offload::value(),
         [](codegen::LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
            analysis::AnalysisManager& analysis_manager,

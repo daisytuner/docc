@@ -37,7 +37,7 @@ using CUDADimension = gpu::GPUDimension;
  */
 class ScheduleType_CUDA_Offload : public gpu::ScheduleType_GPU_Offload {
 public:
-    static const std::string value() { return "CUDA_Offloading"; }
+    static const std::string value() { return "CUDA_Offload"; }
 };
 
 /**

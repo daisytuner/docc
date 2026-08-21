@@ -19,8 +19,6 @@ enum class GPUTarget {
  * nested parallelization (CUDA or ROCM) in two phases:
  * 1. can_be_applied phase: collects all nested loops where parallelization is applicable
  * 2. apply phase: applies parallelization to all collected loops
- * @deprecated This pass is deprecated and will be removed in future versions. Use the new GPU nested parallelization
- * pass instead.
  */
 class GPUNestedParallelizationPass : public Pass {
 private:
