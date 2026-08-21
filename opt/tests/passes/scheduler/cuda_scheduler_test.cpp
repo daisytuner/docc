@@ -80,8 +80,8 @@ TEST(CUDASchedulerTest, OuterParallelMapWithInnerMap) {
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
-    EXPECT_EQ(loop.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(loop.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 }
 
 TEST(CUDASchedulerTest, OuterSequentialForWith2DMap) {
@@ -152,8 +152,8 @@ TEST(CUDASchedulerTest, OuterSequentialForWith2DMap) {
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
-    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 }
 
 TEST(CUDASchedulerTest, OuterWhileWithInnerMaps) {
@@ -233,8 +233,8 @@ TEST(CUDASchedulerTest, OuterWhileWithInnerMaps) {
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
-    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 }
 
 // Regression test: When multiple outermost maps exist and some are already
@@ -279,9 +279,9 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
     };
 
     auto& map_a = make_map("a", structured_control_flow::ScheduleType_Sequential::create());
-    auto& map_b = make_map("b", cuda::ScheduleType_CUDA_deprecated::create());
+    auto& map_b = make_map("b", cuda::ScheduleType_CUDA::create());
     auto& map_c = make_map("c", structured_control_flow::ScheduleType_Sequential::create());
-    auto& map_d = make_map("d", cuda::ScheduleType_CUDA_deprecated::create());
+    auto& map_d = make_map("d", cuda::ScheduleType_CUDA::create());
     auto& map_e = make_map("e", structured_control_flow::ScheduleType_Sequential::create());
 
     // Verify preconditions
@@ -297,16 +297,16 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // Maps a, c, e should now be CUDA-scheduled
-    EXPECT_EQ(map_a.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(map_c.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(map_e.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(map_a.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map_c.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map_e.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 
     // Maps b, d must still have exactly the CUDA schedule type — NOT double-offloaded.
     // With the old bug, maps b and d would pass through the compatibility filter
     // (because queue.size() shrank when earlier maps were removed) and get a second
     // CUDATransform applied, resulting in nested offloading (cudaMemcpy of device ptrs).
-    EXPECT_EQ(map_b.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(map_d.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(map_b.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map_d.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 
     // Verify no containers with double-prefixed device names exist
     // (e.g. __daisy_cuda_0___daisy_cuda_821__ would indicate double-offloading)
@@ -414,9 +414,9 @@ TEST(CUDASchedulerTest, MultipleTargetsNoDoubleScheduling) {
     }
 
     // Manually set map_1 to CUDA to simulate what the first target (rpc) would do
-    builder.update_schedule_type(map_1, cuda::ScheduleType_CUDA_deprecated::create());
+    builder.update_schedule_type(map_1, cuda::ScheduleType_CUDA::create());
 
-    EXPECT_EQ(map_1.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(map_1.schedule_type().value(), cuda::ScheduleType_CUDA::value());
     EXPECT_EQ(map_2.schedule_type().value(), "SEQUENTIAL");
 
     // Run CUDA scheduler — it must see map_1 is already CUDA and skip it
@@ -425,10 +425,10 @@ TEST(CUDASchedulerTest, MultipleTargetsNoDoubleScheduling) {
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // map_2 should now be CUDA
-    EXPECT_EQ(map_2.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(map_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 
     // map_1 should still be CUDA (not double-offloaded)
-    EXPECT_EQ(map_1.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(map_1.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 
     // No double CUDA prefixes in containers
     for (auto& container : builder.subject().containers()) {
@@ -476,7 +476,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
         symbolic::Lt(symbolic::symbol("i"), bound),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
-        cuda::ScheduleType_CUDA_deprecated::create()
+        cuda::ScheduleType_CUDA::create()
     );
     {
         auto& body = map1.root();
@@ -495,7 +495,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
         symbolic::Lt(symbolic::symbol("j"), bound),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
-        cuda::ScheduleType_CUDA_deprecated::create()
+        cuda::ScheduleType_CUDA::create()
     );
     {
         auto& body = map2.root();
@@ -514,7 +514,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
         symbolic::Lt(symbolic::symbol("k"), bound),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("k"), symbolic::integer(1)),
-        cuda::ScheduleType_CUDA_deprecated::create()
+        cuda::ScheduleType_CUDA::create()
     );
     {
         auto& body = map3.root();
@@ -570,13 +570,13 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // Maps 1-3 should remain CUDA (not double-scheduled)
-    EXPECT_EQ(map1.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(map2.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(map3.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(map1.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map3.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 
     // Maps 4-5 should now be CUDA-scheduled
-    EXPECT_EQ(map4.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(map5.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(map4.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map5.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 }
 
 TEST(CUDASchedulerTest, DISABLED_OuterParallelMapWithInnerReduce) {
@@ -636,12 +636,12 @@ TEST(CUDASchedulerTest, DISABLED_OuterParallelMapWithInnerReduce) {
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // Outer map is offloaded on the X dimension.
-    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(cuda::ScheduleType_CUDA_deprecated::dimension(map.schedule_type()), cuda::CUDADimension::X);
+    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(cuda::ScheduleType_CUDA::dimension(map.schedule_type()), cuda::CUDADimension::X);
 
     // The nested reduce is parallelized onto the next (Y) dimension.
-    EXPECT_EQ(reduce.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(cuda::ScheduleType_CUDA_deprecated::dimension(reduce.schedule_type()), cuda::CUDADimension::Y);
+    EXPECT_EQ(reduce.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(cuda::ScheduleType_CUDA::dimension(reduce.schedule_type()), cuda::CUDADimension::Y);
 }
 
 // Regression test (remote-tuning double-offload): a lone top-level map that already carries a
@@ -668,7 +668,7 @@ TEST(CUDASchedulerTest, SkipsLoneAlreadyCUDAScheduledMap) {
         symbolic::Lt(indvar, symbolic::symbol("N")),
         symbolic::integer(0),
         symbolic::add(indvar, symbolic::integer(1)),
-        cuda::ScheduleType_CUDA_deprecated::create()
+        cuda::ScheduleType_CUDA::create()
     );
     auto& block = builder.add_block(map.root());
     auto& a_in = builder.add_access(block, "A");
@@ -684,7 +684,7 @@ TEST(CUDASchedulerTest, SkipsLoneAlreadyCUDAScheduledMap) {
     EXPECT_FALSE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // Schedule unchanged and no device buffers created (not re-offloaded).
-    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
+    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA::value());
     for (auto& container : builder.subject().containers()) {
         std::string name = container;
         EXPECT_EQ(name.find("__daisy_cuda_"), std::string::npos)

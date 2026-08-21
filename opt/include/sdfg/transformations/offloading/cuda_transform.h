@@ -54,9 +54,9 @@ protected:
     }
 
     ScheduleType transformed_schedule_type() override {
-        auto schedule = ScheduleType_CUDA_deprecated::create();
+        auto schedule = ScheduleType_CUDA::create();
         if (block_size_ != 0) {
-            ScheduleType_CUDA_deprecated::block_size(schedule, symbolic::integer(block_size_));
+            ScheduleType_CUDA::block_size(schedule, symbolic::integer(block_size_));
         }
         return schedule;
     }

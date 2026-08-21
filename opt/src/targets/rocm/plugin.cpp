@@ -14,7 +14,7 @@ void register_rocm_plugin(plugins::Context& context) {
     auto& libNodeSerRegistry = context.library_node_serializer_registry;
 
     mapDispatcherRegistry.register_map_dispatcher(
-        ScheduleType_ROCM_deprecated::value(),
+        ScheduleType_ROCM::value(),
         [](codegen::LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
            analysis::AnalysisManager& analysis_manager,
@@ -28,7 +28,7 @@ void register_rocm_plugin(plugins::Context& context) {
     );
 
     reduceDispatcherRegistry.register_reduce_dispatcher(
-        ScheduleType_ROCM_deprecated::value(),
+        ScheduleType_ROCM::value(),
         [](codegen::LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
            analysis::AnalysisManager& analysis_manager,

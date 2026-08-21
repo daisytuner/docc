@@ -23,8 +23,6 @@
 #include "sdfg/types/scalar.h"
 
 
-#include "sdfg/targets/gpu/old_gpu_schedule_type.h"
-
 namespace sdfg {
 namespace transformations {
 

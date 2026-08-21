@@ -22,9 +22,9 @@ TEST(CUDAReduceDispatcherTest, AtomicSumKernel) {
     builder.add_container("__daisy_cuda_A", pointer_type);
     builder.add_container("__daisy_cuda_acc", pointer_type);
 
-    auto cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    auto cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -115,9 +115,9 @@ TEST(CUDAReduceDispatcherTest, NestedReduceInlinesGridStride) {
     builder.add_container("__daisy_cuda_acc", pointer_type);
 
     // Enclosing CUDA map over i on the X dimension.
-    auto map_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(map_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(map_schedule, symbolic::integer(32));
+    auto map_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(map_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(map_schedule, symbolic::integer(32));
     auto& map = builder.add_map(
         root,
         symbolic::symbol("i"),
@@ -128,9 +128,9 @@ TEST(CUDAReduceDispatcherTest, NestedReduceInlinesGridStride) {
     );
 
     // Nested CUDA reduce over j on the Y dimension.
-    auto reduce_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(reduce_schedule, CUDADimension::Y);
-    ScheduleType_CUDA_deprecated::block_size(reduce_schedule, symbolic::integer(32));
+    auto reduce_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(reduce_schedule, CUDADimension::Y);
+    ScheduleType_CUDA::block_size(reduce_schedule, symbolic::integer(32));
     auto& reduce = builder.add_reduce(
         map.root(),
         symbolic::symbol("j"),
@@ -202,9 +202,9 @@ TEST(CUDAReduceDispatcherTest, IndexedAccumulatorAtomicAtSlot) {
     builder.add_container("__daisy_cuda_acc", pointer_type);
 
     // Enclosing data-parallel CUDA map over i on the X dimension.
-    auto map_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(map_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(map_schedule, symbolic::integer(32));
+    auto map_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(map_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(map_schedule, symbolic::integer(32));
     auto& map = builder.add_map(
         root,
         symbolic::symbol("i"),
@@ -215,9 +215,9 @@ TEST(CUDAReduceDispatcherTest, IndexedAccumulatorAtomicAtSlot) {
     );
 
     // Nested CUDA reduce over j on the Y dimension, accumulating into acc[i].
-    auto reduce_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(reduce_schedule, CUDADimension::Y);
-    ScheduleType_CUDA_deprecated::block_size(reduce_schedule, symbolic::integer(32));
+    auto reduce_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(reduce_schedule, CUDADimension::Y);
+    ScheduleType_CUDA::block_size(reduce_schedule, symbolic::integer(32));
     auto& reduce = builder.add_reduce(
         map.root(),
         symbolic::symbol("j"),
@@ -287,9 +287,9 @@ TEST(CUDAReduceDispatcherTest, MulReductionUsesCASHelper) {
     builder.add_container("__daisy_cuda_A", pointer_type);
     builder.add_container("__daisy_cuda_acc", pointer_type);
 
-    auto cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    auto cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto& reduce = builder.add_reduce(
         root,

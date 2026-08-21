@@ -383,42 +383,42 @@ structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
 }
 
 // Explicit template instantiations for CUDA
-template symbolic::Expression find_nested_gpu_blocksize<cuda::ScheduleType_CUDA_deprecated>(
+template symbolic::Expression find_nested_gpu_blocksize<cuda::ScheduleType_CUDA>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 
-template symbolic::Expression find_nested_gpu_iterations<cuda::ScheduleType_CUDA_deprecated>(
+template symbolic::Expression find_nested_gpu_iterations<cuda::ScheduleType_CUDA>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 
 template bool is_outermost_gpu_map<
-    cuda::ScheduleType_CUDA_deprecated>(structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager);
+    cuda::ScheduleType_CUDA>(structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager);
 
-template symbolic::SymbolSet get_gpu_indvars<cuda::ScheduleType_CUDA_deprecated>(
+template symbolic::SymbolSet get_gpu_indvars<cuda::ScheduleType_CUDA>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 
-template std::vector<structured_control_flow::Map*> get_gpu_maps<cuda::ScheduleType_CUDA_deprecated>(
+template std::vector<structured_control_flow::Map*> get_gpu_maps<cuda::ScheduleType_CUDA>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 
 // Explicit template instantiations for ROCM
-template symbolic::Expression find_nested_gpu_blocksize<rocm::ScheduleType_ROCM_deprecated>(
+template symbolic::Expression find_nested_gpu_blocksize<rocm::ScheduleType_ROCM>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 
-template symbolic::Expression find_nested_gpu_iterations<rocm::ScheduleType_ROCM_deprecated>(
+template symbolic::Expression find_nested_gpu_iterations<rocm::ScheduleType_ROCM>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 
 template bool is_outermost_gpu_map<
-    rocm::ScheduleType_ROCM_deprecated>(structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager);
+    rocm::ScheduleType_ROCM>(structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager);
 
-template symbolic::SymbolSet get_gpu_indvars<rocm::ScheduleType_ROCM_deprecated>(
+template symbolic::SymbolSet get_gpu_indvars<rocm::ScheduleType_ROCM>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 
-template std::vector<structured_control_flow::Map*> get_gpu_maps<rocm::ScheduleType_ROCM_deprecated>(
+template std::vector<structured_control_flow::Map*> get_gpu_maps<rocm::ScheduleType_ROCM>(
     structured_control_flow::Map& node, analysis::AnalysisManager& analysis_manager, GPUDimension dimension
 );
 

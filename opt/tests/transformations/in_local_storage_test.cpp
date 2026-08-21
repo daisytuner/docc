@@ -1869,7 +1869,7 @@ TEST(InLocalStorageTest, GPU_NoCoop_Rejected) {
     builder.add_container("k", loop_var);
 
     // Single GPU map (X dim): i = 0..N (block_size=32)
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
@@ -1943,7 +1943,7 @@ TEST(InLocalStorageTest, GPU_OutermostLoop_Rejected) {
     builder.add_container("k", loop_var);
 
     // GPU Map X: i = 0..N (block_size=32) — outermost loop / kernel boundary
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
@@ -1955,8 +1955,8 @@ TEST(InLocalStorageTest, GPU_OutermostLoop_Rejected) {
     );
 
     // GPU Map Y: j = 0..M (block_size=8)
-    auto sched_y = cuda::ScheduleType_CUDA_deprecated::create();
-    cuda::ScheduleType_CUDA_deprecated::dimension(sched_y, cuda::CUDADimension::Y);
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
     gpu::gpu_block_size(sched_y, symbolic::integer(8));
     auto& map_y = builder.add_map(
         map_x.root(),
@@ -2031,7 +2031,7 @@ TEST(InLocalStorageTest, GPU_Cooperative_FlatPointer) {
     builder.add_container("k", loop_var);
 
     // GPU Map X: i = 0..N (block_size=32)
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
@@ -2043,8 +2043,8 @@ TEST(InLocalStorageTest, GPU_Cooperative_FlatPointer) {
     );
 
     // GPU Map Y: j = 0..M (block_size=8)
-    auto sched_y = cuda::ScheduleType_CUDA_deprecated::create();
-    cuda::ScheduleType_CUDA_deprecated::dimension(sched_y, cuda::CUDADimension::Y);
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
     gpu::gpu_block_size(sched_y, symbolic::integer(8));
     auto& map_y = builder.add_map(
         map_x.root(),
@@ -2163,7 +2163,7 @@ TEST(InLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     builder.add_container("k", loop_var);
 
     // GPU Map X: i = 0..N (block_size=32)
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
@@ -2175,8 +2175,8 @@ TEST(InLocalStorageTest, GPU_Cooperative_SymbolicBounds) {
     );
 
     // GPU Map Y: j = 0..M (block_size=8)
-    auto sched_y = cuda::ScheduleType_CUDA_deprecated::create();
-    cuda::ScheduleType_CUDA_deprecated::dimension(sched_y, cuda::CUDADimension::Y);
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
     gpu::gpu_block_size(sched_y, symbolic::integer(8));
     auto& map_y = builder.add_map(
         map_x.root(),
@@ -2271,7 +2271,7 @@ TEST(InLocalStorageTest, GPU_SymbolicExtent_Unresolvable_Rejected) {
     builder.add_container("k", loop_var);
 
     // GPU Map X: i = 0..N (block_size=32)
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
@@ -2283,8 +2283,8 @@ TEST(InLocalStorageTest, GPU_SymbolicExtent_Unresolvable_Rejected) {
     );
 
     // GPU Map Y: j = 0..M (block_size=8)
-    auto sched_y = cuda::ScheduleType_CUDA_deprecated::create();
-    cuda::ScheduleType_CUDA_deprecated::dimension(sched_y, cuda::CUDADimension::Y);
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
     gpu::gpu_block_size(sched_y, symbolic::integer(8));
     auto& map_y = builder.add_map(
         map_x.root(),
@@ -2353,7 +2353,7 @@ TEST(InLocalStorageTest, GPU_Cooperative_AllDimsFree) {
     builder.add_container("k", loop_var);
 
     // GPU Map X: i = 0..N (block_size=32)
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
@@ -2365,8 +2365,8 @@ TEST(InLocalStorageTest, GPU_Cooperative_AllDimsFree) {
     );
 
     // GPU Map Y: j = 0..M (block_size=8)
-    auto sched_y = cuda::ScheduleType_CUDA_deprecated::create();
-    cuda::ScheduleType_CUDA_deprecated::dimension(sched_y, cuda::CUDADimension::Y);
+    auto sched_y = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(sched_y, cuda::CUDADimension::Y);
     gpu::gpu_block_size(sched_y, symbolic::integer(8));
     auto& map_y = builder.add_map(
         map_x.root(),
@@ -2447,7 +2447,7 @@ TEST(InLocalStorageTest, GPU_CPUStack_InsideGPU_Rejected) {
     builder.add_container("k", loop_var);
 
     // GPU Map X: i = 0..N (block_size=32)
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
@@ -2512,7 +2512,7 @@ TEST(InLocalStorageTest, GPU_CPUStack_OutermostCUDAMap_Rejected) {
     builder.add_container("k", loop_var);
 
     // GPU Map X: i = 0..32 (outermost — this is the kernel boundary)
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         seq,
@@ -2582,7 +2582,7 @@ TEST(InLocalStorageTest, GPU_CPUStack_CUDAMapWrappedByFor_Rejected) {
     );
 
     // GPU Map: i = 0..32 (kernel boundary — no GPU ancestors)
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         outer_for.root(),
@@ -2651,7 +2651,7 @@ TEST(InLocalStorageTest, GPU_CPUStack_ForContainingCUDAMap_Rejected) {
     );
 
     // GPU Map: i = 0..32 (inside the For loop)
-    auto sched_x = cuda::ScheduleType_CUDA_deprecated::create();
+    auto sched_x = cuda::ScheduleType_CUDA::create();
     gpu::gpu_block_size(sched_x, symbolic::integer(32));
     auto& map_x = builder.add_map(
         outer_for.root(),

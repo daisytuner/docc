@@ -45,7 +45,7 @@ TEST(ROCMTransformTest, RejectsAlreadyROCMScheduledMap) {
         symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100)),
         symbolic::integer(0),
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
-        rocm::ScheduleType_ROCM_deprecated::create()
+        rocm::ScheduleType_ROCM::create()
     );
 
     analysis::AnalysisManager analysis_manager(builder.subject());
@@ -53,5 +53,5 @@ TEST(ROCMTransformTest, RejectsAlreadyROCMScheduledMap) {
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 
     // Schedule left untouched.
-    EXPECT_EQ(map.schedule_type().value(), rocm::ScheduleType_ROCM_deprecated::value());
+    EXPECT_EQ(map.schedule_type().value(), rocm::ScheduleType_ROCM::value());
 }

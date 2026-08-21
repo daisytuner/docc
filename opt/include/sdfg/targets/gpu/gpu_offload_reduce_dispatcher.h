@@ -5,7 +5,7 @@
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
-#include "sdfg/targets/gpu/gpu_schedule_type.h"
+#include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 
 
 namespace sdfg {

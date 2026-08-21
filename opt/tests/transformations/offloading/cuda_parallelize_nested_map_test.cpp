@@ -28,9 +28,9 @@ TEST(CUDANestedParallelismTransformation, AddYDimension) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -85,15 +85,13 @@ TEST(CUDANestedParallelismTransformation, AddYDimension) {
 
     transformation.apply(builder, analysis_manager);
 
-    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(ScheduleType_CUDA_deprecated::dimension(map.schedule_type()), cuda::CUDADimension::X);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_deprecated::block_size(map.schedule_type()), symbolic::integer(32))
-    );
+    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(ScheduleType_CUDA::dimension(map.schedule_type()), cuda::CUDADimension::X);
+    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(map.schedule_type()), symbolic::integer(32)));
 
-    EXPECT_EQ(map2.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(ScheduleType_CUDA_deprecated::dimension(map2.schedule_type()), cuda::CUDADimension::Y);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_deprecated::block_size(map2.schedule_type()), symbolic::integer(4))
-    );
+    EXPECT_EQ(map2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(ScheduleType_CUDA::dimension(map2.schedule_type()), cuda::CUDADimension::Y);
+    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(map2.schedule_type()), symbolic::integer(4)));
 
     EXPECT_EQ(map3.schedule_type().value(), ScheduleType_Sequential::value());
 }
@@ -113,9 +111,9 @@ TEST(CUDANestedParallelismTransformation, AddZDimension) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -123,9 +121,9 @@ TEST(CUDANestedParallelismTransformation, AddZDimension) {
 
     auto& map = builder.add_map(root, symbolic::symbol("i"), condition, init, update, cuda_schedule);
 
-    ScheduleType schedule2 = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(schedule2, CUDADimension::Y);
-    ScheduleType_CUDA_deprecated::block_size(schedule2, symbolic::integer(8));
+    ScheduleType schedule2 = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(schedule2, CUDADimension::Y);
+    ScheduleType_CUDA::block_size(schedule2, symbolic::integer(8));
 
     auto condition2 = symbolic::Lt(symbolic::symbol("j"), symbolic::integer(40));
     auto init2 = symbolic::integer(0);
@@ -172,20 +170,17 @@ TEST(CUDANestedParallelismTransformation, AddZDimension) {
 
     transformation.apply(builder, analysis_manager);
 
-    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(ScheduleType_CUDA_deprecated::dimension(map.schedule_type()), cuda::CUDADimension::X);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_deprecated::block_size(map.schedule_type()), symbolic::integer(32))
-    );
+    EXPECT_EQ(map.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(ScheduleType_CUDA::dimension(map.schedule_type()), cuda::CUDADimension::X);
+    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(map.schedule_type()), symbolic::integer(32)));
 
-    EXPECT_EQ(map2.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(ScheduleType_CUDA_deprecated::dimension(map2.schedule_type()), cuda::CUDADimension::Y);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_deprecated::block_size(map2.schedule_type()), symbolic::integer(8))
-    );
+    EXPECT_EQ(map2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(ScheduleType_CUDA::dimension(map2.schedule_type()), cuda::CUDADimension::Y);
+    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(map2.schedule_type()), symbolic::integer(8)));
 
-    EXPECT_EQ(map3.schedule_type().value(), cuda::ScheduleType_CUDA_deprecated::value());
-    EXPECT_EQ(ScheduleType_CUDA_deprecated::dimension(map3.schedule_type()), cuda::CUDADimension::Z);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_deprecated::block_size(map3.schedule_type()), symbolic::integer(4))
-    );
+    EXPECT_EQ(map3.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(ScheduleType_CUDA::dimension(map3.schedule_type()), cuda::CUDADimension::Z);
+    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA::block_size(map3.schedule_type()), symbolic::integer(4)));
 }
 
 TEST(CUDANestedParallelismTransformation, AddNoDimension) {
@@ -203,9 +198,9 @@ TEST(CUDANestedParallelismTransformation, AddNoDimension) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::Z);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::Z);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -274,9 +269,9 @@ TEST(CUDANestedParallelismTransformation, AlreadyParallel) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -284,8 +279,8 @@ TEST(CUDANestedParallelismTransformation, AlreadyParallel) {
 
     auto& map = builder.add_map(root, symbolic::symbol("i"), condition, init, update, cuda_schedule);
 
-    ScheduleType schedule2 = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(schedule2, CUDADimension::Y);
+    ScheduleType schedule2 = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(schedule2, CUDADimension::Y);
 
     auto condition2 = symbolic::Lt(symbolic::symbol("j"), symbolic::integer(40));
     auto init2 = symbolic::integer(0);
@@ -346,9 +341,9 @@ TEST(CUDANestedParallelismTransformation, NoDirectCUDAParent) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -486,9 +481,9 @@ TEST(CUDANestedParallelismTransformation, NonZeroStart) {
     auto& B_host = builder.add_container("B", base_desc);
 
     // Create a map with CUDA schedule
-    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -555,9 +550,9 @@ TEST(CUDANestedParallelismTransformation, GridSizeExceedsYZLimit) {
     auto& A_device = builder.add_container("__daisy_cuda_A", pointer_type);
     auto& B_host = builder.add_container("B", base_desc);
 
-    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -611,9 +606,9 @@ TEST(CUDANestedParallelismTransformation, GridSizeWithinYZLimit) {
     auto& A_device = builder.add_container("__daisy_cuda_A", pointer_type);
     auto& B_host = builder.add_container("B", base_desc);
 
-    ScheduleType cuda_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(cuda_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(cuda_schedule, symbolic::integer(32));
+    ScheduleType cuda_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(cuda_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(32));
 
     auto condition = symbolic::Lt(symbolic::symbol("i"), symbolic::integer(100));
     auto init = symbolic::integer(0);
@@ -685,9 +680,9 @@ TEST(CUDANestedParallelismTransformation, SiblingAccumulationBlocksNestedParalle
     auto m = symbolic::symbol("m");
 
     // Outer X-dimension CUDA map (the kernel scope).
-    ScheduleType outer_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(outer_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(outer_schedule, symbolic::integer(32));
+    ScheduleType outer_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(outer_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(outer_schedule, symbolic::integer(32));
     auto& outer = builder.add_map(
         root,
         i,
@@ -772,9 +767,9 @@ TEST(CUDANestedParallelismTransformation, SiblingMismatchedIterationsRejected) {
     auto m = symbolic::symbol("m");
 
     // Outer X-dimension CUDA map (the kernel scope).
-    ScheduleType outer_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(outer_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(outer_schedule, symbolic::integer(32));
+    ScheduleType outer_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(outer_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(outer_schedule, symbolic::integer(32));
     auto& outer = builder.add_map(
         root,
         i,
@@ -874,9 +869,9 @@ TEST(CUDANestedParallelismTransformation, SiblingAccumulationOnLocalAllowsNested
     auto r = symbolic::symbol("r");
     auto m = symbolic::symbol("m");
 
-    ScheduleType outer_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(outer_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(outer_schedule, symbolic::integer(32));
+    ScheduleType outer_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(outer_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(outer_schedule, symbolic::integer(32));
     auto& outer = builder.add_map(
         root,
         i,
@@ -953,9 +948,9 @@ TEST(CUDANestedParallelismTransformation, ParallelizedSiblingReductionAllowsNest
     auto r = symbolic::symbol("r");
     auto m = symbolic::symbol("m");
 
-    ScheduleType outer_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(outer_schedule, CUDADimension::X);
-    ScheduleType_CUDA_deprecated::block_size(outer_schedule, symbolic::integer(32));
+    ScheduleType outer_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(outer_schedule, CUDADimension::X);
+    ScheduleType_CUDA::block_size(outer_schedule, symbolic::integer(32));
     auto& outer = builder.add_map(
         root,
         i,
@@ -967,9 +962,9 @@ TEST(CUDANestedParallelismTransformation, ParallelizedSiblingReductionAllowsNest
 
     // Sibling 1: reduce that is itself parallelized (a CUDA map) - codegen maps it
     // onto its own threads, so it is not replicated by the target's new dimension.
-    ScheduleType reduce_schedule = ScheduleType_CUDA_deprecated::create();
-    ScheduleType_CUDA_deprecated::dimension(reduce_schedule, CUDADimension::Y);
-    ScheduleType_CUDA_deprecated::block_size(reduce_schedule, symbolic::integer(8));
+    ScheduleType reduce_schedule = ScheduleType_CUDA::create();
+    ScheduleType_CUDA::dimension(reduce_schedule, CUDADimension::Y);
+    ScheduleType_CUDA::block_size(reduce_schedule, symbolic::integer(8));
     auto& reduce = builder.add_map(
         outer.root(),
         r,

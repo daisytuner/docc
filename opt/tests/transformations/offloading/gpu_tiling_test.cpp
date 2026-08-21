@@ -45,15 +45,13 @@ TEST(GPUTilingTest, json_serialization) {
     auto condition = symbolic::Le(symbolic::symbol("i"), symbolic::integer(500));
     auto update = symbolic::add(symbolic::symbol("i"), symbolic::one());
 
-    auto& map =
-        builder
-            .add_map(seq, symbolic::symbol("i"), condition, init, update, cuda::ScheduleType_CUDA_deprecated::create());
+    auto& map = builder.add_map(seq, symbolic::symbol("i"), condition, init, update, cuda::ScheduleType_CUDA::create());
 
     auto init2 = symbolic::zero();
     auto condition2 = symbolic::Le(symbolic::symbol("j"), symbolic::integer(500));
     auto update2 = symbolic::add(symbolic::symbol("j"), symbolic::one());
-    auto schedule_type = cuda::ScheduleType_CUDA_deprecated::create();
-    cuda::ScheduleType_CUDA_deprecated::dimension(schedule_type, cuda::CUDADimension::Y);
+    auto schedule_type = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(schedule_type, cuda::CUDADimension::Y);
 
     auto& map2 = builder.add_map(map.root(), symbolic::symbol("j"), condition2, init2, update2, schedule_type);
 
@@ -128,15 +126,13 @@ TEST(GPUTilingTest, WithOffset) {
     auto condition = symbolic::Le(symbolic::symbol("i"), symbolic::integer(500));
     auto update = symbolic::add(symbolic::symbol("i"), symbolic::one());
 
-    auto& map =
-        builder
-            .add_map(seq, symbolic::symbol("i"), condition, init, update, cuda::ScheduleType_CUDA_deprecated::create());
+    auto& map = builder.add_map(seq, symbolic::symbol("i"), condition, init, update, cuda::ScheduleType_CUDA::create());
 
     auto init2 = symbolic::zero();
     auto condition2 = symbolic::Le(symbolic::symbol("j"), symbolic::integer(500));
     auto update2 = symbolic::add(symbolic::symbol("j"), symbolic::one());
-    auto schedule_type = cuda::ScheduleType_CUDA_deprecated::create();
-    cuda::ScheduleType_CUDA_deprecated::dimension(schedule_type, cuda::CUDADimension::Y);
+    auto schedule_type = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(schedule_type, cuda::CUDADimension::Y);
 
     auto& map2 = builder.add_map(map.root(), symbolic::symbol("j"), condition2, init2, update2, schedule_type);
 
