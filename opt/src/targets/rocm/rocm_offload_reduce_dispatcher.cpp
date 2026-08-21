@@ -97,13 +97,22 @@ codegen::InstrumentationInfo ROCMOffloadReduceDispatcher::instrumentation_info()
     );
 };
 
-int ROCMOffloadReduceDispatcher::get_warp_size() const { return ROCM_WARP_SIZE; }
+int ROCMOffloadReduceDispatcher::get_warp_size() const { return rocm_wavefront_size(); }
 
 bool ROCMOffloadReduceDispatcher::is_device_pointer_storage(const types::StorageType& storage) const {
     return storage.is_amd_generic();
 }
 
 std::string ROCMOffloadReduceDispatcher::kernel_file_extension() const { return "rocm.cpp"; }
+
+std::string ROCMOffloadReduceDispatcher::warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const {
+    // HIP's __shfl_xor_sync requires a 64-bit membership mask (static_assert on
+    // sizeof(mask) == 8), so the literal is always ULL-typed. The value covers
+    // exactly the physical wavefront: the low 32 bits for wave32 (RDNA), all 64
+    // bits for wave64 (CDNA/GCN).
+    const std::string mask = rocm_wavefront_size() > 32 ? "0xffffffffffffffffULL" : "0x00000000ffffffffULL";
+    return "__shfl_xor_sync(" + mask + ", " + value + ", " + lane_mask + ")";
+}
 
 
 } // namespace rocm

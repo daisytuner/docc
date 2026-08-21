@@ -143,6 +143,9 @@ protected:
     /// File extension for the kernel translation unit ("cu"/"rocm.cpp").
     virtual std::string kernel_file_extension() const = 0;
 
+    /// Cross-lane XOR butterfly shuffle of `value` by `lane_mask` (CUDA/HIP __shfl_xor_sync).
+    virtual std::string warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const = 0;
+
 public:
     GPUOffloadReduceDispatcher(
         codegen::LanguageExtension& language_extension,

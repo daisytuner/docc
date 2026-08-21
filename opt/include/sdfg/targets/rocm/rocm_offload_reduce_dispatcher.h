@@ -59,6 +59,8 @@ public:
     bool is_device_pointer_storage(const types::StorageType& storage) const override;
 
     std::string kernel_file_extension() const override;
+
+    std::string warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const override;
 };
 
 } // namespace rocm

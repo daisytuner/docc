@@ -104,5 +104,9 @@ bool CUDAOffloadReduceDispatcher::is_device_pointer_storage(const types::Storage
 
 std::string CUDAOffloadReduceDispatcher::kernel_file_extension() const { return "cu"; }
 
+std::string CUDAOffloadReduceDispatcher::warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const {
+    return "__shfl_xor_sync(0xffffffff, " + value + ", " + lane_mask + ")";
+}
+
 } // namespace cuda
 } // namespace sdfg

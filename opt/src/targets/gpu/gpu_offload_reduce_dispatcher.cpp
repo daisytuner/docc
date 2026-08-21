@@ -936,8 +936,8 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             stream << "for (int __daisy_reduce_mask = " << warp_size << " / 2; __daisy_reduce_mask > 0; "
                    << "__daisy_reduce_mask >>= 1) {" << std::endl;
             stream.setIndent(stream.indent() + 4);
-            stream << ctype << " " << other << " = __shfl_xor_sync(0xffffffff, " << reg_name
-                   << ", __daisy_reduce_mask);" << std::endl;
+            stream << ctype << " " << other << " = " << warp_shuffle_xor(reg_name, "__daisy_reduce_mask") << ";"
+                   << std::endl;
             stream << reg_name << " = " << combine_expr(r.operation, reg_name, other) << ";" << std::endl;
             stream.setIndent(stream.indent() - 4);
             stream << "}" << std::endl;

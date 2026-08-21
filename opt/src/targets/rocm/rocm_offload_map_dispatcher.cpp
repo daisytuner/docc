@@ -97,7 +97,7 @@ codegen::InstrumentationInfo ROCMOffloadMapDispatcher::instrumentation_info() co
     );
 };
 
-int ROCMOffloadMapDispatcher::get_warp_size() const { return ROCM_WARP_SIZE; }
+int ROCMOffloadMapDispatcher::get_warp_size() const { return rocm_wavefront_size(); }
 
 bool ROCMOffloadMapDispatcher::is_device_pointer_storage(const types::StorageType& storage) const {
     return storage.is_amd_generic();

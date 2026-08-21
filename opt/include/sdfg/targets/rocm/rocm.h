@@ -65,6 +65,15 @@ void rocm_error_checking(
 
 bool do_rocm_error_checking();
 
+/// Wavefront width of the target device, queried once at codegen time.
+///
+/// RDNA parts (gfx10xx/11xx/12xx) execute wave32 while CDNA/GCN (gfx9xx) execute
+/// wave64, so the value that drives warp-shuffle reductions and launch geometry
+/// cannot be a compile-time constant. Resolved from the `DOCC_ROCM_WAVEFRONT_SIZE`
+/// override, else the present device via `rocminfo`, falling back to
+/// `ROCM_WARP_SIZE`. The result is cached.
+int rocm_wavefront_size();
+
 void check_rocm_kernel_launch_errors(codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension);
 
 } // namespace rocm
