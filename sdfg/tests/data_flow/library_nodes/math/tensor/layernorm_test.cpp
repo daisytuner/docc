@@ -1,162 +1,417 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/layernorm_node.h"
 
 #include <memory>
-#include <vector>
 
 #include <gtest/gtest.h>
+#include <nlohmann/json_fwd.hpp>
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
+#include "sdfg/data_flow/pointer_metadata.h"
+#include "sdfg/element.h"
+#include "sdfg/function.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/serializer/json_serializer.h"
-#include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
+#include "sdfg/types/type.h"
 #include "sdfg_debug_dump.h"
+#include "symengine/mul.h"
 
 using namespace sdfg;
 
-namespace {
-
-// Builds a StructuredSDFG containing a single LayerNormNode over `shape`, normalizing over the
-// trailing `num_normalized_dims` dimensions. Gamma/Beta memlets are wired only when `affine` /
-// `has_bias` are set, matching the node's conditional connector layout. Returns the node and the
-// block it lives in so callers can expand it.
-struct LayerNormFixture {
-    math::tensor::LayerNormNode* node;
-    structured_control_flow::Block* block;
-};
-
-LayerNormFixture build_layernorm(
-    builder::StructuredSDFGBuilder& builder,
-    const symbolic::MultiExpression& shape,
-    size_t num_normalized_dims,
-    bool affine,
-    bool has_bias
-) {
+TEST(LayerNormNodeTest, symbolic) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
 
-    types::Scalar elem(types::PrimitiveType::Float);
-    types::Pointer ptr(elem);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("x", desc, true);
+    builder.add_container("eps", base_desc, true);
+    builder.add_container("gamma", desc, true);
+    builder.add_container("beta", desc, true);
+    builder.add_container("y", desc, true);
+    builder.add_container("mean", desc, true);
+    builder.add_container("rstd", desc, true);
 
-    builder.add_container("X", ptr, true);
-    builder.add_container("Y_out", ptr, true);
-    if (affine) {
-        builder.add_container("Gamma", ptr, true);
-    }
-    if (has_bias) {
-        builder.add_container("Beta", ptr, true);
-    }
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    builder.add_container("b", sym_desc, true);
+    builder.add_container("h", sym_desc, true);
+    builder.add_container("w", sym_desc, true);
+    auto batch = symbolic::symbol("b");
+    auto height = symbolic::symbol("h");
+    auto width = symbolic::symbol("w");
+    symbolic::MultiExpression non_normalized_shape({batch});
+    symbolic::MultiExpression normalized_shape({height, width});
+    symbolic::MultiExpression full_shape({batch, height, width});
+    math::tensor::TensorLayout x_layout(full_shape);
+    types::Tensor x_tensor(base_desc, x_layout);
+    math::tensor::TensorLayout gamma_layout(normalized_shape);
+    types::Tensor gamma_tensor(base_desc, gamma_layout);
+    math::tensor::TensorLayout beta_layout(normalized_shape);
+    types::Tensor beta_tensor(base_desc, gamma_layout);
+    math::tensor::TensorLayout y_layout(full_shape);
+    types::Tensor y_tensor(base_desc, y_layout);
+    math::tensor::TensorLayout mean_layout(non_normalized_shape);
+    types::Tensor mean_tensor(base_desc, mean_layout);
+    math::tensor::TensorLayout rstd_layout(non_normalized_shape);
+    types::Tensor rstd_tensor(base_desc, rstd_layout);
 
-    // Trailing (normalized) shape used for Gamma/Beta.
-    symbolic::MultiExpression trailing(shape.end() - num_normalized_dims, shape.end());
+    auto& block = builder.add_block(root);
+    auto& x_access = builder.add_access(block, "x");
+    auto& eps_access = builder.add_access(block, "eps");
+    auto& gamma_access = builder.add_access(block, "gamma");
+    auto& beta_access = builder.add_access(block, "beta");
+    auto& y_access = builder.add_access(block, "y");
+    auto& mean_access = builder.add_access(block, "mean");
+    auto& rstd_access = builder.add_access(block, "rstd");
+    auto& libnode = builder.add_library_node<math::tensor::LayerNormNode>(
+        block, DebugInfo(), normalized_shape, y_layout, mean_layout, rstd_layout, x_layout, gamma_layout, beta_layout
+    );
+    builder.add_computational_memlet(block, x_access, libnode, "_x", {}, x_tensor);
+    builder.add_computational_memlet(block, eps_access, libnode, "_eps", {}, base_desc);
+    builder.add_computational_memlet(block, gamma_access, libnode, "_gamma", {}, gamma_tensor);
+    builder.add_computational_memlet(block, beta_access, libnode, "_beta", {}, gamma_tensor);
+    builder.add_computational_memlet(block, y_access, libnode, "_y", {}, y_tensor);
+    builder.add_computational_memlet(block, mean_access, libnode, "_mean", {}, mean_tensor);
+    builder.add_computational_memlet(block, rstd_access, libnode, "_rstd", {}, rstd_tensor);
 
-    types::Tensor x_tensor(elem.primitive_type(), shape);
-    types::Tensor y_tensor(elem.primitive_type(), shape);
-    types::Tensor affine_tensor(elem.primitive_type(), trailing);
-
-    auto& block = builder.add_block(sdfg.root());
-
-    auto& x_access = builder.add_access(block, "X");
-    auto& y_access = builder.add_access(block, "Y_out");
-    auto& eps_access = builder.add_constant(block, "0.00001", elem);
-
-    auto& node = dynamic_cast<math::tensor::LayerNormNode&>(builder.add_library_node<math::tensor::LayerNormNode>(
-        block, DebugInfo(), math::tensor::TensorLayout(shape), types::Float, num_normalized_dims, affine, has_bias
+    ASSERT_NO_THROW(sdfg.validate());
+    auto& layernorm_node = static_cast<math::tensor::LayerNormNode&>(libnode);
+    EXPECT_FALSE(layernorm_node.supports_integer_types());
+    EXPECT_TRUE(symbolic::eq(
+        layernorm_node.flop(),
+        symbolic::mul(batch, symbolic::add(SymEngine::mul({symbolic::integer(8), height, width}), symbolic::integer(14)))
     ));
 
-    builder.add_computational_memlet(block, x_access, node, "X", {}, x_tensor, block.debug_info());
-    if (affine) {
-        auto& gamma_access = builder.add_access(block, "Gamma");
-        builder.add_computational_memlet(block, gamma_access, node, "Gamma", {}, affine_tensor, block.debug_info());
-    }
-    if (has_bias) {
-        auto& beta_access = builder.add_access(block, "Beta");
-        builder.add_computational_memlet(block, beta_access, node, "Beta", {}, affine_tensor, block.debug_info());
-    }
-    builder.add_computational_memlet(block, eps_access, node, "epsilon", {}, elem, block.debug_info());
-    builder.add_computational_memlet(block, y_access, node, "Y_out", {}, y_tensor, block.debug_info());
+    auto symbols = layernorm_node.symbols();
+    EXPECT_EQ(symbols.size(), 3);
+    EXPECT_TRUE(symbols.contains(batch));
+    EXPECT_TRUE(symbols.contains(height));
+    EXPECT_TRUE(symbols.contains(width));
 
-    return {&node, &block};
+    builder.add_container("c", sym_desc);
+    builder.add_container("u", sym_desc);
+    builder.add_container("v", sym_desc);
+    auto new_batch = symbolic::symbol("c");
+    auto new_height = symbolic::symbol("u");
+    auto new_width = symbolic::symbol("v");
+
+    builder.replace_symbols(batch, new_batch);
+
+    symbolic::ExpressionMapping replacements({{height, new_height}, {width, new_width}});
+    builder.replace_symbols(replacements);
+
+    ASSERT_NO_THROW(sdfg.validate());
+
+    symbols = layernorm_node.symbols();
+    EXPECT_EQ(symbols.size(), 3);
+    EXPECT_TRUE(symbols.contains(new_batch));
+    EXPECT_TRUE(symbols.contains(new_height));
+    EXPECT_TRUE(symbols.contains(new_width));
+
+    auto check_pointer_access_meta =
+        [](data_flow::PointerAccessType pam, bool no_capture, bool reads, bool writes, bool invalidate) {
+            EXPECT_EQ(pam->no_capture(), no_capture);
+            EXPECT_EQ(pam->may_contain_reads(), reads);
+            EXPECT_EQ(pam->may_contain_writes(), writes);
+            EXPECT_EQ(pam->invalidated_after(), invalidate);
+        };
+    check_pointer_access_meta(
+        layernorm_node.pointer_access_type(math::tensor::LayerNormNode::Y_INPUT_IDX), true, false, true, false
+    );
+    check_pointer_access_meta(
+        layernorm_node.pointer_access_type(math::tensor::LayerNormNode::MEAN_INPUT_IDX), true, false, true, false
+    );
+    check_pointer_access_meta(
+        layernorm_node.pointer_access_type(math::tensor::LayerNormNode::RSTD_INPUT_IDX), true, false, true, false
+    );
+    check_pointer_access_meta(
+        layernorm_node.pointer_access_type(math::tensor::LayerNormNode::X_INPUT_IDX), true, true, false, false
+    );
+    check_pointer_access_meta(
+        layernorm_node.pointer_access_type(math::tensor::LayerNormNode::EPS_INPUT_IDX), true, true, false, false
+    );
+    check_pointer_access_meta(
+        layernorm_node.pointer_access_type(math::tensor::LayerNormNode::GAMMA_INPUT_IDX), true, true, false, false
+    );
+    check_pointer_access_meta(
+        layernorm_node.pointer_access_type(math::tensor::LayerNormNode::BETA_INPUT_IDX), true, true, false, false
+    );
 }
 
-} // namespace
-
-// --- API / construction ---
-
-TEST(LayerNormTest, Connectors_AffineBias) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_conn_affine_bias", FunctionType_CPU);
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 1, /*affine=*/true, /*has_bias=*/true);
-
-    EXPECT_TRUE(fx.node->affine());
-    EXPECT_TRUE(fx.node->has_bias());
-    EXPECT_EQ(fx.node->num_normalized_dims(), 1u);
-    EXPECT_EQ(fx.node->quantization(), types::PrimitiveType::Float);
-
-    std::vector<std::string> expected = {"X", "Gamma", "Beta", "epsilon", "Y_out"};
-    EXPECT_EQ(fx.node->inputs(), expected);
-}
-
-TEST(LayerNormTest, Connectors_NoAffine) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_conn_no_affine", FunctionType_CPU);
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 1, /*affine=*/false, /*has_bias=*/false);
-
-    EXPECT_FALSE(fx.node->affine());
-    EXPECT_FALSE(fx.node->has_bias());
-
-    std::vector<std::string> expected = {"X", "epsilon", "Y_out"};
-    EXPECT_EQ(fx.node->inputs(), expected);
-}
-
-TEST(LayerNormTest, Connectors_AffineNoBias) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_conn_affine_no_bias", FunctionType_CPU);
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 1, /*affine=*/true, /*has_bias=*/false);
-
-    EXPECT_TRUE(fx.node->affine());
-    EXPECT_FALSE(fx.node->has_bias());
-
-    std::vector<std::string> expected = {"X", "Gamma", "epsilon", "Y_out"};
-    EXPECT_EQ(fx.node->inputs(), expected);
-}
-
-TEST(LayerNormTest, ToStr) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_tostr", FunctionType_CPU);
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 1, true, true);
-
-    EXPECT_NE(fx.node->toStr().find("LayerNorm"), std::string::npos);
-}
-
-TEST(LayerNormTest, Clone_PreservesProperties) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_clone", FunctionType_CPU);
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(3), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 2, /*affine=*/true, /*has_bias=*/false);
-
-    auto& dataflow = fx.node->get_parent();
-    auto clone = fx.node->clone(fx.node->element_id(), fx.node->vertex(), dataflow);
-    auto* cloned = dynamic_cast<math::tensor::LayerNormNode*>(clone.get());
-    ASSERT_NE(cloned, nullptr);
-
-    EXPECT_EQ(cloned->num_normalized_dims(), fx.node->num_normalized_dims());
-    EXPECT_EQ(cloned->affine(), fx.node->affine());
-    EXPECT_EQ(cloned->has_bias(), fx.node->has_bias());
-    EXPECT_EQ(cloned->quantization(), fx.node->quantization());
-    EXPECT_EQ(cloned->inputs(), fx.node->inputs());
-}
-
-TEST(LayerNormTest, SerializeDeserialize_RoundTrip) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_serialize", FunctionType_CPU);
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(3), symbolic::integer(16)};
-    build_layernorm(builder, shape, 2, /*affine=*/true, /*has_bias=*/true);
-
+TEST(LayerNormNodeTest, expansion) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("x", desc, true);
+    builder.add_container("eps", base_desc, true);
+    builder.add_container("y", desc, true);
+    builder.add_container("mean", desc, true);
+    builder.add_container("rstd", desc, true);
+
+    auto batch = symbolic::integer(32);
+    auto height = symbolic::integer(16);
+    auto width = symbolic::integer(16);
+    symbolic::MultiExpression non_normalized_shape({batch});
+    symbolic::MultiExpression normalized_shape({height, width});
+    symbolic::MultiExpression full_shape({batch, height, width});
+    math::tensor::TensorLayout x_layout(full_shape);
+    types::Tensor x_tensor(base_desc, x_layout);
+    math::tensor::TensorLayout y_layout(full_shape);
+    types::Tensor y_tensor(base_desc, y_layout);
+    math::tensor::TensorLayout mean_layout(non_normalized_shape);
+    types::Tensor mean_tensor(base_desc, mean_layout);
+    math::tensor::TensorLayout rstd_layout(non_normalized_shape);
+    types::Tensor rstd_tensor(base_desc, rstd_layout);
+
+    auto& block = builder.add_block(root);
+    auto& x_access = builder.add_access(block, "x");
+    auto& eps_access = builder.add_access(block, "eps");
+    auto& y_access = builder.add_access(block, "y");
+    auto& mean_access = builder.add_access(block, "mean");
+    auto& rstd_access = builder.add_access(block, "rstd");
+    auto& libnode = builder.add_library_node<
+        math::tensor::LayerNormNode>(block, DebugInfo(), normalized_shape, y_layout, mean_layout, rstd_layout, x_layout);
+    builder.add_computational_memlet(block, x_access, libnode, "_x", {}, x_tensor);
+    builder.add_computational_memlet(block, eps_access, libnode, "_eps", {}, base_desc);
+    builder.add_computational_memlet(block, y_access, libnode, "_y", {}, y_tensor);
+    builder.add_computational_memlet(block, mean_access, libnode, "_mean", {}, mean_tensor);
+    builder.add_computational_memlet(block, rstd_access, libnode, "_rstd", {}, rstd_tensor);
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::LibraryNodeExpansionPass expansion;
+    ASSERT_TRUE(expansion.run(builder, analysis_manager));
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
+}
+
+TEST(LayerNormNodeTest, expansion_affine) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("x", desc, true);
+    builder.add_container("eps", base_desc, true);
+    builder.add_container("gamma", desc, true);
+    builder.add_container("y", desc, true);
+    builder.add_container("mean", desc, true);
+    builder.add_container("rstd", desc, true);
+
+    auto batch = symbolic::integer(32);
+    auto height = symbolic::integer(16);
+    auto width = symbolic::integer(16);
+    symbolic::MultiExpression non_normalized_shape({batch});
+    symbolic::MultiExpression normalized_shape({height, width});
+    symbolic::MultiExpression full_shape({batch, height, width});
+    math::tensor::TensorLayout x_layout(full_shape);
+    types::Tensor x_tensor(base_desc, x_layout);
+    math::tensor::TensorLayout gamma_layout(normalized_shape);
+    types::Tensor gamma_tensor(base_desc, gamma_layout);
+    math::tensor::TensorLayout y_layout(full_shape);
+    types::Tensor y_tensor(base_desc, y_layout);
+    math::tensor::TensorLayout mean_layout(non_normalized_shape);
+    types::Tensor mean_tensor(base_desc, mean_layout);
+    math::tensor::TensorLayout rstd_layout(non_normalized_shape);
+    types::Tensor rstd_tensor(base_desc, rstd_layout);
+
+    auto& block = builder.add_block(root);
+    auto& x_access = builder.add_access(block, "x");
+    auto& eps_access = builder.add_access(block, "eps");
+    auto& gamma_access = builder.add_access(block, "gamma");
+    auto& y_access = builder.add_access(block, "y");
+    auto& mean_access = builder.add_access(block, "mean");
+    auto& rstd_access = builder.add_access(block, "rstd");
+    auto& libnode = builder.add_library_node<math::tensor::LayerNormNode>(
+        block, DebugInfo(), normalized_shape, y_layout, mean_layout, rstd_layout, x_layout, gamma_layout
+    );
+    builder.add_computational_memlet(block, x_access, libnode, "_x", {}, x_tensor);
+    builder.add_computational_memlet(block, eps_access, libnode, "_eps", {}, base_desc);
+    builder.add_computational_memlet(block, gamma_access, libnode, "_gamma", {}, gamma_tensor);
+    builder.add_computational_memlet(block, y_access, libnode, "_y", {}, y_tensor);
+    builder.add_computational_memlet(block, mean_access, libnode, "_mean", {}, mean_tensor);
+    builder.add_computational_memlet(block, rstd_access, libnode, "_rstd", {}, rstd_tensor);
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::LibraryNodeExpansionPass expansion;
+    ASSERT_TRUE(expansion.run(builder, analysis_manager));
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
+}
+
+TEST(LayerNormNodeTest, expansion_affine_with_bias) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("x", desc, true);
+    builder.add_container("eps", base_desc, true);
+    builder.add_container("gamma", desc, true);
+    builder.add_container("beta", desc, true);
+    builder.add_container("y", desc, true);
+    builder.add_container("mean", desc, true);
+    builder.add_container("rstd", desc, true);
+
+    auto batch = symbolic::integer(32);
+    auto height = symbolic::integer(16);
+    auto width = symbolic::integer(16);
+    symbolic::MultiExpression non_normalized_shape({batch});
+    symbolic::MultiExpression normalized_shape({height, width});
+    symbolic::MultiExpression full_shape({batch, height, width});
+    math::tensor::TensorLayout x_layout(full_shape);
+    types::Tensor x_tensor(base_desc, x_layout);
+    math::tensor::TensorLayout gamma_layout(normalized_shape);
+    types::Tensor gamma_tensor(base_desc, gamma_layout);
+    math::tensor::TensorLayout beta_layout(normalized_shape);
+    types::Tensor beta_tensor(base_desc, gamma_layout);
+    math::tensor::TensorLayout y_layout(full_shape);
+    types::Tensor y_tensor(base_desc, y_layout);
+    math::tensor::TensorLayout mean_layout(non_normalized_shape);
+    types::Tensor mean_tensor(base_desc, mean_layout);
+    math::tensor::TensorLayout rstd_layout(non_normalized_shape);
+    types::Tensor rstd_tensor(base_desc, rstd_layout);
+
+    auto& block = builder.add_block(root);
+    auto& x_access = builder.add_access(block, "x");
+    auto& eps_access = builder.add_access(block, "eps");
+    auto& gamma_access = builder.add_access(block, "gamma");
+    auto& beta_access = builder.add_access(block, "beta");
+    auto& y_access = builder.add_access(block, "y");
+    auto& mean_access = builder.add_access(block, "mean");
+    auto& rstd_access = builder.add_access(block, "rstd");
+    auto& libnode = builder.add_library_node<math::tensor::LayerNormNode>(
+        block, DebugInfo(), normalized_shape, y_layout, mean_layout, rstd_layout, x_layout, gamma_layout, beta_layout
+    );
+    builder.add_computational_memlet(block, x_access, libnode, "_x", {}, x_tensor);
+    builder.add_computational_memlet(block, eps_access, libnode, "_eps", {}, base_desc);
+    builder.add_computational_memlet(block, gamma_access, libnode, "_gamma", {}, gamma_tensor);
+    builder.add_computational_memlet(block, beta_access, libnode, "_beta", {}, gamma_tensor);
+    builder.add_computational_memlet(block, y_access, libnode, "_y", {}, y_tensor);
+    builder.add_computational_memlet(block, mean_access, libnode, "_mean", {}, mean_tensor);
+    builder.add_computational_memlet(block, rstd_access, libnode, "_rstd", {}, rstd_tensor);
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::LibraryNodeExpansionPass expansion;
+    ASSERT_TRUE(expansion.run(builder, analysis_manager));
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
+}
+
+TEST(LayerNormNodeTest, expansion_full_shape) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("x", desc, true);
+    builder.add_container("eps", base_desc, true);
+    builder.add_container("y", desc, true);
+    builder.add_container("mean", desc, true);
+    builder.add_container("rstd", desc, true);
+
+    auto batch = symbolic::integer(32);
+    auto height = symbolic::integer(16);
+    auto width = symbolic::integer(16);
+    symbolic::MultiExpression non_normalized_shape({symbolic::one()});
+    symbolic::MultiExpression normalized_shape({batch, height, width});
+    symbolic::MultiExpression full_shape({batch, height, width});
+    math::tensor::TensorLayout x_layout(full_shape);
+    types::Tensor x_tensor(base_desc, x_layout);
+    math::tensor::TensorLayout y_layout(full_shape);
+    types::Tensor y_tensor(base_desc, y_layout);
+    math::tensor::TensorLayout mean_layout(non_normalized_shape);
+    types::Tensor mean_tensor(base_desc, mean_layout);
+    math::tensor::TensorLayout rstd_layout(non_normalized_shape);
+    types::Tensor rstd_tensor(base_desc, rstd_layout);
+
+    auto& block = builder.add_block(root);
+    auto& x_access = builder.add_access(block, "x");
+    auto& eps_access = builder.add_access(block, "eps");
+    auto& y_access = builder.add_access(block, "y");
+    auto& mean_access = builder.add_access(block, "mean");
+    auto& rstd_access = builder.add_access(block, "rstd");
+    auto& libnode = builder.add_library_node<
+        math::tensor::LayerNormNode>(block, DebugInfo(), normalized_shape, y_layout, mean_layout, rstd_layout, x_layout);
+    builder.add_computational_memlet(block, x_access, libnode, "_x", {}, x_tensor);
+    builder.add_computational_memlet(block, eps_access, libnode, "_eps", {}, base_desc);
+    builder.add_computational_memlet(block, y_access, libnode, "_y", {}, y_tensor);
+    builder.add_computational_memlet(block, mean_access, libnode, "_mean", {}, mean_tensor);
+    builder.add_computational_memlet(block, rstd_access, libnode, "_rstd", {}, rstd_tensor);
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::LibraryNodeExpansionPass expansion;
+    ASSERT_TRUE(expansion.run(builder, analysis_manager));
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
+}
+
+TEST(LayerNormNodeTest, serialization) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("x", desc, true);
+    builder.add_container("eps", base_desc, true);
+    builder.add_container("y", desc, true);
+    builder.add_container("mean", desc, true);
+    builder.add_container("rstd", desc, true);
+
+    auto batch = symbolic::integer(32);
+    auto height = symbolic::integer(16);
+    auto width = symbolic::integer(16);
+    symbolic::MultiExpression non_normalized_shape({batch});
+    symbolic::MultiExpression normalized_shape({height, width});
+    symbolic::MultiExpression full_shape({batch, height, width});
+    math::tensor::TensorLayout x_layout(full_shape);
+    types::Tensor x_tensor(base_desc, x_layout);
+    math::tensor::TensorLayout y_layout(full_shape);
+    types::Tensor y_tensor(base_desc, y_layout);
+    math::tensor::TensorLayout mean_layout(non_normalized_shape);
+    types::Tensor mean_tensor(base_desc, mean_layout);
+    math::tensor::TensorLayout rstd_layout(non_normalized_shape);
+    types::Tensor rstd_tensor(base_desc, rstd_layout);
+
+    auto& block = builder.add_block(root);
+    auto& x_access = builder.add_access(block, "x");
+    auto& eps_access = builder.add_access(block, "eps");
+    auto& y_access = builder.add_access(block, "y");
+    auto& mean_access = builder.add_access(block, "mean");
+    auto& rstd_access = builder.add_access(block, "rstd");
+    auto& libnode = builder.add_library_node<
+        math::tensor::LayerNormNode>(block, DebugInfo(), normalized_shape, y_layout, mean_layout, rstd_layout, x_layout);
+    builder.add_computational_memlet(block, x_access, libnode, "_x", {}, x_tensor);
+    builder.add_computational_memlet(block, eps_access, libnode, "_eps", {}, base_desc);
+    builder.add_computational_memlet(block, y_access, libnode, "_y", {}, y_tensor);
+    builder.add_computational_memlet(block, mean_access, libnode, "_mean", {}, mean_tensor);
+    builder.add_computational_memlet(block, rstd_access, libnode, "_rstd", {}, rstd_tensor);
+
     ASSERT_NO_THROW(sdfg.validate());
 
     serializer::JSONSerializer serializer;
@@ -165,104 +420,128 @@ TEST(LayerNormTest, SerializeDeserialize_RoundTrip) {
 
     std::unique_ptr<StructuredSDFG> new_sdfg;
     ASSERT_NO_THROW(new_sdfg = serializer.deserialize(j));
-    ASSERT_NE(new_sdfg, nullptr);
-
-    // Locate the deserialized LayerNorm node and confirm its properties survived.
-    const math::tensor::LayerNormNode* found = nullptr;
-    auto& new_root = new_sdfg->root();
-    ASSERT_EQ(new_root.size(), 1);
-    auto* block = dyn_cast<structured_control_flow::Block*>(&new_root.at(0));
-    ASSERT_NE(block, nullptr);
-    for (auto& node : block->dataflow().nodes()) {
-        if (auto* ln = dynamic_cast<const math::tensor::LayerNormNode*>(&node)) {
-            found = ln;
-            break;
-        }
-    }
-    ASSERT_NE(found, nullptr);
-    EXPECT_EQ(found->num_normalized_dims(), 2u);
-    EXPECT_TRUE(found->affine());
-    EXPECT_TRUE(found->has_bias());
-    EXPECT_EQ(found->quantization(), types::PrimitiveType::Float);
+    ASSERT_NO_THROW(new_sdfg->validate());
 }
 
-// --- Expansions ---
-
-TEST(LayerNormTest, Expansion_AffineBias_2D) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_exp_affine_bias", FunctionType_CPU);
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 1, /*affine=*/true, /*has_bias=*/true);
-
+TEST(LayerNormNodeTest, serialization_affine) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
-    ASSERT_NO_THROW(sdfg.validate());
-    dump_sdfg(sdfg, "0.pre-expand");
+    auto& root = sdfg.root();
 
-    auto outcome = passes::expansion::expand_single_math_node(builder, *fx.block, *fx.node);
-    EXPECT_TRUE(outcome.expanded);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("x", desc, true);
+    builder.add_container("eps", base_desc, true);
+    builder.add_container("gamma", desc, true);
+    builder.add_container("y", desc, true);
+    builder.add_container("mean", desc, true);
+    builder.add_container("rstd", desc, true);
 
-    dump_sdfg(sdfg, "1.post-expand");
+    auto batch = symbolic::integer(32);
+    auto height = symbolic::integer(16);
+    auto width = symbolic::integer(16);
+    symbolic::MultiExpression non_normalized_shape({batch});
+    symbolic::MultiExpression normalized_shape({height, width});
+    symbolic::MultiExpression full_shape({batch, height, width});
+    math::tensor::TensorLayout x_layout(full_shape);
+    types::Tensor x_tensor(base_desc, x_layout);
+    math::tensor::TensorLayout gamma_layout(normalized_shape);
+    types::Tensor gamma_tensor(base_desc, gamma_layout);
+    math::tensor::TensorLayout y_layout(full_shape);
+    types::Tensor y_tensor(base_desc, y_layout);
+    math::tensor::TensorLayout mean_layout(non_normalized_shape);
+    types::Tensor mean_tensor(base_desc, mean_layout);
+    math::tensor::TensorLayout rstd_layout(non_normalized_shape);
+    types::Tensor rstd_tensor(base_desc, rstd_layout);
+
+    auto& block = builder.add_block(root);
+    auto& x_access = builder.add_access(block, "x");
+    auto& eps_access = builder.add_access(block, "eps");
+    auto& gamma_access = builder.add_access(block, "gamma");
+    auto& y_access = builder.add_access(block, "y");
+    auto& mean_access = builder.add_access(block, "mean");
+    auto& rstd_access = builder.add_access(block, "rstd");
+    auto& libnode = builder.add_library_node<math::tensor::LayerNormNode>(
+        block, DebugInfo(), normalized_shape, y_layout, mean_layout, rstd_layout, x_layout, gamma_layout
+    );
+    builder.add_computational_memlet(block, x_access, libnode, "_x", {}, x_tensor);
+    builder.add_computational_memlet(block, eps_access, libnode, "_eps", {}, base_desc);
+    builder.add_computational_memlet(block, gamma_access, libnode, "_gamma", {}, gamma_tensor);
+    builder.add_computational_memlet(block, y_access, libnode, "_y", {}, y_tensor);
+    builder.add_computational_memlet(block, mean_access, libnode, "_mean", {}, mean_tensor);
+    builder.add_computational_memlet(block, rstd_access, libnode, "_rstd", {}, rstd_tensor);
+
     ASSERT_NO_THROW(sdfg.validate());
-    EXPECT_EQ(sdfg.root().size(), 1);
+
+    serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    ASSERT_NO_THROW(j = serializer.serialize(sdfg));
+
+    std::unique_ptr<StructuredSDFG> new_sdfg;
+    ASSERT_NO_THROW(new_sdfg = serializer.deserialize(j));
+    ASSERT_NO_THROW(new_sdfg->validate());
 }
 
-TEST(LayerNormTest, Expansion_NoAffine_2D) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_exp_no_affine", FunctionType_CPU);
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 1, /*affine=*/false, /*has_bias=*/false);
-
+TEST(LayerNormNodeTest, serialization_affine_with_bias) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
-    ASSERT_NO_THROW(sdfg.validate());
+    auto& root = sdfg.root();
 
-    auto outcome = passes::expansion::expand_single_math_node(builder, *fx.block, *fx.node);
-    EXPECT_TRUE(outcome.expanded);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("x", desc, true);
+    builder.add_container("eps", base_desc, true);
+    builder.add_container("gamma", desc, true);
+    builder.add_container("beta", desc, true);
+    builder.add_container("y", desc, true);
+    builder.add_container("mean", desc, true);
+    builder.add_container("rstd", desc, true);
 
-    ASSERT_NO_THROW(sdfg.validate());
-    EXPECT_EQ(sdfg.root().size(), 1);
-}
+    auto batch = symbolic::integer(32);
+    auto height = symbolic::integer(16);
+    auto width = symbolic::integer(16);
+    symbolic::MultiExpression non_normalized_shape({batch});
+    symbolic::MultiExpression normalized_shape({height, width});
+    symbolic::MultiExpression full_shape({batch, height, width});
+    math::tensor::TensorLayout x_layout(full_shape);
+    types::Tensor x_tensor(base_desc, x_layout);
+    math::tensor::TensorLayout gamma_layout(normalized_shape);
+    types::Tensor gamma_tensor(base_desc, gamma_layout);
+    math::tensor::TensorLayout beta_layout(normalized_shape);
+    types::Tensor beta_tensor(base_desc, gamma_layout);
+    math::tensor::TensorLayout y_layout(full_shape);
+    types::Tensor y_tensor(base_desc, y_layout);
+    math::tensor::TensorLayout mean_layout(non_normalized_shape);
+    types::Tensor mean_tensor(base_desc, mean_layout);
+    math::tensor::TensorLayout rstd_layout(non_normalized_shape);
+    types::Tensor rstd_tensor(base_desc, rstd_layout);
 
-TEST(LayerNormTest, Expansion_AffineNoBias_2D) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_exp_affine_no_bias", FunctionType_CPU);
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 1, /*affine=*/true, /*has_bias=*/false);
-
-    auto& sdfg = builder.subject();
-    ASSERT_NO_THROW(sdfg.validate());
-
-    auto outcome = passes::expansion::expand_single_math_node(builder, *fx.block, *fx.node);
-    EXPECT_TRUE(outcome.expanded);
-
-    ASSERT_NO_THROW(sdfg.validate());
-    EXPECT_EQ(sdfg.root().size(), 1);
-}
-
-TEST(LayerNormTest, Expansion_MultiNormalizedDims) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_exp_multi_dim", FunctionType_CPU);
-    // Normalize over the trailing two dims [3, 16], leading row dim [2].
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(3), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 2, /*affine=*/true, /*has_bias=*/true);
-
-    auto& sdfg = builder.subject();
-    ASSERT_NO_THROW(sdfg.validate());
-
-    auto outcome = passes::expansion::expand_single_math_node(builder, *fx.block, *fx.node);
-    EXPECT_TRUE(outcome.expanded);
-
-    ASSERT_NO_THROW(sdfg.validate());
-    EXPECT_EQ(sdfg.root().size(), 1);
-}
-
-TEST(LayerNormTest, Expansion_AllDimsNormalized) {
-    builder::StructuredSDFGBuilder builder("sdfg_ln_exp_all_dims", FunctionType_CPU);
-    // No leading dimensions: normalize over the entire tensor.
-    symbolic::MultiExpression shape = {symbolic::integer(2), symbolic::integer(16)};
-    auto fx = build_layernorm(builder, shape, 2, /*affine=*/true, /*has_bias=*/true);
-
-    auto& sdfg = builder.subject();
-    ASSERT_NO_THROW(sdfg.validate());
-
-    auto outcome = passes::expansion::expand_single_math_node(builder, *fx.block, *fx.node);
-    EXPECT_TRUE(outcome.expanded);
+    auto& block = builder.add_block(root);
+    auto& x_access = builder.add_access(block, "x");
+    auto& eps_access = builder.add_access(block, "eps");
+    auto& gamma_access = builder.add_access(block, "gamma");
+    auto& beta_access = builder.add_access(block, "beta");
+    auto& y_access = builder.add_access(block, "y");
+    auto& mean_access = builder.add_access(block, "mean");
+    auto& rstd_access = builder.add_access(block, "rstd");
+    auto& libnode = builder.add_library_node<math::tensor::LayerNormNode>(
+        block, DebugInfo(), normalized_shape, y_layout, mean_layout, rstd_layout, x_layout, gamma_layout, beta_layout
+    );
+    builder.add_computational_memlet(block, x_access, libnode, "_x", {}, x_tensor);
+    builder.add_computational_memlet(block, eps_access, libnode, "_eps", {}, base_desc);
+    builder.add_computational_memlet(block, gamma_access, libnode, "_gamma", {}, gamma_tensor);
+    builder.add_computational_memlet(block, beta_access, libnode, "_beta", {}, gamma_tensor);
+    builder.add_computational_memlet(block, y_access, libnode, "_y", {}, y_tensor);
+    builder.add_computational_memlet(block, mean_access, libnode, "_mean", {}, mean_tensor);
+    builder.add_computational_memlet(block, rstd_access, libnode, "_rstd", {}, rstd_tensor);
 
     ASSERT_NO_THROW(sdfg.validate());
-    EXPECT_EQ(sdfg.root().size(), 1);
+
+    serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    ASSERT_NO_THROW(j = serializer.serialize(sdfg));
+
+    std::unique_ptr<StructuredSDFG> new_sdfg;
+    ASSERT_NO_THROW(new_sdfg = serializer.deserialize(j));
+    ASSERT_NO_THROW(new_sdfg->validate());
 }

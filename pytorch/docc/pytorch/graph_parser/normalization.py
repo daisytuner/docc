@@ -105,7 +105,7 @@ class LayerNormParser(GraphParserModule):
 
         # normalized_shape is a list of ints; its length is the number of trailing
         # dimensions that are normalized over.
-        num_normalized_dims: int = len(self.get_arg_multi_expr(node, 1))
+        normalized_shape: list[str] = self.get_arg_multi_expr(node, 1)
 
         # weight (Gamma) is optional: elementwise_affine=False -> None
         if node.args[2] is None:
@@ -126,58 +126,78 @@ class LayerNormParser(GraphParserModule):
         )
 
         # native_layer_norm returns a tuple of three results: (output, mean, rstd).
-        # Only the first (the normalized output) is consumed here; the mean and rstd
-        # result containers are requested to satisfy the metadata but left unwritten.
         result_infos: tuple[TensorInfo, ...] = self.get_result_tensor_infos(
             3, node, builder, metadata
         )
-        result_info: TensorInfo = result_infos[0]
+        output_info: TensorInfo = result_infos[0]
+        mean_info: TensorInfo = result_infos[1]
+        rstd_info: TensorInfo = result_infos[2]
+        mean_tensor: Tensor = mean_info.sdfg_tensor_type()
+        rstd_tensor: Tensor = rstd_info.sdfg_tensor_type()
+        dims: int = len(mean_tensor.shape)
+        for i in range(dims - 1, dims - len(normalized_shape) - 1, -1):
+            mean_tensor: Tensor = mean_tensor.squeeze(i)
+            rstd_tensor: Tensor = rstd_tensor.squeeze(i)
+        if mean_tensor.shape == []:
+            mean_tensor: Tensor = mean_tensor.unsqueeze(0)
+            rstd_tensor: Tensor = rstd_tensor.unsqueeze(0)
 
-        # The LayerNorm expansion addresses the input by flattening the leading and
-        # normalized dimensions into linear (C-contiguous) indices. A non-contiguous
-        # input view (e.g. produced by permute/transpose) would have its strides
-        # silently dropped, reading the wrong memory. Materialize a contiguous copy
-        # first so the layout information is preserved.
         debug_info: DebugInfo = self.get_debug_info(node)
-        # if not input_tensor.is_contiguous():
-        #     input_type: Type = container_info[input_container].sdfg_type()
-        #     contiguous_tensor: Tensor = Tensor(
-        #         input_tensor.element_type, input_tensor.shape
-        #     )
-        #     contiguous_container: str = self.create_intermediate_container(
-        #         node, builder, container_info, input_type, contiguous_tensor
-        #     )
-        #     builder.add_copy_op(
-        #         input_container,
-        #         input_tensor,
-        #         contiguous_container,
-        #         contiguous_tensor,
-        #         debug_info,
-        #     )
-        #     input_container = contiguous_container
-        #     input_tensor = contiguous_tensor
-        builder.add_layernorm_with_bias(
-            input_info.container(),
-            input_info.sdfg_tensor_type(),
-            "" if weight_info is None else weight_info.container(),
-            (
-                input_info.sdfg_tensor_type()
-                if weight_info is None
-                else weight_info.sdfg_tensor_type()
-            ),
-            "" if bias_info is None else bias_info.container(),
-            (
-                input_info.sdfg_tensor_type()
-                if bias_info is None
-                else bias_info.sdfg_tensor_type()
-            ),
-            eps_info_or_const.container(),
-            eps_info_or_const.element_type(),
-            result_info.container(),
-            result_info.sdfg_tensor_type(),
-            num_normalized_dims,
-            debug_info,
-        )
+        if weight_info is None:
+            if bias_info is None:
+                builder.add_layernorm(
+                    input_info.container(),
+                    input_info.sdfg_tensor_type(),
+                    eps_info_or_const.container(),
+                    eps_info_or_const.element_type(),
+                    output_info.container(),
+                    output_info.sdfg_tensor_type(),
+                    mean_info.container(),
+                    mean_tensor,
+                    rstd_info.container(),
+                    rstd_tensor,
+                    normalized_shape,
+                    debug_info,
+                )
+            else:
+                raise GraphParserError(self, node, "weight is None but bias is set")
+        else:
+            if bias_info is None:
+                builder.add_layernorm_affine(
+                    input_info.container(),
+                    input_info.sdfg_tensor_type(),
+                    eps_info_or_const.container(),
+                    eps_info_or_const.element_type(),
+                    weight_info.container(),
+                    weight_info.sdfg_tensor_type(),
+                    output_info.container(),
+                    output_info.sdfg_tensor_type(),
+                    mean_info.container(),
+                    mean_tensor,
+                    rstd_info.container(),
+                    rstd_tensor,
+                    normalized_shape,
+                    debug_info,
+                )
+            else:
+                builder.add_layernorm_affine_with_bias(
+                    input_info.container(),
+                    input_info.sdfg_tensor_type(),
+                    eps_info_or_const.container(),
+                    eps_info_or_const.element_type(),
+                    weight_info.container(),
+                    weight_info.sdfg_tensor_type(),
+                    bias_info.container(),
+                    bias_info.sdfg_tensor_type(),
+                    output_info.container(),
+                    output_info.sdfg_tensor_type(),
+                    mean_info.container(),
+                    mean_tensor,
+                    rstd_info.container(),
+                    rstd_tensor,
+                    normalized_shape,
+                    debug_info,
+                )
 
 
 register_module("aten.native_layer_norm.default", LayerNormParser())
