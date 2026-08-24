@@ -50,5 +50,4 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/std_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/slice_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/upsample_node.h"

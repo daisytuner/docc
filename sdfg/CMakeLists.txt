@@ -82,6 +82,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/blas/gemm_node.cpp
     src/data_flow/library_nodes/math/cmath/cmath_node.cpp
     src/data_flow/library_nodes/math/math_node.cpp
+    src/data_flow/library_nodes/math/tensor/arange_node.cpp
     src/data_flow/library_nodes/math/tensor/batchnorm_node.cpp
     src/data_flow/library_nodes/math/tensor/broadcast_node.cpp
     src/data_flow/library_nodes/math/tensor/concat_node.cpp
@@ -106,7 +107,6 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.cpp
-    src/data_flow/library_nodes/math/tensor/arange_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/relu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/rsqrt_node.cpp
@@ -126,12 +126,11 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/std_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.cpp
-    src/data_flow/library_nodes/math/tensor/slice_node.cpp
     src/data_flow/library_nodes/math/tensor/spatial_tensor_node.cpp
     src/data_flow/library_nodes/math/tensor/tensor_expansion_utils.cpp
-    src/data_flow/library_nodes/math/tensor/upsample_node.cpp
     src/data_flow/library_nodes/math/tensor/tensor_layout.cpp
     src/data_flow/library_nodes/math/tensor/tensor_node.cpp
+    src/data_flow/library_nodes/math/tensor/upsample_node.cpp
     src/data_flow/library_nodes/metadata_node.cpp
     src/data_flow/library_nodes/stdlib/alloca.cpp
     src/data_flow/library_nodes/stdlib/assert.cpp
@@ -164,8 +163,8 @@ set(SOURCE_FILES
     src/passes/dataflow/tensor_to_pointer_conversion.cpp
     src/passes/dataflow/trivial_array_elimination.cpp
     src/passes/dataflow/trivial_reference_conversion.cpp
-    src/passes/debug_info_propagation.cpp
     src/passes/debug_dump_pass.cpp
+    src/passes/debug_info_propagation.cpp
     src/passes/expansion/lib_node_expansion_context.cpp
     src/passes/expansion/library_node_expansion_pass.cpp
     src/passes/memory/allocation_management.cpp
