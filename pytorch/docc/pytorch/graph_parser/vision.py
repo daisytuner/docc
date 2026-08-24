@@ -5,17 +5,13 @@ GraphParser modules for parsing predefined vision operations.
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
-    ContainerInfoBase,
-    ContainerInfo,
-    ContainerRefInfo,
-    ContainerPreInfo,
-    ContainerInfos,
+    TensorInfo,
+    TensorMetadata,
     GraphParserError,
     GraphParserModule,
-    register_pre_module,
     register_module,
 )
 
@@ -25,7 +21,7 @@ class UpsampleBilinear2DParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) < 3 or len(node.args) > 4:
             raise GraphParserError(
@@ -37,16 +33,15 @@ class UpsampleBilinear2DParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        input_container: str = self.get_arg_container(node, container_info, 0)
-        input_tensor: Tensor = self.get_tensor_type(
-            node, container_info, input_container
-        )
-        if len(input_tensor.shape) != 4:
+
+        input_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        if len(input_info.shape()) != 4:
             raise GraphParserError(
                 self,
                 node,
-                "Expected 4D input [N, C, H, W] but got: " + str(input_tensor.shape),
+                "Expected 4D input [N, C, H, W] but got: " + str(input_info.shape()),
             )
+
         align_corners_arg: Argument = node.args[2]
         if not isinstance(align_corners_arg, bool):
             raise GraphParserError(
@@ -55,6 +50,7 @@ class UpsampleBilinear2DParser(GraphParserModule):
                 "Expected bool align_corners but got: " + str(type(align_corners_arg)),
             )
         align_corners: bool = align_corners_arg
+
         scale_factors: list[float] = []
         if len(node.args) == 3 and node.args[2] is None:
             raise GraphParserError(
@@ -108,33 +104,22 @@ class UpsampleBilinear2DParser(GraphParserModule):
                     node,
                     "Expected 2 scale factors but got: " + str(scale_factors),
                 )
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
-        if len(result_tensor.shape) != 4:
+
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        if len(result_info.shape()) != 4:
             raise GraphParserError(
                 self,
                 node,
-                "Expected 4D output [N, C, H, W] but got: " + str(result_tensor.shape),
+                "Expected 4D output [N, C, H, W] but got: " + str(result_info.shape()),
             )
-        # interpolate preserves its input's memory format, so the fx metadata can
-        # express the result in a channels_last layout. Graph output arguments are
-        # boundary tensors that are always contiguous (NCHW); the channels_last
-        # metadata does not apply to them. Writing the strided layout into the
-        # output boundary silently transposes the data, so force a contiguous
-        # write when the result is a graph output.
-        is_output: bool = container_info[result_container].out_argument()
-        if is_output and not result_tensor.is_contiguous():
-            result_tensor = Tensor(result_tensor.element_type, result_tensor.shape)
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_upsample_bilinear2d(
-            input_container,
-            input_tensor,
-            result_container,
-            result_tensor,
-            input_tensor.shape,
-            result_tensor.shape,
+            input_info.container(),
+            input_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            input_info.shape(),
+            result_info.shape(),
             align_corners,
             scale_factors,
             debug_info,

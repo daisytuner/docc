@@ -4,7 +4,7 @@ GraphParser modules for parsing normalization layers.
 
 import torch.fx
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, Scalar, Type, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
     TensorInfo,

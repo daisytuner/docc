@@ -20,28 +20,13 @@
  * - pads: Padding for the beginning and ending along each spatial axis
  * - dilations: Dilation along each spatial axis
  * - group: Number of groups for grouped convolutions
- *
- * ## Expansion via im2col
- *
- * The convolution is expanded into nested maps using a direct convolution approach:
- * 1. Create outer maps for parallel iteration over batch and output dimensions
- * 2. Create inner loops for sequential accumulation over input channels and kernel
- * 3. Compute convolution using FMA (fused multiply-add) operations
- * 4. Add bias (if present)
- * 5. Write results to output tensor
- *
- * The expansion supports n-dimensional convolutions (1D, 2D, 3D, etc.) with
- * configurable strides and padding for each spatial dimension.
  */
 
 #pragma once
 
-#include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
-
-#include "sdfg/codegen/dispatchers/block_dispatcher.h"
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/spatial_tensor_node.h"
-#include "sdfg/serializer/json_serializer.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
 namespace sdfg {
 namespace math {
@@ -64,11 +49,9 @@ inline data_flow::LibraryNodeCode LibraryNodeType_Conv("ml::Conv");
  * - Output connector "Y": Output tensor [N, C_out, D1_out, ..., Dn_out]
  *
  * ## Expansion Support
- * - ✅ 1D, 2D, 3D, and higher-dimensional convolutions
- * - ✅ Configurable strides for each spatial dimension
- * - ✅ Configurable padding (start and end) for each spatial dimension
- * - ✅ Optional bias addition
- * - ⚠️ Grouped convolutions and dilations not yet expanded (returns false)
+ * - naïve: Full support
+ * - im2col: Does not support non-contiguous output tensor and non-BLAS primitive types
+ * - im2row: Does not support grouping (groups != 1) and non-BLAS primitive types
  *
  * ## Example
  *
@@ -123,6 +106,11 @@ public:
         QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
+
+    static int constexpr Y_INPUT_IDX = 0;
+    static int constexpr X_INPUT_IDX = 1;
+    static int constexpr W_INPUT_IDX = 2;
+    static int constexpr B_INPUT_IDX = 3;
 
     /**
      * @brief Get the output channels

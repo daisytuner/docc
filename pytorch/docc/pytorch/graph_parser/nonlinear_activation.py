@@ -5,7 +5,7 @@ GraphParser modules for parsing non-linear activation functions.
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
     TensorInfo,

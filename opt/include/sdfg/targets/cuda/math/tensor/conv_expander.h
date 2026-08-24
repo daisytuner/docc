@@ -1,38 +1,25 @@
 #pragma once
 
-#include "sdfg/analysis/analysis.h"
-#include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
-#include "sdfg/targets/offloading/target_expansion.h"
+#include "sdfg/passes/expansion/lib_node_expander.h"
+#include "sdfg/structured_control_flow/block.h"
 
 namespace sdfg {
 namespace offloading {
 
-class CudaConvExpander : public TargetLibNodeExpander {
-private:
-    math::tensor::ConvNode& node_;
-
+class CudaConvExpander : public passes::CodeLibNodeExpander<math::tensor::ConvNode> {
 public:
-    CudaConvExpander(math::tensor::ConvNode& library_node)
-        : TargetLibNodeExpander(library_node), node_(library_node) {};
-    bool expand(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+    CudaConvExpander() : passes::CodeLibNodeExpander<math::tensor::ConvNode>(math::tensor::LibraryNodeType_Conv) {};
 
-    static bool expand_conv(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
+    virtual passes::LibNodeExpander::ExpandOutcome handle_expand(
+        passes::LibNodeExpander::ExpandContext& context,
+        structured_control_flow::Block& block,
         math::tensor::ConvNode& node
-    );
+    ) const override;
 
-    static bool expand_conv_naive(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        math::tensor::ConvNode& node
-    );
-
-    static bool expand_conv_im2row(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
+    static passes::LibNodeExpander::ExpandOutcome handle_expand_im2row(
+        passes::LibNodeExpander::ExpandContext& context,
+        structured_control_flow::Block& block,
         math::tensor::ConvNode& node
     );
 };

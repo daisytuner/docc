@@ -6,10 +6,7 @@ import torch.fx
 
 from docc.sdfg import (
     StructuredSDFGBuilder,
-    Scalar,
-    Tensor,
     DebugInfo,
-    PrimitiveType,
     Block,
     AccessNode,
     Tasklet,

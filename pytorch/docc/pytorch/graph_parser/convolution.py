@@ -57,35 +57,6 @@ class ConvolutionParser(GraphParserModule):
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
 
-        # DOCC's convolution expansion always writes a contiguous (NCHW) output.
-        # When torch.compile selects a non-contiguous memory format for the
-        # convolution (e.g. channels_last), the fx metadata expresses the result
-        # -- and every downstream view/permute derived from it -- relative to that
-        # layout. Emit the convolution into a contiguous buffer and copy it into
-        # the requested (strided) layout so the physical data matches what the
-        # consumers assume; otherwise the layout mismatch silently transposes the
-        # data.
-        # Graph output arguments are boundary tensors and always contiguous
-        # (NCHW); the fx channels_last metadata does not apply to them, so never
-        # relayout into it -- doing so transposes the physical data. The
-        # expansion's GEMM already writes the output contiguously, so the output
-        # tensor must be described as contiguous as well; otherwise the bias add
-        # would address the boundary buffer in the channels_last layout and
-        # disagree with the GEMM.
-        # TODO: Reintegrate!
-        # conv_container: str = result_container
-        # conv_tensor: Tensor = result_tensor
-        # is_output: bool = container_info[result_container].out_argument()
-        # if is_output and not result_tensor.is_contiguous():
-        #     conv_tensor = Tensor(result_tensor.element_type, result_tensor.shape)
-        # relayout: bool = not result_tensor.is_contiguous() and not is_output
-        # if relayout:
-        #     result_type: Type = container_info[result_container].sdfg_type()
-        #     conv_tensor = Tensor(result_tensor.element_type, result_tensor.shape)
-        #     conv_container = self.create_intermediate_container(
-        #         node, builder, container_info, result_type, conv_tensor
-        #     )
-
         if node.args[2] is None:
             builder.add_conv(
                 input_info.container(),
@@ -123,14 +94,6 @@ class ConvolutionParser(GraphParserModule):
                 groups,
                 debug_info,
             )
-        # if relayout:
-        #     builder.add_copy_op(
-        #         conv_container,
-        #         conv_tensor,
-        #         result_container,
-        #         result_tensor,
-        #         debug_info,
-        #     )
 
 
 register_module("aten.convolution.default", ConvolutionParser())

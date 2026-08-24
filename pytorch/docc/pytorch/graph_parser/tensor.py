@@ -6,7 +6,7 @@ import torch.fx
 from torch.fx.node import Argument
 from math import ceil
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, Scalar, DebugInfo, Type
+from docc.sdfg import StructuredSDFGBuilder, Tensor, Scalar, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
     TensorInfo,
