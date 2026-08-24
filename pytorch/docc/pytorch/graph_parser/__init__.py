@@ -143,6 +143,9 @@ class GraphParser(GraphParserBase):
                     sdfg_type: Type = self.get_node_sdfg_type(output_node)
                     out_name: str = output_node.name
 
+                    if self.metadata.has_container(out_name):
+                        continue
+
                     if not self.metadata.tensor(out_name).is_contiguous() or isinstance(
                         sdfg_type, Scalar
                     ):
