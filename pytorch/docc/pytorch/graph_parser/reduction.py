@@ -16,7 +16,8 @@ from docc.sdfg import (
 )
 
 from docc.pytorch.graph_parser.utils import (
-    ContainerInfos,
+    TensorInfo,
+    TensorMetadata,
     GraphParserError,
     GraphParserModule,
     register_module,
@@ -34,7 +35,7 @@ class MinMaxParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) < 1 or len(node.args) > 3:
             raise GraphParserError(
@@ -47,10 +48,10 @@ class MinMaxParser(GraphParserModule):
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
 
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
 
-        axes: list[int] = [i for i in range(len(self_tensor.shape))]
+        axes: list[int] = [i for i in range(len(self_info.shape()))]
         if len(node.args) >= 2:
             dim: Argument = node.args[1]
             if not isinstance(dim, list):
@@ -89,18 +90,13 @@ class MinMaxParser(GraphParserModule):
                 )
             keepdims: bool = keepdim
 
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
-
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_reduce_op(
             self._op_type,
-            self_container,
-            self_tensor,
-            result_container,
-            result_tensor,
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             axes,
             keepdims,
             debug_info,
@@ -118,7 +114,7 @@ class AnyParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) < 1 or len(node.args) > 3:
             raise GraphParserError(
@@ -130,14 +126,13 @@ class AnyParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        debug_info: DebugInfo = self.get_debug_info(node)
 
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        debug_info: DebugInfo = self.get_debug_info(node)
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
 
         # Perform a cast if necessary
-        if self_tensor.element_type.primitive_type != PrimitiveType.Bool:
-            self_type: Type = container_info[self_container].sdfg_type()
+        if self_info.element_type().primitive_type != PrimitiveType.Bool:
+            self_type: Type = self_info.sdfg_type()
             bool_scalar: Scalar = Scalar(PrimitiveType.Bool)
             if isinstance(self_type, Pointer):
                 intermediate_type: Type = Pointer(bool_scalar)
@@ -150,21 +145,25 @@ class AnyParser(GraphParserModule):
                     "Expected pointer or scalar input type but got: "
                     + self_type.print(),
                 )
-            intermediate_tensor: Tensor = Tensor(bool_scalar, self_tensor.shape)
-            intermediate_container: str = self.create_intermediate_container(
-                node, builder, container_info, intermediate_type, intermediate_tensor
+            intermediate_tensor: Tensor = Tensor(bool_scalar, self_info.shape())
+            intermediate_info: TensorInfo = self.create_intermediate_tensor_info(
+                node,
+                builder,
+                metadata,
+                intermediate_type,
+                intermediate_tensor,
+                [self_info],
             )
             builder.add_cast_op(
-                self_container,
-                self_tensor,
-                intermediate_container,
+                self_info.container(),
+                self_info.sdfg_tensor_type(),
+                intermediate_info.container(),
                 intermediate_tensor,
                 debug_info,
             )
-            self_container: str = intermediate_container
-            self_tensor: Tensor = intermediate_tensor
+            self_info: TensorInfo = intermediate_info
 
-        axes: list[int] = [i for i in range(len(self_tensor.shape))]
+        axes: list[int] = [i for i in range(len(self_info.shape()))]
         if len(node.args) >= 2:
             dim: Argument = node.args[1]
             if dim is None:
@@ -203,10 +202,8 @@ class AnyParser(GraphParserModule):
                 )
             keepdims: bool = keepdim
 
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        result_tensor: Tensor = result_info.sdfg_tensor_type()
 
         # Special case: UInt8 result type
         if result_tensor.element_type.primitive_type == PrimitiveType.UInt8:
@@ -219,9 +216,9 @@ class AnyParser(GraphParserModule):
 
         builder.add_reduce_op(
             "max",
-            self_container,
-            self_tensor,
-            result_container,
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
             result_tensor,
             axes,
             keepdims,
@@ -244,7 +241,7 @@ class MeanParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if self._has_dims:
             if len(node.args) != 2 and len(node.args) != 3:
@@ -274,6 +271,7 @@ class MeanParser(GraphParserModule):
                     "Expected exactly one argument but got " + str(len(node.args)),
                 )
             keepdim: bool = False
+
         debug_info: DebugInfo = self.get_debug_info(node)
         if "dtype" in node.kwargs:
             dtype_arg: Argument = node.kwargs["dtype"]
@@ -284,33 +282,27 @@ class MeanParser(GraphParserModule):
                     "Expected torch.dtype for dtype kwarg but got: "
                     + str(type(dtype_arg)),
                 )
-            self_container: str = self.get_arg_container(node, container_info, 0)
-            self_tensor: Tensor = self.get_tensor_type(
-                node, container_info, self_container
-            )
+            self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
             base_type: Scalar = self.determine_sdfg_scalar_type(node, dtype_arg)
-            cast_tensor: Tensor = Tensor(base_type, self_tensor.shape)
-            cast_container: str = self.create_intermediate_container(
-                node,
-                builder,
-                container_info,
-                Pointer(base_type),
-                cast_tensor,
+            cast_tensor: Tensor = Tensor(base_type, self_info.shape())
+            cast_info: TensorInfo = self.create_intermediate_tensor_info(
+                node, builder, metadata, Pointer(base_type), cast_tensor, [self_info]
             )
             builder.add_cast_op(
-                self_container, self_tensor, cast_container, cast_tensor, debug_info
+                self_info.container(),
+                self_info.sdfg_tensor_type(),
+                cast_info.container(),
+                cast_tensor,
+                debug_info,
             )
-            self_container: str = cast_container
-            self_tensor: Tensor = cast_tensor
+            self_info: TensorInfo = cast_info
         elif len(node.kwargs) != 0:
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
         else:
-            self_container: str = self.get_arg_container(node, container_info, 0)
-            self_tensor: Tensor = self.get_tensor_type(
-                node, container_info, self_container
-            )
+            self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+
         if self._has_dims:
             if not isinstance(arg_2, list):
                 raise GraphParserError(
@@ -330,18 +322,16 @@ class MeanParser(GraphParserModule):
                     )
                 axes.append(elem)
         else:
-            axes: list[int] = [i for i in range(len(self_tensor.shape))]
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+            axes: list[int] = [i for i in range(len(self_info.shape()))]
+
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
 
         builder.add_reduce_op(
             "mean",
-            self_container,
-            self_tensor,
-            result_container,
-            result_tensor,
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             axes,
             keepdim,
             debug_info,
