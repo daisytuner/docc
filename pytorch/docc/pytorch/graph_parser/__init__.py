@@ -38,8 +38,7 @@ import docc.pytorch.graph_parser.builtin
 import docc.pytorch.graph_parser.convolution
 import docc.pytorch.graph_parser.creation
 import docc.pytorch.graph_parser.elementwise
-
-# import docc.pytorch.graph_parser.nonlinear_activation
+import docc.pytorch.graph_parser.nonlinear_activation
 import docc.pytorch.graph_parser.normalization
 
 # import docc.pytorch.graph_parser.pooling
