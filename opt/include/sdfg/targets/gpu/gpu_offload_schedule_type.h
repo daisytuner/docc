@@ -59,6 +59,56 @@ inline TargetLevel target_level_from_string(const std::string& value) {
 }
 
 /**
+ * @brief Where a reduction's per-thread partials live, and hence how they combine.
+ *
+ * Orthogonal to the TargetLevel (which fixes the cooperation *scope*): the
+ * strategy fixes the *mechanism*.
+ * - Register: per-thread/lane register; a warp scope folds via __shfl_xor_sync.
+ * - Shared:   NV_Shared buffer + block halving tree.
+ * - Global:   per-thread register merged atomically into the global accumulator.
+ */
+enum class ReduceStrategy { Register, Shared, Global };
+
+inline std::string reduce_strategy_to_string(ReduceStrategy strategy) {
+    switch (strategy) {
+        case ReduceStrategy::Register:
+            return "register";
+        case ReduceStrategy::Shared:
+            return "shared";
+        case ReduceStrategy::Global:
+            return "global";
+    }
+    throw InvalidSDFGException("Invalid ReduceStrategy");
+}
+
+inline ReduceStrategy reduce_strategy_from_string(const std::string& value) {
+    if (value == "register") {
+        return ReduceStrategy::Register;
+    } else if (value == "shared") {
+        return ReduceStrategy::Shared;
+    } else if (value == "global") {
+        return ReduceStrategy::Global;
+    }
+    throw InvalidSDFGException("Invalid ReduceStrategy: " + value);
+}
+
+// The mechanism a target level uses by default: warp -> register+shuffle,
+// block -> shared tree, grid -> global atomics. Reproduces the historical
+// (pre-partial_storage) codegen when the property is unset.
+inline ReduceStrategy default_reduce_strategy(TargetLevel target_level) {
+    switch (target_level) {
+        case TargetLevel::WARP:
+            return ReduceStrategy::Register;
+        case TargetLevel::X_BLOCK:
+        case TargetLevel::Y_BLOCK:
+        case TargetLevel::Z_BLOCK:
+            return ReduceStrategy::Shared;
+        default:
+            return ReduceStrategy::Global;
+    }
+}
+
+/**
  * @brief Base class for GPU schedule types (CUDA/ROCm) using CRTP pattern
  *
  * This template class provides shared functionality for both CUDA and ROCm
@@ -120,6 +170,45 @@ public:
      */
     static void nested_sync(structured_control_flow::ScheduleType& schedule, const bool nested_sync) {
         schedule.set_property("nested_sync", nested_sync ? "true" : "false");
+    }
+
+    /**
+     * @brief Where this (reduction) schedule's partials live / how they combine.
+     *        Defaults from the target level when unset (backward compatible).
+     */
+    static ReduceStrategy partial_storage(const structured_control_flow::ScheduleType& schedule) {
+        auto it = schedule.properties().find("partial_storage");
+        if (it == schedule.properties().end()) {
+            return default_reduce_strategy(target_level(schedule));
+        }
+        return reduce_strategy_from_string(it->second);
+    }
+
+    /**
+     * @brief Set the reduction partial-storage strategy.
+     */
+    static void partial_storage(structured_control_flow::ScheduleType& schedule, const ReduceStrategy strategy) {
+        schedule.set_property("partial_storage", reduce_strategy_to_string(strategy));
+    }
+
+    /**
+     * @brief Name of the SDFG container holding this reduction's shared partials.
+     *
+     * Empty (the default) means the reduce dispatcher invents the buffer as
+     * `__daisy_reduce_smem_<accumulator>`. A non-empty value lets an external
+     * placement transform own the buffer's name (and, in time, share it with a
+     * staging buffer); the dispatcher then emits/addresses that name instead.
+     */
+    static std::string partial_container(const structured_control_flow::ScheduleType& schedule) {
+        auto it = schedule.properties().find("partial_container");
+        return it == schedule.properties().end() ? std::string() : it->second;
+    }
+
+    /**
+     * @brief Set the container name for this reduction's shared partials.
+     */
+    static void partial_container(structured_control_flow::ScheduleType& schedule, const std::string& container) {
+        schedule.set_property("partial_container", container);
     }
 
     /**

@@ -19,6 +19,7 @@
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
 #include <sdfg/transformations/offloading/gpu_offload_nested_loop.h>
+#include <sdfg/transformations/omp_transform.h>
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/recorder.h>
 #include <sdfg/transformations/tile_fusion.h>
@@ -320,11 +321,19 @@ void register_transformations(py::module& m) {
     // LoopPeeling transformation
     py::class_<LoopPeeling, Transformation>(m, "LoopPeeling")
         .def(
-            py::init<StructuredLoop&>(),
+            py::init<StructuredLoop&, bool>(),
             py::arg("loop"),
+            py::arg("predicate") = false,
             "Create a loop peeling transformation.\n\n"
+            "Collects the perfectly nested chain of compound-condition loops under\n"
+            "`loop`, over-approximates them to constant trip counts and shifts them\n"
+            "to 0-based induction variables.\n\n"
             "Args:\n"
-            "    loop: The loop with compound conditions to peel"
+            "    loop: The outermost loop of the compound-condition nest\n"
+            "    predicate: If True, emit the predicated (GPU register-tiling) form\n"
+            "        (0-based nest + one combined body guard, no remainder); if False\n"
+            "        (default), emit the hoisted then/else form (clean vectorizable\n"
+            "        micro-kernel + variable-trip remainder)."
         )
         .def("__repr__", [](const LoopPeeling& t) {
             std::ostringstream oss;
@@ -344,6 +353,21 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const VectorizeTransform& t) {
             std::ostringstream oss;
             oss << "<VectorizeTransform name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // OMPTransform transformation
+    py::class_<OMPTransform, Transformation>(m, "OMPTransform")
+        .def(
+            py::init<Map&>(),
+            py::arg("loop"),
+            "Create an OpenMP transformation.\n\n"
+            "Args:\n"
+            "    loop: The sequential loop to parallelize with OpenMP"
+        )
+        .def("__repr__", [](const OMPTransform& t) {
+            std::ostringstream oss;
+            oss << "<OMPTransform name='" << t.name() << "'>";
             return oss.str();
         });
 

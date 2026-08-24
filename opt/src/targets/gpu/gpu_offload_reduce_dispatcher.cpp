@@ -257,7 +257,10 @@ void GPUOffloadReduceDispatcher::dispatch_node(
     std::vector<std::string> arguments;
 
     for (auto& argument : used_arguments) {
-        if (!sdfg_.type(argument.first).storage_type().is_nv_symbol()) {
+        auto storage = sdfg_.type(argument.first).storage_type();
+        // Thread-index symbols and shared-memory scratch (a kernel-local placed partials
+        // buffer) are declared inside the kernel, never passed as kernel arguments.
+        if (!storage.is_nv_symbol() && !storage.is_nv_shared()) {
             arguments.push_back(argument.first);
         }
     }
@@ -421,6 +424,42 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     std::string coverage_loop_var = "__daisy_gpu_coverage_loop_" + gpu::to_string(target_level);
     std::string size = kernel_language_extension.expression(node_.num_iterations());
 
+    // The partial-storage strategy fixes the combine mechanism; only these (scope, mechanism)
+    // pairs are supported: warp+Register (shuffle), block+Shared (tree), block/grid+Global
+    // (atomics). Others (e.g. a shared tree at grid scope, a shuffle off a warp) have no
+    // lowering and must fail loudly rather than emit undefined code.
+    ReduceStrategy strategy = gpu::ScheduleType_GPU_Offload::partial_storage(node_.schedule_type());
+    if (strategy == ReduceStrategy::Register && target_level != TargetLevel::WARP) {
+        throw InvalidSDFGException("GPUOffloadReduceDispatcher: Register partial storage is only valid at WARP level");
+    }
+    if (strategy == ReduceStrategy::Shared && !is_block_level(target_level)) {
+        throw InvalidSDFGException("GPUOffloadReduceDispatcher: Shared partial storage is only valid at block levels");
+    }
+    if (strategy == ReduceStrategy::Global && target_level == TargetLevel::WARP) {
+        throw InvalidSDFGException("GPUOffloadReduceDispatcher: Global partial storage is not valid at WARP level");
+    }
+
+    // A placed partials container (partial_container) is a shared buffer; it only applies to
+    // the shared-tree mechanism, names a single reduction's buffer, and — when it already
+    // exists in the SDFG — must be NV_Shared storage.
+    std::string placed_partials = gpu::ScheduleType_GPU_Offload::partial_container(node_.schedule_type());
+    if (!placed_partials.empty()) {
+        if (strategy != ReduceStrategy::Shared) {
+            throw InvalidSDFGException("GPUOffloadReduceDispatcher: partial_container requires Shared partial storage");
+        }
+        if (node_.reductions().size() != 1) {
+            throw InvalidSDFGException(
+                "GPUOffloadReduceDispatcher: partial_container names a single buffer but the reduce carries "
+                "multiple reductions"
+            );
+        }
+        if (sdfg_.exists(placed_partials) && !sdfg_.type(placed_partials).storage_type().is_nv_shared()) {
+            throw InvalidSDFGException(
+                "GPUOffloadReduceDispatcher: placed partials container '" + placed_partials + "' must be NV_Shared"
+            );
+        }
+    }
+
     // Declare this level's reduction partials (registers for WARP/GRID, shared memory for
     // BLOCK) and initialize them to each operator's identity element.
     this->dispatch_reduction_declarations(kernel_language_extension, library_stream, library_snippet_factory, target_level);
@@ -515,6 +554,9 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
 
     library_stream.setIndent(library_stream.indent() - 4);
     library_stream << "}" << std::endl;
+
+    // Publish per-thread register partials to their shared slots once, before the combine.
+    this->dispatch_reduction_publish(kernel_language_extension, library_stream, target_level);
 
     // Combine the per-thread / per-warp partials for this level into the accumulator.
     this->dispatch_reduction_combine(kernel_language_extension, library_stream, library_snippet_factory, target_level);
@@ -753,15 +795,50 @@ symbolic::Expression GPUOffloadReduceDispatcher::reduce_block_size_product() {
             symbolic::mul(reduce_block_dim(TargetLevel::Y_BLOCK), reduce_block_dim(TargetLevel::Z_BLOCK)));
 }
 
+std::string GPUOffloadReduceDispatcher::partials_buffer_name(const std::string& container) {
+    std::string placed = gpu::ScheduleType_GPU_Offload::partial_container(node_.schedule_type());
+    return placed.empty() ? ("__daisy_reduce_smem_" + container) : placed;
+}
+
+bool GPUOffloadReduceDispatcher::uses_register_partial(TargetLevel target_level, const std::string& container) {
+    if (!is_block_level(target_level)) {
+        return false;
+    }
+    if (gpu::ScheduleType_GPU_Offload::partial_storage(node_.schedule_type()) != ReduceStrategy::Shared) {
+        return false;
+    }
+    // The register partial requires this to be the sole block level owning the container's
+    // body: no nested warp reduce (which emits the body itself), no nested block reduce (which
+    // owns the body and shadows the accumulator onto shared, leaving the register at identity
+    // so the publish would clobber the shared result), and no enclosing block reduce (which
+    // already declares the shared buffer, so a register partial here would redeclare it).
+    return !has_nested_warp_reduction(container) && !has_nested_block_reduction(container) &&
+           !has_enclosing_block_reduction(container);
+}
+
+void GPUOffloadReduceDispatcher::dispatch_reduction_publish(
+    codegen::LanguageExtension& language_extension, codegen::PrettyPrinter& stream, TargetLevel target_level
+) {
+    std::string lin_tid = reduce_linear_thread_index(language_extension);
+    for (const auto& r : node_.reductions()) {
+        if (!uses_register_partial(target_level, r.container)) {
+            continue;
+        }
+        std::string reg_name = "__daisy_reduce_reg_" + r.container;
+        std::string smem_name = partials_buffer_name(r.container);
+        stream << smem_name << "[" << lin_tid << "] = " << reg_name << ";" << std::endl;
+    }
+    // No sync here: the combine's leading __syncthreads() (emit_block_tree) makes every
+    // thread's published slot visible before any neighbour slot is read.
+}
+
 void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
     codegen::LanguageExtension& language_extension,
     codegen::PrettyPrinter& stream,
     codegen::CodeSnippetFactory& library_snippet_factory,
     TargetLevel target_level
 ) {
-    const bool grid = is_grid_level(target_level);
-    const bool block = is_block_level(target_level);
-    const bool warp = target_level == TargetLevel::WARP;
+    const ReduceStrategy strategy = gpu::ScheduleType_GPU_Offload::partial_storage(node_.schedule_type());
 
     // Every thread of a (possibly multi-dimensional) block owns a distinct shared slot,
     // addressed by its flat thread index; the buffer spans the whole block (x * y * z).
@@ -791,11 +868,19 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
         }
 
         std::string reg_name = "__daisy_reduce_reg_" + r.container;
-        std::string smem_name = "__daisy_reduce_smem_" + r.container;
+        std::string smem_name = partials_buffer_name(r.container);
 
-        if (grid || warp) {
+        if (strategy != ReduceStrategy::Shared) {
+            // Register / Global: a per-thread (or per-lane) partial in a register.
             stream << ctype << " " << reg_name << " = " << identity << ";" << std::endl;
-        } else if (block && !has_enclosing_block_reduction(r.container)) {
+        } else if (uses_register_partial(target_level, r.container)) {
+            // Block shared, but accumulate the body in a per-thread register partial and
+            // publish it to shared once after the coverage loop (dispatch_reduction_publish),
+            // so the FMA chain is not serialized through shared memory. No pre-coverage init
+            // or sync: the publish fills every slot and syncs before the combine reads them.
+            stream << ctype << " " << reg_name << " = " << identity << ";" << std::endl;
+            stream << "__shared__ " << ctype << " " << smem_name << "[" << block_size << "];" << std::endl;
+        } else if (!has_enclosing_block_reduction(r.container)) {
             // Only the outermost block level owning this container declares the single shared
             // buffer; every inner block level folds into that same buffer. Declaring one per
             // level would create same-named shadows of which only the innermost is populated,
@@ -822,6 +907,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_shadow(
     codegen::LanguageExtension& language_extension, codegen::PrettyPrinter& stream, TargetLevel target_level
 ) {
     const bool block = is_block_level(target_level);
+    const ReduceStrategy strategy = gpu::ScheduleType_GPU_Offload::partial_storage(node_.schedule_type());
     std::string lin_tid = reduce_linear_thread_index(language_extension);
 
     for (const auto& r : node_.reductions()) {
@@ -834,9 +920,11 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_shadow(
         auto prim = accumulator_primitive(sdfg_, r.container);
         std::string ctype = language_extension.primitive_type(prim);
         std::string reg_name = "__daisy_reduce_reg_" + r.container;
-        std::string smem_name = "__daisy_reduce_smem_" + r.container;
+        std::string smem_name = partials_buffer_name(r.container);
 
-        std::string storage = block ? ("&" + smem_name + "[" + lin_tid + "]") : ("&" + reg_name);
+        std::string storage = (strategy == ReduceStrategy::Shared && !uses_register_partial(target_level, r.container))
+                                  ? ("&" + smem_name + "[" + lin_tid + "]")
+                                  : ("&" + reg_name);
 
         auto index = accumulator_index(node_.root(), r.container, node_.indvar());
         if (symbolic::eq(index, symbolic::zero())) {
@@ -854,9 +942,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
     codegen::CodeSnippetFactory& library_snippet_factory,
     TargetLevel target_level
 ) {
-    const bool grid = is_grid_level(target_level);
-    const bool block = is_block_level(target_level);
-    const bool warp = target_level == TargetLevel::WARP;
+    const ReduceStrategy strategy = gpu::ScheduleType_GPU_Offload::partial_storage(node_.schedule_type());
 
     // A reduce reduces only along its own axis; every other block dimension is an
     // independent "row". Shared slots are addressed by the flat thread index, so the
@@ -869,12 +955,12 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
         auto prim = accumulator_primitive(sdfg_, r.container);
         std::string ctype = language_extension.primitive_type(prim);
         std::string reg_name = "__daisy_reduce_reg_" + r.container;
-        std::string smem_name = "__daisy_reduce_smem_" + r.container;
+        std::string smem_name = partials_buffer_name(r.container);
         auto index = accumulator_index(node_.root(), r.container, node_.indvar());
         std::string target = "reinterpret_cast<" + ctype + " *>(" + r.container + ")[" +
                              language_extension.expression(index) + "]";
 
-        if (warp) {
+        if (strategy == ReduceStrategy::Register) {
             // Reduce the per-lane partials into every lane's register. The shuffle is read
             // once into a temporary before combining: emitting the __shfl_xor_sync inside a
             // combine expression (e.g. a min/max ternary) would duplicate it into divergent
@@ -925,7 +1011,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             }
-        } else if (block) {
+        } else if (strategy == ReduceStrategy::Shared) {
             // Inner block levels only accumulate their per-thread partials into the single
             // shared buffer via the body; they emit no fold here. A block coverage loop of
             // an enclosing level iterates multiple times when count > parallel_size, so
@@ -1020,18 +1106,19 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             }
-        } else if (grid) {
-            // Atomics are exclusive to grid-level reductions. When the grid register is
-            // fed by a nested block/warp reduction of the same container, only the block's
-            // axis leaders hold a non-identity value (every other thread holds the operator
-            // identity), so committing every thread is correct. Otherwise the grid body is
-            // replicated verbatim across all block threads and each holds an identical copy
-            // of the partial; committing all of them would multiply the result by blockDim,
-            // so only one thread per block may commit. (For a pure grid reduction blockDim
-            // == 1, making the guard a no-op.)
+        } else if (strategy == ReduceStrategy::Global) {
+            // Atomic commit of each thread's register straight to the global accumulator.
+            // At a grid level with no nested block/warp reduce, the reduce body is replicated
+            // verbatim across all block threads and each holds an identical partial; committing
+            // all of them would multiply the result by blockDim, so a single thread commits.
+            // When fed by a nested block/warp reduction, only the axis leaders hold a
+            // non-identity value (every other thread holds the operator identity), so every
+            // thread may commit. At a block level (block+Global storage) each thread instead
+            // holds a *distinct* reduce-axis partial, so all of them must commit.
             bool fed_by_nested_reduction = has_nested_block_reduction(r.container) ||
                                            has_nested_warp_reduction(r.container);
-            if (!fed_by_nested_reduction) {
+            bool redundant_threads = is_grid_level(target_level) && !fed_by_nested_reduction;
+            if (redundant_threads) {
                 stream << "if (" << lin_tid << " == 0) {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
             }
@@ -1043,7 +1130,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
                 stream << helper << "(&" << target << ", " << reg_name << ");" << std::endl;
             }
-            if (!fed_by_nested_reduction) {
+            if (redundant_threads) {
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             }

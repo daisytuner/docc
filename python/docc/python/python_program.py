@@ -119,6 +119,7 @@ class PythonProgram(DoccProgram):
         instrumentation_mode: Optional[str] = None,
         capture_args: Optional[bool] = None,
         remote_tuning: bool = False,
+        einsum_detection: bool = True,
     ):
         super().__init__(
             name=func.__name__,
@@ -127,6 +128,7 @@ class PythonProgram(DoccProgram):
             instrumentation_mode=instrumentation_mode,
             capture_args=capture_args,
             remote_tuning=remote_tuning,
+            einsum_detection=einsum_detection,
         )
         self.func = func
         self._last_structure_member_info = {}
@@ -828,6 +830,7 @@ def native(
     instrumentation_mode=None,
     capture_args=None,
     remote_tuning=False,
+    einsum_detection=True,
 ):
     """Decorator to create a PythonProgram from a Python function.
 
@@ -846,6 +849,7 @@ def native(
             instrumentation_mode=instrumentation_mode,
             capture_args=capture_args,
             remote_tuning=remote_tuning,
+            einsum_detection=einsum_detection,
         )
     return PythonProgram(
         func,
@@ -854,4 +858,5 @@ def native(
         instrumentation_mode=instrumentation_mode,
         capture_args=capture_args,
         remote_tuning=remote_tuning,
+        einsum_detection=einsum_detection,
     )

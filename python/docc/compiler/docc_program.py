@@ -57,11 +57,13 @@ class DoccProgram(ABC):
         instrumentation_mode: Optional[str] = None,
         capture_args: Optional[bool] = None,
         remote_tuning: bool = False,
+        einsum_detection: bool = True,
     ):
         self.name = name
         self.target = target
         self.category = category
         self.remote_tuning = remote_tuning
+        self.einsum_detection = einsum_detection
         self.last_sdfg: Optional[StructuredSDFG] = None
         self._device_resident: bool = False
         self._device_backend: Optional[str] = None
@@ -173,9 +175,10 @@ class DoccProgram(ABC):
             metrics.add_target_options(target_options)
 
             # Einsum detection
-            sdfg.einsum()
-            if self.debug_dump:
-                sdfg.dump(output_folder, "py1.einsum", dump_dot=True)
+            if self.einsum_detection:
+                sdfg.einsum()
+                if self.debug_dump:
+                    sdfg.dump(output_folder, "py1.einsum", dump_dot=True)
 
             # Tensor targets keep tensor nodes
             custom_expand_fn = get_target_expand_fn(self.target)

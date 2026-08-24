@@ -10,6 +10,7 @@
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
@@ -144,6 +145,11 @@ public:
         bool loop_is_outermost = false; ///< the localized loop is the outermost loop
         bool loop_is_gpu = false; ///< the localized loop itself is GPU-scheduled
         bool has_gpu_descendant = false; ///< a GPU map lives inside the loop body
+        /// The localized loop is itself a GPU map and a block-scheduled loop in its
+        /// body consumes the tile: stage once per block into shared, reused by the
+        /// (sibling) consumers below (e.g. fused softmax: cache the row, then
+        /// max-reduce / sum-reduce / normalize all read from shared).
+        bool enclosing_cooperative = false;
 
         /// True when a GPU-scheduled loop encloses us (we are inside a device kernel).
         bool inside_gpu_kernel() const {
@@ -322,15 +328,35 @@ public:
      * @brief Whether @p container is the accumulator of a Reduce enclosing,
      *        nested within, or equal to @p loop.
      *
-     * Reduction accumulators are staged and combined by the Reduce node + reduce
-     * dispatcher (registers / shared / global partials, tree / shuffle / atomic
-     * combine). LocalStorage stages read-only operands only and must never also
-     * localize an accumulator, so it rejects any such container.
+     * Detects the reduction-accumulator relationship. Localizing such a
+     * container is permitted only for a *non-cooperative* (sequential /
+     * per-thread) Reduce at or below @p loop — see @ref collect_reduction_owners
+     * — where LocalStorage privatizes the accumulator and apply() retargets the
+     * Reduce's descriptor to the local buffer. A cooperatively-combined
+     * (GPU-offloaded) Reduce is owned by the reduce dispatcher and must not be
+     * localized here.
      */
     static bool is_reduction_accumulator(
         structured_control_flow::StructuredLoop& loop,
         const std::string& container,
         analysis::AnalysisManager& analysis_manager
+    );
+
+    /**
+     * @brief Collect the non-cooperative Reduce nodes (@p loop itself or a
+     *        descendant) that reduce into @p container, for accumulator
+     *        privatization.
+     *
+     * @return false if a *cooperative* (GPU-combined) Reduce or an *ancestor*
+     *         Reduce owns @p container — those cannot be safely localized at
+     *         @p loop and must reject. Otherwise fills @p out with the owning
+     *         non-cooperative Reduce nodes (possibly empty) and returns true.
+     */
+    static bool collect_reduction_owners(
+        structured_control_flow::StructuredLoop& loop,
+        const std::string& container,
+        analysis::AnalysisManager& analysis_manager,
+        std::vector<structured_control_flow::Reduce*>& out
     );
 
 private:
@@ -342,6 +368,8 @@ private:
     TileInfo tile_info_; ///< Populated by can_be_applied()
     LocalityPlan plan_; ///< Schedule classification (populated by can_be_applied)
     std::unordered_set<const data_flow::Memlet*> group_memlets_; ///< Memlets in the selected tile group
+    std::vector<structured_control_flow::Reduce*> reduce_retargets_; ///< non-cooperative Reduce nodes to retarget in
+                                                                     ///< apply()
     bool container_read_ = false; ///< Container is read in the loop (set by can_be_applied)
     bool container_written_ = false; ///< Container is written in the loop (set by can_be_applied)
 
@@ -377,6 +405,17 @@ private:
         const types::IType& pointer_type,
         const std::vector<symbolic::Expression>& slot_indices,
         bool leading_barrier
+    );
+
+    /// Stage the tile once at the top of the localized GPU map's body (a
+    /// block-scheduled copy map + trailing barrier), so the block consumers below
+    /// read the shared buffer. Used for the enclosing-cooperative case.
+    void emit_enclosing_cooperative_copy_in(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        const TileBuffer& buffer,
+        const types::IType& buffer_type,
+        const types::IType& pointer_type
     );
 
     /// Redirect every container access in the loop body to the local buffer,
@@ -421,6 +460,9 @@ public:
 
     /// JSON serialization.
     void to_json(nlohmann::json& j) const override;
+
+    /// JSON deserialization.
+    static LocalStorage from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 
     /// Name of the created local buffer (valid after apply()).
     const std::string& local_container() const { return local_name_; }

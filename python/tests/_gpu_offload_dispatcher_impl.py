@@ -41,6 +41,7 @@ from docc.sdfg import (
     DataTransferDirection,
     Pointer,
     PrimitiveType,
+    ReduceStrategy,
     Scalar,
     ScheduleType,
     StorageType,
@@ -82,8 +83,15 @@ class GpuBackend:
     def storage(self):
         return self._storage()
 
-    def schedule(self, target_level, parallel_size):
-        return self._schedule(target_level, parallel_size)
+    def schedule(
+        self, target_level, parallel_size, partial_storage=None, partial_container=None
+    ):
+        return self._schedule(
+            target_level,
+            parallel_size,
+            partial_storage=partial_storage,
+            partial_container=partial_container,
+        )
 
     def offload(self, builder, *args, **kwargs):
         return getattr(builder, self._offload_method)(*args, **kwargs)
@@ -315,12 +323,22 @@ def build_offloaded_elementwise(backend, n, op, target_level, parallel_size):
     return builder.move()
 
 
-def build_offloaded_reduction(backend, n, op, target_level, parallel_size):
+def build_offloaded_reduction(
+    backend,
+    n,
+    op,
+    target_level,
+    parallel_size,
+    partial_storage=None,
+    partial_container=None,
+):
     """Build ``acc[0] = <op>_j A[j]`` as a single offloaded Reduce.
 
     The device accumulator is zero-/identity-initialised on the host and
-    copied H2D before the kernel, since a grid-level reduction combines into
-    the global slot with an atomic / CAS.
+    copied H2D before the kernel, since the reduction combines into the global
+    slot with an atomic / CAS (grid, or block+Global). ``partial_storage``
+    (ReduceStrategy) and ``partial_container`` (placed shared-buffer name) tune
+    the reduce schedule's mechanism / buffer.
     """
     builder = StructuredSDFGBuilder(f"offload_reduce_{op}")
 
@@ -381,7 +399,12 @@ def build_offloaded_reduction(backend, n, op, target_level, parallel_size):
         str(n),
         "1",
         [(op, "__daisy_dev_acc")],
-        backend.schedule(target_level, parallel_size),
+        backend.schedule(
+            target_level,
+            parallel_size,
+            partial_storage=partial_storage,
+            partial_container=partial_container,
+        ),
     )
     blk = builder.add_block()
     a = builder.add_access(blk, "__daisy_dev_A")
@@ -1987,6 +2010,50 @@ def register(namespace, backend):
         ref = numpy_reduce(a, op)
         np.testing.assert_allclose(acc[0], ref, rtol=1e-4, atol=1e-4)
 
+    @pytest.mark.parametrize(
+        "strategy,partial_container",
+        [
+            (ReduceStrategy.Shared, None),  # block halving tree in __shared__
+            (ReduceStrategy.Global, None),  # block partials merged via atomics
+            (
+                ReduceStrategy.Shared,
+                "__daisy_reduce_placed",
+            ),  # placed (renamed) shared buffer
+        ],
+        ids=["block_shared", "block_global", "block_shared_placed"],
+    )
+    @pytest.mark.parametrize("op", ["add", "mul", "min", "max"])
+    @pytest.mark.parametrize(
+        "n,parallel_size",
+        [
+            (1000, 256),  # ragged
+            (100, 32),  # ragged, non-power-of-two remainder
+            (1, 32),  # degenerate size-1 reduction axis
+        ],
+        ids=["1000x256", "100x32", "size1"],
+    )
+    def test_offload_reduce_block_strategy(
+        strategy, partial_container, op, n, parallel_size, tmp_path
+    ):
+        sdfg = build_offloaded_reduction(
+            backend,
+            n,
+            op,
+            TargetLevel.X_BLOCK,
+            parallel_size,
+            partial_storage=strategy,
+            partial_container=partial_container,
+        )
+        compiled = _compile(backend, sdfg, tmp_path / "reduce_block")
+
+        a = _rng_input(op, n, 1)
+        acc = np.full(1, _identity(op), dtype=np.float32)
+
+        compiled(a, acc)
+
+        ref = numpy_reduce(a, op)
+        np.testing.assert_allclose(acc[0], ref, rtol=1e-4, atol=1e-4)
+
     _map_scns = make_map_nest_scenarios(ws)
 
     @pytest.mark.parametrize(
@@ -2130,6 +2197,7 @@ def register(namespace, backend):
     namespace.update(
         test_offload_map=test_offload_map,
         test_offload_reduce=test_offload_reduce,
+        test_offload_reduce_block_strategy=test_offload_reduce_block_strategy,
         test_map_nest=test_map_nest,
         test_reduce_nest=test_reduce_nest,
         test_multi_reduction_one_node=test_multi_reduction_one_node,

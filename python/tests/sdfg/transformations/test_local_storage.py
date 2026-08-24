@@ -375,3 +375,75 @@ def test_local_storage_omp_cooperative_rejected():
     assert not xform.can_be_applied(
         builder, analysis_manager
     ), "cooperative tile across an OMP-parallel dim must be rejected"
+
+
+# ---------------------------------------------------------------------------
+# Reduction-accumulator privatization (gemv-style): a *sequential* Reduce over j
+# accumulates y[iO*CY + iI] for a per-iO block of CY outputs. Localizing y at the
+# Reduce loads the block once, accumulates in a private buffer across j, writes
+# back once, and retargets the Reduce descriptor to the buffer. A correct result
+# validates the copy-in/out + the reduction-container retarget end to end.
+#   y[iO*CY + iI] = sum_{j=0}^{K-1} A[(iO*CY+iI)*K + j] * x[j]
+# ---------------------------------------------------------------------------
+
+
+def _build_reduce_accumulator(K, CY):
+    builder = StructuredSDFGBuilder("ls_reduce_acc")
+    builder.add_container("R", U, is_argument=True)
+    builder.add_container("A", PF, is_argument=True)
+    builder.add_container("x", PF, is_argument=True)
+    builder.add_container("y", PF, is_argument=True)
+    builder.add_container("iO", U)
+    builder.add_container("j", U)
+    builder.add_container("iI", U)
+
+    builder.begin_for("iO", "0", "R", "1")
+    reduce = builder.begin_reduce("j", "0", str(K), "1", [("add", "y")])
+    builder.begin_for("iI", "0", str(CY), "1")
+    block = builder.add_block()
+    a_in = builder.add_access(block, "A")
+    x_in = builder.add_access(block, "x")
+    y_in = builder.add_access(block, "y")
+    y_out = builder.add_access(block, "y")
+    t = builder.add_tasklet(
+        block, TaskletCode.fp_fma, ["_in1", "_in2", "_in3"], ["_out"]
+    )
+    m = f"(iO*{CY} + iI)"
+    builder.add_memlet(block, a_in, "", t, "_in1", subset=f"{m}*{K} + j", type=PF)
+    builder.add_memlet(block, x_in, "", t, "_in2", subset="j", type=PF)
+    builder.add_memlet(block, y_in, "", t, "_in3", subset=m, type=PF)
+    builder.add_memlet(block, t, "_out", y_out, "", subset=m, type=PF)
+    builder.end_for()  # iI
+    builder.end_reduce()  # j
+    builder.end_for()  # iO
+
+    return builder, reduce, y_out
+
+
+@pytest.mark.parametrize(
+    "R,K,CY", [(4, 8, 2), (1, 5, 4), (3, 3, 2)], ids=["4x8x2", "1x5x4", "3x3x2"]
+)
+def test_local_storage_reduction_accumulator(R, K, CY, tmp_path):
+    builder, reduce, y_out = _build_reduce_accumulator(K, CY)
+    analysis_manager = AnalysisManager(builder)
+    xform = LocalStorage(reduce, y_out)
+    assert xform.can_be_applied(
+        builder, analysis_manager
+    ), "sequential reduction accumulator should be localizable"
+    xform.apply(builder, analysis_manager)
+
+    sdfg = builder.move()
+    output_dir = tmp_path / f"reduce_{R}x{K}x{CY}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    lib_path = sdfg._compile(str(output_dir), "sequential")
+    compiled = CompiledSDFG(lib_path, sdfg)
+
+    rng = np.random.default_rng(7)
+    M = R * CY
+    A = rng.standard_normal((M, K)).astype(np.float32)
+    x = rng.standard_normal((K,)).astype(np.float32)
+    y = np.zeros((M,), dtype=np.float32)
+
+    compiled(R, A.reshape(-1), x, y)
+
+    np.testing.assert_allclose(y, A @ x, rtol=1e-4, atol=1e-4)

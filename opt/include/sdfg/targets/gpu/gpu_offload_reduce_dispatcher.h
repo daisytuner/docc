@@ -116,6 +116,10 @@ protected:
     // (x * y * z). Sizes the per-thread shared buffer for a multi-dimensional block.
     symbolic::Expression reduce_block_size_product();
 
+    // Name of the shared partials buffer for @p container: the schedule's
+    // partial_container property when set, else the invented __daisy_reduce_smem_<c>.
+    std::string partials_buffer_name(const std::string& container);
+
     void dispatch_reduction_declarations(
         codegen::LanguageExtension& language_extension,
         codegen::PrettyPrinter& stream,
@@ -132,6 +136,21 @@ protected:
         codegen::PrettyPrinter& stream,
         codegen::CodeSnippetFactory& library_snippet_factory,
         TargetLevel target_level
+    );
+
+    // Whether the body of a block-level shared reduction for @p container accumulates into
+    // a per-thread register partial (published to shared once after the coverage loop)
+    // instead of read-modify-writing shared each iteration. Applies only to a standalone
+    // block level that solely owns the body (no enclosing block reduce, no nested block
+    // reduce, no nested warp reduce). This keeps the hot accumulation in a register so the
+    // FMA chain is not serialized through shared memory; the existing shared tree/shuffle
+    // combine is unchanged.
+    bool uses_register_partial(TargetLevel target_level, const std::string& container);
+
+    // Publish each register partial to its shared slot once, after the coverage loop and
+    // before the combine (a single st.shared per thread instead of one per element).
+    void dispatch_reduction_publish(
+        codegen::LanguageExtension& language_extension, codegen::PrettyPrinter& stream, TargetLevel target_level
     );
 
     virtual codegen::LanguageExtension& create_kernel_language_extension() = 0;

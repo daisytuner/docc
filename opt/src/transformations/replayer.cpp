@@ -4,6 +4,7 @@
 #include <sdfg/transformations/einsum_lift.h>
 #include <sdfg/transformations/einsum_promotion.h>
 #include <sdfg/transformations/in_local_storage.h>
+#include <sdfg/transformations/local_storage.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
@@ -54,6 +55,8 @@ void Replayer::replay(
             this->apply<transformations::LoopDistribute>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "LoopInterchange") {
             this->apply<transformations::LoopInterchange>(builder, analysis_manager, desc, skip_if_not_applicable);
+        } else if (transformation_name == "LocalStorage") {
+            this->apply<transformations::LocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "OutLocalStorage") {
             this->apply<transformations::OutLocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "InLocalStorage") {
