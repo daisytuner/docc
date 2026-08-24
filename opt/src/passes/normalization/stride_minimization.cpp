@@ -4,6 +4,8 @@
 #include <sdfg/transformations/loop_interchange.h>
 #include <unordered_map>
 
+#include "sdfg/analysis/loop_carried_dependency_analyzer.h"
+
 namespace sdfg {
 namespace passes {
 namespace normalization {
@@ -318,6 +320,8 @@ bool StrideMinimization::run_pass(builder::StructuredSDFGBuilder& builder, analy
     bool applied = false;
 
     auto& loop_tree_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+
+    analysis::NewLoopDependencyAnalysis analyzer(builder.subject(), analysis_manager);
 
     // Collect outermost loops
     std::vector<structured_control_flow::ControlFlowNode*> outer_loops = loop_tree_analysis.outermost_loops();

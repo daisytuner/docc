@@ -8,6 +8,7 @@
 #include "sdfg/analysis/base_user_visitor.h"
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/analysis/data_dependency_analyzer.h"
+#include "sdfg/analysis/loop_carried_dependency_info.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -16,11 +17,21 @@
 
 namespace sdfg::analysis {
 
-struct LoopDependencyInfo {};
+class LoopDependencyInfo {
+    bool valid_;
+    std::unordered_map<std::string, LoopCarriedDependencyInfo> dependencies_;
+
+public:
+    bool available() const;
+    const std::unordered_map<std::string, LoopCarriedDependencyInfo>& dependencies() const;
+    bool has_loop_carried() const;
+    bool has_loop_carried_raw() const;
+
+    // reductions are a 2nd stage that can be computed on demand. If we need to cache that, we can think about caching
+    // it in another layer
+};
 
 typedef std::string RegId;
-
-class LoopDepDataDepShim;
 
 struct GroupedAccesses {
     DepAccess* owning_write = nullptr;
@@ -29,15 +40,13 @@ struct GroupedAccesses {
     std::vector<DepAccess*> de_writes;
 };
 
-class NewLoopDependencyAnalysis : BaseUserVisitor {
-    friend LoopDepDataDepShim;
-
+class NewLoopDependencyAnalysis : BaseUserVisitor, DataDependencyAnalyzer {
     StructuredSDFG& sdfg_;
     AnalysisManager& analysis_;
     std::unique_ptr<AssumptionsAnalysis> detailed_assumptions_;
 
     class ScopeState {
-        friend LoopDepDataDepShim;
+        friend NewLoopDependencyAnalysis;
 
         ControlFlowNode* scope_;
         StructuredLoop* loop_;
@@ -61,13 +70,28 @@ class NewLoopDependencyAnalysis : BaseUserVisitor {
 
     struct AnalysisState {};
 
+    /// the current stack of nested scopes that need to traversed.
+    /// If we only analyze a single loop, that loop may the outermost element on this stack,
+    /// regardless if it has further parents, if we pop the parent, we are done with the current analysis
     std::list<ScopeState> current_scope_stack_;
+    /// The live state we use as we traverse over the SDFG
     std::unique_ptr<AnalysisState> analysis_state_;
 
     std::unordered_map<ElementId, std::unique_ptr<LoopDependencyInfo>> loop_dependency_info_;
 
+    ScopeState* get_current_scope();
+
+protected:
+    void direct_read(DepAccess& access) override;
+    void direct_write(DepAccess& access) override;
+    void indirect_read(DepAccess& access) override;
+    void indirect_write(DepAccess& access) override;
+    void aliasing_source(const std::string& container) override;
+
 public:
     NewLoopDependencyAnalysis(StructuredSDFG& sdfg, analysis::AnalysisManager& analysis);
+
+    const LoopDependencyInfo& get_analysis(StructuredLoop& loop);
 
     void analyze_entire_sdfg();
 
@@ -81,21 +105,6 @@ public:
 
 protected:
     void capture_de_on_exit(AnalysisState& state, ScopeState& loop_state);
-};
-
-class LoopDepDataDepShim : public DataDependencyAnalyzer {
-    NewLoopDependencyAnalysis& analysis_;
-
-public:
-    explicit LoopDepDataDepShim(NewLoopDependencyAnalysis& analysis, StructuredSDFG& sdfg)
-        : analysis_(analysis), DataDependencyAnalyzer(sdfg) {}
-
-protected:
-    void direct_read(DepAccess& access) override;
-    void direct_write(DepAccess& access) override;
-    void indirect_read(DepAccess& access) override;
-    void indirect_write(DepAccess& access) override;
-    void aliasing_source(const std::string& container) override;
 };
 
 } // namespace sdfg::analysis
