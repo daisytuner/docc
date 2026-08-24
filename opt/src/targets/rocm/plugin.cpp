@@ -1,5 +1,8 @@
 #include "sdfg/targets/rocm/plugin.h"
 
+#include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/targets/rocm/rocm_offload_map_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_offload_reduce_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"
 
 namespace sdfg::rocm {
@@ -33,6 +36,37 @@ void register_rocm_plugin(plugins::Context& context) {
            codegen::InstrumentationPlan& instrumentation_plan,
            codegen::ArgCapturePlan& arg_capture_plan) {
             return std::make_unique<ROCMReduceDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            );
+        }
+    );
+
+    // Offload (target_level-based) dispatchers. Registration is first-registration-wins, so these
+    // are currently shadowed by the deprecated dimension-based ROCm dispatchers registered above
+    // and remain inactive until the deprecated registrations are removed.
+    mapDispatcherRegistry.register_map_dispatcher(
+        ScheduleType_ROCM_Offload::value(),
+        [](codegen::LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::Map& node,
+           codegen::InstrumentationPlan& instrumentation_plan,
+           codegen::ArgCapturePlan& arg_capture_plan) {
+            return std::make_unique<ROCMOffloadMapDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            );
+        }
+    );
+
+    reduceDispatcherRegistry.register_reduce_dispatcher(
+        ScheduleType_ROCM_Offload::value(),
+        [](codegen::LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::Reduce& node,
+           codegen::InstrumentationPlan& instrumentation_plan,
+           codegen::ArgCapturePlan& arg_capture_plan) {
+            return std::make_unique<ROCMOffloadReduceDispatcher>(
                 language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
             );
         }

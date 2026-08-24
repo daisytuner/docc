@@ -19,6 +19,8 @@ namespace gpu {
  * - static symbolic::Integer default_block_size_x() - Default block size for X dimension
  *
  * @tparam Derived The derived class (ScheduleType_CUDA or ScheduleType_ROCM)
+ * @deprecated This class is deprecated and will be removed in future versions. Use the new GPU schedule type classes
+ * instead.
  */
 template<typename Derived>
 class ScheduleType_GPU_Base {
@@ -98,14 +100,9 @@ public:
 };
 
 /**
- * @brief Check if a schedule type is a GPU schedule (CUDA or ROCM)
- */
-inline bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule) {
-    return schedule.value() == "CUDA" || schedule.value() == "ROCM";
-}
-
-/**
  * @brief Get the GPU dimension from any GPU schedule type
+ * @deprecated This function is deprecated and will be removed in future versions. Use the new GPU schedule type classes
+ * instead.
  */
 inline GPUDimension gpu_dimension(const structured_control_flow::ScheduleType& schedule) {
     return static_cast<GPUDimension>(std::stoi(schedule.properties().at("dimension")));
@@ -113,6 +110,8 @@ inline GPUDimension gpu_dimension(const structured_control_flow::ScheduleType& s
 
 /**
  * @brief Set the GPU dimension on any GPU schedule type
+ * @deprecated This function is deprecated and will be removed in future versions. Use the new GPU schedule type classes
+ * instead.
  */
 inline void gpu_dimension(structured_control_flow::ScheduleType& schedule, const GPUDimension& dimension) {
     schedule.set_property("dimension", std::to_string(dimension));
@@ -124,6 +123,8 @@ inline void gpu_dimension(structured_control_flow::ScheduleType& schedule, const
  * - X: 32 for CUDA, 64 for ROCM
  * - Y: 8
  * - Z: 4
+ * @deprecated This function is deprecated and will be removed in future versions. Use the new GPU schedule type classes
+ * instead.
  */
 inline symbolic::Integer gpu_block_size(const structured_control_flow::ScheduleType& schedule) {
     if (schedule.properties().find("block_size") == schedule.properties().end()) {
@@ -148,6 +149,8 @@ inline symbolic::Integer gpu_block_size(const structured_control_flow::ScheduleT
 
 /**
  * @brief Set the block size on any GPU schedule type
+ * @deprecated This function is deprecated and will be removed in future versions. Use the new GPU schedule type classes
+ * instead.
  */
 inline void gpu_block_size(structured_control_flow::ScheduleType& schedule, const symbolic::Expression block_size) {
     serializer::JSONSerializer serializer;

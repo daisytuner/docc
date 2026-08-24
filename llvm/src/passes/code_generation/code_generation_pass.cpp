@@ -53,7 +53,7 @@
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
-#include "sdfg/targets/gpu/gpu_schedule_type.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
 #include "sdfg/targets/offloading/external_offloading_node.h"
 #include "sdfg/targets/rocm/rocm.h"

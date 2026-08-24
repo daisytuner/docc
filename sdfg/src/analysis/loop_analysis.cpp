@@ -372,6 +372,21 @@ std::unordered_set<sdfg::structured_control_flow::ControlFlowNode*> LoopAnalysis
     return desc;
 }
 
+std::unordered_set<sdfg::structured_control_flow::ControlFlowNode*> LoopAnalysis::
+    ancestors(sdfg::structured_control_flow::ControlFlowNode* loop) const {
+    std::unordered_set<sdfg::structured_control_flow::ControlFlowNode*> ancestors;
+    auto current = loop;
+    while (true) {
+        auto parent = parent_loop(current);
+        if (parent == nullptr) {
+            break;
+        }
+        ancestors.insert(parent);
+        current = parent;
+    }
+    return ancestors;
+}
+
 std::vector<sdfg::structured_control_flow::ControlFlowNode*>::const_iterator LoopAnalysis::
     get_loop_iterator(structured_control_flow::ControlFlowNode* loop) {
     return loops_.begin() + this->loop_infos_.at(loop).local.loop_id;

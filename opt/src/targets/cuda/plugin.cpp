@@ -1,5 +1,8 @@
 #include "sdfg/targets/cuda/plugin.h"
 
+#include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/cuda/cuda_offload_map_dispatcher.h"
+#include "sdfg/targets/cuda/cuda_offload_reduce_dispatcher.h"
 #include "sdfg/targets/cuda/cuda_reduce_dispatcher.h"
 
 
@@ -34,6 +37,37 @@ void register_cuda_plugin(plugins::Context& context) {
            codegen::InstrumentationPlan& instrumentation_plan,
            codegen::ArgCapturePlan& arg_capture_plan) {
             return std::make_unique<CUDAReduceDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            );
+        }
+    );
+
+    // Offload (target_level-based) dispatchers. Registration is first-registration-wins, so these
+    // are currently shadowed by the deprecated dimension-based CUDA dispatchers registered above
+    // and remain inactive until the deprecated registrations are removed.
+    mapDispatcherRegistry.register_map_dispatcher(
+        ScheduleType_CUDA_Offload::value(),
+        [](codegen::LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::Map& node,
+           codegen::InstrumentationPlan& instrumentation_plan,
+           codegen::ArgCapturePlan& arg_capture_plan) {
+            return std::make_unique<CUDAOffloadMapDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            );
+        }
+    );
+
+    reduceDispatcherRegistry.register_reduce_dispatcher(
+        ScheduleType_CUDA_Offload::value(),
+        [](codegen::LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::Reduce& node,
+           codegen::InstrumentationPlan& instrumentation_plan,
+           codegen::ArgCapturePlan& arg_capture_plan) {
+            return std::make_unique<CUDAOffloadReduceDispatcher>(
                 language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
             );
         }

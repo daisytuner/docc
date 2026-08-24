@@ -6,6 +6,7 @@
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_sdfg.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
 

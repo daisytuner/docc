@@ -55,6 +55,8 @@ static DoccTarget rocm_target = {
     .short_name = "rocm",
     .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
         builder.add_compile_option("-x hip");
+        // Enable the synchronizing warp builtins (e.g. __shfl_xor_sync).
+        builder.add_compile_option("-DHIP_ENABLE_WARP_SYNC_BUILTINS");
         const char* arch_env = std::getenv("DOCC_ROCM_ARCH");
         if (!arch_env) {
             arch_env = "gfx1201";

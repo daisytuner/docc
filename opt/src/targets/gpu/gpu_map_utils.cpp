@@ -8,7 +8,9 @@
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/rocm/rocm.h"
 
 namespace sdfg {
@@ -297,6 +299,151 @@ bool nested_parallelization_is_unsafe(
     return false;
 }
 
+symbolic::Expression get_target_level_dim(TargetLevel target_level, int warp_size) {
+    switch (target_level) {
+        case TargetLevel::X_GRID:
+            return symbolic::gridDim_x();
+        case TargetLevel::X_BLOCK:
+            return symbolic::blockDim_x();
+        case TargetLevel::Y_GRID:
+            return symbolic::gridDim_y();
+        case TargetLevel::Y_BLOCK:
+            return symbolic::blockDim_y();
+        case TargetLevel::Z_GRID:
+            return symbolic::gridDim_z();
+        case TargetLevel::Z_BLOCK:
+            return symbolic::blockDim_z();
+        case TargetLevel::WARP:
+            return symbolic::integer(warp_size);
+        default:
+            throw InvalidSDFGException(
+                "Invalid target level for GPU map: " + std::to_string(static_cast<int>(target_level))
+            );
+    }
+}
+
+symbolic::Expression get_target_level_idx(TargetLevel target_level) {
+    switch (target_level) {
+        case TargetLevel::X_GRID:
+            return symbolic::blockIdx_x();
+        case TargetLevel::X_BLOCK:
+            return symbolic::threadIdx_x();
+        case TargetLevel::Y_GRID:
+            return symbolic::blockIdx_y();
+        case TargetLevel::Y_BLOCK:
+            return symbolic::threadIdx_y();
+        case TargetLevel::Z_GRID:
+            return symbolic::blockIdx_z();
+        case TargetLevel::Z_BLOCK:
+            return symbolic::threadIdx_z();
+        case TargetLevel::WARP:
+            throw InvalidSDFGException("Cannot get index for WARP target level");
+        default:
+            throw InvalidSDFGException(
+                "Invalid target level for GPU map: " + std::to_string(static_cast<int>(target_level))
+            );
+    }
+}
+
+bool is_grid_level(TargetLevel target_level) {
+    return target_level == TargetLevel::X_GRID || target_level == TargetLevel::Y_GRID ||
+           target_level == TargetLevel::Z_GRID;
+}
+
+bool is_block_level(TargetLevel target_level) {
+    return target_level == TargetLevel::X_BLOCK || target_level == TargetLevel::Y_BLOCK ||
+           target_level == TargetLevel::Z_BLOCK;
+}
+
+bool is_warp_level(TargetLevel target_level) { return target_level == TargetLevel::WARP; }
+
+symbolic::SymbolSet target_level_indvars(
+    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, TargetLevel target_level
+) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.descendants(&node);
+    loops.insert(&node);
+    symbolic::SymbolSet indvars;
+    for (const auto& loop : loops) {
+        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == target_level) {
+                    indvars.insert(struc_loop->indvar());
+                }
+            }
+        }
+    }
+    return indvars;
+}
+
+void get_nested_schedule_types(
+    structured_control_flow::StructuredLoop& node,
+    analysis::AnalysisManager& analysis_manager,
+    std::unordered_map<TargetLevel, structured_control_flow::ScheduleType>& output
+) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.descendants(&node);
+    loops.insert(&node);
+    for (const auto& loop : loops) {
+        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+                auto level = ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type());
+                auto it = output.find(level);
+                // Sibling offloaders can share a level with different parallel_size; keep the
+                // largest so the launch dimension covers every sibling.
+                if (it == output.end() ||
+                    symbolic::is_true(symbolic::
+                                          Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
+                                             ScheduleType_GPU_Offload::parallel_size(it->second)))) {
+                    output.insert_or_assign(level, struc_loop->schedule_type());
+                }
+            }
+        }
+    }
+}
+
+bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.descendants(&loop);
+    loops.insert(&loop);
+
+    for (const auto& loop : loops) {
+        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == TargetLevel::WARP) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
+    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager
+) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    if (ScheduleType_GPU_Offload::target_level(node.schedule_type()) != TargetLevel::WARP) {
+        return nullptr;
+    }
+
+    auto ancestors = loop_analysis.ancestors(&node);
+    for (auto ancestor : ancestors) {
+        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(ancestor)) {
+            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == TargetLevel::X_BLOCK) {
+                    return struc_loop;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule) {
+    return schedule.value() == "CUDA_Offload" || schedule.value() == "ROCM_Offload" || schedule.value() == "CUDA" ||
+           schedule.value() == "ROCM";
+}
 
 // Explicit template instantiations for CUDA
 template symbolic::Expression find_nested_gpu_blocksize<cuda::ScheduleType_CUDA>(

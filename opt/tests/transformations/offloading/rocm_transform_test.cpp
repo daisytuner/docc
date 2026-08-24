@@ -1,6 +1,7 @@
 #include "sdfg/transformations/offloading/rocm_transform.h"
 
 #include <gtest/gtest.h>
+#include "sdfg/targets/rocm/rocm.h"
 
 using namespace sdfg;
 

@@ -13,6 +13,7 @@
 #include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/structured_control_flow/sequence.h>
 #include <sdfg/structured_control_flow/while.h>
+#include <sdfg/targets/offloading/data_offloading_node.h>
 #include <stack>
 #include <vector>
 
@@ -114,6 +115,7 @@ public:
         const std::string& start,
         const std::string& end,
         const std::string& step,
+        const sdfg::structured_control_flow::ScheduleType* schedule_type = nullptr,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
@@ -125,6 +127,7 @@ public:
         const std::string& end,
         const std::string& step,
         const std::vector<std::pair<std::string, std::string>>& reductions,
+        const sdfg::structured_control_flow::ScheduleType* schedule_type = nullptr,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
@@ -237,6 +240,53 @@ public:
     add_free(sdfg::structured_control_flow::Block& block, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
 
     void add_free_block(const std::string& container, const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
+
+    // Emits a block-local thread barrier (__syncthreads) into the current sequence.
+    void add_barrier_local_block(const sdfg::DebugInfo& debug_info = sdfg::DebugInfo());
+
+    /**
+     * @brief Add a CUDA data-offloading block (cudaMalloc/cudaMemcpy/cudaFree) to the current sequence
+     * @param host_container Name of the host-side container
+     * @param dev_container Name of the device-side container
+     * @param direction Transfer direction (H2D, D2H, NONE)
+     * @param lifecycle Buffer lifecycle (ALLOC, FREE, NO_CHANGE)
+     * @param data_type The element/pointer type transferred
+     * @param size Size expression in bytes
+     * @param device_id Device id expression (default "0")
+     * @param debug_info Optional debug info
+     */
+    void add_cuda_offloading_block(
+        const std::string& host_container,
+        const std::string& dev_container,
+        sdfg::offloading::DataTransferDirection direction,
+        sdfg::offloading::BufferLifecycle lifecycle,
+        const sdfg::types::IType& data_type,
+        const std::string& size,
+        const std::string& device_id = "0",
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    /**
+     * @brief Add a ROCm data-offloading block (hipMalloc/hipMemcpy/hipFree) to the current sequence
+     * @param host_container Name of the host-side container
+     * @param dev_container Name of the device-side container
+     * @param direction Transfer direction (H2D, D2H, NONE)
+     * @param lifecycle Buffer lifecycle (ALLOC, FREE, NO_CHANGE)
+     * @param data_type The element/pointer type transferred
+     * @param size Size expression in bytes
+     * @param device_id Device id expression (default "0")
+     * @param debug_info Optional debug info
+     */
+    void add_rocm_offloading_block(
+        const std::string& host_container,
+        const std::string& dev_container,
+        sdfg::offloading::DataTransferDirection direction,
+        sdfg::offloading::BufferLifecycle lifecycle,
+        const sdfg::types::IType& data_type,
+        const std::string& size,
+        const std::string& device_id = "0",
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
 
     /**
      * @brief Check if a size expression only depends on function arguments (hoistable to function entry)

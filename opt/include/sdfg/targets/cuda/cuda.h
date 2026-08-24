@@ -5,6 +5,7 @@
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
 #include "sdfg/codegen/language_extension.h"
 #include "sdfg/codegen/utils.h"
+#include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_types.h"
 
@@ -12,6 +13,8 @@ namespace sdfg {
 namespace cuda {
 
 inline std::string CUDA_DEVICE_PREFIX = "__daisy_cuda_";
+
+constexpr int CUDA_WARP_SIZE = 32;
 
 /**
  * @brief CUDA implementation with automatic memory transfers
@@ -32,11 +35,24 @@ using CUDADimension = gpu::GPUDimension;
  * @brief CUDA schedule type inheriting shared GPU functionality
  * Provides CUDA-specific value() and default block size (32 for warp size)
  */
+class ScheduleType_CUDA_Offload : public gpu::ScheduleType_GPU_Offload {
+public:
+    static const std::string value() { return "CUDA_Offload"; }
+};
+
+/**
+ * @brief CUDA schedule type inheriting shared GPU functionality
+ * Provides CUDA-specific value() and default block size (32 for warp size)
+ * @deprecated This class is deprecated and will be removed in future versions. Use the new GPU schedule type classes
+ * instead.
+ */
 class ScheduleType_CUDA : public gpu::ScheduleType_GPU_Base<ScheduleType_CUDA> {
 public:
     static const std::string value() { return "CUDA"; }
     static symbolic::Integer default_block_size_x() { return symbolic::integer(32); }
 };
+
+inline codegen::TargetType TargetType_CUDA_Offload{ScheduleType_CUDA_Offload::value()};
 
 inline codegen::TargetType TargetType_CUDA{ScheduleType_CUDA::value()};
 

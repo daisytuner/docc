@@ -121,3 +121,25 @@ REGISTER_POSITIVE_TEST(fdim, Float)
 
 REGISTER_POSITIVE_TEST(acos, Double)
 REGISTER_NEGATIVE_TEST(acos, Int32)
+
+// Every cmath input is a read-only value read that never captures the pointer,
+// so transforms (e.g. LocalStorage) can localize a container a cmath reads.
+TEST(CMathNodeTest, PointerAccessType_ReadOnlyNoCapture) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& block = builder.add_block(builder.subject().root());
+    auto& node = static_cast<math::cmath::CMathNode&>(builder.add_library_node<math::cmath::CMathNode>(
+        block, DebugInfo(), math::cmath::CMathFunction::fmax, types::PrimitiveType::Float
+    ));
+
+    const int arity = static_cast<int>(math::cmath::cmath_function_to_arity(math::cmath::CMathFunction::fmax));
+    ASSERT_EQ(arity, 2);
+    for (int i = 0; i < arity; i++) {
+        auto access = node.pointer_access_type(i);
+        ASSERT_NE(access, nullptr);
+        EXPECT_TRUE(access->no_capture());
+        EXPECT_TRUE(access->may_contain_reads());
+        EXPECT_FALSE(access->may_contain_writes());
+    }
+    // Out-of-range indices fall back to the base (no metadata).
+    EXPECT_EQ(node.pointer_access_type(arity), nullptr);
+}
