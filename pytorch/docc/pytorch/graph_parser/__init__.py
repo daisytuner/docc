@@ -36,8 +36,7 @@ from docc.pytorch.graph_parser.utils import (
 import docc.pytorch.graph_parser.blas
 import docc.pytorch.graph_parser.builtin
 import docc.pytorch.graph_parser.convolution
-
-# import docc.pytorch.graph_parser.creation
+import docc.pytorch.graph_parser.creation
 import docc.pytorch.graph_parser.elementwise
 
 # import docc.pytorch.graph_parser.nonlinear_activation
@@ -150,6 +149,8 @@ class GraphParser(GraphParserBase):
                     if not self.metadata.tensor(out_name).is_contiguous() or isinstance(
                         sdfg_type, Scalar
                     ):
+                        if not isinstance(sdfg_type, Pointer):
+                            sdfg_type: Type = Pointer(sdfg_type)
                         new_out_name: str = f"{out_name}_out"
                         self.builder.add_container(
                             new_out_name, sdfg_type, is_argument=True
