@@ -1,4 +1,8 @@
 import pytest
+import logging
+
+# Disables DEBUG prints at the end of failing pytests
+logging.getLogger("torch.__trace").setLevel(logging.INFO)
 
 
 def pytest_collection_modifyitems(items):

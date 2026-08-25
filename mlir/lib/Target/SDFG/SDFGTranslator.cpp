@@ -398,13 +398,16 @@ void SDFGTranslator::handle_frees(std::string return_container, const ::sdfg::De
 // Count how many linalg ops use `value` as one of their output operands.
 static int count_linalg_output_uses(Value value) {
     int count = 0;
-    for (OpOperand& use : value.getUses()) {
-        if (auto dps = dyn_cast<DestinationStyleOpInterface>(use.getOwner())) {
-            auto inits = dps.getDpsInits();
-            unsigned begin = inits.getBeginOperandIndex();
-            unsigned end = begin + static_cast<unsigned>(inits.size());
-            if (use.getOperandNumber() >= begin && use.getOperandNumber() < end) {
-                count++;
+
+    for (Operation* user : value.getUsers()) {
+        auto dps = dyn_cast<DestinationStyleOpInterface>(user);
+        if (!dps) {
+            continue;
+        }
+
+        for (auto init : dps.getDpsInits()) {
+            if (init == value) {
+                ++count;
             }
         }
     }
@@ -471,7 +474,7 @@ std::string SDFGTranslator::
             this->builder_.add_computational_memlet(block, out_access, fill_node, "Y", {}, *sdfg_tensor, deb_info);
         } else {
             auto& src_type = builder_.subject().type(output_container);
-            auto& dst_type = builder_.subject().type(copy_container);
+            // auto& dst_type = builder_.subject().type(copy_container);
             ::sdfg::stdlib::add_memcpy_block(
                 builder_,
                 this->insertion_point(),

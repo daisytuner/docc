@@ -398,10 +398,12 @@ Pipeline local_buffer_reuse_pipeline() {
 
     // Register passes from longest to shortest to maximize elimination
     // 5 lib nodes first
-    pipeline.register_pass<ConvBatchNormReLUConvBatchNormEliminationPass>();
+    // pipeline.register_pass<ConvBatchNormReLUConvBatchNormEliminationPass>();
 
     // 4 lib nodes
-    pipeline.register_pass<ConvBatchNormReLUConvEliminationPass>();
+    // pipeline.register_pass<ConvBatchNormReLUConvEliminationPass>();
+
+    // The 5 and 4 lib node passes are not safe in generla - only with im2col/im2row conv expansion.
 
     // 3 lib nodes
     pipeline.register_pass<ConvBatchNormReLUEliminationPass>();
