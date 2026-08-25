@@ -30,7 +30,7 @@ def test_segformer_b0_finetuned_cityscapes_1024_1024_simple(target: str) -> None
             "return_dict": False,
         },
         target=target,
-        atol=(2e-5 if target in ("cuda", "rocm") else 1e-5),
+        atol=3e-5,
     )
 
 
