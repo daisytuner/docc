@@ -89,6 +89,7 @@ __global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_thread_idx_z = threadIdx.z;
     int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
     int i = __daisy_cuda_indvar_x;
+    __daisy_cuda_A = reinterpret_cast<decltype(__daisy_cuda_A)>(__builtin_assume_aligned(__daisy_cuda_A, 16));
     if (__daisy_cuda_indvar_x < 100) {
         {
             float in_ = 0.0f;
@@ -194,6 +195,7 @@ __global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
     int i = __daisy_cuda_indvar_x;
     int j = __daisy_cuda_indvar_y;
+    __daisy_cuda_A = reinterpret_cast<decltype(__daisy_cuda_A)>(__builtin_assume_aligned(__daisy_cuda_A, 16));
     if (__daisy_cuda_indvar_x < 100) {
         if (__daisy_cuda_indvar_y < 40) {
             {
@@ -301,6 +303,7 @@ __global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
     int i = __daisy_cuda_indvar_x;
     int j = __daisy_cuda_indvar_z;
+    __daisy_cuda_A = reinterpret_cast<decltype(__daisy_cuda_A)>(__builtin_assume_aligned(__daisy_cuda_A, 16));
     if (__daisy_cuda_indvar_x < 100) {
         if (__daisy_cuda_indvar_z < 40) {
             {
@@ -426,6 +429,7 @@ __global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int i = __daisy_cuda_indvar_x;
     int j = __daisy_cuda_indvar_y;
     int k = __daisy_cuda_indvar_z;
+    __daisy_cuda_A = reinterpret_cast<decltype(__daisy_cuda_A)>(__builtin_assume_aligned(__daisy_cuda_A, 16));
     if (__daisy_cuda_indvar_x < 100) {
         if (__daisy_cuda_indvar_y < 40) {
             if (__daisy_cuda_indvar_z < 200) {

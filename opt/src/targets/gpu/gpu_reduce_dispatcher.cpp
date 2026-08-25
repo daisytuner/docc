@@ -334,6 +334,17 @@ void GPUReduceDispatcher::dispatch_node(
     library_stream << "{" << std::endl;
     library_stream.setIndent(library_stream.indent() + 4);
 
+    // Every device-pointer argument is a full cudaMalloc/hipMalloc allocation,
+    // which is guaranteed >=256-byte aligned. Asserting 16-byte alignment lets
+    // clang's load-store vectorizer widen contiguous copies to 128-bit; decltype
+    // keeps it agnostic to element type / constness.
+    for (auto& container : arguments) {
+        if (this->is_device_pointer_storage(sdfg_.type(container).storage_type())) {
+            library_stream << container << " = reinterpret_cast<decltype(" << container
+                           << ")>(__builtin_assume_aligned(" << container << ", 16));" << std::endl;
+        }
+    }
+
     this->dispatch_reduce_core(
         library_snippet_factory, library_stream, GPUDimension::X, /*declare_scope_variables=*/true, scope_variables
     );

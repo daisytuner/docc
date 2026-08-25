@@ -163,6 +163,17 @@ void CUDAMapDispatcher::dispatch_node(
             library_stream, analysis_manager, kernel_name, x_vars, y_vars, z_vars, arguments_declaration
         );
 
+        // Every device-pointer argument is a full cudaMalloc allocation, guaranteed
+        // >=256-byte aligned. Asserting 16-byte alignment lets clang's load-store
+        // vectorizer widen contiguous copies to 128-bit (LDG/STG.128); decltype
+        // keeps it agnostic to element type / constness.
+        for (auto& container : arguments) {
+            if (sdfg_.type(container).storage_type().is_nv_generic()) {
+                library_stream << container << " = reinterpret_cast<decltype(" << container
+                               << ")>(__builtin_assume_aligned(" << container << ", 16));" << std::endl;
+            }
+        }
+
         this->dispatch_kernel_body(library_snippet_factory, library_stream, node_.indvar(), scope_variables, num_iters);
 
         library_stream.setIndent(library_stream.indent() - 4);
