@@ -41,7 +41,7 @@ bool do_cuda_error_checking() {
 void check_cuda_kernel_launch_errors(
     codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension, bool instrumented
 ) {
-    if (!do_cuda_error_checking() && !instrumented) {
+    if (!do_cuda_error_checking()) {
         return;
     }
     stream << "cudaError_t launch_err = cudaDeviceSynchronize();" << std::endl;

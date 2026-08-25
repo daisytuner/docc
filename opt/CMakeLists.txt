@@ -166,6 +166,7 @@ set(SOURCE_FILES
     src/transformations/tile_fusion.cpp
     src/transformations/transformation_schema.cpp
     src/transformations/vectorize_transform.cpp
+    src/transformations/unroll_transform.cpp
 )
 add_library(sdfgopt
     ${SOURCE_FILES}

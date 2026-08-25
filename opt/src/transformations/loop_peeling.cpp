@@ -164,12 +164,22 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
         auto& else_branch = builder.add_case(if_else, symbolic::Not(combined_fits), loop_.debug_info());
         current = &else_branch;
         for (auto& info : infos) {
-            auto& nl = append_loop(
-                builder, *current, *info.loop, info.indvar, info.loop->condition(), info.init, info.loop->update()
-            );
+            auto& nl =
+                append_loop(builder, *current, *info.loop, info.indvar, info.zero_condition, zero, info.loop->update());
             current = &nl.root();
         }
-        deepcopy::StructuredSDFGDeepCopy(builder, *current, innermost->root()).insert();
+        // 0-based remainder (constant trip) with the original per-iteration
+        // condition as a body guard. Keeping the remainder 0-based leaves any
+        // register tile in the body constant-indexed (no spill to local memory),
+        // while the guard skips the out-of-bounds iterations for correctness.
+        auto& rem_if = builder.add_if_else(*current, loop_.debug_info());
+        auto& rem_body = builder.add_case(rem_if, combined_guard, loop_.debug_info());
+        deepcopy::StructuredSDFGDeepCopy(builder, rem_body, innermost->root()).insert();
+        for (auto& info : infos) {
+            if (!symbolic::eq(info.init, zero)) {
+                rem_body.replace(info.indvar, info.shifted);
+            }
+        }
     }
 
     builder.remove_child(*parent, parent->index(loop_));

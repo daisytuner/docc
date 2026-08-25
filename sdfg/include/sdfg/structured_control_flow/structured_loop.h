@@ -86,6 +86,28 @@ public:
 };
 
 /**
+ * @brief Unroll annotation carried as a generic property on any ScheduleType.
+ *
+ * Unrolling is orthogonal to the execution strategy (a loop stays SEQUENTIAL /
+ * CUDA / ... ), so it is stored as a `"unroll"` property rather than a distinct
+ * schedule kind. When set, the loop codegen emits `#pragma clang loop unroll(full)`.
+ */
+class ScheduleType_Unroll {
+public:
+    /// Mark (or clear) the schedule for full unrolling.
+    static void set(ScheduleType& schedule, bool full = true) {
+        schedule.set_property("unroll", full ? "full" : "none");
+    }
+
+    /// True if the schedule is marked for full unrolling.
+    static bool is_set(const ScheduleType& schedule) {
+        auto it = schedule.properties().find("unroll");
+        return it != schedule.properties().end() && it->second == "full";
+    }
+};
+
+
+/**
  * @brief Base class for structured loop constructs
  *
  * StructuredLoop is the abstract base class for all structured loop types in

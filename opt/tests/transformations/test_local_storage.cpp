@@ -1524,6 +1524,18 @@ bool block_uses(structured_control_flow::Block& block, const std::string& name) 
     }
     return false;
 }
+
+// The copy block may be wrapped in a boundary-guard IfElse (element predication
+// of the global access). Unwrap it to reach the underlying copy Block.
+structured_control_flow::Block* copy_block_of(structured_control_flow::ControlFlowNode& node) {
+    if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&node)) {
+        return blk;
+    }
+    if (auto* ife = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+        return dynamic_cast<structured_control_flow::Block*>(&ife->at(0).first.at(0));
+    }
+    return nullptr;
+}
 } // namespace
 
 /**
@@ -1628,8 +1640,8 @@ TEST(LocalStorageTest, Apply_Out_WriteOnly) {
     auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&root.at(1));
     ASSERT_NE(wb_loop, nullptr);
 
-    // Writeback reads the buffer and writes C.
-    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&wb_loop->root().at(0));
+    // Writeback reads the buffer and writes C (copy may be boundary-guarded).
+    auto* wb_block = copy_block_of(wb_loop->root().at(0));
     ASSERT_NE(wb_block, nullptr);
     EXPECT_TRUE(block_uses(*wb_block, buf));
     EXPECT_TRUE(block_uses(*wb_block, "C"));
@@ -1947,13 +1959,15 @@ TEST(LocalStorageTest, Derive_GpuGridCooperativeRead_Global) {
     EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ true), LocalStorage::Locality::Reject);
 }
 
-// The coarsest cooperative level wins: grid + block cooperation → global.
-TEST(LocalStorageTest, Derive_GpuGridAndBlockCooperative_Global) {
+// A read tile with block cooperation lives in shared memory even when it is also
+// grid-cooperative: each block redundantly stages its own copy (grid cooperation
+// is replication, not a shared buffer). This is the 2D-block GEMM shape.
+TEST(LocalStorageTest, Derive_GpuGridAndBlockCooperativeRead_Shared) {
     using Level = LocalStorage::LocalityPlan::Level;
     LocalStorage::LocalityPlan plan;
     plan.dims.push_back(make_gpu_dim(/*cooperative*/ true, Level::Block));
     plan.dims.push_back(make_gpu_dim(/*cooperative*/ true, Level::Grid));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Global);
+    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Shared);
 }
 
 // Warp-only cooperation is served by shuffles, not a staged buffer → Reject.
@@ -2636,7 +2650,7 @@ TEST(LocalStorageTest, Apply_RegisterTile_OperandReuse) {
     // The load is hoisted above jI: iI body is [copy-in(A->buf), jI-loop], and the
     // jI body reads the register, not A.
     ASSERT_EQ(loop_iI.root().size(), 2u);
-    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&loop_iI.root().at(0));
+    auto* copy_block = copy_block_of(loop_iI.root().at(0));
     ASSERT_NE(copy_block, nullptr);
     EXPECT_TRUE(block_uses(*copy_block, "A"));
     EXPECT_TRUE(block_uses(*copy_block, buf));
@@ -3074,4 +3088,97 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed) {
     ASSERT_NE(main_block, nullptr);
     EXPECT_TRUE(block_uses(*main_block, buf));
     EXPECT_FALSE(block_uses(*main_block, "A"));
+}
+
+/**
+ * Apply_Cooperative_Mixed_CoopOuter: the 2D-block GEMM shape. The tile is
+ * cooperative along the OUTER GPU block dim (j) and per-thread along the INNER,
+ * immediately-enclosing dim (i). This is exactly what LocalStorage v1 rejected
+ * (it required the cooperative axis to be the immediate parent). v2 must accept
+ * it AND parallelize the copy over the cooperative axis (j, width 4) — not the
+ * per-thread immediate parent (i, width 8); using i would stride the copy along
+ * the slot axis and leave each slot only partially filled.
+ */
+TEST(LocalStorageTest, Apply_Cooperative_Mixed_CoopOuter) {
+    builder::StructuredSDFGBuilder builder("ls_coop_mixed_outer", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    builder.add_container("N", loop_var, true);
+    builder.add_container("M", loop_var, true);
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    // j is the OUTER cooperative axis (X_BLOCK, width 4); i is the INNER,
+    // immediately-enclosing per-thread axis (Y_BLOCK, width 8).
+    auto sched_j = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(4));
+    auto sched_i = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Y_BLOCK, symbolic::integer(8));
+    auto& map_j =
+        builder
+            .add_map(seq, j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::integer(1)), sched_j);
+    auto& map_i = builder.add_map(
+        map_j.root(), i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)), sched_i
+    );
+    auto& loop_k = builder.add_for(
+        map_i.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1))
+    );
+
+    // C[i*M + j] += A[i*16 + k] — A per-thread in i (base uses i), cooperative in j.
+    auto& block = builder.add_block(loop_k.root());
+    auto& c_in = builder.add_access(block, "C");
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& t = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, c_in, t, "_in1", {symbolic::add(symbolic::mul(i, M), j)}, ptr);
+    builder
+        .add_computational_memlet(block, a_in, t, "_in2", {symbolic::add(symbolic::mul(i, symbolic::integer(16)), k)}, ptr);
+    builder.add_computational_memlet(block, t, "_out", c_out, {symbolic::add(symbolic::mul(i, M), j)}, ptr);
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(loop_k, a_in);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    EXPECT_TRUE(xform.storage_type().is_nv_shared());
+    xform.apply(builder, am);
+
+    auto buf = xform.local_container();
+    ASSERT_TRUE(builder.subject().exists(buf));
+    // Buffer = [slot(i width = 8)] x [tile(16)] = 128 shared elements.
+    EXPECT_TRUE(builder.subject().type(buf).storage_type().is_nv_shared());
+    EXPECT_TRUE(builder.subject().type(buf) == types::Array(elem, symbolic::integer(128)));
+
+    // The copy sits in the immediately-enclosing (per-thread) map's body:
+    // [leading barrier, copy_map, trailing barrier, k-loop].
+    ASSERT_EQ(map_i.root().size(), 4u);
+    EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_i.root().at(0)), nullptr);
+    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_i.root().at(1));
+    ASSERT_NE(copy_map, nullptr);
+    EXPECT_EQ(copy_map->schedule_type().category(), structured_control_flow::ScheduleTypeCategory::Offloader);
+    // The copy must be parallelized over the cooperative axis j (X_BLOCK, width 4),
+    // NOT the per-thread immediate parent i (Y_BLOCK, width 8).
+    EXPECT_EQ(gpu::gpu_target_level(copy_map->schedule_type()), gpu::TargetLevel::X_BLOCK);
+    EXPECT_TRUE(symbolic::eq(gpu::ScheduleType_GPU_Offload::parallel_size(copy_map->schedule_type()), symbolic::integer(4))
+    );
+    EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_i.root().at(2)), nullptr);
+    EXPECT_NE(dyn_cast<structured_control_flow::For*>(&map_i.root().at(3)), nullptr);
+
+    // The body reads the shared buffer, not A.
+    auto* main_block_outer = dyn_cast<structured_control_flow::Block*>(&loop_k.root().at(0));
+    ASSERT_NE(main_block_outer, nullptr);
+    EXPECT_TRUE(block_uses(*main_block_outer, buf));
+    EXPECT_FALSE(block_uses(*main_block_outer, "A"));
 }

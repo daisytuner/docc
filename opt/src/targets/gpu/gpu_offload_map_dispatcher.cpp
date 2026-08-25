@@ -136,7 +136,13 @@ void GPUOffloadMapDispatcher::dispatch_node(
         // Arguments Declaration
         std::vector<std::string> arguments_declaration;
         for (auto& container : arguments) {
-            arguments_declaration.push_back(this->language_extension_.declaration(container, sdfg_.type(container)));
+            const auto& arg_type = sdfg_.type(container);
+            // Distinct device buffers never alias: mark pointer params __restrict__ so clang's
+            // load-store vectorizer can widen contiguous copies (it bails on possible aliasing).
+            const std::string decl_name = this->is_device_pointer_storage(arg_type.storage_type())
+                                              ? "__restrict__ " + container
+                                              : container;
+            arguments_declaration.push_back(this->language_extension_.declaration(decl_name, arg_type));
         }
 
         std::unordered_map<TargetLevel, ScheduleType> nested_schedule_types;
@@ -288,18 +294,25 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
                        << " + " << coverage_loop_var << " * " << kernel_language_extension.expression(node_.stride())
                        << ";" << std::endl;
     } else {
-        std::string target_level_idx_access = kernel_language_extension.expression(node_.stride()) + " * " +
-                                              kernel_language_extension.expression(get_target_level_idx(target_level));
+        // 0-based parallel index across this dimension: `coverage` sweeps of `dim`
+        // units plus this thread/block's index. The map's induction variable is
+        // then init + stride * parallel_index, so the stride applies to BOTH the
+        // coverage and the index terms (tiled offload maps have stride != 1).
+        std::string dim_expr = kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())
+        );
+        std::string idx_expr = kernel_language_extension.expression(get_target_level_idx(target_level));
+        std::string parallel_index = coverage_loop_var + " * " + dim_expr + " + " + idx_expr;
 
+        std::string offset;
         if (target_level == TargetLevel::X_BLOCK && nested_warp_dim(node_, analysis_manager_)) {
-            target_level_idx_access = kernel_language_extension.expression(get_target_level_idx(target_level));
+            // Warp handles the sub-stride; the block index is used directly.
+            offset = "(" + parallel_index + ")";
+        } else {
+            offset = kernel_language_extension.expression(node_.stride()) + " * (" + parallel_index + ")";
         }
 
-        // compute the effective indvar for this coverage loop iteration
         library_stream << "size_t " << indvar->get_name() << " = " << kernel_language_extension.expression(node_.init())
-                       << " + " << coverage_loop_var << " * "
-                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
-                       << " + " << target_level_idx_access << ";" << std::endl;
+                       << " + " << offset << ";" << std::endl;
     }
 
 

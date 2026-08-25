@@ -70,7 +70,7 @@ TEST(CUDAKernel, DispatcherTest) {
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
     EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
-    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__restrict__ __daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -81,7 +81,7 @@ TEST(CUDAKernel, DispatcherTest) {
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
         R"a(#include ""
 
-__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+__global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_thread_idx_x = threadIdx.x;
     int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
     int __daisy_cuda_thread_idx_y = threadIdx.y;
@@ -174,7 +174,7 @@ TEST(CUDAKernel, NestedXYDispatcherTest) {
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
     EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
-    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__restrict__ __daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -185,7 +185,7 @@ TEST(CUDAKernel, NestedXYDispatcherTest) {
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
         R"a(#include ""
 
-__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+__global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_thread_idx_x = threadIdx.x;
     int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
     int __daisy_cuda_thread_idx_y = threadIdx.y;
@@ -281,7 +281,7 @@ TEST(CUDAKernel, NestedXZDispatcherTest) {
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
     EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
-    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__restrict__ __daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -292,7 +292,7 @@ TEST(CUDAKernel, NestedXZDispatcherTest) {
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
         R"a(#include ""
 
-__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+__global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_thread_idx_x = threadIdx.x;
     int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
     int __daisy_cuda_thread_idx_y = threadIdx.y;
@@ -405,7 +405,7 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
     EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
-    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__restrict__ __daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -416,7 +416,7 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
         R"a(#include ""
 
-__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+__global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_thread_idx_x = threadIdx.x;
     int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
     int __daisy_cuda_thread_idx_y = threadIdx.y;

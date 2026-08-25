@@ -69,6 +69,28 @@ void collect_direct_child_scopes(
         }
     }
 }
+
+// Collect the case conditions of every IfElse nested within `node`'s subtree
+// (including `node` itself if it is an IfElse). Used to discover boundary
+// guards whose per-symbol refinements must be baked at the current scope.
+void collect_descendant_guard_conditions(
+    structured_control_flow::ControlFlowNode& node, std::vector<symbolic::Condition>& out
+) {
+    if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < seq->size(); i++) {
+            collect_descendant_guard_conditions(seq->at(i), out);
+        }
+    } else if (auto* ife = dyn_cast<structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < ife->size(); i++) {
+            out.push_back(ife->at(i).second);
+            collect_descendant_guard_conditions(ife->at(i).first, out);
+        }
+    } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        collect_descendant_guard_conditions(loop->root(), out);
+    } else if (auto* w = dyn_cast<structured_control_flow::While*>(&node)) {
+        collect_descendant_guard_conditions(w->root(), out);
+    }
+}
 } // namespace
 
 MemoryLayoutAnalysis::MemoryLayoutAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {}
@@ -319,14 +341,20 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
     //     tiles propagate as `[i, 0]..[i, M-1]` through the inner loop and
     //     get the proper outer-loop range only at the outer-loop merge.
     //
-    //   * Other scopes (IfElse case body, plain Sequence): exclude *all*
-    //     enclosing loops' indvars. At these scopes, branch refinements may
-    //     have tightened ancestor indvars' AA bounds (e.g. `i ∈ [1, 8]`
-    //     inside a guarded case), and those refinements only live on this
-    //     scope's AssumptionsAnalysis entry — once a tile bubbles up past
-    //     the IfElse, the refined bounds are no longer reachable. By
-    //     unfolding ancestor indvars here, the tile gets baked with the
-    //     tightest visible facts before merging upward.
+    //   * Other scopes (IfElse node, IfElse case body, plain Sequence): keep
+    //     enclosing-loop indvars OPAQUE by default. A coupled boundary guard
+    //     (e.g. `i + i_t1 < N`) then projects against an opaque ancestor and
+    //     cancels to the tile size in max−min, instead of unfolding that
+    //     ancestor to its full grid range (which used to blow the extent up to
+    //     ~N for peeled/tiled GEMM). Two exceptions are unfolded here, at the
+    //     deepest scope where the guard is visible:
+    //       - the nearest enclosing loop's indvar, so a coupled guard has at
+    //         least one in-scope generator to project onto (e.g. Circle's
+    //         inner `j`, needed to tighten the band);
+    //       - ancestor indvars a descendant guard refines with a per-symbol
+    //         (single-variable) bound like `1 <= i <= 8` (Halo-style). Such a
+    //         refinement lives only on this branch scope and is lost once the
+    //         tile bubbles past the IfElse, so it must be baked here.
     symbolic::SymbolSet excluded_indvars;
     const bool scope_is_loop_body = !loop && [&]() {
         auto* parent = scope.get_parent();
@@ -339,9 +367,42 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         auto* parent_loop = dyn_cast<structured_control_flow::StructuredLoop*>(scope.get_parent());
         excluded_indvars.insert(parent_loop->indvar());
     } else {
+        // Nearest enclosing loop indvar: one in-scope generator for coupled
+        // guard projection. Also collect the full set of enclosing indvars so
+        // per-symbol guard refinements can be restricted to them (a bare `N >= 5`
+        // literal must not turn the parameter N into a bounded generator).
+        symbolic::SymbolSet enclosing_indvars;
         for (auto* cur = scope.get_parent(); cur; cur = cur->get_parent()) {
             if (auto* l = dyn_cast<structured_control_flow::StructuredLoop*>(cur)) {
-                excluded_indvars.insert(l->indvar());
+                if (enclosing_indvars.empty()) {
+                    excluded_indvars.insert(l->indvar()); // nearest
+                }
+                enclosing_indvars.insert(l->indvar());
+            }
+        }
+        // Ancestor indvars refined per-symbol by a boundary guard visible here
+        // (e.g. `1 <= i <= 8`): bake them at this scope. Two sources contribute
+        // a visible guard: descendant IfElse branches within the scope, and the
+        // case conditions of enclosing IfElse nodes this scope sits under (the
+        // latter is what a branch/case body sees in its own assumptions).
+        std::vector<symbolic::Condition> guard_conditions;
+        collect_descendant_guard_conditions(scope, guard_conditions);
+        for (auto* cur = &scope; cur->get_parent() != nullptr; cur = cur->get_parent()) {
+            auto* parent = cur->get_parent();
+            if (auto* ife = dyn_cast<structured_control_flow::IfElse*>(parent)) {
+                for (size_t k = 0; k < ife->size(); ++k) {
+                    if (&ife->at(k).first == cur) {
+                        guard_conditions.push_back(ife->at(k).second);
+                        break;
+                    }
+                }
+            }
+        }
+        for (const auto& cond : guard_conditions) {
+            for (const auto& sym : AssumptionsAnalysis::per_symbol_refined_symbols(cond)) {
+                if (enclosing_indvars.contains(sym)) {
+                    excluded_indvars.insert(sym);
+                }
             }
         }
     }

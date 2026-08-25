@@ -100,7 +100,12 @@ void ROCMMapDispatcher::dispatch_node(
     // Arguments Declaration
     std::vector<std::string> arguments_declaration;
     for (auto& container : arguments) {
-        arguments_declaration.push_back(this->language_extension_.declaration(container, sdfg_.type(container)));
+        const auto& arg_type = sdfg_.type(container);
+        // Distinct device buffers never alias: mark pointer params __restrict__ so clang's
+        // load-store vectorizer can widen contiguous copies (it bails on possible aliasing).
+        const std::string decl_name = arg_type.storage_type().value() == "AMD_Generic" ? "__restrict__ " + container
+                                                                                       : container;
+        arguments_declaration.push_back(this->language_extension_.declaration(decl_name, arg_type));
     }
 
     auto block_size_x = gpu::find_nested_gpu_blocksize<ScheduleType_ROCM>(node_, analysis_manager, ROCMDimension::X);

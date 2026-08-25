@@ -120,11 +120,17 @@ TEST(LoopPeelingTest, HoistedFormLeavesCleanThenBranch) {
     ASSERT_EQ(then_for->root().size(), 1);
     EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&then_for->root().at(0)) != nullptr);
 
-    // "else" branch: original variable-trip remainder.
+    // "else" branch: 0-based constant-trip remainder with a per-iteration guard
+    // (keeps register tiles constant-indexed; guard skips OOB iterations).
     auto else_case = if_else->at(1);
     auto* else_for = dyn_cast<structured_control_flow::For*>(&else_case.first.at(0));
     ASSERT_TRUE(else_for != nullptr);
-    EXPECT_TRUE(symbolic::eq(else_for->init(), symbolic::symbol("M")));
+    EXPECT_TRUE(symbolic::eq(else_for->init(), symbolic::integer(0)));
+    ASSERT_EQ(else_for->root().size(), 1);
+    auto* rem_if = dyn_cast<structured_control_flow::IfElse*>(&else_for->root().at(0));
+    ASSERT_TRUE(rem_if != nullptr);
+    ASSERT_EQ(rem_if->size(), 1);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&rem_if->at(0).first.at(0)) != nullptr);
 }
 
 TEST(LoopPeelingTest, PredicatedFormCollectsNestAndGuardsInnermost) {

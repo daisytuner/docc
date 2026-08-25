@@ -26,6 +26,7 @@
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/replayer.h>
 #include <sdfg/transformations/tile_fusion.h>
+#include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 
 namespace sdfg {
@@ -75,6 +76,8 @@ void Replayer::replay(
             this->apply<transformations::LoopPeeling>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "VectorizeTransform") {
             this->apply<transformations::VectorizeTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
+        } else if (transformation_name == "UnrollTransform") {
+            this->apply<transformations::UnrollTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "CUDATransform") {
             this->apply<cuda::CUDATransform>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "CUDAParallelizeNestedMap") {

@@ -57,6 +57,10 @@ public:
         std::vector<symbolic::Expression> dimensions;
         /// Tile min indices per dimension (bases for index subtraction).
         std::vector<symbolic::Expression> bases;
+        /// Tile max valid indices per dimension (from MemoryTile::max_subset), e.g.
+        /// min(_s0-1, base+extent-1, ...). Used to element-predicate global copies
+        /// so the over-approximated tile never touches out-of-bounds memory.
+        std::vector<symbolic::Expression> maxes;
         /// Layout strides from MemoryLayoutAnalysis (original re-linearization).
         std::vector<symbolic::Expression> strides;
         /// Layout offset from MemoryLayoutAnalysis.
@@ -139,6 +143,8 @@ public:
             gpu::TargetLevel target_level = gpu::TargetLevel::X_BLOCK; ///< GPU axis (for threadIdx slotting)
             symbolic::Integer parallel_size = symbolic::integer(0); ///< parallel width (0 on CPU)
             bool needs_sync = false; ///< schedule requires nested synchronization
+            symbolic::Expression init = symbolic::integer(0); ///< loop init (per-block base of the tiled dim)
+            symbolic::Integer stride = symbolic::integer(1); ///< loop stride (tile step)
         };
 
         std::vector<Dim> dims; ///< enclosing parallel loops, innermost-first
@@ -381,6 +387,11 @@ private:
 
     /// Hard capacity guard: max scalar slots the local buffer may occupy.
     size_t max_tile_elements() const { return 1u << 16; }
+
+    /// Element-predicate a global copy: AND over varying dims of `base[d] +
+    /// tile_index <= maxes[d]`, so the over-approximated tile skips out-of-bounds
+    /// global elements. @p tile_indices are per varying dim. boolTrue if unbounded.
+    symbolic::Condition boundary_guard(const data_flow::Subset& tile_indices) const;
 
     /// Private/CPU path: a nested sequential copy nest around the loop (copy-in
     /// when @p writeback is false, copy-out when true).

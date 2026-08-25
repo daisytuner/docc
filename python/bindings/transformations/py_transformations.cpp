@@ -24,6 +24,7 @@
 #include <sdfg/transformations/recorder.h>
 #include <sdfg/transformations/tile_fusion.h>
 #include <sdfg/transformations/transformation.h>
+#include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 #include <sdfg/types/type.h>
 
@@ -353,6 +354,23 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const VectorizeTransform& t) {
             std::ostringstream oss;
             oss << "<VectorizeTransform name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // UnrollTransform transformation
+    py::class_<UnrollTransform, Transformation>(m, "UnrollTransform")
+        .def(
+            py::init<StructuredLoop&>(),
+            py::arg("loop"),
+            "Create an unroll transformation.\n\n"
+            "Marks a constant-trip loop for full unrolling (`#pragma clang loop\n"
+            "unroll(full)`), which lets the compiler scalarize register tiles.\n\n"
+            "Args:\n"
+            "    loop: The constant-trip loop to fully unroll"
+        )
+        .def("__repr__", [](const UnrollTransform& t) {
+            std::ostringstream oss;
+            oss << "<UnrollTransform name='" << t.name() << "'>";
             return oss.str();
         });
 

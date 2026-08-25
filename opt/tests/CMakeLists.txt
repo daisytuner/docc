@@ -84,6 +84,7 @@ set(TEST_FILES
     transformations/test_local_storage.cpp
     transformations/recorder_test.cpp
     transformations/vectorize_transform_test.cpp
+    transformations/unroll_transform_test.cpp
     transformations/transformation_serialization_test.cpp
     test.cpp
 )

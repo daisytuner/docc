@@ -631,7 +631,7 @@ def _build_gemm_regtile(M, N, K, TY, TX, CY, CX):
     for dc in ("__daisy_dev_A", "__daisy_dev_B", "__daisy_dev_C"):
         off(dc, dc, DataTransferDirection.NONE, BufferLifecycle.FREE, "0")
 
-    return b, k_loop, c_out
+    return b, k_loop, a, bb, c_out
 
 
 @pytest.mark.parametrize(
@@ -640,7 +640,7 @@ def _build_gemm_regtile(M, N, K, TY, TX, CY, CX):
     ids=["8x8x4", "16x16x8", "8x8x3"],
 )
 def test_local_storage_register_tile_gemm(M, N, K, TY, TX, CY, CX, tmp_path):
-    builder, k_loop, c_out = _build_gemm_regtile(M, N, K, TY, TX, CY, CX)
+    builder, k_loop, _a, _bb, c_out = _build_gemm_regtile(M, N, K, TY, TX, CY, CX)
 
     am = AnalysisManager(builder)
     xform = LocalStorage(k_loop, c_out)
@@ -655,6 +655,182 @@ def test_local_storage_register_tile_gemm(M, N, K, TY, TX, CY, CX, tmp_path):
 
     generated = "\n".join(p.read_text() for p in output_dir.rglob("*.cu"))
     assert "__daisy_local_storage" in generated, "C register tile not emitted"
+
+    compiled = CompiledSDFG(lib_path, sdfg)
+
+    rng = np.random.default_rng(0)
+    A = rng.standard_normal((M, K)).astype(np.float32)
+    B = rng.standard_normal((K, N)).astype(np.float32)
+    C = np.zeros((M, N), dtype=np.float32)
+
+    compiled(A.reshape(-1), B.reshape(-1), C.reshape(-1))
+
+    np.testing.assert_allclose(C, A @ B, rtol=1e-3, atol=1e-3)
+
+
+@pytest.mark.parametrize(
+    "M,N,K,TY,TX,CY,CX",
+    [(8, 8, 4, 2, 2, 2, 2), (16, 16, 8, 4, 4, 2, 2)],
+    ids=["8x8x4", "16x16x8"],
+)
+def test_local_storage_shared_gemm_mixed_coop(M, N, K, TY, TX, CY, CX, tmp_path):
+    """2D-block GEMM staging A into shared via the v2 mixed cooperative path.
+
+    A[(iO*CY+iI)*K + k] is cooperative across the OUTER block axis jO and
+    per-thread across the INNER, immediately-enclosing axis iO — the shape
+    LocalStorage v1 rejected (it required the cooperative axis to be the immediate
+    parent). The block cooperatively loads A (one shared slot per iO thread, the
+    copy split across the jO threads); each thread then reads its shared slice.
+    """
+    builder, k_loop, a, _bb, _c_out = _build_gemm_regtile(M, N, K, TY, TX, CY, CX)
+
+    am = AnalysisManager(builder)
+    xform = LocalStorage(k_loop, a)
+    assert xform.can_be_applied(builder, am), "mixed cooperative A tile should apply"
+    xform.apply(builder, am)
+    # Hoist any boundary guard off the staging barrier so ragged blocks don't deadlock.
+    SyncConditionPropagation().run(builder, am)
+
+    sdfg = builder.move()
+    sdfg.validate()
+    output_dir = tmp_path / f"gemm_shared_{M}x{N}x{K}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    lib_path = sdfg._compile(str(output_dir), "cuda")
+
+    generated = "\n".join(p.read_text() for p in output_dir.rglob("*.cu"))
+    assert "__shared__" in generated, "shared A tile not emitted"
+    assert "__syncthreads" in generated, "staging barrier not emitted"
+
+    compiled = CompiledSDFG(lib_path, sdfg)
+
+    rng = np.random.default_rng(0)
+    A = rng.standard_normal((M, K)).astype(np.float32)
+    B = rng.standard_normal((K, N)).astype(np.float32)
+    C = np.zeros((M, N), dtype=np.float32)
+
+    compiled(A.reshape(-1), B.reshape(-1), C.reshape(-1))
+
+    np.testing.assert_allclose(C, A @ B, rtol=1e-3, atol=1e-3)
+
+
+def _build_gemm_grid_block(M, N, K, TY, TX, CY, CX):
+    """3-level CUTLASS GEMM: a 2D grid of (TY*CY x TX*CX) block tiles, a TX x TY
+    thread block, and a CY x CX per-thread register tile. Loop nest:
+        jGrid(X_GRID) iGrid(Y_GRID) jThread(X_BLOCK) iThread(Y_BLOCK) k iReg jReg
+    Localizing A at the k loop exercises the grid+block mixed cooperative path: A is
+    cooperative across BOTH the column-grid (jGrid) and column-block (jThread) axes
+    and per-thread across the row axes -> a per-block shared tile, replicated across
+    the column grid, with one slot per iThread.
+    """
+    f = Scalar(PrimitiveType.Float)
+    host = Pointer(f)
+    dev = Pointer(f, StorageType.NV_Generic())
+    i32 = Scalar(PrimitiveType.Int32)
+
+    b = StructuredSDFGBuilder("ls_gemm_grid_block")
+    for nm in ("A", "B", "C"):
+        b.add_container(nm, host, is_argument=True)
+    for nm in ("__daisy_dev_A", "__daisy_dev_B", "__daisy_dev_C"):
+        b.add_container(nm, dev, is_argument=False)
+    for nm in ("jG", "iG", "jT", "iT", "k", "iR", "jR"):
+        b.add_container(nm, i32)
+
+    def off(hc, dc, dirn, life, size):
+        b.add_cuda_offloading_block(hc, dc, dirn, life, dev, size)
+
+    nbA = f"{M * K} * {FLOAT_BYTES}"
+    nbB = f"{K * N} * {FLOAT_BYTES}"
+    nbC = f"{M * N} * {FLOAT_BYTES}"
+    for dc, sz in (
+        ("__daisy_dev_A", nbA),
+        ("__daisy_dev_B", nbB),
+        ("__daisy_dev_C", nbC),
+    ):
+        off(dc, dc, DataTransferDirection.NONE, BufferLifecycle.ALLOC, sz)
+    off("A", "__daisy_dev_A", DataTransferDirection.H2D, BufferLifecycle.NO_CHANGE, nbA)
+    off("B", "__daisy_dev_B", DataTransferDirection.H2D, BufferLifecycle.NO_CHANGE, nbB)
+    off("C", "__daisy_dev_C", DataTransferDirection.H2D, BufferLifecycle.NO_CHANGE, nbC)
+
+    BM = TY * CY  # rows per block tile
+    BN = TX * CX  # cols per block tile
+    b.begin_map(
+        "jG",
+        "0",
+        str(N // BN),
+        "1",
+        ScheduleType.cuda_offload(TargetLevel.X_GRID, N // BN),
+    )
+    b.begin_map(
+        "iG",
+        "0",
+        str(M // BM),
+        "1",
+        ScheduleType.cuda_offload(TargetLevel.Y_GRID, M // BM),
+    )
+    b.begin_map(
+        "jT", "0", str(TX), "1", ScheduleType.cuda_offload(TargetLevel.X_BLOCK, TX)
+    )
+    b.begin_map(
+        "iT", "0", str(TY), "1", ScheduleType.cuda_offload(TargetLevel.Y_BLOCK, TY)
+    )
+    k_loop = b.begin_for("k", "0", str(K), "1")
+    b.begin_for("iR", "0", str(CY), "1")
+    b.begin_for("jR", "0", str(CX), "1")
+    blk = b.add_block()
+    a = b.add_access(blk, "__daisy_dev_A")
+    bb = b.add_access(blk, "__daisy_dev_B")
+    c_in = b.add_access(blk, "__daisy_dev_C")
+    c_out = b.add_access(blk, "__daisy_dev_C")
+    row = f"(iG*{BM} + iT*{CY} + iR)"
+    col = f"(jG*{BN} + jT*{CX} + jR)"
+    t = b.add_tasklet(blk, TaskletCode.fp_fma, ["_in1", "_in2", "_in3"], ["_out"])
+    b.add_memlet(blk, a, "", t, "_in1", f"{row}*{K} + k", dev)
+    b.add_memlet(blk, bb, "", t, "_in2", f"k*{N} + {col}", dev)
+    b.add_memlet(blk, c_in, "", t, "_in3", f"{row}*{N} + {col}", dev)
+    b.add_memlet(blk, t, "_out", c_out, "", f"{row}*{N} + {col}", dev)
+    b.end_for()
+    b.end_for()
+    b.end_for()
+    b.end_map()
+    b.end_map()
+    b.end_map()
+    b.end_map()
+
+    off("C", "__daisy_dev_C", DataTransferDirection.D2H, BufferLifecycle.NO_CHANGE, nbC)
+    for dc in ("__daisy_dev_A", "__daisy_dev_B", "__daisy_dev_C"):
+        off(dc, dc, DataTransferDirection.NONE, BufferLifecycle.FREE, "0")
+
+    return b, k_loop, a, bb, c_out
+
+
+@pytest.mark.parametrize(
+    "M,N,K,TY,TX,CY,CX",
+    [(32, 32, 8, 2, 2, 2, 2), (32, 64, 16, 4, 4, 2, 2)],
+    ids=["32x32x8", "32x64x16"],
+)
+def test_local_storage_shared_gemm_grid_block(M, N, K, TY, TX, CY, CX, tmp_path):
+    """Stage A into shared in a 3-level (grid+block+register) GEMM. A is cooperative
+    across both a grid axis (jGrid) and a block axis (jThread): LocalStorage must
+    derive shared memory (block cooperation wins; grid cooperation replicates per
+    block) and drive the cooperative copy over the block axis, one slot per iThread.
+    """
+    builder, k_loop, a, _bb, _c_out = _build_gemm_grid_block(M, N, K, TY, TX, CY, CX)
+
+    am = AnalysisManager(builder)
+    xform = LocalStorage(k_loop, a)
+    assert xform.can_be_applied(builder, am), "grid+block mixed A tile should apply"
+    xform.apply(builder, am)
+    SyncConditionPropagation().run(builder, am)
+
+    sdfg = builder.move()
+    sdfg.validate()
+    output_dir = tmp_path / f"gemm_gb_{M}x{N}x{K}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    lib_path = sdfg._compile(str(output_dir), "cuda")
+
+    generated = "\n".join(p.read_text() for p in output_dir.rglob("*.cu"))
+    assert "__shared__" in generated, "shared A tile not emitted"
+    assert "__syncthreads" in generated, "staging barrier not emitted"
 
     compiled = CompiledSDFG(lib_path, sdfg)
 

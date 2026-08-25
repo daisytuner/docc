@@ -88,6 +88,15 @@ public:
     bool is_parameter(const symbolic::Symbol& container);
 
     bool is_parameter(const std::string& container);
+
+    // Returns the symbols that `cond` constrains via single-variable clauses
+    // (i.e. per-symbol bounds like `1 <= i <= 8`), as opposed to multi-variable
+    // coupled constraints (like `i + j <= 15`). Purely structural: it inspects
+    // the CNF of `cond` and reports any symbol that is the sole variable of a
+    // single-literal clause. Used by MemoryLayoutAnalysis to decide which
+    // enclosing loop indvars to unfold at a guarded scope; the caller is
+    // responsible for intersecting the result with the actual enclosing indvars.
+    static symbolic::SymbolSet per_symbol_refined_symbols(const symbolic::Condition& cond);
 };
 
 } // namespace analysis
