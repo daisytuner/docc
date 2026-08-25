@@ -98,11 +98,12 @@ class GraphParser(GraphParserBase):
     def parse(self) -> None:
         """
         Parses the GraphModule (exported program) to a structured SDFG. This is done in two steps.
-        The first step is the pre-parsing step, in which the container information are filled with
-        data about "virtual" containers, i.e., containers that reference other containers in the
-        same way that two PyTorch tensors can share the same underlying data. The second step is the
-        parsing step, in which all operations are actually translated to SDFG operations. At the end
-        all allocated memory is freed.
+        The first step is the pre-parsing step, in which all tensor information are collected and
+        written to the tensor metadata. Except for input and output arguments those tensors do not
+        have an underlying container yet.
+        The second step is the parsing step, in which all operations are actually translated to SDFG
+        operations. Containers are conservatively create along the way and also stored in the tensor
+        metadata. At the end all allocated memory is freed.
         """
         nodes = self.ep.graph_module.graph.nodes
 
@@ -208,8 +209,9 @@ class GraphParser(GraphParserBase):
 
     def parse_placeholder(self, node: torch.fx.Node) -> None:
         """
-        Parses a PyTorch placeholder operation by creating an SDFG container for it. Notice, that
-        all arguments of an SDFG must have C-strides. This is also ensured here.
+        Parses a PyTorch placeholder operation by creating a tensor information, a container
+        information and, an actual SDFG container for it. Notice, that all arguments of an SDFG must
+        have C-strides. This is also ensured here.
         """
         if not "desc" in node.meta:
             raise GraphParserError(self, node, "Missing desc metadata in placeholder")

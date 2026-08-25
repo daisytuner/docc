@@ -461,12 +461,6 @@ class TensorMetadata:
         return "".join(stream)
 
 
-ContainerInfoBase = ...
-ContainerRefInfo = ...
-ContainerPreInfo = ...
-ContainerInfos = ...
-
-
 class GraphParserErrorBase(Exception):
     """Custom exception that prints PyTorch stack trace if available"""
 
@@ -546,8 +540,8 @@ class GraphParserBase:
 
     def determine_sdfg_type(self, node: torch.fx.Node, input: Any) -> Type:
         """
-        Tries to convert a PyTorch type to an SDFG type. The output is a pair of the SDFG type and
-        an optional SDFG Tensor type if available. If the conversion fails, an exception is thrown.
+        Tries to convert a PyTorch type to an SDFG type. If the conversion fails, an exception is
+        thrown.
         """
         if isinstance(input, torch.Tensor):
             base_type: Scalar = self.determine_sdfg_scalar_type(node, input.dtype)
@@ -559,6 +553,10 @@ class GraphParserBase:
         return self.determine_sdfg_scalar_type(node, input)
 
     def get_node_sdfg_type(self, node: torch.fx.Node) -> Type:
+        """
+        Tries to converts the return type of a PyTorch node to an SDFG type. If the conversion
+        fails, an exception is thrown.
+        """
         if not "val" in node.meta:
             raise GraphParserError(
                 self,
@@ -570,6 +568,7 @@ class GraphParserBase:
     def determine_sdfg_tensor_type(
         self, node: torch.fx.Node, input: Any
     ) -> Tensor | None:
+        """Tries to convert a PyTorch type to an SDFG tensor type. If it fails, None is returned."""
         if isinstance(input, torch.Tensor):
             base_type: Scalar = self.determine_sdfg_scalar_type(node, input.dtype)
             tensor_shape: list[str] = [str(dim) for dim in input.shape]
@@ -585,8 +584,8 @@ class GraphParserBase:
         tensor_meta: torch.fx.passes.shape_prop.TensorMetadata,
     ) -> Tensor:
         """
-        Converts a PyTorch TensorMetadata to a pair of the SDFG container type and the SDFG Tensor
-        type.
+        Update an SDFG tensor type with a PyTorch TensorMetadata structure and returns the updated
+        SDFG tensor type.
         """
         base_type: Scalar = self.determine_sdfg_scalar_type(node, tensor_meta.dtype)
         tensor_shape: list[str] = [str(dim) for dim in tensor_meta.shape]
@@ -612,6 +611,12 @@ class GraphParserBase:
         return tensor
 
     def get_node_sdfg_tensor(self, node: torch.fx.Node) -> Tensor | None:
+        """
+        Tries to converts the return type of a PyTorch node to an SDFG tensor type. If the
+        conversion fails, None is returned. Calls ``determine_sdfg_tensor_type`` and
+        ``update_with_tensor_meta`` in the process. For a PyTorch tuple return type, use
+        ``get_node_sdfg_tensors``.
+        """
         if not "val" in node.meta:
             raise GraphParserError(
                 self,
@@ -635,6 +640,12 @@ class GraphParserBase:
         return sdfg_tensor
 
     def get_node_sdfg_tensors(self, node: torch.fx.Node) -> tuple[Tensor | None, ...]:
+        """
+        Tries to converts the tuple return type of a PyTorch node to an SDFG tensor types. For each
+        element for which the conversion fails, None is returned. Calls
+        ``determine_sdfg_tensor_type`` in the process. For a PyTorch non-tuple return type, use
+        ``get_node_sdfg_tensor``.
+        """
         if not "val" in node.meta:
             raise GraphParserError(
                 self,
@@ -795,8 +806,8 @@ class GraphParserBase:
 
     def parse_torch_2_13_0_stack_trace(self, stack_trace: str) -> DebugInfo:
         """
-        Parses a PyTorch (version 2.13.0+) stack trace to SDFG debug information. If the parsing
-        fails, an empty debug information is returned.
+        Parses a PyTorch (version 2.13.0 and newer) stack trace to SDFG debug information. If the
+        parsing fails, an empty debug information is returned.
         """
         if len(stack_trace.strip()) == 0:
             return DebugInfo()
@@ -996,7 +1007,8 @@ class GraphParserModule(GraphParserBase, ABC):
         Convert the index-th PyTorch Argument to a tensor information. Throws an exception if the
         index is out of bounds. The flag check_tensor_present checks if the tensor information has
         an SDFG tensor type set. The flag check_container_present checks that the tensor information
-        already has an SDFG container. Those are done by default.
+        already has an SDFG container. Those are done by default. See ``convert_arg_to_tensor_info``
+        for more information.
         """
         if index >= len(node.args):
             raise GraphParserError(
@@ -1031,8 +1043,11 @@ class GraphParserModule(GraphParserBase, ABC):
         check_container_present: bool = True,
     ) -> TensorInfo | TensorConstant:
         """
-        Convert the index-th PyTorch Argument to an SDFG value. Throws an exception if the index is
-        out of bounds. See ``convert_arg_to_sdfg_value`` for more information.
+        Convert the index-th PyTorch Argument to either a tensor information or a tensor constant.
+        Throws an exception if the index is out of bounds. If the align_constant_type flag is set to
+        a SDFG scalar, ``align_constant_type`` is called on the tensor constant (if applicable). See
+        ``get_arg_tensor_info`` for more information about the other flags. Also see
+        ``convert_arg_to_tensor_info_or_constant`` for more information.
         """
         if index >= len(node.args):
             raise GraphParserError(
@@ -1084,50 +1099,6 @@ class GraphParserModule(GraphParserBase, ABC):
             )
         return self.convert_arg_to_multi_expr(node, node.args[index])
 
-    def get_scalar_type(
-        self, node: torch.fx.Node, container_info: ContainerInfos, container: str
-    ) -> Scalar:
-        """
-        Returns the Scalar type of a container. If the container does not have a Scalar type, an
-        exception is thrown.
-        """
-        if not container in container_info:
-            raise GraphParserError(
-                self,
-                node,
-                f"Cannot get container info for container '{container}'",
-            )
-        sdfg_type: Type = container_info[container].sdfg_type()
-        if not isinstance(sdfg_type, Scalar):
-            raise GraphParserError(
-                self,
-                node,
-                f"No scalar type available for container '{container}'",
-            )
-        return sdfg_type
-
-    def get_tensor_type(
-        self, node: torch.fx.Node, container_info: ContainerInfos, container: str
-    ) -> Tensor:
-        """
-        Returns the Tensor type of a container. If the container does not have a Tensor type, an
-        exception is thrown.
-        """
-        if not container in container_info:
-            raise GraphParserError(
-                self,
-                node,
-                f"Cannot get container info for container '{container}'",
-            )
-        tensor_type: Tensor | None = container_info[container].sdfg_tensor_type()
-        if tensor_type is None:
-            raise GraphParserError(
-                self,
-                node,
-                f"No tensor type available for container '{container}",
-            )
-        return tensor_type
-
     def allocate_memory(
         self,
         node: torch.fx.Node,
@@ -1137,8 +1108,9 @@ class GraphParserModule(GraphParserBase, ABC):
         debug_info: DebugInfo | None = None,
     ) -> None:
         """
-        Adds a memory allocation (malloc) to the SDFG for the given container. The size is obtained
-        from the Tensor type. If the size is 0 (Scalar Tensor), this function is a NOP.
+        Adds a memory allocation (malloc) to the SDFG for the underlying container of the tensor
+        information. The size is obtained from the SDFG tensor type. If the size is 0 (Scalar
+        Tensor), this function is a NOP.
         """
         if debug_info is None:
             debug_info_: DebugInfo = self.get_debug_info(node)
@@ -1163,219 +1135,6 @@ class GraphParserModule(GraphParserBase, ABC):
         if size != "0":
             builder.add_malloc_block(tensor_info.container(), size, debug_info_)
 
-    def resolve_contaner_name_forward(
-        self,
-        node: torch.fx.Node,
-        container_info: ContainerInfos,
-        container: str,
-        sdfg_types: tuple[Type, Tensor | None],
-    ) -> ContainerInfo:
-        """
-        Uses the container information to forward resolve a container name. Therefore, the container
-        pre-information is evaluated by following the "reference" field until an already created
-        container is reached. All traversed (so called virtual) containers are marked as reference
-        to the found container. Returns the container information of the found container.
-        """
-        current: str = container
-        ref_containers: list[str] = []
-        out_argument: bool = False
-        while current in container_info:
-            info: ContainerInfoBase = container_info[current]
-            out_argument: bool = out_argument or info.out_argument()
-            if isinstance(info, ContainerPreInfo):
-                if info.is_ref():
-                    ref_containers.append(current)
-                    current: str = info.ref()
-                else:
-                    break
-            else:
-                current = info.name()
-                break
-        if current in container_info:
-            info: ContainerInfoBase = container_info[current]
-            if isinstance(info, ContainerPreInfo):
-                current_info: ContainerInfo = ContainerInfo.from_tuple(
-                    current, sdfg_types, out_argument=out_argument
-                )
-            elif isinstance(info, ContainerInfo):
-                current_info: ContainerInfo = info.update(out_argument=out_argument)
-            elif isinstance(info, ContainerRefInfo):
-                current_info: ContainerInfo = info.ref().update(
-                    out_argument=out_argument
-                )
-            else:
-                raise GraphParserError(
-                    self, node, "Cannot handle ContainerInfoBase: " + str(type(info))
-                )
-        else:
-            current_info: ContainerInfo = ContainerInfo.from_tuple(
-                current, sdfg_types, out_argument=out_argument
-            )
-        container_info[current] = current_info
-        for ref_container in ref_containers:
-            if ref_container in container_info:
-                info: ContainerInfoBase = container_info[ref_container]
-                if isinstance(info, ContainerPreInfo):
-                    container_info[ref_container] = ContainerRefInfo(current_info)
-                else:
-                    raise GraphParserError(
-                        self,
-                        node,
-                        "Expected ContainerPreInfo for ref container but got: "
-                        + str(type(info)),
-                    )
-            else:
-                container_info[ref_container] = ContainerRefInfo(current_info)
-        return current_info
-
-    def update_container_types(
-        self,
-        node: torch.fx.Node,
-        builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
-        container: str,
-    ) -> None:
-        """
-        Updates the container types of a container in the container info. In theory, this does
-        nothing to the generated SDFG but it only updates the container information. For example, if
-        a tensor is transposed, the underlying data stays the same and only the shape and stride
-        information must be updated to respect the transposition in the next operation. In practice,
-        however, this can lead to the edge case that a container is now an input and output argument
-        simultaneously. As this is not possible, a SDFG tensor copy node is generated in this case
-        to explicitly copy the data.
-        """
-        sdfg_types: tuple[Type, Tensor | None] = self.get_node_sdfg_types(node)
-        info: ContainerInfo = self.resolve_contaner_name_forward(
-            node, container_info, container, sdfg_types
-        )
-        if info.in_argument() and info.out_argument():
-            ref_info: ContainerInfoBase = container_info[container]
-            if not isinstance(ref_info, ContainerRefInfo):
-                raise GraphParserError(
-                    self,
-                    node,
-                    "Expected ContainerRefInfo but got: " + str(type(ref_info)),
-                )
-            if ref_info.ref() != info:
-                raise GraphParserError(
-                    self,
-                    node,
-                    f"Container '{container}' is not a reference to container '{info.name()}'",
-                )
-            container_tensor: Tensor | None = sdfg_types[1]
-            if container_tensor is None:
-                raise GraphParserError(
-                    self,
-                    node,
-                    "Cannot copy into non-tensor type for container: " + container,
-                )
-            sdfg_types: tuple[Type, Tensor | None] = (
-                sdfg_types[0],
-                Tensor(container_tensor.element_type, container_tensor.shape),
-            )
-            container_info[container] = ContainerInfo.from_tuple(
-                container, sdfg_types, out_argument=True
-            )
-            info.update(out_argument=False)
-            builder.add_container(container, sdfg_types[0], is_argument=True)
-            debug_info: DebugInfo = self.get_debug_info(node)
-            sdfg_tensor: Tensor | None = info.sdfg_tensor_type()
-            if sdfg_tensor is None:
-                raise GraphParserError(
-                    self,
-                    node,
-                    "Cannot copy non-tensor type for container: " + info.name(),
-                )
-            if sdfg_types[1] is None:
-                raise GraphParserError(
-                    self,
-                    node,
-                    "Cannot copy into non-tensor type for container: " + container,
-                )
-            if sdfg_tensor.total_elements() != sdfg_types[1].total_elements():
-                builder.add_broadcast_op(
-                    info.name(),
-                    sdfg_tensor,
-                    container,
-                    sdfg_types[1],
-                    sdfg_tensor.shape,
-                    sdfg_types[1].shape,
-                    debug_info,
-                )
-            else:
-                builder.add_copy_op(
-                    info.name(), sdfg_tensor, container, sdfg_types[1], debug_info
-                )
-        else:
-            info.update(sdfg_type=sdfg_types[0], sdfg_tensor_type=sdfg_types[1])
-
-    def resolve_container_name_backward(
-        self,
-        node: torch.fx.Node,
-        container_info: ContainerInfos,
-        container: str,
-        sdfg_types: tuple[Type, Tensor | None],
-    ) -> ContainerInfo:
-        """
-        Uses the container information to backward resolve a container name. Therefore, the
-        container pre-information is evaluated by following the "referenced by" field until an
-        already created container is reached. All traversed (so called virtual) containers are
-        marked as reference to the found container. Returns the container information of the found
-        container.
-        """
-        current: str = container
-        ref_containers: list[str] = []
-        out_argument: bool = False
-        while current in container_info:
-            info: ContainerInfoBase = container_info[current]
-            out_argument: bool = out_argument or info.out_argument()
-            if isinstance(info, ContainerPreInfo):
-                if info.is_refed_by():
-                    ref_containers.append(current)
-                    current: str = info.refed_by()
-                else:
-                    break
-            else:
-                current = info.name()
-                break
-        if current in container_info:
-            info: ContainerInfoBase = container_info[current]
-            if isinstance(info, ContainerPreInfo):
-                current_info: ContainerInfo = ContainerInfo.from_tuple(
-                    current, sdfg_types, out_argument=out_argument
-                )
-                container_info[current] = current_info
-            elif isinstance(info, ContainerInfo):
-                current_info: ContainerInfo = info.update(out_argument=out_argument)
-            elif isinstance(info, ContainerRefInfo):
-                current_info: ContainerInfo = info.ref().update(
-                    out_argument=out_argument
-                )
-            else:
-                raise GraphParserError(
-                    self, node, "Cannot handle ContainerInfoBase: " + str(type(info))
-                )
-        else:
-            current_info: ContainerInfo = ContainerInfo.from_tuple(
-                current, sdfg_types, out_argument=out_argument
-            )
-            container_info[current] = current_info
-        for ref_container in ref_containers:
-            if ref_container in container_info:
-                info: ContainerInfoBase = container_info[ref_container]
-                if isinstance(info, ContainerPreInfo):
-                    container_info[ref_container] = ContainerRefInfo(current_info)
-                else:
-                    raise GraphParserError(
-                        self,
-                        node,
-                        "Expected ContainerPreInfo for ref container but got: "
-                        + str(type(info)),
-                    )
-            else:
-                container_info[ref_container] = ContainerRefInfo(current_info)
-        return current_info
-
     def get_result_tensor_info(
         self,
         node: torch.fx.Node,
@@ -1383,9 +1142,10 @@ class GraphParserModule(GraphParserBase, ABC):
         metadata: TensorMetadata,
     ) -> TensorInfo:
         """
-        Creates a new container to use as the result of the current operation. For creating a
-        container for an intermediate result, see ``create_intermediate_tensor_info``. If the
-        operation has multiple results (tuple), use ``create_result_tensor_infos``.
+        Returns (and potentially creates) a tensor information to use as the result of the current
+        operation. For creating a tensor information for an intermediate result, see
+        ``create_intermediate_tensor_info``. If the operation has multiple results (tuple), use
+        ``create_result_tensor_infos``.
         """
         if metadata.has_tensor(node.name):
             tensor_info: TensorInfo = metadata.tensor(node.name)
@@ -1425,10 +1185,10 @@ class GraphParserModule(GraphParserBase, ABC):
         metadata: TensorMetadata,
     ) -> tuple[TensorInfo, ...]:
         """
-        Creates new containers to use as the results of the current operation. Because SDFGs do not
-        support tuples, a container for each element of the tuple is created. Access to them are
-        resolved with the help of virtual containers. For creating only a single result of the
-        current operation, see ``get_result_tensor_info``.
+        Returns (and potentially creates) tensor information to use as the results of the current
+        operation. Because SDFGs do not support tuples, a tensor information for each element of the
+        tuple is created. Access to them are resolved with the help of virtual tensor information.
+        For creating only a single result of the current operation, see ``get_result_tensor_info``.
         """
         sdfg_tensors: tuple[Tensor | None, ...] = self.get_node_sdfg_tensors(node)
         if len(sdfg_tensors) != num:
@@ -1482,6 +1242,12 @@ class GraphParserModule(GraphParserBase, ABC):
         info: TensorInfo,
         ref_info: TensorInfo,
     ) -> None:
+        """
+        Create a view from one tensor information to another tensor information. That means, that
+        the first tensor information will start using the container of the second tensor
+        information. This is not done in the special case that the second tensor information has an
+        underlying output argument container. In that case, a copy/broadcast is added.
+        """
         if not ref_info.has_container():
             raise GraphParserError(
                 self,
@@ -1537,6 +1303,10 @@ class GraphParserModule(GraphParserBase, ABC):
         metadata: TensorMetadata,
         ref_info: TensorInfo,
     ) -> None:
+        """
+        Create a view from the tensor information corresponding to the result of the node to the
+        provided tensor information. See ``create_view`` for more information.
+        """
         if metadata.has_tensor(node.name):
             info: TensorInfo = metadata.tensor(node.name)
         else:
@@ -1555,9 +1325,10 @@ class GraphParserModule(GraphParserBase, ABC):
         dependencies: list[TensorName] | list[TensorInfo | TensorConstant] = [],
     ) -> TensorInfo:
         """
-        Creates a container to use for intermediate results. Memory allocation and management is
-        automatically handled. DO NOT use this method for creating result information. See
-        ``get_result_tensor_info`` and ``get_result_containers`` for that.
+        Creates a tensor information with corresponding container information to use for
+        intermediate results. Memory allocation and management is automatically handled. DO NOT use
+        this method for creating result information. See ``get_result_tensor_info`` and
+        ``get_result_tensor_infos`` for that.
         """
         name: str = builder.find_new_name("intermediate")
         builder.add_container(name, sdfg_type)
