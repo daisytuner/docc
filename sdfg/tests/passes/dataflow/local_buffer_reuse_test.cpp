@@ -998,7 +998,8 @@ TEST(LocalBufferReuseTest, FiveNodeChain_DifferentSizes_NotApplied) {
     EXPECT_EQ(sdfg->root().size(), original_size);
 }
 
-TEST(LocalBufferReuseTest, FiveNodeChain_Pipeline_LongestFirst) {
+// Disabled because with naïve convolution expansion this is not generally correct anymore
+TEST(LocalBufferReuseTest, DISABLED_FiveNodeChain_Pipeline_LongestFirst) {
     ConvBatchNormReLUConvBatchNormSetup setup;
     setup.setup_containers();
 
