@@ -394,15 +394,16 @@ class SlicingParser(GraphParserModule):
         new_strides[dim] = str(stride * step)
         new_offset = str(offset + start * stride)
 
-        new_tensor: Tensor | None = self.get_node_sdfg_tensor(node)
-        if new_tensor is None:
+        new_tensor_or_none: Tensor | None = self.get_node_sdfg_tensor(node)
+        if new_tensor_or_none is None:
             raise GraphParserError(
                 self,
                 node,
                 "No tensor type available for result container",
             )
+        new_tensor: Tensor = new_tensor_or_none
         if self._force_copy:
-            new_tensor: Tensor | None = Tensor(
+            new_tensor: Tensor = Tensor(
                 new_tensor.element_type, new_shape, new_strides, new_offset
             )
         else:
