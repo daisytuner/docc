@@ -22,7 +22,9 @@ def test_single_output():
     model_ref.eval()
     model_ref.load_state_dict(model.state_dict())
 
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(
+        model, backend="docc", options={"target": "none", "category": "server"}
+    )
 
     example_input = torch.randn(2, 4)
 
@@ -37,6 +39,7 @@ def test_single_output():
 
 def test_multi_output_float32():
     """Test model returning two float32 tensors."""
+
     class TwoOutputNet(nn.Module):
         def __init__(self):
             super().__init__()
@@ -52,7 +55,9 @@ def test_multi_output_float32():
     model_ref.eval()
     model_ref.load_state_dict(model.state_dict())
 
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(
+        model, backend="docc", options={"target": "none", "category": "server"}
+    )
     example_input = torch.randn(2, 4)
 
     with torch.no_grad():
@@ -67,6 +72,7 @@ def test_multi_output_float32():
 
 def test_multi_output_float64():
     """Test model returning two float64 tensors."""
+
     class TwoOutputNet(nn.Module):
         def __init__(self):
             super().__init__()
@@ -82,7 +88,9 @@ def test_multi_output_float64():
     model_ref.eval()
     model_ref.load_state_dict(model.state_dict())
 
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(
+        model, backend="docc", options={"target": "none", "category": "server"}
+    )
     example_input = torch.randn(2, 4, dtype=torch.float64)
 
     with torch.no_grad():
@@ -99,6 +107,7 @@ def test_multi_output_float64():
 
 def test_multi_output_different_shapes():
     """Test model returning tensors with different shapes."""
+
     class DiffShapeNet(nn.Module):
         def __init__(self):
             super().__init__()
@@ -116,7 +125,9 @@ def test_multi_output_different_shapes():
     model_ref.eval()
     model_ref.load_state_dict(model.state_dict())
 
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(
+        model, backend="docc", options={"target": "none", "category": "server"}
+    )
     example_input = torch.randn(3, 8)
 
     with torch.no_grad():
@@ -131,6 +142,7 @@ def test_multi_output_different_shapes():
 
 def test_multi_output_three_outputs():
     """Test model returning three tensors."""
+
     class ThreeOutputNet(nn.Module):
         def __init__(self):
             super().__init__()
@@ -147,7 +159,9 @@ def test_multi_output_three_outputs():
     model_ref.eval()
     model_ref.load_state_dict(model.state_dict())
 
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(
+        model, backend="docc", options={"target": "none", "category": "server"}
+    )
     example_input = torch.randn(2, 4)
 
     with torch.no_grad():
@@ -164,6 +178,7 @@ def test_multi_output_three_outputs():
 
 def test_output_c_contiguous():
     """Verify all outputs are C-contiguous."""
+
     class TwoOutputNet(nn.Module):
         def __init__(self):
             super().__init__()
@@ -176,7 +191,9 @@ def test_output_c_contiguous():
     model = TwoOutputNet()
     model.eval()
 
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(
+        model, backend="docc", options={"target": "none", "category": "server"}
+    )
     example_input = torch.randn(2, 4)
 
     with torch.no_grad():
@@ -188,6 +205,7 @@ def test_output_c_contiguous():
 
 def test_output_stride_verification():
     """Verify output strides match expected C-order strides."""
+
     class Net(nn.Module):
         def __init__(self):
             super().__init__()
@@ -199,7 +217,9 @@ def test_output_stride_verification():
     model = Net()
     model.eval()
 
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(
+        model, backend="docc", options={"target": "none", "category": "server"}
+    )
     example_input = torch.randn(4, 8)
 
     with torch.no_grad():
@@ -215,6 +235,7 @@ def test_output_stride_verification():
 
 def test_multi_output_strides():
     """Verify multi-output strides are all C-order."""
+
     class MultiNet(nn.Module):
         def __init__(self):
             super().__init__()
@@ -227,7 +248,9 @@ def test_multi_output_strides():
     model = MultiNet()
     model.eval()
 
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(
+        model, backend="docc", options={"target": "none", "category": "server"}
+    )
     example_input = torch.randn(3, 8)
 
     with torch.no_grad():
@@ -243,7 +266,10 @@ def test_multi_output_strides():
         1,
     ), f"res2 strides should be (4, 1), got {res2.stride()}"
 
-@pytest.mark.skipif(os.environ.get("DOCC_INFERENCE") == "ON", reason="Failing due to AOTAutograd FunctionalTensor bug in torch-mlir")
+
+@pytest.mark.skip(
+    "torch versions newer than 2.10.0 fail this and if we restore such a test, we want it in the pytorch frontend"
+)
 def test_training():
     """Verify gradient descent learns a known linear function."""
 
@@ -261,7 +287,9 @@ def test_training():
     torch.manual_seed(42)
     model = LinearNet()
 
-    program = torch.compile(model, backend="docc", options={"target": "none", "category": "server"})
+    program = torch.compile(
+        model, backend="docc", options={"target": "none", "category": "server"}
+    )
     optimizer = torch.optim.SGD(program.parameters(), lr=0.5)
     criterion = nn.MSELoss()
 

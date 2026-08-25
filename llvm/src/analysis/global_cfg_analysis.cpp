@@ -51,7 +51,7 @@ const std::vector<GlobalCFGNode *> *GlobalCFGAnalysis::getExitPoints(llvm::Globa
 }
 
 const std::vector<GlobalCFGNode *> *GlobalCFGAnalysis::getExitPoints(llvm::StringRef Name) const {
-    return getExitPoints(llvm::GlobalValue::getGUID(Name));
+    return getExitPoints(llvm::GlobalValue::getGUIDAssumingExternalLinkage(Name));
 }
 
 class GlobalCFGBuilder {
@@ -73,7 +73,7 @@ public:
         ReturnEdgeOrigins_[func].emplace_back(&node);
         node.specialType_ = CfgSpecialType::Return;
         if (global) {
-            CFG_.ExitPoints_[llvm::GlobalValue::getGUID(func)].push_back(&node);
+            CFG_.ExitPoints_[llvm::GlobalValue::getGUIDAssumingExternalLinkage(func)].push_back(&node);
         }
     }
 
@@ -186,7 +186,7 @@ private:
 
         auto &transfer_node = builder_.addNode(modId_);
         transfer_node.Name_ = label;
-        transfer_node.Id_ = llvm::GlobalValue::getGUID(func_id);
+        transfer_node.Id_ = llvm::GlobalValue::getGUIDAssumingExternalLinkage(func_id);
         transfer_node.specialType_ = h2d ? CfgSpecialType::H2D : CfgSpecialType::D2H;
         builder_.addEdge(prev_node, transfer_node, EdgeType::Sequence, prev_node.evtSteps_);
 
@@ -209,7 +209,7 @@ private:
             //            builder_.registerCallReturnSite(call_target_name, *known_call, state.node, step);
         } else {
             auto &callee_node = builder_.addNodeExternal(modId_, call_target_name);
-            callee_node.Id_ = llvm::GlobalValue::getGUID(call_target_name);
+            callee_node.Id_ = llvm::GlobalValue::getGUIDAssumingExternalLinkage(call_target_name);
             builder_.addEdge(state.node, callee_node, EdgeType::CallExternal, step, true);
         }
     }
@@ -567,7 +567,7 @@ void GlobalCFGAnalysis::addEntryPoint(llvm::GlobalValue::GUID Id, GlobalCFGNode 
 }
 
 GlobalCFGNode *GlobalCFGAnalysis::findNodeExternallyVisible(llvm::StringRef Name) const {
-    auto It = EntryPoints_.find(llvm::GlobalValue::getGUID(Name));
+    auto It = EntryPoints_.find(llvm::GlobalValue::getGUIDAssumingExternalLinkage(Name));
     if (It == EntryPoints_.end()) return nullptr;
     return It->second;
 }
@@ -616,7 +616,7 @@ void GlobalCFGAnalysis::run(AnalysisManager &am) {
         auto path = Entry.first();
 
         for (auto &[name, holder] : registry.at(path)) {
-            auto guid = llvm::GlobalValue::getGUID(name);
+            auto guid = llvm::GlobalValue::getGUIDAssumingExternalLinkage(name);
             auto it = EntryPoints_.find(guid);
             if (it != EntryPoints_.end()) {
                 it->second->sdfg_ = holder.get();

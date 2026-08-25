@@ -284,7 +284,7 @@ inline DoccPaths find_docc_paths() {
     std::string ld_filename = "docc-ld";
     std::filesystem::path maybe_ld_path;
     if (driver_path.has_root_path()) {
-        maybe_ld_path = driver_path.parent_path().parent_path() / ld_filename;
+        maybe_ld_path = driver_path.parent_path() / ld_filename;
     }
     if (maybe_ld_path.empty() || !std::filesystem::exists(maybe_ld_path)) {
         maybe_ld_path = find_file(split_env(getEnv("PATH"), ':'), "docc-ld");

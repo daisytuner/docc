@@ -124,7 +124,15 @@ jobs:
             upload-dist-version: 24.04
             runner: build-amd64-big
             architecture: x64
-            image: daisytuner/docc-build-env-llvm19-ubuntu-24.04:latest-amd64
+            image: daisytuner/docc-build-env-llvm21-ubuntu-24.04:latest-amd64
+          - platform: ubuntu-26.04
+            package-format: deb
+            cpack-generator: DEB
+            upload-dist-id: ubuntu
+            upload-dist-version: 26.04
+            runner: build-amd64-big
+            architecture: x64
+            image: daisytuner/docc-build-env-llvm21-ubuntu-26.04:latest-amd64
           - platform: ubuntu-24.04
             package-format: deb
             cpack-generator: DEB
@@ -132,7 +140,7 @@ jobs:
             upload-dist-version: 24.04
             runner: build-arm64-big
             architecture: arm64
-            image: daisytuner/docc-build-env-llvm19-ubuntu-24.04:latest-arm64
+            image: daisytuner/docc-build-env-llvm21-ubuntu-24.04:latest-arm64
           - platform: rhel-10
             package-format: rpm
             cpack-generator: RPM
@@ -141,7 +149,7 @@ jobs:
             upload-dist-platform-id: platform:el10
             runner: build-amd64-big
             architecture: x64
-            image: daisytuner/docc-build-env-llvm19-rhel-10:latest-amd64
+            image: daisytuner/docc-build-env-llvm21-rhel-10:latest-amd64
           - platform: debian-13
             package-format: deb
             cpack-generator: DEB
@@ -149,7 +157,7 @@ jobs:
             upload-dist-version: 13
             runner: build-amd64-big
             architecture: x64
-            image: daisytuner/docc-build-env-llvm19-debian-13:latest-amd64
+            image: daisytuner/docc-build-env-llvm21-debian-13:latest-amd64
 
     runs-on: ${{ matrix.runner }}
     container:
@@ -170,14 +178,13 @@ jobs:
           mkdir -p build
           cd build
           cmake -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_BUILD_TYPE=Release \
             -DINSTALL_GTEST=OFF \
             -DBUILD_TESTS:BOOL=OFF \
             -DLLVM_BUILD_FRONTEND=ON \
             -DLLVM_BUILD_TESTS=OFF \
-            -DSDFGLIB_AUTO_INSTALL_MODE=ON \
             -DBUILD_BENCHMARKS:BOOL=OFF \
             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
             -DRELEASE_PACKAGE=ON \

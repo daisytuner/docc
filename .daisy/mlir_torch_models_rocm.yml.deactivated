@@ -6,8 +6,9 @@ on: # Deactivated because torch mlir breaks here
     types: [opened, reopened, synchronize]
 
 parameters:
-  container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+  container: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
   timeout: 120
+  docc_version: ~
   partitions:
     - zinnia
 
@@ -23,16 +24,7 @@ steps:
     pip install --no-build-isolation -e python/
     pip install --no-build-isolation -e mlir/
 
-    # Build cupy-rocm from source for ROCm 6x
-    # To be removed when docker image is updated to ROCm 7x
-    export CUPY_INSTALL_USE_HIP=1
-    export ROCM_HOME=/opt/rocm
-    export HCC_AMDGPU_TARGET=$(rocminfo | grep -m1 -o 'gfx[0-9a-f]*')
-    pip install cupy --no-cache-dir
-
     pip install -r mlir/requirements.txt
-    pip uninstall -y torch torchvision
-    pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/rocm6.4
 
     # Warm start
     venv/bin/python3 mlir/benchmarks/torch/model_zoo/resnet18.py --n_runs=1 --device cpu

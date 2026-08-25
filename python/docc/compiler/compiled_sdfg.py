@@ -41,6 +41,59 @@ def warn_host_to_device_copies(backend):
     )
 
 
+# Backends that live in device (GPU) memory and their matching cupy build.
+
+# Cached (module, is_hip) once cupy has been imported and validated.
+_cupy_module = None
+
+
+def import_cupy_for_target(target):
+    """Import cupy and verify its build matches the SDFG ``target``.
+
+    A single cupy installation is built for exactly one platform: either CUDA
+    (``cupy-cuda*``) or ROCm/HIP (``cupy-rocm*``). ``cupy.cuda.runtime.is_hip``
+    reports which one. This raises when the installed cupy build does not match
+    the backend the SDFG was compiled for, so a cuda artifact is never fed
+    ROCm device pointers (or vice versa).
+
+    Args:
+        target: The SDFG compilation target ("cuda" or "rocm").
+
+    Returns:
+        The imported cupy module.
+
+    Raises:
+        RuntimeError: If cupy is missing or its build does not match ``target``.
+    """
+    global _cupy_module
+    if _cupy_module is not None:
+        cupy, is_hip = _cupy_module
+    else:
+        try:
+            import cupy
+        except ImportError as exc:
+            raise RuntimeError(
+                f"Device-resident execution for target '{target}' requires cupy, "
+                f"but it could not be imported: {exc}"
+            ) from exc
+        is_hip = bool(getattr(cupy.cuda.runtime, "is_hip", False))
+        _cupy_module = (cupy, is_hip)
+
+    if target in "rocm" and not is_hip:
+        raise RuntimeError(
+            f"SDFG target is '{target}' (ROCm/HIP) but the installed cupy is a "
+            f"CUDA build. Install the ROCm cupy build (e.g. cupy-rocm-*) to run "
+            f"device-resident ROCm artifacts."
+        )
+    if target in "cuda" and is_hip:
+        raise RuntimeError(
+            f"SDFG target is '{target}' (CUDA) but the installed cupy is a "
+            f"ROCm/HIP build. Install the CUDA cupy build (e.g. cupy-cuda*) to "
+            f"run device-resident CUDA artifacts."
+        )
+    return cupy
+
+
 def idiv(a, b):
     """Integer division (floor division for positive numbers)."""
     return int(a) // int(b)
@@ -636,7 +689,7 @@ class CompiledSDFG:
         if _is_device_array(arg):
             return arg
 
-        import cupy
+        cupy = import_cupy_for_target(self.target)
 
         host = arg
         # Convert a CPU torch tensor to numpy first; cupy.asarray handles numpy.
@@ -660,7 +713,7 @@ class CompiledSDFG:
         Outputs are returned as cupy arrays (zero-copy interoperable with torch
         via DLPack / __cuda_array_interface__).
         """
-        import cupy
+        cupy = import_cupy_for_target(self.target)
 
         _eval = eval
         _GLOBALS = _EVAL_GLOBALS

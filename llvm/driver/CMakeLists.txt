@@ -6,12 +6,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # LLVM dependency
-find_package(LLVM REQUIRED CONFIG 19.1)
-if (LLVM_VERSION VERSION_GREATER_EQUAL "20.0.0")
-	message(FATAL_ERROR "LLVM version too new: ${LLVM_VERSION}")
+find_package(LLVM 21.1 REQUIRED CONFIG)
+if (LLVM_VERSION VERSION_GREATER_EQUAL "22.0.0")
+    message(FATAL_ERROR "LLVM version too new: ${LLVM_VERSION}")
 endif()
-if (LLVM_VERSION VERSION_LESS "19.0.0")
-	message(FATAL_ERROR "LLVM version too old: ${LLVM_VERSION}")
+if (LLVM_VERSION VERSION_LESS "21.0.0")
+    message(FATAL_ERROR "LLVM version too old: ${LLVM_VERSION}")
 endif()
 
 # LLVM cmake configurations
@@ -34,7 +34,7 @@ add_executable(docc
 )
 target_compile_definitions(docc PRIVATE ${driver_definitions})
 target_package_deps(docc
-    TOOLS clang-19
+    TOOLS clang-21
 )
 
 install(TARGETS docc DESTINATION bin COMPONENT docc-driver)
@@ -45,7 +45,7 @@ add_executable(docc-cpp
 )
 target_compile_definitions(docc-cpp PRIVATE ${driver_definitions})
 target_package_deps(docc-cpp
-    TOOLS clang-19
+    TOOLS clang-21
 )
 
 install(TARGETS docc-cpp DESTINATION bin COMPONENT docc-driver)
@@ -57,7 +57,7 @@ add_executable(docc-ld
 target_compile_definitions(docc-ld PRIVATE ${driver_definitions})
 target_link_libraries(docc-ld PRIVATE ${LLVM_LIBS})
 target_package_deps(docc-ld
-    TOOLS lld-19
+    TOOLS lld-21
 )
 
 install(TARGETS docc-ld DESTINATION bin COMPONENT docc-driver)

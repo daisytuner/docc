@@ -14,7 +14,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
     strategy:
       fail-fast: false
       matrix:
@@ -34,8 +34,8 @@ jobs:
           mkdir build
           cd build
           cmake -G Ninja \
-            -DCMAKE_C_COMPILER=clang-19 \
-            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DSDFG_ENABLE_SANITIZER=ON \
             -DSDFG_SANITIZER=${{ matrix.san }} \
@@ -78,7 +78,7 @@ jobs:
         # The docc C/C++ compiler currently only works with leak sanitizer
         if: matrix.san == 'leak'
         run: |
-          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-19)
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-21)
 
           cd llvm/integration
           pytest -v llvm_test_suite.py

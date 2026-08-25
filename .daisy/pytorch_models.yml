@@ -6,8 +6,9 @@ on:
     types: [opened, reopened, synchronize]
 
 parameters:
-  container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+  container: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
   timeout: 120
+  docc_version: ~
   partitions:
     - chamomile
 
@@ -24,6 +25,7 @@ steps:
 
     # Warm start
     export DOCC_DEBUG=dump
+    export DOCC_CUDA_ARCH=sm_86
 
     # Compile and cache binaries
     venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
@@ -50,6 +52,7 @@ steps:
       measurements: 3
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         torch:
           command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
@@ -78,6 +81,7 @@ steps:
       env:
         DOCC_REUSE_BINARIES: 1
         NVIDIA_TF32_OVERRIDE: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         # torch:
         #   command: venv/bin/python3 pytorch/benchmarks/models/segformer.py --device cpu --n_runs=1 --variant segformer --batch-size 16

@@ -6,7 +6,8 @@ on:
     types: [opened, reopened, synchronize]
 
 parameters:
-  container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+  container: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+  docc_version: ~
   timeout: 120
   partitions:
     - zinnia
@@ -19,12 +20,13 @@ steps:
     . venv/bin/activate
 
     python -m pip install --upgrade pip
-    pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
+    pip install pybind11 pytest coverage build scikit-build-core
     pip install numpy scipy cupy-cuda12x
 
     pip install --no-build-isolation -v -e python/
 
     export DOCC_DEBUG=dump
+    export DOCC_CUDA_ARCH=sm_86
 
     # Compile and cache binaries
     venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --docc --size=M --n_runs=1 --target=sequential --remote-tuning
@@ -131,6 +133,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_adi.py --numpy --size=M --n_runs=1
@@ -162,6 +165,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_atax.py --numpy --size=M --n_runs=1
@@ -193,6 +197,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemm.py --numpy --size=M --n_runs=1
@@ -224,6 +229,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gesummv.py --numpy --size=M --n_runs=1
@@ -255,6 +261,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_gemver.py --numpy --size=M --n_runs=1
@@ -286,6 +293,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k2mm.py --numpy --size=M --n_runs=1
@@ -317,6 +325,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_k3mm.py --numpy --size=M --n_runs=1
@@ -348,6 +357,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_mvt.py --numpy --size=M --n_runs=1
@@ -379,6 +389,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_symm.py --numpy --size=M --n_runs=1
@@ -410,6 +421,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syr2k.py --numpy --size=M --n_runs=1
@@ -441,6 +453,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_syrk.py --numpy --size=M --n_runs=1
@@ -472,6 +485,7 @@ steps:
       control: true
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         numpy:
           command: venv/bin/python3 python/benchmarks/npbench/polybench/test_trmm.py --numpy --size=M --n_runs=1

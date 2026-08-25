@@ -36,6 +36,7 @@
 #include "docc/analysis/attributes.h"
 #include "docc/cmd_args.h"
 #include "docc/target/tenstorrent/tenstorrent_offloading_node.h"
+#include "docc/util/cuda_query_compute_capability.h"
 #include "docc/util/docc_paths.h"
 #include "docc/utils.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -129,6 +130,37 @@ void add_schedule_type_specific_linker_args(const ScheduleType& schedule_type, s
     }
 }
 
+static std::optional<util::CudaComputeCapability> cuda_select_compute_cap() {
+    auto caps = util::query_cuda_compute_capabilities();
+
+    if (!caps.empty()) {
+        auto& first = caps.front();
+        std::cerr << "[DOCC] Compiling CUDA for sm_" << first.compute_cap << " of "
+                  << ((first.device_names.empty()) ? "unidentified GPU" : first.device_names.front()) << std::endl;
+        return first;
+    } else {
+        std::cerr << "[DOCC] No CUDA ARCH identified, trying to compile for all supported architectures" << std::endl;
+        return {};
+    }
+}
+
+static void add_cuda_arch_args(std::vector<std::string>& args) {
+    static const char* arch_env = std::getenv("DOCC_CUDA_ARCH");
+
+    if (arch_env) {
+        args.emplace_back("--cuda-gpu-arch=" + std::string(arch_env));
+    } else {
+        static auto selected = cuda_select_compute_cap();
+        if (selected) {
+            util::clang_21_set_cuda_specific_compute_cap(args, selected->compute_cap);
+        } else {
+            // don't know the arch, so try to build for all with the driver handling the rest (may not work for all
+            // cases)
+            util::clang_21_set_cuda_forward_compatible_options(args);
+        }
+    }
+}
+
 void add_schedule_type_specific_compile_args(
     const ScheduleType& schedule_type,
     llvm::dwarf::SourceLanguage& language,
@@ -144,7 +176,6 @@ void add_schedule_type_specific_compile_args(
         language = llvm::dwarf::DW_LANG_C_plus_plus;
     } else if (schedule_type.value() == sdfg::cuda::ScheduleType_CUDA::value()) {
         compile_args.emplace_back("-x cuda");
-        compile_args.emplace_back("--cuda-gpu-arch=sm_70");
         compile_args.emplace_back("--cuda-host-only");
         language = llvm::dwarf::DW_LANG_C_plus_plus;
     } else if (sdfg::tenstorrent::is_tenstorrent_schedule(schedule_type)) {
@@ -203,6 +234,8 @@ bool CodeGenerationPass::compile_additional_files(
         for (const auto& inc : docc_paths.get_default_include_paths()) {
             comp_args.push_back("-I" + inc.string());
         }
+        comp_args.emplace_back("-x cuda");
+        add_cuda_arch_args(comp_args);
         auto& cu_files = it->second;
         for (auto& cu_file : cu_files) {
             auto fn = cu_file.filename().string();
@@ -582,7 +615,7 @@ llvm::PreservedAnalyses CodeGenerationPass::
         std::stringstream opt_report_stream;
         opt_report_stream << "\nDOCC Optimization Report Start:\n";
         opt_report_stream << "  source_language: " << (language == llvm::dwarf::DW_LANG_C ? "C" : "C++") << "\n";
-        opt_report_stream << "  target_triple: " << triple << "\n";
+        opt_report_stream << "  target_triple: " << triple.str() << "\n";
         opt_report_stream << "  data_layout: " << datalayout << "\n";
         opt_report_stream << "  sdfgs: " << sdfgs.size() << "\n";
         for (auto& [key, value] : cumulated_report) {
@@ -618,7 +651,11 @@ llvm::PreservedAnalyses CodeGenerationPass::
     }
     subcomp_args.insert(subcomp_args.end(), this->sub_compile_opts_.begin(), this->sub_compile_opts_.end());
 
-    std::set<std::string> link_2nd_args = {"-L/usr/lib/llvm-19/lib/", "-lomp"};
+    std::set<std::string> link_2nd_args = {"-L/usr/lib/llvm-21/lib/"};
+    if (DOCC_TUNE == "openmp") {
+        link_2nd_args.emplace("-lomp");
+    }
+
     bool success = true;
     docc::analysis::SDFGRegistry::for_each_sdfg_modifiable(sdfgs, [&](analysis::SDFGHolder&, sdfg::StructuredSDFG& sdfg) {
         auto& attributes = registry.attributes(sdfg.name());
@@ -685,7 +722,7 @@ bool CodeGenerationPass::compile_to_object_file(
     const std::filesystem::path& object_file,
     const std::vector<std::string>& compile_args
 ) {
-    std::vector<std::string> cmd{"clang++-19"};
+    std::vector<std::string> cmd{"clang++-21"};
     for (auto& arg : compile_args) {
         cmd.push_back(arg);
     }
@@ -714,10 +751,10 @@ std::unique_ptr<llvm::Module> CodeGenerationPass::compile_to_ir_in_memory(
     const std::filesystem::path& source_path,
     const std::vector<std::string>& compile_args,
     const std::vector<std::string>& add_compile_args,
-    llvm::StringRef target_triple
+    const llvm::Triple& target_triple
 ) {
     std::ostringstream cmd;
-    cmd << "clang-19 ";
+    cmd << "clang-21 ";
     for (auto& arg : add_compile_args) {
         cmd << arg << " ";
     }

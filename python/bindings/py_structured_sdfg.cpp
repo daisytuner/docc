@@ -521,7 +521,7 @@ std::string docc_backend_compiler() {
 #if defined(__APPLE__)
 #define DOCC_CXX_COMPILER "clang++"
 #elif defined(__linux__)
-#define DOCC_CXX_COMPILER "clang-19"
+#define DOCC_CXX_COMPILER "clang++-21"
 #else
 #error "Unsupported platform"
 #endif

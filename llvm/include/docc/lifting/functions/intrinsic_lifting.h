@@ -570,8 +570,6 @@ public:
                 return false;
             case llvm::Intrinsic::experimental_stackmap:
                 return false;
-            case llvm::Intrinsic::experimental_stepvector:
-                return false;
             case llvm::Intrinsic::experimental_vector_compress:
                 return false;
             case llvm::Intrinsic::experimental_vector_histogram_add:
@@ -927,6 +925,8 @@ public:
             case llvm::Intrinsic::stacksave:
                 return false;
             case llvm::Intrinsic::start_loop_iterations:
+                return false;
+            case llvm::Intrinsic::stepvector:
                 return false;
             case llvm::Intrinsic::strip_invariant_group:
                 return false;
