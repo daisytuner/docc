@@ -125,6 +125,13 @@ struct DaisyRegion {
     std::unordered_map<std::string, double> static_counters_variance;
     std::unordered_map<std::string, double> static_counters_min;
     std::unordered_map<std::string, double> static_counters_max;
+
+    // CUDA-event timing: kernels are timed with cudaEvents recorded on the stream
+    // (no per-launch host sync), so back-to-back launches stay async and the GPU
+    // boosts. `last_cuda_start` holds the enter event; each exit pushes a
+    // (start, stop) pair, resolved (synchronize + elapsed) lazily at stats time.
+    void* last_cuda_start = nullptr;
+    std::vector<std::pair<void*, void*>> cuda_pending;
 };
 
 struct JsSafeDouble {
@@ -165,6 +172,81 @@ private:
     std::vector<std::string> event_names_cuda;
 
     std::mutex mutex;
+
+    // CUDA event API loaded lazily via dlopen (no hard cudart link dependency).
+    // When available, CUDA regions are timed with events instead of a host clock
+    // + per-launch cudaDeviceSynchronize, so launches stay async and clocks boost.
+    bool cuda_events_tried_ = false;
+    bool cuda_events_available_ = false;
+    void* cudart_handle_ = nullptr;
+    int (*cuEventCreate_)(void**) = nullptr;
+    int (*cuEventRecord_)(void*, void*) = nullptr;
+    int (*cuEventSynchronize_)(void*) = nullptr;
+    int (*cuEventElapsedTime_)(float*, void*, void*) = nullptr;
+    int (*cuEventDestroy_)(void*) = nullptr;
+    std::vector<void*> cuda_event_pool_;
+
+    bool ensure_cuda_events() {
+        if (cuda_events_tried_) return cuda_events_available_;
+        cuda_events_tried_ = true;
+        cudart_handle_ = dlopen("libcudart.so", RTLD_NOW | RTLD_GLOBAL);
+        if (!cudart_handle_) cudart_handle_ = dlopen("libcudart.so.12", RTLD_NOW | RTLD_GLOBAL);
+        if (!cudart_handle_) return false;
+        cuEventCreate_ = reinterpret_cast<int (*)(void**)>(dlsym(cudart_handle_, "cudaEventCreate"));
+        cuEventRecord_ = reinterpret_cast<int (*)(void*, void*)>(dlsym(cudart_handle_, "cudaEventRecord"));
+        cuEventSynchronize_ = reinterpret_cast<int (*)(void*)>(dlsym(cudart_handle_, "cudaEventSynchronize"));
+        cuEventElapsedTime_ =
+            reinterpret_cast<int (*)(float*, void*, void*)>(dlsym(cudart_handle_, "cudaEventElapsedTime"));
+        cuEventDestroy_ = reinterpret_cast<int (*)(void*)>(dlsym(cudart_handle_, "cudaEventDestroy"));
+        cuda_events_available_ = cuEventCreate_ && cuEventRecord_ && cuEventSynchronize_ && cuEventElapsedTime_ &&
+                                 cuEventDestroy_;
+        return cuda_events_available_;
+    }
+
+    void* acquire_cuda_event() {
+        if (!cuda_event_pool_.empty()) {
+            void* e = cuda_event_pool_.back();
+            cuda_event_pool_.pop_back();
+            return e;
+        }
+        void* e = nullptr;
+        if (cuEventCreate_(&e) != 0) return nullptr;
+        return e;
+    }
+
+    // Accumulate one duration into a region's aggregate runtime stats (Welford).
+    static void accumulate_runtime(DaisyRegion& region, long long duration_ns) {
+        if (region.runtime_n == 0) {
+            region.runtime_n = 1;
+            region.runtime_mean = static_cast<double>(duration_ns);
+            region.runtime_variance = 0.0;
+            region.runtime_min = duration_ns;
+            region.runtime_max = duration_ns;
+        } else {
+            region.runtime_n += 1;
+            double delta1 = duration_ns - region.runtime_mean;
+            region.runtime_mean += delta1 / region.runtime_n;
+            double delta2 = duration_ns - region.runtime_mean;
+            region.runtime_variance += (delta1 * delta2 - region.runtime_variance) / region.runtime_n;
+            if (duration_ns < region.runtime_min) region.runtime_min = duration_ns;
+            if (duration_ns > region.runtime_max) region.runtime_max = duration_ns;
+        }
+    }
+
+    // Synchronize + read every pending CUDA-event pair for `region` and fold the
+    // elapsed times into its aggregate runtime stats. Events are returned to the
+    // pool for reuse. Called from the stats accessors (once per batch).
+    void resolve_cuda_pending(DaisyRegion& region) {
+        for (auto& [start, stop] : region.cuda_pending) {
+            cuEventSynchronize_(stop);
+            float ms = 0.0f;
+            cuEventElapsedTime_(&ms, start, stop);
+            accumulate_runtime(region, static_cast<long long>(static_cast<double>(ms) * 1.0e6));
+            cuda_event_pool_.push_back(start);
+            cuda_event_pool_.push_back(stop);
+        }
+        region.cuda_pending.clear();
+    }
 
     double ns_to_us(double ns) { return ns / 1000; }
 
@@ -765,6 +847,15 @@ public:
         } else {
             region.starts.push_back(start_ns);
         }
+
+        // CUDA regions: record a start event on the stream (async, no host sync)
+        // so back-to-back launches stay hot; the paired exit records the stop.
+        if (region.event_set == __DAISY_EVENT_SET_CUDA && ensure_cuda_events()) {
+            region.last_cuda_start = acquire_cuda_event();
+            if (region.last_cuda_start) {
+                cuEventRecord_(region.last_cuda_start, nullptr);
+            }
+        }
     }
 
     void exit_region(size_t region_id) {
@@ -782,6 +873,21 @@ public:
         }
 
         DaisyRegion& region = it->second;
+
+        // CUDA-event timing: record the stop event on the stream and defer the
+        // elapsed-time read to stats time. The host clock would only see the async
+        // launch, so skip it (and the PAPI-counter path, unused for pure timing).
+        if (region.event_set == __DAISY_EVENT_SET_CUDA && cuda_events_available_ && region.last_cuda_start) {
+            void* stop = acquire_cuda_event();
+            if (stop) {
+                cuEventRecord_(stop, nullptr);
+                region.cuda_pending.emplace_back(region.last_cuda_start, stop);
+            } else {
+                cuda_event_pool_.push_back(region.last_cuda_start);
+            }
+            region.last_cuda_start = nullptr;
+            return;
+        }
 
         // Save duration (before counters)
         long long end_ns = _PAPI_get_real_nsec();
@@ -1014,6 +1120,7 @@ public:
             return false;
         }
         DaisyRegion& region = it->second;
+        resolve_cuda_pending(region);
         if (region.runtime_n <= 0) {
             return false;
         }
@@ -1033,6 +1140,7 @@ public:
         bool any = false;
         for (auto& kv : regions) {
             DaisyRegion& region = kv.second;
+            resolve_cuda_pending(region);
             if (region.runtime_n <= 0) {
                 continue;
             }
@@ -1061,6 +1169,16 @@ public:
             region.first_start = 0;
             region.starts.clear();
             region.durations.clear();
+
+            // Discard any pending CUDA events (e.g. the warmup launch) so their
+            // timing is dropped consistently with the runtime stats above; the
+            // events are recycled into the pool.
+            for (auto& [start, stop] : region.cuda_pending) {
+                cuda_event_pool_.push_back(start);
+                cuda_event_pool_.push_back(stop);
+            }
+            region.cuda_pending.clear();
+            region.last_cuda_start = nullptr;
 
             // Hardware-counter aggregates, cleared so all metrics drop the
             // warmup sample consistently with the runtime stats above.
