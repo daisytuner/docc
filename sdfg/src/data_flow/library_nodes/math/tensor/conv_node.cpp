@@ -232,13 +232,6 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
         return context.unable();
     }
 
-    // Determine BLAS precision
-    types::Scalar base_type(this->primitive_type(dfg));
-    math::blas::BLAS_Precision precision = this->get_blas_precision(base_type);
-    if (precision == math::blas::BLAS_Precision::invalid) {
-        return context.unable();
-    }
-
     using Use = passes::LibNodeExpander::InputUse;
     std::vector<Use> req_inputs = {Use::IndirectReadWrite, Use::IndirectRead, Use::IndirectRead};
     if (this->with_bias_) {
@@ -251,6 +244,7 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
     }
 
     // Create new sequence for expansion
+    types::Scalar base_type(this->primitive_type(dfg));
     auto& new_sequence = standalone->replace_with_sequence();
     auto& builder = standalone->builder();
 

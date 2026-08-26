@@ -1,4 +1,4 @@
-#include "sdfg/targets/cuda/math/tensor/conv_expander.h"
+#include "sdfg/targets/gpu/math/tensor/conv_expander.h"
 
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
@@ -15,13 +15,13 @@
 namespace sdfg {
 namespace offloading {
 
-passes::LibNodeExpander::ExpandOutcome CudaConvExpander::handle_expand(
+passes::LibNodeExpander::ExpandOutcome GPUConvExpander::handle_expand(
     passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, math::tensor::ConvNode& node
 ) const {
     return handle_expand_im2row(context, block, node);
 }
 
-passes::LibNodeExpander::ExpandOutcome CudaConvExpander::handle_expand_im2row(
+passes::LibNodeExpander::ExpandOutcome GPUConvExpander::handle_expand_im2row(
     passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, math::tensor::ConvNode& node
 ) {
     auto& dfg = node.get_parent();

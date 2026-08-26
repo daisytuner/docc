@@ -8,7 +8,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/math/tensor/batched_matmul_expander.h"
 #include "sdfg/targets/cuda/math/tensor/concat_expander.h"
-#include "sdfg/targets/cuda/math/tensor/conv_expander.h"
+#include "sdfg/targets/gpu/math/tensor/conv_expander.h"
 
 namespace sdfg {
 namespace passes {
@@ -29,8 +29,8 @@ bool CudaExpansion::accept(structured_control_flow::Block& node) {
         auto& lib_node_code = library_node->code();
 
         if (lib_node_code == math::tensor::LibraryNodeType_Conv) {
-            offloading::CudaConvExpander cuda_conv_expander;
-            auto outcome = expansion::expand_single_node(builder_, node, *library_node, cuda_conv_expander);
+            offloading::GPUConvExpander conv_expander;
+            auto outcome = expansion::expand_single_node(builder_, node, *library_node, conv_expander);
             made_changes |= outcome.expanded;
         } else if (lib_node_code == math::tensor::LibraryNodeType_MatMul) {
             auto& matmul_node = static_cast<math::tensor::MatMulNode&>(*library_node);

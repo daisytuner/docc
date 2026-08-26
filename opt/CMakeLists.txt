@@ -75,7 +75,6 @@ set(SOURCE_FILES
     src/targets/cuda/cuda.cpp
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
     src/targets/cuda/math/tensor/concat_expander.cpp
-    src/targets/cuda/math/tensor/conv_expander.cpp
     src/targets/cuda/math/tensor/softmax.cpp
     src/targets/cuda/plugin.cpp
     src/targets/cuda/stdlib/memcpy.cpp
@@ -84,39 +83,26 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_offload_map_dispatcher.cpp
     src/targets/gpu/gpu_offload_reduce_dispatcher.cpp
     src/targets/gpu/gpu_reduce_dispatcher.cpp
+    src/targets/gpu/math/tensor/conv_expander.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
     src/targets/omp/math/tensor/conv_expander.cpp
     src/targets/rocm/blas/batched_gemm.cpp
-    src/targets/rocm/blas/batched_gemm.cpp
-    src/targets/rocm/blas/dot.cpp
     src/targets/rocm/blas/dot.cpp
     src/targets/rocm/blas/gemm_handtuned.cpp
-    src/targets/rocm/blas/gemm_handtuned.cpp
-    src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
-    src/targets/rocm/blas/utils.cpp
-    src/targets/rocm/math/tensor/batched_matmul_expander.cpp
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp
     src/targets/rocm/math/tensor/concat_expander.cpp
-    src/targets/rocm/math/tensor/conv_expander.cpp
-    src/targets/rocm/math/tensor/conv_expander.cpp
-    src/targets/rocm/plugin.cpp
     src/targets/rocm/plugin.cpp
     src/targets/rocm/rocm_data_offloading_node.cpp
-    src/targets/rocm/rocm_data_offloading_node.cpp
-    src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/rocm/rocm_offload_map_dispatcher.cpp
     src/targets/rocm/rocm_offload_reduce_dispatcher.cpp
     src/targets/rocm/rocm_reduce_dispatcher.cpp
     src/targets/rocm/rocm.cpp
-    src/targets/rocm/rocm.cpp
     src/targets/rocm/stdlib/memcpy.cpp
-    src/targets/rocm/stdlib/memcpy.cpp
-    src/targets/rocm/stdlib/memset.cpp
     src/targets/rocm/stdlib/memset.cpp
     src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/transformations/collapse_to_depth.cpp
@@ -165,8 +151,8 @@ set(SOURCE_FILES
     src/transformations/replayer.cpp
     src/transformations/tile_fusion.cpp
     src/transformations/transformation_schema.cpp
-    src/transformations/vectorize_transform.cpp
     src/transformations/unroll_transform.cpp
+    src/transformations/vectorize_transform.cpp
 )
 add_library(sdfgopt
     ${SOURCE_FILES}
