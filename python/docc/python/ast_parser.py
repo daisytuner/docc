@@ -22,6 +22,7 @@ from docc.python.ast_utils import (
 from docc.python.types import (
     sdfg_type_from_type,
     element_type_from_sdfg_type,
+    promote_element_types,
 )
 from docc.python.functions.numpy import NumPyHandler
 from docc.python.functions.math import MathHandler
@@ -288,9 +289,18 @@ class ASTParser(ast.NodeVisitor):
 
         left_is_int = self._is_int(left)
         right_is_int = self._is_int(right)
-        dtype = Scalar(PrimitiveType.Double)
-        if left_is_int and right_is_int and op not in ["/", "**"]:
-            dtype = Scalar(PrimitiveType.Int64)
+        if left_is_int and right_is_int:
+            # true division / power of integers yields a float (NumPy semantics)
+            dtype = (
+                Scalar(PrimitiveType.Double)
+                if op in ["/", "**"]
+                else Scalar(PrimitiveType.Int64)
+            )
+        else:
+            # Propagate operand precision (e.g. float32 * float32 -> float32)
+            dtype = promote_element_types(
+                self._element_type(left), self._element_type(right)
+            )
 
         if not self.builder.exists(tmp_name):
             self.builder.add_container(tmp_name, dtype, False)
@@ -3640,8 +3650,13 @@ class ASTParser(ast.NodeVisitor):
         return None
 
     def _element_type(self, name):
-        if name in self.container_table:
-            return element_type_from_sdfg_type(self.container_table[name])
+        # Strip functional-index notation (e.g. `C(i, j)` -> `C`) to reach the
+        # base container, mirroring _is_int.
+        lookup = name
+        if "(" in name and name.endswith(")"):
+            lookup = name.split("(")[0]
+        if lookup in self.container_table:
+            return element_type_from_sdfg_type(self.container_table[lookup])
         else:  # Constant
             if self._is_int(name):
                 return Scalar(PrimitiveType.Int64)
