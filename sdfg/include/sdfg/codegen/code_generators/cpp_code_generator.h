@@ -8,10 +8,10 @@ namespace sdfg {
 namespace codegen {
 
 /// @brief Optional GPU-runtime context warmup emitted as a `.so`-load
-/// constructor. Off by default; enable to amortize the one-shot CUDA
+/// constructor. Off by default; enable to amortize the one-shot CUDA/HIP
 /// driver/context init cost out of the first kernel call (and out of any
 /// measured region wrapping it).
-enum class GlobalConstructor { None, CUDA };
+enum class GlobalConstructor { None, CUDA, ROCM };
 
 class CPPCodeGenerator : public CStyleBaseCodeGenerator {
 private:

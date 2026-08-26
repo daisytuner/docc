@@ -1124,6 +1124,17 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream << "}" << std::endl;
             }
         } else if (strategy == ReduceStrategy::Global) {
+            // A grid level nested inside another grid reduction of the same accumulator folds
+            // into the enclosing level's shadowed *thread-local* register, not the real global
+            // slot. Its target lives in local memory, where atomics are illegal (NVPTX cannot
+            // select an atomic in address space 5) and unnecessary — only the outermost grid
+            // level races across blocks. Combine plainly into that register; the outermost
+            // level then atomically commits the folded result to global memory.
+            if (is_grid_level(target_level) && has_enclosing_grid_reduction(r.container)) {
+                stream << target << " = " << combine_expr(r.operation, target, reg_name) << ";" << std::endl;
+                continue;
+            }
+
             // Atomic commit of each thread's register straight to the global accumulator.
             // At a grid level with no nested block/warp reduce, the reduce body is replicated
             // verbatim across all block threads and each holds an identical partial; committing
