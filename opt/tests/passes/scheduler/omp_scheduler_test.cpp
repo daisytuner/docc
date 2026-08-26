@@ -238,3 +238,41 @@ TEST(OMPSchedulerTest, OuterWhileWithInnerMaps) {
     EXPECT_EQ(loop_2.schedule_type().value(), omp::ScheduleType_OMP::value());
     EXPECT_EQ(loop_3.schedule_type().value(), omp::ScheduleType_OMP::value());
 }
+
+// Regression test: a map that already carries a parallel (non-None) schedule must be left
+// untouched -- the scheduler's find() returns SKIP instead of re-parallelizing it.
+TEST(OMPSchedulerTest, SkipsAlreadyParallelMap) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc_2(base_desc);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+
+    auto indvar = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(indvar, symbolic::integer(1)),
+        omp::ScheduleType_OMP::create()
+    );
+    auto& block = builder.add_block(map.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {indvar}, desc_2);
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, desc_2);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
+
+    EXPECT_FALSE(loop_scheduling_pass.run(builder, analysis_manager));
+    EXPECT_EQ(map.schedule_type().value(), omp::ScheduleType_OMP::value());
+}

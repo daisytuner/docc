@@ -2,6 +2,7 @@
 #include <filesystem>
 
 #include "docc/compile/src_file_compiler_builder.h"
+#include "docc/util/cuda_query_compute_capability.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
@@ -24,7 +25,28 @@ static DoccTarget cuda_target = {
 
         compile::SrcFileCompilerBuilder b;
         b.inherit(builder, true);
-        b.add_compile_option("--cuda-gpu-arch=sm_70");
+
+        const char* arch_env = std::getenv("DOCC_CUDA_ARCH");
+        if (arch_env) { // build for a specific arch
+            builder.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
+            b.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
+        } else {
+            auto caps = util::query_cuda_compute_capabilities();
+            if (!caps.empty()) {
+                auto& first = caps.front();
+                std::cerr << "[DOCC] Compiling CUDA for sm_" << first.compute_cap << " of "
+                          << ((first.device_names.empty()) ? "unidentified GPU" : first.device_names.front())
+                          << std::endl;
+                util::clang_21_set_cuda_specific_compute_cap(builder, b, caps.front().compute_cap);
+            } else {
+                // don't know the arch, so try to build for all with the driver handling the rest (may not work for all
+                // cases)
+                std::cerr << "[DOCC] No CUDA ARCH identified, trying to compile for all supported architectures"
+                          << std::endl;
+                util::clang_21_set_cuda_forward_compatible_options(builder, b);
+            }
+        }
+
         b.add_compile_option("--cuda-path=/usr/local/cuda");
         b.set_bin_extension("cu");
         builder.redirect_snippet("cu", std::move(b));
@@ -55,6 +77,8 @@ static DoccTarget rocm_target = {
     .short_name = "rocm",
     .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
         builder.add_compile_option("-x hip");
+        // Enable the synchronizing warp builtins (e.g. __shfl_xor_sync).
+        builder.add_compile_option("-DHIP_ENABLE_WARP_SYNC_BUILTINS");
         const char* arch_env = std::getenv("DOCC_ROCM_ARCH");
         if (!arch_env) {
             arch_env = "gfx1201";
@@ -110,6 +134,17 @@ static DoccTarget sequential_target = {
 
 static DoccTarget openmp_target = {
     .short_name = "openmp",
+    .apply_additional_compile_options = [](compile::SrcFileCompilerBuilder& builder) -> bool {
+#if defined(__APPLE__)
+        builder.add_common_option("-Xpreprocessor -fopenmp");
+        builder.add_library_path("/opt/homebrew/opt/libomp/lib");
+        builder.add_library_path("/opt/homebrew/opt/libomp/include");
+        builder.add_link_option("-lomp");
+#else
+        builder.add_common_option("-fopenmp");
+#endif
+        return true;
+    },
     .get_target_loop_schedulers = [](const TargetOptions& options
                                   ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;

@@ -21,12 +21,12 @@ public:
     explicit TenstorrentTransform(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysisManager,
-        structured_control_flow::Map& map,
+        structured_control_flow::StructuredLoop& loop,
         bool force_synchronous = false,
         bool allow_dynamic_sizes = false
     )
-        : OffloadTransform(map, allow_dynamic_sizes),
-          TenstorrentOffloadingExpansion(builder, analysisManager, map, force_synchronous, nullptr) {}
+        : OffloadTransform(loop, allow_dynamic_sizes),
+          TenstorrentOffloadingExpansion(builder, analysisManager, loop, force_synchronous, nullptr) {}
 
     std::string name() const override;
 
@@ -48,27 +48,27 @@ public:
     static TenstorrentTransform from_json(
         builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, const nlohmann::json& j
     ) {
-        size_t map_id;
+        size_t loop_id;
         if (j.contains("subgraph")) {
             const auto& node_desc = j.at("subgraph").at("0");
-            map_id = node_desc.at("element_id").get<size_t>();
-        } else if (j.contains("map_element_id")) {
-            map_id = j.at("map_element_id").get<size_t>();
+            loop_id = node_desc.at("element_id").get<size_t>();
+        } else if (j.contains("loop_element_id")) {
+            loop_id = j.at("loop_element_id").get<size_t>();
         } else {
             throw transformations::InvalidTransformationDescriptionException(
-                "TenstorrentTransform descriptor missing 'subgraph' or 'map_element_id'."
+                "TenstorrentTransform descriptor missing 'subgraph' or 'loop_element_id'."
             );
         }
 
-        auto element = builder.find_element_by_id(map_id);
+        auto element = builder.find_element_by_id(loop_id);
         if (!element) {
             throw transformations::
-                InvalidTransformationDescriptionException("Element with ID " + std::to_string(map_id) + " not found.");
+                InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
         }
-        auto* map = dyn_cast<structured_control_flow::Map*>(element);
-        if (!map) {
+        auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
+        if (!loop) {
             throw transformations::InvalidTransformationDescriptionException(
-                "Element with ID " + std::to_string(map_id) + " is not a Map."
+                "Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop."
             );
         }
 
@@ -84,13 +84,13 @@ public:
             }
         }
 
-        return TenstorrentTransform(builder, analysis_manager, *map, force_synchronous, allow_dynamic_sizes);
+        return TenstorrentTransform(builder, analysis_manager, *loop, force_synchronous, allow_dynamic_sizes);
     }
 
     void to_json(nlohmann::json& j) const override {
         j["transformation_type"] = this->name();
 
-        j["subgraph"] = {{"0", {{"element_id", this->map_.element_id()}, {"type", "map"}}}};
+        j["subgraph"] = {{"0", {{"element_id", this->loop_.element_id()}, {"type", "map"}}}};
         j["parameters"] = {
             {"force_synchronous", this->force_synchronous_}, {"allow_dynamic_sizes", this->allow_dynamic_sizes_}
         };
@@ -132,7 +132,7 @@ protected:
         symbolic::Expression page_size
     ) override {
         TenstorrentOffloadingExpansion::
-            allocate_device_arg(builder, map_, alloc_block, host_arg_name, device_arg_name, arg_size, page_size);
+            allocate_device_arg(builder, loop_, alloc_block, host_arg_name, device_arg_name, arg_size, page_size);
     }
 
     void deallocate_device_arg(
@@ -143,7 +143,7 @@ protected:
         symbolic::Expression page_size
     ) override {
         TenstorrentOffloadingExpansion::
-            deallocate_device_arg(builder, map_, dealloc_block, device_arg_name, arg_size, page_size);
+            deallocate_device_arg(builder, loop_, dealloc_block, device_arg_name, arg_size, page_size);
     }
 
     void copy_to_device(
@@ -155,7 +155,7 @@ protected:
         Block& copy_block
     ) override {
         TenstorrentOffloadingExpansion::
-            copy_to_device(builder, map_, host_arg_name, device_arg_name, size, page_size, copy_block);
+            copy_to_device(builder, loop_, host_arg_name, device_arg_name, size, page_size, copy_block);
     }
 
     void copy_to_device_with_allocation(
@@ -167,7 +167,7 @@ protected:
         Block& copy_block
     ) override {
         TenstorrentOffloadingExpansion::
-            copy_to_device_with_allocation(builder, map_, host_arg_name, device_arg_name, size, copy_block, page_size);
+            copy_to_device_with_allocation(builder, loop_, host_arg_name, device_arg_name, size, copy_block, page_size);
     }
 
     void copy_from_device(
@@ -179,7 +179,7 @@ protected:
         symbolic::Expression page_size
     ) override {
         TenstorrentOffloadingExpansion::
-            copy_from_device(builder, map_, copy_out_block, host_arg_name, device_arg_name, size, page_size);
+            copy_from_device(builder, loop_, copy_out_block, host_arg_name, device_arg_name, size, page_size);
     }
 
     void copy_from_device_with_free(
@@ -191,7 +191,7 @@ protected:
         symbolic::Expression page_size
     ) override {
         TenstorrentOffloadingExpansion::
-            copy_from_device(builder, map_, copy_out_block, host_arg_name, device_arg_name, size, page_size);
+            copy_from_device(builder, loop_, copy_out_block, host_arg_name, device_arg_name, size, page_size);
     }
 };
 

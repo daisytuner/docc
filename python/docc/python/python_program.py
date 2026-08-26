@@ -119,6 +119,7 @@ class PythonProgram(DoccProgram):
         instrumentation_mode: Optional[str] = None,
         capture_args: Optional[bool] = None,
         remote_tuning: bool = False,
+        einsum_detection: bool = True,
     ):
         super().__init__(
             name=func.__name__,
@@ -127,6 +128,7 @@ class PythonProgram(DoccProgram):
             instrumentation_mode=instrumentation_mode,
             capture_args=capture_args,
             remote_tuning=remote_tuning,
+            einsum_detection=einsum_detection,
         )
         self.func = func
         self._last_structure_member_info = {}
@@ -189,7 +191,7 @@ class PythonProgram(DoccProgram):
         )
 
         # When binary reuse is requested, the build run must persist the
-        # normalized SDFG (py4.norm.json) so a later run can reload it without
+        # SDFG (py5.post_sched.json) so a later run can reload it without
         # re-parsing/recompiling. Force the dump if instrumentation/capture
         # would not already produce it.
         docc_reuse_binaries = os.environ.get("DOCC_REUSE_BINARIES")
@@ -293,8 +295,13 @@ class PythonProgram(DoccProgram):
         if os.path.exists(output_folder):
             # Multiple python processes running the same code?
             shutil.rmtree(output_folder)
+
         sdfg, out_args, out_shapes, out_strides = self._build_sdfg(
             arg_types, args, arg_shape_mapping, shape_values
+        )
+        parse_sdfg_time = time.perf_counter() - compile_start_time
+        metrics.add_metric(
+            "parse_to_sdfg_time_ms", round(parse_sdfg_time * 1000), "compile_times"
         )
 
         lib_path = self.sdfg_pipe(
@@ -343,11 +350,11 @@ class PythonProgram(DoccProgram):
 
         The return shapes/strides are discovered while parsing the kernel and
         are not otherwise recoverable from the SDFG structure. Persisting them
-        (into the same ``py4.norm.json`` the reuse path loads) lets a later
+        (into the same ``py5.post_sched.json`` the reuse path loads) lets a later
         ``DOCC_REUSE_BINARIES`` run reconstruct the CompiledSDFG without
         re-parsing/recompiling.
         """
-        json_path = os.path.join(output_folder, f"{sdfg.name}.py4.norm.json")
+        json_path = os.path.join(output_folder, f"{sdfg.name}.py5.post_sched.json")
         if not os.path.exists(json_path):
             return
         try:
@@ -385,7 +392,7 @@ class PythonProgram(DoccProgram):
 
         sdfg_name = f"{self.name}_sdfg"
         lib_path = os.path.join(output_folder, f"lib{sdfg_name}.so")
-        json_path = os.path.join(output_folder, f"{sdfg_name}.py4.norm.json")
+        json_path = os.path.join(output_folder, f"{sdfg_name}.py5.post_sched.json")
         if not os.path.exists(lib_path):
             raise ValueError(f"Tried reusing binary '{lib_path}' but does not exist")
         if not os.path.exists(json_path):
@@ -823,6 +830,7 @@ def native(
     instrumentation_mode=None,
     capture_args=None,
     remote_tuning=False,
+    einsum_detection=True,
 ):
     """Decorator to create a PythonProgram from a Python function.
 
@@ -841,6 +849,7 @@ def native(
             instrumentation_mode=instrumentation_mode,
             capture_args=capture_args,
             remote_tuning=remote_tuning,
+            einsum_detection=einsum_detection,
         )
     return PythonProgram(
         func,
@@ -849,4 +858,5 @@ def native(
         instrumentation_mode=instrumentation_mode,
         capture_args=capture_args,
         remote_tuning=remote_tuning,
+        einsum_detection=einsum_detection,
     )

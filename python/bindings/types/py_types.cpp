@@ -38,6 +38,32 @@ void register_types(py::module& m) {
         .value("PPC_FP128", PrimitiveType::PPC_FP128)
         .export_values();
 
+    // StorageType
+    py::class_<StorageType>(m, "StorageType")
+        .def(py::init<const std::string&>(), py::arg("value"))
+        .def(
+            py::init([](const std::string& value, const std::string& allocation_size) {
+                return new StorageType(
+                    value,
+                    sdfg::symbolic::parse(allocation_size),
+                    StorageType::AllocationType::Unmanaged,
+                    StorageType::AllocationType::Unmanaged
+                );
+            }),
+            py::arg("value"),
+            py::arg("allocation_size")
+        )
+        .def_static("CPU_Stack", []() { return StorageType::CPU_Stack(); })
+        .def_static("CPU_Heap", []() { return StorageType::CPU_Heap(); })
+        .def_static("NV_Generic", []() { return StorageType::NV_Generic(); })
+        .def_static("NV_Global", []() { return StorageType::NV_Global(); })
+        .def_static("NV_Shared", []() { return StorageType::NV_Shared(); })
+        .def_static("NV_Constant", []() { return StorageType::NV_Constant(); })
+        .def_static("NV_Symbol", []() { return StorageType::NV_Symbol(); })
+        .def_static("AMD_Generic", []() { return StorageType("AMD_Generic"); })
+        .def_property_readonly("value", [](const StorageType& st) { return st.value(); })
+        .def("__repr__", [](const StorageType& st) { return "<StorageType value='" + st.value() + "'>"; });
+
     // IType
     py::class_<IType>(m, "Type")
         .def("print", &IType::print)
@@ -63,6 +89,13 @@ void register_types(py::module& m) {
     py::class_<Pointer, IType>(m, "Pointer")
         .def(py::init<>())
         .def(py::init<const IType&>(), py::arg("pointee_type"))
+        .def(
+            py::init([](const IType& pointee_type, const StorageType& storage_type) {
+                return new Pointer(storage_type, 0, "", pointee_type);
+            }),
+            py::arg("pointee_type"),
+            py::arg("storage_type")
+        )
         .def_property_readonly("pointee_type", &Pointer::pointee_type)
         .def("has_pointee_type", &Pointer::has_pointee_type);
 

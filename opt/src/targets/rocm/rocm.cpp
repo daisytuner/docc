@@ -1,5 +1,6 @@
 #include "sdfg/targets/rocm/rocm.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <sdfg/codegen/dispatchers/sequence_dispatcher.h>
 #include <string>
@@ -46,6 +47,38 @@ void check_rocm_kernel_launch_errors(codegen::PrettyPrinter& stream, const codeg
     rocm_error_checking(stream, language_extension, "launch_err");
     stream << "launch_err = hipGetLastError();" << std::endl;
     rocm_error_checking(stream, language_extension, "launch_err");
+}
+
+int query_rocm_wavefront_size() {
+    if (const char* env = std::getenv("DOCC_ROCM_WAVEFRONT_SIZE")) {
+        int value = std::atoi(env);
+        if (value > 0) {
+            return value;
+        }
+    }
+
+    // Read the first GPU agent's wavefront size from rocminfo.
+    if (FILE* pipe = popen("rocminfo 2>/dev/null", "r")) {
+        char line[512];
+        int size = 0;
+        while (std::fgets(line, sizeof(line), pipe) != nullptr) {
+            if (std::sscanf(line, " Wavefront Size: %d", &size) == 1 && size > 0) {
+                break;
+            }
+            size = 0;
+        }
+        pclose(pipe);
+        if (size > 0) {
+            return size;
+        }
+    }
+
+    return ROCM_WARP_SIZE;
+}
+
+int rocm_wavefront_size() {
+    static const int cached = query_rocm_wavefront_size();
+    return cached;
 }
 
 } // namespace rocm

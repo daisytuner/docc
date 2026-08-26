@@ -17,7 +17,7 @@ bool VectorizeTransform::
         return false;
     }
 
-    auto result = loop_.schedule_type().value() == structured_control_flow::ScheduleType_Sequential::value();
+    auto result = loop_.schedule_type().category() == structured_control_flow::ScheduleTypeCategory::None;
 
     if (report_) {
         if (result) {

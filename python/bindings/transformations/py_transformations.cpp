@@ -4,7 +4,10 @@
 #include <sstream>
 
 #include <sdfg/data_flow/access_node.h>
+#include <sdfg/symbolic/symbolic.h>
+#include <sdfg/targets/cuda/cuda.h>
 #include <sdfg/transformations/in_local_storage.h>
+#include <sdfg/transformations/local_storage.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
@@ -12,12 +15,16 @@
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/map_collapse.h>
 #include <sdfg/transformations/map_fusion.h>
+#include <sdfg/transformations/offloading/cuda_offload_transform.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
+#include <sdfg/transformations/offloading/gpu_offload_nested_loop.h>
+#include <sdfg/transformations/omp_transform.h>
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/recorder.h>
 #include <sdfg/transformations/tile_fusion.h>
 #include <sdfg/transformations/transformation.h>
+#include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 #include <sdfg/types/type.h>
 
@@ -262,14 +269,72 @@ void register_transformations(py::module& m) {
             return oss.str();
         });
 
+    // CUDAOffloadTransform (offload a map to a CUDA kernel at a given target level)
+    py::class_<sdfg::cuda::CUDAOffloadTransform, Transformation>(m, "CUDAOffloadTransform")
+        .def(
+            py::init([](StructuredLoop& loop,
+                        int parallel_size,
+                        sdfg::gpu::TargetLevel target_level,
+                        bool allow_dynamic_sizes) {
+                return sdfg::cuda::CUDAOffloadTransform(
+                    loop, sdfg::symbolic::integer(parallel_size), target_level, allow_dynamic_sizes
+                );
+            }),
+            py::arg("loop"),
+            py::arg("parallel_size") = 32,
+            py::arg("target_level") = sdfg::gpu::TargetLevel::X_GRID,
+            py::arg("allow_dynamic_sizes") = false,
+            "Offload a map to a CUDA kernel dimension (produces a CUDA_Offload schedule).\n\n"
+            "Args:\n"
+            "    loop: The map to offload\n"
+            "    parallel_size: Threads/blocks along this dimension (default: 32)\n"
+            "    target_level: Grid/block/warp target level (default: X_GRID)\n"
+            "    allow_dynamic_sizes: Permit non-constant iteration counts (default: False)"
+        )
+        .def("__repr__", [](const sdfg::cuda::CUDAOffloadTransform& t) {
+            std::ostringstream oss;
+            oss << "<CUDAOffloadTransform name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // CUDAOffloadNestedLoop (offload a nested loop to a further CUDA target level)
+    using CUDAOffloadNestedLoop = GPUOffloadNestedLoop<sdfg::cuda::ScheduleType_CUDA_Offload>;
+    py::class_<CUDAOffloadNestedLoop, Transformation>(m, "CUDAOffloadNestedLoop")
+        .def(
+            py::init([](StructuredLoop& loop, sdfg::gpu::TargetLevel target_level, int parallel_size) {
+                return CUDAOffloadNestedLoop(loop, target_level, sdfg::symbolic::integer(parallel_size));
+            }),
+            py::arg("loop"),
+            py::arg("target_level"),
+            py::arg("parallel_size"),
+            "Offload a nested (sequential) map/reduce to a further CUDA target level.\n\n"
+            "Args:\n"
+            "    loop: The nested map or reduce to offload\n"
+            "    target_level: Block/warp target level (must nest correctly under ancestors)\n"
+            "    parallel_size: Threads along this dimension"
+        )
+        .def("__repr__", [](const CUDAOffloadNestedLoop& t) {
+            std::ostringstream oss;
+            oss << "<CUDAOffloadNestedLoop name='" << t.name() << "'>";
+            return oss.str();
+        });
+
     // LoopPeeling transformation
     py::class_<LoopPeeling, Transformation>(m, "LoopPeeling")
         .def(
-            py::init<StructuredLoop&>(),
+            py::init<StructuredLoop&, bool>(),
             py::arg("loop"),
+            py::arg("predicate") = false,
             "Create a loop peeling transformation.\n\n"
+            "Collects the perfectly nested chain of compound-condition loops under\n"
+            "`loop`, over-approximates them to constant trip counts and shifts them\n"
+            "to 0-based induction variables.\n\n"
             "Args:\n"
-            "    loop: The loop with compound conditions to peel"
+            "    loop: The outermost loop of the compound-condition nest\n"
+            "    predicate: If True, emit the predicated (GPU register-tiling) form\n"
+            "        (0-based nest + one combined body guard, no remainder); if False\n"
+            "        (default), emit the hoisted then/else form (clean vectorizable\n"
+            "        micro-kernel + variable-trip remainder)."
         )
         .def("__repr__", [](const LoopPeeling& t) {
             std::ostringstream oss;
@@ -289,6 +354,38 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const VectorizeTransform& t) {
             std::ostringstream oss;
             oss << "<VectorizeTransform name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // UnrollTransform transformation
+    py::class_<UnrollTransform, Transformation>(m, "UnrollTransform")
+        .def(
+            py::init<StructuredLoop&>(),
+            py::arg("loop"),
+            "Create an unroll transformation.\n\n"
+            "Marks a constant-trip loop for full unrolling (`#pragma clang loop\n"
+            "unroll(full)`), which lets the compiler scalarize register tiles.\n\n"
+            "Args:\n"
+            "    loop: The constant-trip loop to fully unroll"
+        )
+        .def("__repr__", [](const UnrollTransform& t) {
+            std::ostringstream oss;
+            oss << "<UnrollTransform name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // OMPTransform transformation
+    py::class_<OMPTransform, Transformation>(m, "OMPTransform")
+        .def(
+            py::init<Map&>(),
+            py::arg("loop"),
+            "Create an OpenMP transformation.\n\n"
+            "Args:\n"
+            "    loop: The sequential loop to parallelize with OpenMP"
+        )
+        .def("__repr__", [](const OMPTransform& t) {
+            std::ostringstream oss;
+            oss << "<OMPTransform name='" << t.name() << "'>";
             return oss.str();
         });
 
@@ -320,6 +417,28 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const InLocalStorage& t) {
             std::ostringstream oss;
             oss << "<InLocalStorage name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // LocalStorage transformation (schedule-derived local buffer; direction derived)
+    py::class_<LocalStorage, Transformation>(m, "LocalStorage")
+        .def(
+            py::init<StructuredLoop&, const sdfg::data_flow::AccessNode&>(),
+            py::arg("loop"),
+            py::arg("access_node"),
+            "Create a local-storage transformation.\n\n"
+            "The copy direction (in/out) and the storage space are both derived\n"
+            "from the dataflow and the enclosing parallel schedule.\n\n"
+            "Args:\n"
+            "    loop: The loop defining the localization scope\n"
+            "    access_node: An access node for the container to localize"
+        )
+        .def_property_readonly(
+            "local_container", &LocalStorage::local_container, "Name of the created local buffer (valid after apply())"
+        )
+        .def("__repr__", [](const LocalStorage& t) {
+            std::ostringstream oss;
+            oss << "<LocalStorage name='" << t.name() << "'>";
             return oss.str();
         });
 

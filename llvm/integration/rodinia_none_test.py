@@ -74,7 +74,7 @@ def evaluate(reference_file: Path, test_file: Path, args, dtype=np.float64) -> f
 
 
 @pytest.mark.skip(reason="Timeout")
-def test_bplustree(compiler="clang-19"):
+def test_bplustree(compiler="clang-21"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "b+tree" / "main.c"
     )
@@ -190,7 +190,7 @@ def test_bplustree(compiler="clang-19"):
     return runner.run(timeout=240)
 
 
-def test_backprop(compiler="clang-19"):
+def test_backprop(compiler="clang-21"):
     test_case = (
         Path(__file__).parent
         / "tests"
@@ -265,7 +265,7 @@ def test_backprop(compiler="clang-19"):
     return runner.run(timeout=240)
 
 
-def test_bfs(compiler="clang++-19"):
+def test_bfs(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "bfs" / "bfs.cpp"
     )
@@ -330,7 +330,7 @@ def test_bfs(compiler="clang++-19"):
     return runner.run(timeout=240)
 
 
-def test_cfd(compiler="clang++-19"):
+def test_cfd(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent
         / "tests"
@@ -402,7 +402,7 @@ def test_cfd(compiler="clang++-19"):
 
 
 @pytest.mark.xfail(reason="Timeout")
-def test_heartwall(compiler="clang-19"):
+def test_heartwall(compiler="clang-21"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "heartwall" / "main.c"
     )
@@ -506,7 +506,7 @@ def test_heartwall(compiler="clang-19"):
 
 
 @pytest.mark.skip(reason="Test is flaky, needs investigation")
-def test_hotspot(compiler="clang++-19"):
+def test_hotspot(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent
         / "tests"
@@ -589,8 +589,9 @@ def test_hotspot(compiler="clang++-19"):
     )
     return runner.run(timeout=240)
 
+
 @pytest.mark.skip(reason="Flaky")
-def test_hotspot3D(compiler="clang-19"):
+def test_hotspot3D(compiler="clang-21"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "hotspot3D" / "3D.c"
     )
@@ -670,7 +671,7 @@ def test_hotspot3D(compiler="clang-19"):
 
 
 @pytest.mark.skip(reason="Reference executable segfaults (SIGSEGV) in CI environment")
-def test_kmeans(compiler="clang-19"):
+def test_kmeans(compiler="clang-21"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "kmeans" / "kmeans.c"
     )
@@ -765,13 +766,13 @@ def test_kmeans(compiler="clang-19"):
     return runner.run(timeout=240)
 
 
-def test_lavaMD(compiler="clang-19"):
+def test_lavaMD(compiler="clang-21"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lavaMD" / "main.c"
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 4, "FOR": 20, "WHILE": 6, "Malloc": 8, "Free": 8}
+        verification={"sdfgs": 4, "FOR": 22, "WHILE": 4, "Malloc": 8, "Free": 8}
     )
     runner = TestRunner(
         "Rodinia",
@@ -841,7 +842,7 @@ def test_lavaMD(compiler="clang-19"):
 
 
 @pytest.mark.skip(reason="Timeout")
-def test_lud(compiler="clang-19"):
+def test_lud(compiler="clang-21"):
     test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lud" / "lud.c"
 
     verifier = SDFGVerification(
@@ -906,7 +907,7 @@ def test_lud(compiler="clang-19"):
     return runner.run(timeout=240)
 
 
-def test_nw(compiler="clang++-19"):
+def test_nw(compiler="clang++-21"):
     test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "nw" / "nw.cpp"
 
     verifier = SDFGVerification(
@@ -954,7 +955,7 @@ def test_nw(compiler="clang++-19"):
     return runner.run(timeout=240)
 
 
-def test_particlefilter(compiler="clang-19"):
+def test_particlefilter(compiler="clang-21"):
     test_case = (
         Path(__file__).parent
         / "tests"
@@ -1022,7 +1023,7 @@ def test_particlefilter(compiler="clang-19"):
     return runner.run(timeout=240)
 
 
-def test_pathfinder(compiler="clang++-19"):
+def test_pathfinder(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent
         / "tests"
@@ -1077,7 +1078,7 @@ def test_pathfinder(compiler="clang++-19"):
     return runner.run(timeout=240)
 
 
-def test_srad(compiler="clang++-19"):
+def test_srad(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "srad" / "srad.cpp"
     )
@@ -1131,7 +1132,7 @@ def test_srad(compiler="clang++-19"):
     return runner.run(timeout=240)
 
 
-def test_streamcluster(compiler="clang++-19"):
+def test_streamcluster(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent
         / "tests"

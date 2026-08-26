@@ -3,380 +3,185 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/structured_control_flow/for.h"
+#include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
 
-#include <symengine/functions.h>
-#include <symengine/logic.h>
+#include <symengine/integer.h>
 
 namespace sdfg {
 namespace transformations {
 
-LoopPeeling::LoopPeeling(structured_control_flow::StructuredLoop& loop) : loop_(loop) {};
+LoopPeeling::LoopPeeling(structured_control_flow::StructuredLoop& loop, bool predicate)
+    : loop_(loop), predicate_(predicate) {};
 
 std::string LoopPeeling::name() const { return "LoopPeeling"; };
 
-/// Extract upper bound from a condition of the form `indvar < bound`.
-/// Returns SymEngine::null if not a simple strict-less-than on indvar.
-static symbolic::Expression extract_upper_bound(const symbolic::Condition& cond, const symbolic::Symbol& indvar) {
-    if (!SymEngine::is_a<SymEngine::StrictLessThan>(*cond)) {
-        return SymEngine::null;
-    }
-    auto lt = SymEngine::rcp_static_cast<const SymEngine::StrictLessThan>(cond);
-    auto lhs = lt->get_arg1();
-    auto rhs = lt->get_arg2();
-    if (symbolic::eq(lhs, indvar)) {
-        return rhs;
-    }
-    return SymEngine::null;
+/// True if `expr` is a strictly positive integer constant.
+static bool is_positive_int(const symbolic::Expression& expr) {
+    return expr != SymEngine::null && SymEngine::is_a<SymEngine::Integer>(*expr) &&
+           SymEngine::rcp_static_cast<const SymEngine::Integer>(expr)->as_int() > 0;
 }
 
-/// Determine if `bound - init` simplifies to a positive integer constant.
-/// Also handles the case where init is a max() expression: if bound - any_arg
-/// gives a positive integer constant, the loop has a bounded trip count.
-static bool is_constant_trip_bound(const symbolic::Expression& bound, const symbolic::Expression& init) {
-    auto diff = symbolic::expand(symbolic::sub(bound, init));
-    if (SymEngine::is_a<SymEngine::Integer>(*diff)) {
-        auto val = SymEngine::rcp_static_cast<const SymEngine::Integer>(diff);
-        return val->as_int() > 0;
-    }
-    // If init is max(a, b, ...), check if bound - arg is constant for any arg.
-    // trip_count = bound - max(a, b, ...) = min(bound-a, bound-b, ...)
-    // If any (bound - arg) is a positive constant, then the trip count is at most that constant.
-    if (SymEngine::is_a<SymEngine::Max>(*init)) {
-        auto max_op = SymEngine::rcp_static_cast<const SymEngine::Max>(init);
-        auto args = max_op->get_args();
-        for (auto& arg : args) {
-            auto arg_diff = symbolic::expand(symbolic::sub(bound, arg));
-            if (SymEngine::is_a<SymEngine::Integer>(*arg_diff)) {
-                auto val = SymEngine::rcp_static_cast<const SymEngine::Integer>(arg_diff);
-                if (val->as_int() > 0) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-/// Get the constant trip count for a bound/init pair that passes is_constant_trip_bound.
-/// Returns the positive integer trip count, handling max() in init.
-static int64_t get_constant_trip_count(const symbolic::Expression& bound, const symbolic::Expression& init) {
-    auto diff = symbolic::expand(symbolic::sub(bound, init));
-    if (SymEngine::is_a<SymEngine::Integer>(*diff)) {
-        return SymEngine::rcp_static_cast<const SymEngine::Integer>(diff)->as_int();
-    }
-    // For init = max(a, b, ...), find the smallest positive constant among (bound - arg)
-    if (SymEngine::is_a<SymEngine::Max>(*init)) {
-        auto max_op = SymEngine::rcp_static_cast<const SymEngine::Max>(init);
-        auto args = max_op->get_args();
-        int64_t best = INT64_MAX;
-        for (auto& arg : args) {
-            auto arg_diff = symbolic::expand(symbolic::sub(bound, arg));
-            if (SymEngine::is_a<SymEngine::Integer>(*arg_diff)) {
-                auto val = SymEngine::rcp_static_cast<const SymEngine::Integer>(arg_diff)->as_int();
-                if (val > 0 && val < best) {
-                    best = val;
-                }
-            }
-        }
-        return best;
-    }
-    // Should not reach here if is_constant_trip_bound returned true
-    return 0;
-}
-
-/// Check if a loop has a compound condition with at least one canonical bound.
-static bool loop_is_peelable(structured_control_flow::StructuredLoop& loop) {
-    auto cond = loop.condition();
-    if (!SymEngine::is_a<SymEngine::And>(*cond)) {
+/// Applicable when the loop has a constant-trip overapproximation (so the nest
+/// can be fully unrolled) but a non-constant exact trip count (so there is a
+/// dynamic boundary to handle). Relies on the StructuredLoop trip-count helpers,
+/// which handle `<=`, offsets, strides and tile-style `min(...)` bounds.
+static bool has_predicable_boundary(structured_control_flow::StructuredLoop& loop) {
+    if (!loop.is_monotonic()) {
         return false;
     }
-    auto and_cond = SymEngine::rcp_static_cast<const SymEngine::And>(cond);
-    auto& conjuncts = and_cond->get_container();
-    if (conjuncts.size() < 2) {
+    auto approx = loop.num_iterations_approx();
+    if (!is_positive_int(approx)) {
         return false;
     }
-
-    auto indvar = loop.indvar();
-    auto init = loop.init();
-    bool has_canonical = false;
-    bool has_dynamic = false;
-
-    for (auto& conjunct : conjuncts) {
-        auto bound = extract_upper_bound(conjunct, indvar);
-        if (bound == SymEngine::null) {
-            return false;
-        }
-        if (is_constant_trip_bound(bound, init)) {
-            has_canonical = true;
-        } else {
-            has_dynamic = true;
-        }
+    auto exact = loop.num_iterations();
+    if (exact == SymEngine::null || is_positive_int(exact)) {
+        return false;
     }
-    return has_canonical && has_dynamic;
+    return true;
 }
 
-/// For a peelable loop, extract the canonical bound (tightest constant-trip bound).
-static symbolic::Expression find_canonical_bound(structured_control_flow::StructuredLoop& loop) {
-    auto cond = loop.condition();
-    auto and_cond = SymEngine::rcp_static_cast<const SymEngine::And>(cond);
-    auto& conjuncts = and_cond->get_container();
-    auto indvar = loop.indvar();
-    auto init = loop.init();
-
-    symbolic::Expression canonical = SymEngine::null;
-    int64_t canonical_trip = INT64_MAX;
-    for (auto& conjunct : conjuncts) {
-        auto bound = extract_upper_bound(conjunct, indvar);
-        if (bound == SymEngine::null) continue;
-        if (!is_constant_trip_bound(bound, init)) continue;
-
-        auto trip = get_constant_trip_count(bound, init);
-        if (canonical == SymEngine::null || trip < canonical_trip) {
-            canonical = bound;
-            canonical_trip = trip;
-        }
-    }
-    return canonical;
-}
-
-/// Build the peeling condition for a single loop: canonical_bound <= each dynamic bound.
-static symbolic::Condition build_loop_peeling_condition(
-    structured_control_flow::StructuredLoop& loop, const symbolic::Expression& canonical_bound
+/// Collect the perfectly nested chain of peelable loops starting at `loop`
+/// (each level's body being exactly the next peelable loop).
+static std::vector<structured_control_flow::StructuredLoop*> collect_nest(structured_control_flow::StructuredLoop& loop
 ) {
-    auto cond = loop.condition();
-    auto and_cond = SymEngine::rcp_static_cast<const SymEngine::And>(cond);
-    auto& conjuncts = and_cond->get_container();
-    auto indvar = loop.indvar();
-    auto init = loop.init();
-
-    symbolic::Condition result = SymEngine::boolTrue;
-    for (auto& conjunct : conjuncts) {
-        auto bound = extract_upper_bound(conjunct, indvar);
-        if (bound == SymEngine::null) continue;
-        if (is_constant_trip_bound(bound, init) && symbolic::eq(bound, canonical_bound)) continue;
-        // canonical_bound <= this dynamic/looser bound
-        result = symbolic::And(result, symbolic::Le(canonical_bound, bound));
-    }
-
-    // If init is max(a, b, ...), we need to ensure the max resolves to the arg
-    // that gives the constant trip count. Add conditions: chosen_arg >= other_args.
-    if (SymEngine::is_a<SymEngine::Max>(*init)) {
-        auto max_op = SymEngine::rcp_static_cast<const SymEngine::Max>(init);
-        auto args = max_op->get_args();
-        // Find the arg that gives the constant trip (smallest constant trip)
-        symbolic::Expression chosen_arg = SymEngine::null;
-        int64_t best_trip = INT64_MAX;
-        for (auto& arg : args) {
-            auto arg_diff = symbolic::expand(symbolic::sub(canonical_bound, arg));
-            if (SymEngine::is_a<SymEngine::Integer>(*arg_diff)) {
-                auto val = SymEngine::rcp_static_cast<const SymEngine::Integer>(arg_diff)->as_int();
-                if (val > 0 && val < best_trip) {
-                    best_trip = val;
-                    chosen_arg = arg;
-                }
-            }
-        }
-        // Add conditions: chosen_arg >= each other arg (so max resolves to chosen_arg)
-        if (chosen_arg != SymEngine::null) {
-            for (auto& arg : args) {
-                if (!symbolic::eq(arg, chosen_arg)) {
-                    result = symbolic::And(result, symbolic::Le(arg, chosen_arg));
-                }
-            }
-        }
-    }
-
-    return result;
-}
-
-/// Collect the perfectly nested chain of peelable loops starting from `loop`.
-/// A chain continues as long as the loop body has exactly one child which is
-/// another peelable structured loop.
-static std::vector<structured_control_flow::StructuredLoop*> collect_peelable_nest(structured_control_flow::StructuredLoop&
-                                                                                       loop) {
-    std::vector<structured_control_flow::StructuredLoop*> nest;
-    nest.push_back(&loop);
-
+    std::vector<structured_control_flow::StructuredLoop*> nest{&loop};
     auto* current = &loop;
     while (true) {
         auto& body = current->root();
-        if (body.size() != 1) break;
-        auto& child = body.at(0);
-        auto* inner_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child);
-        if (!inner_loop) break;
-        if (!loop_is_peelable(*inner_loop)) break;
-        nest.push_back(inner_loop);
-        current = inner_loop;
+        if (body.size() != 1) {
+            break;
+        }
+        auto* inner = dynamic_cast<structured_control_flow::StructuredLoop*>(&body.at(0));
+        if (inner == nullptr || !has_predicable_boundary(*inner)) {
+            break;
+        }
+        nest.push_back(inner);
+        current = inner;
     }
     return nest;
 }
 
+/// Append a copy of `proto`'s loop header (same kind/schedule) into `parent`.
+static structured_control_flow::StructuredLoop& append_loop(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& parent,
+    structured_control_flow::StructuredLoop& proto,
+    const symbolic::Symbol& indvar,
+    const symbolic::Condition& condition,
+    const symbolic::Expression& init,
+    const symbolic::Expression& update
+) {
+    if (auto* map = dynamic_cast<structured_control_flow::Map*>(&proto)) {
+        return builder.add_map(parent, indvar, condition, init, update, map->schedule_type(), proto.debug_info());
+    }
+    if (auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(&proto)) {
+        return builder.add_reduce(
+            parent, indvar, condition, init, update, reduce->reductions(), reduce->schedule_type(), proto.debug_info()
+        );
+    }
+    return builder.add_for(parent, indvar, condition, init, update, proto.debug_info());
+}
+
 bool LoopPeeling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    return loop_is_peelable(loop_);
+    return has_predicable_boundary(loop_);
 };
 
 void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto& sdfg = builder.subject();
+    auto nest = collect_nest(loop_);
+    auto* innermost = nest.back();
+    auto zero = symbolic::integer(0);
 
-    // Collect perfectly nested chain of peelable loops
-    auto nest = collect_peelable_nest(loop_);
-
-    // For each loop in the nest, find its canonical bound and build peeling condition
-    struct LoopPeelInfo {
+    // Per-loop 0-based header + the shift `indvar -> indvar + init` that rewrites
+    // the shifted body back to original induction values. Also accumulate:
+    //  - combined_guard: dynamic bounds evaluated per iteration (predicate form);
+    //  - combined_fits:  dynamic bounds evaluated at each loop's last iteration,
+    //                    i.e. the whole tile is in bounds (hoisted form).
+    struct LoopInfo {
         structured_control_flow::StructuredLoop* loop;
-        symbolic::Expression canonical_bound;
-        symbolic::Condition peeling_condition;
+        symbolic::Symbol indvar;
+        symbolic::Expression init;
+        symbolic::Condition zero_condition;
+        symbolic::Expression shifted;
     };
-    std::vector<LoopPeelInfo> peel_infos;
-
-    symbolic::Condition combined_peeling_condition = SymEngine::boolTrue;
-    for (auto* loop : nest) {
-        auto canonical = find_canonical_bound(*loop);
-        auto peel_cond = build_loop_peeling_condition(*loop, canonical);
-        combined_peeling_condition = symbolic::And(combined_peeling_condition, peel_cond);
-        peel_infos.push_back({loop, canonical, peel_cond});
+    std::vector<LoopInfo> infos;
+    symbolic::Condition combined_guard = SymEngine::boolTrue;
+    symbolic::Condition combined_fits = SymEngine::boolTrue;
+    for (auto* l : nest) {
+        auto indvar = l->indvar();
+        auto init = l->init();
+        auto stride = l->stride();
+        auto trip = l->num_iterations_approx();
+        auto shifted = symbolic::add(indvar, init);
+        symbolic::Condition zero_condition = symbolic::Lt(indvar, symbolic::mul(trip, stride));
+        combined_guard = symbolic::And(combined_guard, symbolic::subs(l->condition(), indvar, shifted));
+        auto last = symbolic::add(init, symbolic::mul(symbolic::sub(trip, symbolic::integer(1)), stride));
+        combined_fits = symbolic::And(combined_fits, symbolic::subs(l->condition(), indvar, last));
+        infos.push_back({l, indvar, init, zero_condition, shifted});
     }
 
-    // Get parent scope of the outermost loop
-    auto parent = static_cast<structured_control_flow::Sequence*>(loop_.get_parent());
+    auto* parent = static_cast<structured_control_flow::Sequence*>(loop_.get_parent());
 
-    // Create IfElse before the outermost loop
-    auto& if_else = builder.add_if_else_before(*parent, loop_, loop_.debug_info());
+    if (predicate_) {
+        // 0-based nest; the whole boundary is re-checked once at the innermost body.
+        auto& holder = builder.add_sequence_before(*parent, loop_, loop_.debug_info());
+        structured_control_flow::Sequence* current = &holder;
+        for (auto& info : infos) {
+            auto& nl =
+                append_loop(builder, *current, *info.loop, info.indvar, info.zero_condition, zero, info.loop->update());
+            current = &nl.root();
+        }
+        auto& if_else = builder.add_if_else(*current, loop_.debug_info());
+        auto& body = builder.add_case(if_else, combined_guard, loop_.debug_info());
+        deepcopy::StructuredSDFGDeepCopy(builder, body, innermost->root()).insert();
+        for (auto& info : infos) {
+            if (!symbolic::eq(info.init, zero)) {
+                body.replace(info.indvar, info.shifted);
+            }
+        }
+    } else {
+        // Hoisted: full clean tile in the "then" branch, original variable-trip
+        // remainder in the "else". The "then" micro-kernel is unguarded (vectorizes).
+        auto& if_else = builder.add_if_else_before(*parent, loop_, loop_.debug_info());
 
-    // === Then branch: all loops normalized to start at 0 with constant trip counts ===
-    auto& then_branch = builder.add_case(if_else, combined_peeling_condition);
-
-    // Build the nest of loops with clean 0-based bounds in the then branch
-    structured_control_flow::Sequence* current_parent = &then_branch;
-    // Track substitutions: original_indvar → indvar + init (for body fixup)
-    std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> substitutions;
-
-    for (size_t i = 0; i < peel_infos.size(); i++) {
-        auto& info = peel_infos[i];
-        auto* loop = info.loop;
-        auto indvar = loop->indvar();
-        auto init = loop->init();
-
-        // Compute constant trip count: canonical_bound - init (using helper for max() cases)
-        auto trip_count = symbolic::integer(get_constant_trip_count(info.canonical_bound, init));
-
-        // Resolve effective init for the then-branch.
-        // If init = max(a, b, ...) and canonical_bound - b is the constant trip,
-        // then in the then-branch (where peeling condition guarantees max = b), use b directly.
-        symbolic::Expression effective_init = init;
-        if (SymEngine::is_a<SymEngine::Max>(*init)) {
-            auto max_op = SymEngine::rcp_static_cast<const SymEngine::Max>(init);
-            auto args = max_op->get_args();
-            int64_t best_trip = INT64_MAX;
-            for (auto& arg : args) {
-                auto arg_diff = symbolic::expand(symbolic::sub(info.canonical_bound, arg));
-                if (SymEngine::is_a<SymEngine::Integer>(*arg_diff)) {
-                    auto val = SymEngine::rcp_static_cast<const SymEngine::Integer>(arg_diff)->as_int();
-                    if (val > 0 && val < best_trip) {
-                        best_trip = val;
-                        effective_init = arg;
-                    }
-                }
+        auto& then_branch = builder.add_case(if_else, combined_fits, loop_.debug_info());
+        structured_control_flow::Sequence* current = &then_branch;
+        for (auto& info : infos) {
+            auto& nl =
+                append_loop(builder, *current, *info.loop, info.indvar, info.zero_condition, zero, info.loop->update());
+            current = &nl.root();
+        }
+        deepcopy::StructuredSDFGDeepCopy(builder, *current, innermost->root()).insert();
+        for (auto& info : infos) {
+            if (!symbolic::eq(info.init, zero)) {
+                current->replace(info.indvar, info.shifted);
             }
         }
 
-        // New loop: indvar goes from 0 to trip_count
-        auto zero_condition = symbolic::Lt(indvar, trip_count);
-        auto zero_init = symbolic::integer(0);
-
-        structured_control_flow::StructuredLoop* new_loop = nullptr;
-        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
-            new_loop = &builder.add_map(
-                *current_parent,
-                indvar,
-                zero_condition,
-                zero_init,
-                loop->update(),
-                map->schedule_type(),
-                loop->debug_info()
-            );
-        } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(loop)) {
-            new_loop = &builder.add_reduce(
-                *current_parent,
-                indvar,
-                zero_condition,
-                zero_init,
-                loop->update(),
-                reduce->reductions(),
-                loop->schedule_type(),
-                loop->debug_info()
-            );
-        } else {
-            new_loop =
-                &builder.add_for(*current_parent, indvar, zero_condition, zero_init, loop->update(), loop->debug_info());
+        auto& else_branch = builder.add_case(if_else, symbolic::Not(combined_fits), loop_.debug_info());
+        current = &else_branch;
+        for (auto& info : infos) {
+            auto& nl =
+                append_loop(builder, *current, *info.loop, info.indvar, info.zero_condition, zero, info.loop->update());
+            current = &nl.root();
         }
-
-        // Record substitution: in the body, original indvar usage = new_indvar + effective_init
-        substitutions.push_back({indvar, effective_init});
-        current_parent = &new_loop->root();
-    }
-
-    // Deep copy the innermost loop's body into the new innermost loop
-    auto* innermost = nest.back();
-    deepcopy::StructuredSDFGDeepCopy main_copier(builder, *current_parent, innermost->root());
-    main_copier.insert();
-
-    // Apply shift substitutions in the copied body:
-    // Replace indvar with (indvar + original_init) so body accesses use correct offsets.
-    // Must apply outermost first (since inner body may reference outer indvars).
-    for (auto& [indvar, init] : substitutions) {
-        if (symbolic::eq(init, symbolic::zero())) continue;
-        auto shifted_expr = symbolic::add(indvar, init);
-        current_parent->replace(indvar, shifted_expr);
-    }
-
-    // === Else branch: original compound bounds (remainder) ===
-    auto else_condition = symbolic::Not(combined_peeling_condition);
-    auto& else_branch = builder.add_case(if_else, else_condition);
-
-    // Build the nest of loops with original conditions in the else branch
-    current_parent = &else_branch;
-    for (size_t i = 0; i < peel_infos.size(); i++) {
-        auto* loop = peel_infos[i].loop;
-
-        structured_control_flow::StructuredLoop* new_loop = nullptr;
-        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
-            new_loop = &builder.add_map(
-                *current_parent,
-                loop->indvar(),
-                loop->condition(),
-                loop->init(),
-                loop->update(),
-                map->schedule_type(),
-                loop->debug_info()
-            );
-        } else if (auto reduce = dyn_cast<structured_control_flow::Reduce*>(loop)) {
-            new_loop = &builder.add_reduce(
-                *current_parent,
-                loop->indvar(),
-                loop->condition(),
-                loop->init(),
-                loop->update(),
-                reduce->reductions(),
-                loop->schedule_type(),
-                loop->debug_info()
-            );
-        } else {
-            new_loop = &builder.add_for(
-                *current_parent, loop->indvar(), loop->condition(), loop->init(), loop->update(), loop->debug_info()
-            );
+        // 0-based remainder (constant trip) with the original per-iteration
+        // condition as a body guard. Keeping the remainder 0-based leaves any
+        // register tile in the body constant-indexed (no spill to local memory),
+        // while the guard skips the out-of-bounds iterations for correctness.
+        auto& rem_if = builder.add_if_else(*current, loop_.debug_info());
+        auto& rem_body = builder.add_case(rem_if, combined_guard, loop_.debug_info());
+        deepcopy::StructuredSDFGDeepCopy(builder, rem_body, innermost->root()).insert();
+        for (auto& info : infos) {
+            if (!symbolic::eq(info.init, zero)) {
+                rem_body.replace(info.indvar, info.shifted);
+            }
         }
-        current_parent = &new_loop->root();
     }
 
-    // Deep copy the innermost loop's body into the remainder innermost loop
-    deepcopy::StructuredSDFGDeepCopy remainder_copier(builder, *current_parent, innermost->root());
-    remainder_copier.insert();
-
-    // Remove the original loop
     builder.remove_child(*parent, parent->index(loop_));
 
     analysis_manager.invalidate_all();
@@ -385,6 +190,7 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
 void LoopPeeling::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["parameters"] = nlohmann::json::object();
+    j["parameters"]["predicate"] = predicate_;
 
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -398,14 +204,17 @@ LoopPeeling LoopPeeling::from_json(builder::StructuredSDFGBuilder& builder, cons
     if (element == nullptr) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
-    auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
+    auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
         throw InvalidTransformationDescriptionException(
-            "Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop."
+            "Element with ID " + std::to_string(loop_id) + " is not a structured loop."
         );
     }
-
-    return LoopPeeling(*loop);
+    bool predicate = false;
+    if (desc.contains("parameters") && desc["parameters"].contains("predicate")) {
+        predicate = desc["parameters"]["predicate"].get<bool>();
+    }
+    return LoopPeeling(*loop, predicate);
 };
 
 } // namespace transformations

@@ -592,6 +592,11 @@ public:
                 return false;
             case llvm::LibFunc_ZnwmSt11align_val_tRKSt9nothrow_t12__hot_cold_t:
                 return false;
+            case llvm::LibFunc_size_returning_new:
+            case llvm::LibFunc_size_returning_new_hot_cold:
+            case llvm::LibFunc_size_returning_new_aligned:
+            case llvm::LibFunc_size_returning_new_aligned_hot_cold:
+                return false;
             case llvm::LibFunc_acos_finite:
                 return true;
             case llvm::LibFunc_acosf_finite:
@@ -639,6 +644,11 @@ public:
             case llvm::LibFunc_cxa_atexit:
                 return false;
             case llvm::LibFunc_atexit:
+            case llvm::LibFunc_abort:
+            case llvm::LibFunc_exit:
+            case llvm::LibFunc_Exit:
+            case llvm::LibFunc_terminate:
+            case llvm::LibFunc_cxa_throw:
                 return false;
             case llvm::LibFunc_cxa_guard_abort:
                 return false;
@@ -886,6 +896,10 @@ public:
                 return false;
             case llvm::LibFunc_erfl:
                 return false;
+            case llvm::LibFunc_tgamma:
+            case llvm::LibFunc_tgammaf:
+            case llvm::LibFunc_tgammal:
+                return false;
             case llvm::LibFunc_execl:
                 return false;
             case llvm::LibFunc_execle:
@@ -988,6 +1002,13 @@ public:
                 return true;
             case llvm::LibFunc_fminl:
                 return true;
+            case llvm::LibFunc_fmaximum_num:
+            case llvm::LibFunc_fmaximum_numf:
+            case llvm::LibFunc_fmaximum_numl:
+            case llvm::LibFunc_fminimum_num:
+            case llvm::LibFunc_fminimum_numf:
+            case llvm::LibFunc_fminimum_numl:
+                return false;
             case llvm::LibFunc_fmod:
                 return true;
             case llvm::LibFunc_fmodf:
@@ -1078,6 +1099,10 @@ public:
                 return false;
             case llvm::LibFunc_htons:
                 return false;
+            case llvm::LibFunc_hypot:
+            case llvm::LibFunc_hypotf:
+            case llvm::LibFunc_hypotl:
+                return false;
             case llvm::LibFunc_iprintf:
                 return false;
             case llvm::LibFunc_isascii:
@@ -1112,6 +1137,10 @@ public:
                 return true;
             case llvm::LibFunc_log2l:
                 return true;
+            case llvm::LibFunc_ilogb:
+            case llvm::LibFunc_ilogbf:
+            case llvm::LibFunc_ilogbl:
+                return false;
             case llvm::LibFunc_logb:
                 return true;
             case llvm::LibFunc_logbf:
@@ -1162,6 +1191,10 @@ public:
                 return false;
             case llvm::LibFunc_modfl:
                 return false;
+            case llvm::LibFunc_nan:
+            case llvm::LibFunc_nanf:
+            case llvm::LibFunc_nanl:
+                return false;
             case llvm::LibFunc_nearbyint:
                 return true;
             case llvm::LibFunc_nearbyintf:
@@ -1206,6 +1239,8 @@ public:
                 return false;
             case llvm::LibFunc_puts:
                 return false;
+            case llvm::LibFunc_pvalloc:
+                return false;
             case llvm::LibFunc_pwrite:
                 return false;
             case llvm::LibFunc_qsort:
@@ -1217,6 +1252,8 @@ public:
             case llvm::LibFunc_realloc:
                 return false;
             case llvm::LibFunc_reallocf:
+                return false;
+            case llvm::LibFunc_reallocarray:
                 return false;
             case llvm::LibFunc_realpath:
                 return false;
@@ -1231,6 +1268,10 @@ public:
             case llvm::LibFunc_remquof:
                 return false;
             case llvm::LibFunc_remquol:
+                return false;
+            case llvm::LibFunc_fdim:
+            case llvm::LibFunc_fdimf:
+            case llvm::LibFunc_fdiml:
                 return false;
             case llvm::LibFunc_remove:
                 return false;
@@ -1258,6 +1299,13 @@ public:
                 return true;
             case llvm::LibFunc_roundl:
                 return true;
+            case llvm::LibFunc_scalbln:
+            case llvm::LibFunc_scalblnf:
+            case llvm::LibFunc_scalblnl:
+            case llvm::LibFunc_scalbn:
+            case llvm::LibFunc_scalbnf:
+            case llvm::LibFunc_scalbnl:
+                return false;
             case llvm::LibFunc_scanf:
                 return false;
             case llvm::LibFunc_setbuf:
@@ -1278,6 +1326,10 @@ public:
                 return true;
             case llvm::LibFunc_sinl:
                 return true;
+            case llvm::LibFunc_sincos:
+            case llvm::LibFunc_sincosf:
+            case llvm::LibFunc_sincosl:
+                return false;
             case llvm::LibFunc_siprintf:
                 return false;
             case llvm::LibFunc_snprintf:
@@ -1438,6 +1490,8 @@ public:
                 return false;
             case llvm::NotLibFunc:
                 return false;
+            default:
+                throw std::runtime_error("Unknown LibFunc type:" + std::to_string(static_cast<size_t>(lf)));
         }
     };
 };

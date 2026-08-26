@@ -4,6 +4,7 @@
 #include <sdfg/transformations/einsum_lift.h>
 #include <sdfg/transformations/einsum_promotion.h>
 #include <sdfg/transformations/in_local_storage.h>
+#include <sdfg/transformations/local_storage.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
@@ -25,6 +26,7 @@
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/replayer.h>
 #include <sdfg/transformations/tile_fusion.h>
+#include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 
 namespace sdfg {
@@ -54,6 +56,8 @@ void Replayer::replay(
             this->apply<transformations::LoopDistribute>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "LoopInterchange") {
             this->apply<transformations::LoopInterchange>(builder, analysis_manager, desc, skip_if_not_applicable);
+        } else if (transformation_name == "LocalStorage") {
+            this->apply<transformations::LocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "OutLocalStorage") {
             this->apply<transformations::OutLocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "InLocalStorage") {
@@ -72,6 +76,8 @@ void Replayer::replay(
             this->apply<transformations::LoopPeeling>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "VectorizeTransform") {
             this->apply<transformations::VectorizeTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
+        } else if (transformation_name == "UnrollTransform") {
+            this->apply<transformations::UnrollTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "CUDATransform") {
             this->apply<cuda::CUDATransform>(builder, analysis_manager, desc, skip_if_not_applicable);
         } else if (transformation_name == "CUDAParallelizeNestedMap") {

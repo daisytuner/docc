@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -152,6 +153,11 @@ private:
     bool aggregate_events = false;
     bool papi_available = false;
     std::string output_file;
+
+    // Global measurement switch. When false, enter/exit/metric calls are no-ops
+    // so no samples accumulate. Atomic so start/stop don't contend on `mutex` and
+    // the hot-path check stays cheap. Shared RTL => one instance toggles all callers.
+    std::atomic<bool> enabled{true};
 
     std::vector<std::string> event_names_cpu;
     std::vector<std::string> event_names_cuda;
@@ -709,6 +715,11 @@ public:
     }
 
     void enter_region(size_t region_id) {
+        // No-op while measurement is globally disabled: skip recording a start so
+        // the matching (also skipped) exit leaves per-region buffers consistent.
+        if (!enabled.load(std::memory_order_relaxed)) {
+            return;
+        }
         std::lock_guard<std::mutex> lock(mutex);
 
         auto it = regions.find(region_id);
@@ -743,6 +754,11 @@ public:
     }
 
     void exit_region(size_t region_id) {
+        // No-op while disabled: the paired enter was also skipped, so there is no
+        // start to close out and no sample to record.
+        if (!enabled.load(std::memory_order_relaxed)) {
+            return;
+        }
         std::lock_guard<std::mutex> lock(mutex);
 
         auto it = regions.find(region_id);
@@ -868,6 +884,11 @@ public:
     }
 
     void provided_metric(size_t region_id, const char* name, double value) {
+        // No-op while disabled so provided metrics stay aligned with the runtime
+        // samples, which are also suppressed.
+        if (!enabled.load(std::memory_order_relaxed)) {
+            return;
+        }
         std::lock_guard<std::mutex> lock(mutex);
 
         auto it = regions.find(region_id);
@@ -1026,8 +1047,30 @@ public:
             region.first_start = 0;
             region.starts.clear();
             region.durations.clear();
+
+            // Hardware-counter aggregates, cleared so all metrics drop the
+            // warmup sample consistently with the runtime stats above.
+            region.counts.clear();
+            region.n.clear();
+            region.mean.clear();
+            region.variance.clear();
+            region.min.clear();
+            region.max.clear();
+
+            // Static counters.
+            region.static_counters_n.clear();
+            region.static_counters_mean.clear();
+            region.static_counters_variance.clear();
+            region.static_counters_min.clear();
+            region.static_counters_max.clear();
         }
     }
+
+    // Globally enable/disable measurement. Toggling only takes effect at region
+    // boundaries (like reset_all_stats), which is where harnesses call it.
+    void set_enabled(bool on) { enabled.store(on, std::memory_order_relaxed); }
+
+    bool is_enabled() const { return enabled.load(std::memory_order_relaxed); }
 };
 
 static DaisyInstrumentationState& get_daisy_state() {
@@ -1069,6 +1112,12 @@ bool __daisy_instrumentation_total_stats(double* mean_us, double* variance_us2, 
 }
 
 void __daisy_instrumentation_reset_all(void) { get_daisy_state().reset_all_stats(); }
+
+void __daisy_instrumentation_start(void) { get_daisy_state().set_enabled(true); }
+
+void __daisy_instrumentation_stop(void) { get_daisy_state().set_enabled(false); }
+
+bool __daisy_instrumentation_is_enabled(void) { return get_daisy_state().is_enabled(); }
 
 #ifdef __cplusplus
 } // extern "C"

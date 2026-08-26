@@ -91,6 +91,7 @@ def test_static_global(opt_level):
     assert square_res == "Square: 4"
     assert cube_res == "Cube: 8"
 
+
 def test_memcpy():
     benchmark_path = Path(__file__).parent / "tests" / "basic" / "memory_lto"
     output_path = benchmark_path / f"memcpy.out"
@@ -133,10 +134,10 @@ def test_device_transfers():
     output_path = benchmark_path / f"device_transfers.out"
     cmd = [
         "docc",
-        "-mllvm",
         "-docc-tune=cuda",
         "-g",
         "-O3",
+        "-docc-save-temps",
         str(benchmark_path / "device_transfers.c"),
         str(benchmark_path / "device_transfers_lib.c"),
         "-o",
@@ -173,12 +174,12 @@ def test_device_transfers_lib():
     output_path_lib = benchmark_path / f"libdevice_transfers.so"
     cmd_lib = [
         "docc",
-        "-mllvm",
         "-docc-tune=cuda",
         "-fPIC",
         "-shared",
         "-g",
         "-O3",
+        "-docc-save-temps",
         str(benchmark_path / "device_transfers_lib.c"),
         "-o",
         str(output_path_lib),
@@ -204,7 +205,7 @@ def test_device_transfers_lib():
         "-o",
         str(output_path),
         "-L" + str(benchmark_path),
-        "-l" + "device_transfers"
+        "-l" + "device_transfers",
     ]
     process = subprocess.Popen(
         cmd,
@@ -219,7 +220,9 @@ def test_device_transfers_lib():
     assert process.returncode == 0
 
     # Run benchmark
-    os.environ["LD_LIBRARY_PATH"] = str(benchmark_path) + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+    os.environ["LD_LIBRARY_PATH"] = (
+        str(benchmark_path) + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+    )
     process = subprocess.Popen(
         [str(output_path)],
         stdout=subprocess.PIPE,
@@ -272,13 +275,14 @@ def test_long_name():
     success = stdout.splitlines()[0]
     assert success == "Success: data[10] = 20.000000"
 
+
 @pytest.mark.xfail(reason="Compilation segfaults")
 def test_transfer_minimization_external():
     # Compile lib
     benchmark_path = Path(__file__).parent / "tests" / "basic" / "transfer_minimization"
     output_path_lib = benchmark_path / "libvecadd.so"
     cmd = [
-        "clang-19",
+        "clang-21",
         "-fPIC",
         "-shared",
         "-g",
@@ -310,7 +314,7 @@ def test_transfer_minimization_external():
         "-o",
         str(output_path),
         "-L" + str(benchmark_path),
-        "-l" + "vecadd"
+        "-l" + "vecadd",
     ]
     process = subprocess.Popen(
         cmd,
@@ -324,15 +328,19 @@ def test_transfer_minimization_external():
         print("STDERR:", stderr)
     assert process.returncode == 0
 
-    verification = SDFGVerification({
-        "sdfgs": 1,
-        "ExternalOffloading": 11,
-        "Call": 6,
-    })
+    verification = SDFGVerification(
+        {
+            "sdfgs": 1,
+            "ExternalOffloading": 11,
+            "Call": 6,
+        }
+    )
     verification.verify(stderr)
 
     # Run test
-    os.environ["LD_LIBRARY_PATH"] = str(benchmark_path) + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+    os.environ["LD_LIBRARY_PATH"] = (
+        str(benchmark_path) + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+    )
     process = subprocess.Popen(
         [str(output_path)],
         stdout=subprocess.PIPE,
@@ -345,6 +353,7 @@ def test_transfer_minimization_external():
         print("STDERR:", stderr)
     assert process.returncode == 0
     assert "Correct" in stdout.splitlines()
+
 
 @pytest.mark.xfail(reason="Verifier changed")
 def test_transfer_minimization_cuda():
@@ -359,7 +368,7 @@ def test_transfer_minimization_cuda():
         "-O3",
         str(benchmark_path / "test_cuda.c"),
         "-o",
-        str(output_path)
+        str(output_path),
     ]
     process = subprocess.Popen(
         cmd,
@@ -373,11 +382,13 @@ def test_transfer_minimization_cuda():
         print("STDERR:", stderr)
     assert process.returncode == 0
 
-    verification = SDFGVerification({
-        "sdfgs": 1,
-        "CUDA": 3,
-        "CUDAOffloading": 11,
-    })
+    verification = SDFGVerification(
+        {
+            "sdfgs": 1,
+            "CUDA": 3,
+            "CUDAOffloading": 11,
+        }
+    )
     verification.verify(stderr)
 
     # Run test

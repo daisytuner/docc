@@ -91,7 +91,7 @@ SrcFileCompiler::SrcFileCompiler(
     const std::optional<std::string>& linker,
     const std::string& common_args,
     const std::string& compile_args,
-    const std::vector<std::filesystem::path>& library_paths,
+    const std::vector<LibPath>& library_paths,
     const std::vector<std::string>& link_options,
     bool link_immediately,
     std::unordered_map<std::string, std::unique_ptr<SrcFileCompiler>>&& redirects,
@@ -277,7 +277,10 @@ bool SrcFileCompiler::run_compile_and_link_single(const std::filesystem::path& s
 
 void SrcFileCompiler::add_link_args(std::stringstream& cmd) const {
     for (auto& ld : this->library_paths_) {
-        cmd << "-L " << ld << " ";
+        cmd << "-L " << ld.path << " ";
+        if (ld.is_rpath) {
+            cmd << "-Wl,-rpath," << ld.path << " ";
+        }
     }
     for (auto& option : this->link_options_) {
         cmd << option << " ";

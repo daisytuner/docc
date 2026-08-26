@@ -52,7 +52,11 @@ void SequentialMapDispatcher::dispatch_node(
     PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
 ) {
     main_stream << "// Map" << std::endl;
-    main_stream << "#pragma clang loop vectorize(disable) interleave(disable)" << std::endl;
+    main_stream << "#pragma clang loop vectorize(disable) interleave(disable)";
+    if (structured_control_flow::ScheduleType_Unroll::is_set(node_.schedule_type())) {
+        main_stream << " unroll(full)";
+    }
+    main_stream << std::endl;
     main_stream << "for";
     main_stream << "(";
     main_stream << node_.indvar()->get_name();

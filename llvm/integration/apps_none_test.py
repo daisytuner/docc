@@ -56,7 +56,7 @@ def test_HPCCG():
         "HPCCG",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         ["-O3", "-g", "-lm"],
         "none",
         [
@@ -131,13 +131,13 @@ def test_LULESH():
     test_case = Path(__file__).parent / "tests" / "apps" / "LULESH" / "lulesh.cc"
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 29, "FOR": 22, "SEQUENTIAL": 36, "WHILE": 24, "MAP": 14}
+        verification={"sdfgs": 30, "FOR": 23, "SEQUENTIAL": 44, "WHILE": 24, "MAP": 21}
     )
     runner = TestRunner(
         "Apps",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         [
             "-O3",
             "-fopenmp",
@@ -244,7 +244,7 @@ def test_miniFE(data_layout, precision):
         "Apps",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         [
             "-O3",
             "-g",
@@ -387,7 +387,7 @@ def test_miniAMR2():
         "Apps",
         test_case,
         "docc",
-        "clang-19",
+        "clang-21",
         ["-O3", "-g", "-fopenmp", "-latomic", "-DMANTEVO_DUMP_ARRAYS"],
         "none",
         [
@@ -459,7 +459,7 @@ def test_cloudsc():
         "Apps",
         test_case,
         "docc",
-        "clang-19",
+        "clang-21",
         [
             "-O3",
             "-g",

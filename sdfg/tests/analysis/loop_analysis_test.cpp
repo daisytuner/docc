@@ -272,6 +272,84 @@ TEST(LoopAnalysisTest, descendants_concatenated) {
     manager.invalidate_all();
 }
 
+TEST(LoopAnalysisTest, ancestors_nested) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
+    builder.add_container("j", types::Scalar(types::PrimitiveType::Int32));
+    builder.add_container("k", types::Scalar(types::PrimitiveType::Int32));
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    auto indvar_i = symbolic::symbol("i");
+    auto update_i = symbolic::add(indvar_i, symbolic::one());
+    auto condition_i = symbolic::Lt(indvar_i, symbolic::symbol("N"));
+    auto init_i = symbolic::zero();
+    auto& loop_i = builder.add_for(root, indvar_i, condition_i, init_i, update_i);
+
+    auto indvar_j = symbolic::symbol("j");
+    auto update_j = symbolic::add(indvar_j, symbolic::one());
+    auto condition_j = symbolic::Lt(indvar_j, symbolic::symbol("N"));
+    auto init_j = symbolic::zero();
+    auto& loop_j = builder.add_for(loop_i.root(), indvar_j, condition_j, init_j, update_j);
+
+    auto indvar_k = symbolic::symbol("k");
+    auto update_k = symbolic::add(indvar_k, symbolic::one());
+    auto condition_k = symbolic::Lt(indvar_k, symbolic::symbol("N"));
+    auto init_k = symbolic::zero();
+    auto& loop_k = builder.add_for(loop_j.root(), indvar_k, condition_k, init_k, update_k);
+
+    analysis::AnalysisManager manager(sdfg);
+    auto& loop_analysis = manager.get<analysis::LoopAnalysis>();
+
+    auto anc = loop_analysis.ancestors(&loop_k);
+    EXPECT_EQ(anc.size(), 2);
+    bool found_i = false;
+    bool found_j = false;
+    for (auto& node : anc) {
+        if (node == &loop_i) {
+            found_i = true;
+        } else if (node == &loop_j) {
+            found_j = true;
+        }
+    }
+    EXPECT_TRUE(found_i);
+    EXPECT_TRUE(found_j);
+    manager.invalidate_all();
+}
+
+TEST(LoopAnalysisTest, ancestors_outermost) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
+    builder.add_container("j", types::Scalar(types::PrimitiveType::Int32));
+
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    auto indvar_i = symbolic::symbol("i");
+    auto update_i = symbolic::add(indvar_i, symbolic::one());
+    auto condition_i = symbolic::Lt(indvar_i, symbolic::symbol("N"));
+    auto init_i = symbolic::zero();
+    auto& loop_i = builder.add_for(root, indvar_i, condition_i, init_i, update_i);
+
+    auto indvar_j = symbolic::symbol("j");
+    auto update_j = symbolic::add(indvar_j, symbolic::one());
+    auto condition_j = symbolic::Lt(indvar_j, symbolic::symbol("N"));
+    auto init_j = symbolic::zero();
+    auto& loop_j = builder.add_for(loop_i.root(), indvar_j, condition_j, init_j, update_j);
+
+    analysis::AnalysisManager manager(sdfg);
+    auto& loop_analysis = manager.get<analysis::LoopAnalysis>();
+
+    auto anc = loop_analysis.ancestors(&loop_i);
+    EXPECT_EQ(anc.size(), 0);
+
+    auto anc_j = loop_analysis.ancestors(&loop_j);
+    EXPECT_EQ(anc_j.size(), 1);
+    EXPECT_EQ(*anc_j.begin(), &loop_i);
+    manager.invalidate_all();
+}
+
 TEST(LoopAnalysisTest, outermost_loops) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 

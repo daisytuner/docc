@@ -39,11 +39,11 @@ if(NOT TARGET docc::c-compile)
 endif()
 
 # LLVM dependency
-find_package(LLVM 19.1 REQUIRED CONFIG)
-if (LLVM_VERSION VERSION_GREATER_EQUAL "20.0.0")
+find_package(LLVM 21.1 REQUIRED CONFIG)
+if (LLVM_VERSION VERSION_GREATER_EQUAL "22.0.0")
   message(FATAL_ERROR "LLVM version too new: ${LLVM_VERSION}")
 endif()
-if (LLVM_VERSION VERSION_LESS "19.0.0")
+if (LLVM_VERSION VERSION_LESS "21.0.0")
   message(FATAL_ERROR "LLVM version too old: ${LLVM_VERSION}")
 endif()
 
@@ -125,7 +125,7 @@ else()
 endif()
 
 target_package_deps(docc_llvm_pass
-    TOOLS clang-19
+    TOOLS clang-21
 )
 
 

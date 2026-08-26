@@ -14,31 +14,31 @@
 
 #include "utils.h"
 
-static bool is_preprocess_only(const std::vector<std::string> &args) {
+static bool is_preprocess_only(const std::vector<std::string>& args) {
     return std::find(args.begin(), args.end(), "-E") != args.end() &&
            std::find(args.begin(), args.end(), "-dM") != args.end();
 }
 
-static bool is_driver_dump(const std::vector<std::string> &args) {
+static bool is_driver_dump(const std::vector<std::string>& args) {
     return std::find(args.begin(), args.end(), "-###") != args.end();
 }
 
-static bool is_cmake_compiler_id(const std::vector<std::string> &args) {
-    for (const auto &a : args)
+static bool is_cmake_compiler_id(const std::vector<std::string>& args) {
+    for (const auto& a : args)
         if (a.find("CMakeCCompilerId") != std::string::npos || a.find("CMakeCXXCompilerId") != std::string::npos)
             return true;
     return false;
 }
 
-static bool is_docc_noop(const std::vector<std::string> &args) {
-    return std::any_of(args.begin(), args.end(), [](const std::string &arg) { return arg == "-docc-noop"; });
+static bool is_docc_noop(const std::vector<std::string>& args) {
+    return std::any_of(args.begin(), args.end(), [](const std::string& arg) { return arg == "-docc-noop"; });
 }
 
-static std::string add_docc_work_dir(std::vector<std::string> &args, bool alsoLinking = true) {
+static std::string add_docc_work_dir(std::vector<std::string>& args, bool alsoLinking = true) {
     const std::string flag = "-docc-work-dir=";
 
     for (auto it = args.begin(); it != args.end(); ++it) {
-        auto &item = *it;
+        auto& item = *it;
         if (item.starts_with(flag)) {
             auto wdir = item.substr(flag.size());
             if (alsoLinking) {
@@ -71,7 +71,7 @@ static std::string add_docc_work_dir(std::vector<std::string> &args, bool alsoLi
     return wDir.string();
 }
 
-static void forward_docc_args(std::vector<std::string> &args, bool alsoLinking = true) {
+static void forward_docc_args(std::vector<std::string>& args, bool alsoLinking = true) {
     for (auto it = args.begin(); it != args.end(); ++it) {
         auto item = *it;
         if (item.starts_with("-docc-")) {
@@ -84,20 +84,29 @@ static void forward_docc_args(std::vector<std::string> &args, bool alsoLinking =
     }
 }
 
-static bool is_link_step(const std::vector<std::string> &args) {
+static bool is_link_step(const std::vector<std::string>& args) {
     // Compile‑only options that suppress linking.
-    constexpr const char *compile_only_flags[] = {"-c", "-S", "-E", "-emit-llvm"};
+    constexpr const char* compile_only_flags[] = {"-c", "-S", "-E", "-emit-llvm"};
     for (auto f : compile_only_flags)
         if (std::find(args.begin(), args.end(), f) != args.end()) return false;
     return true;
 }
 
+std::ostream& operator<<(std::ostream& lhs, const std::vector<std::string>& cmd) {
+    lhs << "[";
+    for (const auto& arg : cmd) {
+        lhs << arg << " ";
+    }
+    lhs << "]";
+    return lhs;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // main
 // ──────────────────────────────────────────────────────────────────────────────
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     const bool cpp_mode = docc::ends_with(argv[0], "docc-cpp");
-    const std::string cc = cpp_mode ? "clang++-19" : "clang-19";
+    const std::string cc = cpp_mode ? "clang++-21" : "clang-21";
 
     std::vector<std::string> cmd{cc};
     docc::collect_args(cmd, argc, argv);

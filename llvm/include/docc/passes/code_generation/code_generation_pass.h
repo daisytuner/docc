@@ -24,7 +24,7 @@ private:
         const std::filesystem::path &source_path,
         const std::vector<std::string> &compile_args,
         const std::vector<std::string> &add_compile_args,
-        llvm::StringRef target_triple
+        const llvm::Triple &target_triple
     );
 
     bool write_library_snippets_to_files(

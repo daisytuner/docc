@@ -11,9 +11,12 @@ option(DOCC_TESTS_ENABLE_DUMP "Enable dumping intermediary files of test cases" 
 set(TEST_FILES
     cuda/blas/cublas_test.cpp
     cuda/cuda_kernel_test.cpp
+    cuda/cuda_reduce_dispatcher_test.cpp
+    cuda/cuda_offload_reduce_dispatcher_test.cpp
     cuda/softmax_dispatcher_test.cpp
     rocm/blas/rocblas_test.cpp
     rocm/rocm_library_nodes_test.cpp
+    rocm/rocm_reduce_dispatcher_test.cpp
     cuda/cuda_library_nodes_test.cpp
     passes/einsum_test.cpp
     passes/loop_fusion/loop_fusion_by_domain_pass_test.cpp
@@ -28,6 +31,7 @@ set(TEST_FILES
     passes/offloading/device_buffer_reuse_pass_test.cpp
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_parallelize_nested_map_test.cpp
+    transformations/offloading/rocm_transform_test.cpp
     transformations/offloading/cuda_transform_im2col_test.cpp
     transformations/offloading/gpu_tiling_test.cpp
     transformations/offloading/kernel_local_storage_test.cpp
@@ -35,6 +39,9 @@ set(TEST_FILES
     transformations/offloading/rocblas_data_transfer_extraction_test.cpp
     transformations/offloading/cuda_stdlib_data_transfer_extraction_test.cpp
     transformations/offloading/rocm_stdlib_data_transfer_extraction_test.cpp
+    transformations/offloading/gpu_offload_nested_loop_test.cpp
+    transformations/offloading/cuda_offload_transform_test.cpp
+    transformations/offloading/rocm_offload_transform_test.cpp
     optimizations/diamond_tiling_test.cpp
     optimizations/blocking_test.cpp
     optimizations/gpu_kernels_test.cpp
@@ -47,6 +54,8 @@ set(TEST_FILES
     passes/offloading/rocm_library_node_rewriter_pass_test.cpp
     passes/scheduler/cuda_scheduler_test.cpp
     passes/scheduler/omp_scheduler_test.cpp
+    passes/scheduler/rocm_scheduler_test.cpp
+    passes/scheduler/vectorize_scheduler_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
     targets/omp/schedule_test.cpp
     transformations/collapse_to_depth_test.cpp
@@ -63,6 +72,7 @@ set(TEST_FILES
     transformations/loop_rotate_test.cpp
     transformations/loop_shift_test.cpp
     transformations/loop_skewing_test.cpp
+    transformations/loop_peeling_test.cpp
     transformations/loop_split_test.cpp
     transformations/loop_tiling_test.cpp
     transformations/loop_unit_stride_test.cpp
@@ -71,8 +81,10 @@ set(TEST_FILES
     transformations/tile_fusion_test.cpp
     transformations/out_local_storage_test.cpp
     transformations/in_local_storage_test.cpp
+    transformations/test_local_storage.cpp
     transformations/recorder_test.cpp
     transformations/vectorize_transform_test.cpp
+    transformations/unroll_transform_test.cpp
     transformations/transformation_serialization_test.cpp
     test.cpp
 )

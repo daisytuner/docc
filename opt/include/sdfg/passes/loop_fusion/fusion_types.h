@@ -95,6 +95,16 @@ struct FusionLoopCandidate {
     bool incompatible = false;
     bool nested_incompatible = false;
 
+    FusionLoopCandidate(
+        structured_control_flow::StructuredLoop* loop,
+        const symbolic::Assumption* indvar_boundaries,
+        symbolic::Assumptions assumptions,
+        bool is_map = false,
+        bool is_by_domain_candidate = false
+    )
+        : loop(loop), indvar_boundaries(indvar_boundaries), assumptions(std::move(assumptions)), is_map(is_map),
+          is_by_domain_candidate(is_by_domain_candidate) {}
+
     void non_indvar_writes();
 
     void aliasing_encountered();

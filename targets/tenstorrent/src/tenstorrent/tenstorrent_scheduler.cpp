@@ -13,7 +13,7 @@ SchedulerAction TenstorrentScheduler::find(
     bool offload_unknown_sizes
 ) {
     if (dyn_cast<structured_control_flow::Map*>(&loop)) {
-        return NEXT;
+        return APPLY;
     }
 
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();

@@ -217,7 +217,9 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
                 });
 
                 // Link-Time Pass Registration (Early and Late)
-                PB.registerOptimizerLastEPCallback([](llvm::ModulePassManager &MPM, llvm::OptimizationLevel Level) {
+                PB.registerOptimizerLastEPCallback([](llvm::ModulePassManager &MPM,
+                                                      llvm::OptimizationLevel Level,
+                                                      llvm::ThinOrFullLTOPhase) {
                     // Minimize data transfers
                     MPM.addPass(docc::passes::createDOCCPass(docc::passes::ArgumentExpansionPass(), AM));
 

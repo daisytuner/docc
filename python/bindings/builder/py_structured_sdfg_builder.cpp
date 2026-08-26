@@ -11,6 +11,7 @@
 #include <symengine/real_double.h>
 #include "py_structured_sdfg.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
@@ -28,6 +29,8 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/passes/debug_info_propagation.h"
+#include "sdfg/targets/cuda/cuda_data_offloading_node.h"
+#include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
@@ -287,6 +290,7 @@ sdfg::structured_control_flow::Map& PyStructuredSDFGBuilder::begin_map(
     const std::string& start,
     const std::string& end,
     const std::string& step,
+    const sdfg::structured_control_flow::ScheduleType* schedule_type,
     const sdfg::DebugInfo& debug_info
 ) {
     auto& parent = current_sequence();
@@ -299,9 +303,6 @@ sdfg::structured_control_flow::Map& PyStructuredSDFGBuilder::begin_map(
     if (SymEngine::is_a<SymEngine::Integer>(*step_expr)) {
         auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(step_expr);
         if (i->is_negative()) is_negative = true;
-    } else if (SymEngine::is_a<SymEngine::RealDouble>(*step_expr)) {
-        auto d = SymEngine::rcp_static_cast<const SymEngine::RealDouble>(step_expr);
-        if (d->as_double() < 0) is_negative = true;
     }
 
     SymEngine::RCP<const SymEngine::Boolean> condition;
@@ -313,15 +314,10 @@ sdfg::structured_control_flow::Map& PyStructuredSDFGBuilder::begin_map(
 
     auto update = SymEngine::add(var_sym, step_expr);
 
-    auto& map_node = builder_.add_map(
-        parent,
-        var_sym,
-        condition,
-        start_expr,
-        update,
-        sdfg::structured_control_flow::ScheduleType_Sequential::create(),
-        debug_info
-    );
+    auto schedule = schedule_type != nullptr ? *schedule_type
+                                             : sdfg::structured_control_flow::ScheduleType_Sequential::create();
+
+    auto& map_node = builder_.add_map(parent, var_sym, condition, start_expr, update, schedule, debug_info);
 
     scope_stack.push_back({&map_node.root(), &map_node, 0});
 
@@ -332,7 +328,70 @@ void PyStructuredSDFGBuilder::end_map() {
     auto current = scope_stack.back();
     auto* map_node = sdfg::dyn_cast<sdfg::structured_control_flow::Map*>(current.node);
     if (!map_node) {
-        throw std::runtime_error("Cannot end_map: not in a map loop");
+        throw std::runtime_error("Cannot end_map: not in a map");
+    }
+    scope_stack.pop_back();
+}
+
+sdfg::structured_control_flow::Reduce& PyStructuredSDFGBuilder::begin_reduce(
+    const std::string& var,
+    const std::string& start,
+    const std::string& end,
+    const std::string& step,
+    const std::vector<std::pair<std::string, std::string>>& reductions,
+    const sdfg::structured_control_flow::ScheduleType* schedule_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& parent = current_sequence();
+    auto var_sym = sdfg::symbolic::symbol(var);
+    auto start_expr = parse_and_expand(start);
+    auto end_expr = parse_and_expand(end);
+    auto step_expr = parse_and_expand(step);
+
+    bool is_negative = false;
+    if (SymEngine::is_a<SymEngine::Integer>(*step_expr)) {
+        auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(step_expr);
+        if (i->is_negative()) is_negative = true;
+    }
+
+    SymEngine::RCP<const SymEngine::Boolean> condition;
+    if (is_negative) {
+        condition = SymEngine::Gt(var_sym, end_expr);
+    } else {
+        condition = SymEngine::Lt(var_sym, end_expr);
+    }
+
+    auto update = SymEngine::add(var_sym, step_expr);
+
+    std::vector<sdfg::structured_control_flow::ReductionInfo> reduction_infos;
+    reduction_infos.reserve(reductions.size());
+    for (const auto& reduction : reductions) {
+        reduction_infos
+            .push_back({sdfg::structured_control_flow::reduction_operation_from_string(reduction.first), reduction.second}
+            );
+    }
+
+    auto& reduce_node = builder_.add_reduce(
+        parent,
+        var_sym,
+        condition,
+        start_expr,
+        update,
+        reduction_infos,
+        schedule_type != nullptr ? *schedule_type : sdfg::structured_control_flow::ScheduleType_Sequential::create(),
+        debug_info
+    );
+
+    scope_stack.push_back({&reduce_node.root(), &reduce_node, 0});
+
+    return reduce_node;
+}
+
+void PyStructuredSDFGBuilder::end_reduce() {
+    auto current = scope_stack.back();
+    auto* reduce_node = dynamic_cast<sdfg::structured_control_flow::Reduce*>(current.node);
+    if (!reduce_node) {
+        throw std::runtime_error("Cannot end_reduce: not in a reduce");
     }
     scope_stack.pop_back();
 }
@@ -800,6 +859,65 @@ void PyStructuredSDFGBuilder::add_free_block(const std::string& container, const
     auto& libnode = add_free(block, debug_info);
     builder_.add_computational_memlet(
         block, container_access, libnode, "_ptr", {}, builder_.subject().type(container), debug_info
+    );
+}
+
+void PyStructuredSDFGBuilder::add_barrier_local_block(const sdfg::DebugInfo& debug_info) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    builder_.add_library_node<sdfg::data_flow::BarrierLocalNode>(block, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_cuda_offloading_block(
+    const std::string& host_container,
+    const std::string& dev_container,
+    sdfg::offloading::DataTransferDirection direction,
+    sdfg::offloading::BufferLifecycle lifecycle,
+    const sdfg::types::IType& data_type,
+    const std::string& size,
+    const std::string& device_id,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto size_expr = parse_and_expand(size);
+    auto device_id_expr = parse_and_expand(device_id);
+
+    sdfg::offloading::add_offloading_block<sdfg::cuda::CUDADataOffloadingNode>(
+        builder_,
+        current_sequence(),
+        host_container,
+        dev_container,
+        direction,
+        lifecycle,
+        data_type,
+        debug_info,
+        size_expr,
+        device_id_expr
+    );
+}
+
+void PyStructuredSDFGBuilder::add_rocm_offloading_block(
+    const std::string& host_container,
+    const std::string& dev_container,
+    sdfg::offloading::DataTransferDirection direction,
+    sdfg::offloading::BufferLifecycle lifecycle,
+    const sdfg::types::IType& data_type,
+    const std::string& size,
+    const std::string& device_id,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto size_expr = parse_and_expand(size);
+    auto device_id_expr = parse_and_expand(device_id);
+
+    sdfg::offloading::add_offloading_block<sdfg::rocm::ROCMDataOffloadingNode>(
+        builder_,
+        current_sequence(),
+        host_container,
+        dev_container,
+        direction,
+        lifecycle,
+        data_type,
+        debug_info,
+        size_expr,
+        device_id_expr
     );
 }
 

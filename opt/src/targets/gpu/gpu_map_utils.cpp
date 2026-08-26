@@ -8,7 +8,9 @@
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/rocm/rocm.h"
 
 namespace sdfg {
@@ -29,7 +31,7 @@ symbolic::Expression find_nested_gpu_blocksize(
         bool foundY = false;
         bool foundZ = false;
         for (auto& loop : path) {
-            if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
+            if (auto map = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
                 if (map->schedule_type().value() == ScheduleT::value()) {
                     auto dim = ScheduleT::dimension(map->schedule_type());
                     if (dim == GPUDimension::X) {
@@ -55,7 +57,7 @@ symbolic::Expression find_nested_gpu_blocksize(
 
     // Find block size for the requested dimension
     for (auto loop : loops) {
-        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
             if (map->schedule_type().value() != ScheduleT::value() &&
                 map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value()) {
                 throw InvalidSDFGException("Nested map in GPU kernel not GPU or Sequential");
@@ -84,7 +86,7 @@ symbolic::Expression find_nested_gpu_iterations(
     symbolic::Expression max_num_iterations = symbolic::one();
 
     for (auto loop : loops) {
-        if (auto map = dyn_cast<structured_control_flow::Map*>(loop)) {
+        if (auto map = dynamic_cast<structured_control_flow::StructuredLoop*>(loop)) {
             if (map->schedule_type().value() != ScheduleT::value() &&
                 map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value()) {
                 throw InvalidSDFGException("Nested map in GPU kernel not GPU or Sequential");
@@ -165,15 +167,15 @@ get_gpu_maps(structured_control_flow::Map& node, analysis::AnalysisManager& anal
     return maps;
 }
 
-bool nested_parallelization_replicates_accumulation(
-    structured_control_flow::Map& loop, analysis::AnalysisManager& analysis_manager
+bool nested_parallelization_is_unsafe(
+    structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager
 ) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
     // The outermost enclosing GPU map is the kernel scope. Everything below it is
     // folded into a single flattened launch, so adding a dimension for `loop`
-    // replicates its siblings (and the siblings of any ancestor up to this map)
-    // across the new dimension's threads.
+    // distributes its iterations across the new dimension's threads and replicates
+    // its siblings (and the siblings of any ancestor up to this map) across them.
     auto is_parallelized = [](structured_control_flow::Map* map) {
         return map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value();
     };
@@ -195,28 +197,25 @@ bool nested_parallelization_replicates_accumulation(
     auto& users = analysis_manager.get<analysis::Users>();
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
     // Containers whose entire lifetime is confined to the kernel are privatized per
-    // thread (registers/stack, per-thread allocation), so a read-modify-write on one
-    // races nothing. Only an accumulation on a container that escapes the kernel
-    // (function argument/external or a transient living outside) is a hazard. Loop
-    // induction variables are locals by definition, so this subsumes loop-control
-    // bookkeeping without any special-casing.
+    // thread (registers/stack, per-thread allocation), so they race nothing. Only a
+    // container that escapes the kernel (function argument/external or a transient
+    // living outside, per ArgumentsAnalysis) is a hazard. Loop induction variables
+    // are locals by definition, so this subsumes loop-control bookkeeping.
     const auto& locals = arguments_analysis.locals(analysis_manager, *outermost);
     auto is_local = [&locals](const std::string& container) { return locals.count(container) != 0; };
 
-    // A subtree performs an unsafe accumulation if it reads and writes the same
-    // non-local container (e.g. `acc[i] += x`). A plain store is idempotent under
-    // replication and therefore allowed.
-    auto accumulates_on_shared = [&](structured_control_flow::ControlFlowNode& node) {
+    // Collect the container reads and writes of a subtree. Views alias memory and
+    // are treated conservatively as both a read and a write.
+    auto collect = [&](structured_control_flow::ControlFlowNode& node,
+                       std::unordered_set<std::string>& writes,
+                       std::unordered_set<std::string>& reads) {
         analysis::UsersView view(users, node);
-        std::unordered_set<std::string> writes;
-        std::unordered_set<std::string> reads;
         for (auto* u : view.writes()) {
             writes.insert(u->container());
         }
         for (auto* u : view.moves()) {
             writes.insert(u->container());
         }
-        // Views alias memory; treat conservatively as both a read and a write.
         for (auto* u : view.views()) {
             writes.insert(u->container());
             reads.insert(u->container());
@@ -224,6 +223,19 @@ bool nested_parallelization_replicates_accumulation(
         for (auto* u : view.reads()) {
             reads.insert(u->container());
         }
+    };
+
+    // `loop`'s writes vary across the new dimension (its iterations are distributed),
+    // so any replicated sibling that touches one of these shared containers races.
+    std::unordered_set<std::string> loop_writes;
+    std::unordered_set<std::string> loop_reads;
+    collect(loop, loop_writes, loop_reads);
+
+    // A subtree performs an unsafe self-accumulation if it reads and writes the same
+    // non-local container (e.g. `acc[i] += x`). A plain store is idempotent under
+    // replication and therefore allowed.
+    auto accumulates_on_shared = [&](const std::unordered_set<std::string>& writes,
+                                     const std::unordered_set<std::string>& reads) {
         for (const auto& container : writes) {
             if (reads.count(container) != 0 && !is_local(container)) {
                 return true;
@@ -246,14 +258,35 @@ bool nested_parallelization_replicates_accumulation(
             if (&sibling == node) {
                 continue;
             }
-            // A sibling that is itself a GPU map is already parallelized: codegen maps
-            // it onto its own threads, so its accumulation is not replicated.
+
+            std::unordered_set<std::string> sibling_writes;
+            std::unordered_set<std::string> sibling_reads;
+            collect(sibling, sibling_writes, sibling_reads);
+
+            // Hazard 1 (producer/consumer across the fold): a shared container that
+            // `loop` writes is read or written by a replicated sibling. `loop`'s
+            // writes vary across the new dimension, so the sibling observes another
+            // thread's incomplete data without synchronization. This is the reduce
+            // accumulator -> consumer race (softmax: reduce writes acc[i], a sibling
+            // divides by acc[i]). Applies even if the sibling is itself a GPU map.
+            for (const auto& container : loop_writes) {
+                if (is_local(container)) {
+                    continue;
+                }
+                if (sibling_writes.count(container) != 0 || sibling_reads.count(container) != 0) {
+                    return true;
+                }
+            }
+
+            // Hazard 2 (replicated self-accumulation): a sibling read-modify-writes a
+            // shared container. A sibling that is itself a GPU map is exempt: codegen
+            // maps it onto its own threads instead of replicating it.
             if (auto* sibling_map = dyn_cast<structured_control_flow::Map*>(&sibling)) {
                 if (is_parallelized(sibling_map)) {
                     continue;
                 }
             }
-            if (accumulates_on_shared(sibling)) {
+            if (accumulates_on_shared(sibling_writes, sibling_reads)) {
                 return true;
             }
         }
@@ -266,6 +299,151 @@ bool nested_parallelization_replicates_accumulation(
     return false;
 }
 
+symbolic::Expression get_target_level_dim(TargetLevel target_level, int warp_size) {
+    switch (target_level) {
+        case TargetLevel::X_GRID:
+            return symbolic::gridDim_x();
+        case TargetLevel::X_BLOCK:
+            return symbolic::blockDim_x();
+        case TargetLevel::Y_GRID:
+            return symbolic::gridDim_y();
+        case TargetLevel::Y_BLOCK:
+            return symbolic::blockDim_y();
+        case TargetLevel::Z_GRID:
+            return symbolic::gridDim_z();
+        case TargetLevel::Z_BLOCK:
+            return symbolic::blockDim_z();
+        case TargetLevel::WARP:
+            return symbolic::integer(warp_size);
+        default:
+            throw InvalidSDFGException(
+                "Invalid target level for GPU map: " + std::to_string(static_cast<int>(target_level))
+            );
+    }
+}
+
+symbolic::Expression get_target_level_idx(TargetLevel target_level) {
+    switch (target_level) {
+        case TargetLevel::X_GRID:
+            return symbolic::blockIdx_x();
+        case TargetLevel::X_BLOCK:
+            return symbolic::threadIdx_x();
+        case TargetLevel::Y_GRID:
+            return symbolic::blockIdx_y();
+        case TargetLevel::Y_BLOCK:
+            return symbolic::threadIdx_y();
+        case TargetLevel::Z_GRID:
+            return symbolic::blockIdx_z();
+        case TargetLevel::Z_BLOCK:
+            return symbolic::threadIdx_z();
+        case TargetLevel::WARP:
+            throw InvalidSDFGException("Cannot get index for WARP target level");
+        default:
+            throw InvalidSDFGException(
+                "Invalid target level for GPU map: " + std::to_string(static_cast<int>(target_level))
+            );
+    }
+}
+
+bool is_grid_level(TargetLevel target_level) {
+    return target_level == TargetLevel::X_GRID || target_level == TargetLevel::Y_GRID ||
+           target_level == TargetLevel::Z_GRID;
+}
+
+bool is_block_level(TargetLevel target_level) {
+    return target_level == TargetLevel::X_BLOCK || target_level == TargetLevel::Y_BLOCK ||
+           target_level == TargetLevel::Z_BLOCK;
+}
+
+bool is_warp_level(TargetLevel target_level) { return target_level == TargetLevel::WARP; }
+
+symbolic::SymbolSet target_level_indvars(
+    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, TargetLevel target_level
+) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.descendants(&node);
+    loops.insert(&node);
+    symbolic::SymbolSet indvars;
+    for (const auto& loop : loops) {
+        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == target_level) {
+                    indvars.insert(struc_loop->indvar());
+                }
+            }
+        }
+    }
+    return indvars;
+}
+
+void get_nested_schedule_types(
+    structured_control_flow::StructuredLoop& node,
+    analysis::AnalysisManager& analysis_manager,
+    std::unordered_map<TargetLevel, structured_control_flow::ScheduleType>& output
+) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.descendants(&node);
+    loops.insert(&node);
+    for (const auto& loop : loops) {
+        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+                auto level = ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type());
+                auto it = output.find(level);
+                // Sibling offloaders can share a level with different parallel_size; keep the
+                // largest so the launch dimension covers every sibling.
+                if (it == output.end() ||
+                    symbolic::is_true(symbolic::
+                                          Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
+                                             ScheduleType_GPU_Offload::parallel_size(it->second)))) {
+                    output.insert_or_assign(level, struc_loop->schedule_type());
+                }
+            }
+        }
+    }
+}
+
+bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.descendants(&loop);
+    loops.insert(&loop);
+
+    for (const auto& loop : loops) {
+        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == TargetLevel::WARP) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
+    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager
+) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    if (ScheduleType_GPU_Offload::target_level(node.schedule_type()) != TargetLevel::WARP) {
+        return nullptr;
+    }
+
+    auto ancestors = loop_analysis.ancestors(&node);
+    for (auto ancestor : ancestors) {
+        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(ancestor)) {
+            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == TargetLevel::X_BLOCK) {
+                    return struc_loop;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule) {
+    return schedule.value() == "CUDA_Offload" || schedule.value() == "ROCM_Offload" || schedule.value() == "CUDA" ||
+           schedule.value() == "ROCM";
+}
 
 // Explicit template instantiations for CUDA
 template symbolic::Expression find_nested_gpu_blocksize<cuda::ScheduleType_CUDA>(

@@ -49,6 +49,7 @@
 #include <sdfg/passes/statistics.h>
 
 #include "docc/target/docc_target.h"
+#include "docc/util/docc_paths.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
 
 #ifdef DOCC_HAS_TARGET_ET
@@ -265,8 +266,10 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def(
             "schedule",
-            static_cast<void (PyStructuredSDFG::*)(const docc::target::TargetOptions&)>(&PyStructuredSDFG::schedule),
+            static_cast<void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool)>(&PyStructuredSDFG::schedule
+            ),
             py::arg("options"),
+            py::arg("schedule_loops") = true,
             "Schedule the SDFG"
         )
         .def(
@@ -287,6 +290,7 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("reuse_sources") = false
         )
         .def("metadata", &PyStructuredSDFG::metadata, py::arg("key"), "Get metadata value")
+        .def("add_metadata", &PyStructuredSDFG::add_metadata, py::arg("key"), py::arg("value"), "Set metadata value")
         .def_property(
             "output_dir",
             [](PyStructuredSDFG* self) { return self->metadata("output_dir"); },
@@ -441,10 +445,24 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("start"),
             py::arg("end"),
             py::arg("step"),
+            py::arg("schedule_type") = nullptr,
             py::arg("debug_info") = sdfg::DebugInfo(),
             py::return_value_policy::reference
         )
         .def("end_map", &PyStructuredSDFGBuilder::end_map)
+        .def(
+            "begin_reduce",
+            &PyStructuredSDFGBuilder::begin_reduce,
+            py::arg("var"),
+            py::arg("start"),
+            py::arg("end"),
+            py::arg("step"),
+            py::arg("reductions"),
+            py::arg("schedule_type") = nullptr,
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
+        )
+        .def("end_reduce", &PyStructuredSDFGBuilder::end_reduce)
         .def(
             "add_assignments",
             &PyStructuredSDFGBuilder::add_assignments,
@@ -932,6 +950,38 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_barrier_local_block",
+            &PyStructuredSDFGBuilder::add_barrier_local_block,
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            "Add a block-local thread barrier (__syncthreads) to the current sequence"
+        )
+        .def(
+            "add_cuda_offloading_block",
+            &PyStructuredSDFGBuilder::add_cuda_offloading_block,
+            py::arg("host_container"),
+            py::arg("dev_container"),
+            py::arg("direction"),
+            py::arg("lifecycle"),
+            py::arg("data_type"),
+            py::arg("size"),
+            py::arg("device_id") = "0",
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            "Add a CUDA data-offloading block (cudaMalloc/cudaMemcpy/cudaFree) to the current sequence"
+        )
+        .def(
+            "add_rocm_offloading_block",
+            &PyStructuredSDFGBuilder::add_rocm_offloading_block,
+            py::arg("host_container"),
+            py::arg("dev_container"),
+            py::arg("direction"),
+            py::arg("lifecycle"),
+            py::arg("data_type"),
+            py::arg("size"),
+            py::arg("device_id") = "0",
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            "Add a ROCm data-offloading block (hipMalloc/hipMemcpy/hipFree) to the current sequence"
+        )
+        .def(
             "is_hoistable_size",
             &PyStructuredSDFGBuilder::is_hoistable_size,
             py::arg("size_expr"),
@@ -1055,5 +1105,22 @@ PYBIND11_MODULE(_sdfg, m) {
             return result;
         },
         "Get pass and pipeline statistics summary"
+    );
+
+    // Runtime library search paths, resolved the same way the native compiler
+    // driver resolves them (DefaultDoccPaths reconstructed from this extension
+    // module's on-disk location). Used by the Python RTL loader to locate
+    // libdaisy_rtl without guessing directory layouts.
+    m.def(
+        "_default_library_paths",
+        []() {
+            auto paths = docc::util::DefaultDoccPaths::from_lib_location(docc::util::find_lib_location());
+            std::vector<std::string> result;
+            for (const auto& p : paths->get_default_library_paths()) {
+                result.push_back(p.string());
+            }
+            return result;
+        },
+        "Default runtime library search paths, matching the native compiler driver"
     );
 }

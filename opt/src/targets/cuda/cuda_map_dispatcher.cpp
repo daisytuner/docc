@@ -101,7 +101,11 @@ void CUDAMapDispatcher::dispatch_node(
     // Arguments Declaration
     std::vector<std::string> arguments_declaration;
     for (auto& container : arguments) {
-        arguments_declaration.push_back(this->language_extension_.declaration(container, sdfg_.type(container)));
+        const auto& arg_type = sdfg_.type(container);
+        // Distinct device buffers never alias: mark pointer params __restrict__ so clang's
+        // load-store vectorizer can widen contiguous copies (it bails on possible aliasing).
+        const std::string decl_name = arg_type.storage_type().is_nv_generic() ? "__restrict__ " + container : container;
+        arguments_declaration.push_back(this->language_extension_.declaration(decl_name, arg_type));
     }
 
     auto block_size_x = gpu::find_nested_gpu_blocksize<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::X);
@@ -158,6 +162,17 @@ void CUDAMapDispatcher::dispatch_node(
         this->dispatch_kernel_preamble(
             library_stream, analysis_manager, kernel_name, x_vars, y_vars, z_vars, arguments_declaration
         );
+
+        // Every device-pointer argument is a full cudaMalloc allocation, guaranteed
+        // >=256-byte aligned. Asserting 16-byte alignment lets clang's load-store
+        // vectorizer widen contiguous copies to 128-bit (LDG/STG.128); decltype
+        // keeps it agnostic to element type / constness.
+        for (auto& container : arguments) {
+            if (sdfg_.type(container).storage_type().is_nv_generic()) {
+                library_stream << container << " = reinterpret_cast<decltype(" << container
+                               << ")>(__builtin_assume_aligned(" << container << ", 16));" << std::endl;
+            }
+        }
 
         this->dispatch_kernel_body(library_snippet_factory, library_stream, node_.indvar(), scope_variables, num_iters);
 

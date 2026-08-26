@@ -7,7 +7,7 @@ namespace sdfg {
 namespace printf_target {
 
 /**
- * @brief Transform that converts a map to use the printf debug target
+ * @brief Transform that converts a loop to use the printf debug target
  *
  * This transform follows the same pattern as CUDATransform but instead
  * of generating actual GPU kernels and memory transfers, it generates
@@ -15,8 +15,8 @@ namespace printf_target {
  */
 class PrintfTransform : public transformations::OffloadTransform {
 public:
-    explicit PrintfTransform(structured_control_flow::Map& map, bool allow_dynamic_sizes = false)
-        : OffloadTransform(map, allow_dynamic_sizes) {};
+    explicit PrintfTransform(structured_control_flow::StructuredLoop& loop, bool allow_dynamic_sizes = false)
+        : OffloadTransform(loop, allow_dynamic_sizes) {};
 
     std::string name() const override;
 

@@ -23,12 +23,15 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/structure.h"
 #include "sdfg/types/type.h"
 #include "sdfg/types/utils.h"
 #include "symengine/symengine_rcp.h"
+
+#include "sdfg/targets/gpu/gpu_schedule_type.h"
 
 namespace sdfg {
 namespace transformations {

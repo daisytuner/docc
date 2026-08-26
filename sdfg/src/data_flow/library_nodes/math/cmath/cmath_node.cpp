@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "sdfg/data_flow/pointer_metadata.h"
 #include "sdfg/types/utils.h"
 
 namespace sdfg {
@@ -217,6 +218,14 @@ types::PrimitiveType CMathNode::primitive_type() const { return this->primitive_
 std::string CMathNode::name() const { return get_cmath_intrinsic_name(this->function_, this->primitive_type_); }
 
 symbolic::SymbolSet CMathNode::symbols() const { return {}; }
+
+data_flow::PointerAccessType CMathNode::pointer_access_type(int input_idx) const {
+    // Every input is a scalar value read; the node never captures the pointer.
+    if (input_idx >= 0 && input_idx < static_cast<int>(this->inputs_.size())) {
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::__nullptr__(), true);
+    }
+    return data_flow::LibraryNode::pointer_access_type(input_idx);
+}
 
 void CMathNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     return;

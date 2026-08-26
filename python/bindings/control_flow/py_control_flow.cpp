@@ -8,10 +8,18 @@
 #include <sdfg/structured_control_flow/for.h>
 #include <sdfg/structured_control_flow/if_else.h>
 #include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/structured_control_flow/return.h>
 #include <sdfg/structured_control_flow/sequence.h>
 #include <sdfg/structured_control_flow/structured_loop.h>
 #include <sdfg/structured_control_flow/while.h>
+
+#include <sdfg/symbolic/symbolic.h>
+#include <sdfg/targets/cuda/cuda.h>
+#include <sdfg/targets/gpu/gpu_offload_schedule_type.h>
+#include <sdfg/targets/offloading/data_offloading_node.h>
+#include <sdfg/targets/omp/schedule.h>
+#include <sdfg/targets/rocm/rocm.h>
 
 using namespace sdfg::structured_control_flow;
 
@@ -226,12 +234,108 @@ void register_control_flow(py::module& m) {
         .value("None_", ScheduleTypeCategory::None)
         .export_values();
 
+    // TargetLevel enum (GPU offload target levels)
+    py::enum_<sdfg::gpu::TargetLevel>(m, "TargetLevel")
+        .value("X_GRID", sdfg::gpu::TargetLevel::X_GRID)
+        .value("Y_GRID", sdfg::gpu::TargetLevel::Y_GRID)
+        .value("Z_GRID", sdfg::gpu::TargetLevel::Z_GRID)
+        .value("X_BLOCK", sdfg::gpu::TargetLevel::X_BLOCK)
+        .value("Y_BLOCK", sdfg::gpu::TargetLevel::Y_BLOCK)
+        .value("Z_BLOCK", sdfg::gpu::TargetLevel::Z_BLOCK)
+        .value("WARP", sdfg::gpu::TargetLevel::WARP)
+        .export_values();
+
+    // ReduceStrategy enum (where a reduction's partials live / how they combine)
+    py::enum_<sdfg::gpu::ReduceStrategy>(m, "ReduceStrategy")
+        .value("Register", sdfg::gpu::ReduceStrategy::Register)
+        .value("Shared", sdfg::gpu::ReduceStrategy::Shared)
+        .value("Global", sdfg::gpu::ReduceStrategy::Global)
+        .export_values();
+
+    // DataTransferDirection enum (host/device transfers)
+    py::enum_<sdfg::offloading::DataTransferDirection>(m, "DataTransferDirection")
+        .value("D2H", sdfg::offloading::DataTransferDirection::D2H)
+        .value("NONE", sdfg::offloading::DataTransferDirection::NONE)
+        .value("H2D", sdfg::offloading::DataTransferDirection::H2D)
+        .export_values();
+
+    // BufferLifecycle enum (device buffer allocation lifecycle)
+    py::enum_<sdfg::offloading::BufferLifecycle>(m, "BufferLifecycle")
+        .value("FREE", sdfg::offloading::BufferLifecycle::FREE)
+        .value("NO_CHANGE", sdfg::offloading::BufferLifecycle::NO_CHANGE)
+        .value("ALLOC", sdfg::offloading::BufferLifecycle::ALLOC)
+        .export_values();
+
     // ScheduleType class
     py::class_<ScheduleType>(m, "ScheduleType")
         .def_property_readonly("value", &ScheduleType::value, "Get the schedule type identifier")
         .def_property_readonly("category", &ScheduleType::category, "Get the schedule type category")
         .def_property_readonly(
             "properties", [](const ScheduleType& st) { return st.properties(); }, "Get all schedule properties"
+        )
+        .def_static(
+            "sequential", []() { return ScheduleType_Sequential::create(); }, "Create a sequential schedule type"
+        )
+        .def_static(
+            "omp",
+            [](py::object num_threads) {
+                auto schedule = sdfg::omp::ScheduleType_OMP::create();
+                if (!num_threads.is_none()) {
+                    sdfg::omp::ScheduleType_OMP::
+                        num_threads(schedule, sdfg::symbolic::integer(num_threads.cast<int64_t>()));
+                }
+                return schedule;
+            },
+            py::arg("num_threads") = py::none(),
+            "Create an OpenMP (CPU parallel) schedule type, optionally pinning the thread count"
+        )
+        .def_static(
+            "cuda_offload",
+            [](sdfg::gpu::TargetLevel target_level,
+               int64_t parallel_size,
+               py::object partial_storage,
+               py::object partial_container) {
+                auto schedule = sdfg::cuda::ScheduleType_CUDA_Offload::create<
+                    sdfg::cuda::ScheduleType_CUDA_Offload>(target_level, sdfg::symbolic::integer(parallel_size));
+                if (!partial_storage.is_none()) {
+                    sdfg::gpu::ScheduleType_GPU_Offload::
+                        partial_storage(schedule, partial_storage.cast<sdfg::gpu::ReduceStrategy>());
+                }
+                if (!partial_container.is_none()) {
+                    sdfg::gpu::ScheduleType_GPU_Offload::partial_container(schedule, partial_container.cast<std::string>());
+                }
+                return schedule;
+            },
+            py::arg("target_level"),
+            py::arg("parallel_size"),
+            py::arg("partial_storage") = py::none(),
+            py::arg("partial_container") = py::none(),
+            "Create a CUDA offload schedule type for the given target level and parallel size; for a "
+            "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set"
+        )
+        .def_static(
+            "rocm_offload",
+            [](sdfg::gpu::TargetLevel target_level,
+               int64_t parallel_size,
+               py::object partial_storage,
+               py::object partial_container) {
+                auto schedule = sdfg::rocm::ScheduleType_ROCM_Offload::create<
+                    sdfg::rocm::ScheduleType_ROCM_Offload>(target_level, sdfg::symbolic::integer(parallel_size));
+                if (!partial_storage.is_none()) {
+                    sdfg::gpu::ScheduleType_GPU_Offload::
+                        partial_storage(schedule, partial_storage.cast<sdfg::gpu::ReduceStrategy>());
+                }
+                if (!partial_container.is_none()) {
+                    sdfg::gpu::ScheduleType_GPU_Offload::partial_container(schedule, partial_container.cast<std::string>());
+                }
+                return schedule;
+            },
+            py::arg("target_level"),
+            py::arg("parallel_size"),
+            py::arg("partial_storage") = py::none(),
+            py::arg("partial_container") = py::none(),
+            "Create a ROCm offload schedule type for the given target level and parallel size; for a "
+            "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set"
         )
         .def("__repr__", [](const ScheduleType& st) {
             std::ostringstream oss;

@@ -6,8 +6,9 @@ on:
     types: [opened, reopened, synchronize]
 
 parameters:
-  container: daisytuner/docc-run-env-llvm19-ubuntu-24.04:latest-amd64
+  container: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
   timeout: 120
+  docc_version: ~
   partitions:
     - chamomile
 
@@ -17,18 +18,17 @@ steps:
     . venv/bin/activate
 
     python -m pip install --upgrade pip
-    pip install pybind11 pytest coverage black==25.9.0 build scikit-build-core
-    pip install numpy scipy cupy-cuda12x transformers ml_dtypes
+    pip install pybind11 pytest coverage build scikit-build-core
+    pip install numpy scipy transformers ml_dtypes
 
     pip install --no-build-isolation -e python/
     pip install --no-build-isolation -e pytorch/
 
-    pip install -r pytorch/requirements.txt
-    pip uninstall -y torch torchvision
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+    pip install -r pytorch/requirements-cuda.txt
 
     # Warm start
     export DOCC_DEBUG=dump
+    export DOCC_CUDA_ARCH=sm_86
 
     # Compile and cache binaries
     venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
@@ -55,6 +55,7 @@ steps:
       measurements: 3
       env:
         DOCC_REUSE_BINARIES: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         torch:
           command: venv/bin/python3 pytorch/benchmarks/models/resnet18.py --n_runs=1 --device cpu
@@ -83,6 +84,7 @@ steps:
       env:
         DOCC_REUSE_BINARIES: 1
         NVIDIA_TF32_OVERRIDE: 1
+        DOCC_CUDA_ARCH: sm_86
       variants:
         # torch:
         #   command: venv/bin/python3 pytorch/benchmarks/models/segformer.py --device cpu --n_runs=1 --variant segformer --batch-size 16

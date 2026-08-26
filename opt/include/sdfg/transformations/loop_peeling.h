@@ -6,31 +6,39 @@ namespace sdfg {
 namespace transformations {
 
 /**
- * @brief Loop peeling transformation for compound-condition loops
+ * @brief Loop peeling for a perfectly nested chain of compound-condition loops.
  *
- * This transformation splits a loop with a compound condition (conjunction)
- * into a main body with a simple constant-trip-count condition and a postamble
- * for the remainder case. The result is an IfElse node:
+ * Targets a loop whose condition is a conjunction of a canonical (constant-trip)
+ * bound and one or more dynamic bounds, e.g. `for (k = k0; k < TK + k0 && k < N; ++k)`,
+ * and greedily collects the perfectly nested chain of such loops beneath it. All
+ * loops in the chain are over-approximated to their constant trip counts and
+ * shifted to a 0-based induction variable, so the whole nest becomes
+ * compile-time constant and can be fully unrolled/vectorized. The dropped dynamic
+ * bounds are re-applied in one of two ways, selected by @p predicate:
  *
- *   if (canonical_bound <= min(dynamic_bounds)):
- *     loop(init, canonical_bound, step) { body }        // constant trip count
- *   else:
- *     loop(init, min(dynamic_bounds), step) { body }    // remainder
+ * - **Hoisted (default, `predicate = false`)** — a single outer `IfElse` whose
+ *   "then" branch runs the clean, unguarded, 0-based nest when the whole tile is
+ *   in bounds, and whose "else" branch runs the original (variable-trip) nest for
+ *   boundary tiles. The unguarded inner micro-kernel vectorizes on CPU. Universal.
  *
- * The canonical bound is the conjunct that gives a constant trip count relative
- * to the init expression (e.g., `j < 8 + j_tile1` with init=j_tile1 → trip=8).
- *
- * This enables the compiler to vectorize the main body with a proven trip count.
+ * - **Predicated (`predicate = true`)** — the 0-based nest is emitted directly and
+ *   the innermost body is wrapped in one combined guard `if (all dynamic bounds
+ *   hold)`, with no remainder branch. On GPU the guard lowers to cheap predicated
+ *   instructions, so register-tile accumulators stay in registers (no local-memory
+ *   spill). Use for GPU / einsum register tiling.
  */
 class LoopPeeling : public Transformation {
     structured_control_flow::StructuredLoop& loop_;
+    bool predicate_;
 
 public:
     /**
-     * @brief Construct a loop peeling transformation
-     * @param loop The loop with compound conditions to be peeled
+     * @brief Construct a loop peeling transformation.
+     * @param loop The outermost loop of the perfectly nested compound-condition chain.
+     * @param predicate If true, emit the predicated (GPU register-tiling) form; if
+     *        false (default), emit the hoisted then/else form.
      */
-    LoopPeeling(structured_control_flow::StructuredLoop& loop);
+    explicit LoopPeeling(structured_control_flow::StructuredLoop& loop, bool predicate = false);
 
     virtual std::string name() const override;
 

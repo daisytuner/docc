@@ -82,7 +82,7 @@ public:
     void normalize();
 
     void schedule(const std::string& target, const std::string& category, bool remote_tuning = false);
-    void schedule(const docc::target::TargetOptions& options);
+    void schedule(const docc::target::TargetOptions& options, bool schedule_loops = true);
 
     /**
      * Run the device-resident argument promotion pass.
@@ -117,6 +117,8 @@ public:
     ) const;
 
     std::string metadata(const std::string& key) const;
+
+    void add_metadata(const std::string& key, const std::string& value);
 
     pybind11::dict loop_report() const;
 

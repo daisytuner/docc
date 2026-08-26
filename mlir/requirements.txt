@@ -1,5 +1,5 @@
-torch==2.10.0+cpu
-torchvision==0.25.0+cpu
+-r requirements-base.txt
+
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch-mlir==20260512.810
--f https://github.com/llvm/torch-mlir-release/releases/expanded_assets/dev-wheels
+torch==2.13.0+cpu
+torchvision==0.28.0+cpu

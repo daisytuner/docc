@@ -46,24 +46,36 @@ def evaluate_hpccg(reference_file: Path, test_file: Path, args) -> float:
     print("###", test_final_residual, ref_final_residual)
     assert np.abs(test_final_residual - ref_final_residual) <= 1e-17
 
+
 @pytest.mark.skip("Dot expansion regression")
 def test_HPCCG():
     test_case = Path(__file__).parent / "tests" / "apps" / "HPCCG" / "main.cpp"
     verifier = SDFGVerification(
-        verification={"FOR": 22, "MAP": 9, "WHILE": 6, 'SEQUENTIAL': 3, "TTOffloading": 18, "DOT": 1},
+        verification={
+            "FOR": 22,
+            "MAP": 9,
+            "WHILE": 6,
+            "SEQUENTIAL": 3,
+            "TTOffloading": 18,
+            "DOT": 1,
+        },
     )
     runner = TestRunner(
         "Apps",
         test_case,
         "docc-cpp",
-        "clang++-19",
+        "clang++-21",
         ["-O3", "-g", "-lm"],
         "tenstorrent",
         [
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "compute_residual.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "ddot.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "generate_matrix.cpp",
-            Path(__file__).parent / "tests" / "apps" / "HPCCG" / "HPC_Sparse_Matrix.cpp",
+            Path(__file__).parent
+            / "tests"
+            / "apps"
+            / "HPCCG"
+            / "HPC_Sparse_Matrix.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "HPC_sparsemv.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "HPCCG.cpp",
             Path(__file__).parent / "tests" / "apps" / "HPCCG" / "mytimer.cpp",

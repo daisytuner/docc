@@ -61,6 +61,7 @@ set(SOURCE_FILES
     src/passes/scheduler/rocm_scheduler.cpp
     src/passes/scheduler/scheduler_registry.cpp
     src/passes/scheduler/vectorize_scheduler.cpp
+    src/passes/targets/device_residency.cpp
     src/passes/targets/target_mapping_pass.cpp
     src/targets/cuda/blas/batched_gemm.cpp
     src/targets/cuda/blas/dot.cpp
@@ -68,6 +69,9 @@ set(SOURCE_FILES
     src/targets/cuda/blas/utils.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
+    src/targets/cuda/cuda_reduce_dispatcher.cpp
+    src/targets/cuda/cuda_offload_map_dispatcher.cpp
+    src/targets/cuda/cuda_offload_reduce_dispatcher.cpp
     src/targets/cuda/cuda.cpp
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
     src/targets/cuda/math/tensor/concat_expander.cpp
@@ -76,7 +80,26 @@ set(SOURCE_FILES
     src/targets/cuda/plugin.cpp
     src/targets/cuda/stdlib/memcpy.cpp
     src/targets/cuda/stdlib/memset.cpp
+    src/targets/rocm/blas/dot.cpp
+    src/targets/rocm/blas/gemm.cpp
+    src/targets/rocm/blas/gemm_handtuned.cpp
+    src/targets/rocm/blas/batched_gemm.cpp
+    src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/math/tensor/batched_matmul_expander.cpp
+    src/targets/rocm/math/tensor/conv_expander.cpp
+    src/targets/rocm/stdlib/memset.cpp
+    src/targets/rocm/stdlib/memcpy.cpp
+    src/targets/rocm/plugin.cpp
+    src/targets/rocm/rocm.cpp
+    src/targets/rocm/rocm_data_offloading_node.cpp
+    src/targets/rocm/rocm_map_dispatcher.cpp
+    src/targets/rocm/rocm_reduce_dispatcher.cpp
+    src/targets/rocm/rocm_offload_map_dispatcher.cpp
+    src/targets/rocm/rocm_offload_reduce_dispatcher.cpp
     src/targets/gpu/gpu_map_utils.cpp
+    src/targets/gpu/gpu_reduce_dispatcher.cpp
+    src/targets/gpu/gpu_offload_map_dispatcher.cpp
+    src/targets/gpu/gpu_offload_reduce_dispatcher.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
@@ -102,8 +125,8 @@ set(SOURCE_FILES
     src/transformations/einsum2dot.cpp
     src/transformations/einsum2gemm.cpp
     src/transformations/in_local_storage.cpp
-    src/transformations/loop_condition_normalize.cpp
-    src/transformations/loop_distribute.cpp
+    src/transformations/local_storage.cpp
+    src/transformations/loop_condition_normalize.cpp    src/transformations/loop_distribute.cpp
     src/transformations/loop_indvar_finalize.cpp
     src/transformations/loop_interchange.cpp
     src/transformations/loop_peeling.cpp
@@ -117,16 +140,20 @@ set(SOURCE_FILES
     src/transformations/map_fusion.cpp
     src/transformations/multi_level_tiling.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
+    src/transformations/offloading/cuda_offload_transform.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_transform.cpp
     src/transformations/offloading/gpu_condition_propagation.cpp
     src/transformations/offloading/gpu_loop_reordering.cpp
+    src/transformations/offloading/gpu_offload_nested_loop.cpp
+    src/transformations/offloading/gpu_offload_transform.cpp
     src/transformations/offloading/gpu_tiling.cpp
     src/transformations/offloading/kernel_local_storage.cpp
     src/transformations/offloading/offload_transform.cpp
     src/transformations/offloading/rocblas_data_transfer_extraction.cpp
+    src/transformations/offloading/rocm_offload_transform.cpp
     src/transformations/offloading/rocm_parallelize_nested_map.cpp
     src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/rocm_transform.cpp
@@ -137,6 +164,7 @@ set(SOURCE_FILES
     src/transformations/tile_fusion.cpp
     src/transformations/transformation_schema.cpp
     src/transformations/vectorize_transform.cpp
+    src/transformations/unroll_transform.cpp
 )
 add_library(sdfgopt
     ${SOURCE_FILES}

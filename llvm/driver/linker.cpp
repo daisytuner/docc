@@ -27,7 +27,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "utils.h"
 
-const std::string BASE_LINKER = "ld.lld-19";
+const std::string BASE_LINKER = "ld.lld-21";
 
 std::vector<std::filesystem::path> find_modules(const std::vector<std::string>& cmd) {
     const std::regex object_file("[a-z,A-Z,0-9,\\+,\\-,\\_,\\/,\\.]+.o");
@@ -464,6 +464,7 @@ int final_link_pass(
     auto target_lib_paths = docc_paths.target_lib_paths();
     for (auto& libdir : target_lib_paths) {
         final_link_cmd_parts.push_back("-L'" + libdir.string() + "'");
+        final_link_cmd_parts.push_back("-rpath='" + libdir.string() + "'");
     }
 
     // replace modified modules by temporary files

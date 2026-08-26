@@ -62,6 +62,11 @@ void TenstorrentTransform::add_device_buffer(
 
 bool TenstorrentTransform::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (dynamic_cast<structured_control_flow::Map*>(&loop_) == nullptr) {
+        throw transformations::
+            InvalidTransformationDescriptionException("TenstorrentTransform: can only offload Map nodes.");
+    }
+
     auto plan = try_create_transform_plan(builder, analysis_manager);
 
     return !!plan;
@@ -69,37 +74,37 @@ bool TenstorrentTransform::
 
 std::unique_ptr<TransformPlan> TenstorrentTransform::
     try_create_transform_plan(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto stride = map_.stride();
+    auto stride = loop_.stride();
     if (!symbolic::eq(stride, symbolic::one())) { // map stride must be 1 for convenient tiling
         if (report_) report_->transform_impossible(this, "non-1 stride");
         return {};
     }
 
     // Criterion: Map must start at 0
-    if (!symbolic::eq(this->map_.init(), symbolic::zero())) {
+    if (!symbolic::eq(this->loop_.init(), symbolic::zero())) {
         if (report_) report_->transform_impossible(this, "non zero start");
         return {};
     }
 
-    auto num_iterations = map_.num_iterations();
+    auto num_iterations = loop_.num_iterations();
     DEBUG_PRINTLN(
-        "TTT: " << builder.subject().name() << ":n" << map_.element_id()
+        "TTT: " << builder.subject().name() << ":n" << loop_.element_id()
                 << ": num strides: " << num_iterations->__str__()
     );
 
     auto& sdfg = builder.subject();
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
 
-    if (!arguments_analysis.inferred_types(analysis_manager, this->map_)) {
+    if (!arguments_analysis.inferred_types(analysis_manager, this->loop_)) {
         if (report_) report_->transform_impossible(this, "confusing arg types");
         return {};
     }
 
-    auto& arguments = arguments_analysis.arguments(analysis_manager, this->map_);
+    auto& arguments = arguments_analysis.arguments(analysis_manager, this->loop_);
 
     // Criterion: arg Data Types must be continuous
     for (auto& [argument, meta] : arguments) {
-        auto base_type = analysis::TypeAnalysis(sdfg, &map_, analysis_manager).get_outer_type(argument);
+        auto base_type = analysis::TypeAnalysis(sdfg, &loop_, analysis_manager).get_outer_type(argument);
         if (base_type == nullptr) {
             if (report_) report_->transform_impossible(this, "cannot infer type");
             return {};
@@ -122,16 +127,16 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
         }
     }
 
-    if (!arguments_analysis.argument_size_known(analysis_manager, this->map_, allow_dynamic_sizes_)) {
+    if (!arguments_analysis.argument_size_known(analysis_manager, this->loop_, allow_dynamic_sizes_)) {
         if (report_) report_->transform_impossible(this, "transfer args not sized");
         return {};
     }
 
     std::unordered_map<std::string, symbolic::Expression> argument_sizes =
-        arguments_analysis.argument_sizes(analysis_manager, this->map_, allow_dynamic_sizes_);
+        arguments_analysis.argument_sizes(analysis_manager, this->loop_, allow_dynamic_sizes_);
 
     auto& users = analysis_manager.get<analysis::Users>();
-    analysis::UsersView scope_users(users, map_);
+    analysis::UsersView scope_users(users, loop_);
 
     std::optional<symbolic::Expression> input_ratio;
     std::optional<symbolic::Expression> output_ratio;
@@ -145,7 +150,7 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
                 //                    input_ratio = ratio;
                 //                } else if (!symbolic::eq(*input_ratio, ratio)) {
                 //                    DEBUG_PRINTLN(
-                //                        "TTT: " << builder.subject().name() << ":n" << map_.element_id() << ": arg "
+                //                        "TTT: " << builder.subject().name() << ":n" << loop_.element_id() << ": arg "
                 //                        << arg
                 //                                << " ratio '" << ratio->__str__() << "' does match other in ratio '"
                 //                                << input_ratio.value()->__str__() << "' between input sizes and map
@@ -161,7 +166,7 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
                 //                    output_ratio = ratio;
                 //                } else if (!symbolic::eq(*output_ratio, ratio)) {
                 //                    DEBUG_PRINTLN(
-                //                        "TTT: " << builder.subject().name() << ":n" << map_.element_id() << ": arg "
+                //                        "TTT: " << builder.subject().name() << ":n" << loop_.element_id() << ": arg "
                 //                        << arg
                 //                                << " ratio '" << ratio->__str__() << "' does match other out ratio '"
                 //                                << output_ratio.value()->__str__() << "' between output sizes and map
@@ -185,7 +190,7 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
                     }
                     for (auto& subset : user->subsets()) {
                         auto& outermost_idx = subset.at(0);
-                        if (!symbolic::eq(outermost_idx, map_.indvar())) {
+                        if (!symbolic::eq(outermost_idx, loop_.indvar())) {
                             if (report_) {
                                 std::stringstream ss;
                                 ss << "use of arg " << arg << " with subset " << subset << " not indVar";
@@ -252,7 +257,7 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
         }
     }
 
-    auto& locals = arguments_analysis.locals(analysis_manager, this->map_);
+    auto& locals = arguments_analysis.locals(analysis_manager, this->loop_);
     for (auto& local : locals) {
         plan.locals_.emplace_back(local);
     }
@@ -286,7 +291,7 @@ void TenstorrentTransform::apply_plan(
     analysis::AnalysisManager& analysis_manager,
     std::unique_ptr<TransformPlan> plan
 ) {
-    transformations::LoopTiling tiler(map_, plan->tile_entries_);
+    transformations::LoopTiling tiler(loop_, plan->tile_entries_);
     assert(tiler.can_be_applied(builder, analysis_manager) && "Cannot apply tiling");
 
     auto& parent_scope = require_parent_scope();
@@ -298,17 +303,17 @@ void TenstorrentTransform::apply_plan(
         ScheduleType_Tenstorrent_Device::set_blocking(schedType, true);
     }
 
-    builder.update_schedule_type(map_, schedType); // will be copied by tiler to outer
-                                                   // loop
-    auto outer_map_idx = parent_scope.index(map_);
+    builder.update_schedule_type(loop_, schedType); // will be copied by tiler to outer
+                                                    // loop
+    auto outer_loop_idx = parent_scope.index(loop_);
 
     tiler.apply(builder, analysis_manager);
 
-    builder.update_schedule_type(map_, ScheduleType_Tenstorrent_Kernel::create()); // override the inner / original
-                                                                                   // loops type
+    builder.update_schedule_type(loop_, ScheduleType_Tenstorrent_Kernel::create()); // override the inner / original
+                                                                                    // loops type
 
     allocate_locals_on_device_stack(builder, analysis_manager, plan->locals_);
-    auto& outer_map = dyn_cast<structured_control_flow::Map&>(parent_scope.at(outer_map_idx));
+    auto& outer_map = dyn_cast<structured_control_flow::Map&>(parent_scope.at(outer_loop_idx));
 
     builder.subject().type(outer_map.indvar()->get_name()).storage_type() = local_device_storage_type();
     if (report_) report_->transform_applied(this);

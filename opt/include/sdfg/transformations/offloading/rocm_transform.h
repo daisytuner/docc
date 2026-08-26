@@ -7,11 +7,11 @@ namespace sdfg {
 namespace rocm {
 
 /**
- * @brief Offloads a top-level map to a ROCm/HIP kernel (X grid dimension).
+ * @brief Offloads a top-level loop to a ROCm/HIP kernel (X grid dimension).
  *
  * This transformation does not perform blocking or tiling on its own. It expects
- * the scheduler to have already identified a suitable map for GPU offloading.
- * The transformation assigns the map to the ROCm X grid dimension and handles
+ * the scheduler to have already identified a suitable loop for GPU offloading.
+ * The transformation assigns the loop to the ROCm X grid dimension and handles
  * data transfers between host and device.
  *
  * The resulting grid X-dimension is validated against ROCm/HIP hardware limits
@@ -20,8 +20,10 @@ namespace rocm {
  */
 class ROCMTransform : public transformations::OffloadTransform {
 public:
-    explicit ROCMTransform(structured_control_flow::Map& map, int block_size = 64, bool allow_dynamic_sizes = false)
-        : OffloadTransform(map, allow_dynamic_sizes), block_size_(block_size) {};
+    explicit ROCMTransform(
+        structured_control_flow::StructuredLoop& loop, int block_size = 64, bool allow_dynamic_sizes = false
+    )
+        : OffloadTransform(loop, allow_dynamic_sizes), block_size_(block_size) {};
 
     std::string name() const override;
 

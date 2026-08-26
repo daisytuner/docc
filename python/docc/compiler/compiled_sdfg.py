@@ -1,6 +1,5 @@
 import ctypes
 import re
-import time
 import warnings
 from docc.sdfg import Scalar, Array, Pointer, Structure, PrimitiveType
 
@@ -40,6 +39,59 @@ def warn_host_to_device_copies(backend):
         DoccPerformanceWarning,
         stacklevel=3,
     )
+
+
+# Backends that live in device (GPU) memory and their matching cupy build.
+
+# Cached (module, is_hip) once cupy has been imported and validated.
+_cupy_module = None
+
+
+def import_cupy_for_target(target):
+    """Import cupy and verify its build matches the SDFG ``target``.
+
+    A single cupy installation is built for exactly one platform: either CUDA
+    (``cupy-cuda*``) or ROCm/HIP (``cupy-rocm*``). ``cupy.cuda.runtime.is_hip``
+    reports which one. This raises when the installed cupy build does not match
+    the backend the SDFG was compiled for, so a cuda artifact is never fed
+    ROCm device pointers (or vice versa).
+
+    Args:
+        target: The SDFG compilation target ("cuda" or "rocm").
+
+    Returns:
+        The imported cupy module.
+
+    Raises:
+        RuntimeError: If cupy is missing or its build does not match ``target``.
+    """
+    global _cupy_module
+    if _cupy_module is not None:
+        cupy, is_hip = _cupy_module
+    else:
+        try:
+            import cupy
+        except ImportError as exc:
+            raise RuntimeError(
+                f"Device-resident execution for target '{target}' requires cupy, "
+                f"but it could not be imported: {exc}"
+            ) from exc
+        is_hip = bool(getattr(cupy.cuda.runtime, "is_hip", False))
+        _cupy_module = (cupy, is_hip)
+
+    if target in "rocm" and not is_hip:
+        raise RuntimeError(
+            f"SDFG target is '{target}' (ROCm/HIP) but the installed cupy is a "
+            f"CUDA build. Install the ROCm cupy build (e.g. cupy-rocm-*) to run "
+            f"device-resident ROCm artifacts."
+        )
+    if target in "cuda" and is_hip:
+        raise RuntimeError(
+            f"SDFG target is '{target}' (CUDA) but the installed cupy is a "
+            f"ROCm/HIP build. Install the CUDA cupy build (e.g. cupy-cuda*) to "
+            f"run device-resident CUDA artifacts."
+        )
+    return cupy
 
 
 def idiv(a, b):
@@ -283,6 +335,18 @@ class CompiledSDFG:
 
         # Pre-compute argument classification for fast __call__
         self._precompute_arg_metadata()
+
+    def reset_instrumentation(self) -> None:
+        """Discard aggregated region stats collected so far (e.g. a warmup run).
+
+        The instrumentation RTL aggregates every region invocation regardless of
+        any external measurement window, so callers reset it before the timed
+        region to keep region counts aligned with the measured runs.
+        """
+        # getattr avoids Python name-mangling of the dunder-prefixed symbol.
+        reset = getattr(self.lib, "__daisy_instrumentation_reset_all", None)
+        if reset is not None:
+            reset()
 
     def _precompute_arg_metadata(self):
         """Pre-compute argument metadata for fast __call__ dispatch."""
@@ -625,7 +689,7 @@ class CompiledSDFG:
         if _is_device_array(arg):
             return arg
 
-        import cupy
+        cupy = import_cupy_for_target(self.target)
 
         host = arg
         # Convert a CPU torch tensor to numpy first; cupy.asarray handles numpy.
@@ -649,7 +713,7 @@ class CompiledSDFG:
         Outputs are returned as cupy arrays (zero-copy interoperable with torch
         via DLPack / __cuda_array_interface__).
         """
-        import cupy
+        cupy = import_cupy_for_target(self.target)
 
         _eval = eval
         _GLOBALS = _EVAL_GLOBALS

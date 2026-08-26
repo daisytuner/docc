@@ -37,6 +37,9 @@ protected:
         FusionLoopCandidate* consumer_fusion_candidate_ = nullptr;
         std::vector<FusionRegCandidate> fusion_candidates_;
 
+        Plan(structured_control_flow::Map& first, structured_control_flow::StructuredLoop& second)
+            : first(first), second(second), direction_() {}
+
         // Case 2 (init-into-reduction): when true, the producer is hoisted to the
         // reduction's outer parallel band (before the innermost sequential loop) and
         // keeps writing the accumulator array, instead of being scalarized and inlined

@@ -221,6 +221,44 @@ void ensure_assumption_entries(const symbolic::Condition& cond, symbolic::Assump
 
 } // namespace
 
+symbolic::SymbolSet AssumptionsAnalysis::per_symbol_refined_symbols(const symbolic::Condition& cond) {
+    // Structural classification, independent of scope/indvar status: a symbol is
+    // "per-symbol refined" iff it is the sole variable of some single-literal CNF
+    // clause. Multi-variable literals (`i + j <= 15`) are coupled constraints and
+    // are deliberately excluded so their ancestor operands stay opaque.
+    symbolic::SymbolSet result;
+    symbolic::CNF cnf;
+    try {
+        cnf = symbolic::conjunctive_normal_form(cond);
+    } catch (const symbolic::CNFException&) {
+        return result;
+    }
+    for (const auto& clause : cnf) {
+        if (clause.size() != 1) continue; // disjunctive — constrains no single symbol
+        const auto& lit = clause.front();
+
+        symbolic::Expression delta = SymEngine::null;
+        if (SymEngine::is_a<SymEngine::LessThan>(*lit)) {
+            auto rel = SymEngine::rcp_static_cast<const SymEngine::LessThan>(lit);
+            delta = symbolic::sub(rel->get_arg1(), rel->get_arg2());
+        } else if (SymEngine::is_a<SymEngine::StrictLessThan>(*lit)) {
+            auto rel = SymEngine::rcp_static_cast<const SymEngine::StrictLessThan>(lit);
+            delta = symbolic::sub(rel->get_arg1(), rel->get_arg2());
+        } else if (SymEngine::is_a<SymEngine::Equality>(*lit)) {
+            auto rel = SymEngine::rcp_static_cast<const SymEngine::Equality>(lit);
+            delta = symbolic::sub(rel->get_arg1(), rel->get_arg2());
+        } else {
+            continue;
+        }
+
+        const auto atoms = symbolic::atoms(delta);
+        if (atoms.size() == 1) {
+            result.insert(*atoms.begin());
+        }
+    }
+    return result;
+}
+
 AssumptionsAnalysis::AssumptionsAnalysis(StructuredSDFG& sdfg)
     : Analysis(sdfg) {
 

@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <iostream>
+
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/tasklet.h"
@@ -3147,4 +3149,339 @@ TEST(MemoryLayoutAnalysisTest, ScopeAPI_TileGroups_NonLoopScope) {
     auto* groups_root = analysis.tile_groups(root, "A");
     ASSERT_NE(groups_root, nullptr);
     EXPECT_FALSE(groups_root->empty());
+}
+
+// Reproduces the structure LoopTiling produces for a two-level-tiled 2D map: each
+// of i, j is tiled twice, giving 6 stepped/offset loops
+//   i_t0[0,N) step T1 -> i_t1[i_t0,i_t0+T1) step T2 -> i[i_t1,i_t1+T2) step 1
+// (same for j), with row-major access A[i*N + j]. The per-level tiles walking from
+// the innermost loop outward SHOULD have constant extents equal to the tile sizes
+// (T2 at the register level, T1 at the thread level) with only the grid level
+// spanning the full symbolic N. This pins down where extents_approx() diverges to
+// a symbolic over-approximation (the extreme-value bounding under-substitutes the
+// tight tile bounds).
+TEST(MemoryLayoutAnalysisTest, TwoLevelTiled2D_ExtentDivergence) {
+    builder::StructuredSDFGBuilder builder("tiled2d", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar idx(types::PrimitiveType::Int64);
+    types::Scalar f(types::PrimitiveType::Float);
+    types::Pointer ptr(f);
+    builder.add_container("N", idx, true);
+    for (const char* nm : {"i_t0", "i_t1", "i", "j_t0", "j_t1", "j"}) {
+        builder.add_container(nm, idx);
+    }
+    builder.add_container("A", ptr, true);
+
+    auto N = symbolic::symbol("N");
+    const int64_t T1 = 128; // grid tile (CY*TY)
+    const int64_t T2 = 8; // thread/register tile (CY)
+    auto T1e = symbolic::integer(T1);
+    auto T2e = symbolic::integer(T2);
+    auto it0 = symbolic::symbol("i_t0"), it1 = symbolic::symbol("i_t1"), i = symbolic::symbol("i");
+    auto jt0 = symbolic::symbol("j_t0"), jt1 = symbolic::symbol("j_t1"), j = symbolic::symbol("j");
+
+    // i tiled twice (outer step T, inner init = outer indvar, cond And(< outer+T, < original)).
+    auto& L_it0 = builder.add_map(
+        root, it0, symbolic::Lt(it0, N), symbolic::zero(), symbolic::add(it0, T1e), ScheduleType_Sequential::create()
+    );
+    auto& L_it1 = builder.add_map(
+        L_it0.root(),
+        it1,
+        symbolic::And(symbolic::Lt(it1, symbolic::add(it0, T1e)), symbolic::Lt(it1, N)),
+        it0,
+        symbolic::add(it1, T2e),
+        ScheduleType_Sequential::create()
+    );
+    auto& L_i = builder.add_map(
+        L_it1.root(),
+        i,
+        symbolic::
+            And(symbolic::And(symbolic::Lt(i, symbolic::add(it1, T2e)), symbolic::Lt(i, symbolic::add(it0, T1e))),
+                symbolic::Lt(i, N)),
+        it1,
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    // j tiled twice, nested inside i.
+    auto& L_jt0 = builder.add_map(
+        L_i.root(),
+        jt0,
+        symbolic::Lt(jt0, N),
+        symbolic::zero(),
+        symbolic::add(jt0, T1e),
+        ScheduleType_Sequential::create()
+    );
+    auto& L_jt1 = builder.add_map(
+        L_jt0.root(),
+        jt1,
+        symbolic::And(symbolic::Lt(jt1, symbolic::add(jt0, T1e)), symbolic::Lt(jt1, N)),
+        jt0,
+        symbolic::add(jt1, T2e),
+        ScheduleType_Sequential::create()
+    );
+    auto& L_j = builder.add_map(
+        L_jt1.root(),
+        j,
+        symbolic::
+            And(symbolic::And(symbolic::Lt(j, symbolic::add(jt1, T2e)), symbolic::Lt(j, symbolic::add(jt0, T1e))),
+                symbolic::Lt(j, N)),
+        jt1,
+        symbolic::add(j, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    // Row-major A[i*N + j].
+    auto& block = builder.add_block(L_j.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto lin = symbolic::add(symbolic::mul(i, N), j);
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {lin});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {lin});
+
+    analysis::AnalysisManager am(sdfg);
+    auto& mla = am.get<analysis::MemoryLayoutAnalysis>();
+
+    auto dump = [&](const char* name, structured_control_flow::StructuredLoop& L) -> const analysis::MemoryTile* {
+        const analysis::MemoryTile* tl = mla.tile(L, "A");
+        std::cout << "tile(" << name << ") extents_approx = [";
+        if (tl) {
+            for (auto& e : tl->extents_approx()) {
+                std::cout << (e.is_null() ? std::string("null") : e->__str__()) << ", ";
+            }
+        } else {
+            std::cout << "<null tile>";
+        }
+        std::cout << "]" << std::endl;
+        return tl;
+    };
+
+    // Bottom-to-top. dim 0 = row (i), dim 1 = col (j).
+    const analysis::MemoryTile* t_j = dump("j", L_j);
+    ASSERT_NE(t_j, nullptr);
+    ASSERT_EQ(t_j->extents_approx().size(), 2u);
+    EXPECT_TRUE(symbolic::eq(t_j->extents_approx().at(1), T2e)) << "inner j col extent should be T2=8";
+
+    const analysis::MemoryTile* t_jt1 = dump("j_t1", L_jt1);
+    ASSERT_NE(t_jt1, nullptr);
+    EXPECT_TRUE(symbolic::eq(t_jt1->extents_approx().at(1), T1e)) << "j_t1 col extent should be T1=128";
+
+    dump("j_t0", L_jt0); // grid level: expected to span the full symbolic N.
+
+    const analysis::MemoryTile* t_i = dump("i", L_i);
+    ASSERT_NE(t_i, nullptr);
+    EXPECT_TRUE(symbolic::eq(t_i->extents_approx().at(0), T2e)) << "inner i row extent should be T2=8";
+
+    const analysis::MemoryTile* t_it1 = dump("i_t1", L_it1);
+    ASSERT_NE(t_it1, nullptr);
+    EXPECT_TRUE(symbolic::eq(t_it1->extents_approx().at(0), T1e)) << "i_t1 row extent should be T1=128";
+
+    dump("i_t0", L_it0); // grid level: expected to span the full symbolic N.
+}
+
+// Reproduces the structure AFTER LoopPeeling 0-bases the inner nest: the register
+// loop `i` and reduction loop `k` become 0-based [0, T2) / [0, TK), and their tile
+// offsets move from the loop BOUNDS into the SUBSET expression
+//   A[(i + i_t1) * N + (k + k_t0)]
+// where i_t1 (thread tile) and k_t0 (k panel) are enclosing stepped loops. The
+// tile at the k loop SHOULD still be a constant [T2, TK] block (i_t1 and k_t0 held
+// fixed as enclosing-loop indvars). If extents_approx() instead unfolds the full
+// ranges of i_t1 / k_t0, it reproduces the whole-matrix symbolic blowup seen in the
+// GEMM agent -- i.e. the offset-in-subset (peeled) form defeats the extreme-value
+// substitution that the offset-in-bounds (tiled) form handles fine.
+TEST(MemoryLayoutAnalysisTest, PeeledOffsetInSubset_ExtentDivergence) {
+    builder::StructuredSDFGBuilder builder("peeled2d", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar idx(types::PrimitiveType::Int64);
+    types::Scalar f(types::PrimitiveType::Float);
+    types::Pointer ptr(f);
+    builder.add_container("N", idx, true);
+    for (const char* nm : {"i_t0", "i_t1", "k_t0", "k", "i"}) {
+        builder.add_container(nm, idx);
+    }
+    builder.add_container("A", ptr, true);
+
+    auto N = symbolic::symbol("N");
+    const int64_t T1 = 128, T2 = 8, TK = 8;
+    auto T1e = symbolic::integer(T1), T2e = symbolic::integer(T2), TKe = symbolic::integer(TK);
+    auto it0 = symbolic::symbol("i_t0"), it1 = symbolic::symbol("i_t1");
+    auto kt0 = symbolic::symbol("k_t0"), k = symbolic::symbol("k"), i = symbolic::symbol("i");
+
+    // Enclosing stepped tile loops (as LoopTiling leaves them): i_t0 grid, i_t1 thread.
+    auto& L_it0 = builder.add_map(
+        root, it0, symbolic::Lt(it0, N), symbolic::zero(), symbolic::add(it0, T1e), ScheduleType_Sequential::create()
+    );
+    auto& L_it1 = builder.add_map(
+        L_it0.root(),
+        it1,
+        symbolic::And(symbolic::Lt(it1, symbolic::add(it0, T1e)), symbolic::Lt(it1, N)),
+        it0,
+        symbolic::add(it1, T2e),
+        ScheduleType_Sequential::create()
+    );
+    // k panel loop (kO), stepped by TK.
+    auto& L_kt0 = builder.add_map(
+        L_it1.root(),
+        kt0,
+        symbolic::Lt(kt0, N),
+        symbolic::zero(),
+        symbolic::add(kt0, TKe),
+        ScheduleType_Sequential::create()
+    );
+    // Peeled 0-based reduction loop (kI) and register loop (iReg).
+    auto& L_k = builder.add_map(
+        L_kt0.root(),
+        k,
+        symbolic::Lt(k, TKe),
+        symbolic::zero(),
+        symbolic::add(k, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto& L_i = builder.add_map(
+        L_k.root(),
+        i,
+        symbolic::Lt(i, T2e),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    // Offsets folded into the subset (as peeling produces): A[(i + i_t1) * N + (k + k_t0)].
+    auto& block = builder.add_block(L_i.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto row = symbolic::add(i, it1);
+    auto col = symbolic::add(k, kt0);
+    auto lin = symbolic::add(symbolic::mul(row, N), col);
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {lin});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {lin});
+
+    analysis::AnalysisManager am(sdfg);
+    auto& mla = am.get<analysis::MemoryLayoutAnalysis>();
+
+    auto dump = [&](const char* name, structured_control_flow::StructuredLoop& L) -> const analysis::MemoryTile* {
+        const analysis::MemoryTile* tl = mla.tile(L, "A");
+        std::cout << "tile(" << name << ") extents_approx = [";
+        if (tl) {
+            for (auto& e : tl->extents_approx()) {
+                std::cout << (e.is_null() ? std::string("null") : e->__str__()) << ", ";
+            }
+        } else {
+            std::cout << "<null tile>";
+        }
+        std::cout << "]" << std::endl;
+        return tl;
+    };
+
+    const analysis::MemoryTile* t_i = dump("i (register)", L_i);
+    const analysis::MemoryTile* t_k = dump("k (reduction, localize here)", L_k);
+
+    // The per-thread panel staged at the k loop must be a constant T2 x TK block.
+    ASSERT_NE(t_k, nullptr);
+    ASSERT_EQ(t_k->extents_approx().size(), 2u);
+    EXPECT_TRUE(symbolic::eq(t_k->extents_approx().at(0), T2e)) << "row (i) extent should be T2=8";
+    EXPECT_TRUE(symbolic::eq(t_k->extents_approx().at(1), TKe)) << "col (k) extent should be TK=8";
+    (void) t_i;
+}
+
+// As PeeledOffsetInSubset, but the body is wrapped in the boundary predicate that
+// predicate-peeling emits: if (i + i_t1 < N && k + k_t0 < N) { ... }. The branch-
+// condition-aware AssumptionsAnalysis feeds `i + i_t1 < N` / `k + k_t0 < N` into the
+// extreme-value bounding, which then bounds the access by the full symbolic N
+// instead of the tight tile size -- reproducing the whole-matrix symbolic extents
+// that make is_constant_bounded() reject the GEMM tile. This is the divergence
+// point: the guard's `< N` upper bound is looser than the enclosing tile bound and
+// wins, so the substitution needs to prefer the tighter tile-derived bound.
+TEST(MemoryLayoutAnalysisTest, PeeledWithBoundaryGuard_ExtentDivergence) {
+    builder::StructuredSDFGBuilder builder("peeled_guard", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar idx(types::PrimitiveType::Int64);
+    types::Scalar f(types::PrimitiveType::Float);
+    types::Pointer ptr(f);
+    builder.add_container("N", idx, true);
+    for (const char* nm : {"i_t0", "i_t1", "k_t0", "k", "i"}) {
+        builder.add_container(nm, idx);
+    }
+    builder.add_container("A", ptr, true);
+
+    auto N = symbolic::symbol("N");
+    const int64_t T1 = 128, T2 = 8, TK = 8;
+    auto T1e = symbolic::integer(T1), T2e = symbolic::integer(T2), TKe = symbolic::integer(TK);
+    auto it0 = symbolic::symbol("i_t0"), it1 = symbolic::symbol("i_t1");
+    auto kt0 = symbolic::symbol("k_t0"), k = symbolic::symbol("k"), i = symbolic::symbol("i");
+
+    auto& L_it0 = builder.add_map(
+        root, it0, symbolic::Lt(it0, N), symbolic::zero(), symbolic::add(it0, T1e), ScheduleType_Sequential::create()
+    );
+    auto& L_it1 = builder.add_map(
+        L_it0.root(),
+        it1,
+        symbolic::And(symbolic::Lt(it1, symbolic::add(it0, T1e)), symbolic::Lt(it1, N)),
+        it0,
+        symbolic::add(it1, T2e),
+        ScheduleType_Sequential::create()
+    );
+    auto& L_kt0 = builder.add_map(
+        L_it1.root(),
+        kt0,
+        symbolic::Lt(kt0, N),
+        symbolic::zero(),
+        symbolic::add(kt0, TKe),
+        ScheduleType_Sequential::create()
+    );
+    auto& L_k = builder.add_map(
+        L_kt0.root(),
+        k,
+        symbolic::Lt(k, TKe),
+        symbolic::zero(),
+        symbolic::add(k, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto& L_i = builder.add_map(
+        L_k.root(),
+        i,
+        symbolic::Lt(i, T2e),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+
+    auto row = symbolic::add(i, it1);
+    auto col = symbolic::add(k, kt0);
+    // Predicate-peel boundary guard: if (i + i_t1 < N && k + k_t0 < N).
+    auto& ife = builder.add_if_else(L_i.root());
+    auto guard = symbolic::And(symbolic::Lt(row, N), symbolic::Lt(col, N));
+    auto& taken = builder.add_case(ife, guard);
+
+    auto& block = builder.add_block(taken);
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto lin = symbolic::add(symbolic::mul(row, N), col);
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {lin});
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {lin});
+
+    analysis::AnalysisManager am(sdfg);
+    auto& mla = am.get<analysis::MemoryLayoutAnalysis>();
+
+    const analysis::MemoryTile* t_k = mla.tile(L_k, "A");
+    std::cout << "tile(k) with guard extents_approx = [";
+    if (t_k) {
+        for (auto& e : t_k->extents_approx()) {
+            std::cout << (e.is_null() ? std::string("null") : e->__str__()) << ", ";
+        }
+    }
+    std::cout << "]" << std::endl;
+
+    ASSERT_NE(t_k, nullptr);
+    ASSERT_EQ(t_k->extents_approx().size(), 2u);
+    EXPECT_TRUE(symbolic::eq(t_k->extents_approx().at(0), T2e)) << "row (i) extent should be T2=8 (tile bound, not N)";
+    EXPECT_TRUE(symbolic::eq(t_k->extents_approx().at(1), TKe)) << "col (k) extent should be TK=8 (tile bound, not N)";
 }

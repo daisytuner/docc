@@ -70,7 +70,7 @@ TEST(CUDAKernel, DispatcherTest) {
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
     EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
-    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__restrict__ __daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -81,7 +81,7 @@ TEST(CUDAKernel, DispatcherTest) {
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
         R"a(#include ""
 
-__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+__global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_thread_idx_x = threadIdx.x;
     int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
     int __daisy_cuda_thread_idx_y = threadIdx.y;
@@ -89,6 +89,7 @@ __global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
     int __daisy_cuda_thread_idx_z = threadIdx.z;
     int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
     int i = __daisy_cuda_indvar_x;
+    __daisy_cuda_A = reinterpret_cast<decltype(__daisy_cuda_A)>(__builtin_assume_aligned(__daisy_cuda_A, 16));
     if (__daisy_cuda_indvar_x < 100) {
         {
             float in_ = 0.0f;
@@ -174,7 +175,7 @@ TEST(CUDAKernel, NestedXYDispatcherTest) {
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
     EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
-    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__restrict__ __daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -185,7 +186,7 @@ TEST(CUDAKernel, NestedXYDispatcherTest) {
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
         R"a(#include ""
 
-__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+__global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_thread_idx_x = threadIdx.x;
     int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
     int __daisy_cuda_thread_idx_y = threadIdx.y;
@@ -194,6 +195,7 @@ __global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
     int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
     int i = __daisy_cuda_indvar_x;
     int j = __daisy_cuda_indvar_y;
+    __daisy_cuda_A = reinterpret_cast<decltype(__daisy_cuda_A)>(__builtin_assume_aligned(__daisy_cuda_A, 16));
     if (__daisy_cuda_indvar_x < 100) {
         if (__daisy_cuda_indvar_y < 40) {
             {
@@ -281,7 +283,7 @@ TEST(CUDAKernel, NestedXZDispatcherTest) {
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
     EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
-    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__restrict__ __daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -292,7 +294,7 @@ TEST(CUDAKernel, NestedXZDispatcherTest) {
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
         R"a(#include ""
 
-__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+__global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_thread_idx_x = threadIdx.x;
     int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
     int __daisy_cuda_thread_idx_y = threadIdx.y;
@@ -301,6 +303,7 @@ __global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
     int __daisy_cuda_indvar_z = threadIdx.z + blockIdx.z*blockDim.z;
     int i = __daisy_cuda_indvar_x;
     int j = __daisy_cuda_indvar_z;
+    __daisy_cuda_A = reinterpret_cast<decltype(__daisy_cuda_A)>(__builtin_assume_aligned(__daisy_cuda_A, 16));
     if (__daisy_cuda_indvar_x < 100) {
         if (__daisy_cuda_indvar_z < 40) {
             {
@@ -405,7 +408,7 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
     EXPECT_EQ(library_snippet_factory.snippets().size(), 1);
 
     EXPECT_TRUE(library_snippet_factory.globals_snippets().count("#include <cstdio>"));
-    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__daisy_cuda_A);\n");
+    EXPECT_EQ(globals_stream.str(), "__global__ void " + kernel_name + "(float *__restrict__ __daisy_cuda_A);\n");
 
     EXPECT_EQ(
         main_stream.str(),
@@ -416,7 +419,7 @@ TEST(CUDAKernel, NestedXYZDispatcherTest) {
         library_snippet_factory.snippets().at(kernel_name).stream().str(),
         R"a(#include ""
 
-__global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
+__global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     int __daisy_cuda_thread_idx_x = threadIdx.x;
     int __daisy_cuda_indvar_x = threadIdx.x + blockIdx.x*blockDim.x;
     int __daisy_cuda_thread_idx_y = threadIdx.y;
@@ -426,6 +429,7 @@ __global__ void kernel_test_sdfg_1(float *__daisy_cuda_A){
     int i = __daisy_cuda_indvar_x;
     int j = __daisy_cuda_indvar_y;
     int k = __daisy_cuda_indvar_z;
+    __daisy_cuda_A = reinterpret_cast<decltype(__daisy_cuda_A)>(__builtin_assume_aligned(__daisy_cuda_A, 16));
     if (__daisy_cuda_indvar_x < 100) {
         if (__daisy_cuda_indvar_y < 40) {
             if (__daisy_cuda_indvar_z < 200) {
@@ -472,15 +476,15 @@ TEST(CudaTransformTest, CudaTransformWithBlocksizeTest) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    // Create transform locally
+    // Re-applying CUDATransform to a map that already carries a CUDA schedule is rejected:
+    // this is what prevents double-offloading of remote-tuned cutouts. The schedule (and its
+    // block size) is left untouched.
     auto cuda_transform = CUDATransform(map, 64);
-    if (cuda_transform.can_be_applied(builder, analysis_manager)) {
-        cuda_transform.apply(builder, analysis_manager);
-    }
+    EXPECT_FALSE(cuda_transform.can_be_applied(builder, analysis_manager));
 
     auto transformed_schedule = map.schedule_type();
 
-    EXPECT_TRUE(SymEngine::eq(*ScheduleType_CUDA::block_size(transformed_schedule), *symbolic::integer(64)));
+    EXPECT_TRUE(SymEngine::eq(*ScheduleType_CUDA::block_size(transformed_schedule), *symbolic::integer(32)));
 }
 
 

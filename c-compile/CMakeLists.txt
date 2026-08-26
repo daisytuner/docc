@@ -6,6 +6,7 @@ set(SOURCE_FILES
     src/compile/src_file_compiler.cpp
     src/compile/src_file_compiler_builder.cpp
     src/target/docc_target.cpp
+    src/util/cuda_query_compute_capability.cpp
     src/util/docc_paths.cpp
     src/util/offloading_instrumentation_plan.cpp
     src/util/offloading_type_collector.cpp

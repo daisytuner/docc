@@ -120,16 +120,19 @@ void CPPCodeGenerator::dispatch_globals() {
     // init cost out of the first kernel call (and out of any instrumented region
     // wrapping it). Opt-in: callers set GlobalConstructor at construction time.
     if (this->global_constructor_ != GlobalConstructor::None) {
-        // No explicit cuda_runtime.h include: the source file
-        // is compiled with `-x cuda`, which provides the runtime
+        // No explicit runtime header include: the source file is compiled
+        // with `-x cuda` (CUDA) or `-x hip` (ROCM), which provides the runtime
         // API declarations implicitly (matches the rest of the emitted host
-        // wrapper, e.g. cudaSetDevice/cudaMalloc below).
+        // wrapper, e.g. cudaSetDevice/hipSetDevice below).
         this->globals_stream_ << "static void __attribute__((constructor)) "
                                  "__daisy_gpu_context_warmup(void) {"
                               << std::endl;
         if (this->global_constructor_ == GlobalConstructor::CUDA) {
             this->globals_stream_ << "    (void)cudaSetDevice(0);" << std::endl;
             this->globals_stream_ << "    (void)cudaFree(0);" << std::endl;
+        } else if (this->global_constructor_ == GlobalConstructor::ROCM) {
+            this->globals_stream_ << "    (void)hipSetDevice(0);" << std::endl;
+            this->globals_stream_ << "    (void)hipFree(0);" << std::endl;
         }
         this->globals_stream_ << "}" << std::endl;
     }
