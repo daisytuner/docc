@@ -194,3 +194,242 @@ TEST(LoopPeelingTest, NotApplicableToSimpleLoop) {
     transformations::LoopPeeling t(loop);
     EXPECT_FALSE(t.can_be_applied(b, am));
 }
+
+/// Build for(i = 0; i < 8 && i < 8 + M; i++) { A[i] = A[i] } where M is an
+/// unsigned container (so the assumptions give M >= 0). The exact trip count
+/// (min(8, 8 + M)) is symbolic, so the boundary is predicable, but since M >= 0
+/// the tile always fully fits — the `i < 8 + M` bound is statically redundant.
+static builder::StructuredSDFGBuilder make_always_fits_loop(structured_control_flow::For*& out_loop) {
+    builder::StructuredSDFGBuilder builder("pb_fits", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("M", sym_desc, true); // unsigned => assumption M >= 0
+    builder.add_container("i", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto condition = symbolic::
+        And(symbolic::Lt(i, symbolic::integer(8)),
+            symbolic::Lt(i, symbolic::add(symbolic::integer(8), symbolic::symbol("M"))));
+    auto& loop = builder.add_for(root, i, condition, symbolic::integer(0), symbolic::add(i, symbolic::integer(1)));
+
+    auto& block = builder.add_block(loop.root());
+    auto& A_in = builder.add_access(block, "A");
+    auto& A_out = builder.add_access(block, "A");
+    auto& t = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, A_in, t, "_in", {i}, desc);
+    builder.add_computational_memlet(block, t, "_out", A_out, {i}, desc);
+
+    out_loop = &loop;
+    return builder;
+}
+
+// Hoisted form: when the tile provably always fits (M >= 0), the remainder is
+// dead — emit only the clean 0-based nest with no IfElse at all.
+TEST(LoopPeelingTest, HoistedRemainderEliminatedWhenProvablyInBounds) {
+    structured_control_flow::For* orig = nullptr;
+    auto builder = make_always_fits_loop(orig);
+
+    auto sdfg = builder.move();
+    builder::StructuredSDFGBuilder b(sdfg);
+    analysis::AnalysisManager am(b.subject());
+
+    transformations::LoopPeeling t(*orig); // hoisted
+    EXPECT_TRUE(t.can_be_applied(b, am));
+    t.apply(b, am);
+
+    auto& s = b.subject();
+    ASSERT_EQ(s.root().size(), 1);
+    // No IfElse: the top-level node is the holder Sequence, not a then/else split.
+    auto* holder = dyn_cast<structured_control_flow::Sequence*>(&s.root().at(0));
+    ASSERT_TRUE(holder != nullptr);
+    ASSERT_EQ(holder->size(), 1);
+
+    auto* clean_for = dyn_cast<structured_control_flow::For*>(&holder->at(0));
+    ASSERT_TRUE(clean_for != nullptr);
+    EXPECT_TRUE(symbolic::eq(clean_for->init(), symbolic::integer(0)));
+    EXPECT_TRUE(symbolic::eq(clean_for->condition(), symbolic::Lt(symbolic::symbol("i"), symbolic::integer(8))));
+
+    // Body is unguarded (a plain Block, no remainder IfElse).
+    ASSERT_EQ(clean_for->root().size(), 1);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&clean_for->root().at(0)) != nullptr);
+}
+
+// Predicated form: when every iteration is provably in bounds, the per-iteration
+// guard is dead — emit the clean 0-based nest with no inner IfElse guard.
+TEST(LoopPeelingTest, PredicatedGuardEliminatedWhenProvablyInBounds) {
+    structured_control_flow::For* orig = nullptr;
+    auto builder = make_always_fits_loop(orig);
+
+    auto sdfg = builder.move();
+    builder::StructuredSDFGBuilder b(sdfg);
+    analysis::AnalysisManager am(b.subject());
+
+    transformations::LoopPeeling t(*orig, /*predicate=*/true);
+    EXPECT_TRUE(t.can_be_applied(b, am));
+    t.apply(b, am);
+
+    auto& s = b.subject();
+    ASSERT_EQ(s.root().size(), 1);
+    auto* holder = dyn_cast<structured_control_flow::Sequence*>(&s.root().at(0));
+    ASSERT_TRUE(holder != nullptr);
+    ASSERT_EQ(holder->size(), 1);
+
+    auto* clean_for = dyn_cast<structured_control_flow::For*>(&holder->at(0));
+    ASSERT_TRUE(clean_for != nullptr);
+    EXPECT_TRUE(symbolic::eq(clean_for->condition(), symbolic::Lt(symbolic::symbol("i"), symbolic::integer(8))));
+
+    // No inner guard IfElse: the body is a plain Block.
+    ASSERT_EQ(clean_for->root().size(), 1);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&clean_for->root().at(0)) != nullptr);
+}
+
+// Guard against over-eager elimination: when the boundary is NOT provable
+// (dynamic `N` unbounded above), the hoisted then/else remainder is preserved.
+TEST(LoopPeelingTest, HoistedRemainderPreservedWhenBoundaryUnprovable) {
+    structured_control_flow::For* orig = nullptr;
+    auto builder = make_compound_loop(orig); // i < M+8 && i < N, N unbounded above
+
+    auto sdfg = builder.move();
+    builder::StructuredSDFGBuilder b(sdfg);
+    analysis::AnalysisManager am(b.subject());
+
+    transformations::LoopPeeling t(*orig);
+    EXPECT_TRUE(t.can_be_applied(b, am));
+    t.apply(b, am);
+
+    auto& s = b.subject();
+    ASSERT_EQ(s.root().size(), 1);
+    // Unprovable boundary => the then/else split (with remainder) is kept.
+    auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&s.root().at(0));
+    ASSERT_TRUE(if_else != nullptr);
+    EXPECT_EQ(if_else->size(), 2);
+}
+
+// The inner boundary `i < 11 - t` is dead only because the ENCLOSING loop bounds
+// t to [0, 4) (=> 11 - t >= 8 >= the tile). This is provable from the inner
+// body's scope assumptions but NOT from the coarse function-level assumptions
+// (where t is only known to be an unsigned >= 0), so it exercises exactly the
+// scope-vs-function-level distinction.
+TEST(LoopPeelingTest, InnerRemainderEliminatedViaEnclosingLoopBound) {
+    builder::StructuredSDFGBuilder builder("pb_enclosing", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("t", sym_desc);
+    builder.add_container("i", sym_desc);
+
+    auto t = symbolic::symbol("t");
+    auto i = symbolic::symbol("i");
+    // Enclosing loop: t in [0, 4).
+    auto& outer = builder.add_for(
+        root, t, symbolic::Lt(t, symbolic::integer(4)), symbolic::integer(0), symbolic::add(t, symbolic::integer(1))
+    );
+    // Inner peelable loop: i < 8 (tile) && i < 11 - t (dynamic; >= 8 since t <= 3).
+    auto& inner = builder.add_for(
+        outer.root(),
+        i,
+        symbolic::And(symbolic::Lt(i, symbolic::integer(8)), symbolic::Lt(i, symbolic::sub(symbolic::integer(11), t))),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1))
+    );
+    auto& block = builder.add_block(inner.root());
+    auto& A_in = builder.add_access(block, "A");
+    auto& A_out = builder.add_access(block, "A");
+    auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, A_in, tk, "_in", {i}, desc);
+    builder.add_computational_memlet(block, tk, "_out", A_out, {i}, desc);
+
+    auto sdfg = builder.move();
+    builder::StructuredSDFGBuilder b(sdfg);
+    analysis::AnalysisManager am(b.subject());
+
+    transformations::LoopPeeling peel(inner);
+    EXPECT_TRUE(peel.can_be_applied(b, am));
+    peel.apply(b, am);
+
+    auto& s = b.subject();
+    ASSERT_EQ(s.root().size(), 1);
+    auto* outer_for = dyn_cast<structured_control_flow::For*>(&s.root().at(0));
+    ASSERT_TRUE(outer_for != nullptr);
+    ASSERT_EQ(outer_for->root().size(), 1);
+
+    // Inner remainder eliminated: the outer body holds a plain Sequence, not an
+    // IfElse then/else split.
+    auto* holder = dyn_cast<structured_control_flow::Sequence*>(&outer_for->root().at(0));
+    ASSERT_TRUE(holder != nullptr);
+    ASSERT_EQ(holder->size(), 1);
+    auto* clean_for = dyn_cast<structured_control_flow::For*>(&holder->at(0));
+    ASSERT_TRUE(clean_for != nullptr);
+    EXPECT_TRUE(symbolic::eq(clean_for->condition(), symbolic::Lt(symbolic::symbol("i"), symbolic::integer(8))));
+    ASSERT_EQ(clean_for->root().size(), 1);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&clean_for->root().at(0)) != nullptr);
+}
+
+// GEMM-style tiling: an outer STRIDE-4 tile loop `it in {0,4,...,508}` (it < 512)
+// makes the inner `i < 4 && i < 512 - it` tile always fit — but only because the
+// tight (stride/evolution-aware) upper bound of `it` is 508, not the loose 511
+// implied by `it < 512`. Exercises the tight-bound proving path.
+TEST(LoopPeelingTest, InnerRemainderEliminatedViaStrideTightBound) {
+    builder::StructuredSDFGBuilder builder("pb_stride", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("it", sym_desc);
+    builder.add_container("i", sym_desc);
+
+    auto it = symbolic::symbol("it");
+    auto i = symbolic::symbol("i");
+    // Outer tile loop: it = 0, 4, ..., 508 (stride 4, it < 512).
+    auto& outer = builder.add_for(
+        root, it, symbolic::Lt(it, symbolic::integer(512)), symbolic::integer(0), symbolic::add(it, symbolic::integer(4))
+    );
+    // Inner peelable loop: i < 4 (tile) && i < 512 - it (always >= 4 since it <= 508).
+    auto& inner = builder.add_for(
+        outer.root(),
+        i,
+        symbolic::And(symbolic::Lt(i, symbolic::integer(4)), symbolic::Lt(i, symbolic::sub(symbolic::integer(512), it))),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1))
+    );
+    auto& block = builder.add_block(inner.root());
+    auto& A_in = builder.add_access(block, "A");
+    auto& A_out = builder.add_access(block, "A");
+    auto& tk = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, A_in, tk, "_in", {i}, desc);
+    builder.add_computational_memlet(block, tk, "_out", A_out, {i}, desc);
+
+    auto sdfg = builder.move();
+    builder::StructuredSDFGBuilder b(sdfg);
+    analysis::AnalysisManager am(b.subject());
+
+    transformations::LoopPeeling peel(inner);
+    EXPECT_TRUE(peel.can_be_applied(b, am));
+    peel.apply(b, am);
+
+    auto& s = b.subject();
+    ASSERT_EQ(s.root().size(), 1);
+    auto* outer_for = dyn_cast<structured_control_flow::For*>(&s.root().at(0));
+    ASSERT_TRUE(outer_for != nullptr);
+    ASSERT_EQ(outer_for->root().size(), 1);
+    // Remainder eliminated => plain Sequence holder, not an IfElse.
+    auto* holder = dyn_cast<structured_control_flow::Sequence*>(&outer_for->root().at(0));
+    ASSERT_TRUE(holder != nullptr);
+    ASSERT_EQ(holder->size(), 1);
+    auto* clean = dyn_cast<structured_control_flow::For*>(&holder->at(0));
+    ASSERT_TRUE(clean != nullptr);
+    ASSERT_EQ(clean->root().size(), 1);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&clean->root().at(0)) != nullptr);
+}

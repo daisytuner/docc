@@ -1,5 +1,6 @@
 #include "sdfg/transformations/loop_peeling.h"
 
+#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/structured_control_flow/for.h"
@@ -7,9 +8,12 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/symbolic/conjunctive_normal_form.h"
+#include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/symbolic.h"
 
 #include <symengine/integer.h>
+#include <symengine/logic.h>
 
 namespace sdfg {
 namespace transformations {
@@ -18,6 +22,102 @@ LoopPeeling::LoopPeeling(structured_control_flow::StructuredLoop& loop, bool pre
     : loop_(loop), predicate_(predicate) {};
 
 std::string LoopPeeling::name() const { return "LoopPeeling"; };
+
+/// Sound tri-state result of statically evaluating a boundary condition against
+/// the SDFG's symbol assumptions.
+enum class Provable { True, False, Unknown };
+
+/// Prove a single relational literal True/False under @p assums, or Unknown when
+/// undecidable. Only sound conclusions are returned. Gt/Ge are normalized by
+/// SymEngine into swapped StrictLessThan/LessThan, so four classes suffice.
+static Provable
+prove_literal(const symbolic::Condition& lit, const symbolic::SymbolSet& params, const symbolic::Assumptions& assums) {
+    if (symbolic::is_true(lit)) return Provable::True;
+    if (symbolic::is_false(lit)) return Provable::False;
+    if (!SymEngine::is_a_Relational(*lit)) return Provable::Unknown;
+
+    auto rel = SymEngine::rcp_static_cast<const SymEngine::Relational>(lit);
+    auto a = rel->get_arg1();
+    auto b = rel->get_arg2();
+
+    // Try both the tight (stride/evolution-aware) and loose bound sets: a
+    // stride-tiled offset's provable range often needs the tight upper bound
+    // (e.g. last-iteration value), while type-derived bounds are loose. Both are
+    // sound, so proving under either suffices.
+    auto lt = [&](const symbolic::Expression& x, const symbolic::Expression& y) {
+        return symbolic::is_lt(x, y, params, assums, true) || symbolic::is_lt(x, y, params, assums, false);
+    };
+    auto le = [&](const symbolic::Expression& x, const symbolic::Expression& y) {
+        return symbolic::is_le(x, y, params, assums, true) || symbolic::is_le(x, y, params, assums, false);
+    };
+    auto gt = [&](const symbolic::Expression& x, const symbolic::Expression& y) {
+        return symbolic::is_gt(x, y, params, assums, true) || symbolic::is_gt(x, y, params, assums, false);
+    };
+    auto ge = [&](const symbolic::Expression& x, const symbolic::Expression& y) {
+        return symbolic::is_ge(x, y, params, assums, true) || symbolic::is_ge(x, y, params, assums, false);
+    };
+    auto eq = [&](const symbolic::Expression& x, const symbolic::Expression& y) {
+        return symbolic::is_eq(x, y, params, assums, true) || symbolic::is_eq(x, y, params, assums, false);
+    };
+
+    if (SymEngine::is_a<SymEngine::StrictLessThan>(*lit)) { // a < b
+        if (lt(a, b)) return Provable::True;
+        if (ge(a, b)) return Provable::False;
+    } else if (SymEngine::is_a<SymEngine::LessThan>(*lit)) { // a <= b
+        if (le(a, b)) return Provable::True;
+        if (gt(a, b)) return Provable::False;
+    } else if (SymEngine::is_a<SymEngine::Equality>(*lit)) { // a == b
+        if (eq(a, b)) return Provable::True;
+        if (lt(a, b) || gt(a, b)) return Provable::False;
+    } else if (SymEngine::is_a<SymEngine::Unequality>(*lit)) { // a != b
+        if (lt(a, b) || gt(a, b)) return Provable::True;
+        if (eq(a, b)) return Provable::False;
+    }
+    return Provable::Unknown;
+}
+
+/// Prove a boundary condition (a conjunction of bounds) statically True/False, or
+/// Unknown. True  => the guarded remainder is dead and can be dropped; False =>
+/// the clean tile is dead and only the remainder is needed. Sound: only proven
+/// conclusions are returned, so an Unknown keeps the full (correct) emission.
+static Provable prove_condition(
+    const symbolic::Condition& cond, const symbolic::SymbolSet& params, const symbolic::Assumptions& assums
+) {
+    auto simplified = symbolic::simplify(cond);
+    if (symbolic::is_true(simplified)) return Provable::True;
+    if (symbolic::is_false(simplified)) return Provable::False;
+
+    symbolic::CNF cnf;
+    try {
+        cnf = symbolic::conjunctive_normal_form(cond);
+    } catch (const symbolic::CNFException&) {
+        return Provable::Unknown;
+    }
+
+    // The whole condition is the AND of clauses; each clause is an OR of literals.
+    bool all_true = true;
+    for (const auto& clause : cnf) {
+        bool clause_true = false;
+        bool clause_all_false = !clause.empty();
+        for (const auto& lit : clause) {
+            auto p = prove_literal(lit, params, assums);
+            if (p == Provable::True) {
+                clause_true = true;
+                break;
+            }
+            if (p != Provable::False) {
+                clause_all_false = false;
+            }
+        }
+        if (clause_true) continue;
+        // A clause whose every literal is provably false is unsatisfiable, so the
+        // whole conjunction is provably false.
+        if (clause_all_false) return Provable::False;
+        all_true = false; // this clause is undecided
+    }
+    return all_true ? Provable::True : Provable::Unknown;
+}
+
 
 /// True if `expr` is a strictly positive integer constant.
 static bool is_positive_int(const symbolic::Expression& expr) {
@@ -125,60 +225,77 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
 
     auto* parent = static_cast<structured_control_flow::Sequence*>(loop_.get_parent());
 
-    if (predicate_) {
-        // 0-based nest; the whole boundary is re-checked once at the innermost body.
-        auto& holder = builder.add_sequence_before(*parent, loop_, loop_.debug_info());
-        structured_control_flow::Sequence* current = &holder;
+    // Build the 0-based loop nest into @p into and return its innermost body.
+    auto build_zero_nest = [&](structured_control_flow::Sequence& into) -> structured_control_flow::Sequence& {
+        structured_control_flow::Sequence* current = &into;
         for (auto& info : infos) {
             auto& nl =
                 append_loop(builder, *current, *info.loop, info.indvar, info.zero_condition, zero, info.loop->update());
             current = &nl.root();
         }
-        auto& if_else = builder.add_if_else(*current, loop_.debug_info());
-        auto& body = builder.add_case(if_else, combined_guard, loop_.debug_info());
-        deepcopy::StructuredSDFGDeepCopy(builder, body, innermost->root()).insert();
+        return *current;
+    };
+    // Rewrite a copied body's shifted induction variables back to originals.
+    auto apply_shifts = [&](structured_control_flow::Sequence& body) {
         for (auto& info : infos) {
             if (!symbolic::eq(info.init, zero)) {
                 body.replace(info.indvar, info.shifted);
             }
         }
+    };
+    // Clean, unguarded 0-based nest running the whole tile.
+    auto emit_clean = [&](structured_control_flow::Sequence& into) {
+        auto& body = build_zero_nest(into);
+        deepcopy::StructuredSDFGDeepCopy(builder, body, innermost->root()).insert();
+        apply_shifts(body);
+    };
+    // 0-based nest with the original per-iteration bounds as a body guard.
+    auto emit_guarded = [&](structured_control_flow::Sequence& into) {
+        auto& deep = build_zero_nest(into);
+        auto& rem_if = builder.add_if_else(deep, loop_.debug_info());
+        auto& body = builder.add_case(rem_if, combined_guard, loop_.debug_info());
+        deepcopy::StructuredSDFGDeepCopy(builder, body, innermost->root()).insert();
+        apply_shifts(body);
+    };
+
+    // Assumptions at the innermost body scope carry every enclosing loop's bounds
+    // (e.g. tile-offset ranges), so a boundary that is dead given the surrounding
+    // nest is provable here — unlike the coarser function-level assumptions.
+    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    const auto& assums = assumptions_analysis.get(innermost->root(), true);
+    const auto& params = assumptions_analysis.parameters();
+    // The boundary is dead exactly when the last (worst-case, since the loops are
+    // monotonic) iteration still fits: `combined_fits`. This governs both forms —
+    // the hoisted remainder and the predicated per-iteration guard.
+    auto fits = prove_condition(combined_fits, params, assums);
+
+    if (predicate_) {
+        auto& holder = builder.add_sequence_before(*parent, loop_, loop_.debug_info());
+        if (fits == Provable::True) {
+            // Every iteration is provably in bounds: the per-iteration guard is dead.
+            emit_clean(holder);
+        } else {
+            emit_guarded(holder);
+        }
     } else {
-        // Hoisted: full clean tile in the "then" branch, original variable-trip
-        // remainder in the "else". The "then" micro-kernel is unguarded (vectorizes).
-        auto& if_else = builder.add_if_else_before(*parent, loop_, loop_.debug_info());
-
-        auto& then_branch = builder.add_case(if_else, combined_fits, loop_.debug_info());
-        structured_control_flow::Sequence* current = &then_branch;
-        for (auto& info : infos) {
-            auto& nl =
-                append_loop(builder, *current, *info.loop, info.indvar, info.zero_condition, zero, info.loop->update());
-            current = &nl.root();
-        }
-        deepcopy::StructuredSDFGDeepCopy(builder, *current, innermost->root()).insert();
-        for (auto& info : infos) {
-            if (!symbolic::eq(info.init, zero)) {
-                current->replace(info.indvar, info.shifted);
-            }
-        }
-
-        auto& else_branch = builder.add_case(if_else, symbolic::Not(combined_fits), loop_.debug_info());
-        current = &else_branch;
-        for (auto& info : infos) {
-            auto& nl =
-                append_loop(builder, *current, *info.loop, info.indvar, info.zero_condition, zero, info.loop->update());
-            current = &nl.root();
-        }
-        // 0-based remainder (constant trip) with the original per-iteration
-        // condition as a body guard. Keeping the remainder 0-based leaves any
-        // register tile in the body constant-indexed (no spill to local memory),
-        // while the guard skips the out-of-bounds iterations for correctness.
-        auto& rem_if = builder.add_if_else(*current, loop_.debug_info());
-        auto& rem_body = builder.add_case(rem_if, combined_guard, loop_.debug_info());
-        deepcopy::StructuredSDFGDeepCopy(builder, rem_body, innermost->root()).insert();
-        for (auto& info : infos) {
-            if (!symbolic::eq(info.init, zero)) {
-                rem_body.replace(info.indvar, info.shifted);
-            }
+        if (fits == Provable::True) {
+            // The whole tile always fits: the remainder branch is dead, emit only
+            // the clean nest (no outer IfElse).
+            auto& holder = builder.add_sequence_before(*parent, loop_, loop_.debug_info());
+            emit_clean(holder);
+        } else if (fits == Provable::False) {
+            // The tile never fully fits: the clean branch is dead, emit only the
+            // guarded remainder.
+            auto& holder = builder.add_sequence_before(*parent, loop_, loop_.debug_info());
+            emit_guarded(holder);
+        } else {
+            // Hoisted: full clean tile in the "then" branch, original variable-trip
+            // remainder in the "else". The "then" micro-kernel is unguarded (vectorizes).
+            auto& if_else = builder.add_if_else_before(*parent, loop_, loop_.debug_info());
+            auto& then_branch = builder.add_case(if_else, combined_fits, loop_.debug_info());
+            emit_clean(then_branch);
+            auto& else_branch = builder.add_case(if_else, symbolic::Not(combined_fits), loop_.debug_info());
+            emit_guarded(else_branch);
         }
     }
 
