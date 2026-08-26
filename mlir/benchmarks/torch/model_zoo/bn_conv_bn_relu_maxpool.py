@@ -1,8 +1,9 @@
+import docc.torch
+
 import torch
 import torch.nn as nn
 import pytest
 
-import docc.torch
 
 class SubModel(nn.Module):
     def __init__(self):
@@ -21,12 +22,14 @@ class SubModel(nn.Module):
         x = self.maxpool(x)
         return x
 
+
 def setup():
     """Return (eval-mode model, example_input) for the full pipeline."""
     model = SubModel()
     model.eval()
     x = torch.randn(1, 3, 224, 224)
     return model, x
+
 
 if __name__ == "__main__":
     from benchmarks.harness import run_benchmark

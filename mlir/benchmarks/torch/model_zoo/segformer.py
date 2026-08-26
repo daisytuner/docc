@@ -1,4 +1,5 @@
 import pytest
+import docc.torch
 
 import torch
 import torch.nn as nn
