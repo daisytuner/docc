@@ -1,8 +1,7 @@
+import docc.torch
 import torch
 import copy
 from math import isnan
-
-import docc.torch
 
 
 def compare(

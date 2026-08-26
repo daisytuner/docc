@@ -467,6 +467,16 @@ private:
         std::fprintf(f, "%s", entry.str().c_str());
     }
 
+    void verify_events_exist(const std::vector<std::string>& list) {
+        for (const auto& event_name : list) {
+            int event_code;
+            if (_PAPI_query_named_event(event_name.c_str()) != 0) {
+                std::fprintf(stderr, "[daisy-rtl] PAPI event '%s' not found.\n", event_name.c_str());
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
 public:
     DaisyInstrumentationState() {
         load_papi_symbols();
@@ -514,26 +524,14 @@ public:
         const char* env_events_cpu = std::getenv("__DAISY_INSTRUMENTATION_EVENTS");
         if (env_events_cpu) {
             split_string(env_events_cpu, this->event_names_cpu);
-            for (const auto& event_name : this->event_names_cpu) {
-                int event_code;
-                if (_PAPI_query_named_event(event_name.c_str()) != 0) {
-                    std::fprintf(stderr, "[daisy-rtl] PAPI event '%s' not found.\n", event_name.c_str());
-                    exit(EXIT_FAILURE);
-                }
-            }
+            verify_events_exist(this->event_names_cpu);
         }
 
         // Events - CUDA
         const char* env_events_cuda = std::getenv("__DAISY_INSTRUMENTATION_EVENTS_CUDA");
         if (env_events_cuda) {
             split_string(env_events_cuda, this->event_names_cuda);
-            for (const auto& event_name : this->event_names_cuda) {
-                int event_code;
-                if (_PAPI_query_named_event(event_name.c_str()) != 0) {
-                    std::fprintf(stderr, "[daisy-rtl] PAPI event '%s' not found.\n", event_name.c_str());
-                    exit(EXIT_FAILURE);
-                }
-            }
+            verify_events_exist(this->event_names_cuda);
         }
     }
 

@@ -1,9 +1,9 @@
+import docc.pytorch
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
 from functools import partial
-
-import docc.pytorch
 
 
 class Resnet18BasicBlock(nn.Module):
