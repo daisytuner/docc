@@ -82,8 +82,10 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 PyStructuredSDFG::PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<sdfg::StructuredSDFG>& sdfg)
-    : docc_context_(ctx), sdfg_(std::move(sdfg)), use_new_fusion_in_simplify_(true), enable_fusion_in_normalize_(true) {
-}
+    : docc_context_(ctx), sdfg_(std::move(sdfg)), use_new_fusion_in_simplify_(true),
+      // DOCC_DISABLE_FUSION keeps normalize from fusing sibling loop nests (e.g. a
+      // GEMM's C-init nest into its accumulate nest) so benchmarks see them apart.
+      enable_fusion_in_normalize_(std::getenv("DOCC_DISABLE_FUSION") == nullptr) {}
 
 PyStructuredSDFG PyStructuredSDFG::parse(sdfg::plugins::Context& ctx, const std::string& sdfg_text) {
     json j = json::parse(sdfg_text);

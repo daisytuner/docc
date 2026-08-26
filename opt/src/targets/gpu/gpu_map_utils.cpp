@@ -402,6 +402,30 @@ void get_nested_schedule_types(
     }
 }
 
+void get_nested_level_maps(
+    structured_control_flow::StructuredLoop& node,
+    analysis::AnalysisManager& analysis_manager,
+    std::unordered_map<TargetLevel, structured_control_flow::StructuredLoop*>& output
+) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.descendants(&node);
+    loops.insert(&node);
+    for (const auto& loop : loops) {
+        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+                auto level = ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type());
+                auto it = output.find(level);
+                if (it == output.end() ||
+                    symbolic::is_true(symbolic::
+                                          Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
+                                             ScheduleType_GPU_Offload::parallel_size(it->second->schedule_type())))) {
+                    output.insert_or_assign(level, struc_loop);
+                }
+            }
+        }
+    }
+}
+
 bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto loops = loop_analysis.descendants(&loop);

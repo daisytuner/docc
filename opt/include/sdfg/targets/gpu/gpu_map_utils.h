@@ -162,6 +162,15 @@ void get_nested_schedule_types(
     std::unordered_map<TargetLevel, structured_control_flow::ScheduleType>& output
 );
 
+// Per-level launch map for @p node's subtree: for each occupied target level, the
+// offloaded loop with the largest parallel_size (matching get_nested_schedule_types).
+// Exposes the loop node so callers can read its num_iterations for the launch size.
+void get_nested_level_maps(
+    structured_control_flow::StructuredLoop& node,
+    analysis::AnalysisManager& analysis_manager,
+    std::unordered_map<TargetLevel, structured_control_flow::StructuredLoop*>& output
+);
+
 bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager);
 
 structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(

@@ -155,164 +155,133 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
     auto& new_sequence = standalone->replace_with_sequence();
     auto& builder = standalone->builder();
 
-    // Add maps
+    // Emit C's initialization as its own (m, n) nest, then a separate accumulate
+    // nest. Accumulating in place (C[i,j] = A*B + C[i,j]) instead of into a
+    // register reduction keeps the k loop a plain, interchangeable loop the
+    // vectorizer can transform (matching the numpy C[i,j] += form).
     std::vector<symbolic::Expression> indvar_ends{this->m(), this->n(), this->k()};
-    data_flow::Subset new_subset;
-    structured_control_flow::Sequence* last_scope = &new_sequence;
-    structured_control_flow::StructuredLoop* last_map = nullptr;
-    structured_control_flow::StructuredLoop* output_loop = nullptr;
     std::vector<std::string> indvar_names{"_i", "_j", "_k"};
 
-    std::string sum_var = builder.find_new_name("_sum");
-    builder.add_container(sum_var, scalar_type);
+    bool alpha_is_one = alpha_edge->is_src_constant(1.0);
+    bool beta_is_zero = beta_edge->is_src_constant(0.0);
+    bool beta_is_one = beta_edge->is_src_constant(1.0);
 
-    for (size_t i = 0; i < 3; i++) {
-        auto dim_begin = symbolic::zero();
-        auto& dim_end = indvar_ends[i];
-
-        std::string indvar_str = builder.find_new_name(indvar_names[i]);
-        builder.add_container(indvar_str, types::Scalar(types::PrimitiveType::UInt64));
-
-        auto indvar = symbolic::symbol(indvar_str);
-        auto init = dim_begin;
-        auto update = symbolic::add(indvar, symbolic::one());
-        auto condition = symbolic::Lt(indvar, dim_end);
-        if (i < 2) {
-            last_map = &builder.add_map(
-                *last_scope,
-                indvar,
-                condition,
-                init,
+    auto add_loop = [&](structured_control_flow::Sequence& scope, size_t dim, bool as_map
+                    ) -> structured_control_flow::StructuredLoop& {
+        std::string iv = builder.find_new_name(indvar_names[dim]);
+        builder.add_container(iv, types::Scalar(types::PrimitiveType::UInt64));
+        auto sym = symbolic::symbol(iv);
+        auto cond = symbolic::Lt(sym, indvar_ends[dim]);
+        auto update = symbolic::add(sym, symbolic::one());
+        if (as_map) {
+            return builder.add_map(
+                scope,
+                sym,
+                cond,
+                symbolic::zero(),
                 update,
                 structured_control_flow::ScheduleType_Sequential::create(),
                 block.debug_info()
             );
+        }
+        return builder.add_for(scope, sym, cond, symbolic::zero(), update, block.debug_info());
+    };
+
+    // ---- Init nest: for i, j: C[i,j] = (beta == 0 ? 0 : beta * C[i,j]) ----
+    // Skipped when beta == 1 (identity): C already holds its starting value, so
+    // only the accumulate nest remains -- a single, unfused, vectorizable loop.
+    if (!beta_is_one) {
+        auto& i_loop = add_loop(new_sequence, 0, true);
+        auto i_sym = i_loop.indvar();
+        auto& j_loop = add_loop(i_loop.root(), 1, true);
+        auto j_sym = j_loop.indvar();
+        auto& init_blk = builder.add_block(j_loop.root(), block.debug_info());
+        symbolic::Expression c_idx = symbolic::add(symbolic::mul(ldc(), i_sym), j_sym);
+        auto& c_write = standalone->add_indirect_write_access(init_blk, C_INPUT_IDX);
+
+        if (beta_is_zero) {
+            auto& zero_node = builder.add_constant(init_blk, "0.0", scalar_type, block.debug_info());
+            auto& t = builder.add_tasklet(init_blk, data_flow::assign, "_out", {"_in"}, block.debug_info());
+            builder.add_computational_memlet(init_blk, zero_node, t, "_in", {}, block.debug_info());
+            builder.add_computational_memlet(
+                init_blk, t, "_out", c_write, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
+            );
         } else {
-            last_map = &builder.add_for(*last_scope, indvar, condition, init, update, block.debug_info());
+            auto& c_read = standalone->add_indirect_read_access(init_blk, C_INPUT_IDX);
+            auto& beta_node = standalone->add_scalar_input_access(init_blk, BETA_INPUT_IDX);
+            auto& t =
+                builder
+                    .add_tasklet(init_blk, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"}, block.debug_info());
+            builder.add_computational_memlet(
+                init_blk, c_read, t, "_in1", {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
+            );
+            builder.add_computational_memlet(init_blk, beta_node, t, "_in2", {}, block.debug_info());
+            builder.add_computational_memlet(
+                init_blk, t, "_out", c_write, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
+            );
         }
-        last_scope = &last_map->root();
-
-        if (i == 1) {
-            output_loop = last_map;
-        }
-
-        new_subset.push_back(indvar);
     }
 
+    // ---- Compute nest: for i, j, k: C[i,j] = alpha * A[i,k] * B[k,j] + C[i,j] ----
+    {
+        auto& i_loop = add_loop(new_sequence, 0, true);
+        auto i_sym = i_loop.indvar();
+        auto& j_loop = add_loop(i_loop.root(), 1, true);
+        auto j_sym = j_loop.indvar();
+        auto& k_loop = add_loop(j_loop.root(), 2, false);
+        auto k_sym = k_loop.indvar();
+        auto& code_block = builder.add_block(k_loop.root(), block.debug_info());
 
-    // Add code
-    auto& init_block = builder.add_block_before(output_loop->root(), *last_map, block.debug_info());
-    auto& sum_init = builder.add_access(init_block, sum_var, block.debug_info());
+        // Row-major indexing: address = ld * row + col.
+        symbolic::Expression a_idx = (trans_a_ == BLAS_Transpose::Trans)
+                                         ? symbolic::add(symbolic::mul(lda(), k_sym), i_sym)
+                                         : symbolic::add(symbolic::mul(lda(), i_sym), k_sym);
+        symbolic::Expression b_idx = (trans_b_ == BLAS_Transpose::Trans)
+                                         ? symbolic::add(symbolic::mul(ldb(), j_sym), k_sym)
+                                         : symbolic::add(symbolic::mul(ldb(), k_sym), j_sym);
+        symbolic::Expression c_idx = symbolic::add(symbolic::mul(ldc(), i_sym), j_sym);
 
-    auto& zero_node = builder.add_constant(init_block, "0.0", alpha_edge->base_type(), block.debug_info());
-    auto& init_tasklet = builder.add_tasklet(init_block, data_flow::assign, "_out", {"_in"}, block.debug_info());
-    builder.add_computational_memlet(init_block, zero_node, init_tasklet, "_in", {}, block.debug_info());
-    builder.add_computational_memlet(init_block, init_tasklet, "_out", sum_init, {}, block.debug_info());
+        auto& a_node = standalone->add_indirect_read_access(code_block, A_INPUT_IDX);
+        auto& b_node = standalone->add_indirect_read_access(code_block, B_INPUT_IDX);
+        auto& c_in = standalone->add_indirect_read_access(code_block, C_INPUT_IDX);
+        auto& c_out = standalone->add_indirect_write_access(code_block, C_INPUT_IDX);
 
-    auto& code_block = builder.add_block(*last_scope, block.debug_info());
-    auto& input_node_a_new = standalone->add_indirect_read_access(code_block, A_INPUT_IDX);
-    auto& input_node_b_new = standalone->add_indirect_read_access(code_block, B_INPUT_IDX);
-
-    auto& core_fma =
-        builder.add_tasklet(code_block, data_flow::fp_fma, "_out", {"_in1", "_in2", "_in3"}, block.debug_info());
-    auto& sum_in = builder.add_access(code_block, sum_var, block.debug_info());
-    auto& sum_out = builder.add_access(code_block, sum_var, block.debug_info());
-    builder.add_computational_memlet(code_block, sum_in, core_fma, "_in3", {}, block.debug_info());
-
-    // Row-major indexing: address = ld * row + col
-    // No transpose: A is m×k, access A[i, k] => lda*i + k
-    // Transpose:    A is k×m stored, access A[k, i] => lda*k + i
-    symbolic::Expression a_idx = (trans_a_ == BLAS_Transpose::Trans)
-                                     ? symbolic::add(symbolic::mul(lda(), new_subset[2]), new_subset[0])
-                                     : symbolic::add(symbolic::mul(lda(), new_subset[0]), new_subset[2]);
-    builder.add_computational_memlet(
-        code_block, input_node_a_new, core_fma, "_in1", {a_idx}, iedge_a->base_type(), iedge_a->debug_info()
-    );
-    // No transpose: B is k×n, access B[k, j] => ldb*k + j
-    // Transpose:    B is n×k stored, access B[j, k] => ldb*j + k
-    symbolic::Expression b_idx = (trans_b_ == BLAS_Transpose::Trans)
-                                     ? symbolic::add(symbolic::mul(ldb(), new_subset[1]), new_subset[2])
-                                     : symbolic::add(symbolic::mul(ldb(), new_subset[2]), new_subset[1]);
-    builder.add_computational_memlet(
-        code_block, input_node_b_new, core_fma, "_in2", {b_idx}, iedge_b->base_type(), iedge_b->debug_info()
-    );
-    builder.add_computational_memlet(code_block, core_fma, "_out", sum_out, {}, iedge_c->debug_info());
-
-    // Detect statically-known special scalar values that simplify the epilogue:
-    // alpha == 1 => skip scaling the accumulator; beta == 0 => skip reading/scaling C.
-    bool alpha_is_one = alpha_edge->is_src_constant(1.0);
-    bool beta_is_zero = beta_edge->is_src_constant(0.0);
-
-    auto& flush_block = builder.add_block_after(output_loop->root(), *last_map, block.debug_info());
-    auto& sum_final = builder.add_access(flush_block, sum_var, block.debug_info());
-    symbolic::Expression c_idx = symbolic::add(symbolic::mul(ldc(), new_subset[0]), new_subset[1]);
-
-    // Node holding alpha * sum (or just sum when alpha == 1)
-    data_flow::AccessNode* scaled_sum_node = &sum_final;
-    if (!alpha_is_one) {
-        auto& scale_sum_tasklet =
-            builder
-                .add_tasklet(flush_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"}, block.debug_info());
-        builder.add_computational_memlet(flush_block, sum_final, scale_sum_tasklet, "_in1", {}, block.debug_info());
-        auto& alpha_node = standalone->add_scalar_input_access(flush_block, ALPHA_INPUT_IDX);
-        builder.add_computational_memlet(flush_block, alpha_node, scale_sum_tasklet, "_in2", {}, block.debug_info());
-
-        std::string scaled_sum_temp = builder.find_new_name("scaled_sum_temp");
-        builder.add_container(scaled_sum_temp, scalar_type);
-        auto& scaled_sum_final = builder.add_access(flush_block, scaled_sum_temp, block.debug_info());
+        auto& fma =
+            builder.add_tasklet(code_block, data_flow::fp_fma, "_out", {"_in1", "_in2", "_in3"}, block.debug_info());
+        builder
+            .add_computational_memlet(code_block, c_in, fma, "_in3", {c_idx}, iedge_c->base_type(), iedge_c->debug_info());
         builder.add_computational_memlet(
-            flush_block, scale_sum_tasklet, "_out", scaled_sum_final, {}, scalar_type, block.debug_info()
-        );
-        scaled_sum_node = &scaled_sum_final;
-    }
-
-    auto& output_node_new = standalone->add_indirect_write_access(flush_block, C_INPUT_IDX);
-
-    if (beta_is_zero) {
-        // C = alpha * sum
-        auto& store_tasklet = builder.add_tasklet(flush_block, data_flow::assign, "_out", {"_in"}, block.debug_info());
-        builder.add_computational_memlet(flush_block, *scaled_sum_node, store_tasklet, "_in", {}, block.debug_info());
-        builder.add_computational_memlet(
-            flush_block, store_tasklet, "_out", output_node_new, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
-        );
-    } else {
-        // C = alpha * sum + beta * C
-        auto& input_node_c_new = standalone->add_indirect_read_access(flush_block, C_INPUT_IDX);
-
-        auto& scale_input_tasklet =
-            builder
-                .add_tasklet(flush_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"}, block.debug_info());
-        builder.add_computational_memlet(
-            flush_block,
-            input_node_c_new,
-            scale_input_tasklet,
-            "_in1",
-            {c_idx},
-            iedge_c->base_type(),
-            iedge_c->debug_info()
-        );
-        auto& beta_node = standalone->add_scalar_input_access(flush_block, BETA_INPUT_IDX);
-        builder.add_computational_memlet(flush_block, beta_node, scale_input_tasklet, "_in2", {}, block.debug_info());
-
-        std::string scaled_input_temp = builder.find_new_name("scaled_input_temp");
-        builder.add_container(scaled_input_temp, scalar_type);
-        auto& scaled_input_c = builder.add_access(flush_block, scaled_input_temp, block.debug_info());
-        builder.add_computational_memlet(
-            flush_block, scale_input_tasklet, "_out", scaled_input_c, {}, scalar_type, block.debug_info()
+            code_block, fma, "_out", c_out, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
         );
 
-        auto& flush_add_tasklet =
-            builder
-                .add_tasklet(flush_block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"}, block.debug_info());
-        builder.add_computational_memlet(
-            flush_block, *scaled_sum_node, flush_add_tasklet, "_in1", {}, scalar_type, block.debug_info()
-        );
-        builder.add_computational_memlet(
-            flush_block, scaled_input_c, flush_add_tasklet, "_in2", {}, scalar_type, block.debug_info()
-        );
-        builder.add_computational_memlet(
-            flush_block, flush_add_tasklet, "_out", output_node_new, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
-        );
+        if (alpha_is_one) {
+            // C[i,j] = A[i,k] * B[k,j] + C[i,j]
+            builder.add_computational_memlet(
+                code_block, a_node, fma, "_in1", {a_idx}, iedge_a->base_type(), iedge_a->debug_info()
+            );
+            builder.add_computational_memlet(
+                code_block, b_node, fma, "_in2", {b_idx}, iedge_b->base_type(), iedge_b->debug_info()
+            );
+        } else {
+            // p = A[i,k] * B[k,j]; C[i,j] = alpha * p + C[i,j]
+            auto& mul_t =
+                builder
+                    .add_tasklet(code_block, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"}, block.debug_info());
+            builder.add_computational_memlet(
+                code_block, a_node, mul_t, "_in1", {a_idx}, iedge_a->base_type(), iedge_a->debug_info()
+            );
+            builder.add_computational_memlet(
+                code_block, b_node, mul_t, "_in2", {b_idx}, iedge_b->base_type(), iedge_b->debug_info()
+            );
+            std::string prod = builder.find_new_name("_prod");
+            builder.add_container(prod, scalar_type);
+            auto& prod_node = builder.add_access(code_block, prod, block.debug_info());
+            builder.add_computational_memlet(code_block, mul_t, "_out", prod_node, {}, scalar_type, block.debug_info());
+
+            auto& alpha_node = standalone->add_scalar_input_access(code_block, ALPHA_INPUT_IDX);
+            builder.add_computational_memlet(code_block, alpha_node, fma, "_in1", {}, block.debug_info());
+            builder.add_computational_memlet(code_block, prod_node, fma, "_in2", {}, scalar_type, block.debug_info());
+        }
     }
 
     return standalone->successfully_expanded();

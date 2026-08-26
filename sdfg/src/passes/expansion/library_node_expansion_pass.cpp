@@ -3,6 +3,7 @@
 #include "lib_node_expansion_context.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 
+#include <cstdlib>
 #include <memory>
 
 namespace sdfg {
@@ -85,6 +86,11 @@ LibNodeExpansionVisitor::BlockOutcome LibNodeExpansionVisitor::
     bool may_contain_lib_nodes = true;
     bool handled_any = false;
 
+    // Opt-in: also lower library nodes whose implementation dispatches to a
+    // vendor library (e.g. BLAS GEMM -> cblas). With this set, GEMMNode::expand
+    // rewrites them into explicit loops so the optimizer can tile/offload them.
+    const bool expand_all = std::getenv("DOCC_EXPAND_BLAS") != nullptr;
+
     do {
         // expansion may change the contents of this block or even remove it.
         // to ensure stable order, order by element_id
@@ -94,8 +100,8 @@ LibNodeExpansionVisitor::BlockOutcome LibNodeExpansionVisitor::
         auto libnodes = dataflow.nodes() |
                         std::views::transform([](auto& n) { return dynamic_cast<const data_flow::LibraryNode*>(&n); }) |
                         std::views::filter([](auto* n) { return n != nullptr; }) |
-                        std::views::filter([last_element_id](auto* n) {
-                            return n->implementation_type() == data_flow::ImplementationType_NONE &&
+                        std::views::filter([last_element_id, expand_all](auto* n) {
+                            return (expand_all || n->implementation_type() == data_flow::ImplementationType_NONE) &&
                                    n->element_id() > last_element_id;
                         });
         std::vector<const data_flow::LibraryNode*> sorted_nodes(libnodes.begin(), libnodes.end());
