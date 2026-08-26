@@ -4,6 +4,7 @@
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/EnumAttr.td"
+include "mlir/Interfaces/DestinationStyleOpInterface.td"
 
 def LinalgCustom_Dialect : Dialect {
     let name = "linalg_custom";
@@ -19,7 +20,8 @@ def LinalgCustom_Dialect : Dialect {
 class LinalgCustom_Op<string mnemonic, list<Trait> traits = []> : Op<LinalgCustom_Dialect, mnemonic, traits>;
 
 def LinalgCustom_ReLUOp : LinalgCustom_Op<"relu",
-        [PredOpTrait<"input and output have same element type", TCopVTEtIsSameAs<0, 1>>]> {
+        [PredOpTrait<"input and output have same element type", TCopVTEtIsSameAs<0, 1>>,
+        DeclareOpInterfaceMethods<DestinationStyleOpInterface>]> {
     let summary = "ReLU operator";
 
     let arguments = (ins AnyShaped:$input,
@@ -35,7 +37,8 @@ def LinalgCustom_ReLUOp : LinalgCustom_Op<"relu",
 }
 
 def LinalgCustom_SigmoidOp : LinalgCustom_Op<"sigmoid",
-        [PredOpTrait<"input and output have same element type", TCopVTEtIsSameAs<0, 1>>]> {
+        [PredOpTrait<"input and output have same element type", TCopVTEtIsSameAs<0, 1>>,
+        DeclareOpInterfaceMethods<DestinationStyleOpInterface>]> {
     let summary = "Sigmoid operator";
 
     let arguments = (ins AnyShaped:$input,
@@ -51,7 +54,8 @@ def LinalgCustom_SigmoidOp : LinalgCustom_Op<"sigmoid",
 }
 
 def LinalgCustom_BatchNorm2DNchwOp : LinalgCustom_Op<"batchnorm_2d_nchw",
-        [PredOpTrait<"element types must be the same", TCopVTEtAreSameAt<[0, 1, 2, 3, 4, 5, 6]>>]> {
+        [PredOpTrait<"element types must be the same", TCopVTEtAreSameAt<[0, 1, 2, 3, 4, 5, 6]>>,
+        DeclareOpInterfaceMethods<DestinationStyleOpInterface>]> {
     let summary = "Performs 2-D Batch Normalization";
 
     let arguments = (ins TensorRankOf<[AnyType], [4]>:$batch,
@@ -76,7 +80,8 @@ def LinalgCustom_BatchNorm2DNchwOp : LinalgCustom_Op<"batchnorm_2d_nchw",
 }
 
 def LinalgCustom_Conv2DNchwFchwOp : LinalgCustom_Op<"conv_2d_nchw_fchw",
-        [PredOpTrait<"element types must be the same", TCopVTEtAreSameAt<[0, 1, 2]>>]> {
+        [PredOpTrait<"element types must be the same", TCopVTEtAreSameAt<[0, 1, 2]>>,
+        DeclareOpInterfaceMethods<DestinationStyleOpInterface>]> {
     let summary = "Performs 2-D convolution.";
 
     let arguments = (ins TensorRankOf<[AnyType], [4]>:$input,
@@ -105,7 +110,8 @@ def LinalgCustom_PoolingMethod : I64EnumAttr<"PoolingMethod", "", [
 }
 
 def LinalgCustom_PoolingNchwOp : LinalgCustom_Op<"pooling_nchw",
-        [PredOpTrait<"element types must be the same", TCopVTEtIsSameAs<0, 1>>]> {
+        [PredOpTrait<"element types must be the same", TCopVTEtIsSameAs<0, 1>>,
+        DeclareOpInterfaceMethods<DestinationStyleOpInterface>]> {
     let summary = "Performs pooling.";
 
     let arguments = (ins TensorRankOf<[AnyType], [4]>:$input,

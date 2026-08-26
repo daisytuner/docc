@@ -504,6 +504,7 @@ class PyTorchProgram(DoccProgram):
         parser: GraphParser = GraphParser(self.name, ir, self.example_input)
         parser.parse()
         sdfg = parser.to_sdfg()
+        self.example_input: tuple[Any, ...] | None = parser.get_arguments()
 
         try:
             sdfg.validate()

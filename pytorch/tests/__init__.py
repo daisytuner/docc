@@ -14,13 +14,30 @@ def compare_shapes(res_shape: torch.Size, ref_shape: torch.Size) -> None:
         assert res_shape == ref_shape
 
 
+def torch_allclose(
+    res: torch.Tensor, ref: torch.Tensor, rtol: float, atol: float, equal_nan: bool
+) -> None:
+    all_close: bool = torch.allclose(
+        res, ref, rtol=rtol, atol=atol, equal_nan=equal_nan
+    )
+    if not all_close:
+        if not equal_nan and torch.any(
+            torch.logical_or(torch.isnan(res), torch.isnan(ref))
+        ):
+            max_diff: torch.Tensor = torch.tensor(torch.nan)
+        else:
+            diff: torch.Tensor = torch.abs(res - ref)
+            max_diff: torch.Tensor = torch.max(diff)
+        raise AssertionError("Non-eqal; biggest difference: " + str(max_diff))
+
+
 def compare(
     res: None | int | float | np.ndarray | torch.Tensor | tuple,
     ref: None | int | float | np.ndarray | torch.Tensor | tuple,
     rtol: float = 1e-4,
     atol: float = 1e-5,
     equal_nan: bool = False,
-):
+) -> None:
     if res is None and ref is None:
         pass  # This is valid
     if type(res) == int and type(ref) == int:
@@ -43,7 +60,7 @@ def compare(
         assert res.dtype == ref.dtype
         compare_shapes(res.shape, ref.shape)
         if torch.is_floating_point(res):
-            assert torch.allclose(res, ref, rtol=rtol, atol=atol, equal_nan=equal_nan)
+            torch_allclose(res, ref, rtol, atol, equal_nan)
         else:
             assert torch.all(res == ref)
     elif type(res) == np.ndarray and type(ref) == torch.Tensor:
@@ -67,7 +84,7 @@ def check(
     target: str = "none",
     category: str = "server",
     remote_tuning: bool = False,
-):
+) -> None:
     model_ref = copy.deepcopy(model)
     program = torch.compile(
         model,

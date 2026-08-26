@@ -14,17 +14,14 @@ parameters:
 
 steps:
   build: |
-    python3.11 -m venv venv
+    python3 -m venv venv
     . venv/bin/activate
 
     python -m pip install --upgrade pip
-    pip install pybind11 pytest coverage build scikit-build-core
-    pip install numpy scipy transformers ml_dtypes
+    pip install -r pytorch/requirements-cuda.txt
 
     pip install --no-build-isolation -e python/
     pip install --no-build-isolation -e pytorch/
-
-    pip install -r pytorch/requirements-cuda.txt
 
     # Warm start
     export DOCC_DEBUG=dump

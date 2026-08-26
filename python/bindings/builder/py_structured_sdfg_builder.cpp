@@ -1590,52 +1590,130 @@ void PyStructuredSDFGBuilder::add_batchnorm_with_bias(
     builder_.add_computational_memlet(block, B_out_access, libnode, "B_out", {}, B_out_type, debug_info);
 }
 
-
-void PyStructuredSDFGBuilder::add_layernorm_with_bias(
+void PyStructuredSDFGBuilder::add_layernorm(
     const std::string& X,
     const sdfg::types::Tensor& X_type,
+    const std::string& Eps,
+    const sdfg::types::Scalar& Eps_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const std::string& Mean,
+    const sdfg::types::Tensor& Mean_type,
+    const std::string& Rstd,
+    const sdfg::types::Tensor& Rstd_type,
+    const std::vector<std::string>& normalized_shape_strs,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto normalized_shape = parse_and_expand(normalized_shape_strs);
+    auto& block = builder_.add_block(current_sequence(), debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& Eps_access =
+        (builder_.subject().exists(Eps) ? builder_.add_access(block, Eps, debug_info)
+                                        : builder_.add_constant(block, Eps, Eps_type));
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& Mean_access = builder_.add_access(block, Mean, debug_info);
+    auto& Rstd_access = builder_.add_access(block, Rstd, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::LayerNormNode>(
+        block, debug_info, normalized_shape, Y_type.layout(), Mean_type.layout(), Rstd_type.layout(), X_type.layout()
+    );
+    builder_.add_computational_memlet(block, X_access, libnode, "_x", {}, X_type, debug_info);
+    builder_.add_computational_memlet(block, Eps_access, libnode, "_eps", {}, Eps_type, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "_y", {}, Y_type, debug_info);
+    builder_.add_computational_memlet(block, Mean_access, libnode, "_mean", {}, Mean_type, debug_info);
+    builder_.add_computational_memlet(block, Rstd_access, libnode, "_rstd", {}, Rstd_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_layernorm_affine(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Eps,
+    const sdfg::types::Scalar& Eps_type,
+    const std::string& Gamma,
+    const sdfg::types::Tensor& Gamma_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const std::string& Mean,
+    const sdfg::types::Tensor& Mean_type,
+    const std::string& Rstd,
+    const sdfg::types::Tensor& Rstd_type,
+    const std::vector<std::string>& normalized_shape_strs,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto normalized_shape = parse_and_expand(normalized_shape_strs);
+    auto& block = builder_.add_block(current_sequence(), debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& Eps_access =
+        (builder_.subject().exists(Eps) ? builder_.add_access(block, Eps, debug_info)
+                                        : builder_.add_constant(block, Eps, Eps_type));
+    auto& Gamma_access = builder_.add_access(block, Gamma, debug_info);
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& Mean_access = builder_.add_access(block, Mean, debug_info);
+    auto& Rstd_access = builder_.add_access(block, Rstd, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::LayerNormNode>(
+        block,
+        debug_info,
+        normalized_shape,
+        Y_type.layout(),
+        Mean_type.layout(),
+        Rstd_type.layout(),
+        X_type.layout(),
+        Gamma_type.layout()
+    );
+    builder_.add_computational_memlet(block, X_access, libnode, "_x", {}, X_type, debug_info);
+    builder_.add_computational_memlet(block, Eps_access, libnode, "_eps", {}, Eps_type, debug_info);
+    builder_.add_computational_memlet(block, Gamma_access, libnode, "_gamma", {}, Gamma_type, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "_y", {}, Y_type, debug_info);
+    builder_.add_computational_memlet(block, Mean_access, libnode, "_mean", {}, Mean_type, debug_info);
+    builder_.add_computational_memlet(block, Rstd_access, libnode, "_rstd", {}, Rstd_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_layernorm_affine_with_bias(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Eps,
+    const sdfg::types::Scalar& Eps_type,
     const std::string& Gamma,
     const sdfg::types::Tensor& Gamma_type,
     const std::string& Beta,
     const sdfg::types::Tensor& Beta_type,
-    const std::string& epsilon,
-    const sdfg::types::Scalar& epsilon_type,
-    const std::string& Y_out,
-    const sdfg::types::Tensor& Y_out_type,
-    int64_t num_normalized_dims,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const std::string& Mean,
+    const sdfg::types::Tensor& Mean_type,
+    const std::string& Rstd,
+    const sdfg::types::Tensor& Rstd_type,
+    const std::vector<std::string>& normalized_shape_strs,
     const sdfg::DebugInfo& debug_info
 ) {
-    const bool affine = !Gamma.empty();
-    const bool has_bias = !Beta.empty();
-
-    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto normalized_shape = parse_and_expand(normalized_shape_strs);
+    auto& block = builder_.add_block(current_sequence(), debug_info);
     auto& X_access = builder_.add_access(block, X, debug_info);
-    auto& epsilon_access =
-        (builder_.subject().exists(epsilon) ? builder_.add_access(block, epsilon, debug_info)
-                                            : builder_.add_constant(block, epsilon, epsilon_type));
-    auto& Y_out_access = builder_.add_access(block, Y_out, debug_info);
-
+    auto& Eps_access =
+        (builder_.subject().exists(Eps) ? builder_.add_access(block, Eps, debug_info)
+                                        : builder_.add_constant(block, Eps, Eps_type));
+    auto& Gamma_access = builder_.add_access(block, Gamma, debug_info);
+    auto& Beta_access = builder_.add_access(block, Beta, debug_info);
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& Mean_access = builder_.add_access(block, Mean, debug_info);
+    auto& Rstd_access = builder_.add_access(block, Rstd, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::LayerNormNode>(
         block,
         debug_info,
-        Y_out_type.layout(),
-        sdfg::math::tensor::QUANTIZATION_MATCH_INPUTS,
-        static_cast<size_t>(num_normalized_dims),
-        affine,
-        has_bias
+        normalized_shape,
+        Y_type.layout(),
+        Mean_type.layout(),
+        Rstd_type.layout(),
+        X_type.layout(),
+        Gamma_type.layout(),
+        Beta_type.layout()
     );
-
-    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
-    if (affine) {
-        auto& Gamma_access = builder_.add_access(block, Gamma, debug_info);
-        builder_.add_computational_memlet(block, Gamma_access, libnode, "Gamma", {}, Gamma_type, debug_info);
-    }
-    if (has_bias) {
-        auto& Beta_access = builder_.add_access(block, Beta, debug_info);
-        builder_.add_computational_memlet(block, Beta_access, libnode, "Beta", {}, Beta_type, debug_info);
-    }
-    builder_.add_computational_memlet(block, epsilon_access, libnode, "epsilon", {}, epsilon_type, debug_info);
-    builder_.add_computational_memlet(block, Y_out_access, libnode, "Y_out", {}, Y_out_type, debug_info);
+    builder_.add_computational_memlet(block, X_access, libnode, "_x", {}, X_type, debug_info);
+    builder_.add_computational_memlet(block, Eps_access, libnode, "_eps", {}, Eps_type, debug_info);
+    builder_.add_computational_memlet(block, Gamma_access, libnode, "_gamma", {}, Gamma_type, debug_info);
+    builder_.add_computational_memlet(block, Beta_access, libnode, "_beta", {}, Beta_type, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "_y", {}, Y_type, debug_info);
+    builder_.add_computational_memlet(block, Mean_access, libnode, "_mean", {}, Mean_type, debug_info);
+    builder_.add_computational_memlet(block, Rstd_access, libnode, "_rstd", {}, Rstd_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_pooling(

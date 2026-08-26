@@ -1,5 +1,7 @@
 #include "mlir/Dialect/Linalg/IR/LinalgCustomOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 
 #include "mlir/Dialect/Linalg/IR/LinalgCustomOpsDialect.cpp.inc"
@@ -33,6 +35,8 @@ LogicalResult ReLUOp::verify() {
     return success();
 }
 
+MutableOperandRange ReLUOp::getDpsInitsMutable() { return this->getOutputMutable(); }
+
 //===----------------------------------------------------------------------===//
 // SigmoidOp
 //===----------------------------------------------------------------------===//
@@ -49,6 +53,8 @@ LogicalResult SigmoidOp::verify() {
 
     return success();
 }
+
+MutableOperandRange SigmoidOp::getDpsInitsMutable() { return this->getOutputMutable(); }
 
 //===----------------------------------------------------------------------===//
 // BatchNorm2DNchw
@@ -89,6 +95,8 @@ LogicalResult BatchNorm2DNchwOp::verify() {
 
     return success();
 }
+
+MutableOperandRange BatchNorm2DNchwOp::getDpsInitsMutable() { return this->getOutputMutable(); }
 
 //===----------------------------------------------------------------------===//
 // Conv2DNchwFchwOp
@@ -147,6 +155,8 @@ LogicalResult Conv2DNchwFchwOp::verify() {
     return success();
 }
 
+MutableOperandRange Conv2DNchwFchwOp::getDpsInitsMutable() { return this->getOutputMutable(); }
+
 //===----------------------------------------------------------------------===//
 // PoolingNchwOp
 //===----------------------------------------------------------------------===//
@@ -192,6 +202,8 @@ LogicalResult PoolingNchwOp::verify() {
 
     return success();
 }
+
+MutableOperandRange PoolingNchwOp::getDpsInitsMutable() { return this->getOutputMutable(); }
 
 //===----------------------------------------------------------------------===//
 // Dialect initialization

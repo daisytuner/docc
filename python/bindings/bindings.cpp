@@ -640,19 +640,57 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
-            "add_layernorm_with_bias",
-            &PyStructuredSDFGBuilder::add_layernorm_with_bias,
+            "add_layernorm",
+            &PyStructuredSDFGBuilder::add_layernorm,
             py::arg("X"),
             py::arg("X_type"),
+            py::arg("Eps"),
+            py::arg("Eps_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("Mean"),
+            py::arg("Mean_type"),
+            py::arg("Rstd"),
+            py::arg("Rstd_type"),
+            py::arg("normalized_shape"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_layernorm_affine",
+            &PyStructuredSDFGBuilder::add_layernorm_affine,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Eps"),
+            py::arg("Eps_type"),
+            py::arg("Gamma"),
+            py::arg("Gamma_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("Mean"),
+            py::arg("Mean_type"),
+            py::arg("Rstd"),
+            py::arg("Rstd_type"),
+            py::arg("normalized_shape"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_layernorm_affine_with_bias",
+            &PyStructuredSDFGBuilder::add_layernorm_affine_with_bias,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Eps"),
+            py::arg("Eps_type"),
             py::arg("Gamma"),
             py::arg("Gamma_type"),
             py::arg("Beta"),
             py::arg("Beta_type"),
-            py::arg("epsilon"),
-            py::arg("epsilon_type"),
-            py::arg("Y_out"),
-            py::arg("Y_out_type"),
-            py::arg("num_normalized_dims"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("Mean"),
+            py::arg("Mean_type"),
+            py::arg("Rstd"),
+            py::arg("Rstd_type"),
+            py::arg("normalized_shape"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
@@ -756,20 +794,6 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("Y"),
             py::arg("Y_type"),
             py::arg("dim_offset"),
-            "add_slice_op",
-            py::arg("debug_info") = sdfg::DebugInfo()
-        )
-        .def(
-            "add_slice_op",
-            &PyStructuredSDFGBuilder::add_slice_op,
-            py::arg("X"),
-            py::arg("X_type"),
-            py::arg("Y"),
-            py::arg("Y_type"),
-            py::arg("dim"),
-            py::arg("start"),
-            py::arg("end"),
-            py::arg("step"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(

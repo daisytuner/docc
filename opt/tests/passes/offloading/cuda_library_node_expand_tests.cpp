@@ -4,9 +4,10 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/targets/cuda/math/tensor/concat_expander.h"
-#include "sdfg/targets/cuda/math/tensor/conv_expander.h"
 
+#include "sdfg/targets/gpu/math/tensor/conv_expander.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -59,9 +60,9 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_Group1) {
     EXPECT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "0.before");
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
-    EXPECT_TRUE(expander.expand(builder, analysis_manager));
+    offloading::GPUConvExpander expander;
+    auto outcome = passes::expansion::expand_single_node(builder, block, conv_node, expander);
+    EXPECT_TRUE(outcome.expanded);
 
     EXPECT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "1.after");
@@ -118,19 +119,10 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne) {
     builder.add_computational_memlet(block, output_node, conv_node, "Y", {}, desc_tensor_output, block.debug_info());
 
     EXPECT_NO_THROW(sdfg.validate());
-    dump_sdfg(sdfg, "0.before");
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
-    EXPECT_TRUE(expander.expand(builder, analysis_manager));
-
-    EXPECT_NO_THROW(sdfg.validate());
-    dump_sdfg(sdfg, "1.after");
-
-    ASSERT_EQ(sdfg.root().size(), 1);
-    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0));
-    ASSERT_NE(new_sequence, nullptr);
-    EXPECT_EQ(new_sequence->size(), 1) << "Expecting naïve expansion";
+    offloading::GPUConvExpander expander;
+    auto outcome = passes::expansion::expand_single_node(builder, block, conv_node, expander);
+    EXPECT_FALSE(outcome.expanded);
 }
 
 // Test that CudaConvExpander successfully expands a valid 2D ConvNode with group==1 with im2row expansion
@@ -185,9 +177,9 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_Group1) {
     EXPECT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "0.before");
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
-    EXPECT_TRUE(expander.expand(builder, analysis_manager));
+    offloading::GPUConvExpander expander;
+    auto outcome = passes::expansion::expand_single_node(builder, block, conv_node, expander);
+    EXPECT_TRUE(outcome.expanded);
 
     EXPECT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "1.after");
@@ -250,17 +242,9 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2DWithBias_GroupNotOne) {
     EXPECT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "0.before");
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
-    EXPECT_TRUE(expander.expand(builder, analysis_manager));
-
-    EXPECT_NO_THROW(sdfg.validate());
-    dump_sdfg(sdfg, "1.after");
-
-    ASSERT_EQ(sdfg.root().size(), 1);
-    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0));
-    ASSERT_NE(new_sequence, nullptr);
-    EXPECT_EQ(new_sequence->size(), 1) << "Expecting naïve expansion";
+    offloading::GPUConvExpander expander;
+    auto outcome = passes::expansion::expand_single_node(builder, block, conv_node, expander);
+    EXPECT_FALSE(outcome.expanded);
 }
 
 // Test that CudaConvExpander successfully expands a valid 2D ConvNode with group!=1 with naïve expansion
@@ -312,19 +296,10 @@ TEST(CudaConvExpanderTest, ExpandsValidConv2D_GroupNotOne_SymbolicPadding) {
     builder.add_computational_memlet(block, output_node, conv_node, "Y", {}, desc_tensor_output, block.debug_info());
 
     EXPECT_NO_THROW(sdfg.validate());
-    dump_sdfg(sdfg, "0.before");
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
-    EXPECT_TRUE(expander.expand(builder, analysis_manager));
-
-    EXPECT_NO_THROW(sdfg.validate());
-    dump_sdfg(sdfg, "1.after");
-
-    ASSERT_EQ(sdfg.root().size(), 1);
-    auto* new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0));
-    ASSERT_NE(new_sequence, nullptr);
-    EXPECT_EQ(new_sequence->size(), 1) << "Expecting naïve expansion";
+    offloading::GPUConvExpander expander;
+    auto outcome = passes::expansion::expand_single_node(builder, block, conv_node, expander);
+    EXPECT_FALSE(outcome.expanded);
 }
 
 // Test that CudaConvExpander declines when the dataflow graph has extra nodes
@@ -376,12 +351,11 @@ TEST(CudaConvExpanderTest, DeclinesWhenNotExpandable_ExtraNodes) {
     builder.add_computational_memlet(block, weights_node, conv_node, "W", {}, desc_tensor_weights, block.debug_info());
     builder.add_computational_memlet(block, output_node, conv_node, "Y", {}, desc_tensor_output, block.debug_info());
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
-    bool expanded = expander.expand(builder, analysis_manager);
+    offloading::GPUConvExpander expander;
+    auto outcome = passes::expansion::expand_single_node(builder, block, conv_node, expander);
 
     // Should decline because check_expandable fails (extra node in DFG)
-    EXPECT_FALSE(expanded);
+    EXPECT_FALSE(outcome.expanded);
 }
 
 // Test that CudaConvExpander successfully expands a valid 1D ConvNode with group==1
@@ -424,11 +398,9 @@ TEST(CudaConvExpanderTest, ExpandsValidConv1D_Group1) {
 
     EXPECT_NO_THROW(sdfg.validate());
 
-    analysis::AnalysisManager analysis_manager(sdfg);
-    offloading::CudaConvExpander expander(conv_node);
-    bool expanded = expander.expand(builder, analysis_manager);
-
-    EXPECT_TRUE(expanded);
+    offloading::GPUConvExpander expander;
+    auto outcome = passes::expansion::expand_single_node(builder, block, conv_node, expander);
+    EXPECT_TRUE(outcome.expanded);
 }
 
 TEST(CudaConcatExpanderTest, expands) {

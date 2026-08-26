@@ -5,10 +5,11 @@ GraphParser modules for parsing non-linear activation functions.
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
-    ContainerInfos,
+    TensorInfo,
+    TensorMetadata,
     GraphParserError,
     GraphParserModule,
     register_module,
@@ -20,7 +21,7 @@ class ReLUParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 1:
             raise GraphParserError(
@@ -32,15 +33,16 @@ class ReLUParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_relu(
-            self_container, self_tensor, result_container, result_tensor, debug_info
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            debug_info,
         )
 
 
@@ -52,7 +54,7 @@ class GELUParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 1:
             raise GraphParserError(
@@ -60,6 +62,7 @@ class GELUParser(GraphParserModule):
                 node,
                 "Expected exactly one argument but got " + str(len(node.args)),
             )
+
         tanh_approx: bool = False
         if "approximate" in node.kwargs:
             approximate: Argument = node.kwargs["approximate"]
@@ -80,18 +83,15 @@ class GELUParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_gelu(
-            self_container,
-            self_tensor,
-            result_container,
-            result_tensor,
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             tanh_approx,
             debug_info,
         )
@@ -105,7 +105,7 @@ class SoftmaxParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 3:
             raise GraphParserError(
@@ -117,8 +117,7 @@ class SoftmaxParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+
         dim: Argument = node.args[1]
         if not isinstance(dim, int):
             raise GraphParserError(
@@ -136,17 +135,16 @@ class SoftmaxParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Currently setting half_to_float arg is unsupported"
             )
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_reduce_op(
             "softmax",
-            self_container,
-            self_tensor,
-            result_container,
-            result_tensor,
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             [dim],
             False,
             debug_info,

@@ -19,8 +19,12 @@ def test_foo(target: str) -> None:
 
 import re
 from typing import cast
+import logging
 
 import pytest
+
+# Disables DEBUG prints at the end of failing pytests
+logging.getLogger("torch.__trace").setLevel(logging.INFO)
 
 
 def _parse_version_tuple(version: str) -> tuple[int, ...]:

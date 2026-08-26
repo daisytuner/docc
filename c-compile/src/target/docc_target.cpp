@@ -1,8 +1,11 @@
 #include "docc/target/docc_target.h"
+
 #include <filesystem>
+#include <memory>
 
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/cuda_query_compute_capability.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
@@ -11,6 +14,7 @@
 #include "sdfg/passes/scheduler/omp_scheduler.h"
 #include "sdfg/passes/scheduler/rocm_scheduler.h"
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
+#include "sdfg/targets/omp/math/tensor/conv_expander.h"
 
 namespace docc::target {
 
@@ -124,6 +128,13 @@ static DoccTarget rocm_target = {
 
 static DoccTarget sequential_target = {
     .short_name = "sequential",
+    .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
+                                    sdfg::analysis::AnalysisManager& analysis_manager,
+                                    const TargetOptions& options) -> bool {
+        auto conv_expander = std::make_shared<sdfg::omp::OMPConvExpander>();
+        sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(conv_expander);
+        return libnode_expansion_pass.run(builder, analysis_manager);
+    },
     .get_target_loop_schedulers = [](const TargetOptions& options
                                   ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
@@ -144,6 +155,13 @@ static DoccTarget openmp_target = {
         builder.add_common_option("-fopenmp");
 #endif
         return true;
+    },
+    .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
+                                    sdfg::analysis::AnalysisManager& analysis_manager,
+                                    const TargetOptions& options) -> bool {
+        auto conv_expander = std::make_shared<sdfg::omp::OMPConvExpander>();
+        sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(conv_expander);
+        return libnode_expansion_pass.run(builder, analysis_manager);
     },
     .get_target_loop_schedulers = [](const TargetOptions& options
                                   ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {

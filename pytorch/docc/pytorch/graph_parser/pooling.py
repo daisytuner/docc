@@ -5,10 +5,11 @@ GraphParser modules for parsing pooling layers.
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
-    ContainerInfos,
+    TensorInfo,
+    TensorMetadata,
     GraphParserError,
     GraphParserModule,
     register_module,
@@ -25,7 +26,7 @@ class MaxPoolWithIndicesParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) < 3 or len(node.args) > 6:
             raise GraphParserError(
@@ -33,8 +34,12 @@ class MaxPoolWithIndicesParser(GraphParserModule):
                 node,
                 "Expected between 3 and 6 arguments but got " + str(len(node.args)),
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
         kernel_size: list[str] = self.get_arg_multi_expr(node, 1)
         if len(kernel_size) != self._dim:
             raise GraphParserError(
@@ -75,21 +80,19 @@ class MaxPoolWithIndicesParser(GraphParserModule):
             ceil_mode: bool = False
         if ceil_mode:
             raise GraphParserError(self, node, "ceil_mode == True is not supported")
-        result_containers: tuple[str, ...] = self.get_result_containers(
-            2, node, builder, container_info
+        result_infos: tuple[TensorInfo, ...] = self.get_result_tensor_infos(
+            2, node, builder, metadata
         )
-        result_container: str = result_containers[0]
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        result_info: TensorInfo = result_infos[0]
+
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_pooling(
             "max",
-            self_container,
-            self_tensor,
-            result_container,
-            result_tensor,
-            self_tensor.shape,
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            self_info.shape(),
             kernel_size,
             stride,
             padding,

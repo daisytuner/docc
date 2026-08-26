@@ -4,7 +4,7 @@ import torch.nn as nn
 from tests import check
 
 
-def test_simple(target: str) -> None:
+def test_abs_simple(target: str) -> None:
     class PointwiseAbsSimpleNet(nn.Module):
         def forward(self, input: torch.Tensor) -> torch.Tensor:
             return torch.abs(input)

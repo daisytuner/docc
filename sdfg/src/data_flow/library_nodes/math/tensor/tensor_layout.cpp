@@ -41,7 +41,11 @@ std::string TensorLayout::toStr() const {
     for (auto& s : strides_) {
         ss << s->__str__() << ",";
     }
-    ss << "])";
+    ss << "]";
+    if (!symbolic::eq(offset_, symbolic::zero())) {
+        ss << ", offset=" << offset_->__str__();
+    }
+    ss << ")";
     return ss.str();
 }
 

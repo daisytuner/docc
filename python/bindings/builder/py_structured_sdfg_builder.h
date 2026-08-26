@@ -441,18 +441,6 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
-    void add_slice_op(
-        const std::string& X,
-        const sdfg::types::Tensor& X_type,
-        const std::string& Y,
-        const sdfg::types::Tensor& Y_type,
-        long long dim,
-        long long start,
-        long long end,
-        long long step,
-        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
-    );
-
     void add_reduce_op(
         const std::string& op_type,
         const std::string& input,
@@ -596,18 +584,52 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
-    void add_layernorm_with_bias(
+    void add_layernorm(
         const std::string& X,
         const sdfg::types::Tensor& X_type,
+        const std::string& Eps,
+        const sdfg::types::Scalar& Eps_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::string& Mean,
+        const sdfg::types::Tensor& Mean_type,
+        const std::string& Rstd,
+        const sdfg::types::Tensor& Rstd_type,
+        const std::vector<std::string>& normalized_shape,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+    void add_layernorm_affine(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Eps,
+        const sdfg::types::Scalar& Eps_type,
+        const std::string& Gamma,
+        const sdfg::types::Tensor& Gamma_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::string& Mean,
+        const sdfg::types::Tensor& Mean_type,
+        const std::string& Rstd,
+        const sdfg::types::Tensor& Rstd_type,
+        const std::vector<std::string>& normalized_shape,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+    void add_layernorm_affine_with_bias(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Eps,
+        const sdfg::types::Scalar& Eps_type,
         const std::string& Gamma,
         const sdfg::types::Tensor& Gamma_type,
         const std::string& Beta,
         const sdfg::types::Tensor& Beta_type,
-        const std::string& epsilon,
-        const sdfg::types::Scalar& epsilon_type,
-        const std::string& Y_out,
-        const sdfg::types::Tensor& Y_out_type,
-        int64_t num_normalized_dims,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::string& Mean,
+        const sdfg::types::Tensor& Mean_type,
+        const std::string& Rstd,
+        const sdfg::types::Tensor& Rstd_type,
+        const std::vector<std::string>& normalized_shape,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 

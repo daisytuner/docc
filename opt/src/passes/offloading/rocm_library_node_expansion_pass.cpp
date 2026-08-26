@@ -3,9 +3,10 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
+#include "sdfg/targets/gpu/math/tensor/conv_expander.h"
 #include "sdfg/targets/rocm/math/tensor/batched_matmul_expander.h"
 #include "sdfg/targets/rocm/math/tensor/concat_expander.h"
-#include "sdfg/targets/rocm/math/tensor/conv_expander.h"
 
 namespace sdfg {
 namespace passes {
@@ -26,10 +27,9 @@ bool RocmExpansion::accept(structured_control_flow::Block& node) {
         auto& lib_node_code = library_node->code();
 
         if (lib_node_code == math::tensor::LibraryNodeType_Conv) {
-            auto& conv_node = static_cast<math::tensor::ConvNode&>(*library_node);
-            sdfg::offloading::RocmConvExpander expander(conv_node);
-            expander.expand(builder_, analysis_manager_);
-            made_changes = true;
+            offloading::GPUConvExpander conv_expander;
+            auto outcome = expansion::expand_single_node(builder_, node, *library_node, conv_expander);
+            made_changes |= outcome.expanded;
         } else if (lib_node_code == math::tensor::LibraryNodeType_MatMul) {
             auto& matmul_node = static_cast<math::tensor::MatMulNode&>(*library_node);
             sdfg::offloading::RocmBatchedMatMulExpander expander(matmul_node);

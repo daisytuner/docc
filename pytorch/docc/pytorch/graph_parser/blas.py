@@ -5,11 +5,12 @@ GraphParser modules for parsing BLAS and LAPACK operations.
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo, Scalar, Type
+from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
-    ContainerInfo,
-    ContainerInfos,
+    TensorInfo,
+    TensorConstant,
+    TensorMetadata,
     GraphParserError,
     GraphParserModule,
     register_module,
@@ -32,60 +33,55 @@ class MatmulParserBase(GraphParserModule):
         test_tensor: Tensor = Tensor(tensor.element_type, test_shape)
         return test_tensor.strides == test_strides
 
-    def _copy_container_if_needed(
+    def _copy_if_needed(
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
-        mat_container: str,
-        mat_tensor: Tensor,
+        metadata: TensorMetadata,
+        info: TensorInfo,
         debug_info: DebugInfo,
-    ) -> tuple[str, Tensor]:
-        if self._last_dims_non_transposed(mat_tensor) or self._last_dims_transposed(
-            mat_tensor
-        ):
-            return mat_container, mat_tensor  # Not needed
+    ) -> TensorInfo:
+        if self._last_dims_non_transposed(
+            info.sdfg_tensor_type()
+        ) or self._last_dims_transposed(info.sdfg_tensor_type()):
+            return info  # Not needed
 
-        mat_type: Type = container_info[mat_container].sdfg_type()
-        intermediate_tensor: Tensor = Tensor(mat_tensor.element_type, mat_tensor.shape)
-        intermediate_container: str = self.create_intermediate_container(
-            node, builder, container_info, mat_type, intermediate_tensor
+        intermediate_tensor: Tensor = Tensor(info.element_type(), info.shape())
+        intermediate_info: TensorInfo = self.create_intermediate_tensor_info(
+            node, builder, metadata, info.sdfg_type(), intermediate_tensor, [info]
         )
         builder.add_copy_op(
-            mat_container,
-            mat_tensor,
-            intermediate_container,
+            info.container(),
+            info.sdfg_tensor_type(),
+            intermediate_info.container(),
             intermediate_tensor,
             debug_info,
         )
-        return intermediate_container, intermediate_tensor
+        return intermediate_info
 
     def add_matmul_op(
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
-        A_container: str,
-        A_tensor: Tensor,
-        B_container: str,
-        B_tensor: Tensor,
-        Y_container: str,
-        Y_tensor: Tensor,
+        metadata: TensorMetadata,
+        A_info: TensorInfo,
+        B_info: TensorInfo,
+        Y_info: TensorInfo,
         debug_info: DebugInfo,
     ) -> None:
-        A_container, A_tensor = self._copy_container_if_needed(
-            node, builder, container_info, A_container, A_tensor, debug_info
+        A_info_: TensorInfo = self._copy_if_needed(
+            node, builder, metadata, A_info, debug_info
         )
-        B_container, B_tensor = self._copy_container_if_needed(
-            node, builder, container_info, B_container, B_tensor, debug_info
+        B_info_: TensorInfo = self._copy_if_needed(
+            node, builder, metadata, B_info, debug_info
         )
         builder.add_matmul_op(
-            A_container,
-            A_tensor,
-            B_container,
-            B_tensor,
-            Y_container,
-            Y_tensor,
+            A_info_.container(),
+            A_info_.sdfg_tensor_type(),
+            B_info_.container(),
+            B_info_.sdfg_tensor_type(),
+            Y_info.container(),
+            Y_info.sdfg_tensor_type(),
             debug_info,
         )
 
@@ -97,7 +93,7 @@ class MMParser(MatmulParserBase):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 2:
             raise GraphParserError(
@@ -109,25 +105,17 @@ class MMParser(MatmulParserBase):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        mat2_container: str = self.get_arg_container(node, container_info, 1)
-        mat2_tensor: Tensor = self.get_tensor_type(node, container_info, mat2_container)
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        mat2_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 1)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
         self.add_matmul_op(
             node,
             builder,
-            container_info,
-            self_container,
-            self_tensor,
-            mat2_container,
-            mat2_tensor,
-            result_container,
-            result_tensor,
+            metadata,
+            self_info,
+            mat2_info,
+            result_info,
             debug_info,
         )
 
@@ -143,7 +131,7 @@ class AddMMParser(MatmulParserBase):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 3:
             raise GraphParserError(
@@ -151,167 +139,122 @@ class AddMMParser(MatmulParserBase):
                 node,
                 "Expected exactly 3 arguments but got " + str(len(node.args)),
             )
-        alpha_arg: Argument | None = None
-        beta_arg: Argument | None = None
+        alpha_arg: Argument = None
+        beta_arg: Argument = None
         for key in node.kwargs:
             if key == "alpha":
-                alpha_arg: Argument | None = node.kwargs[key]
+                alpha_arg: Argument = node.kwargs[key]
             elif key == "beta":
-                beta_arg: Argument | None = node.kwargs[key]
+                beta_arg: Argument = node.kwargs[key]
             else:
                 raise GraphParserError(
                     self, node, "Unsupported kwargs: " + str(node.kwargs)
                 )
 
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        mat1_container: str = self.get_arg_container(node, container_info, 1)
-        mat1_tensor: Tensor = self.get_tensor_type(node, container_info, mat1_container)
-        mat2_container: str = self.get_arg_container(node, container_info, 2)
-        mat2_tensor: Tensor = self.get_tensor_type(node, container_info, mat2_container)
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        mat1_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 1)
+        mat2_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 2)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        debug_info: DebugInfo = self.get_debug_info(node)
 
         # matmul = mat1 @ mat2
-        matmul_container: str = self.create_intermediate_container(
+        matmul_info: TensorInfo = self.create_intermediate_tensor_info(
             node,
             builder,
-            container_info,
-            container_info[result_container].sdfg_type(),
-            result_tensor,
+            metadata,
+            result_info.sdfg_type(),
+            result_info.sdfg_tensor_type(),
+            [mat1_info, mat2_info],
         )
-        matmul_tensor: Tensor = self.get_tensor_type(
-            node, container_info, matmul_container
-        )
-        debug_info: DebugInfo = self.get_debug_info(node)
         self.add_matmul_op(
             node,
             builder,
-            container_info,
-            mat1_container,
-            mat1_tensor,
-            mat2_container,
-            mat2_tensor,
-            matmul_container,
-            matmul_tensor,
+            metadata,
+            mat1_info,
+            mat2_info,
+            matmul_info,
             debug_info,
         )
 
         # mul1 = alpha * matmul
         if alpha_arg is None:
-            mul1_container: str = matmul_container
-            mul1_tensor: Tensor = matmul_tensor
+            mul1_info: TensorInfo = matmul_info
         else:
-            alpha: str | tuple[str, Scalar] = self.convert_arg_to_sdfg_value(
-                node, container_info, alpha_arg
+            alpha_info_or_const: TensorInfo | TensorConstant = (
+                self.convert_arg_to_tensor_info_or_constant(
+                    node,
+                    metadata,
+                    alpha_arg,
+                    align_constant_type=matmul_info.element_type(),
+                )
             )
-            if isinstance(alpha, str):
-                alpha_container: str = alpha
-                alpha_tensor: Tensor = self.get_tensor_type(
-                    node, container_info, alpha_container
-                )
-            else:
-                alpha_container: str = alpha[0]
-                alpha_tensor: Tensor = Tensor(
-                    self.align_constant_type(node, alpha, matmul_tensor.element_type),
-                    [],
-                )
-            mul1_container: str = self.create_intermediate_container(
+            mul1_info: TensorInfo = self.create_intermediate_tensor_info(
                 node,
                 builder,
-                container_info,
-                container_info[matmul_container].sdfg_type(),
-                matmul_tensor,
-            )
-            mul1_tensor: Tensor = self.get_tensor_type(
-                node, container_info, mul1_container
+                metadata,
+                matmul_info.sdfg_type(),
+                matmul_info.sdfg_tensor_type(),
+                [alpha_info_or_const, matmul_info],
             )
             builder.add_elementwise_op(
                 "mul",
-                alpha_container,
-                alpha_tensor,
-                matmul_container,
-                matmul_tensor,
-                mul1_container,
-                mul1_tensor,
+                alpha_info_or_const.container(),
+                alpha_info_or_const.sdfg_tensor_type(),
+                matmul_info.container(),
+                matmul_info.sdfg_tensor_type(),
+                mul1_info.container(),
+                mul1_info.sdfg_tensor_type(),
                 debug_info,
             )
 
         # mul2 = beta * self
         if beta_arg is None:
-            mul2_container: str = self_container
-            mul2_tensor: Tensor = self_tensor
+            mul2_info: TensorInfo = self_info
         else:
-            beta: str | tuple[str, Scalar] = self.convert_arg_to_sdfg_value(
-                node, container_info, beta_arg
+            beta_info_or_const: TensorInfo | TensorConstant = (
+                self.convert_arg_to_tensor_info_or_constant(
+                    node,
+                    metadata,
+                    beta_arg,
+                    align_constant_type=self_info.element_type(),
+                )
             )
-            if isinstance(beta, str):
-                beta_container: str = beta
-                beta_tensor: Tensor = self.get_tensor_type(
-                    node, container_info, beta_container
-                )
-            else:
-                beta_container: str = beta[0]
-                beta_tensor: Tensor = Tensor(
-                    self.align_constant_type(node, beta, self_tensor.element_type), []
-                )
-            mul2_container: str = self.create_intermediate_container(
+            mul2_info: TensorInfo = self.create_intermediate_tensor_info(
                 node,
                 builder,
-                container_info,
-                container_info[self_container].sdfg_type(),
-                self_tensor,
-            )
-            mul2_tensor: Tensor = self.get_tensor_type(
-                node, container_info, mul2_container
+                metadata,
+                self_info.sdfg_type(),
+                self_info.sdfg_tensor_type(),
+                [beta_info_or_const, self_info],
             )
             builder.add_elementwise_op(
                 "mul",
-                beta_container,
-                beta_tensor,
-                self_container,
-                self_tensor,
-                mul2_container,
-                mul2_tensor,
+                beta_info_or_const.container(),
+                beta_info_or_const.sdfg_tensor_type(),
+                self_info.container(),
+                self_info.sdfg_tensor_type(),
+                mul2_info.container(),
+                mul2_info.sdfg_tensor_type(),
                 debug_info,
             )
 
-        # Broadcast mul2 shape to mul1 shape: broadcast = Broadcast(mul2)
-        if mul2_tensor.shape == mul1_tensor.shape:
-            broadcast_container: str = mul2_container
-            broadcast_tensor: Tensor = mul2_tensor
-        else:
-            broadcast_container: str = self.create_intermediate_container(
-                node,
-                builder,
-                container_info,
-                container_info[mul1_container].sdfg_type(),
-                mul1_tensor,
-            )
-            broadcast_tensor: Tensor = self.get_tensor_type(
-                node, container_info, broadcast_container
-            )
-            builder.add_broadcast_op(
-                mul2_container,
-                mul2_tensor,
-                broadcast_container,
-                broadcast_tensor,
-                mul2_tensor.shape,
-                broadcast_tensor.shape,
-                debug_info,
+        # Broadcast mul2 shape to mul1 shape if needed
+        mul1_tensor: Tensor = mul1_info.sdfg_tensor_type()
+        mul2_tensor: Tensor = mul2_info.sdfg_tensor_type()
+        if len(mul1_info.shape()) != len(mul2_info.shape()):
+            mul1_tensor, mul2_tensor = self.align_elementwise_tensors(
+                node, mul1_tensor, mul2_tensor
             )
 
-        # result = broadcast + mul1
+        # result = mul2 + mul1
         builder.add_elementwise_op(
             "add",
-            broadcast_container,
-            broadcast_tensor,
-            mul1_container,
+            mul2_info.container(),
+            mul2_tensor,
+            mul1_info.container(),
             mul1_tensor,
-            result_container,
-            result_tensor,
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             debug_info,
         )
 

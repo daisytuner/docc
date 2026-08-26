@@ -3,26 +3,25 @@ GraphParser modules for parsing builtin Python functions.
 """
 
 import torch.fx
+from torch.fx.node import Argument
 
 from docc.sdfg import StructuredSDFGBuilder
 
 from docc.pytorch.graph_parser.utils import (
-    ContainerInfoBase,
-    ContainerPreInfo,
-    ContainerInfos,
+    TensorName,
+    TensorMetadata,
     GraphParserError,
     GraphParserModule,
-    register_pre_module,
     register_module,
 )
 
 
 class GetitemParser(GraphParserModule):
-    def pre_parse(
+    def parse(
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 2:
             raise GraphParserError(
@@ -34,50 +33,29 @@ class GetitemParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        container: str = node.name
-        base_ref_container: str = self.get_arg_container(
-            node, container_info, 0, resolve=False
-        )
-        if not isinstance(node.args[1], int):
+
+        first: Argument = node.args[0]
+        second: Argument = node.args[1]
+        if not isinstance(first, torch.fx.Node):
             raise GraphParserError(
                 self,
                 node,
-                "Expected int-type as second argument but got: "
-                + str(type(node.args[1])),
+                "Expected first argument to be forch.fx.Node type but got: "
+                + str(type(first)),
             )
-        index: int = node.args[1]
-        ref_container: str = f"{base_ref_container}_{index}"
-        if container in container_info:
-            info: ContainerInfoBase = container_info[container]
-            if not isinstance(info, ContainerPreInfo):
-                raise GraphParserError(
-                    self, node, "Expected ContainterPreInfo but got: " + str(type(info))
-                )
-            container_info[container] = ContainerPreInfo.copy(info, ref=ref_container)
-        else:
-            container_info[container] = ContainerPreInfo(container, ref=ref_container)
-        if ref_container in container_info:
-            info: ContainerInfoBase = container_info[ref_container]
-            if not isinstance(info, ContainerPreInfo):
-                raise GraphParserError(
-                    self, node, "Expected ContainerPreInfo but got: " + str(type(info))
-                )
-            container_info[ref_container] = ContainerPreInfo.copy(
-                info, refed_by=container
-            )
-        else:
-            container_info[ref_container] = ContainerPreInfo(
-                ref_container, refed_by=container
+        if not isinstance(second, int):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected second argument to be int type but got: " + str(type(second)),
             )
 
-    def parse(
-        self,
-        node: torch.fx.Node,
-        builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
-    ) -> None:
-        pass
+        ref_name: TensorName = f"{first.name}_{second}"
+        if not metadata.has_tensor(ref_name):
+            raise GraphParserError(
+                self, node, f"Could not find tensor information for '{ref_name}'"
+            )
+        self.create_result_view(node, builder, metadata, metadata.tensor(ref_name))
 
 
-register_pre_module("_operator.getitem", GetitemParser())
 register_module("_operator.getitem", GetitemParser())

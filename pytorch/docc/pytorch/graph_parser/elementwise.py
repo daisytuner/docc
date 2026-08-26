@@ -3,24 +3,21 @@ GraphParser modules for parsing elementwise operations.
 """
 
 import torch.fx
-from torch.fx.node import Argument
-
-from typing import Any
 
 from docc.sdfg import (
     DebugInfo,
     StructuredSDFGBuilder,
-    Type,
     Tensor,
-    Scalar,
     CMathFunction,
     TaskletCode,
 )
 
 from docc.pytorch.graph_parser.utils import (
+    TensorInfo,
+    TensorConstant,
+    TensorMetadata,
     GraphParserError,
     GraphParserModule,
-    ContainerInfos,
     register_module,
     primitive_type_is_floating_point,
     primitive_type_is_integer,
@@ -37,7 +34,7 @@ class UnaryTensorOpParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 1:
             raise GraphParserError(
@@ -49,19 +46,15 @@ class UnaryTensorOpParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_elementwise_unary_op(
             self.op_type,
-            self_container,
-            self_tensor,
-            result_container,
-            result_tensor,
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             debug_info,
         )
 
@@ -72,22 +65,12 @@ register_module("aten.sigmoid.default", UnaryTensorOpParser("sigmoid"))
 register_module("aten.rsqrt.default", UnaryTensorOpParser("rsqrt"))
 
 
-class UnaryTaskletOpParser(GraphParserModule):
-    """
-    Parses a unary elementwise operation by directly emitting an elementwise tasklet, without
-    lowering to a tensor library node.
-    """
-
-    tasklet_code: TaskletCode
-
-    def __init__(self, tasklet_code: TaskletCode) -> None:
-        self.tasklet_code: TaskletCode = tasklet_code
-
+class NegParser(GraphParserModule):
     def parse(
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 1:
             raise GraphParserError(
@@ -99,133 +82,36 @@ class UnaryTaskletOpParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
-        builder.add_elementwise_tasklet_op(
-            self.tasklet_code,
-            [self_container],
-            [self_tensor],
-            result_container,
-            result_tensor,
-            debug_info,
-        )
-
-
-class UnaryTaskletConstantOpParser(GraphParserModule):
-    """
-    Parses a unary elementwise operation by emitting an elementwise tasklet that combines the input
-    with a constant operand (e.g., negation as a multiplication with -1). The constant can be placed
-    as either the first or second operand, which is relevant for non-commutative tasklet codes like
-    sub or div.
-    """
-
-    tasklet_code: TaskletCode
-    constant: str
-    constant_first: bool
-
-    def __init__(
-        self, tasklet_code: TaskletCode, constant: str, constant_first: bool = False
-    ) -> None:
-        self.tasklet_code: TaskletCode = tasklet_code
-        self.constant: str = constant
-        self.constant_first: bool = constant_first
-
-    def parse(
-        self,
-        node: torch.fx.Node,
-        builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
-    ) -> None:
-        if len(node.args) != 1:
-            raise GraphParserError(
-                self,
-                node,
-                "Expected exactly one argument but got " + str(len(node.args)),
+        if primitive_type_is_floating_point(self_info.element_type().primitive_type):
+            builder.add_elementwise_tasklet_op(
+                TaskletCode.fp_neg,
+                [self_info.container()],
+                [self_info.sdfg_tensor_type()],
+                result_info.container(),
+                result_info.sdfg_tensor_type(),
+                debug_info,
             )
-        if len(node.kwargs) != 0:
-            raise GraphParserError(
-                self, node, "Unsupported kwargs: " + str(node.kwargs)
+        elif primitive_type_is_integer(self_info.element_type().primitive_type):
+            builder.add_elementwise_op(
+                "sub",
+                "0",
+                Tensor(self_info.element_type(), []),
+                self_info.container(),
+                self_info.sdfg_tensor_type(),
+                result_info.container(),
+                result_info.sdfg_tensor_type(),
+                debug_info,
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
-        debug_info: DebugInfo = self.get_debug_info(node)
-        constant_tensor: Tensor = Tensor(self_tensor.element_type, [])
-        if self.constant_first:
-            inputs: list[str] = [self.constant, self_container]
-            input_tensors: list[Tensor] = [constant_tensor, self_tensor]
-        else:
-            inputs: list[str] = [self_container, self.constant]
-            input_tensors: list[Tensor] = [self_tensor, constant_tensor]
-        builder.add_elementwise_tasklet_op(
-            self.tasklet_code,
-            inputs,
-            input_tensors,
-            result_container,
-            result_tensor,
-            debug_info,
-        )
-
-
-class UnaryTaskletFloatIntOpParser(GraphParserModule):
-    """
-    Parses a unary elementwise operation by dispatching to a floating-point parser or an integer
-    parser depending on the element type of the input.
-    """
-
-    fp_parser: GraphParserModule
-    int_parser: GraphParserModule
-
-    def __init__(
-        self, fp_parser: GraphParserModule, int_parser: GraphParserModule
-    ) -> None:
-        self.fp_parser: GraphParserModule = fp_parser
-        self.int_parser: GraphParserModule = int_parser
-
-    def parse(
-        self,
-        node: torch.fx.Node,
-        builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
-    ) -> None:
-        if len(node.args) != 1:
-            raise GraphParserError(
-                self,
-                node,
-                "Expected exactly one argument but got " + str(len(node.args)),
-            )
-        if len(node.kwargs) != 0:
-            raise GraphParserError(
-                self, node, "Unsupported kwargs: " + str(node.kwargs)
-            )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        primitive_type = self_tensor.element_type.primitive_type
-        if primitive_type_is_floating_point(primitive_type):
-            self.fp_parser.parse(node, builder, container_info)
-        elif primitive_type_is_integer(primitive_type):
-            self.int_parser.parse(node, builder, container_info)
         else:
             raise GraphParserError(
-                self, node, "Unsupported primitive type for unary elementwise tasklet"
+                self, node, "Neither floating point nor integer type"
             )
 
 
-register_module(
-    "aten.neg.default",
-    UnaryTaskletFloatIntOpParser(
-        UnaryTaskletOpParser(TaskletCode.fp_neg),
-        UnaryTaskletConstantOpParser(TaskletCode.int_mul, "-1"),
-    ),
-)
+register_module("aten.neg.default", NegParser())
 
 
 class UnaryCMathTensorOpParser(GraphParserModule):
@@ -238,7 +124,7 @@ class UnaryCMathTensorOpParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 1:
             raise GraphParserError(
@@ -250,19 +136,15 @@ class UnaryCMathTensorOpParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_elementwise_unary_cmath_op(
             self.func,
-            self_container,
-            self_tensor,
-            result_container,
-            result_tensor,
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             debug_info,
         )
 
@@ -287,7 +169,7 @@ class ElementwiseTensorOpParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 2:
             raise GraphParserError(
@@ -299,41 +181,30 @@ class ElementwiseTensorOpParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        other: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
-            node, container_info, 1
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        other_info_or_const: TensorInfo | TensorConstant = (
+            self.get_arg_tensor_info_or_constant(
+                node, metadata, 1, align_constant_type=self_info.element_type()
+            )
         )
-        if isinstance(other, str):
-            other_container: str = other
-            other_tensor: Tensor = self.get_tensor_type(
-                node, container_info, other_container
-            )
-        else:
-            other_container: str = other[0]
-            other_tensor: Tensor = Tensor(
-                self.align_constant_type(node, other, self_tensor.element_type),
-                [],
-            )
 
-        if len(self_tensor.shape) != len(other_tensor.shape):
+        self_tensor: Tensor = self_info.sdfg_tensor_type()
+        other_tensor: Tensor = other_info_or_const.sdfg_tensor_type()
+        if len(self_info.shape()) != len(other_info_or_const.shape()):
             self_tensor, other_tensor = self.align_elementwise_tensors(
                 node, self_tensor, other_tensor
             )
 
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_elementwise_op(
             self.op_type,
-            self_container,
+            self_info.container(),
             self_tensor,
-            other_container,
+            other_info_or_const.container(),
             other_tensor,
-            result_container,
-            result_tensor,
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             debug_info,
         )
 
@@ -357,7 +228,7 @@ class ElementwiseTaskletOpParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 2:
             raise GraphParserError(
@@ -369,31 +240,19 @@ class ElementwiseTaskletOpParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        other: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
-            node, container_info, 1
-        )
-        if isinstance(other, str):
-            other_container: str = other
-            other_tensor: Tensor = self.get_tensor_type(
-                node, container_info, other_container
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        other_info_or_const: TensorInfo | TensorConstant = (
+            self.get_arg_tensor_info_or_constant(
+                node, metadata, 1, align_constant_type=self_info.element_type()
             )
-        else:
-            other_container: str = other[0]
-            other_tensor: Tensor = Tensor(
-                self.align_constant_type(node, other, self_tensor.element_type), []
-            )
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
         )
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
 
         is_float = primitive_type_is_floating_point(
-            self_tensor.element_type.primitive_type
+            self_info.element_type().primitive_type
         )
-        is_integer = primitive_type_is_integer(self_tensor.element_type.primitive_type)
+        is_integer = primitive_type_is_integer(self_info.element_type().primitive_type)
         if is_float:
             tasklet_code = self.fp_code
         elif is_integer:
@@ -405,10 +264,10 @@ class ElementwiseTaskletOpParser(GraphParserModule):
 
         builder.add_elementwise_tasklet_op(
             tasklet_code,
-            [self_container, other_container],
-            [self_tensor, other_tensor],
-            result_container,
-            result_tensor,
+            [self_info.container(), other_info_or_const.container()],
+            [self_info.sdfg_tensor_type(), other_info_or_const.sdfg_tensor_type()],
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             debug_info,
         )
 
@@ -443,7 +302,7 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 2:
             raise GraphParserError(
@@ -451,85 +310,54 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
                 node,
                 "Expected exactly 2 arguments but got " + str(len(node.args)),
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
         debug_info: DebugInfo = self.get_debug_info(node)
         if len(node.kwargs) == 0:
-            intermediate: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
-                node, container_info, 1
+            intermediate_info_or_const: TensorInfo | TensorConstant = (
+                self.get_arg_tensor_info_or_constant(
+                    node, metadata, 1, align_constant_type=self_info.element_type()
+                )
             )
-            if isinstance(intermediate, str):
-                intermediate_container: str = intermediate
-                intermediate_tensor: Tensor = self.get_tensor_type(
-                    node, container_info, intermediate_container
-                )
-            else:
-                intermediate_container: str = intermediate[0]
-                intermediate_tensor: Tensor = Tensor(
-                    self.align_constant_type(
-                        node, intermediate, self_tensor.element_type
-                    ),
-                    [],
-                )
         elif len(node.kwargs) == 1:
-            other: str | tuple[str, Scalar] = self.get_arg_sdfg_value(
-                node, container_info, 1
+            other_info_or_const: TensorInfo | TensorConstant = (
+                self.get_arg_tensor_info_or_constant(
+                    node, metadata, 1, align_constant_type=self_info.element_type()
+                )
             )
-            if isinstance(other, str):
-                other_container: str = other
-                other_tensor: Tensor = self.get_tensor_type(
-                    node, container_info, other_container
-                )
-                other_is_scalar: bool = False
-            else:
-                other_container: str = other[0]
-                other_tensor: Tensor = Tensor(
-                    self.align_constant_type(node, other, self_tensor.element_type), []
-                )
-                other_is_scalar: bool = True
             if not "alpha" in node.kwargs:
                 raise GraphParserError(
                     self,
                     node,
                     "Only 'alpha' in kwargs is supported but got: " + str(node.kwargs),
                 )
-            alpha: str | tuple[str, Scalar] = self.convert_arg_to_sdfg_value(
-                node, container_info, node.kwargs["alpha"]
-            )
-            if isinstance(alpha, str):
-                alpha_container: str = alpha
-                alpha_type: Scalar = self.get_scalar_type(
-                    node, container_info, alpha_container
-                )
-            else:
-                alpha_container: str = alpha[0]
-                alpha_type: Scalar = self.align_constant_type(
-                    node, alpha, other_tensor.element_type
-                )
-            if not isinstance(alpha_type, Scalar):
-                raise GraphParserError(
-                    self,
+            alpha_info_or_const: TensorInfo | TensorConstant = (
+                self.convert_arg_to_tensor_info_or_constant(
                     node,
-                    "Input 'alpha' must be a scalar but got " + alpha_type.print(),
+                    metadata,
+                    node.kwargs["alpha"],
+                    align_constant_type=other_info_or_const.element_type(),
                 )
-            alpha_tensor: Tensor = Tensor(alpha_type, [])
-            if other_is_scalar:
-                intermediate_type: Type = self_tensor.element_type
-            else:
-                intermediate_type: Type = container_info[self_container].sdfg_type()
-            intermediate_tensor: Tensor = Tensor(
-                other_tensor.element_type, other_tensor.shape
             )
-            intermediate_container: str = self.create_intermediate_container(
-                node, builder, container_info, intermediate_type, intermediate_tensor
+            intermediate_tensor: Tensor = Tensor(
+                other_info_or_const.element_type(), other_info_or_const.shape()
+            )
+            intermediate_info_or_const: TensorInfo | TensorConstant = (
+                self.create_intermediate_tensor_info(
+                    node,
+                    builder,
+                    metadata,
+                    other_info_or_const.sdfg_type(),
+                    intermediate_tensor,
+                    [alpha_info_or_const, other_info_or_const],
+                )
             )
             builder.add_elementwise_op(
                 "mul",
-                alpha_container,
-                alpha_tensor,
-                other_container,
-                other_tensor,
-                intermediate_container,
+                alpha_info_or_const.container(),
+                alpha_info_or_const.sdfg_tensor_type(),
+                other_info_or_const.container(),
+                other_info_or_const.sdfg_tensor_type(),
+                intermediate_info_or_const.container(),
                 intermediate_tensor,
                 debug_info,
             )
@@ -538,23 +366,22 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
                 self, node, "Unsupported number of kwargs: " + str(len(node.kwargs))
             )
 
-        if len(self_tensor.shape) != len(intermediate_tensor.shape):
+        self_tensor: Tensor = self_info.sdfg_tensor_type()
+        intermediate_tensor: Tensor = intermediate_info_or_const.sdfg_tensor_type()
+        if len(self_info.shape()) != len(intermediate_info_or_const.shape()):
             self_tensor, intermediate_tensor = self.align_elementwise_tensors(
                 node, self_tensor, intermediate_tensor
             )
 
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         builder.add_elementwise_op(
             self.op_type,
-            self_container,
+            self_info.container(),
             self_tensor,
-            intermediate_container,
+            intermediate_info_or_const.container(),
             intermediate_tensor,
-            result_container,
-            result_tensor,
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             debug_info,
         )
 
@@ -572,7 +399,7 @@ class ElementwiseCMathTensorOpParser(GraphParserModule):
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
-        container_info: ContainerInfos,
+        metadata: TensorMetadata,
     ) -> None:
         if len(node.args) != 2:
             raise GraphParserError(
@@ -584,25 +411,18 @@ class ElementwiseCMathTensorOpParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_container: str = self.get_arg_container(node, container_info, 0)
-        self_tensor: Tensor = self.get_tensor_type(node, container_info, self_container)
-        other_container: str = self.get_arg_container(node, container_info, 1)
-        other_tensor: Tensor = self.get_tensor_type(
-            node, container_info, other_container
-        )
-        result_container: str = self.get_result_container(node, builder, container_info)
-        result_tensor: Tensor = self.get_tensor_type(
-            node, container_info, result_container
-        )
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        other_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 1)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_elementwise_cmath_op(
             self.func,
-            self_container,
-            self_tensor,
-            other_container,
-            other_tensor,
-            result_container,
-            result_tensor,
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            other_info.container(),
+            other_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             debug_info,
         )
 
