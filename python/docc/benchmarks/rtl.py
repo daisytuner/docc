@@ -52,6 +52,9 @@ __all__ = [
     "start_instrumentation",
     "stop_instrumentation",
     "instrumentation_enabled",
+    "ensure_instrumentation_ready",
+    "try_ensure_instrumentation_ready",
+    "InstrumentationNotReady",
     "total_stats",
     "RtlTotalStats",
 ]
@@ -222,6 +225,63 @@ def instrumentation_enabled() -> Optional[bool]:
     fn.restype = ctypes.c_bool
     fn.argtypes = []
     return bool(fn())
+
+
+class InstrumentationNotReady(RuntimeError):
+    """Raised when the daisy RTL cannot be loaded or initialized eagerly."""
+
+
+def ensure_instrumentation_ready() -> None:
+    """Eagerly load and initialize the daisy RTL instrumentation library.
+
+    Some counter backends (notably ROCm) must be initialized before the
+    application under measurement sets up its own runtime, otherwise the counters
+    are unavailable. Loading the shared RTL and calling a native entry point forces
+    construction of the process-global instrumentation state, which readies the
+    underlying PAPI/ROCm libraries now instead of lazily on the first measured
+    region.
+
+    Raises :class:`InstrumentationNotReady` if the shared RTL cannot be located,
+    loaded, or its entry point invoked. Note the native initializer aborts the
+    process when ``__DAISY_PAPI_VERSION`` is unset or PAPI is unavailable; use
+    :func:`try_ensure_instrumentation_ready` when that must be avoided.
+    """
+    lib = _rtl_lib()
+    if lib is None:
+        raise InstrumentationNotReady(
+            "Could not locate or load libdaisy_rtl; set DAISY_RTL_LIB or ensure "
+            "the shared RTL is on the library search path."
+        )
+    try:
+        # Subscript access bypasses ctypes' dunder-name guard.
+        fn = lib[_RTL_IS_ENABLED_SYMBOL]
+    except (AttributeError, KeyError, ValueError) as exc:
+        raise InstrumentationNotReady(
+            f"RTL is missing the {_RTL_IS_ENABLED_SYMBOL} entry point."
+        ) from exc
+    fn.restype = ctypes.c_bool
+    fn.argtypes = []
+    # The call triggers construction of the process-global state, readying PAPI/ROCm.
+    fn()
+
+
+def try_ensure_instrumentation_ready() -> bool:
+    """Best-effort :func:`ensure_instrumentation_ready` that never raises.
+
+    Returns ``True`` if the RTL was readied, ``False`` otherwise. Initialization is
+    only attempted when ``__DAISY_PAPI_VERSION`` is set (the native initializer
+    aborts the process if it is missing) and the RTL library can be located, so on a
+    machine without instrumentation configured this is a cheap no-op.
+    """
+    if not os.environ.get("__DAISY_PAPI_VERSION"):
+        return False
+    if _find_rtl_lib() is None:
+        return False
+    try:
+        ensure_instrumentation_ready()
+        return True
+    except Exception:
+        return False
 
 
 @dataclass(frozen=True)
