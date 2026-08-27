@@ -80,11 +80,6 @@ class GraphParser(GraphParserBase):
         """
         Flattens a nested tuple/list to a list of torch.fx.Node's.
         Example: ((arg_0, arg_1), arg_2) -> ["arg_0", "arg_1", "arg_2"]
-
-        Only user-visible outputs are returned. Outputs that correspond to parameter or buffer
-        mutations (produced by in-place ops such as ``embedding_renorm_``) are executed for their
-        side effects during parsing but must not be exposed as function outputs, otherwise the
-        runtime would return the mutated tensor instead of (or in addition to) the real result.
         """
         result: list[torch.fx.Node] = []
         if isinstance(arg, (tuple, list)):

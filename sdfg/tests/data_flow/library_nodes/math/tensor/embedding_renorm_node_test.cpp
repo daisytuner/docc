@@ -27,10 +27,6 @@ using namespace sdfg;
 
 namespace {
 
-// Wires up an EmbeddingRenormNode with a 2D float weight and an integer index
-// tensor. Both connectors ("W", "I") are input connectors; the weight "W" is
-// additionally written in place during expansion (IndirectReadWrite), so there
-// is no output connector.
 math::tensor::EmbeddingRenormNode& build_renorm(
     builder::StructuredSDFGBuilder& builder,
     const std::vector<symbolic::Expression>& weight_shape,

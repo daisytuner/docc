@@ -13,14 +13,13 @@ inline data_flow::LibraryNodeCode LibraryNodeType_EmbeddingRenorm("ml::Embedding
 
 /** @brief In-place embedding renormalization implementing `aten.embedding_renorm_`.
  *
- * Renormalizes, in place, the rows of a 2D `weight` tensor of shape
- * `[num_embeddings, embedding_dim]` that are selected by an integer `indices`
- * tensor of arbitrary shape. For each selected row `W[idx]` whose `norm_type`-norm
- * exceeds `max_norm`, the row is scaled so that its norm equals `max_norm`:
+ * Renormalizes the rows of a 2D `weight` tensor of shape `[num_embeddings, embedding_dim]` that are selected by an
+ * integer `indices` tensor of arbitrary shape. For each selected row `W[idx]` whose `norm_type`-norm exceeds
+ * `max_norm`, the row is scaled so that its norm equals `max_norm`:
  *
  *   norm  = ||W[idx]||_{norm_type}
  *   scale = min(1, max_norm / (norm + 1e-7))
- *   W[idx] *= scale
+ *   Y[idx] *= scale
  *
  * The clamped `scale` is branchless: rows already within `max_norm` are multiplied
  * by 1 and left unchanged, matching the semantics of `aten.embedding_renorm_` up to
@@ -30,9 +29,6 @@ inline data_flow::LibraryNodeCode LibraryNodeType_EmbeddingRenorm("ml::Embedding
  * `max_norm` makes its subsequent norm no longer exceed `max_norm`, processing the
  * (possibly duplicated) indices SEQUENTIALLY is idempotent and yields the same result
  * as deduplication; the index loops are therefore emitted as sequential maps.
- *
- * The single `weight` connector is used for both reading and writing (in-place):
- * it is requested as `IndirectReadWrite` during expansion.
  */
 class EmbeddingRenormNode : public TensorNode {
 private:
