@@ -90,10 +90,6 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/conv_node.cpp
     src/data_flow/library_nodes/math/tensor/copy_node.cpp
     src/data_flow/library_nodes/math/tensor/einsum_node.cpp
-    src/data_flow/library_nodes/math/tensor/embedding_node.cpp
-    src/data_flow/library_nodes/math/tensor/embedding_renorm_node.cpp
-    src/data_flow/library_nodes/math/tensor/index_node.cpp
-    src/data_flow/library_nodes/math/tensor/slice_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/abs_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.cpp
@@ -119,6 +115,9 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.cpp
+    src/data_flow/library_nodes/math/tensor/embedding_node.cpp
+    src/data_flow/library_nodes/math/tensor/embedding_renorm_node.cpp
+    src/data_flow/library_nodes/math/tensor/index_node.cpp
     src/data_flow/library_nodes/math/tensor/index_node.cpp
     src/data_flow/library_nodes/math/tensor/layernorm_node.cpp
     src/data_flow/library_nodes/math/tensor/matmul_node.cpp

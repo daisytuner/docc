@@ -174,6 +174,12 @@ public:
      * @return true if identical
      */
     static bool identicalBackingData(const AccessNode& src1, const AccessNode& src2);
+
+    /**
+     * Checks if the access node is constant and matches the provided constant number.
+     * @return true if node equals constant number
+     */
+    static bool has_constant_value(const AccessNode& node, long long constant_number);
 };
 
 /**

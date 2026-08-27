@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
 #include "sdfg/serializer/json_serializer.h"
@@ -35,10 +36,9 @@ inline data_flow::LibraryNodeCode LibraryNodeType_EmbeddingRenorm("ml::Embedding
  */
 class EmbeddingRenormNode : public TensorNode {
 private:
-    std::vector<symbolic::Expression> weight_shape_;
-    std::vector<symbolic::Expression> index_shape_;
-    double max_norm_;
-    double norm_type_;
+    TensorLayout y_layout_;
+    TensorLayout weight_layout_;
+    TensorLayout indices_layout_;
 
 public:
     EmbeddingRenormNode(
@@ -46,20 +46,21 @@ public:
         const DebugInfo& debug_info,
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
-        const std::vector<symbolic::Expression>& weight_shape,
-        const std::vector<symbolic::Expression>& index_shape,
-        double max_norm,
-        double norm_type,
+        const TensorLayout& y_layout,
+        const TensorLayout& weight_layout,
+        const TensorLayout& indices_layout,
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
-    static auto constexpr W_INPUT_IDX = 0;
-    static auto constexpr INDEX_IDX = 1;
+    static int constexpr Y_INPUT_IDX = 0;
+    static int constexpr WEIGHT_INPUT_IDX = 1;
+    static int constexpr INDICES_INPUT_IDX = 2;
+    static int constexpr MAX_NORM_INPUT_IDX = 3;
+    static int constexpr NORM_TYPE_INPUT_IDX = 4;
 
-    const std::vector<symbolic::Expression>& weight_shape() const;
-    const std::vector<symbolic::Expression>& index_shape() const;
-    double max_norm() const;
-    double norm_type() const;
+    const TensorLayout& y_layout() const;
+    const TensorLayout& weight_layout() const;
+    const TensorLayout& indices_layout() const;
 
     void validate(const Function& function) const override;
 

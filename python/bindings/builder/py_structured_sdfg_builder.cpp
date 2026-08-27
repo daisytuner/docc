@@ -1914,42 +1914,36 @@ void PyStructuredSDFGBuilder::add_embedding_op(
 }
 
 void PyStructuredSDFGBuilder::add_embedding_renorm_op(
-    const std::string& W,
-    const sdfg::types::Tensor& W_type,
-    const std::string& I,
-    const sdfg::types::Tensor& I_type,
-    double max_norm,
-    double norm_type,
-    const sdfg::DebugInfo& debug_info
-) {
-    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
-    auto& W_access = builder_.add_access(block, W, debug_info);
-    auto& I_access = builder_.add_access(block, I, debug_info);
-    auto& libnode = builder_.add_library_node<
-        sdfg::math::tensor::EmbeddingRenormNode>(block, debug_info, W_type.shape(), I_type.shape(), max_norm, norm_type);
-    builder_.add_computational_memlet(block, W_access, libnode, "W", {}, W_type, debug_info);
-    builder_.add_computational_memlet(block, I_access, libnode, "I", {}, I_type, debug_info);
-}
-
-void PyStructuredSDFGBuilder::add_slice_op(
-    const std::string& X,
-    const sdfg::types::Tensor& X_type,
     const std::string& Y,
     const sdfg::types::Tensor& Y_type,
-    long long dim,
-    long long start,
-    long long end,
-    long long step,
+    const std::string& Weight,
+    const sdfg::types::Tensor& Weight_type,
+    const std::string& Indices,
+    const sdfg::types::Tensor& Indices_type,
+    const std::string& MaxNorm,
+    const sdfg::types::Scalar& MaxNorm_type,
+    const std::string& NormType,
+    const sdfg::types::Scalar& NormType_type,
     const sdfg::DebugInfo& debug_info
 ) {
-    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
-    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& block = builder_.add_block(current_sequence(), debug_info);
     auto& Y_access = builder_.add_access(block, Y, debug_info);
-    auto& libnode =
-        builder_
-            .add_library_node<sdfg::math::tensor::SliceNode>(block, debug_info, X_type.shape(), dim, start, end, step);
+    auto& Weight_access = builder_.add_access(block, Weight, debug_info);
+    auto& Indices_access = builder_.add_access(block, Indices, debug_info);
+    auto& MaxNorm_access =
+        (builder_.subject().exists(MaxNorm) ? builder_.add_access(block, MaxNorm, debug_info)
+                                            : builder_.add_constant(block, MaxNorm, MaxNorm_type, debug_info));
+    auto& NormType_access =
+        (builder_.subject().exists(NormType) ? builder_.add_access(block, NormType, debug_info)
+                                             : builder_.add_constant(block, NormType, NormType_type, debug_info));
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::EmbeddingRenormNode>(
+        block, debug_info, Y_type.layout(), Weight_type.layout(), Indices_type.layout()
+    );
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
-    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    builder_.add_computational_memlet(block, Weight_access, libnode, "Weight", {}, Weight_type, debug_info);
+    builder_.add_computational_memlet(block, Indices_access, libnode, "Indices", {}, Indices_type, debug_info);
+    builder_.add_computational_memlet(block, MaxNorm_access, libnode, "MaxNorm", {}, MaxNorm_type, debug_info);
+    builder_.add_computational_memlet(block, NormType_access, libnode, "NormType", {}, NormType_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_reduce_op(

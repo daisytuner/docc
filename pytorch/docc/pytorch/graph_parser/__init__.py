@@ -43,6 +43,7 @@ import docc.pytorch.graph_parser.normalization
 import docc.pytorch.graph_parser.pooling
 import docc.pytorch.graph_parser.reduction
 import docc.pytorch.graph_parser.reshaping
+import docc.pytorch.graph_parser.sparse
 import docc.pytorch.graph_parser.tensor
 import docc.pytorch.graph_parser.vision
 
@@ -85,18 +86,6 @@ class GraphParser(GraphParserBase):
         side effects during parsing but must not be exposed as function outputs, otherwise the
         runtime would return the mutated tensor instead of (or in addition to) the real result.
         """
-        # result = []
-        # if isinstance(args, tuple):
-        #     for elem in list(args):
-        #         result += self.get_output_containers(node, elem)
-        # else:
-        #     if isinstance(args, torch.fx.Node):
-        #         user_outputs = getattr(self.ep.graph_signature, "user_outputs", None)
-        #         if user_outputs is not None and args.name not in user_outputs:
-        #             return result
-        #     result.append(
-        #         self.convert_arg_to_container(node, self.container_info, args)
-        #     )
         result: list[torch.fx.Node] = []
         if isinstance(arg, (tuple, list)):
             for elem in arg:
@@ -158,6 +147,9 @@ class GraphParser(GraphParserBase):
             elif node.op == "output":
                 output_nodes: list[torch.fx.Node] = self.flatten_arg(node.args)
                 for output_node in output_nodes:
+                    if not output_node.name in self.ep.graph_signature.user_outputs:
+                        continue
+
                     sdfg_type: Type = self.get_node_sdfg_type(output_node)
                     out_name: str = output_node.name
 
@@ -281,8 +273,13 @@ class GraphParser(GraphParserBase):
         their shape information.
         """
         outputs: list[TensorName] = self.get_tensors_from_arg(node.args)
+        non_user_outputs: list[int] = []
         for i in range(len(outputs)):
             output: TensorName = outputs[i]
+            if not output in self.ep.graph_signature.user_outputs:
+                non_user_outputs.append(i)
+                continue
+
             if output in self.result_copy:
                 new_output: TensorName = self.result_copy[output]
                 output_info: TensorInfo = self.metadata.tensor(output)
@@ -291,6 +288,9 @@ class GraphParser(GraphParserBase):
                     node, self.builder, self.metadata, output_info, new_output_info
                 )
                 outputs[i] = new_output
+
+        for non_user_output in non_user_outputs:
+            del outputs[non_user_output]
 
         self.builder.add_metadata("output_args", ",".join(outputs))
         for output in outputs:

@@ -776,12 +776,16 @@ PYBIND11_MODULE(_sdfg, m) {
         .def(
             "add_embedding_renorm_op",
             &PyStructuredSDFGBuilder::add_embedding_renorm_op,
-            py::arg("W"),
-            py::arg("W_type"),
-            py::arg("I"),
-            py::arg("I_type"),
-            py::arg("max_norm"),
-            py::arg("norm_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("Weight"),
+            py::arg("Weight_type"),
+            py::arg("Indices"),
+            py::arg("Indices_type"),
+            py::arg("MaxNorm"),
+            py::arg("MaxNorm_type"),
+            py::arg("NormType"),
+            py::arg("NormType_type"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(

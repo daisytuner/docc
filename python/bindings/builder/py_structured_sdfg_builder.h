@@ -432,12 +432,16 @@ public:
     );
 
     void add_embedding_renorm_op(
-        const std::string& W,
-        const sdfg::types::Tensor& W_type,
-        const std::string& I,
-        const sdfg::types::Tensor& I_type,
-        double max_norm,
-        double norm_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::string& Weight,
+        const sdfg::types::Tensor& Weight_type,
+        const std::string& Indices,
+        const sdfg::types::Tensor& Indices_type,
+        const std::string& MaxNorm,
+        const sdfg::types::Scalar& MaxNorm_type,
+        const std::string& NormType,
+        const sdfg::types::Scalar& NormType_type,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 

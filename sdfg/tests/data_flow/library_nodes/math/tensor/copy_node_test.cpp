@@ -170,7 +170,7 @@ TEST(TensorCopyNodeTest, identity_empty) {
 TEST(TensorCopyNodeTest, permutation_2d) {
     auto a = symbolic::integer(2);
     auto b = symbolic::integer(3);
-    math::tensor::TensorLayout layout_x({a, b});
+    math::tensor::TensorLayout layout_x({a, b}, {symbolic::one(), a});
     math::tensor::TensorLayout layout_y({b, a});
     TensorCopyNodeTestReturn test_return;
     create_and_test(layout_x, layout_y, test_return);
@@ -188,7 +188,7 @@ TEST(TensorCopyNodeTest, permutation_3d) {
     auto b = symbolic::integer(2);
     auto c = symbolic::integer(3);
     math::tensor::TensorLayout layout_x({a, b, c});
-    math::tensor::TensorLayout layout_y({c, b, a});
+    math::tensor::TensorLayout layout_y({c, b, a}, {symbolic::one(), c, symbolic::mul(b, c)});
     TensorCopyNodeTestReturn test_return;
     create_and_test(layout_x, layout_y, test_return);
     ASSERT_EQ(test_return.dims.size(), 3);
@@ -206,7 +206,7 @@ TEST(TensorCopyNodeTest, permutation_3d_equal_dims) {
     auto a = symbolic::integer(2);
     auto b = symbolic::integer(2);
     auto c = symbolic::integer(4);
-    math::tensor::TensorLayout layout_x({a, b, c});
+    math::tensor::TensorLayout layout_x({a, b, c}, {symbolic::mul(b, c), symbolic::one(), b});
     math::tensor::TensorLayout layout_y({a, c, b});
     TensorCopyNodeTestReturn test_return;
     create_and_test(layout_x, layout_y, test_return);

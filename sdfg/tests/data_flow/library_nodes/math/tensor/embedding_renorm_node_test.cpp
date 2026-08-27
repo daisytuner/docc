@@ -10,6 +10,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/element.h"
 #include "sdfg/function.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
@@ -33,9 +34,9 @@ namespace {
 math::tensor::EmbeddingRenormNode& build_renorm(
     builder::StructuredSDFGBuilder& builder,
     const std::vector<symbolic::Expression>& weight_shape,
-    const std::vector<symbolic::Expression>& index_shape,
-    double max_norm,
-    double norm_type
+    const std::vector<symbolic::Expression>& indices_shape,
+    const std::string& max_norm,
+    const std::string& norm_type
 ) {
     auto& sdfg = builder.subject();
 
@@ -44,21 +45,34 @@ math::tensor::EmbeddingRenormNode& build_renorm(
     types::Pointer float_ptr(float_desc);
     types::Pointer int_ptr(int_desc);
 
-    builder.add_container("W", float_ptr, true);
-    builder.add_container("I", int_ptr, true);
+    builder.add_container("y", float_ptr, true);
+    builder.add_container("weight", float_ptr, true);
+    builder.add_container("indices", int_ptr, true);
+    builder.add_container("max_norm", float_desc, true);
+    builder.add_container("norm_type", float_desc, true);
 
-    types::Tensor W_tensor(float_desc, weight_shape);
-    types::Tensor I_tensor(int_desc, index_shape);
+    math::tensor::TensorLayout y_layout(weight_shape);
+    types::Tensor y_tensor(float_desc, y_layout);
+    math::tensor::TensorLayout weight_layout(weight_shape);
+    types::Tensor weight_tensor(float_desc, y_layout);
+    math::tensor::TensorLayout indices_layout(indices_shape);
+    types::Tensor indices_tensor(int_desc, indices_layout);
 
     auto& block = builder.add_block(sdfg.root());
-    auto& W_access = builder.add_access(block, "W");
-    auto& I_access = builder.add_access(block, "I");
+    auto& y_access = builder.add_access(block, "y");
+    auto& weight_access = builder.add_access(block, "weight");
+    auto& indices_access = builder.add_access(block, "indices");
+    auto& max_norm_access = builder.add_access(block, "max_norm");
+    auto& norm_type_access = builder.add_access(block, "norm_type");
 
     auto& libnode = builder.add_library_node<
-        math::tensor::EmbeddingRenormNode>(block, DebugInfo(), weight_shape, index_shape, max_norm, norm_type);
+        math::tensor::EmbeddingRenormNode>(block, DebugInfo(), y_layout, weight_layout, indices_layout);
 
-    builder.add_computational_memlet(block, W_access, libnode, "W", {}, W_tensor);
-    builder.add_computational_memlet(block, I_access, libnode, "I", {}, I_tensor);
+    builder.add_computational_memlet(block, y_access, libnode, "Y", {}, y_tensor);
+    builder.add_computational_memlet(block, weight_access, libnode, "Weight", {}, weight_tensor);
+    builder.add_computational_memlet(block, indices_access, libnode, "Indices", {}, indices_tensor);
+    builder.add_computational_memlet(block, max_norm_access, libnode, "MaxNorm", {}, float_desc);
+    builder.add_computational_memlet(block, norm_type_access, libnode, "NormType", {}, float_desc);
 
     return static_cast<math::tensor::EmbeddingRenormNode&>(libnode);
 }
@@ -66,11 +80,11 @@ math::tensor::EmbeddingRenormNode& build_renorm(
 // Builds a renorm node with concrete shapes, runs the library-node expansion
 // pass, and asserts the resulting SDFG re-validates. Exercises one norm_type
 // code path per call.
-void expand_with_norm_type(double norm_type) {
+void expand_with_norm_type(const std::string& norm_type) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
-    build_renorm(builder, {symbolic::integer(10), symbolic::integer(4)}, {symbolic::integer(3)}, 1.0, norm_type);
+    build_renorm(builder, {symbolic::integer(10), symbolic::integer(4)}, {symbolic::integer(3)}, "1.0", norm_type);
 
     ASSERT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "0.before");
@@ -96,14 +110,13 @@ TEST(EmbeddingRenormNodeTest, symbolic) {
     auto m = symbolic::symbol("m");
     auto k = symbolic::symbol("k");
 
-    auto& renorm_node = build_renorm(builder, {n, m}, {k}, 1.5, 2.0);
+    auto& renorm_node = build_renorm(builder, {n, m}, {k}, "1.5", "2.0");
 
     ASSERT_NO_THROW(sdfg.validate());
 
-    EXPECT_EQ(renorm_node.weight_shape().size(), 2);
-    EXPECT_EQ(renorm_node.index_shape().size(), 1);
-    EXPECT_DOUBLE_EQ(renorm_node.max_norm(), 1.5);
-    EXPECT_DOUBLE_EQ(renorm_node.norm_type(), 2.0);
+    EXPECT_EQ(renorm_node.y_layout().dims(), 2);
+    EXPECT_EQ(renorm_node.weight_layout().dims(), 2);
+    EXPECT_EQ(renorm_node.indices_layout().dims(), 1);
 
     auto symbols = renorm_node.symbols();
     EXPECT_EQ(symbols.size(), 3);
@@ -125,22 +138,26 @@ TEST(EmbeddingRenormNodeTest, symbolic) {
     EXPECT_FALSE(symbols.contains(k));
 }
 
-TEST(EmbeddingRenormNodeTest, expand_l2_norm) { expand_with_norm_type(2.0); }
+TEST(EmbeddingRenormNodeTest, expand_l2_norm) { expand_with_norm_type("2.0"); }
 
-TEST(EmbeddingRenormNodeTest, expand_l1_norm) { expand_with_norm_type(1.0); }
+TEST(EmbeddingRenormNodeTest, expand_l1_norm) { expand_with_norm_type("1.0"); }
 
-TEST(EmbeddingRenormNodeTest, expand_l3_norm) { expand_with_norm_type(3.0); }
+TEST(EmbeddingRenormNodeTest, expand_l3_norm) { expand_with_norm_type("3.0"); }
 
-TEST(EmbeddingRenormNodeTest, expand_fractional_norm) { expand_with_norm_type(0.5); }
+TEST(EmbeddingRenormNodeTest, expand_fractional_norm) { expand_with_norm_type("0.5"); }
 
-TEST(EmbeddingRenormNodeTest, expand_inf_norm) { expand_with_norm_type(std::numeric_limits<double>::infinity()); }
+TEST(EmbeddingRenormNodeTest, expand_inf_norm) { expand_with_norm_type("INFINITY"); }
 
 TEST(EmbeddingRenormNodeTest, expand_2d_indices) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
     build_renorm(
-        builder, {symbolic::integer(10), symbolic::integer(4)}, {symbolic::integer(2), symbolic::integer(3)}, 1.0, 2.0
+        builder,
+        {symbolic::integer(10), symbolic::integer(4)},
+        {symbolic::integer(2), symbolic::integer(3)},
+        "1.0",
+        "2.0"
     );
 
     ASSERT_NO_THROW(sdfg.validate());
@@ -157,7 +174,7 @@ TEST(EmbeddingRenormNodeTest, serialization) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
-    build_renorm(builder, {symbolic::integer(10), symbolic::integer(4)}, {symbolic::integer(3)}, 1.5, 2.0);
+    build_renorm(builder, {symbolic::integer(10), symbolic::integer(4)}, {symbolic::integer(3)}, "1.5", "2.0");
 
     ASSERT_NO_THROW(sdfg.validate());
 
@@ -173,30 +190,7 @@ TEST(EmbeddingRenormNodeTest, validate_rejects_non_2d_weight) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
-    types::Scalar float_desc(types::PrimitiveType::Float);
-    types::Scalar int_desc(types::PrimitiveType::Int64);
-    types::Pointer float_ptr(float_desc);
-    types::Pointer int_ptr(int_desc);
+    auto& renorm_node = build_renorm(builder, {symbolic::integer(10)}, {symbolic::integer(3)}, "1.0", "2.0");
 
-    builder.add_container("W", float_ptr, true);
-    builder.add_container("I", int_ptr, true);
-
-    // 1D weight shape is invalid for an embedding renorm.
-    std::vector<symbolic::Expression> weight_shape = {symbolic::integer(10)};
-    std::vector<symbolic::Expression> index_shape = {symbolic::integer(3)};
-
-    types::Tensor W_tensor(float_desc, weight_shape);
-    types::Tensor I_tensor(int_desc, index_shape);
-
-    auto& block = builder.add_block(sdfg.root());
-    auto& W_access = builder.add_access(block, "W");
-    auto& I_access = builder.add_access(block, "I");
-
-    auto& libnode = builder.add_library_node<
-        math::tensor::EmbeddingRenormNode>(block, DebugInfo(), weight_shape, index_shape, 1.0, 2.0);
-    builder.add_computational_memlet(block, W_access, libnode, "W", {}, W_tensor);
-    builder.add_computational_memlet(block, I_access, libnode, "I", {}, I_tensor);
-
-    auto& renorm_node = static_cast<math::tensor::EmbeddingRenormNode&>(libnode);
     EXPECT_THROW(renorm_node.validate(sdfg), InvalidSDFGException);
 }

@@ -1033,6 +1033,34 @@ class GraphParserModule(GraphParserBase, ABC):
             )
         return info
 
+    def get_arg_tensor_constant(
+        self,
+        node: torch.fx.Node,
+        index: int,
+        align_constant_type: Scalar | None = None,
+    ) -> TensorConstant:
+        """
+        Convert the index-th PyTorch Argument to a tensor constant. Throws an exception if the index
+        is out of bounds. If the align_constant_type flag is set to a SDFG scalar,
+        ``align_constant_type`` is called on the tensor constant.
+        """
+        if index >= len(node.args):
+            raise GraphParserError(
+                self,
+                node,
+                f"Tried to get the {index+1}. argument but has only {len(node.args)}",
+            )
+        constant: TensorConstant = self.convert_arg_to_tensor_constant(
+            node, node.args[index]
+        )
+        if align_constant_type is None:
+            return constant
+        else:
+            new_constant_scalar: Scalar = self.align_constant_type(
+                node, constant, align_constant_type
+            )
+            return TensorConstant(constant.value(), new_constant_scalar)
+
     def get_arg_tensor_info_or_constant(
         self,
         node: torch.fx.Node,

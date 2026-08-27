@@ -15,6 +15,7 @@
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
+#include "sdfg/data_flow/pointer_metadata.h"
 #include "sdfg/element.h"
 #include "sdfg/function.h"
 #include "sdfg/graph/graph.h"
@@ -155,6 +156,8 @@ public:
     virtual symbolic::SymbolSet symbols() const override;
 
     virtual symbolic::Expression flop() const override;
+
+    virtual data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 
     virtual std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;

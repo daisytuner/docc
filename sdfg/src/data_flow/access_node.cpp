@@ -1,6 +1,8 @@
 #include "sdfg/data_flow/access_node.h"
 
+#include <format>
 #include <unordered_set>
+
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/function.h"
 
@@ -78,6 +80,50 @@ EdgeRemoveOption AccessNode::can_remove_in_edge(const data_flow::DataFlowGraph& 
 
 bool AccessNode::identicalBackingData(const AccessNode& src1, const AccessNode& src2) {
     return src1.data() == src2.data();
+}
+
+bool AccessNode::has_constant_value(const AccessNode& node, long long constant_number) {
+    // Require constant access node
+    if (!node.is_constant()) {
+        return false;
+    }
+
+    // Boolean special case
+    if (constant_number == 0 && node.data() == "false") {
+        return true;
+    }
+    if (constant_number == 1 && node.data() == "true") {
+        return true;
+    }
+
+    // Normal case
+    static const std::vector<std::string> suffixes = {
+        "", "u", "U", "l", "L", "ll", "LL", "ull", "uLL", "Ull", "ULL", "e0", "e-0", ".0", ".0f", ".0F", ".0l", ".0L"
+    };
+    const std::string constant_number_str = std::to_string(constant_number);
+    for (const auto& suffix : suffixes) {
+        if (constant_number_str + suffix == node.data()) {
+            return true;
+        }
+    }
+
+    // Hexadecimal or octal case
+    static const std::vector<std::string> hex_or_oct_suffixes = {
+        "", "u", "U", "l", "L", "ll", "LL", "ull", "uLL", "Ull", "ULL"
+    };
+    const std::string hex_constant_number_str = std::format("{:#x}", constant_number);
+    for (const auto& suffix : hex_or_oct_suffixes) {
+        if (hex_constant_number_str + suffix == node.data()) {
+            return true;
+        }
+    }
+    const std::string oct_constant_number_str = std::format("{:#o}", constant_number);
+    for (const auto& suffix : hex_or_oct_suffixes) {
+        if (oct_constant_number_str + suffix == node.data()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 namespace {

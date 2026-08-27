@@ -17,14 +17,14 @@ public:
     /**
      * @deprecated use TensorLayout
      */
-    Tensor(const Scalar& element_type, const symbolic::MultiExpression& shape);
+    [[deprecated("Use TensorLayout")]] Tensor(const Scalar& element_type, const symbolic::MultiExpression& shape);
 
     Tensor(const Scalar& element_type, const math::tensor::TensorLayout& layout);
 
     /**
      * @deprecated use TensorLayout
      */
-    Tensor(
+    [[deprecated("Use TensorLayout")]] Tensor(
         const Scalar& element_type,
         const symbolic::MultiExpression& shape,
         const symbolic::MultiExpression& strides,
@@ -42,7 +42,7 @@ public:
     /**
      * @deprecated use TensorLayout
      */
-    Tensor(
+    [[deprecated("Use TensorLayout")]] Tensor(
         StorageType storage_type,
         size_t alignment,
         const std::string& initializer,
