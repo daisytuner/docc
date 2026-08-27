@@ -6,6 +6,7 @@
 #include <sdfg/data_flow/access_node.h>
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/targets/cuda/cuda.h>
+#include <sdfg/targets/rocm/rocm.h>
 #include <sdfg/transformations/in_local_storage.h>
 #include <sdfg/transformations/local_storage.h>
 #include <sdfg/transformations/loop_distribute.h>
@@ -19,6 +20,7 @@
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
 #include <sdfg/transformations/offloading/gpu_offload_nested_loop.h>
+#include <sdfg/transformations/offloading/rocm_offload_transform.h>
 #include <sdfg/transformations/omp_transform.h>
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/recorder.h>
@@ -316,6 +318,56 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const CUDAOffloadNestedLoop& t) {
             std::ostringstream oss;
             oss << "<CUDAOffloadNestedLoop name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // ROCMOffloadTransform (offload a map to a ROCM kernel at a given target level)
+    py::class_<sdfg::rocm::ROCMOffloadTransform, Transformation>(m, "ROCMOffloadTransform")
+        .def(
+            py::init([](StructuredLoop& loop,
+                        int parallel_size,
+                        sdfg::gpu::TargetLevel target_level,
+                        bool allow_dynamic_sizes) {
+                return sdfg::rocm::ROCMOffloadTransform(
+                    loop, sdfg::symbolic::integer(parallel_size), target_level, allow_dynamic_sizes
+                );
+            }),
+            py::arg("loop"),
+            py::arg("parallel_size") = 64,
+            py::arg("target_level") = sdfg::gpu::TargetLevel::X_GRID,
+            py::arg("allow_dynamic_sizes") = false,
+            "Offload a map to a ROCM kernel dimension (produces a ROCM_Offload schedule).\n\n"
+            "Args:\n"
+            "    loop: The map to offload\n"
+            "    parallel_size: Threads/blocks along this dimension (default: 64)\n"
+            "    target_level: Grid/block/warp target level (default: X_GRID)\n"
+            "    allow_dynamic_sizes: Permit non-constant iteration counts (default: False)"
+        )
+        .def("__repr__", [](const sdfg::rocm::ROCMOffloadTransform& t) {
+            std::ostringstream oss;
+            oss << "<ROCMOffloadTransform name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // ROCMOffloadNestedLoop (offload a nested loop to a further ROCM target level)
+    using ROCMOffloadNestedLoop = GPUOffloadNestedLoop<sdfg::rocm::ScheduleType_ROCM_Offload>;
+    py::class_<ROCMOffloadNestedLoop, Transformation>(m, "ROCMOffloadNestedLoop")
+        .def(
+            py::init([](StructuredLoop& loop, sdfg::gpu::TargetLevel target_level, int parallel_size) {
+                return ROCMOffloadNestedLoop(loop, target_level, sdfg::symbolic::integer(parallel_size));
+            }),
+            py::arg("loop"),
+            py::arg("target_level"),
+            py::arg("parallel_size"),
+            "Offload a nested (sequential) map/reduce to a further ROCM target level.\n\n"
+            "Args:\n"
+            "    loop: The nested map or reduce to offload\n"
+            "    target_level: Block/warp target level (must nest correctly under ancestors)\n"
+            "    parallel_size: Threads along this dimension"
+        )
+        .def("__repr__", [](const ROCMOffloadNestedLoop& t) {
+            std::ostringstream oss;
+            oss << "<ROCMOffloadNestedLoop name='" << t.name() << "'>";
             return oss.str();
         });
 

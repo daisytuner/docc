@@ -1,11 +1,16 @@
 from docc.sdfg import (
     AnalysisManager,
+    CUDAOffloadNestedLoop,
+    CUDAOffloadTransform,
     CUDAParallelizeNestedMap,
     CUDATransform,
     Pointer,
     PrimitiveType,
+    ROCMOffloadNestedLoop,
+    ROCMOffloadTransform,
     Scalar,
     StructuredSDFGBuilder,
+    TargetLevel,
 )
 
 
@@ -102,3 +107,49 @@ def test_cuda_parallelize_nested_map():
     assert inner.schedule_type.value == "CUDA"
     # Parent is X (0), so the child takes the Y grid dimension (1).
     assert inner.schedule_type.properties.get("dimension") == "1"
+
+
+# ---------------------------------------------------------------------------
+# ROCMOffloadTransform & ROCMOffloadNestedLoop
+# ---------------------------------------------------------------------------
+
+
+def test_rocm_offload_transform():
+    builder, m = _build_elementwise_map("rocm_copy")
+    am = AnalysisManager(builder)
+
+    assert m.schedule_type.value == "SEQUENTIAL"
+
+    t = ROCMOffloadTransform(
+        m, parallel_size=64, target_level=TargetLevel.X_GRID, allow_dynamic_sizes=True
+    )
+    assert "ROCMOffloadTransform" in repr(t)
+    assert t.can_be_applied(builder, am)
+    t.apply(builder, am)
+
+    assert m.schedule_type.value == "ROCM_Offload"
+
+
+def test_rocm_offload_nested_loop():
+    builder, outer, inner = _build_nested_maps("rocm_nest")
+
+    am = AnalysisManager(builder)
+    outer_t = ROCMOffloadTransform(
+        outer,
+        parallel_size=64,
+        target_level=TargetLevel.X_GRID,
+        allow_dynamic_sizes=True,
+    )
+    assert outer_t.can_be_applied(builder, am)
+    outer_t.apply(builder, am)
+    assert outer.schedule_type.value == "ROCM_Offload"
+
+    am = AnalysisManager(builder)
+    nested_t = ROCMOffloadNestedLoop(
+        inner, target_level=TargetLevel.X_BLOCK, parallel_size=16
+    )
+    assert "ROCMOffloadNestedLoop" in repr(nested_t)
+    assert nested_t.can_be_applied(builder, am)
+    nested_t.apply(builder, am)
+
+    assert inner.schedule_type.value == "ROCM_Offload"
