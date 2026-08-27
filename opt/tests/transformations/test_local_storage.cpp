@@ -10,16 +10,23 @@
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/metadata_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/function.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
+#include "sdfg/transformations/loop_tiling.h"
+#include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/types/type.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 using transformations::LocalStorage;
@@ -3070,9 +3077,12 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed) {
 
     auto buf = xform.local_container();
     ASSERT_TRUE(builder.subject().exists(buf));
-    // Buffer = [slot(BM=8)] x [tile(16)] = 128 shared elements.
+    // Buffer = [slot(BM=8)] x [padded per-slot block]: tile 16 -> 17 (coprime with
+    // 32) to avoid shared-memory bank conflicts.
     EXPECT_TRUE(builder.subject().type(buf).storage_type().is_nv_shared());
-    EXPECT_TRUE(builder.subject().type(buf) == types::Array(elem, symbolic::integer(128)));
+    EXPECT_TRUE(
+        builder.subject().type(buf) == types::Array(types::Array(elem, symbolic::integer(17)), symbolic::integer(8))
+    );
 
     // The cooperative map body is [leading barrier, copy_map, trailing barrier, k-loop].
     ASSERT_EQ(map_j.root().size(), 4u);
@@ -3157,9 +3167,12 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed_CoopOuter) {
 
     auto buf = xform.local_container();
     ASSERT_TRUE(builder.subject().exists(buf));
-    // Buffer = [slot(i width = 8)] x [tile(16)] = 128 shared elements.
+    // Buffer = [slot(i width = 8)] x [padded per-slot block]: tile 16 -> 17 (coprime
+    // with 32) to avoid shared-memory bank conflicts.
     EXPECT_TRUE(builder.subject().type(buf).storage_type().is_nv_shared());
-    EXPECT_TRUE(builder.subject().type(buf) == types::Array(elem, symbolic::integer(128)));
+    EXPECT_TRUE(
+        builder.subject().type(buf) == types::Array(types::Array(elem, symbolic::integer(17)), symbolic::integer(8))
+    );
 
     // The copy sits in the immediately-enclosing (per-thread) map's body:
     // [leading barrier, copy_map, trailing barrier, k-loop].
@@ -3181,4 +3194,106 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed_CoopOuter) {
     ASSERT_NE(main_block_outer, nullptr);
     EXPECT_TRUE(block_uses(*main_block_outer, buf));
     EXPECT_FALSE(block_uses(*main_block_outer, "A"));
+}
+
+/**
+ * Extracted from a recipe with old OutLocalStorage that produced wrong code.
+ */
+TEST(LocalStorageTest, Matmul_WrongTiledLoop) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Double);
+    types::Array arr_210(base_desc, symbolic::integer(210));
+    types::Pointer desc_210(arr_210);
+    types::Array arr_190(base_desc, symbolic::integer(190));
+    types::Pointer desc_190(arr_190);
+
+    types::Pointer opaque_ptr;
+    builder.add_container("A", opaque_ptr, true);
+    builder.add_container("B", opaque_ptr, true);
+    builder.add_container("C", opaque_ptr, true);
+
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto& outer_map = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(180)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto j = symbolic::symbol("j");
+    auto& inner_map = builder.add_map(
+        outer_map.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(210)),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& init_block = builder.add_block(inner_map.root());
+    auto& constant_zero = builder.add_constant(init_block, "0.0", base_desc);
+    auto& init_C_access = builder.add_access(init_block, "C");
+    auto& init_tasklet = builder.add_tasklet(init_block, data_flow::TaskletCode::assign, "__out", {"_in"});
+    builder.add_computational_memlet(init_block, constant_zero, init_tasklet, "_in", {}, base_desc);
+    builder.add_computational_memlet(init_block, init_tasklet, "__out", init_C_access, {i, j}, desc_210);
+
+    auto k = symbolic::symbol("k");
+    auto& reduce = builder.add_reduce(
+        inner_map.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(190)),
+        symbolic::zero(),
+        symbolic::add(k, symbolic::one()),
+        {{ReductionOperation::Add, "C"}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& comp_block = builder.add_block(reduce.root());
+    auto& comp_A_access = builder.add_access(comp_block, "A");
+    auto& comp_B_access = builder.add_access(comp_block, "B");
+    auto& comp_C_access_in = builder.add_access(comp_block, "C");
+    auto& comp_C_access_out = builder.add_access(comp_block, "C");
+    auto& comp_tasklet =
+        builder.add_tasklet(comp_block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+    builder.add_computational_memlet(comp_block, comp_A_access, comp_tasklet, "_in1", {i, k}, desc_190);
+    builder.add_computational_memlet(comp_block, comp_B_access, comp_tasklet, "_in2", {k, j}, desc_210);
+    builder.add_computational_memlet(comp_block, comp_C_access_in, comp_tasklet, "_in3", {i, j}, desc_210);
+    builder.add_computational_memlet(comp_block, comp_tasklet, "_out", comp_C_access_out, {i, j}, desc_210);
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+
+    transformations::LoopTiling outer_map_tiling(outer_map, 512);
+    ASSERT_TRUE(outer_map_tiling.can_be_applied(builder, analysis_manager));
+    outer_map_tiling.apply(builder, analysis_manager);
+
+    transformations::LoopTiling inner_map_tiling(inner_map, 4);
+    ASSERT_TRUE(inner_map_tiling.can_be_applied(builder, analysis_manager));
+    inner_map_tiling.apply(builder, analysis_manager);
+
+    transformations::LoopTiling reduce_tiling(reduce, 4);
+    ASSERT_TRUE(reduce_tiling.can_be_applied(builder, analysis_manager));
+    reduce_tiling.apply(builder, analysis_manager);
+
+    transformations::LocalStorage A_in_local_storage(*outer_map_tiling.outer_loop(), comp_A_access);
+    ASSERT_TRUE(A_in_local_storage.can_be_applied(builder, analysis_manager));
+    A_in_local_storage.apply(builder, analysis_manager);
+
+    transformations::LocalStorage C_out_local_storage(*outer_map_tiling.inner_loop(), comp_C_access_in);
+    ASSERT_FALSE(C_out_local_storage.can_be_applied(builder, analysis_manager));
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
 }

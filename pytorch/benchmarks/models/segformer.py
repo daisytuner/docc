@@ -1,5 +1,6 @@
 import pytest
 
+import docc.pytorch
 import torch
 import torch.nn as nn
 import transformers

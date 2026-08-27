@@ -1,13 +1,13 @@
 import argparse
 import os
 import sys
+import docc.torch
 import torch
 import torch._dynamo
 import time
 import numpy as np
 import pytest
 
-import docc.torch
 from docc.benchmarks.perf import PerfControl
 from docc.benchmarks import reset_instrumentation
 

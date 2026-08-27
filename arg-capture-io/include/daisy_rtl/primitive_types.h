@@ -64,8 +64,8 @@ static const char* primitive_type_cppspellings[] = {
     "uint32_t", // UInt32
     "uint64_t", // UInt64
     "unsigned __int128", // UInt128
-    "__fp16", // Half (C++ spellings vary: could also be "_Float16")
-    "bfloat16_t", // BFloat (requires <bfloat16>, e.g. x86/ARM extensions)
+    "_Float16", // Half
+    "__bf16", // BFloat (clang builtin, 16-bit IEEE bfloat16; storage-only, promotes to float)
     "float", // Float
     "double", // Double
     "long double", // X86_FP80  (x86 80-bit extended precision)
@@ -86,8 +86,8 @@ static const double primitive_type_machine_epsilons[] = {
     0.0, // uint32_t
     0.0, // uint64_t
     0.0, // unsigned __int128
-    9.765625e-04, // Half (__fp16)  ≈ 2^-10
-    7.8125e-03, // BFloat16 (bfloat16_t) ≈ 2^-7
+    9.765625e-04, // Half (_Float16)  ≈ 2^-10
+    7.8125e-03, // BFloat16 (__bf16) ≈ 2^-7
     1.1920929e-07, // Float (float, 32-bit)  ≈ 2^-23
     2.220446049250313e-16, // Double (double, 64-bit) ≈ 2^-52
     1.0842021724855044e-19, // long double (x86_80-bit) ≈ 2^-63
@@ -179,12 +179,16 @@ constexpr T machine_epsilon() {
 
 inline long double primitive_type_epsilon(arg_capture::PrimitiveType pt) {
     switch (pt) {
+        // Single source of truth: the machine-epsilon table (there is no portable
+        // numeric_limits specialization for the 16-bit floats).
+        case arg_capture::PrimitiveType::Half:
+        case arg_capture::PrimitiveType::BFloat:
         case arg_capture::PrimitiveType::Float:
-            return machine_epsilon<float>();
         case arg_capture::PrimitiveType::Double:
-            return machine_epsilon<double>();
         case arg_capture::PrimitiveType::X86_FP80:
-            return machine_epsilon<long double>();
+        case arg_capture::PrimitiveType::FP128:
+        case arg_capture::PrimitiveType::PPC_FP128:
+            return static_cast<long double>(primitive_type_machine_epsilons[static_cast<int32_t>(pt)]);
         default:
             throw std::runtime_error("No machine epsilon defined for this type");
     }

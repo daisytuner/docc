@@ -1,3 +1,5 @@
+import docc.torch
+
 import torch
 import torchvision.models as models
 import time
@@ -5,16 +7,15 @@ import os
 import sys
 
 # Use Agg backend for headless CI environments
-if os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'):
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
     import matplotlib
-    matplotlib.use('Agg')
+
+    matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import PIL.Image as Image
 import requests
 import copy
-
-import docc.torch
 
 # Load a pre-trained Faster R-CNN model
 weights = models.detection.FasterRCNN_ResNet50_FPN_Weights.DEFAULT
@@ -53,7 +54,7 @@ image = Image.open(requests.get(url, stream=True).raw)
 
 input_tensor = transforms(image)
 
-if not (os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS')):
+if not (os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS")):
     _ = plt.imshow(image)
     plt.title("Input Image")
     plt.axis("off")
@@ -76,28 +77,36 @@ with torch.no_grad():
     print("\n--- Results Comparison ---")
 
     # Compare outputs - these assertions will fail the test if results don't match
-    number_of_outputs_match = (len(res) == len(ref) and len(res) == 1 and len(res[0]['labels']) == len(ref[0]['labels']))
+    number_of_outputs_match = (
+        len(res) == len(ref)
+        and len(res) == 1
+        and len(res[0]["labels"]) == len(ref[0]["labels"])
+    )
     if number_of_outputs_match:
         print("✓ Number of outputs match between docc and torch")
     else:
-        print(f"✗ Number of outputs differ: {len(res[0]['labels'])} != {len(ref[0]['labels'])}")
-    
-    # Assert here because else the other checks crash
-    assert number_of_outputs_match, "Number of outputs don't match between docc and torch inductor"
+        print(
+            f"✗ Number of outputs differ: {len(res[0]['labels'])} != {len(ref[0]['labels'])}"
+        )
 
-    boxes_match = torch.allclose(res[0]['boxes'], ref[0]['boxes'], rtol=1e-2)
+    # Assert here because else the other checks crash
+    assert (
+        number_of_outputs_match
+    ), "Number of outputs don't match between docc and torch inductor"
+
+    boxes_match = torch.allclose(res[0]["boxes"], ref[0]["boxes"], rtol=1e-2)
     if boxes_match:
         print("✓ Boxes match between docc and torch")
     else:
         print("✗ Boxes differ with a relative difference of:")
-        print((res[0]['boxes'] - ref[0]['boxes']) / ref[0]['boxes'])
+        print((res[0]["boxes"] - ref[0]["boxes"]) / ref[0]["boxes"])
 
-    scores_match = torch.allclose(res[0]['scores'], ref[0]['scores'], rtol=1e-2)
+    scores_match = torch.allclose(res[0]["scores"], ref[0]["scores"], rtol=1e-2)
     if scores_match:
         print("✓ Scores match between docc and torch")
     else:
         print("✗ Scores differ with a relative difference of:")
-        print((res[0]['scores'] - ref[0]['scores']) / ref[0]['scores'])
+        print((res[0]["scores"] - ref[0]["scores"]) / ref[0]["scores"])
 
     print(f"\nDetected {len(res[0]['boxes'])} objects with docc")
     print(f"Detected {len(ref[0]['boxes'])} objects with torch inductor")
@@ -109,11 +118,19 @@ with torch.no_grad():
 
 
 # Draw the predicted bounding boxes (only in interactive mode, not CI)
-if not (os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS')):
+if not (os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS")):
     # COCO labels for object detection
     labels = weights.meta["categories"]
 
-    def draw_boxes(image, boxes, classes, labels, scores, threshold=0.4, title="Predicted Bounding Boxes"):
+    def draw_boxes(
+        image,
+        boxes,
+        classes,
+        labels,
+        scores,
+        threshold=0.4,
+        title="Predicted Bounding Boxes",
+    ):
         plt.figure(figsize=(8, 8))
         plt.imshow(image)
         ax = plt.gca()
@@ -133,7 +150,23 @@ if not (os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS')):
         plt.title(title)
         plt.show()
 
-    draw_boxes(image, ref[0]["boxes"].cpu().numpy(), ref[0]["labels"].cpu().numpy(), labels, ref[0]["scores"].cpu().numpy(), threshold=0.5, title="Torch Detections")
-    draw_boxes(image, res[0]["boxes"].cpu().numpy(), res[0]["labels"].cpu().numpy(), labels, res[0]["scores"].cpu().numpy(), threshold=0.5, title="DOCC Detections")
+    draw_boxes(
+        image,
+        ref[0]["boxes"].cpu().numpy(),
+        ref[0]["labels"].cpu().numpy(),
+        labels,
+        ref[0]["scores"].cpu().numpy(),
+        threshold=0.5,
+        title="Torch Detections",
+    )
+    draw_boxes(
+        image,
+        res[0]["boxes"].cpu().numpy(),
+        res[0]["labels"].cpu().numpy(),
+        labels,
+        res[0]["scores"].cpu().numpy(),
+        threshold=0.5,
+        title="DOCC Detections",
+    )
 else:
     print("\nSkipping visualization in CI environment")

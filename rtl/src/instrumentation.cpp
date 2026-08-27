@@ -52,6 +52,7 @@ static int (*_PAPI_library_init)(int) = nullptr;
 static int (*_PAPI_create_eventset)(int*) = nullptr;
 static int (*_PAPI_cleanup_eventset)(int) = nullptr;
 static int (*_PAPI_destroy_eventset)(int*) = nullptr;
+static int (*_PAPI_query_named_event)(const char*) = nullptr;
 static int (*_PAPI_add_named_event)(int, const char*) = nullptr;
 static int (*_PAPI_start)(int) = nullptr;
 static int (*_PAPI_stop)(int, long long*) = nullptr;
@@ -72,6 +73,7 @@ static void load_papi_symbols() {
     _PAPI_create_eventset = reinterpret_cast<int (*)(int*)>(dlsym(handle, "PAPI_create_eventset"));
     _PAPI_cleanup_eventset = reinterpret_cast<int (*)(int)>(dlsym(handle, "PAPI_cleanup_eventset"));
     _PAPI_destroy_eventset = reinterpret_cast<int (*)(int*)>(dlsym(handle, "PAPI_destroy_eventset"));
+    _PAPI_query_named_event = reinterpret_cast<int (*)(const char*)>(dlsym(handle, "PAPI_query_named_event"));
     _PAPI_add_named_event = reinterpret_cast<int (*)(int, const char*)>(dlsym(handle, "PAPI_add_named_event"));
     _PAPI_start = reinterpret_cast<int (*)(int)>(dlsym(handle, "PAPI_start"));
     _PAPI_stop = reinterpret_cast<int (*)(int, long long*)>(dlsym(handle, "PAPI_stop"));
@@ -465,6 +467,16 @@ private:
         std::fprintf(f, "%s", entry.str().c_str());
     }
 
+    void verify_events_exist(const std::vector<std::string>& list) {
+        for (const auto& event_name : list) {
+            int event_code;
+            if (_PAPI_query_named_event(event_name.c_str()) != 0) {
+                std::fprintf(stderr, "[daisy-rtl] PAPI event '%s' not found.\n", event_name.c_str());
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
 public:
     DaisyInstrumentationState() {
         load_papi_symbols();
@@ -512,12 +524,14 @@ public:
         const char* env_events_cpu = std::getenv("__DAISY_INSTRUMENTATION_EVENTS");
         if (env_events_cpu) {
             split_string(env_events_cpu, this->event_names_cpu);
+            verify_events_exist(this->event_names_cpu);
         }
 
         // Events - CUDA
         const char* env_events_cuda = std::getenv("__DAISY_INSTRUMENTATION_EVENTS_CUDA");
         if (env_events_cuda) {
             split_string(env_events_cuda, this->event_names_cuda);
+            verify_events_exist(this->event_names_cuda);
         }
     }
 

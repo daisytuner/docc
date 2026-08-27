@@ -1,8 +1,24 @@
+import docc.torch
 import torch
 import copy
 from math import isnan
 
-import docc.torch
+
+def torch_allclose(
+    res: torch.Tensor, ref: torch.Tensor, rtol: float, atol: float, equal_nan: bool
+) -> None:
+    all_close: bool = torch.allclose(
+        res, ref, rtol=rtol, atol=atol, equal_nan=equal_nan
+    )
+    if not all_close:
+        if not equal_nan and torch.any(
+            torch.logical_or(torch.isnan(res), torch.isnan(ref))
+        ):
+            max_diff: torch.Tensor = torch.tensor(torch.nan)
+        else:
+            diff: torch.Tensor = torch.abs(res - ref)
+            max_diff: torch.Tensor = torch.max(diff)
+        raise AssertionError("Non-eqal; biggest difference: " + str(max_diff))
 
 
 def torch_allclose(

@@ -1,10 +1,9 @@
 import numpy as np
+import docc.pytorch
 import torch
 import copy
 from math import isnan
 from typing import Any
-
-import docc.pytorch
 
 
 def compare_shapes(res_shape: torch.Size, ref_shape: torch.Size) -> None:

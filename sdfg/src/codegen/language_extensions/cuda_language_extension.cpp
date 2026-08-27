@@ -35,7 +35,7 @@ std::string CUDALanguageExtension::primitive_type(const types::PrimitiveType pri
         case types::PrimitiveType::UInt128:
             return "unsigned __int128";
         case types::PrimitiveType::Half:
-            return "__fp16";
+            return "_Float16";
         case types::PrimitiveType::BFloat:
             return "__bf16";
         case types::PrimitiveType::Float:
@@ -351,9 +351,9 @@ std::string CUDALanguageExtension::zero(const types::PrimitiveType prim_type) {
         case types::UInt128:
             return "0";
         case types::Half:
-            return "CUDART_ZERO_FP16";
+            return "(_Float16)0.0f";
         case types::BFloat:
-            return "CUDART_ZERO_BF16";
+            return "(__bf16)0.0f";
         case types::Float:
             return "0.0f";
         case types::Double:

@@ -8,6 +8,12 @@ from docc.compiler.target_registry import (
     unregister_target,
     reset_target_registry,
 )
+from docc.benchmarks.rtl import try_ensure_instrumentation_ready
 
 # Backward compatibility alias - ExpressionVisitor is now merged into ASTParser
 ExpressionVisitor = ASTParser
+
+# Ready the counter backends (e.g. ROCm) early: they must initialize before the
+# workload sets up its own runtime. Best-effort so importing docc never fails when
+# instrumentation is not configured.
+try_ensure_instrumentation_ready()
