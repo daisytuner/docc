@@ -1,6 +1,7 @@
 #include "sdfg/data_flow/access_node.h"
 
-#include <format>
+#include <ios>
+#include <sstream>
 #include <unordered_set>
 
 #include "sdfg/data_flow/data_flow_graph.h"
@@ -111,13 +112,17 @@ bool AccessNode::has_constant_value(const AccessNode& node, long long constant_n
     static const std::vector<std::string> hex_or_oct_suffixes = {
         "", "u", "U", "l", "L", "ll", "LL", "ull", "uLL", "Ull", "ULL"
     };
-    const std::string hex_constant_number_str = std::format("{:#x}", constant_number);
+    std::ostringstream hex_stream;
+    hex_stream << "0x" << std::hex << constant_number;
+    const std::string hex_constant_number_str = hex_stream.str();
     for (const auto& suffix : hex_or_oct_suffixes) {
         if (hex_constant_number_str + suffix == node.data()) {
             return true;
         }
     }
-    const std::string oct_constant_number_str = std::format("{:#o}", constant_number);
+    std::ostringstream oct_stream;
+    oct_stream << "0" << std::oct << constant_number;
+    const std::string oct_constant_number_str = oct_stream.str();
     for (const auto& suffix : hex_or_oct_suffixes) {
         if (oct_constant_number_str + suffix == node.data()) {
             return true;
