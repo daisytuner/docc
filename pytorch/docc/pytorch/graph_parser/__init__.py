@@ -134,6 +134,9 @@ class GraphParser(GraphParserBase):
             else:
                 raise GraphParserError(self, node, "Unknown op kind: " + node.op)
 
+        # Emit hoisted allocations at the function entry, then free every managed buffer
+        # (hoisted and in-place alike) at the end of the function.
+        self.container_info.memory_handler(self.builder).emit_allocations()
         for container in self.container_info.memory_managed():
             self.builder.add_free_block(container)
 
