@@ -3,8 +3,9 @@ GraphParser modules for parsing indexing, slicing, joining, and mutating operati
 """
 
 import torch.fx
+from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, Tensor, DebugInfo
 
 from docc.pytorch.graph_parser.utils import (
     TensorInfo,
@@ -251,40 +252,3 @@ class IndexParser(GraphParserModule):
 
 
 register_module("aten.index.Tensor", IndexParser())
-
-
-class ViewCopyParser(GraphParserModule):
-    def parse(
-        self,
-        node: torch.fx.Node,
-        builder: StructuredSDFGBuilder,
-        metadata: TensorMetadata,
-    ) -> None:
-        if len(node.args) != 2:
-            raise GraphParserError(
-                self, node, "Expected exactly 2 argument but got " + str(len(node.args))
-            )
-        if len(node.kwargs) != 0:
-            raise GraphParserError(
-                self, node, "Unsupported kwargs: " + str(node.kwargs)
-            )
-
-        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
-        size: list[str] = self.get_arg_multi_expr(node, 1)
-        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
-        if size != result_info.shape():
-            raise GraphParserError(
-                self, node, f"Shapes mismatch: {size} != {result_info.shape()}"
-            )
-
-        debug_info: DebugInfo = self.get_debug_info(node)
-        builder.add_copy_op(
-            self_info.container(),
-            self_info.sdfg_tensor_type(),
-            result_info.container(),
-            result_info.sdfg_tensor_type(),
-            debug_info,
-        )
-
-
-register_module("aten.view_copy.default", ViewCopyParser())

@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import pytest
 
 from tests import check
@@ -300,41 +299,6 @@ def test_unsqueeze_1(target: str) -> None:
             return torch.unsqueeze(input, 1)
 
     check(Unsqueeze1Net(), torch.tensor([1, 2, 3, 4]), target=target)
-
-
-# --- view_copy ---
-
-
-def test_view_copy_simple(target: str) -> None:
-    class ViewCopySimpleNet(nn.Module):
-        def forward(self, input: torch.Tensor) -> torch.Tensor:
-            return torch.view_copy(input, [2, 3, 4])
-
-    check(ViewCopySimpleNet(), torch.randn(2, 3, 4), target=target)
-
-
-def test_view_copy_permute(target: str) -> None:
-    class ViewCopyPermuteNet(nn.Module):
-        def forward(self, input: torch.Tensor) -> torch.Tensor:
-            return torch.view_copy(input, [4, 3, 2])
-
-    check(ViewCopyPermuteNet(), torch.randn(2, 3, 4), target=target)
-
-
-def test_view_copy_squeeze(target: str) -> None:
-    class ViewCopySqueezeNet(nn.Module):
-        def forward(self, input: torch.Tensor) -> torch.Tensor:
-            return torch.view_copy(input, [2, 3, 4])
-
-    check(ViewCopySqueezeNet(), torch.randn(2, 1, 3, 4), target=target)
-
-
-def test_view_copy_unsqueeze(target: str) -> None:
-    class ViewCopyUnsqueezeNet(nn.Module):
-        def forward(self, input: torch.Tensor) -> torch.Tensor:
-            return torch.view_copy(input, [2, 3, 1, 4])
-
-    check(ViewCopyUnsqueezeNet(), torch.randn(2, 3, 4), target=target)
 
 
 # --- where ---

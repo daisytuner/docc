@@ -163,22 +163,17 @@ register_module("aten.clone.default", CloneParser())
 
 
 class ViewParser(GraphParserModule):
-    num_args: int
-
-    def __init__(self, num_args: int) -> None:
-        self.num_args: int = num_args
-
     def parse(
         self,
         node: torch.fx.Node,
         builder: StructuredSDFGBuilder,
         metadata: TensorMetadata,
     ) -> None:
-        if len(node.args) != self.num_args:
+        if len(node.args) != 2:
             raise GraphParserError(
                 self,
                 node,
-                f"Expected {self.num_args} arguments but got " + str(len(node.args)),
+                "Expected exactly 2 arguments but got " + str(len(node.args)),
             )
         if len(node.kwargs) != 0:
             raise GraphParserError(
@@ -189,9 +184,7 @@ class ViewParser(GraphParserModule):
         self.create_result_view(node, builder, metadata, self_info)
 
 
-register_module("aten.view.default", ViewParser(2))
-register_module("aten.alias.default", ViewParser(1))
-register_module("aten.detach.default", ViewParser(1))
+register_module("aten.view.default", ViewParser())
 
 
 class ExpandParser(GraphParserModule):

@@ -399,7 +399,6 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
-
     void add_copy_op(
         const std::string& X,
         const sdfg::types::Tensor& X_type,
@@ -426,30 +425,6 @@ public:
         const std::string& result,
         const sdfg::types::Tensor& result_type,
         long long dim,
-        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
-    );
-
-    void add_embedding_op(
-        const std::string& W,
-        const sdfg::types::Tensor& W_type,
-        const std::string& I,
-        const sdfg::types::Tensor& I_type,
-        const std::string& Y,
-        const sdfg::types::Tensor& Y_type,
-        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
-    );
-
-    void add_embedding_renorm_op(
-        const std::string& Y,
-        const sdfg::types::Tensor& Y_type,
-        const std::string& Weight,
-        const sdfg::types::Tensor& Weight_type,
-        const std::string& Indices,
-        const sdfg::types::Tensor& Indices_type,
-        const std::string& MaxNorm,
-        const sdfg::types::Scalar& MaxNorm_type,
-        const std::string& NormType,
-        const sdfg::types::Scalar& NormType_type,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 

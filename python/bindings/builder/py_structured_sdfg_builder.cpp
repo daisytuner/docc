@@ -1904,59 +1904,6 @@ void PyStructuredSDFGBuilder::add_concat_op(
     builder_.add_computational_memlet(block, result_access, libnode, "Y", {}, result_type, debug_info);
 }
 
-void PyStructuredSDFGBuilder::add_embedding_op(
-    const std::string& W,
-    const sdfg::types::Tensor& W_type,
-    const std::string& I,
-    const sdfg::types::Tensor& I_type,
-    const std::string& Y,
-    const sdfg::types::Tensor& Y_type,
-    const sdfg::DebugInfo& debug_info
-) {
-    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
-    auto& W_access = builder_.add_access(block, W, debug_info);
-    auto& I_access = builder_.add_access(block, I, debug_info);
-    auto& Y_access = builder_.add_access(block, Y, debug_info);
-    auto& libnode =
-        builder_.add_library_node<sdfg::math::tensor::EmbeddingNode>(block, debug_info, W_type.shape(), I_type.shape());
-    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
-    builder_.add_computational_memlet(block, W_access, libnode, "W", {}, W_type, debug_info);
-    builder_.add_computational_memlet(block, I_access, libnode, "I", {}, I_type, debug_info);
-}
-
-void PyStructuredSDFGBuilder::add_embedding_renorm_op(
-    const std::string& Y,
-    const sdfg::types::Tensor& Y_type,
-    const std::string& Weight,
-    const sdfg::types::Tensor& Weight_type,
-    const std::string& Indices,
-    const sdfg::types::Tensor& Indices_type,
-    const std::string& MaxNorm,
-    const sdfg::types::Scalar& MaxNorm_type,
-    const std::string& NormType,
-    const sdfg::types::Scalar& NormType_type,
-    const sdfg::DebugInfo& debug_info
-) {
-    auto& block = builder_.add_block(current_sequence(), debug_info);
-    auto& Y_access = builder_.add_access(block, Y, debug_info);
-    auto& Weight_access = builder_.add_access(block, Weight, debug_info);
-    auto& Indices_access = builder_.add_access(block, Indices, debug_info);
-    auto& MaxNorm_access =
-        (builder_.subject().exists(MaxNorm) ? builder_.add_access(block, MaxNorm, debug_info)
-                                            : builder_.add_constant(block, MaxNorm, MaxNorm_type, debug_info));
-    auto& NormType_access =
-        (builder_.subject().exists(NormType) ? builder_.add_access(block, NormType, debug_info)
-                                             : builder_.add_constant(block, NormType, NormType_type, debug_info));
-    auto& libnode = builder_.add_library_node<sdfg::math::tensor::EmbeddingRenormNode>(
-        block, debug_info, Y_type.layout(), Weight_type.layout(), Indices_type.layout()
-    );
-    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
-    builder_.add_computational_memlet(block, Weight_access, libnode, "Weight", {}, Weight_type, debug_info);
-    builder_.add_computational_memlet(block, Indices_access, libnode, "Indices", {}, Indices_type, debug_info);
-    builder_.add_computational_memlet(block, MaxNorm_access, libnode, "MaxNorm", {}, MaxNorm_type, debug_info);
-    builder_.add_computational_memlet(block, NormType_access, libnode, "NormType", {}, NormType_type, debug_info);
-}
-
 void PyStructuredSDFGBuilder::add_reduce_op(
     const std::string& op_type,
     const std::string& input,

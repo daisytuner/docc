@@ -1,14 +1,11 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/copy_node.h"
-
 #include <cstddef>
 #include <list>
 #include <memory>
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <unordered_set>
 #include <vector>
-
-#include <nlohmann/json_fwd.hpp>
-
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/data_flow_node.h"
@@ -16,7 +13,6 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 #include "sdfg/data_flow/memlet.h"
-#include "sdfg/data_flow/pointer_metadata.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/element.h"
 #include "sdfg/exceptions.h"
@@ -382,8 +378,7 @@ bool TensorCopyNode::is_permutation_mode() const {
     for (int i = 0; i < dims; i++) {
         bool found = false;
         for (int j = 0; j < dims; j++) {
-            if (symbolic::eq(this->layout_x_.get_dim(i), this->layout_y_.get_dim(j)) &&
-                symbolic::eq(this->layout_x_.get_stride(i), this->layout_y_.get_stride(j))) {
+            if (symbolic::eq(this->layout_x_.get_dim(i), this->layout_y_.get_dim(j))) {
                 found = true;
                 break;
             }
@@ -495,17 +490,6 @@ symbolic::SymbolSet TensorCopyNode::symbols() const {
 }
 
 symbolic::Expression TensorCopyNode::flop() const { return symbolic::zero(); }
-
-data_flow::PointerAccessType TensorCopyNode::pointer_access_type(int input_idx) const {
-    switch (input_idx) {
-        case X_INPUT_IDX:
-            return data_flow::PointerAccessMeta::create_read_only(this->layout_x_.total_elements(), false);
-        case Y_INPUT_IDX:
-            return data_flow::PointerAccessMeta::create_full_write_only(this->layout_y_.total_elements(), false);
-        default:
-            return nullptr;
-    }
-}
 
 std::unique_ptr<data_flow::DataFlowNode> TensorCopyNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {

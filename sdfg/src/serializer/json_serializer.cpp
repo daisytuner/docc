@@ -1540,14 +1540,6 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::ConcatNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(math::tensor::LibraryNodeType_Embedding.value(), []() {
-            return std::make_unique<math::tensor::EmbeddingNodeSerializer>();
-        });
-    LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(math::tensor::LibraryNodeType_EmbeddingRenorm.value(), []() {
-            return std::make_unique<math::tensor::EmbeddingRenormNodeSerializer>();
-        });
-    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Index.value(), []() {
             return std::make_unique<math::tensor::IndexNodeSerializer>();
         });
