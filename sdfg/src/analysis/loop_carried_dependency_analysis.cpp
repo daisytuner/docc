@@ -534,7 +534,42 @@ void LoopCarriedDependencyAnalysis::detect_reductions(structured_control_flow::S
                 continue;
             }
             auto& write_edge = *in_edges.front();
-            auto& combine = write_edge.src();
+
+            // The frontend lowers library-node combines such as `acc = max(acc, x)`
+            // as `_t = fmax(acc, x); acc = _t`, so the accumulator write is fed by a
+            // pass-through copy from a temporary rather than by the combine node
+            // directly. Peel scalar assign-copies and single-producer temporaries to
+            // reach the underlying combine (e.g. the fmax CMath node). A direct
+            // `acc = acc + x` reduction is unaffected: its write is fed by the combine
+            // straight away, so the peel loop stops immediately.
+            const data_flow::DataFlowNode* combine_node = &write_edge.src();
+            for (int hops = 0; hops < 4; ++hops) {
+                if (auto* task = dynamic_cast<const data_flow::Tasklet*>(combine_node)) {
+                    if (!task->is_assign() || task->inputs().size() != 1) {
+                        break;
+                    }
+                    const data_flow::Memlet* copy_in = nullptr;
+                    for (auto& edge : graph.in_edges(*task)) {
+                        copy_in = &edge;
+                    }
+                    if (copy_in == nullptr) {
+                        break;
+                    }
+                    combine_node = &copy_in->src();
+                } else if (auto* tmp = dynamic_cast<const data_flow::AccessNode*>(combine_node)) {
+                    std::vector<const data_flow::Memlet*> tmp_in;
+                    for (auto& edge : graph.in_edges(*tmp)) {
+                        tmp_in.push_back(&edge);
+                    }
+                    if (tmp_in.size() != 1) {
+                        break;
+                    }
+                    combine_node = &tmp_in.front()->src();
+                } else {
+                    break;
+                }
+            }
+            auto& combine = *combine_node;
 
             auto op = combine_operator(combine);
             if (!op.has_value()) {
